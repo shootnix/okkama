@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.variants.search",
+  "title": "contains and index_of on arrays of payload enums: Maybe, Presence, a generic and a plain variant",
+  "purpose": "Observe that array searches compare variants by case and payload, as == and array difference do (#300).",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "TYPE.VARIANTS",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "true false false true\n1 -1\ntrue false 1\ntrue false\ntrue 1\nfalse,true,false,true 2\nfalse -1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#15",
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #300 from the spec text",
+    "expected_basis": "spec 6.6: contains/index_of use the equality of ==; a variant is equal to another of the same case and payload (Book 24.1), built independently; index_of gives the first match or none; the array difference removes both equal elements."
+  },
+  "status": "mandatory"
+}

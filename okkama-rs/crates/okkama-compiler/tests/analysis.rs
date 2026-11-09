@@ -642,3 +642,22 @@ fn constants_are_computed_by_the_compiler() {
         assert!(found.iter().any(|m| m.contains(expected)), "{text}: {found:?}");
     }
 }
+
+#[test]
+fn arrays_of_payload_enums_have_searches_and_errors_name_the_full_type() {
+    // #300: contains/index_of take the equality of `==`, variants included.
+    let decls = "enum Reading = (empty, value(item is int)); enum Slot<T> = (vacant, full(item is T));";
+    for body in [
+        "let xs is @Reading = [Reading.empty]; let a = xs.contains(Reading.value(1)); let b = xs.index_of(Reading.empty);",
+        "let xs is @Maybe<int> = [Maybe.some(1)]; let a = xs.contains(Maybe<int>.none);",
+        "let xs is @Presence<int> = [Presence<int>.missing]; let a = xs.index_of(Presence.some(2));",
+        "let xs is @Slot<int> = [Slot.full(3)]; let a = xs.contains(Slot<int>.vacant);",
+    ] {
+        let found = messages(&format!("{decls} main() is int {{ {body} 0; }}"));
+        assert!(found.is_empty(), "{body}: {found:?}");
+    }
+    assert_eq!(
+        messages("main() is int { let a is any = 1; let xs is @any = [a]; let b = xs.contains(a); 0; }"),
+        ["Type \"@any\" has no builtin action \"contains\""]
+    );
+}

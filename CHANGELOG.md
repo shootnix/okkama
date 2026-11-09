@@ -6,6 +6,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Fixed
+
+- `contains` and `index_of` work on arrays of enums with payloads —
+  `@Maybe<T>`, `@Presence<T>`, user enums, generic or not (#300). They use
+  the deep equality of array `==` and `-`: the case, then the payload. A
+  `±0.0` payload is the one corner where that differs from the variant's own
+  `==` (#314). A builtin missing on a collection names its full type
+  (`Type "@any" has no builtin action "contains"`, not `"array"`).
+  Conformance case `L05.variants.search`.
+
 ### Changed
 
 - Variants — enums with payloads, `Maybe`, `Presence` and error enums — have
