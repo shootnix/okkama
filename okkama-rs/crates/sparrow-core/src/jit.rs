@@ -2182,6 +2182,7 @@ fn generic(instruction: &I) -> bool {
             | I::Undef { .. }
             | I::AnyBox { .. }
             | I::ArraySlice { .. }
+            | I::ArrayReplace { .. }
             | I::ArrayJoin { .. }
             | I::ArrayConcat { .. }
             | I::ArrayDiff { .. }

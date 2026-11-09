@@ -6,6 +6,25 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Added
+
+- `@T.replaced(index, value)` (#250, owner's spelling): a new array equal to
+  the receiver except at `index`, which holds `value`; the receiver keeps
+  its elements. `value` meets the element type by the boundary rules of an
+  action parameter (a role wraps its implementer, `@any` boxes) and by no
+  other conversion; an index outside the array is the runtime error of
+  indexing (`Array index out of bounds`); an untyped `[]` has no element type
+  and is rejected at compile time. Programs rebuilt the array with a `map`
+  over the indices before. One new OIR instruction, `array.replace`, and one
+  SPB instruction, `arr.replace` (opcode 155, SPB format version 14), so
+  that an engine can later replace an element without copying everything
+  (#250 part 2); today every engine copies the array once (`@byte` arrays
+  stay packed on Tomato), and `sparrow-origin` reports it unsupported (#14).
+  OCS: contract `COLL.ARRAY-REPLACED`, cases `L05.array.replaced`,
+  `…-past-end`, `…-negative`, `…-type-rejected`,
+  `…-untyped-empty-rejected`; Book 10 (EN/RU), spec 6.6, Sparrow Book
+  (EN/RU), LSP completion, t/op/array.
+
 ### Fixed
 
 - Tomato: maps no longer pile up in memory (#331). A map's entries live in
@@ -29,6 +48,8 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   −32%. One scenario costs more: 4 000 versions `base - [k: 0]` thrown away
   at once (+28…40%), which the old heap did not pay because it never freed
   them.
+
+## [0.4.2] — 2026-11-09
 
 0.4.2 is a correctness and infrastructure release. Variants — enums with
 payloads, `Maybe`, `Presence` and error enums — keep their payload in place

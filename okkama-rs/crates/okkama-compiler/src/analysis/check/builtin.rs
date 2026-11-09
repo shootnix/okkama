@@ -23,6 +23,10 @@ enum Param {
     Key,
     /// Элемент массива-получателя (`contains`, `index_of`).
     Element,
+    /// A value stored as an element (`replaced`, #250): the element type,
+    /// reached by the boundary rules of an action parameter (a role wraps
+    /// its implementer, `any` boxes).
+    Stored,
 }
 
 /// Битовые действия `int`/`byte`.
@@ -142,6 +146,9 @@ impl Checker<'_, '_> {
             (Ty::Array(_), "reversed") => (Builtin::ArrayReversed, vec![], Some(receiver.clone())),
             (Ty::Array(_), "take") => (Builtin::ArrayTake, vec![int()], Some(receiver.clone())),
             (Ty::Array(_), "drop") => (Builtin::ArrayDrop, vec![int()], Some(receiver.clone())),
+            (Ty::Array(_), "replaced") => {
+                (Builtin::ArrayReplaced, vec![int(), Param::Stored], Some(receiver.clone()))
+            }
             (Ty::Map(..), "size") => (Builtin::MapSize, vec![], Some(Ty::Int)),
             (Ty::Map(..), "has") => (Builtin::MapHas, vec![Param::Key], Some(Ty::Bool)),
             (Ty::Map(key, _), "keys") => {
@@ -357,7 +364,7 @@ impl Checker<'_, '_> {
                 Param::Same => Some(receiver.clone()),
                 Param::Exact(ty) => Some(ty.clone()),
                 Param::Key => None,
-                Param::Element => element.clone(),
+                Param::Element | Param::Stored => element.clone(),
             };
             let value = self.value(&arg.value, hint.as_ref());
             diverges |= value.diverges;
@@ -366,6 +373,16 @@ impl Checker<'_, '_> {
                 Param::Same => Some(receiver.clone()),
                 Param::Exact(ty) => Some(ty.clone()),
                 Param::Element => element,
+                Param::Stored => match element {
+                    Some(element) => Some(element),
+                    None => {
+                        self.error(
+                            span,
+                            "Builtin action \"replaced\" needs an element type: an untyped [] has no element to replace",
+                        );
+                        return Self::poisoned(span);
+                    }
+                },
                 Param::Key => match &receiver {
                     Ty::Map(key, _) if **key != Ty::Never => Some((**key).clone()),
                     _ => {
@@ -380,8 +397,8 @@ impl Checker<'_, '_> {
                 && actual != expected && !actual.is_error() && !value.diverges {
                     // A role parameter takes an implementer through `role.wrap`,
                     // as the parameter of an action does (#299).
-                    if let Ty::Role(..) = expected
-                        && let Ok(wrapped) = self.try_coerce(value, &expected, "Argument")
+                    if (matches!(expected, Ty::Role(..)) || matches!(param, Param::Stored))
+                        && let Ok(wrapped) = self.try_coerce(value.clone(), &expected, "Argument")
                     {
                         values.push(wrapped);
                         continue;

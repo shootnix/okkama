@@ -659,6 +659,11 @@ impl<'a> Typing<'a> {
                 }
                 self.define(dst.0, self.ty(*array), "arr.slice")
             }
+            I::ArrayReplace { dst, array, index, value } => {
+                self.expect(*index, &int)?;
+                self.expect_ref(*value, self.element(*array)?)?;
+                self.define(dst.0, self.ty(*array), "arr.replace")
+            }
             I::ArrayJoin { dst, array, separator } => {
                 match self.ty(*array) {
                     Type::Array(e) if *self.resolve(*e) == Type::Str => {}

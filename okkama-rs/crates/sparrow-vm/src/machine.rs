@@ -955,6 +955,7 @@ pub(crate) fn evaluate<'a>(
         I::StrUtf8 { dst, text } => string_op(S::Utf8, *dst, &[*text]),
         // The previous VM is not extended any more (#14).
         I::StrFn { op, .. } => Err(Stop::Unsupported(format!("str.fn {} is not supported by sparrow-origin", op.name()))),
+        I::ArrayReplace { .. } => Err(Stop::Unsupported("arr.replace is not supported by sparrow-origin".into())),
         I::GlobalGet { .. } => Err(Stop::Unsupported("module constants are not supported by sparrow-origin".into())),
         I::RegionSettle { .. } | I::RegionSettleUnwind { .. } => {
             Err(Stop::Unsupported("async destroy is not supported by sparrow-origin".into()))

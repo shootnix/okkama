@@ -908,6 +908,7 @@ pub fn builtin_members(key: &str) -> Vec<Completion> {
         out.push(method("reversed", &[], key, "last element first"));
         out.push(method("take", &["count is int"], key, "at most count from the start"));
         out.push(method("drop", &["count is int"], key, "all but the first count"));
+        out.push(method("replaced", &["index is int", "value is T"], key, "a copy with the element at index replaced"));
         out.push(functional(
             "map",
             "${2:item}",

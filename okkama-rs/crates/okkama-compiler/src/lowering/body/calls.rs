@@ -521,6 +521,10 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 let drop = *op == Builtin::ArrayDrop;
                 return Ok(Out::Value(self.array_take(&target, ids[0], drop, span)));
             }
+            Builtin::ArrayReplaced => (
+                InstKind::ArrayReplace { array: receiver_id, index: ids[0], value: ids[1] },
+                target.ty.clone(),
+            ),
             // Лексикографически по code point, как `order()` (#281).
             Builtin::StrCompare(compare) => (
                 InstKind::StrCompare {

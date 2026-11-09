@@ -340,6 +340,9 @@ instructions! {
     ArrayLen = 101, "arr.len" { dst: Dst, array: Register }
     ArrayGet = 102, "arr.get" { dst: Dst, array: Register, index: Register }
     ArraySlice = 103, "arr.slice" { dst: Dst, array: Register, start: Register, end: Register }
+    /// `array.replaced(index, value)` (#250): a copy with one element
+    /// replaced; out of bounds is a program error, as for `arr.get`.
+    ArrayReplace = 155, "arr.replace" { dst: Dst, array: Register, index: Register, value: Register }
     ArrayJoin = 104, "arr.join" { dst: Dst, array: Register, separator: Register }
     /// `a + b + ...`: один массив под сумму длин частей.
     ArrayConcat = 96, "arr.concat" { dst: Dst, parts: Vec<Register> }

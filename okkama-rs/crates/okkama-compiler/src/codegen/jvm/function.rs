@@ -1117,6 +1117,19 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
                     1,
                 )?;
             }
+            InstKind::ArrayReplace { array, index, value } => {
+                self.load(*array);
+                self.load(*index);
+                self.load(*value);
+                self.box_value(*value)?;
+                self.class.call_rt(
+                    &mut self.asm,
+                    "replaced",
+                    "(Ljava/util/List;Ljava/math/BigInteger;Ljava/lang/Object;)Ljava/util/List;",
+                    3,
+                    1,
+                )?;
+            }
             InstKind::ArrayJoin { array, separator } => {
                 self.load(*array);
                 self.load(*separator);

@@ -98,7 +98,7 @@ pub(crate) fn plan(program: &Program, function: &Function) -> Vec<Option<Action>
 mod tests {
     use super::*;
     pub(crate) fn fixture() -> Program {
-        okkama_sparrow::assemble(r#"sparrow 13
+        okkama_sparrow::assemble(r#"sparrow 14
 module "scalar" "v1.0.0"
 type t0 int
 type t1 object obj0

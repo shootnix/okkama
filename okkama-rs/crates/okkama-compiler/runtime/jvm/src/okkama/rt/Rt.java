@@ -470,6 +470,16 @@ public final class Rt {
         return new ArrayList<Object>(array.subList(start.intValue(), end.intValue()));
     }
 
+    /** {@code array.replaced(index, value)} (#250): a copy with one element replaced. */
+    public static List<Object> replaced(List<?> array, BigInteger index, Object value) {
+        if (!inBounds(array, index)) {
+            throw trap("Array index out of bounds");
+        }
+        List<Object> copy = new ArrayList<Object>(array);
+        copy.set(index.intValue(), value);
+        return copy;
+    }
+
     public static List<Object> appendRange(
             List<Object> builder, BigInteger start, BigInteger end, boolean inclusive) {
         if (start.compareTo(end) > 0) {
