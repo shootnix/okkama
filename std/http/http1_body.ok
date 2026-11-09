@@ -29,8 +29,7 @@ object Http1BodyReading does BodyReading {
         let source=Http1BodyInput(origin,plan,prefix,head,limits);input=source;reading=StreamBodyReading(source,owner,Headers([]));self.plan=plan;
     }
     async bytes(limit is int) is @byte{
-        let group is FutureGroup<@byte>=FutureGroup();let complete=Event();let cleanup=Http1BodyOperationCleanup(group,complete);defer await cleanup.close();
-        let pending=reading.bytes(limit);group.start(pending);let result=await pending;complete.set();result;
+        await reading.bytes(limit);
     }
     trailers() is Headers{reading.trailers();input.trailers();}
     remainder() is @byte{reading.trailers();input.remainder();}

@@ -49,6 +49,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- std: `Http1BodyReading.bytes` awaits its read directly (#264, wave B). Its
+  `Http1BodyOperationCleanup` watched a group with one child awaited at once,
+  which structured await already cancels and settles. Wave B also tried
+  turning the remaining per-operation guards into `async destroy` guards and
+  stopped there: an `async destroy` costs more than `defer await
+  guard.close()` (243 against 130 ns per call on Tomato, 1 101 against 889 on
+  the IR engine), and as the server's run guard it delayed every Tomato
+  server run by about 0.8 s (#328). The guards keep their deferred close.
+
 - std: 33 more single-child settlement wrappers are gone (#264, wave A of the
   second part). Each read, connect, accept, TLS handshake, read and shutdown,
   DNS lookup, HTTP/2 server and session step and WebSocket output step built a
