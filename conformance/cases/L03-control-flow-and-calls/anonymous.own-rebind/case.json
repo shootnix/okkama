@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.anonymous.own-rebind",
+  "title": "an anonymous action rebinds its own locals and parameters, and captures stay snapshots",
+  "purpose": "Observe which bindings an anonymous action may rebind.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.ANON-ACTIONS",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "1 11 3 2 2\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.12",
+    "docs/okkama-spec-11072026.md#8.10.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #321",
+    "expected_basis": "spec 9.12 and 8.10.2: parameters and locals of the action stay rebindable; rebinding the outer name after creating `read` does not change its snapshot (#321)."
+  },
+  "status": "mandatory"
+}

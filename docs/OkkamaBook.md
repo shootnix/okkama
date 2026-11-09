@@ -2321,8 +2321,13 @@ add_ten(5); // 15, even after make_adder's call has ended
 Parameters and local declarations shadow captured names. Each action captures
 values and declared types at creation: later rebinding outside the action does
 not change the snapshot, and declarations appearing later are not captured.
-Rebinding a captured name inside the action is an error. Capturing an object
-preserves its identity; it does not copy the object.
+Rebinding a captured name inside the action is an error (`Cannot rebind
+captured variable "counter" inside an anonymous action`): the capture is a
+snapshot, and rebinding it would change nothing outside. To keep state across
+calls, return the successor and let the caller hold it. The action's own
+parameters and locals, including ones that shadow a captured name, stay
+rebindable under the ordinary rules. Capturing an object preserves its
+identity; it does not copy the object.
 
 An escaping action transfers ownership of captured local resources through the
 same rules as an object containing those resources. Unreferenced locals are

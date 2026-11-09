@@ -567,6 +567,51 @@ fn bound_actions_carry_successor_obligations() {
     }
 }
 
+/// Захват — снимок: перепривязать захваченное имя нельзя (#321).
+#[test]
+fn captured_bindings_cannot_be_rebound() {
+    let captured = |name: &str| {
+        format!(
+            "Cannot rebind captured variable \"{name}\" inside an anonymous action: captured bindings are snapshots; return the successor instead"
+        )
+    };
+    for (body, expected) in [
+        ("let c = C(); let bump = () is int { c = c.inc(); c.value(); }; bump();", captured("c")),
+        (
+            "let c = C(); let outer = () is int { let inner = () is int { c = c.inc(); c.value(); }; inner(); }; outer();",
+            captured("c"),
+        ),
+        // Своя локальная внешнего замыкания — захват для внутреннего.
+        (
+            "let outer = () is int { let d = C(); let inner = () is int { d = d.inc(); d.value(); }; d = d.inc(); inner() + d.value(); }; outer();",
+            captured("d"),
+        ),
+        // Сообщение о захвате важнее, чем о типе без successor.
+        ("let n = 1; let f = () is int { n = 2; n; }; f();", captured("n")),
+    ] {
+        assert_eq!(
+            messages(&format!("{COUNTER} main() is int {{ {body} }}")),
+            [expected],
+            "{body}"
+        );
+    }
+    for body in [
+        "let c = C(); let read = () is int { c.value(); }; read();",
+        "let c = C(); let bump = () is int { let next = c.inc(); next.value(); }; bump();",
+        "let bump = () is int { let c = C(); c = c.inc(); c.value(); }; bump();",
+        // Затенение локальной и параметром: привязка самого действия.
+        "let c = C(); let f = () is int { let c = C(); c = c.inc(); c.value(); }; f() + c.value();",
+        "let c = C(); let f = (c is C) is int { c = c.inc(); c.value(); }; f(c);",
+        // Внешнее имя перепривязывается снаружи, снимок не меняется.
+        "let c = C(); let read = () is int { c.value(); }; c = c.inc(); read() + c.value();",
+    ] {
+        assert!(
+            messages(&format!("{COUNTER} main() is int {{ {body} }}")).is_empty(),
+            "{body}"
+        );
+    }
+}
+
 #[test]
 fn constructor_fields_are_checked_before_lowering() {
     for (object, expected) in [
