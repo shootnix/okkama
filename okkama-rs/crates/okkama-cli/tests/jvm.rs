@@ -1767,7 +1767,7 @@ fn any_values_are_opaque_boxes() {
              object Holder { has value is any; Holder(:value); }\n\
              object Relay { Relay(); count(values is @any) is int { values.size(); } echo(value is any) is any { value; } }\n\
              main() is int {\n\
-                 let mixed = [1, \"two\", 3.0];\n\
+                 let mixed is @any = [1, \"two\", 3.0];\n\
                  let row is %string:any = [\"id\": 7, \"name\": \"Ada\"];\n\
                  let echoed = Relay().echo(Holder(value: 1));\n\
                  Stdout().writeln(Relay().count(mixed).string(), \" \", row.size().string());\n\
