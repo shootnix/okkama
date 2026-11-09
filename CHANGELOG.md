@@ -116,6 +116,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Parser: `async` in front of an anonymous action says what is wrong (#323).
+  `let later = async () is int { 1; };` read as a call of a name `async`
+  and failed at `is` with "Expect \";\" after let declaration". It now
+  fails at `async`: "Anonymous actions cannot be async; declare a named
+  async action instead." The check needs the anonymous action's signature
+  (`(…)` followed by `is`), so `async()`, `async(1)` and `receiver.async()`
+  stay calls of an action labelled `async`; nothing else in the grammar
+  changes, and a recovering parse (editors) reports the one error and goes
+  on.
+
 - Sparrow core: a failed file operation reports the same message as on the
   IR engine and the JVM (#319). Opening a missing file gave
   `FileSystemFailure.detailed("not_found", "No such file or directory (os
