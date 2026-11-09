@@ -64,6 +64,17 @@ impl<'a> Typing<'a> {
         }
     }
 
+    /// Отличается ли `from` от `to` только местами `never`.
+    fn fits_untagged(&self, from: &Type, to: &Type) -> bool {
+        let refs = |x: &TypeRef, y: &TypeRef| self.fits_untagged(self.resolve(*x), self.resolve(*y));
+        match (from, to) {
+            (Type::Never, _) => true,
+            (Type::Array(a), Type::Array(b)) => refs(a, b),
+            (Type::Map(k1, v1), Type::Map(k2, v2)) => refs(k1, k2) && refs(v1, v2),
+            _ => self.equal(from, to),
+        }
+    }
+
     /// Структурное равенство: одинаковые типы могут стоять в таблице дважды.
     fn equal(&self, a: &Type, b: &Type) -> bool {
         let refs = |x: &TypeRef, y: &TypeRef| x == y || self.equal(self.resolve(*x), self.resolve(*y));
@@ -260,8 +271,8 @@ impl<'a> Typing<'a> {
                 let (from, to) = (self.ty(*source), self.ty(dst.0));
                 let renamed = match (from, to) {
                     (Type::Successor(a), Type::Object(b)) => a == b,
-                    (Type::Array(e), Type::Array(_)) => *self.resolve(*e) == Type::Never,
-                    (Type::Map(k, v), Type::Map(..)) => *self.resolve(*k) == Type::Never && *self.resolve(*v) == Type::Never,
+                    // Only `never` parts of an untagged literal change, at any depth (#297).
+                    (Type::Array(_), Type::Array(_)) | (Type::Map(..), Type::Map(..)) => self.fits_untagged(from, to),
                     (Type::Object(o), Type::Cap(c)) => self.program.caps.get(c.0 as usize).is_some_and(|cap| cap.owner == *o),
                     _ => false,
                 };

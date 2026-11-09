@@ -1268,10 +1268,14 @@ impl<'a> FunctionVerifier<'a> {
                 let Some(result) = result else {
                     return Err("`retag` must define a value".to_string());
                 };
-                self.expect_type(*value, &Type::Array(Box::new(Type::Never)))?;
-                let Type::Array(_) = self.ty(result)? else {
+                let (source, target) = (self.ty(*value)?, self.ty(result)?);
+                let (Type::Array(_), Type::Array(_)) = (source, target) else {
                     return Err(format!("{result} must have an array type"));
                 };
+                // Only `never` parts of an untagged literal change (#297).
+                if !source.fits_untagged(target) {
+                    return Err(format!("retag of {value}: {source} does not fit {target}"));
+                }
                 return Ok(());
             }
             InstKind::BuilderNew => {
@@ -1774,11 +1778,13 @@ impl<'a> FunctionVerifier<'a> {
                 let Some(result) = result else {
                     return Err("`map.retag` must define a value".to_string());
                 };
-                let never = Box::new(Type::Never);
-                self.expect_type(*map, &Type::Map(never.clone(), never))?;
-                let Type::Map(..) = self.ty(result)? else {
+                let (source, target) = (self.ty(*map)?, self.ty(result)?);
+                let (Type::Map(..), Type::Map(..)) = (source, target) else {
                     return Err(format!("{result} must have a map type"));
                 };
+                if !source.fits_untagged(target) {
+                    return Err(format!("map.retag of {map}: {source} does not fit {target}"));
+                }
                 return Ok(());
             }
             InstKind::MapBuilderNew => {

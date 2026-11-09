@@ -1,0 +1,37 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+const NESTED is @@int = [[]];
+
+object Make {
+    Make();
+    rows() is @@int { [[]]; }
+    table(c is bool) is %string:@int { c ?? ["a": [1], "b": []] !! [:]; }
+}
+
+main() is int {
+    let out = Stdout();
+    let make = Make();
+    let c = true;
+    // An untagged [] or [:] takes the type of its siblings, in either order and at any depth.
+    let a = [[1], []];
+    let b = [[], [1]];
+    let m = ["a": [1], "b": []];
+    let deep = [[[]], [[1, 2]]];
+    let maps = [[:], ["k": 1]];
+    let typed_a is @@int = a;
+    let typed_m is %string:@int = m;
+    out.writeln(typed_a.size().string() + " " + b[1].size().string() + " " + (typed_m["b"] else [7]).size().string()
+        + " " + deep[1][0].size().string() + " " + (maps[1]["k"] else 0).string());
+    // Comparisons, branch joins, constants and typed results.
+    let v is @@int = [[]];
+    let joined = if c { [[]]; } else { [[2, 3]]; };
+    let matched = match 1 { case 1 { [[]]; } else { [[1]]; } };
+    out.writeln((v == [[]]).string() + " " + ([[1]] == [[]]).string() + " " + (joined == [[]]).string()
+        + " " + (matched == v).string() + " " + (NESTED == make.rows()).string() + " " + make.table(true).size().string());
+    // Different concrete elements still need an explicit `any`.
+    let mixed is @any = [[1], ["s"]];
+    out.writeln(mixed.size().string());
+    0;
+}
