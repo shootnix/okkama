@@ -510,6 +510,8 @@ pub enum Builtin {
     ArrayReversed,
     ArrayTake,
     ArrayDrop,
+    /// `replaced(index, value)`: a copy with one element replaced (#250).
+    ArrayReplaced,
     StrLength,
     StrEmpty,
     StrSlice,

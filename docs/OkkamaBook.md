@@ -921,6 +921,7 @@ Runtime-supported today:
 ```okkama
 [1, 2, 3].size();            // 3
 [1, 2, 3, 4].slice(1, 3);    // [2, 3]        end-exclusive
+[10, 20, 30].replaced(1, 99); // [10, 99, 30]  a new array; the original stays
 "héllo".length();            // 5             Unicode code points
 "hello".slice(0, 2);         // "he"
 "a,,b,".split(",");          // ["a", "", "b", ""]
@@ -973,7 +974,7 @@ Complete list (a test checks it against the compiler's table, `analysis/check/bu
 
 | Receiver | Builtin actions |
 |---|---|
-| `@T` | `size()`, `slice(start, end)`, `item(index)`, `first()`, `last()`, `cursor()`, `ordering()` (elements that do `Comparing<T>`; needs `import "compare" take Comparing`), `join(separator)` on `@string`; `contains(value)`, `index_of(value)` (a `Maybe<int>`; equality as `==`), `reversed()`, `take(count)`, `drop(count)` (at most `count` elements; a negative count is an error) |
+| `@T` | `size()`, `slice(start, end)`, `item(index)`, `first()`, `last()`, `cursor()`, `ordering()` (elements that do `Comparing<T>`; needs `import "compare" take Comparing`), `join(separator)` on `@string`; `contains(value)`, `index_of(value)` (a `Maybe<int>`; equality as `==`), `reversed()`, `take(count)`, `drop(count)` (at most `count` elements; a negative count is an error), `replaced(index, value)` (a copy with element `index` replaced by `value`, an element of the array's type; the original is unchanged; an index outside the array is the error of indexing) |
 | `%K:V` | `size()`, `has(key)`, `keys()`, `values()` |
 | `string` | `length()`, `empty()`, `slice(start, end)`, `split(separator)`, `replace(from, to)`, `replace_first(from, to)`, `trim()`, `trim_start()`, `trim_end()`, `chomp()`, `string()`, `less(other)`, `less_or_equal(other)`, `order(other)`; `contains(part)`, `starts_with(part)`, `ends_with(part)`, `find(part)`, `find_last(part)` (a `Maybe<int>` code point index; an empty part is found at the start or the end), `lower()`, `upper()` (full Unicode case mapping, no locale), `repeat(count)` (a negative count is an error; at most 1 GiB), `characters()` (an `@char` of code points) |
 | `int`, `float` | `abs()`, `sign()`, `pow(exponent)`, `sqrt()` (a `float`) — `int.pow(int)` is the exact `int` (a negative exponent is an error), `float.pow(float)` a `float` |

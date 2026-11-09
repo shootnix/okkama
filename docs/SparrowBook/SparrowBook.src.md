@@ -68,7 +68,7 @@ result. Comments start with `;`.
 ## 3. The shape of a file
 
 ```text
-sparrow 13                      ; format version
+sparrow 14                      ; format version
 module "name" "version"         ; the module's name and version (may be "")
 type t0 …                       ; the type table, in order
 enum enum0 "Name" ["a", "b"]    ; enums with their cases
@@ -226,7 +226,9 @@ The operators `+` and `-` of Okkama collections compile to one instruction
 per chain: `arr.concat rD, [rA, rB, rC]` allocates its result once for the sum
 of the parts' lengths, `arr.diff rD, rA, [rB, rC]` keeps the elements of `rA`
 equal to none of the others, and `map.merge` and `map.diff` do the same for
-maps (a repeated key takes the rightmost value).
+maps (a repeated key takes the rightmost value). `arr.replace rD, rA, rI, rV`
+is `replaced(index, value)` (#250): a copy of `rA` whose element `rI` is
+`rV`, failing on a bad index as `arr.get` does (format version 14).
 
 ## 11. Calls, closures and natives
 

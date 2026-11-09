@@ -4,7 +4,7 @@ module t v1.0.0;
 import "tap" take Tap;
 
 main() is int {
-    let t = Tap(21);
+    let t = Tap(26);
     let xs = [10, 20, 30];
     t = t.is(xs[1], 20, "indexing");
     t = t.is(xs[9] else 0, 0, "else on an index out of bounds");
@@ -33,5 +33,12 @@ main() is int {
     let longer = original + [3];
     t = t.ok(original == [1, 2] && longer == [1, 2, 3], "arrays are immutable");
     t = t.is(@string("a", "b").size(), 2, "@string(...)");
+    // replaced(index, value) (#250): a new array, the receiver unchanged.
+    let swapped = xs.replaced(1, 99);
+    t = t.ok(swapped == [10, 99, 30] && xs == [10, 20, 30], "replaced leaves the receiver");
+    t = t.ok(xs.replaced(0, 1) == [1, 20, 30] && xs.replaced(2, 3) == [10, 20, 3], "replaced at both ends");
+    t = t.ok([5].replaced(0, 6) == [6], "replaced in a one-element array");
+    t = t.ok(xs.replaced(0, 1).replaced(1, 2).replaced(2, 3) == [1, 2, 3], "replaced in a chain");
+    t = t.ok(nested.replaced(0, []) == [[], [2, 3]], "replaced with an empty element");
     t.done();
 }

@@ -55,7 +55,7 @@ okkama exec prog.spb                       # запуск SPB внутри okkam
 
 ```text
 ; Hello from Sparrow assembly: a native writes the UTF-8 bytes of a string.
-sparrow 13
+sparrow 14
 module "hello" "1.0.0"
 type t0 int
 type t1 str
@@ -97,7 +97,7 @@ Hello, Sparrow!
 ## 3. Устройство файла
 
 ```text
-sparrow 13                      ; версия формата
+sparrow 14                      ; версия формата
 module "name" "version"         ; имя и версия модуля (можно "")
 type t0 …                       ; таблица типов по порядку
 enum enum0 "Name" ["a", "b"]    ; enum и его варианты
@@ -173,7 +173,7 @@ BigInt.
 
 ```text
 ; 30! with a loop: exact integers grow into BigInt transparently.
-sparrow 13
+sparrow 14
 module "factorial" "1.0.0"
 type t0 int
 type t1 bool
@@ -233,7 +233,7 @@ $ sparrow run factorial.spb
 
 ```text
 ; Fibonacci with edge moves: the jump back writes both loop registers at once.
-sparrow 13
+sparrow 14
 module "fibonacci" "1.0.0"
 type t0 int
 type t1 bool
@@ -283,7 +283,7 @@ $ sparrow run fibonacci.spb; echo $?
 ```text
 ; Objects, a role with two implementations, dispatch through role slots and
 ; a successor (a changed copy of an immutable object).
-sparrow 13
+sparrow 14
 module "shapes" "1.0.0"
 type t0 int
 type t1 object obj0
@@ -373,7 +373,7 @@ $ sparrow run shapes.spb; echo $?
 ```text
 ; Arrays are built through a linear builder; `arr.lookup` and `map.lookup`
 ; branch on whether the element exists.
-sparrow 13
+sparrow 14
 module "collections" "1.0.0"
 type t0 int
 type t1 array t0
@@ -432,6 +432,9 @@ $ sparrow run collections.spb; echo $?
 длин частей, `arr.diff rD, rA, [rB, rC]` оставляет элементы `rA`, не равные ни
 одному элементу остальных, а `map.merge` и `map.diff` делают то же для
 словарей (при повторе ключа — значение самой правой части).
+`arr.replace rD, rA, rI, rV` — это `replaced(index, value)` (#250): копия `rA`,
+в которой элемент `rI` равен `rV`; неверный индекс — отказ, как у `arr.get`
+(версия формата 14).
 
 ## 11. Вызовы, замыкания и natives
 
@@ -443,7 +446,7 @@ $ sparrow run collections.spb; echo $?
 ```text
 ; A closure value: `fn.closure` fills the leading parameters of its function
 ; with captures; `call.fn` passes the rest.
-sparrow 13
+sparrow 14
 module "closures" "1.0.0"
 type t0 int
 type t1 fn [t0] -> t0
@@ -488,7 +491,7 @@ $ sparrow run closures.spb; echo $?
 ```text
 ; Throwing and catching: an object that does the builtin Error role is
 ; thrown; a handler range sends failures to a `catch`, which matches the type.
-sparrow 13
+sparrow 14
 module "errors" "1.0.0"
 type t0 int
 type t1 str
@@ -576,7 +579,7 @@ sparrow: Sparrow assembly line 0: Sparrow @main instruction 2: register r2 may b
 ; Ownership regions: an object with `destroy` is tracked and adopted by the
 ; region of its scope; leaving the region runs `destroy`, on the failure path
 ; too (`region.unwind`).
-sparrow 13
+sparrow 14
 module "resources" "1.0.0"
 type t0 int
 type t1 str
@@ -650,7 +653,7 @@ closing data.txt
 ```text
 ; Async functions: a call makes a cold future, `await` runs it to its value,
 ; `fut.spawn` starts one now so it runs while the caller goes on.
-sparrow 13
+sparrow 14
 module "tasks" "1.0.0"
 type t0 int
 type t1 future t0
@@ -698,7 +701,7 @@ async.
 ```text
 ; A test profile: `tests` lists parameterless functions; `sparrow test` runs
 ; each on a fresh runtime and reports it. A failure fails the test.
-sparrow 13
+sparrow 14
 module "testing" "1.0.0"
 type t0 int
 type t1 bool
@@ -869,6 +872,7 @@ Tomato компилирует каждую функцию в машинный к
 | 101 | `arr.len rD, rX` | длина |
 | 102 | `arr.get rD, rX, rX` | элемент по индексу; неверный индекс — отказ |
 | 103 | `arr.slice rD, rX, rX, rX` | подмассив start..end |
+| 155 | `arr.replace rD, rX, rX, rX` | копия с заменённым элементом index (#250) |
 | 104 | `arr.join rD, rX, rX` | склейка массива str через разделитель |
 | 96 | `arr.concat rD, [rX, …]` | `a + b + …`: один массив, выделенный под сумму длин частей |
 | 97 | `arr.diff rD, rX, [rX, …]` | `a - b - …`: элементы первого массива, не равные ни одному элементу остальных, по порядку |

@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.array.replaced-negative",
+  "title": "replaced at a negative index fails as indexing",
+  "purpose": "A negative index is out of bounds, also for an empty array.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.ARRAY-REPLACED",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "failure",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "runtime"
+      ]
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #250",
+    "expected_basis": "spec 6.6 and #250: an index outside 0 .. size() is the runtime error of indexing."
+  },
+  "status": "mandatory"
+}

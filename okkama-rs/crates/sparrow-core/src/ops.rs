@@ -1014,6 +1014,24 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             let items: Vec<Word> = runtime.heap.elements(array)[range].to_vec();
             Ok(runtime.heap.allocate_array(repr, &items))
         }
+        I::ArrayReplace { array, index, value: item, .. } => {
+            // A copy with one element replaced (#250); `arr.get`'s bounds.
+            let (array, index, item) = (value(array), value(index), value(item));
+            let length = crate::heap::payload(runtime.heap.header_of(array)) as usize;
+            let at = word::small_value(index)
+                .and_then(|i| usize::try_from(i).ok())
+                .filter(|&i| i < length)
+                .ok_or_else(|| "Array index out of bounds".to_string())?;
+            if runtime.heap.is_bytes(array) {
+                let mut bytes = runtime.heap.bytes(array).to_vec();
+                bytes[at] = item as u8;
+                return Ok(runtime.heap.allocate_bytes(&bytes));
+            }
+            let repr = element_repr(runtime, array);
+            let mut items = runtime.heap.elements(array).into_owned();
+            items[at] = item;
+            Ok(runtime.heap.allocate_array(repr, &items))
+        }
         I::ArrayJoin { array, separator, .. } => {
             let separator = runtime.heap.text(value(separator)).to_owned();
             let mut text = String::new();

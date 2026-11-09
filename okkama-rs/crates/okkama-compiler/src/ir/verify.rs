@@ -1224,6 +1224,12 @@ impl<'a> FunctionVerifier<'a> {
                 self.expect_int(*end)?;
                 self.ty(*array)?.clone()
             }
+            InstKind::ArrayReplace { array, index, value } => {
+                self.expect_int(*index)?;
+                let element = self.element_of(*array)?.clone();
+                self.expect_type(*value, &element)?;
+                self.ty(*array)?.clone()
+            }
             InstKind::ArrayJoin { array, separator } => {
                 self.expect_type(*array, &Type::Array(Box::new(Type::Str)))?;
                 self.expect_type(*separator, &Type::Str)?;

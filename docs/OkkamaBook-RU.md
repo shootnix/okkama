@@ -967,6 +967,7 @@ API в стиле format — мест, где гетерогенность и е
 ```okkama
 [1, 2, 3].size();            // 3
 [1, 2, 3, 4].slice(1, 3);    // [2, 3]        конец исключается
+[10, 20, 30].replaced(1, 99); // [10, 99, 30]  новый массив; исходный прежний
 "héllo".length();            // 5             кодовые точки Unicode
 "hello".slice(0, 2);         // "he"
 "a,,b,".split(",");          // ["a", "", "b", ""]
@@ -1020,7 +1021,7 @@ prices.values();             // @V, тот же порядок пар, что у
 
 | Получатель | Встроенные действия |
 |---|---|
-| `@T` | `size()`, `slice(start, end)`, `item(index)`, `first()`, `last()`, `cursor()`, `ordering()` (элементы делают `Comparing<T>`; нужен `import "compare" take Comparing`), `join(separator)` у `@string`; `contains(value)`, `index_of(value)` (`Maybe<int>`; равенство как у `==`), `reversed()`, `take(count)`, `drop(count)` (не больше `count` элементов; отрицательное число — ошибка) |
+| `@T` | `size()`, `slice(start, end)`, `item(index)`, `first()`, `last()`, `cursor()`, `ordering()` (элементы делают `Comparing<T>`; нужен `import "compare" take Comparing`), `join(separator)` у `@string`; `contains(value)`, `index_of(value)` (`Maybe<int>`; равенство как у `==`), `reversed()`, `take(count)`, `drop(count)` (не больше `count` элементов; отрицательное число — ошибка), `replaced(index, value)` (копия, в которой элемент `index` заменён на `value` — элемент типа массива; исходный массив не меняется; индекс вне массива — та же ошибка, что у индексации) |
 | `%K:V` | `size()`, `has(key)`, `keys()`, `values()` |
 | `string` | `length()`, `empty()`, `slice(start, end)`, `split(separator)`, `replace(from, to)`, `replace_first(from, to)`, `trim()`, `trim_start()`, `trim_end()`, `chomp()`, `string()`, `less(other)`, `less_or_equal(other)`, `order(other)`; `contains(part)`, `starts_with(part)`, `ends_with(part)`, `find(part)`, `find_last(part)` (`Maybe<int>` — индекс code point; пустая часть находится в начале или в конце), `lower()`, `upper()` (полное Unicode-отображение регистра, без локали), `repeat(count)` (отрицательное число — ошибка; не больше 1 ГиБ), `characters()` (`@char` из code points) |
 | `int`, `float` | `abs()`, `sign()`, `pow(exponent)`, `sqrt()` (это `float`) — `int.pow(int)` даёт точный `int` (отрицательная степень — ошибка), `float.pow(float)` — `float` |

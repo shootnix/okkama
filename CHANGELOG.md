@@ -9,6 +9,25 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 0.4.3 is an experiment: persistent collections (#246–#255), measured before
 anything is kept. Not released until the measurements show a net gain.
 
+### Added
+
+- `@T.replaced(index, value)` (#250, owner's spelling): a new array equal to
+  the receiver except at `index`, which holds `value`; the receiver keeps
+  its elements. `value` meets the element type by the boundary rules of an
+  action parameter (a role wraps its implementer, `@any` boxes) and by no
+  other conversion; an index outside the array is the runtime error of
+  indexing (`Array index out of bounds`); an untyped `[]` has no element type
+  and is rejected at compile time. Programs rebuilt the array with a `map`
+  over the indices before. One new OIR instruction, `array.replace`, and one
+  SPB instruction, `arr.replace` (opcode 155, SPB format version 14), so
+  that an engine can later replace an element without copying everything
+  (#250 part 2); today every engine copies the array once (`@byte` arrays
+  stay packed on Tomato), and `sparrow-origin` reports it unsupported (#14).
+  OCS: contract `COLL.ARRAY-REPLACED`, cases `L05.array.replaced`,
+  `…-past-end`, `…-negative`, `…-type-rejected`,
+  `…-untyped-empty-rejected`; Book 10 (EN/RU), spec 6.6, Sparrow Book
+  (EN/RU), LSP completion, t/op/array.
+
 ### Changed
 
 - Tomato: a chain of appends no longer copies the array at every step

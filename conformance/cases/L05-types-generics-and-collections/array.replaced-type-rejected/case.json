@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.array.replaced-type-rejected",
+  "title": "replaced takes an element of the array type",
+  "purpose": "Replacing an element of an @int with a string is rejected; no conversion is made.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.ARRAY-REPLACED",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #250",
+    "expected_basis": "spec 6.6 and #250: value meets the element type by the boundary rules of a parameter; no other conversion."
+  },
+  "status": "mandatory"
+}

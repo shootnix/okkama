@@ -1,0 +1,35 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Shape { area() is int; }
+object Square does Shape { has side is int; Square(:side); area() is int { side * side; } }
+
+object Text {
+    Text();
+    ints(xs is @int) is string { (xs.map() -> x { x.string(); }).join(","); }
+}
+
+main() is int {
+    let t = Text();
+    let source = [10, 20, 30];
+    let first = source.replaced(0, 99);
+    let middle = source.replaced(1, 99);
+    let ending = source.replaced(2, 99);
+    Stdout().writeln(t.ints(source) + " " + t.ints(first) + " " + t.ints(middle) + " " + t.ints(ending));
+    let one = [1].replaced(0, 7);
+    let chain = [0, 0, 0].replaced(0, 1).replaced(1, 2).replaced(2, 3);
+    Stdout().writeln(t.ints(one) + " " + t.ints(chain));
+    let names = ["a", "b"];
+    let renamed = names.replaced(0, "z");
+    Stdout().writeln(renamed.join(",") + " " + (names[0] == "a" ?? "x" !! "changed"));
+    let nested = [[1], [2, 3]].replaced(0, [7, 8, 9]);
+    Stdout().writeln(t.ints(nested[0]) + "|" + t.ints(nested[1]) + " " + [[1]].replaced(0, []).size().string());
+    let bytes = [byte(1), byte(2)].replaced(1, byte(9));
+    let shapes is @Shape = [Square(side: 1), Square(side: 2)];
+    let bigger = shapes.replaced(1, Square(side: 5));
+    let mixed is @any = [1, "two"];
+    let boxed = mixed.replaced(1, 2.5);
+    Stdout().writeln(bytes[0].int().string() + "," + bytes[1].int().string() + " " + bigger[1].area().string() + " " + boxed.size().string());
+    0;
+}
