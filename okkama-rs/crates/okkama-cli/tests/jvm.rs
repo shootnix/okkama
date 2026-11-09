@@ -1093,15 +1093,15 @@ fn ownership_cleanup_order_matches_the_interpreter() {
             "let r = try { let x = [Fragile(code: 3), Fragile(code: 4)]; 0; }",
             4,
         ),
-        // Значение ветви `if`/`match`/`try` принадлежит внешнему блоку.
+        // Ветвь `if`/`match`, как и блок, уничтожает свои `let` при выходе (#308).
         (
             "let r = try { if true { let f = Fragile(code: 2); } throw Boom.failed(1); }",
-            1,
+            2,
         ),
         (
             "let n = 1; let r = try { match n { case 1 { let f = Fragile(code: 2); } else { 0; } } \
              throw Boom.failed(1); }",
-            1,
+            2,
         ),
         (
             "let r = try { { let f = Fragile(code: 2); } throw Boom.failed(1); }",
