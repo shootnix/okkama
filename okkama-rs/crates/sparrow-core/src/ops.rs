@@ -1124,21 +1124,25 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
         | I::RatMul { left, right, .. }
         | I::RatDiv { left, right, .. }
         | I::RatMod { left, right, .. } => {
-            let (a, b) = (runtime.rational(value(left)).clone(), runtime.rational(value(right)).clone());
-            if b.is_zero() && matches!(instruction, I::RatDiv { .. } | I::RatMod { .. }) {
-                return Err(if matches!(instruction, I::RatDiv { .. }) { "Division by zero" } else { "Modulo by zero" }.into());
-            }
-            let result = match instruction {
-                I::RatAdd { .. } => a + b,
-                I::RatSub { .. } => a - b,
-                I::RatMul { .. } => a * b,
-                I::RatDiv { .. } => a / b,
-                _ => a % b,
+            // Borrowed operands: the result is computed before the runtime
+            // is borrowed again to allocate it (#326).
+            let result = {
+                let (a, b) = (runtime.rational(value(left)), runtime.rational(value(right)));
+                if b.is_zero() && matches!(instruction, I::RatDiv { .. } | I::RatMod { .. }) {
+                    return Err(if matches!(instruction, I::RatDiv { .. }) { "Division by zero" } else { "Modulo by zero" }.into());
+                }
+                match instruction {
+                    I::RatAdd { .. } => a + b,
+                    I::RatSub { .. } => a - b,
+                    I::RatMul { .. } => a * b,
+                    I::RatDiv { .. } => a / b,
+                    _ => a % b,
+                }
             };
             Ok(runtime.rational_new(result))
         }
         I::RatNeg { operand, .. } | I::RatAbs { operand, .. } => {
-            let n = runtime.rational(value(operand)).clone();
+            let n = runtime.rational(value(operand));
             let result = if matches!(instruction, I::RatNeg { .. }) { -n } else { n.abs() };
             Ok(runtime.rational_new(result))
         }
