@@ -7,6 +7,13 @@ import "cell" take Cell;
 role Shape { area() is int; }
 object Square does Shape { has side is int; Square(:side); area() is int { side * side; } }
 
+object Tick {
+    has n is int;
+    Tick(:n);
+    n() is int { n; }
+    up() is ^Tick { ^n = n + 1; }
+}
+
 object Op {
     has f is (int) is int;
     Op(:f);
@@ -24,7 +31,7 @@ object Kit {
 }
 
 main() is int {
-    let t = Tap(19);
+    let t = Tap(23);
     let kit = Kit();
     let n = 5;
     let plus = (x is int) is int { x + n; };
@@ -67,5 +74,16 @@ main() is int {
     t = t.is(recursive(5), 120, "recursion through an object");
     let outer = (x is int) is int { plus(x) * 2; };
     t = t.is(outer(1), 12, "a closure calls a captured closure");
+    // A capture is a snapshot; the action rebinds only its own bindings (#321).
+    let tick = Tick(n: 1);
+    let seen = () is int { tick.n(); };
+    tick = tick.up();
+    t = t.is(seen() * 10 + tick.n(), 12, "rebinding outside keeps the captured snapshot");
+    let own = () is int { let mine = Tick(n: 5); mine = mine.up(); mine.n(); };
+    t = t.is(own(), 6, "a closure rebinds its own local");
+    let from = (start is Tick) is int { start = start.up(); start.n(); };
+    t = t.is(from(Tick(n: 7)), 8, "a closure rebinds its parameter");
+    let shadow = () is int { let tick = Tick(n: 20); tick = tick.up(); tick.n(); };
+    t = t.is(shadow() + tick.n(), 23, "a local shadowing a capture is the closure's own");
     t.done();
 }

@@ -26,7 +26,7 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `t/lang`) and generated families (`tools/t/gen.py`: strings, collections,
   nesting, control, structures, value-object keys, casts, lexical forms,
   enums, …) whose expected values come from a Python oracle, not from
-  running Okkama. 44 753 checks in 125 files; every configuration (ir,
+  running Okkama. 44 757 checks in 125 files; every configuration (ir,
   sparrow, jvm, ir-passes-off, ir-gc-stress) must print the same stream.
   `tools/t/run.py` runs it (`--cage` locally), and it is a mandatory step of
   the release gate. It found #294–#310; checks blocked by an open issue
@@ -130,6 +130,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   the instructions.
 
 ### Fixed
+
+- Compiler: rebinding a captured name inside an anonymous action is an error,
+  as the Book always said (#321). `let bump = () is int { counter =
+  counter.bumped(); counter.count(); };` was accepted and rebound a copy that
+  lived for one call (`bump()` twice printed `2 2`, `counter` stayed 1). It
+  now fails at the rebind: `Cannot rebind captured variable "counter" inside
+  an anonymous action: captured bindings are snapshots; return the successor
+  instead`. The check is by binding identity: the action's parameters and
+  locals, including ones that shadow a captured name, stay rebindable, and a
+  nested action cannot rebind what it captured from the enclosing one.
 
 - Compiler: a successor captured by an anonymous action is used when the
   closure is (#322). `let later = c.bumped(); let show = () is int {
