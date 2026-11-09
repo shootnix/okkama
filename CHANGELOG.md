@@ -129,6 +129,22 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Compiler: a successor captured by an anonymous action is used when the
+  closure is (#322). `let later = c.bumped(); let show = () is int {
+  later.count(); }; show();` was rejected, "binding \"later\" can leave
+  scope without consumption", because the flow check did not follow
+  captures. A closure now carries the obligations of the successors its body
+  uses on every normal path (spec 11.1; found by a second, silent pass over
+  the body, run only when a capture holds one), transitively through
+  captured closures. Creating it and binding it to locals or aliases keep
+  them; calling it uses them; passing it as an argument, returning it and
+  storing it in an array, map, `Maybe` or field transfer them. A closure
+  that is never used is still an error, now naming the closure: "closure
+  \"show\" captures it and can leave scope without being called, returned,
+  passed or stored". A body that uses the capture on one branch only does
+  not carry it. Bound actions (`later.count` without a call) still consume
+  their receiver at creation: #324.
+
 - Sparrow core: a failed file operation reports the same message as on the
   IR engine and the JVM (#319). Opening a missing file gave
   `FileSystemFailure.detailed("not_found", "No such file or directory (os

@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.successor.closure-unused",
+  "title": "a closure that is never used does not hide its captured successor",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "SUCC.MUST-USE",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes this an error without fixing the detection stage; static analysis may reject it, otherwise execution fails. Either way the program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.1 (static successor consumption)"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #322",
+    "expected_basis": "spec 11.1: creating an anonymous action does not consume captured values; a dead closure does not hide a dead successor."
+  },
+  "status": "mandatory"
+}
