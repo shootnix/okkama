@@ -102,6 +102,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- IR engine: reading length-prefixed records from a large byte buffer is
+  linear again (#280). The `runtime/bytes` natives behind `ByteRange`
+  (`integer`, `text`, `decimal`, `equal`) and `ByteSearch` converted the
+  whole source array to bytes on every call, so `PgInput.data_rows`, which
+  reads one 4-byte length per DataRow, cost the size of the buffer per row:
+  draining 10⁶ PostgreSQL rows took 78 s on the IR engine against 0.18 s on
+  the core. They now read only the range (or, for a search and a join, the
+  rest from the start offset). 20 000 records in one buffer: 16.0 s → 0.36 s
+  on the IR engine; the core is unchanged.
+
 - Conformance: the std inventory (`contracts/stdlib.json`) is current again
   and cannot go stale (#282). Regenerated from `std/`: 32 new `STD.*`
   contracts for modules that existed but were missing (`STD.CELL`,
