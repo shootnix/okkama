@@ -52,8 +52,10 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   explicit boundaries are unchanged. Impact audit with `okkama check`: std
   (537 files), examples (8), the Bible examples (77), the Book's checkable
   examples (171) and the generated t/ files (82) — no change; the only
-  programs that relied on the inferred `any` were tests of that rule itself:
-  2 conformance cases, 2 compiler tests and one t/ check, rewritten.
+  programs that relied on the inferred `any` were tests of that rule itself
+  and one JVM test that passed an untyped mixed local to an `@any` parameter:
+  2 conformance cases, 2 compiler tests, one JVM test and one t/ check,
+  rewritten.
   Conformance: `L05.literal.heterogeneous-boundaries` and five
   `…-rejected` cases; spec 6.2/6.6.2, Book 9 and 31 (EN/RU), Bible 4.5.
 - A fenced raw string keeps every character between its delimiters,
