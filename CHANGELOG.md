@@ -62,6 +62,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Inference: a generic enum case no longer passes its uninferred `T` as the
+  expected type of a payload (#304), so `Maybe.some(loop { last 42; })`,
+  `Maybe.some(Maybe.some(42) else 0)`, `Maybe.some(xs.reduce(0) -> …)` and
+  `Slot.full(…)` with such payloads compile; `T` comes from the payload and
+  every payload is then checked against the solved specialization. Explicit
+  and contextual specializations still guide the payloads; real conflicts
+  read `cannot be both int and string`. Conformance case
+  `L05.variants.inferred-payloads`.
 - Inference: an untagged `[]` or `[:]` takes the collection type of its
   siblings, of the other branch or the other operand, at any depth and in
   either order (#297): `[[1], []]` and `[[], [1]]` are `@@int` (they were

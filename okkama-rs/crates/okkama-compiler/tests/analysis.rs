@@ -748,3 +748,30 @@ fn untagged_empty_collections_take_their_siblings_type_at_any_depth() {
         ["Cannot compare @@int and @@string"]
     );
 }
+
+#[test]
+fn generic_cases_do_not_impose_an_uninferred_parameter_on_their_payloads() {
+    // #304: loop/last, else and reduce need an expected type; an uninferred T is none.
+    let decls = "enum Slot<T> = (vacant, full(item is T)); enum Two<T> = (empty, both(a is T, b is T));";
+    for body in [
+        "let a = Maybe.some(loop { last 42; });",
+        "let a = Maybe.some(Maybe.some(42) else 0);",
+        "let a = Maybe.some((0..1).reduce(0) -> acc, i { 42; });",
+        "let a = Slot.full(loop { last 42; });",
+        "let a = Two.both(loop { last 1; }, 2);",
+        "let a = Slot.full(Slot.full(loop { last 5; }));",
+        "let a = Slot<int>.full(loop { last 3; });",
+    ] {
+        let found = messages(&format!("{decls} main() is int {{ {body} 0; }}"));
+        assert!(found.is_empty(), "{body}: {found:?}");
+    }
+    // Real conflicts and missing evidence are still reported.
+    assert_eq!(
+        messages(&format!("{decls} main() is int {{ let a = Two.both(loop {{ last 1; }}, \"s\"); 0; }}")),
+        ["Generic parameter \"T\" for object \"Two\" cannot be both int and string"]
+    );
+    assert_eq!(
+        messages(&format!("{decls} main() is int {{ let a = Slot.full([]); 0; }}")),
+        ["Cannot infer type arguments for Slot.full; provide an expected type or explicit type arguments"]
+    );
+}
