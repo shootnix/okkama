@@ -54,6 +54,21 @@ const CAPACITY_SHIFT: u32 = 18;
 /// Arrays shorter than this are copied on append, as before: a copy of a
 /// few words costs less than a buffer and a view.
 pub const CHAIN_MIN: usize = 32;
+/// An array version kept as a 32-way trie (#250): word 1 is the root branch,
+/// word 2 the tail (the last 1–32 elements), word 3 the root's shift; the
+/// payload is the length. Its nodes are ordinary arrays — branches of node
+/// references, leaves of 32 elements — so the collector traces them as such.
+/// Machine code reads it through a helper ([`Heap::trie_get`]); Rust code
+/// through [`Heap::elements`], which copies it out.
+pub const TRIE: u64 = 1 << 24;
+/// A flat array made by `replaced` from one of [`TRIE_MIN`] elements or
+/// more: replacing in it again is a chain, which becomes a trie.
+pub const REPLACED: u64 = 1 << 25;
+/// Arrays shorter than this are copied by `replaced`, as before.
+pub const TRIE_MIN: usize = 64;
+const TRIE_BITS: u32 = 5;
+const TRIE_WIDTH: usize = 1 << TRIE_BITS;
+const TRIE_MASK: usize = TRIE_WIDTH - 1;
 const PAGE_WORDS: usize = 64 * 1024 / 8;
 /// Bytes of one page of small cells.
 pub const PAGE_BYTES: usize = PAGE_WORDS * 8;
@@ -519,6 +534,9 @@ impl Heap {
         if header & PACKED != 0 {
             return std::borrow::Cow::Owned(self.bytes(array).iter().map(|&b| Word::from(b)).collect());
         }
+        if header & TRIE != 0 {
+            return std::borrow::Cow::Owned(self.trie_elements(array));
+        }
         if header & SHARED != 0 {
             let (buffer, start) = self.shared(array);
             // SAFETY: a version's slots are below its buffer's frontier, which
@@ -595,8 +613,122 @@ impl Heap {
 
     /// Mark a flat array as made by an append (see [`APPENDED`]).
     pub fn mark_appended(&mut self, array: Word) {
+        self.mark(array, APPENDED);
+    }
+
+    /// Set a header flag of an array the caller just allocated.
+    pub fn mark(&mut self, array: Word, flag: u64) {
         // SAFETY: `array` is a live array just allocated by the caller.
-        unsafe { *(array as *mut u64) |= APPENDED }
+        unsafe { *(array as *mut u64) |= flag }
+    }
+
+    // ---- tries (#250) ----
+
+    fn trie_parts(&self, array: Word) -> (Word, Word, u32) {
+        // SAFETY: a trie array has four words.
+        unsafe {
+            (*((array + 8) as *const u64), *((array + 16) as *const u64), *((array + 24) as *const u64) as u32)
+        }
+    }
+
+    fn trie_tail_offset(length: usize) -> usize {
+        if length < TRIE_WIDTH { 0 } else { ((length - 1) >> TRIE_BITS) << TRIE_BITS }
+    }
+
+    fn word_at(node: Word, index: usize) -> Word {
+        // SAFETY: `node` is a live flat array with more than `index` elements.
+        unsafe { *((node + 8 + index as Word * 8) as *const u64) }
+    }
+
+    /// A trie of `items` (all of them, built bottom-up).
+    pub fn trie_from(&mut self, repr: Repr, items: &[Word]) -> Word {
+        let length = items.len();
+        let offset = Self::trie_tail_offset(length);
+        let mut level: Vec<Word> = items[..offset].chunks(TRIE_WIDTH).map(|leaf| self.allocate_array(repr, leaf)).collect();
+        let mut shift = TRIE_BITS;
+        while level.len() > TRIE_WIDTH {
+            level = level.chunks(TRIE_WIDTH).map(|group| self.allocate_array(Repr::Ref, group)).collect();
+            shift += TRIE_BITS;
+        }
+        let root = self.allocate_array(Repr::Ref, &level);
+        let tail = self.allocate_array(repr, &items[offset..]);
+        self.trie_object(repr, length, root, tail, shift)
+    }
+
+    fn trie_object(&mut self, repr: Repr, length: usize, root: Word, tail: Word, shift: u32) -> Word {
+        self.counted("array trie", 0, 4);
+        let object = self.allocate(4);
+        // SAFETY: four words.
+        unsafe {
+            *(object as *mut u64) = header(ARRAY, repr, length as u32) | TRIE;
+            *((object + 8) as *mut u64) = root;
+            *((object + 16) as *mut u64) = tail;
+            *((object + 24) as *mut u64) = u64::from(shift);
+        }
+        object
+    }
+
+    /// Element `index` (in bounds) of a trie: the tail, or a walk of
+    /// ⌈log₃₂ n⌉ branches down to a leaf.
+    pub fn trie_get(&self, array: Word, index: usize) -> Word {
+        let length = payload(self.header_of(array)) as usize;
+        let (mut node, tail, mut shift) = self.trie_parts(array);
+        let offset = Self::trie_tail_offset(length);
+        if index >= offset {
+            return Self::word_at(tail, index - offset);
+        }
+        while shift > 0 {
+            node = Self::word_at(node, (index >> shift) & TRIE_MASK);
+            shift -= TRIE_BITS;
+        }
+        Self::word_at(node, index & TRIE_MASK)
+    }
+
+    /// A new trie with element `index` (in bounds) replaced: the nodes on its
+    /// path are copied, every other node is shared with `array`.
+    pub fn trie_set(&mut self, array: Word, index: usize, item: Word) -> Word {
+        let header = self.header_of(array);
+        let (repr, length) = (element_repr(header), payload(header) as usize);
+        let (root, tail, shift) = self.trie_parts(array);
+        let offset = Self::trie_tail_offset(length);
+        if index >= offset {
+            let mut items = self.elements(tail).into_owned();
+            items[index - offset] = item;
+            let tail = self.allocate_array(repr, &items);
+            return self.trie_object(repr, length, root, tail, shift);
+        }
+        let root = self.trie_path(root, shift, index, item, repr);
+        self.trie_object(repr, length, root, tail, shift)
+    }
+
+    fn trie_path(&mut self, node: Word, shift: u32, index: usize, item: Word, repr: Repr) -> Word {
+        let mut words = self.elements(node).into_owned();
+        if shift == 0 {
+            words[index & TRIE_MASK] = item;
+            return self.allocate_array(repr, &words);
+        }
+        let at = (index >> shift) & TRIE_MASK;
+        words[at] = self.trie_path(words[at], shift - TRIE_BITS, index, item, repr);
+        self.allocate_array(Repr::Ref, &words)
+    }
+
+    /// Every element of a trie, in order.
+    fn trie_elements(&self, array: Word) -> Vec<Word> {
+        fn walk(heap: &Heap, node: Word, shift: u32, out: &mut Vec<Word>) {
+            let words = heap.elements(node);
+            if shift == 0 {
+                out.extend_from_slice(&words);
+            } else {
+                for &child in words.iter() {
+                    walk(heap, child, shift - TRIE_BITS, out);
+                }
+            }
+        }
+        let (root, tail, shift) = self.trie_parts(array);
+        let mut out = Vec::with_capacity(payload(self.header_of(array)) as usize);
+        walk(self, root, shift, &mut out);
+        out.extend_from_slice(&self.elements(tail));
+        out
     }
 
     /// A byte array (`@byte`): one byte per element after the header.
@@ -789,6 +921,11 @@ impl Heap {
                 // A shared version keeps its buffer alive; the buffer traces
                 // the slots below its frontier like any array.
                 ARRAY if header & SHARED != 0 => push(unsafe { *((object + 8) as *const u64) }, Repr::Ref),
+                // A trie keeps its root and its tail; they trace the rest.
+                ARRAY if header & TRIE != 0 => {
+                    push(unsafe { *((object + 8) as *const u64) }, Repr::Ref);
+                    push(unsafe { *((object + 16) as *const u64) }, Repr::Ref);
+                }
                 ARRAY => {
                     let repr = element_repr(header);
                     if repr != Repr::Raw {
@@ -1178,6 +1315,40 @@ mod tests {
         assert_eq!(heap.buffer_room(buffer), (40, 256));
         heap.collect(|_| {});
         assert_eq!(heap.stats().large, 0, "the buffer dies with its last version");
+    }
+
+    /// Tries (#250): reads agree with the flat array across level boundaries,
+    /// a replacement copies one path and leaves every older version as it
+    /// was, and a version survives a collection through its nodes alone.
+    #[test]
+    fn tries_replace_one_path_and_keep_old_versions() {
+        let mut heap = Heap::new(layouts());
+        for n in [64usize, 65, 1056, 1057, 33_000] {
+            let items: Vec<Word> = (0..n as i64).map(|i| heap.int(i * 3)).collect();
+            let trie = heap.trie_from(Repr::Int, &items);
+            assert_eq!(payload(heap.header_of(trie)) as usize, n);
+            for index in [0, 1, 31, 32, 33, n / 2, n - 33, n - 32, n - 1] {
+                assert_eq!(heap.trie_get(trie, index), items[index], "n = {n}, index {index}");
+            }
+            assert_eq!(&*heap.elements(trie), &items[..]);
+            let mut versions = vec![(trie, items.clone())];
+            for (step, index) in [0, n - 1, n / 2, 31, 32, n - 33].into_iter().enumerate() {
+                let (last, model) = versions.last().unwrap().clone();
+                let value = heap.int(-(step as i64) - 1);
+                let next = heap.trie_set(last, index, value);
+                let mut changed = model.clone();
+                changed[index] = value;
+                versions.push((next, changed));
+            }
+            for (version, model) in &versions {
+                assert_eq!(&*heap.elements(*version), &model[..], "n = {n}");
+            }
+            // Only the newest version is a root: its nodes keep it whole.
+            let (newest, model) = versions.last().unwrap().clone();
+            heap.collect(|visit| visit(newest, Repr::Ref));
+            assert_eq!(&*heap.elements(newest), &model[..]);
+            assert_eq!(heap.trie_get(newest, n / 2), model[n / 2]);
+        }
     }
 
     /// Code point positions agree with a plain count from the start, in any

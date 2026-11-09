@@ -1322,6 +1322,50 @@ def persistence_family():
         if n:
             program.ok(f"{rows}[{n - 1}] == [{n - 1}, {model[-1]}]", f"{desc}: the last row")
             program.ok(f"{rows}[0] == [0, 0]", f"{desc}: the first row")
+    # Chains of replacements (#250): from the second one on, a large array
+    # is a trie on engines that have them; every version keeps its elements.
+    for n in [1, 2, 63, 64, 65, 100, 1056, 1057, 2049, 33000]:
+        program = batch.program()
+        model = [v(i) for i in range(n)]
+        spots = sorted({0, n - 1, n // 2, min(31, n - 1), min(32, n - 1), max(n - 33, 0)})
+        ex = program.fresh("ex")
+        setup = [f"let {ex} is @int = (0..{n}).map() -> i {{ i * 7 % 101; }};"]
+        names, models = [ex], [model]
+        for step, spot in enumerate(spots):
+            name = program.fresh("r")
+            setup.append(f"let {name} = {names[-1]}.replaced({spot}, {1000 + step});")
+            changed = list(models[-1])
+            changed[spot] = 1000 + step
+            names.append(name)
+            models.append(changed)
+        branch = program.fresh("b")
+        setup.append(f"let {branch} = {names[1]}.replaced({n - 1}, 7777);")
+        branched = list(models[1])
+        branched[n - 1] = 7777
+        last, final = names[-1], models[-1]
+        desc = f"{n} elements after {len(spots)} replacements"
+
+        def same(name, values, what):
+            program.is_(f"{name}.reduce(0) -> a, x {{ a + x; }}", lit_int(sum(values)), f"{desc}: {what}, reduce")
+            for i in sorted({0, n // 2, n - 1}):
+                program.is_(f"{name}[{i}]", lit_int(values[i]), f"{desc}: {what}, [{i}]")
+
+        program.is_(f"{last}.size()", lit_int(n), f"{desc}: size", setup)
+        for name, values, what in zip(names, models, ["the origin"] + [f"version {k}" for k in range(1, len(names))]):
+            same(name, values, what)
+        same(branch, branched, "a branch from version 1")
+        for i in spots:
+            program.is_(f"{last}[{i}]", lit_int(final[i]), f"{desc}: [{i}]")
+        for a, b in sorted({(0, n), (0, min(n, 33)), (n // 3, n - n // 3)}):
+            program.is_(f"{last}.slice({a}, {b}).reduce(0) -> a, x {{ a + x; }}", lit_int(sum(final[a:b])), f"{desc}: slice({a}, {b})")
+        program.is_(f"{last}.take(32).size() + {last}.drop(32).size()", lit_int(n), f"{desc}: take and drop")
+        program.is_(f"{last}.reversed()[0]", lit_int(final[-1]), f"{desc}: reversed")
+        program.ok(f"{last}.contains({1000 + len(spots) - 1})", f"{desc}: contains the last replacement")
+        program.is_(f"{last}.index_of({final[n // 2]}) else -1", lit_int(final.index(final[n // 2])), f"{desc}: index_of")
+        program.is_(f"({last}.map() -> x {{ x + 1; }}).reduce(0) -> a, x {{ a + x; }}", lit_int(sum(final) + n), f"{desc}: map")
+        program.is_(f"({last} + [5, 6]).reduce(0) -> a, x {{ a + x; }}", lit_int(sum(final) + 11), f"{desc}: appended to")
+        program.ok(f"{last} == {ex}.map() -> x {{ x; }}.replaced(0, {final[0]}).replaced({n - 1}, {final[n - 1]}).replaced({n // 2}, {final[n // 2]}).replaced({min(31, n - 1)}, {final[min(31, n - 1)]}).replaced({min(32, n - 1)}, {final[min(32, n - 1)]}).replaced({max(n - 33, 0)}, {final[max(n - 33, 0)]})",
+                   f"{desc}: equal to the same replacements made again")
     return batch.programs
 
 

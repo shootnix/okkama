@@ -371,11 +371,21 @@ fn slice_bounds(runtime: &Runtime, length: usize, start: Word, end: Word) -> Res
 
 // ---- shared arrays (#246) ----
 
-/// Shared buffers for append chains; `OKKAMA_ARRAYS=flat` turns them off, so
-/// one binary measures both representations.
+/// Which persistent array representations are on (#246, #250), so that one
+/// binary measures each: `OKKAMA_ARRAYS=flat` copies as before, `shared`
+/// keeps append chains in shared buffers but no tries, anything else (the
+/// default) has both.
+fn arrays_mode() -> &'static str {
+    static MODE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    MODE.get_or_init(|| std::env::var("OKKAMA_ARRAYS").unwrap_or_default())
+}
+
 pub(crate) fn shared_arrays() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("OKKAMA_ARRAYS").map_or(true, |v| v != "flat"))
+    arrays_mode() != "flat"
+}
+
+pub(crate) fn trie_arrays() -> bool {
+    !matches!(arrays_mode(), "flat" | "shared")
 }
 
 /// `a + b + …` when `a` continues a chain of appends: written in place at
@@ -585,6 +595,13 @@ pub extern "C" fn rt_builder_push(ctx: *mut Ctx, builder: Word, item: Word) -> W
     let runtime = unsafe { &mut *(*ctx).runtime };
     grow_builder(&mut runtime.heap, builder, |items| items.push(item));
     builder
+}
+
+/// Element `position` (in bounds) of a trie array (#250), for machine code.
+#[inline(never)]
+pub extern "C" fn rt_trie_get(ctx: *mut Ctx, array: Word, position: u64) -> Word {
+    let runtime = unsafe { &*(*ctx).runtime };
+    runtime.heap.trie_get(array, position as usize)
 }
 
 /// Grow a builder's items and charge the capacity its vector took on
@@ -1028,8 +1045,22 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
                 return Ok(runtime.heap.allocate_bytes(&bytes));
             }
             let repr = element_repr(runtime, array);
+            let header = runtime.heap.header_of(array);
+            // A chain of replacements in a large array becomes a trie, which
+            // copies one path per replacement instead of the array (#250).
+            if trie_arrays() && header & crate::heap::TRIE != 0 {
+                return Ok(runtime.heap.trie_set(array, at, item));
+            }
             let mut items = runtime.heap.elements(array).into_owned();
             items[at] = item;
+            if trie_arrays() && length >= crate::heap::TRIE_MIN {
+                if header & crate::heap::REPLACED != 0 {
+                    return Ok(runtime.heap.trie_from(repr, &items));
+                }
+                let copy = runtime.heap.allocate_array(repr, &items);
+                runtime.heap.mark(copy, crate::heap::REPLACED);
+                return Ok(copy);
+            }
             Ok(runtime.heap.allocate_array(repr, &items))
         }
         I::ArrayJoin { array, separator, .. } => {

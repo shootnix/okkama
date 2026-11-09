@@ -74,7 +74,9 @@ async main() is int {
     let joined = words.reduce("")->text,word{ text + word; };
     out.writeln(joined.length().string());
     let pair = [big, bigger, base];
-    out.writeln(pair.size().string());
+    // Two replacements make a trie (#250): its elements are read by a helper.
+    let tree = (0..100).map()->i{ i; }.replaced(1, 1).replaced(2, 2);
+    out.writeln((pair.size() + tree[50] - 50).string());
     let prices is %string:int = ["apple": 120, "pear": 140];
     out.writeln((prices["apple"] else 0).string());
     let counter = Atomic(0);
