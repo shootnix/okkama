@@ -52,6 +52,27 @@ anything is kept. Not released until the measurements show a net gain.
   checks: chains, pairs, successor fields, cells, prepends, branching
   versions, at sizes around 32, 64, 128, 1 024 and 2 048).
 
+- Tomato: a chain of `replaced` calls on a large array no longer copies the
+  array at every step (#250, part 2, prototype). From the second
+  replacement in an array of 64 elements or more, the array is a 32-way trie
+  with a tail — a four-word object whose nodes are ordinary heap arrays — and
+  a replacement copies one path from the root to a leaf. A trie that is
+  only read flattens itself: after as many reads as two passes it rewrites
+  itself in place as a shared view of a flat copy, which machine code reads
+  inline, and the next replacement makes it a trie again. Machine code keeps
+  the plain load for flat arrays (one branch on two header bits); a view now
+  keeps its first element's address, so reading it costs one load more than
+  a flat array (reading a view was 11% slower; now it is on par).
+  `OKKAMA_ARRAYS=flat|shared|trie` selects the representations for
+  comparisons (the default is all of them, with flattening). Persistence
+  stand, same binary in four modes: a chain of replacements 6–82× faster
+  (n = 10³…10⁶), every version kept alive at n = 10⁶ 1.27 ms → 73 µs per
+  version and 365 → 103 MB; reading an array after replacements: +45…75%
+  when a trie stays a trie, −3% on geometric mean with flattening; arrays
+  nobody replaced in read the same in every mode. t/ family `persistence`
+  gains replacement chains up to 33 000 elements with branches from older
+  versions (3 481 checks), also under GC stress.
+
 ### Fixed
 
 - Tomato: maps no longer pile up in memory (#331). A map's entries live in
