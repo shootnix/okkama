@@ -687,3 +687,34 @@ fn arrays_of_payload_enums_have_searches_and_errors_name_the_full_type() {
         ["Type \"@any\" has no builtin action \"contains\""]
     );
 }
+
+#[test]
+fn try_optional_keeps_its_type_when_operand_paths_throw() {
+    // #307: a throw ends its own path, not the try? that recovers from it.
+    let decls = "enum E is Error = (a, b);";
+    let check = |body: &str| messages(&format!("{decls} main() is int {{ let c = 1 > 0; {body} 0; }}"));
+    for body in [
+        "let m = try? (if true { throw E.a; } else { 2; }) else 7;",
+        "let m is Maybe<int> = try? (if true { throw E.a; } else { 2; });",
+        "let m is Maybe<int> = try? (if c { throw E.a; } else { throw E.b; });",
+        "let m = try? (if c { throw E.a; } else { throw E.b; }) else 8; let n is int = m;",
+        "let m = try? loop { throw E.a; } else 9;",
+        "let m = try? (true ?? throw E.a !! 2) else 5;",
+        "let m = try! (if true { throw E.a; } else { 2; }); let n is int = m;",
+    ] {
+        assert!(check(body).is_empty(), "{body}: {:?}", check(body));
+    }
+    // No successful path and no context: an inference error, not a silent poison.
+    for body in ["let m = try? (if c { throw E.a; } else { throw E.b; });", "let m = try? loop { throw E.a; };"] {
+        assert_eq!(
+            check(body),
+            ["Cannot infer the type of try?: its operand never produces a value; declare Maybe<T> or add a fallback"],
+            "{body}"
+        );
+    }
+    // The selected throwing branch keeps the other branch's type for try?.
+    assert_eq!(
+        check("let m = try? (if true { throw E.a; } else { 2; }); let n is Maybe<string> = m;"),
+        ["Cannot initialize variable \"n\" of type Maybe<string> with Maybe<int>"]
+    );
+}

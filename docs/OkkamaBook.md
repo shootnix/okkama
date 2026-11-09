@@ -1622,6 +1622,12 @@ let config = try! Config.parse(source);     // "cannot fail" → panic if it doe
   flattened. A void call is rejected (there is no value to wrap; use
   `try`/`catch`), and so is a successor result (its must-use obligation would
   be lost).
+- `T` is the type of the operand's successful paths; a branch that throws
+  does not erase it, even when a literal condition selects that branch:
+  `try? (if true { throw E.a; } else { 2; }) else 7` is `7`. When no path
+  succeeds (every branch throws), `T` comes from the `Maybe<T>` boundary or
+  from the fallback after `else`; without either it is a compile error. A
+  caught error leaves `none`, so code after a `try?` is reachable.
 - `try! value` keeps the value's type, including void and successor results.
   A thrown error becomes the panic `Unexpected error: <text()>` located at the
   `try!`.
