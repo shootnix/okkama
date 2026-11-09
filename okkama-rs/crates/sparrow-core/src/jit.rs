@@ -1612,7 +1612,7 @@ impl Emitter<'_, '_> {
                 return Ok(true);
             }
             I::MapLookup { map, key, value, found, missing } => {
-                let (map, key) = (self.get(map), self.get(key));
+                let (map, key) = (self.get(map), self.word(key));
                 let function = self.iconst(self.function as i64);
                 let at = self.iconst(pc as i64);
                 let present = self.helper(|h| h.map_find, &[ctx, function, at, map, key]).expect("result");
