@@ -4,7 +4,6 @@ import "io/stream" take AsyncReading,AsyncWriting,ByteSource;
 import "http/message" take InvalidHttpMessage;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
-import "async/scope" take FutureGroup;
 // Used only by an exclusive HTTP1 conversation. Includes partial and 1xx
 // bytes; absence of a parsed final head is insufficient evidence for replay.
 object HttpResponseObservation {
@@ -32,4 +31,3 @@ object HttpObservedWriting does AsyncWriting{
         catch e is NetworkClosed{if observation.active() && !observation.received(){throw HttpPeerGoneBeforeResponse.closed(e);}throw;}
     }
 }
-object HttpObservationSettlement<T>{has group is FutureGroup<T>;HttpObservationSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}

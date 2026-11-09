@@ -4,7 +4,6 @@ import "net/ip" take IpAddress,IpNetwork,IpProperty;
 import "net/endpoint" take IpEndpoint,HostEndpoint;
 import "net/dns" take Resolving;
 import "collections/sequence" take Sequencing;
-import "async/scope" take FutureGroup;
 
 // The caller can inspect both the effective URL and the exact numeric candidate.
 // This capability grants no DNS lookup, socket mutation or implicit redirect.
@@ -70,10 +69,6 @@ object HttpEndpointSelection {
         let allowed is @IpEndpoint=snapshot.filter()->endpoint{access.allowed(url,endpoint);};
         confirm allowed.size()>0 else throw EndpointDenied.denied;allowed;
     }
-}
-object HttpResolutionCleanup {
-    has group is FutureGroup<Sequencing<IpEndpoint>>;HttpResolutionCleanup(group is FutureGroup<Sequencing<IpEndpoint>>){self.group=group;}
-    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
 }
 enum InvalidHttpEndpoint is Error = (because(reason is string));
 enum EndpointDenied is Error = (denied);

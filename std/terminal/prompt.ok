@@ -24,7 +24,7 @@ object PromptedSecret{
         complete.set();result;
     }
 }
-object SecretPromptCleanup{
+hidden object SecretPromptCleanup{
     has origin is TerminalSession;has complete is Event;
     SecretPromptCleanup(origin is TerminalSession,complete is Event){self.origin=origin;self.complete=complete;}
     close() is void{if !complete.ready(){origin.close();}}

@@ -140,7 +140,7 @@ object Http1LineTail {
     has origin is string;Http1LineTail(){origin="";}
     following(origin is string) is ^Http1LineTail{^origin=origin;}string() is string{origin;}
 }
-object Http1BodyOperationCleanup {
+hidden object Http1BodyOperationCleanup {
     has group is FutureGroup<@byte>;has complete is Event;
     Http1BodyOperationCleanup(group is FutureGroup<@byte>,complete is Event){self.group=group;self.complete=complete;}
     async close() is void{let pending=group.active()>0;if !complete.ready(){group.cancel();}if pending{await group.wait();}}

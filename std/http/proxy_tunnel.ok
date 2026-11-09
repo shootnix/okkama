@@ -8,7 +8,6 @@ import "http/header" take Header;
 import "http/message" take InvalidHttpMessage;
 import "io/stream" take AsyncReading,AsyncWriting;
 import "url/value" take Url;
-import "async/scope" take FutureGroup;
 import "http/media_type" take HttpMediaPosition;
 // Borrowed raw halves. Reading one byte at a time avoids consuming a tunnel
 // prefix that the native TLS handshake must receive from the same TCP stream.
@@ -27,4 +26,3 @@ object HttpProxyTunnel {
         }
     }
 }
-object HttpProxySettlement<T>{has group is FutureGroup<T>;HttpProxySettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}

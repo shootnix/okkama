@@ -153,7 +153,7 @@ object Http2StreamHolding {
     async settled() is bool{if self.preserving(){for origin.value() -> entry{await entry.settled();}}else{if group.active()>0{await group.wait();}}true;}
 }
 object Http2HoldingSignal{has signal is Event;Http2HoldingSignal(signal is Event){self.signal=signal;}close() is void{signal.set();}}
-object Http2HoldingCleanup{has entry is Http2StreamEntry;Http2HoldingCleanup(entry is Http2StreamEntry){self.entry=entry;}async close() is void{if !entry.finished_consumption(){entry.close();}else{entry.cancel_writing();}await entry.settled();}}
+hidden object Http2HoldingCleanup{has entry is Http2StreamEntry;Http2HoldingCleanup(entry is Http2StreamEntry){self.entry=entry;}async close() is void{if !entry.finished_consumption(){entry.close();}else{entry.cancel_writing();}await entry.settled();}}
 object Http2SessionExchange {
     has owner is Http2SessionState;has request is Request;
     Http2SessionExchange(owner is Http2SessionState,request is Request){self.owner=owner;self.request=request;}
@@ -263,11 +263,11 @@ object Http2SessionReading does BodyReading {
     async bytes(limit is int) is @byte{let pending=entry.buffer().bytes(limit);await pending;}
     destroy{self.close();}
 }
-object Http2ExchangeCleanup {
+hidden object Http2ExchangeCleanup {
     has entry is Http2StreamEntry;has published is Event;Http2ExchangeCleanup(entry is Http2StreamEntry,published is Event){self.entry=entry;self.published=published;}
     async close() is void{if !published.ready(){entry.close();await entry.settled();}}
 }
-object Http2AdmissionCleanup{has owner is Http2SessionState;has position is int;Http2AdmissionCleanup(owner is Http2SessionState,position is int){self.owner=owner;self.position=position;}close() is void{owner.unqueue(position);}}
-object Http2SessionSettlement<T>{has group is FutureGroup<T>;Http2SessionSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
+hidden object Http2AdmissionCleanup{has owner is Http2SessionState;has position is int;Http2AdmissionCleanup(owner is Http2SessionState,position is int){self.owner=owner;self.position=position;}close() is void{owner.unqueue(position);}}
+hidden object Http2SessionSettlement<T>{has group is FutureGroup<T>;Http2SessionSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
 enum Http2SessionClosed is Error = (closed);
 enum Http2Unprocessed is Error = (stream(stream is int));

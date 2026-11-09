@@ -115,10 +115,6 @@ object StreamReadTicket {
     has busy is Atomic<bool>;StreamReadTicket(busy is Atomic<bool>){self.busy=busy;}
     close() is void{busy.replace(false);}
 }
-object StreamReadCleanup {
-    has group is FutureGroup<@byte>;StreamReadCleanup(group is FutureGroup<@byte>){self.group=group;}
-    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
-}
 object StreamWriteCleanup {
     has guards is FutureGroup<LockGuard>;has writing is FutureGroup<bool>;has pending is Atomic<@Future<LockGuard>>;has taken is Event;
     StreamWriteCleanup(guards is FutureGroup<LockGuard>,writing is FutureGroup<bool>,pending is Atomic<@Future<LockGuard>>,taken is Event){self.guards=guards;self.writing=writing;self.pending=pending;self.taken=taken;}

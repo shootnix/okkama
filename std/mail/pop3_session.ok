@@ -135,7 +135,7 @@ object PopWire does Closing {
         prefix.replace(result.remainder());result.reply();
     }
 }
-object PopSessionCleanup {
+hidden object PopSessionCleanup {
     has origin is PopSession;has complete is Event;
     PopSessionCleanup(origin is PopSession, complete is Event){self.origin=origin;self.complete=complete;}
     close() is void {if !complete.ready(){origin.abort();}}

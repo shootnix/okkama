@@ -82,10 +82,6 @@ object TlsUnpublished {
     has state is tls.TlsState;has published is Event;TlsUnpublished(state is tls.TlsState,published is Event){self.state=state;self.published=published;}
     close() is void{if !published.ready(){tls.close(state);}}
 }
-object TlsTaskCleanup<T> {
-    has group is FutureGroup<T>;TlsTaskCleanup(group is FutureGroup<T>){self.group=group;}
-    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
-}
 object TlsConnection does Closing {
     has state is tls.TlsState;has info is TlsDetails;has busy is Atomic<bool>;has lock is Lock;
 

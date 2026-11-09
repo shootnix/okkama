@@ -1,7 +1,7 @@
 module http/internal/websocket_reading v1.0.0;
 import "http/internal/websocket_frame" take ParsedWebSocketFrameHeader,WebSocketFrame,WebSocketMaskedBytes,WebSocketHeaderPrefix;
 import "http/websocket" take WebSocketFailure,WebSocketClosed;
-import "net/stream" take StreamReadCleanup;
+
 import "io/stream" take AsyncReading;
 import "async/scope" take FutureGroup;
 import "io/buffer" take ByteBuffer;
@@ -36,7 +36,7 @@ object WebSocketFrameInput {
         let bytes=await self.exact(header.length(),false);let payload=if masked{WebSocketMaskedBytes(bytes,mask,0).bytes();}else{bytes;};WebSocketFrame(header.opcode(),header.final(),payload);
     }
 }
-object WebSocketFrameSettlement {
+hidden object WebSocketFrameSettlement {
     has group is FutureGroup<WebSocketFrame>;WebSocketFrameSettlement(group is FutureGroup<WebSocketFrame>){self.group=group;}
     async close() is void{if group.active()>0{group.cancel();await group.wait();}}
 }

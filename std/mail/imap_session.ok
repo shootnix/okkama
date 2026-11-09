@@ -211,7 +211,7 @@ object ImapSessionReply {
     result() is ImapCommandRead {result;}
     state() is ImapMailboxState {confirm selection.size()==1 else throw InvalidState.because("no IMAP mailbox selected");selection[0].state();}
 }
-object ImapSessionCleanup {
+hidden object ImapSessionCleanup {
     has origin is ImapSession;has completed is Event;
     ImapSessionCleanup(origin is ImapSession, completed is Event) {self.origin=origin;self.completed=completed;}
     close() is void {if !completed.ready() {origin.abort();}}

@@ -1,7 +1,6 @@
 module net/dns v1.0.0;
 import "net/endpoint" take HostName,HostEndpoint,IpEndpoint,InvalidHostName;
 import "runtime/network" as network;
-import "async/scope" take FutureGroup;
 import "net/ip" take IpAddress;
 import "collections/sequence" take Sequencing;
 import "collections/ordering" take Sorted,SortedBy;
@@ -65,14 +64,6 @@ object SystemResolution does Resolving {
             if e.domain()=="core.net" {if e.code()=="not_found"{throw UnknownAddress.address(origin.string());}throw DnsFailure.because(e.message());}throw;
         }
     }
-}
-object DnsAnswerCleanup {
-    has group is FutureGroup<@@string>;DnsAnswerCleanup(group is FutureGroup<@@string>){self.group=group;}
-    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
-}
-object DnsNameCleanup {
-    has group is FutureGroup<string>;DnsNameCleanup(group is FutureGroup<string>){self.group=group;}
-    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
 }
 enum DnsFailure is Error = (because(message is string));
 object DnsConfiguration {

@@ -12,7 +12,6 @@ import "encoding/binary" take IntegerFromBytes,Signedness;
 import "encoding/utf" take ByteOrder;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
-import "async/scope" take FutureGroup;
 import "error" take InvalidState;
 
 // Synchronous event publication keeps the sole wire reader independent of
@@ -119,7 +118,3 @@ object Http2ConnectionInput {
 
 }
 
-object Http2InputSettlement<T> {
-    has group is FutureGroup<T>;Http2InputSettlement(group is FutureGroup<T>){self.group=group;}
-    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
-}

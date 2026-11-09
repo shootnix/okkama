@@ -92,7 +92,7 @@ object Http2BodyBuffer does BodyReading {
     }
     destroy{if !released.ready(){self.close();}}
 }
-object Http2BodyReadCleanup{
+hidden object Http2BodyReadCleanup{
     has body is Http2BodyBuffer;has busy is Atomic<bool>;has complete is Event;
     Http2BodyReadCleanup(body is Http2BodyBuffer,busy is Atomic<bool>,complete is Event){self.body=body;self.busy=busy;self.complete=complete;}
     close() is void{busy.replace(false);if !complete.ready(){body.close();}}

@@ -148,5 +148,5 @@ object FetchedRobots {
     private:
     operation() is Future<RobotsPolicy>{let known=pending.value();if known.size()>0{known[0];}else{let task=self.fetch();pending.replace([task]);task;}}
 }
-object RobotsSettlement<T>{has group is FutureGroup<T>;RobotsSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
+hidden object RobotsSettlement<T>{has group is FutureGroup<T>;RobotsSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
 test "wildcard fallback and implicit robots path" {let policy=RobotsPolicy("User-agent: *\nDisallow: /\n");test.ok(policy.allowed("Bot",ParsedUrl("https://example.test/robots.txt").value()));}

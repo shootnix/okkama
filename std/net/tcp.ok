@@ -12,7 +12,6 @@ import "io/decorators" take ByteSnapshot;
 import "strings/parse" take ParsedInt;
 import "net/ip" take IpAddress;
 import "async/event" take Event;
-import "async/scope" take FutureGroup;
 
 // Immutable connection option request. Defaults keep keepalive off and do not
 // request disabling Nagle's algorithm. Construction applies no socket options;
@@ -110,10 +109,6 @@ object TcpListenerUnpublished {
     has state is network.TcpListenerState;has ready is Event;
     TcpListenerUnpublished(state is network.TcpListenerState,ready is Event){self.state=state;self.ready=ready;}
     close() is void{if !ready.ready(){network.tcp_listener_close(state);}}
-}
-object TcpConnectCleanup {
-    has group is FutureGroup<network.SocketState>;TcpConnectCleanup(group is FutureGroup<network.SocketState>){self.group=group;}
-    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
 }
 
 test "TCP defaults agree with explicit settings" {

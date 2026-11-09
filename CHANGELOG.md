@@ -49,6 +49,21 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- std API: cleanup and settlement helpers are no longer public (#264, wave
+  D). Twelve that nothing constructs any more are removed —
+  `DigestSettlement`, `HttpResolutionCleanup`, `HttpObservationSettlement`,
+  `Http2InputSettlement`, `Http1LeaseSettlement`, both `HttpProxySettlement`s,
+  `DnsAnswerCleanup`, `DnsNameCleanup`, `StreamReadCleanup`,
+  `TcpConnectCleanup`, `TlsTaskCleanup` — and 49 that are used only inside
+  their own module are `hidden` (the `Sqlite*`, `Http1*`, `Http2*`,
+  `HttpClient*`, `Form*`, `Event*`, `Imap*`, `Pop*`, `TcpRace*` guards and
+  the others). Five that other std modules import stay public:
+  `HttpAcquisitionCleanup`, `WebSocketOutputSettlement`,
+  `WebSocketOpeningCleanup`, `RedirectResponseCleanup`, `StreamWriteCleanup`.
+  A program that took one of the removed or hidden names now fails to
+  import it; nothing in the repository did. Unused `FutureGroup` imports
+  left behind are gone.
+
 - std: `Http1BodyReading.bytes` awaits its read directly (#264, wave B). Its
   `Http1BodyOperationCleanup` watched a group with one child awaited at once,
   which structured await already cancels and settles. Wave B also tried

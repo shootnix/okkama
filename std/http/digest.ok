@@ -17,7 +17,6 @@ import "async/atomic" take Atomic;
 import "http/client" take Exchanging;
 import "http/exchange" take ClientResponse;
 import "random/source" take SecureRandom;
-import "async/scope" take FutureGroup;
 import "async/event" take Event;
 import "url/value" take Url;
 import "http/version" take HttpVersion;
@@ -198,11 +197,10 @@ object DigestSelection {
         selected;
     }
 }
-object DigestResponseCleanup {
+hidden object DigestResponseCleanup {
     has origin is Response;has retained,closed is Event;DigestResponseCleanup(origin is Response,retained is Event){self.origin=origin;self.retained=retained;closed=Event();}
     close() is void{if !retained.ready() && !closed.ready(){closed.set();origin.body().reading().close();}}
 }
-object DigestSettlement<T>{has group is FutureGroup<T>;DigestSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
 
 object DigestServerProof {
     has expected,cnonce,count is string;

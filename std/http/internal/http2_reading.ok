@@ -1,6 +1,6 @@
 module http/internal/http2_reading v1.0.0;
 import "http/internal/http2_frame" take ParsedHttp2FrameHeader,Http2Frame,Http2FrameRules,Http2HeaderRules,Http2Fault,Http2FaultScope;
-import "net/stream" take StreamReadCleanup;
+
 import "io/stream" take AsyncReading;
 import "async/scope" take FutureGroup;
 import "io/buffer" take ByteBuffer;
@@ -56,7 +56,7 @@ object Http2FrameInput {
         let frame=Http2Frame(parsed,payload.content().bytes());Http2FrameRules(frame).check();frame;
     }
 }
-object Http2FrameSettlement {
+hidden object Http2FrameSettlement {
     has group is FutureGroup<Http2Frame>;Http2FrameSettlement(group is FutureGroup<Http2Frame>){self.group=group;}
     async close() is void{if group.active()>0{group.cancel();await group.wait();}}
 }

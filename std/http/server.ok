@@ -67,7 +67,7 @@ object HttpServerState {
         }
     }
 }
-object HttpServerCleanup{has owner is HttpServerState;HttpServerCleanup(owner is HttpServerState){self.owner=owner;}async close() is void{owner.close();await owner.settled();}}
+hidden object HttpServerCleanup{has owner is HttpServerState;HttpServerCleanup(owner is HttpServerState){self.owner=owner;}async close() is void{owner.close();await owner.settled();}}
 object HttpServerPeer {
     has server is HttpServerState;has id is int;has waiting is Future<TcpConnection>;has ready,dispatch is Event;has handling is Handling;has policy is ServerPolicy;has clock is Timing;has group is FutureGroup<bool>;has cancelled is Cancellation;has destinations is @Url;has sent is Atomic<bool>;has phase,seen is Atomic<int>;
     HttpServerPeer(server is HttpServerState,id is int,waiting is Future<TcpConnection>,handling is Handling,policy is ServerPolicy,clock is Timing,destinations is @Url){self.destinations=destinations;self.server=server;self.id=id;self.waiting=waiting;ready=Event();dispatch=Event();self.handling=handling;self.policy=policy;self.clock=clock;group=FutureGroup();cancelled=Cancellation();sent=Atomic(false);phase=Atomic(0);seen=Atomic(0);}
@@ -147,4 +147,4 @@ object ServerDrain {
     ServerDrain(server is HttpServer,limit is Duration,clock is Timing){confirm limit.seconds()>=0.rat() else throw BadRequest.because("negative drain deadline");self.server=server;self.limit=limit;self.clock=clock;}
     async drain() is ServerDrain{let cleanup=HttpServerDrainCleanup(server);defer await cleanup.close();server.stop_accepting();let bounded is Within<bool>=Within(server.drained(),limit,clock);let waiting=bounded.result();await waiting;self;}
 }
-object HttpServerDrainCleanup{has server is HttpServer;HttpServerDrainCleanup(server is HttpServer){self.server=server;}async close() is void{server.close();await server.settled();}}
+hidden object HttpServerDrainCleanup{has server is HttpServer;HttpServerDrainCleanup(server is HttpServer){self.server=server;}async close() is void{server.close();await server.settled();}}

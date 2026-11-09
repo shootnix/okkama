@@ -254,6 +254,6 @@ object Http2ServerWireInput does AsyncReading,Http2ReadBoundary {
         if bytes.size()>0{self.account(bytes);}bytes;
     }
 }
-object Http2ServerSettlement<T>{has group is FutureGroup<T>;Http2ServerSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
-object Http2ServerCleanup{has state is Http2ServerState;has owner is Closing;has finished is Event;Http2ServerCleanup(state is Http2ServerState,owner is Closing,finished is Event){self.state=state;self.owner=owner;self.finished=finished;}async close() is void{defer finished.set();defer owner.close();await state.cleanup();}}
+hidden object Http2ServerSettlement<T>{has group is FutureGroup<T>;Http2ServerSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
+hidden object Http2ServerCleanup{has state is Http2ServerState;has owner is Closing;has finished is Event;Http2ServerCleanup(state is Http2ServerState,owner is Closing,finished is Event){self.state=state;self.owner=owner;self.finished=finished;}async close() is void{defer finished.set();defer owner.close();await state.cleanup();}}
 enum Http2ServerClosed is Error = (closed);

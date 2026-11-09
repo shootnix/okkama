@@ -53,5 +53,3 @@ object HttpProxyConnecting does HttpConversationConnecting {
         let adapting=HttpConversationAdopting(tcp,target,tls,client,clock).acquisition();acquisition_pending.replace([adapting]);adopted.start(adapting);let acquired=await adapting;acquisition_taken.set();published.set();acquired;
     }
 }
-// Keep the same structured drain rule for tunnel/acquisition children.
-object HttpProxySettlement<T>{has group is FutureGroup<T>;HttpProxySettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}

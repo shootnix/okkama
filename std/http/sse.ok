@@ -90,7 +90,7 @@ object ServerEvents {
     }
     destroy{self.close();}
 }
-object EventReadCleanup{has owner is ServerEvents;has complete is Event;EventReadCleanup(owner is ServerEvents,complete is Event){self.owner=owner;self.complete=complete;}close() is void{if !complete.ready() && !owner.closed(){owner.close();}}}
+hidden object EventReadCleanup{has owner is ServerEvents;has complete is Event;EventReadCleanup(owner is ServerEvents,complete is Event){self.owner=owner;self.complete=complete;}close() is void{if !complete.ready() && !owner.closed(){owner.close();}}}
 // WHATWG replacement decoding at line boundaries. Native strict prefix scans
 // preserve maximal well-formed runs; malformed maximal subparts consume once.
 object EventUtf8 {
@@ -123,5 +123,5 @@ object EventBodyInput does BodyReading {
     }
     destroy{self.close();}
 }
-object EventBodyCleanup{has owner is EventBodyInput;has complete is Event;EventBodyCleanup(owner is EventBodyInput,complete is Event){self.owner=owner;self.complete=complete;}close() is void{if !complete.ready(){owner.close();}}}
+hidden object EventBodyCleanup{has owner is EventBodyInput;has complete is Event;EventBodyCleanup(owner is EventBodyInput,complete is Event){self.owner=owner;self.complete=complete;}close() is void{if !complete.ready(){owner.close();}}}
 test "event retry is explicit and negative delays clamp to zero" {test.ok(try{ServerEvent("x").retry();false;}catch e is MissingEventRetry{true;});test.is(ServerEvent("x","message","",Duration((-1).rat(),DurationUnit.second)).retry().seconds(),0.rat());}

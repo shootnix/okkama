@@ -254,13 +254,13 @@ object FormFileSpooling {
     private:
     operation() is Future<TemporaryFile>{let known=pending.value();if known.size()>0{known[0];}else{let task=self.copy();pending.replace([task]);task;}}
 }
-object FormSpoolCleanup{has file is TemporaryFile;has complete is Event;FormSpoolCleanup(file is TemporaryFile,complete is Event){self.file=file;self.complete=complete;}close() is void{if !complete.ready(){file.close();}}}
+hidden object FormSpoolCleanup{has file is TemporaryFile;has complete is Event;FormSpoolCleanup(file is TemporaryFile,complete is Event){self.file=file;self.complete=complete;}close() is void{if !complete.ready(){file.close();}}}
 // The session owns only its one active logical operation. Close cancels that
 // group's nested physical read even if a custom source close does not wake it.
-object FormGroupDrain<T> does FormDraining{has group is FutureGroup<T>;FormGroupDrain(group is FutureGroup<T>){self.group=group;}cancel() is void{group.cancel();}async settled() is bool{await group.wait();true;}}
+hidden object FormGroupDrain<T> does FormDraining{has group is FutureGroup<T>;FormGroupDrain(group is FutureGroup<T>){self.group=group;}cancel() is void{group.cancel();}async settled() is bool{await group.wait();true;}}
 object FormRegistration{has state is MultipartState;FormRegistration(state is MultipartState,operation is FormDraining){self.state=state;state.register(operation);}close() is void{state.released();}}
-object FormOperationCleanup{has state is MultipartState;has busy is Atomic<bool>;has complete is Event;FormOperationCleanup(state is MultipartState,busy is Atomic<bool>,complete is Event){self.state=state;self.busy=busy;self.complete=complete;}close() is void{busy.replace(false);if !complete.ready(){state.close();}}}
-object FormSettlement<T>{has group is FutureGroup<T>;FormSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
+hidden object FormOperationCleanup{has state is MultipartState;has busy is Atomic<bool>;has complete is Event;FormOperationCleanup(state is MultipartState,busy is Atomic<bool>,complete is Event){self.state=state;self.busy=busy;self.complete=complete;}close() is void{busy.replace(false);if !complete.ready(){state.close();}}}
+hidden object FormSettlement<T>{has group is FutureGroup<T>;FormSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
 test "multipart boundary is bounded ASCII, including quoted MIME spaces" {
     test.is(FormBoundary("a b").string(),"a b");test.ok(try{FormBoundary("bad ");false;}catch e is InvalidMultipartForm{true;});
 }

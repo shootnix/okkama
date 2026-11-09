@@ -100,7 +100,7 @@ object TcpRaceSignal {
     has gate is Event;TcpRaceSignal(gate is Event){self.gate=gate;}
     async ready() is bool{await gate.wait();true;}
 }
-object TcpRaceAttemptCleanup {
+hidden object TcpRaceAttemptCleanup {
     has waiting is FutureGroup<bool>;has connecting is FutureGroup<TcpConnection>;
     TcpRaceAttemptCleanup(waiting is FutureGroup<bool>,connecting is FutureGroup<TcpConnection>){self.waiting=waiting;self.connecting=connecting;}
     async close() is void {
@@ -108,7 +108,7 @@ object TcpRaceAttemptCleanup {
         if connecting.active()>0{connecting.cancel();defer await connecting.wait();}
     }
 }
-object TcpRaceCleanup {
+hidden object TcpRaceCleanup {
     has group is FutureGroup<TcpRaceWin>;has attempts is @TcpRaceAttempt;has keeper is Atomic<@int>;has published is Event;
     TcpRaceCleanup(group is FutureGroup<TcpRaceWin>,attempts is @TcpRaceAttempt,keeper is Atomic<@int>,published is Event){self.group=group;self.attempts=attempts;self.keeper=keeper;self.published=published;}
     async close() is void {

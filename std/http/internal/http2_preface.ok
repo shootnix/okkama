@@ -8,7 +8,7 @@ import "async/scope" take FutureGroup;
 import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Encoded;
 import "http/internal/wire_bytes" take HttpWireBytes;
-import "net/stream" take StreamReadCleanup;
+
 import "async/atomic" take Atomic;
 import "io/decorators" take InvalidReading;
 
@@ -44,7 +44,7 @@ object Http2PrefaceOperation {
         await self.emit(Http2Frame(Http2FrameHeader(4.byte(),1.byte(),0,0),[]).bytes());received;
     }
 }
-object Http2PrefaceSettlement<T> {
+hidden object Http2PrefaceSettlement<T> {
     has group is FutureGroup<T>;Http2PrefaceSettlement(group is FutureGroup<T>){self.group=group;}
     async close() is void{if group.active()>0{group.cancel();await group.wait();}}
 }

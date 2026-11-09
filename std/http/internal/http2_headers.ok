@@ -117,7 +117,7 @@ object Http2EncodedHeaderFrames {
     }
     frames() is @Http2Frame{value;}
 }
-object Http2HeaderSettlement<T> {
+hidden object Http2HeaderSettlement<T> {
     has group is FutureGroup<T>;Http2HeaderSettlement(group is FutureGroup<T>){self.group=group;}
     async close() is void{if group.active()>0{group.cancel();await group.wait();}}
 }
