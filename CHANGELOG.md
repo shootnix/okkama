@@ -36,6 +36,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- Release gate: about 15 minutes instead of 30–40. Its optimized Rust tests
+  build with a new cargo profile `gate` (release optimizations, no fat LTO,
+  16 codegen units): the step took 20.6 minutes, of which 28 seconds were
+  tests and the rest was a full LTO link of each of ~90 test binaries. The
+  release binaries the gate builds keep fat LTO, and conformance, std and
+  the t/ suite run on them. The informative conformance run on the previous
+  VM (`sparrow-origin`) is no longer part of the gate.
+
 - A fenced raw string keeps every character between its delimiters,
   carriage returns included (#310): ```` ```a<CR><LF>b``` ```` is `a\r\nb`
   (length 4) and ```` ```a<CR>b``` ```` is `a\rb`. The lexer dropped every CR
