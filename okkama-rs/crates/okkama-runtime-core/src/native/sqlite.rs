@@ -350,7 +350,7 @@ impl Engine {
         match error {
             rusqlite::Error::SqliteFailure(error, _) => self.error(error.extended_code),
             rusqlite::Error::MultipleStatement => self.raise("syntax", "SQLITE_MULTIPLE_STATEMENTS"),
-            rusqlite::Error::Utf8Error(_) => self.raise("data", "SQLITE_UTF8"),
+            rusqlite::Error::Utf8Error(..) => self.raise("data", "SQLITE_UTF8"),
             _ => Stop::Unexpected,
         }
     }
@@ -597,7 +597,7 @@ impl Engine {
         }
         if let Some(library) = &cursor.library {
             let columns = library.metadata().columns();
-            if columns.len() != cursor.columns as usize || columns.iter().enumerate().any(|(index, column)| {
+            if columns.len() != cursor.columns as usize || columns.enumerate().any(|(index, column)| {
                 column.name() != cursor.raw_names[index] || column.decl_type().unwrap_or("") != cursor.raw_declarations[index]
             }) {
                 return Err(self.raise("data", "SQLITE_SCHEMA_CHANGED"));
@@ -612,7 +612,7 @@ impl Engine {
         use rusqlite::types::ValueRef;
         if !cursor.verified {
             let columns = row.as_ref().columns();
-            if columns.len() != cursor.columns as usize || columns.iter().enumerate().any(|(index, column)| {
+            if columns.len() != cursor.columns as usize || columns.enumerate().any(|(index, column)| {
                 column.name() != cursor.raw_names[index] || column.decl_type().unwrap_or("") != cursor.raw_declarations[index]
             }) { return Err(self.raise("data", "SQLITE_SCHEMA_CHANGED")); }
         }

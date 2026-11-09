@@ -440,6 +440,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   job is a workflow of its own (`miri.yml`) with a 30-minute limit, run when
   the runtime core changes, every night and by hand.
 
+### Security
+
+- SQLite: the bundled C SQLite is the one of `libsqlite3-sys` 0.39.1 instead
+  of 0.35.0, which carried CVE-2026-119375 (RUSTSEC-2026-0459, severity 6.8;
+  `cargo audit` failed CI) (#330). `rusqlite` goes from 0.37 to 0.41 in the
+  IR engine's runtime, Tomato and the previous VM; two API changes followed
+  (`Error::Utf8Error` has two fields, `Statement::columns()` is an
+  iterator).
+
 ### Documentation
 
 - The Book no longer promises recursive anonymous actions (#318). A `let`

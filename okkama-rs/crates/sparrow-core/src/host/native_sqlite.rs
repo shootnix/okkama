@@ -689,7 +689,7 @@ impl Engine {
         };
         let columns = library.metadata().columns();
         if columns.len() != cursor.columns as usize
-            || columns.iter().enumerate().any(|(index, column)| {
+            || columns.enumerate().any(|(index, column)| {
                 column.name() != cursor.raw_names[index]
                     || column.decl_type().unwrap_or("") != cursor.raw_declarations[index]
             })
@@ -705,7 +705,7 @@ impl Engine {
         if !cursor.verified {
             let columns = row.as_ref().columns();
             if columns.len() != cursor.columns as usize
-                || columns.iter().enumerate().any(|(index, column)| {
+                || columns.enumerate().any(|(index, column)| {
                     column.name() != cursor.raw_names[index]
                         || column.decl_type().unwrap_or("") != cursor.raw_declarations[index]
                 })
