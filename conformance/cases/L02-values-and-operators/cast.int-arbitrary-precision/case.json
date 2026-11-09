@@ -1,0 +1,55 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.cast.int-arbitrary-precision",
+  "title": "int casts of int, byte and rat are exact at any size; a float source keeps the signed-64 check",
+  "purpose": "Observe that int(...) never narrows an arbitrary-precision value (#309).",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.SCALAR-CASTS",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "VAL.CAST-METHODS",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "VAL.ARRAY-CASTS",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "100000000000000000000000000000 100000000000000000000000000000 100000000000000000000000000000\n33333333333333333333333333333 -33333333333333333333333333333 14285714285714285714285714285\n-9223372036854775809 255\n-9223372036854775808 9200000000000000000\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #309 from the owner's decision and spec 6.6.1",
+    "expected_basis": "spec 6.6.1 (#309): int, byte and rat sources convert exactly (rat truncates toward zero); a float source is range-checked, and -2^63 and 9.2e18 are inside the range; values computed exactly in Python."
+  },
+  "status": "mandatory"
+}

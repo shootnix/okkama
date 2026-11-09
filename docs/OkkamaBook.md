@@ -503,9 +503,13 @@ let labels = @string(101, byte(2), true);  // ["101", "2", "true"]
 ```
 
 Numeric targets accept `int`, `byte`, `float`, and `rat`. Integer casts
-truncate toward zero, then check the signed-64 range for `int` or `0..255`
-for `byte`. Thus `byte(255.9)` is 255 and `byte(-0.5)` is 0. Float casts
-round to finite binary64 and can lose integer precision. String casts accept
+truncate toward zero. `int` is arbitrary-precision, so `int(...)` of an
+`int`, a `byte` or a `rat` is exact at any size:
+`int(100000000000000000000000000000 / 3)` is
+`33333333333333333333333333333`. Only a `float` source is checked against
+the signed-64 range: `int(1e30)` fails (#309). `byte(...)` checks
+`0..255`: `byte(255.9)` is 255 and `byte(-0.5)` is 0. Float casts round to
+finite binary64 and can lose integer precision. String casts accept
 numeric primitives, bool (`"true"`/`"false"`), char and string; rational text
 is canonical.
 
