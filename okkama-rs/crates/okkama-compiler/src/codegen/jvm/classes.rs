@@ -2,7 +2,7 @@
 
 use super::asm::{Asm, Frame, VType};
 use super::classfile::{self, ACC_ABSTRACT, ClassNames, ConstantPool, FieldInfo, Method};
-use super::{EnumLayout, FnLayout, Layout, ObjectLayout, Result, RoleLayout, error, runtime};
+use super::{EnumLayout, FnLayout, Layout, ObjectLayout, Result, RoleLayout, VariantLayout, error, runtime};
 use crate::ir::{ResultType, Type};
 
 fn names(
@@ -82,9 +82,40 @@ fn return_opcode(result: char) -> (u8, i32) {
 }
 
 /// Класс объекта: `final`-поля, конструктор `<init>(поля…)` и мосты ролей.
+/// Абстрактный класс варианта (#290): наследник `Obj`, поле `$tag` —
+/// номер случая; классы случаев наследуют его.
+pub(super) fn variant_class(variant: &VariantLayout) -> Result<Vec<u8>> {
+    let mut pool = ConstantPool::default();
+    let names = names(&mut pool, 0x0421, &variant.class, runtime::OBJ)?;
+    let fields = vec![FieldInfo {
+        access: 0x0011,
+        name: pool.utf8("$tag")?,
+        descriptor: pool.utf8("Ljava/math/BigInteger;")?,
+    }];
+    let mut asm = Asm::default();
+    let object_init = pool.method_ref(runtime::OBJ, "<init>", "()V")?;
+    let value_of = pool.method_ref("java/math/BigInteger", "valueOf", "(J)Ljava/math/BigInteger;")?;
+    let tag = pool.field_ref(&variant.class, "$tag", "Ljava/math/BigInteger;")?;
+    asm.op(&[0x2a], 0, 1); // aload_0
+    asm.op_index(0xb7, object_init, 1, 0); // invokespecial Obj.<init>
+    asm.op(&[0x2a], 0, 1); // aload_0
+    asm.op(&[0x1b], 0, 1); // iload_1
+    asm.op(&[0x85], 1, 2); // i2l
+    asm.op_index(0xb8, value_of, 2, 1); // invokestatic BigInteger.valueOf
+    asm.op_index(0xb5, tag, 2, 0); // putfield $tag
+    asm.op(&[0xb1], 0, 0); // return
+    let methods = vec![method(&mut pool, asm, 0x0004, "<init>", "(I)V", 2)?];
+    classfile::write_class(&pool, &names, &fields, &methods)
+}
+
 pub(super) fn object_class(layout: &Layout, object: &ObjectLayout) -> Result<Vec<u8>> {
     let mut pool = ConstantPool::default();
-    let mut names = names(&mut pool, 0x0030, &object.class, runtime::OBJ)?;
+    // Случай варианта наследует класс варианта и передаёт ему свой тег.
+    let parent = match object.variant {
+        Some((variant, _)) => layout.variants[variant].class.as_str(),
+        None => runtime::OBJ,
+    };
+    let mut names = names(&mut pool, 0x0030, &object.class, parent)?;
     for role in &object.interfaces {
         names
             .interfaces
@@ -102,9 +133,18 @@ pub(super) fn object_class(layout: &Layout, object: &ObjectLayout) -> Result<Vec
     let mut methods = Vec::new();
 
     let mut asm = Asm::default();
-    let object_init = pool.method_ref(runtime::OBJ, "<init>", "()V")?;
     asm.op(&[0x2a], 0, 1); // aload_0
-    asm.op_index(0xb7, object_init, 1, 0); // invokespecial Object.<init>
+    match object.variant {
+        Some((_, tag)) => {
+            let parent_init = pool.method_ref(parent, "<init>", "(I)V")?;
+            push_int(&mut asm, tag)?;
+            asm.op_index(0xb7, parent_init, 2, 0); // invokespecial Variant.<init>(tag)
+        }
+        None => {
+            let object_init = pool.method_ref(runtime::OBJ, "<init>", "()V")?;
+            asm.op_index(0xb7, object_init, 1, 0); // invokespecial Object.<init>
+        }
+    }
     for (index, (name, descriptor)) in object.fields.iter().enumerate() {
         asm.op(&[0x2a], 0, 1); // aload_0
         let slot = u16::try_from(index + 1)

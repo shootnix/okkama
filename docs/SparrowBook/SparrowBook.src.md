@@ -68,7 +68,7 @@ result. Comments start with `;`.
 ## 3. The shape of a file
 
 ```text
-sparrow 12                      ; format version
+sparrow 13                      ; format version
 module "name" "version"         ; the module's name and version (may be "")
 type t0 …                       ; the type table, in order
 enum enum0 "Name" ["a", "b"]    ; enums with their cases
@@ -104,6 +104,7 @@ accepts them in any order, each table numbered on its own.
 | `successor objN` | an object under construction by `obj.next` | pointer |
 | `role roleN` | a reference through a role | pointer |
 | `enum enumN` | a payload-less enum case | raw word |
+| `variant variantN` | a value of an enum with payloads: an object of one of its cases | pointer |
 | `array tN`, `map tK tV` | immutable collections | pointer |
 | `builder tN`, `mbuilder tK tV` | linear builders of them | pointer |
 | `fn [t…] -> t` | a closure | pointer |
@@ -196,6 +197,14 @@ $ sparrow run shapes.spb; echo $?
   `call.role r7, r5, role0, 0, []` calls slot 0 of the role on it.
 - `role.narrow` converts between roles and fails with its message when the
   object does not do the target role.
+- An enum with payloads is a `variant variantN "Name" { case "c" objK … }`
+  declaration: each case has its own object, whose fields are that case's
+  payload and nothing else. `variant.new rD, variant0, 1, [r0]` makes case 1,
+  `variant.tag` gives the active case number, `variant.get rD, rV, 1, 0`
+  reads field 0 of case 1 and fails if another case is active, and
+  `variant.of` turns a case object into a value of its variant. The core
+  needs the cases of a variant to be consecutive objects: it reads the case
+  number from the object header.
 
 ## 10. Arrays, builders and maps
 
@@ -258,7 +267,8 @@ $ sparrow run errors.spb; echo $?
 - `handler START END @TARGET rF` covers instructions `START..END-1`: a failure
   there jumps to `TARGET` with the failure in `rF` (type `failure`).
 - `catch rF, object, N, rV, @MATCH, @OTHER` tests the failure: if it is an
-  `objN` (or, with `role`, does `roleN`), the caught value goes to `rV` on
+  `objN` (with `role`, does `roleN`; with `variant`, is a case of
+  `variantN`), the caught value goes to `rV` on
   the edge to `MATCH`; otherwise control goes to `OTHER`.
 - `raise rF` sends a failure on unchanged. `fail.caused` and
   `fail.secondary` build failures that carry the one they replaced.

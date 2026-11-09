@@ -1398,3 +1398,20 @@ fn a_cell_stays_in_synchronous_code() {
     assert!(stderr.contains("A Cell cannot be used in an async action"), "{stderr}");
     assert_eq!(stderr.matches("error").count(), 2, "{stderr}");
 }
+
+#[test]
+fn an_uncaught_error_text_keeps_its_payload_on_one_line() {
+    // #306: a string payload is an Okkama literal, so a newline in it does
+    // not split the report.
+    let source = b"module app v1.0.0;\nenum Ferr is Error = (text(s is string));\nmain() is int { throw Ferr.text(\"line1\\nline2 \\\"q\\\"\"); }\n";
+    for engine in ["ir", "sparrow"] {
+        let mut command = okkama();
+        command.args(["run", "--engine", engine, "-"]).env("OKKAMA_TRACE", "off");
+        command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut child = command.spawn().unwrap();
+        child.stdin.take().unwrap().write_all(source).unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(output.status.code(), Some(1), "{engine}");
+        assert_eq!(stderr(&output), "Ferr: Ferr.text(\"line1\\nline2 \\\"q\\\"\")\n", "{engine}");
+    }
+}

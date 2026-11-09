@@ -642,3 +642,136 @@ fn constants_are_computed_by_the_compiler() {
         assert!(found.iter().any(|m| m.contains(expected)), "{text}: {found:?}");
     }
 }
+
+#[test]
+fn positional_calls_of_shorthand_constructors_name_the_named_form() {
+    // #311: reported before generic inference and before the arguments.
+    let decls = "object Point { has x is int; has y is int; Point(:x, :y); } \
+                 object Box<T> { has v is T; Box(:v); } \
+                 object Pair { has a is int; has b is int; Pair(:a, :b); Pair(a is int) { self.a = a; self.b = 0; } } \
+                 object Bag { has xs is @int; Bag(:xs); Bag(items is ...int) { self.xs = items...; } }";
+    let check = |body: &str| messages(&format!("{decls} main() is int {{ {body} 0; }}"));
+    assert_eq!(
+        check("let p = Point(1, 2);"),
+        ["Constructor of \"Point\" takes named arguments only: write Point(x: …, y: …)"]
+    );
+    for body in ["let b = Box(5);", "let b is Box<int> = Box(5);", "let b = Box(nope);"] {
+        assert_eq!(check(body), ["Constructor of \"Box\" takes named arguments only: write Box(v: …)"], "{body}");
+    }
+    assert_eq!(
+        check("let p = Pair(1, 2);"),
+        ["No constructor of \"Pair\" takes 2 positional argument(s); the shorthand takes named ones: write Pair(a: …, b: …)"]
+    );
+    // Positional overloads, named calls and real inference failures are unchanged.
+    for body in ["let p = Pair(1);", "let g = Bag(1, 2, 3);", "let p = Point(x: 1, y: 2);", "let b = Box(v: 5);"] {
+        assert!(check(body).is_empty(), "{body}: {:?}", check(body));
+    }
+    assert_eq!(check("let b = Box(v: []);"), ["Cannot infer generic parameter \"T\" for object \"Box\""]);
+}
+
+#[test]
+fn arrays_of_payload_enums_have_searches_and_errors_name_the_full_type() {
+    // #300: contains/index_of take the equality of `==`, variants included.
+    let decls = "enum Reading = (empty, value(item is int)); enum Slot<T> = (vacant, full(item is T));";
+    for body in [
+        "let xs is @Reading = [Reading.empty]; let a = xs.contains(Reading.value(1)); let b = xs.index_of(Reading.empty);",
+        "let xs is @Maybe<int> = [Maybe.some(1)]; let a = xs.contains(Maybe<int>.none);",
+        "let xs is @Presence<int> = [Presence<int>.missing]; let a = xs.index_of(Presence.some(2));",
+        "let xs is @Slot<int> = [Slot.full(3)]; let a = xs.contains(Slot<int>.vacant);",
+    ] {
+        let found = messages(&format!("{decls} main() is int {{ {body} 0; }}"));
+        assert!(found.is_empty(), "{body}: {found:?}");
+    }
+    assert_eq!(
+        messages("main() is int { let a is any = 1; let xs is @any = [a]; let b = xs.contains(a); 0; }"),
+        ["Type \"@any\" has no builtin action \"contains\""]
+    );
+}
+
+#[test]
+fn try_optional_keeps_its_type_when_operand_paths_throw() {
+    // #307: a throw ends its own path, not the try? that recovers from it.
+    let decls = "enum E is Error = (a, b);";
+    let check = |body: &str| messages(&format!("{decls} main() is int {{ let c = 1 > 0; {body} 0; }}"));
+    for body in [
+        "let m = try? (if true { throw E.a; } else { 2; }) else 7;",
+        "let m is Maybe<int> = try? (if true { throw E.a; } else { 2; });",
+        "let m is Maybe<int> = try? (if c { throw E.a; } else { throw E.b; });",
+        "let m = try? (if c { throw E.a; } else { throw E.b; }) else 8; let n is int = m;",
+        "let m = try? loop { throw E.a; } else 9;",
+        "let m = try? (true ?? throw E.a !! 2) else 5;",
+        "let m = try! (if true { throw E.a; } else { 2; }); let n is int = m;",
+    ] {
+        assert!(check(body).is_empty(), "{body}: {:?}", check(body));
+    }
+    // No successful path and no context: an inference error, not a silent poison.
+    for body in ["let m = try? (if c { throw E.a; } else { throw E.b; });", "let m = try? loop { throw E.a; };"] {
+        assert_eq!(
+            check(body),
+            ["Cannot infer the type of try?: its operand never produces a value; declare Maybe<T> or add a fallback"],
+            "{body}"
+        );
+    }
+    // The selected throwing branch keeps the other branch's type for try?.
+    assert_eq!(
+        check("let m = try? (if true { throw E.a; } else { 2; }); let n is Maybe<string> = m;"),
+        ["Cannot initialize variable \"n\" of type Maybe<string> with Maybe<int>"]
+    );
+}
+
+#[test]
+fn untagged_empty_collections_take_their_siblings_type_at_any_depth() {
+    // #297: order, nesting, maps, branches, comparisons, constants and results.
+    for body in [
+        "let a is @@int = [[1], []];",
+        "let a is @@int = [[], [1]];",
+        "let m is %string:@int = [\"a\": [1], \"b\": []];",
+        "let y is @@@int = [[[]], [[1]]];",
+        "let z is @%string:int = [[:], [\"k\": 1]];",
+        "let v is @@int = [[]]; let ok = v == [[]];",
+        "let ok = [[1]] == [[]];",
+        "let c = true; let x is @@int = if c { [[]]; } else { [[2, 3]]; };",
+        "let x is @@int = match 1 { case 1 { [[]]; } else { [[1]]; } };",
+    ] {
+        let found = messages(&format!("main() is int {{ {body} 0; }}"));
+        assert!(found.is_empty(), "{body}: {found:?}");
+    }
+    let found = messages("const K is @@int = [[]]; object P { P(); r() is @@int { [[]]; } } main() is int { 0; }");
+    assert!(found.is_empty(), "{found:?}");
+    // Concrete differences are not taken for empty ones.
+    assert_eq!(
+        messages("main() is int { let c = true; let x = if c { [[1]]; } else { [[\"s\"]]; }; 0; }"),
+        ["Branches produce different types: @@int and @@string"]
+    );
+    assert_eq!(
+        messages("main() is int { let ok = [[1]] == [[\"s\"]]; 0; }"),
+        ["Cannot compare @@int and @@string"]
+    );
+}
+
+#[test]
+fn generic_cases_do_not_impose_an_uninferred_parameter_on_their_payloads() {
+    // #304: loop/last, else and reduce need an expected type; an uninferred T is none.
+    let decls = "enum Slot<T> = (vacant, full(item is T)); enum Two<T> = (empty, both(a is T, b is T));";
+    for body in [
+        "let a = Maybe.some(loop { last 42; });",
+        "let a = Maybe.some(Maybe.some(42) else 0);",
+        "let a = Maybe.some((0..1).reduce(0) -> acc, i { 42; });",
+        "let a = Slot.full(loop { last 42; });",
+        "let a = Two.both(loop { last 1; }, 2);",
+        "let a = Slot.full(Slot.full(loop { last 5; }));",
+        "let a = Slot<int>.full(loop { last 3; });",
+    ] {
+        let found = messages(&format!("{decls} main() is int {{ {body} 0; }}"));
+        assert!(found.is_empty(), "{body}: {found:?}");
+    }
+    // Real conflicts and missing evidence are still reported.
+    assert_eq!(
+        messages(&format!("{decls} main() is int {{ let a = Two.both(loop {{ last 1; }}, \"s\"); 0; }}")),
+        ["Generic parameter \"T\" for object \"Two\" cannot be both int and string"]
+    );
+    assert_eq!(
+        messages(&format!("{decls} main() is int {{ let a = Slot.full([]); 0; }}")),
+        ["Cannot infer type arguments for Slot.full; provide an expected type or explicit type arguments"]
+    );
+}

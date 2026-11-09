@@ -6,6 +6,162 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Added
+
+- Packages: an `.rpm` for Linux next to the `.deb` (#313), built by
+  `tools/package.sh --installer` from the same tree with `rpmbuild`
+  (`GPL-3.0-only`, `Requires: glibc >= 2.35`, a nightly version written with
+  `~`), with its `.sha256`, in releases and nightlies. CI installs it on
+  Fedora 41 and runs the smoke programs. The binaries need glibc 2.35, so
+  the RPM targets Fedora 36+, RHEL 10 and openSUSE Tumbleweed; RHEL 8/9 need
+  an older-glibc build (noted in #313).
+- `rat` is a map key type (#296): `%rat:V`, rat-key literals, indexing,
+  `has()`, `keys()`/`values()`, `+`/`-` and generic maps work on every
+  engine. A key is the reduced value, so `rat(1, 2)`, `rat(2, 4)` and `2 / 4`
+  are one key, and keys sort by value. Numeric categories stay apart:
+  `%rat:int` takes no `int` key. A missing rat key reads `Map key not found:
+  1/2` on Sparrow and the IR engine (it printed a debug form or failed). The
+  specification (8.8), the Book (EN/RU), the Bible (ch. 8) and the LLM
+  context say so. Conformance: case `L05.map.rat-keys`.
+
+### Changed
+
+- A fenced raw string keeps every character between its delimiters,
+  carriage returns included (#310): ```` ```a<CR><LF>b``` ```` is `a\r\nb`
+  (length 4) and ```` ```a<CR>b``` ```` is `a\rb`. The lexer dropped every CR
+  (D-030, "as in Go"), while the specification and the Book said every
+  character is kept; the owner superseded D-030 for raw strings. A CR between
+  tokens is still whitespace, and nothing normalizes line endings. Conformance
+  case `L01.lex.crlf.raw-string-keeps-cr` replaces
+  `L01.lex.crlf.raw-string-discards-cr`; DEF-006 is withdrawn. Lexing a
+  3.5 MB raw literal is about 35 % faster (median of 10, LF, CRLF and mixed
+  endings alike): the per-character filter is gone.
+- **Breaking:** `string.less(other)` and `string.less_or_equal(other)`
+  compare lexicographically by Unicode code point, the order of
+  `string.order()` and `ordering()`. They compared lengths, so code that
+  mixed the two orders — a binary search with `less` over an array sorted by
+  `ordering()` — was silently wrong (#281). Compare lengths with `length()`.
+  Conformance: contract VAL.STRING-ORDER, case `L02.string.order-consistent`
+  (prefixes, equal strings, the empty string, no case folding, code points
+  past the BMP, agreement with `order()` on every pair, the binary search).
+- Variants — enums with payloads, `Maybe`, `Presence` and error enums — have
+  a representation of their own (#290). OIR gains the variant type and
+  `variant.new`, `variant.tag`, `variant.get` and `variant.of`; each case is
+  an object holding only its own payload, so a value is one allocation, and
+  building or reading one no longer depends on the fields of the other
+  cases. Before, a variant was one object with a one-element array per
+  payload field of every case. Sparrow (bytecode version 13: a variant table,
+  four instructions, `catch … variant`), the IR engine and the JVM (an
+  abstract class per variant, a subclass per case) store a value as the
+  object of its case; the Sparrow verifier rejects a case or a field outside
+  the layout, and reading the payload of an inactive case traps. Sparrow,
+  10 M steps that build and match a value: `value`/`pair` 1.46 → 0.53 s and
+  30 M → 0 arrays; a 13-case variant 7.58 → 0.64 s and 260 M → 0 arrays.
+  Conformance case `L05.variants.case-layouts`; the Sparrow Book documents
+  the instructions.
+
+### Fixed
+
+- Inference: a generic enum case no longer passes its uninferred `T` as the
+  expected type of a payload (#304), so `Maybe.some(loop { last 42; })`,
+  `Maybe.some(Maybe.some(42) else 0)`, `Maybe.some(xs.reduce(0) -> …)` and
+  `Slot.full(…)` with such payloads compile; `T` comes from the payload and
+  every payload is then checked against the solved specialization. Explicit
+  and contextual specializations still guide the payloads; real conflicts
+  read `cannot be both int and string`. Conformance case
+  `L05.variants.inferred-payloads`.
+- Inference: an untagged `[]` or `[:]` takes the collection type of its
+  siblings, of the other branch or the other operand, at any depth and in
+  either order (#297): `[[1], []]` and `[[], [1]]` are `@@int` (they were
+  `@any`), `["a": [1], "b": []]` is `%string:@int`, `[[1]] == [[]]` and
+  `if c { [[]]; } else { [[2, 3]]; }` type-check. The value is retagged at
+  no cost: `retag`/`map.retag` (OIR) and `move` (Sparrow) now accept a
+  source that differs from the target only by `never` parts. Concrete
+  differences still need `any` (`[[1], ["s"]]`). Conformance case
+  `L05.literal.empty-collections`.
+- Lifetimes: a resource bound in an `if`, `match`, `try` or `catch` branch
+  is destroyed when the branch ends, the last `let` included, unless the
+  branch's value is used (#308). A branch passed its last value (a `let` or
+  an unused expression) to the enclosing scope even as a statement, so
+  `if true { let a = Res(); let b = Res(); }` destroyed `a` at once and `b`
+  only at the end of the action — out of order, and after resources its
+  `destroy` needed could be closed. A value that is used (`let r = if … {
+  Res(); } else { Res(); };`) still moves out. Same on every engine;
+  conformance case `L07.destroy.branch-scope` (constant and dynamic
+  conditions, nested blocks, match, try, a throw, a kept value).
+- `try?` recovers from operands whose paths throw (#307). A throwing branch
+  selected by a literal condition no longer erases the type of the other
+  branch: `try? (if true { throw E.a; } else { 2; }) else 7` is `7` (it was
+  rejected with "Optional fallback requires Maybe<T>"). An operand with no
+  successful path takes `T` from its `Maybe<T>` boundary or its fallback;
+  with neither, an inference error replaces the silent poison that ended in
+  "internal compiler error: unreachable expression reached lowering". A caught
+  error leaves `none`, so `try?` no longer diverges with its operand (`try!`
+  still does), and a compact choice with a literal condition diverges only
+  when its selected branch does, as lowering already assumed. Conformance case
+  `L07.try-mark.diverging-operand`; Book 14.5.
+- `contains` and `index_of` work on arrays of enums with payloads —
+  `@Maybe<T>`, `@Presence<T>`, user enums, generic or not (#300). They use
+  the deep equality of array `==` and `-`: the case, then the payload. A
+  `±0.0` payload is the one corner where that differs from the variant's own
+  `==` (#314). A builtin missing on a collection names its full type
+  (`Type "@any" has no builtin action "contains"`, not `"array"`).
+  Conformance case `L05.variants.search`.
+- `text()` of an error enum writes string payloads as Okkama string literals
+  (#306): quotes, backslashes, `\n`, `\t`, `\r` and other control characters
+  (`\u{1b}`) are escaped, printable Unicode is kept, nested error enums
+  follow the same rules. `Ferr.text("a \"q\"\n")` printed a bare quote and a
+  line break, so one payload could look like two arguments and an uncaught
+  report could span lines. One shared lowering helper does it for every
+  engine; the Book (14.2) gives the rules. Conformance case
+  `L07.error-enum.text-escaping`.
+- Sparrow core: a map lookup with `else` on a `float` key failed JIT
+  verification (`arg has type f64, expected i64`): the key went to the
+  runtime helper as a float register instead of its word (#301). The other
+  helper calls were checked for the same mistake; none takes a float.
+  Conformance case `L05.map.float-key-fallback`.
+- Parser: a statement `match` and `try … catch` take one optional `;`, like
+  `if` and `loop` (#302); the formatter keeps the chosen spelling (it refused
+  to format such files before). `last if a { 1; } else { 2; };` leaves the
+  loop with the `if` expression instead of reading `a` as a condition; `last`
+  now parses its value like `return` and `throw` (#303). Compile time of the
+  t/ nesting and control files is unchanged (median of 10: 0.247 → 0.246 s).
+- Diagnostics: a positional call that only a field-shorthand constructor
+  could take now says so before generic inference and before the arguments
+  are checked (#311): `Box(5)` for `Box(:v)` reads `Constructor of "Box"
+  takes named arguments only: write Box(v: …)` instead of `Cannot infer
+  generic parameter "T"`, and `let b is Box<int> = Box(5)` no longer reports
+  a mismatch with `Box<int>`. Positional overloads, variadic constructors and
+  real inference failures are unchanged; compile time is unchanged (median of
+  10 over constructor-heavy t/ files: 0.153 → 0.154 s).
+- A boolean choice or `if` with a literal condition whose selected branch is
+  an untagged `[]` or `[:]` (`(false ?? [1] !! []) == []`) no longer stops
+  the compiler with invalid IR (#298). The lowered value takes the analyzed
+  type of the whole expression (retagging the empty collection), for literal
+  and variable conditions alike; a literal condition still emits only the
+  selected branch. Conformance case `L05.choice.empty-collections`; compile
+  time of branch-heavy t/ files is unchanged (median of 10: 0.386 → 0.388 s).
+- Packages: the publish job downloads only the package artifacts
+  (`okkama-*`). Since 0.4.1 the release gate uploads its report as an
+  artifact too, and `gh release create dist/*` failed on that directory, so
+  neither the v0.4.1 release nor the nightly was published.
+
+### Documentation
+
+- `int(...)` keeps arbitrary precision (#309): casts of `int`, `byte` and
+  `rat` sources are exact at any size (a `rat` truncates toward zero); only a
+  `float` source is checked against the signed-64 range. The specification
+  (6.6.1) and the Book (5.1.1, EN/RU) said every source was range-checked;
+  the engines never did. Conformance case `L02.cast.int-arbitrary-precision`.
+- `byte` no longer mixes with other numbers in the documents either (#294,
+  decision #230): the Book (5.3, 8.1, 8.4, the builtin rules; EN/RU), the
+  specification (8.3, 8.4, ranges, 8.7) and the LLM context said that
+  arithmetic and ordering accept `byte` with `int`/`rat`/`float`, that the
+  ordering operators are broader than equality, and that a `byte` is an array
+  index and a range bound. The compiler rejects all of these; the documents
+  now say so: `byte op byte` gives `int` (`/` gives `rat`), conversions are
+  explicit (`b.int()`), and indexes and range bounds are `int`.
+
 ## [0.4.1] — 2026-11-09
 
 0.4.1 completes the language proof of concept and the first hardening
@@ -603,6 +759,25 @@ calls and closures no longer pay for a `destroy` elsewhere in the program
   ([#70](https://github.com/shootnix/okkama/issues/70)).
 
 ### Fixed
+
+- Sparrow core: a TLS read that completed and was then cancelled before its
+  result reached the program lost the plaintext it had taken (the core's
+  part of the abandoned-read fix below; `L11.tls.cancelled-read-keeps-data`
+  failed on CI). The read's result now puts undelivered bytes back in front
+  of the plaintext buffer when it is dropped unpublished.
+
+- JVM: splitting a large function no longer panics (`unwind targets take a
+  failure`, #305). When the moved part of a function over the method limit
+  held the handler of its own root — a `try` handler is dominated by the
+  block that enters the `try` — the remaining call kept an unwind edge into
+  the moved code, which the renumbering turned into the entry block. The
+  call now keeps its handler only when the handler stays outside. Exposed in
+  0.4.1 by block merging (#292); found by the generated t/ suite (#245).
+
+- Gate: the `ir-passes-off` and `ir-gc-stress` conformance runs get four
+  times the case budgets. Without the IR passes tail calls are real calls,
+  and `L03.recursion.tail-constant-stack` (10^7 of them in the adapter's
+  debug build) timed out on the CI runner.
 
 - IR: closures paid region tracking in any program with a `destroy` (#292).
   Lowering judges plainness per type and treats every function value as

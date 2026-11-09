@@ -182,6 +182,18 @@ fn loop_next_and_last() {
         body_sexpr("loop { last (if ready { 1; } else { 2; }); }"),
         "(loop {(LastStatement value=(group (if ready {1} {2})) condition=_)})"
     );
+    // Like `return` and `throw` (#303): an `if` followed by a block is the
+    // value; an `if` followed by `;` is the condition.
+    let value = body_sexpr("loop { last if ready { 1; } else { 2; }; }");
+    assert!(value.contains("(LastStatement value=(") && !value.contains("condition=ready"), "{value}");
+    let nested = body_sexpr("loop { last if a { if b { 1; } else { 2; }; } else { 3; }; }");
+    assert!(nested.contains("(LastStatement value=(") && nested.contains("condition=_"), "{nested}");
+    let guarded = body_sexpr("loop { last if a { 1; } else { 2; } if b; }");
+    assert!(guarded.contains(" condition=b)"), "{guarded}");
+    assert_eq!(
+        body_sexpr("loop { last if done; }"),
+        "(loop {(LastStatement value=_ condition=done)})"
+    );
     for (body, expected) in [
         ("loop 1;", "Expect \"{\" after \"loop\"."),
         ("loop { next 1; }", "\"next\" does not accept a value."),
@@ -356,6 +368,30 @@ fn reserved_words_cannot_be_bindings() {
     parse_ok(&wrap(
         "let var = 1; let optional = 2; let mutable = 3; let setters = 4;",
     ));
+}
+
+#[test]
+fn statement_match_and_try_take_one_optional_semicolon() {
+    // Like `if` and `loop` (#302).
+    assert_eq!(
+        body_sexpr("match x { case 1 { a; } else { b; } }; try { c; } catch e is E { d; }; f;"),
+        body_sexpr("match x { case 1 { a; } else { b; } } try { c; } catch e is E { d; } f;")
+    );
+    assert_rejects(&wrap("match x { case 1 { a; } else { b; } };;"), "Expect expression.");
+    assert_rejects(&wrap("try { c; } catch e is E { d; };;"), "Expect expression.");
+    // `try?` and `try!` stay expressions with their own `;`.
+    parse_ok(&wrap("let a = try? f() else 0; try! g();"));
+    assert_rejects(&wrap("let a = try? f() else 0 try! g();"), "Expect \";\" after let declaration.");
+    // The formatter keeps the chosen spelling and reads its own output.
+    use okkama_compiler::{SourceFile, syntax};
+    let text = "module app v1.0.0; main() is int { match 1 { case 1 { } else { } }; \
+                try { f(); } catch e is E { }; match 2 { case 2 { } else { } } \
+                let v = loop { last if true { 1; } else { 2; }; }; v; }";
+    let source = SourceFile::new("semi.ok", text).unwrap();
+    let formatted = syntax::format::format(&source).unwrap();
+    assert_eq!(formatted.matches("};").count(), 2 + 2, "{formatted}");
+    let again = SourceFile::new("semi.ok", &formatted).unwrap();
+    assert_eq!(formatted, syntax::format::format(&again).unwrap());
 }
 
 #[test]

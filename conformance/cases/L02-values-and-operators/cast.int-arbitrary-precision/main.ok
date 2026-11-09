@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let big = 100000000000000000000000000000;
+    // int is arbitrary-precision: casts of int, byte and rat are exact at any size.
+    out.writeln(string(int(big)) + " " + string(big.int()) + " " + string(@int(big)[0]));
+    out.writeln(string(int(big / 3)) + " " + string(int(-big / 3)) + " " + string((big / 7).int()));
+    out.writeln(string(int(-9223372036854775809 / 1)) + " " + string(int(byte(255))));
+    // A float source keeps the signed-64 check: its edge is still a value.
+    out.writeln(string(int(-9.223372036854776e18)) + " " + string(int(9.2e18)));
+    0;
+}

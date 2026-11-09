@@ -74,6 +74,16 @@ struct ObjectLayout {
     refs: Vec<usize>,
     /// Функция `destroy`, которую вызывает `destroyBody`.
     destroy: Option<ir::FuncId>,
+    /// Раскладка случая варианта: номер варианта и тег (#290). Класс
+    /// случая наследует абстрактный класс варианта, который хранит тег.
+    variant: Option<(usize, usize)>,
+}
+
+/// Абстрактный класс варианта: общий тип значений и поле `$tag`.
+struct VariantLayout {
+    class: String,
+    /// Объект раскладки каждого случая.
+    cases: Vec<usize>,
 }
 
 impl ObjectLayout {
@@ -129,6 +139,7 @@ struct Layout {
     main: String,
     enums: Vec<EnumLayout>,
     objects: Vec<ObjectLayout>,
+    variants: Vec<VariantLayout>,
     roles: Vec<RoleLayout>,
     /// Имя и дескриптор статического метода каждой функции модуля.
     signatures: Vec<(String, String)>,
@@ -173,6 +184,7 @@ impl Layout {
                 format!("L{};", self.objects[object.0].class)
             }
             Type::Role(role) => format!("L{};", self.roles[role.0].class),
+            Type::Variant(variant) => format!("L{};", self.variants[variant.0].class),
             Type::Enum(_) => format!("L{};", runtime::CASE),
             Type::Region => format!("L{};", runtime::REGION),
             // Native object — значение класса provider; программа его не читает.
@@ -295,6 +307,9 @@ pub fn generate(module: &ir::Module, class_name: &str, budgeted: bool) -> Result
     for decl in &layout.enums {
         files.push((format!("{}.class", decl.class), classes::enum_class(decl)?));
     }
+    for variant in &layout.variants {
+        files.push((format!("{}.class", variant.class), classes::variant_class(variant)?));
+    }
     for object in layout.objects.iter().filter(|object| {
         object.class != runtime::NATIVE_FAILURE && object.class != runtime::CANCELLED
     }) {
@@ -356,6 +371,7 @@ fn layout(module: &ir::Module, class_name: &str, entry: Option<ir::FuncId>) -> R
         main: class_name.to_string(),
         enums,
         objects: Vec::new(),
+        variants: Vec::new(),
         roles: Vec::new(),
         signatures: Vec::new(),
         fns: Vec::new(),
@@ -367,16 +383,30 @@ fn layout(module: &ir::Module, class_name: &str, entry: Option<ir::FuncId>) -> R
             .map(|cap| cap.fields.iter().map(|(_, func)| *func).collect())
             .collect(),
     };
-    for object in &module.objects {
+    for variant in &module.variants {
+        layout.variants.push(VariantLayout {
+            class: class_for(&format!("{}.$variant", variant.name))?,
+            cases: variant.cases.iter().map(|(_, object)| object.0).collect(),
+        });
+    }
+    for (index, object) in module.objects.iter().enumerate() {
+        let case = module.variant_case(ir::ObjectId(index));
         layout.objects.push(ObjectLayout {
             // Класс системного объекта даёт рантайм (`okkama.rt.NativeFailure`).
             class: if object.is_native_failure() {
                 runtime::NATIVE_FAILURE.to_string()
             } else if object.builtin && object.name == "Cancelled" {
                 runtime::CANCELLED.to_string()
+            } else if let Some((variant, tag)) = case {
+                // Класс различает случаи по имени, а последний сегмент — имя
+                // enum: по нему рантайм называет тип неперехваченной ошибки.
+                let variant = &module.variants[variant.0];
+                let short = variant.name.rsplit([':', '.']).next().unwrap_or(&variant.name);
+                class_for(&format!("{}.{}.{short}", variant.name, variant.cases[tag].0))?
             } else {
                 class_for(&object.name)?
             },
+            variant: case.map(|(variant, tag)| (variant.0, tag)),
             name: object.name.clone(),
             field_types: object.fields.iter().map(|field| field.ty.clone()).collect(),
             fields: Vec::new(),
@@ -391,6 +421,7 @@ fn layout(module: &ir::Module, class_name: &str, entry: Option<ir::FuncId>) -> R
                         field.ty,
                         Type::Object(_)
                             | Type::Role(_)
+                            | Type::Variant(_)
                             | Type::Array(_)
                             | Type::Map(..)
                             | Type::Any

@@ -237,9 +237,16 @@ each pass alone and that `sabotage-int-add` is caught). A new pass gets a
 name there.
 
 **Language facts that shape the runtime**: objects are immutable (a successor
-`^` makes a changed copy; `Atomic` is the mutable cell); errors are enums
-(`enum E is Error = (case(payload is T), …)`, lowered to objects
-`{$tag, $<case>_<name>: array}`; runtime-raised errors are the first case);
+`^` makes a changed copy; `Atomic` is the mutable cell); an enum with
+payloads (errors included: `enum E is Error = (case(payload is T), …)`) is an
+OIR variant (#290): `module.variants` lists its cases, each with its own
+layout object holding only that case's payload, and `variant.new`,
+`variant.tag`, `variant.get` (traps on another active case) and `variant.of`
+(case object → variant) work on it. The engines store a value as the object
+of its case; the case number comes from the object's declaration (Sparrow
+needs the cases consecutive; the JVM gives each variant an abstract class with
+a `$tag` field and each case a subclass). Runtime-raised errors are the first
+case's object;
 resources (`destroy`) are released by cleanup regions that the compiler emits
 (`region.enter/track/adopt/leave/transfer`); plainness (`is_plain`) decides
 where regions are needed. Lowering decides it conservatively per type (a
@@ -373,7 +380,7 @@ drivers `std/db/sqlite.ok` (worker thread in Rust) and `std/db/postgres.ok`
 4. Merge the release branch into `develop` (fast-forward history on
    `develop`), tag `vX.Y.Z` (annotated, must match Cargo.toml), push `develop`,
    the release branch and the tag: `.github/workflows/packages.yml` builds
-   tar.gz/.pkg/.deb and the GitHub Release; pushes to `develop` publish the
+   tar.gz/.pkg/.deb/.rpm and the GitHub Release; pushes to `develop` publish the
    `nightly` pre-release.
 5. Install locally: `./install.sh` (or `make install-pgo`).
 6. Delete merged branches locally and on GitHub.

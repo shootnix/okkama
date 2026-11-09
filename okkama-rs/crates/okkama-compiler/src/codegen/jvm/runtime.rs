@@ -148,6 +148,7 @@ impl ClassGen {
                 self.layout.objects[object.0].class.clone()
             }
             Type::Role(role) => self.layout.roles[role.0].class.clone(),
+            Type::Variant(variant) => self.layout.variants[variant.0].class.clone(),
             Type::Enum(_) => CASE.to_string(),
             Type::Region => REGION.to_string(),
             Type::Handle(_) => "java/lang/Object".to_string(),

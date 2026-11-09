@@ -1,0 +1,80 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum Fault is Error = (lost, late);
+enum Other is Error = (odd);
+
+object Probe {
+    Probe();
+    fallback(n is int) is int {
+        Stdout().writeln("fallback " + n.string());
+        n;
+    }
+    fail(flag is bool) is int {
+        if flag { throw Fault.lost; }
+        3;
+    }
+    pick(n is int) is int {
+        match n {
+            case 1 { throw Fault.lost; }
+            case 2 { throw Fault.late; }
+            else { n * 10; }
+        }
+    }
+}
+
+object Counter {
+    has value is int;
+    Counter(:value);
+    value() is int { value; }
+    bumped() is ^Counter { ^value = value + 1; }
+}
+
+main() is int {
+    let out = Stdout();
+    let yes = 1 > 0;
+    let no = 1 < 0;
+    // A literal condition selects the throwing branch; the other still types it.
+    let a = try? (if true { throw Fault.lost; } else { 2; }) else 7;
+    let b = try? (if false { throw Fault.lost; } else { 2; }) else 7;
+    let c = try? (if yes { throw Fault.lost; } else { 2; }) else 7;
+    let d = try? (if no { throw Fault.lost; } else { 2; }) else 7;
+    out.writeln(a.string() + " " + b.string() + " " + c.string() + " " + d.string());
+    // No successful path: the boundary or the fallback gives T.
+    let e is Maybe<int> = try? (if yes { throw Fault.lost; } else { throw Fault.late; });
+    let f = try? (if yes { throw Fault.lost; } else { throw Fault.late; }) else 8;
+    let g = try? loop { throw Fault.late; } else 9;
+    out.writeln((e == Maybe<int>.none ?? "none" !! "some") + " " + f.string() + " " + g.string());
+    // match, compact choices and loops.
+    let probe = Probe();
+    let h = try? probe.pick(1) else -1;
+    let i = try? probe.pick(4) else -1;
+    let j = try? (true ?? throw Fault.lost !! 2) else 5;
+    let k = try? (false ?? throw Fault.lost !! 2) else 5;
+    let counter = Counter(value: 0);
+    let l = try? loop {
+        counter = counter.bumped();
+        last counter.value() * 100 if counter.value() == 3;
+    } else 0;
+    let m = try? loop {
+        counter = counter.bumped();
+        if counter.value() > 4 { throw Fault.lost; }
+    } else -2;
+    out.writeln(h.string() + " " + i.string() + " " + j.string() + " " + k.string() + " " + l.string() + " " + m.string() + " " + counter.value().string());
+    // Nested handlers: an inner catch that does not match leaves the error to try?.
+    let o = try? (try { throw Fault.late; } catch failure is Other { 1; }) else 6;
+    let p = try? (try { throw Other.odd; } catch failure is Other { 1; }) else 6;
+    // try! over a literal condition that selects the value.
+    let q = try! (if false { throw Fault.lost; } else { 4; });
+    out.writeln(o.string() + " " + p.string() + " " + q.string());
+    // The fallback stays lazy.
+    let r = try? probe.fail(false) else probe.fallback(50);
+    let s = try? probe.fail(true) else probe.fallback(60);
+    let t = try? (if yes { throw Fault.lost; } else { throw Fault.late; }) else probe.fallback(70);
+    out.writeln(r.string() + " " + s.string() + " " + t.string());
+    // Code after a recovered try? is reachable.
+    let u = try? (if true { throw Fault.lost; } else { 1; });
+    out.writeln(u == Maybe<int>.none ?? "reached none" !! "reached some");
+    0;
+}

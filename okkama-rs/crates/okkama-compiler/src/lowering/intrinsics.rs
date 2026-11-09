@@ -160,8 +160,8 @@ impl Ctx<'_, '_> {
                     self.object_instance(adapter, vec![element.clone(), element], span)?
                 }
                 other if other.contains('.') && !other.starts_with("core::") => {
-                    // Рантайм создаёт error enum как объект варианта
-                    // `[$tag, payload…]` с тегом 0: case обязан быть первым.
+                    // Рантайм создаёт error enum как объект его первого
+                    // случая с полями payload (#290): case обязан быть первым.
                     let (name, case) = other.split_once('.').expect("enum case");
                     let found = match self.reg.modules[module].own.types.get(name).copied() {
                         Some(TypeRef::Enum(found)) => Some(found),
@@ -178,8 +178,8 @@ impl Ctx<'_, '_> {
                         ));
                     };
                     match self.ir_type(&Ty::Variant(found, Vec::new()), span)? {
-                        Type::Object(id) => id,
-                        _ => unreachable!("error enums lower to objects"),
+                        Type::Variant(id) => self.variants[id.0].cases[0].1,
+                        _ => unreachable!("error enums lower to variants"),
                     }
                 }
                 other => {

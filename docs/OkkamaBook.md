@@ -373,7 +373,8 @@ let document = ```
 ````
 
 Everything between the delimiters is retained exactly. Quotes, backslashes,
-comment-looking text, indentation and newlines have no special treatment.
+comment-looking text, indentation and line endings — a CRLF or a lone CR
+included (#310) — have no special treatment.
 There is no interpolation, escape processing, dedenting, trimming or fence
 modifier. The first following three-backtick sequence closes the literal, so
 that exact sequence cannot occur inside this initial form. One or two
@@ -504,9 +505,13 @@ let labels = @string(101, byte(2), true);  // ["101", "2", "true"]
 ```
 
 Numeric targets accept `int`, `byte`, `float`, and `rat`. Integer casts
-truncate toward zero, then check the signed-64 range for `int` or `0..255`
-for `byte`. Thus `byte(255.9)` is 255 and `byte(-0.5)` is 0. Float casts
-round to finite binary64 and can lose integer precision. String casts accept
+truncate toward zero. `int` is arbitrary-precision, so `int(...)` of an
+`int`, a `byte` or a `rat` is exact at any size:
+`int(100000000000000000000000000000 / 3)` is
+`33333333333333333333333333333`. Only a `float` source is checked against
+the signed-64 range: `int(1e30)` fails (#309). `byte(...)` checks
+`0..255`: `byte(255.9)` is 255 and `byte(-0.5)` is 0. Float casts round to
+finite binary64 and can lose integer precision. String casts accept
 numeric primitives, bool (`"true"`/`"false"`), char and string; rational text
 is canonical. `char(value)` accepts an `int` code point or a `char`: `char(65)`
 is `'A'`, and a value outside `0..0x10FFFF` or a surrogate is a runtime error.
@@ -583,17 +588,18 @@ let payload is @byte = @byte(0, 127, maximum);
   syntax. `byte(256)` fails.
 - `byte` satisfies the numeric umbrella `number`, but it does not satisfy
   `int`, and `int` does not satisfy `byte`.
-- Arithmetic accepts `byte` operands mixed with `byte`/`int`/`rat`/`float`,
-  but the *result* is never `byte` — it promotes to `int`, `rat` for exact
-  division, or `float`. So byte
-  arithmetic can never silently overflow within `0..255`; the result simply
-  becomes an ordinary number and must be re-checked with `byte(...)` if you
-  want a byte back.
-- Equality is exact-category: `byte(1) == 1` is a runtime error. Ordering
-  operators (`<`, `<=`, `>`, `>=`) are broader and accept mixed numeric
-  operands under the promotion rules.
-- A `byte` is a valid array index (interpreted by its integer value) and a
-  valid range bound (normalized to `int`). A `byte` is not a **map key**
+- Arithmetic takes two `byte` operands, and the *result* is never `byte`:
+  `+ - * %` give `int` and `/` gives the exact `rat`; unary `-` gives `int`.
+  So byte arithmetic can never silently overflow within `0..255`; the result
+  simply becomes an ordinary number and must be re-checked with `byte(...)`
+  if you want a byte back. Bitwise operators keep `byte` (5.4).
+- Numeric categories never mix (#230): `byte(2) + 3`, `byte(2) / 2` and
+  `byte(2) + 1.5` are compile errors. Convert one side explicitly:
+  `byte(2).int() + 3`.
+- Equality and ordering are exact-category too: `byte(1) == 1` and
+  `byte(1) < 2` are compile errors; `byte(1) < byte(2)` is `true`.
+- A `byte` is neither an array index nor a range bound — convert it:
+  `xs[b.int()]`, `0..b.int()`. A `byte` is not a **map key** either
   (`%byte:V` is a compile error; decision D-007).
 
 `@byte` is an ordinary immutable typed array of bytes — the language's raw
@@ -726,7 +732,8 @@ let empty = [];
 
 - Arrays are immutable values.
 - `@T` at a typed boundary validates every element recursively.
-- Indexing uses brackets and `int` (or `byte`) indexes:
+- Indexing uses brackets and `int` indexes (a `byte` is converted
+  explicitly, `xs[b.int()]`):
   `[10, 20, 30][1]` is `20`. Out-of-bounds indexing is a runtime error unless
   an `else` fallback is present: `xs[9] else 0;`
 - Ranges expand inside array literals: `[0, 2..=4, 9]` is `[0, 2, 3, 4, 9]`.
@@ -750,7 +757,11 @@ let empty_map = [:];
   (decision D-007: `Map key type byte is not a scalar key type`). A `byte`
   may still be a field of a key object. Map *values* may be any type
   including `any`.
-- A **value object** is a key when every field is a scalar (`byte` and `rat`
+- A `rat` key is its exact, reduced value: `rat(1, 2)`, `rat(2, 4)` and
+  `2 / 4` are one key, and `keys()` orders rat keys by value. Numeric
+  categories never mix, so `%rat:int` takes no `int` key — write `1.rat()`
+  (#296).
+- A **value object** is a key when every field is a scalar (`byte`
   included), an enum or another such object, and it has no `destroy` block and
   no capabilities. Objects are immutable, so a key compares by its fields
   exactly like `==`, and `keys()` orders object keys field by field in
@@ -832,8 +843,8 @@ tag.
 1..=5    // inclusive: 1, 2, 3, 4, 5
 ```
 
-- Bounds must be integer-like (`int` or `byte`; byte bounds normalize to
-  `int`).
+- Bounds must be `int`; a `byte` bound is converted explicitly
+  (`0..b.int()`).
 - `start` must be `<=` `end`.
 - Chained ranges are forbidden.
 - Ranges are first-class values: they compare by `start`, `end`, and
@@ -935,8 +946,14 @@ Rules:
 - Every transformation is immutable: it returns a new string or array.
 - The numeric comparisons `.less`, `.less_or_equal`, `.greater`,
   `.greater_or_equal` require the **exact same** numeric category on both
-  sides: `1.less(2.0)` fails. (The operators `<`/`>` are broader; the builtin action
-  form is deliberately strict.)
+  sides: `1.less(2.0)` fails. The operators `<`, `<=`, `>`, `>=` follow the
+  same rule (§11.3).
+- `string.less(other)` and `string.less_or_equal(other)` follow
+  `order(other)`: lexicographic by Unicode code point, a prefix before the
+  longer string, no case folding — `"ab".less("b")` and `"Z".less("a")` are
+  `true`. A string has one order, shared by `less`, `order` and `ordering()`;
+  compare lengths with `length()`. (Until 0.4.2 `less` and `less_or_equal`
+  compared lengths, #281.)
 - Builtin calls are positional-only and exact-arity.
 - Builtin dispatch activates only for non-object receivers, so an object's
   own action named `size` or `less` is never shadowed and never shadows.
@@ -1299,8 +1316,10 @@ return if done;                // a void action: the bare form
 throw Failure.empty if items.size() == 0;
 ```
 
-Right after `return` or `throw`, `if cond;` is the bare form with a condition,
-while `return if a { 1; } else { 2; };` still returns an `if` expression.
+Right after `return`, `throw` or `last`, `if cond;` is the bare form with a
+condition, while `return if a { 1; } else { 2; };` still returns an `if`
+expression, and `last if a { 1; } else { 2; };` leaves the loop with one
+(#303).
 
 The postfix condition must be `bool`, like every condition. It is evaluated
 before a `last`, `return` or `throw` payload; a false condition does not
@@ -1474,8 +1493,14 @@ throw DbError.query("select 1", 42);
   collections, `char`, actions and `any` are rejected.
 - `text()` is generated from the case: `DbError.closed`,
   `DbError.query("select 1", 42)`, `RepoError.db(DbError.closed)`. Strings
-  are quoted, numbers use `string()`, booleans are `true`/`false`, enum cases
-  are `Enum.case`. It is callable on the value and through `Error`.
+  are written as Okkama string literals (#306): `\\`, `\"`, `\n`, `\t` and
+  `\r` are escaped, other control characters become `\u{1b}`, printable
+  Unicode stays as is — so `Ferr.text("a \"q\"\n").text()` is
+  `Ferr.text("a \"q\"\n")`, a quote or comma inside a payload cannot pass for
+  an argument boundary, and a newline cannot split an uncaught-error report.
+  Numbers use `string()`, booleans are `true`/`false`, enum cases are
+  `Enum.case`, nested error enums use the same rules. It is callable on the
+  value and through `Error`.
 - An error enum value converts to `Error`; uncaught, it reports
   `DbError: DbError.query("select 1", 42)`.
 
@@ -1600,6 +1625,12 @@ let config = try! Config.parse(source);     // "cannot fail" → panic if it doe
   flattened. A void call is rejected (there is no value to wrap; use
   `try`/`catch`), and so is a successor result (its must-use obligation would
   be lost).
+- `T` is the type of the operand's successful paths; a branch that throws
+  does not erase it, even when a literal condition selects that branch:
+  `try? (if true { throw E.a; } else { 2; }) else 7` is `7`. When no path
+  succeeds (every branch throws), `T` comes from the `Maybe<T>` boundary or
+  from the fallback after `else`; without either it is a compile error. A
+  caught error leaves `none`, so code after a `try?` is reachable.
 - `try! value` keeps the value's type, including void and successor results.
   A thrown error becomes the panic `Unexpected error: <text()>` located at the
   `try!`.
@@ -3121,8 +3152,9 @@ main() is int { if true { 1 } else { 0 }; }
 `{ 1 }` and `{ 1; }` produce the same value. The rule applies to action bodies,
 `match` arms and functional blocks. Between statements `;` is still required,
 and `let`, `return`, `throw`, `defer` and assignments keep it even before `}`.
-A statement-level `if` may take one optional `;`. The formatter keeps the
-chosen spelling.
+A statement-level `if`, `loop`, `match` or `try … catch` may take one
+optional `;` (#302); two are an error, and the rule is not a general one for
+expressions. The formatter keeps the chosen spelling.
 
 ### 24.3 Compact choices: `?? … !!`
 

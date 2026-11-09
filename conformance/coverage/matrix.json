@@ -1654,16 +1654,22 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L05.literal.empty-collections",
       "L05.literal.heterogeneous-to-any"
      ],
      "mandatory_cases": [
+      "L05.literal.empty-collections",
       "L05.literal.heterogeneous-to-any"
      ],
      "requirement": "required"
     },
     "interaction": {
-     "cases": [],
-     "mandatory_cases": [],
+     "cases": [
+      "L05.literal.empty-collections"
+     ],
+     "mandatory_cases": [
+      "L05.literal.empty-collections"
+     ],
      "requirement": "n/a: no fragile cross-feature interaction is identified in the audited sources"
     },
     "invalid": {
@@ -1703,13 +1709,17 @@
     "boundary": {
      "cases": [
       "L05.collections.map-difference",
+      "L05.map.float-key-fallback",
       "L05.map.int-key-order",
-      "L05.map.key-types"
+      "L05.map.key-types",
+      "L05.map.rat-keys"
      ],
      "mandatory_cases": [
       "L05.collections.map-difference",
+      "L05.map.float-key-fallback",
       "L05.map.int-key-order",
-      "L05.map.key-types"
+      "L05.map.key-types",
+      "L05.map.rat-keys"
      ],
      "requirement": "required"
     },
@@ -1717,12 +1727,14 @@
      "cases": [
       "L05.collections.map-merge",
       "L05.map.fallback-lazy",
-      "L05.map.object-key"
+      "L05.map.object-key",
+      "L05.map.rat-keys"
      ],
      "mandatory_cases": [
       "L05.collections.map-merge",
       "L05.map.fallback-lazy",
-      "L05.map.object-key"
+      "L05.map.object-key",
+      "L05.map.rat-keys"
      ],
      "requirement": "required"
     },
@@ -1748,13 +1760,17 @@
       "L05.collections.map-difference",
       "L05.collections.map-merge",
       "L05.map.access",
-      "L05.map.object-key"
+      "L05.map.float-key-fallback",
+      "L05.map.object-key",
+      "L05.map.rat-keys"
      ],
      "mandatory_cases": [
       "L05.collections.map-difference",
       "L05.collections.map-merge",
       "L05.map.access",
-      "L05.map.object-key"
+      "L05.map.float-key-fallback",
+      "L05.map.object-key",
+      "L05.map.rat-keys"
      ],
      "requirement": "required"
     }
@@ -2909,10 +2925,12 @@
     "boundary": {
      "cases": [
       "L07.error-enum.non-exhaustive-match",
+      "L07.error-enum.text-escaping",
       "L07.error-enum.throw-and-catch"
      ],
      "mandatory_cases": [
       "L07.error-enum.non-exhaustive-match",
+      "L07.error-enum.text-escaping",
       "L07.error-enum.throw-and-catch"
      ],
      "requirement": "required"
@@ -3225,10 +3243,12 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L07.try-mark.diverging-operand",
       "L07.try-mark.optional",
       "L07.try-mark.panic-passes"
      ],
      "mandatory_cases": [
+      "L07.try-mark.diverging-operand",
       "L07.try-mark.optional",
       "L07.try-mark.panic-passes"
      ],
@@ -3236,10 +3256,12 @@
     },
     "interaction": {
      "cases": [
+      "L07.try-mark.diverging-operand",
       "L07.try-mark.optional",
       "L07.try-mark.optional-successor"
      ],
      "mandatory_cases": [
+      "L07.try-mark.diverging-operand",
       "L07.try-mark.optional",
       "L07.try-mark.optional-successor"
      ],
@@ -3258,10 +3280,12 @@
     },
     "normal": {
      "cases": [
+      "L07.try-mark.diverging-operand",
       "L07.try-mark.force-panics",
       "L07.try-mark.optional"
      ],
      "mandatory_cases": [
+      "L07.try-mark.diverging-operand",
       "L07.try-mark.force-panics",
       "L07.try-mark.optional"
      ],
@@ -5469,10 +5493,10 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L01.lex.crlf.raw-string-discards-cr"
+      "L01.lex.crlf.raw-string-keeps-cr"
      ],
      "mandatory_cases": [
-      "L01.lex.crlf.raw-string-discards-cr"
+      "L01.lex.crlf.raw-string-keeps-cr"
      ],
      "requirement": "required"
     },
@@ -5506,7 +5530,7 @@
     "contracts/DISCREPANCY-LEDGER.md#d-030"
    ],
    "status": "mandatory",
-   "title": "CR LF line endings are accepted and CR inside raw strings is discarded, as in Go (owner decision)"
+   "title": "CR LF line endings are accepted; a CR between tokens is whitespace and a fenced raw string keeps its CRs (owner decision, #310)"
   },
   {
    "aspects": {
@@ -5885,11 +5909,11 @@
     },
     "interaction": {
      "cases": [
-      "L01.lex.crlf.raw-string-discards-cr",
+      "L01.lex.crlf.raw-string-keeps-cr",
       "L01.lex.raw.concatenation"
      ],
      "mandatory_cases": [
-      "L01.lex.crlf.raw-string-discards-cr",
+      "L01.lex.crlf.raw-string-keeps-cr",
       "L01.lex.raw.concatenation"
      ],
      "requirement": "required"
@@ -6324,9 +6348,11 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L07.destroy.branch-scope",
       "L07.destroy.scope-exit-lifo"
      ],
      "mandatory_cases": [
+      "L07.destroy.branch-scope",
       "L07.destroy.scope-exit-lifo"
      ],
      "requirement": "required"
@@ -6334,10 +6360,12 @@
     "interaction": {
      "cases": [
       "L07.defer.before-destroy",
+      "L07.destroy.branch-scope",
       "L07.uncaught.cleanup-first"
      ],
      "mandatory_cases": [
       "L07.defer.before-destroy",
+      "L07.destroy.branch-scope",
       "L07.uncaught.cleanup-first"
      ],
      "requirement": "required"
@@ -27003,12 +27031,14 @@
     "boundary": {
      "cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
      ],
      "mandatory_cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
@@ -27018,12 +27048,14 @@
     "interaction": {
      "cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
      ],
      "mandatory_cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
@@ -27054,12 +27086,14 @@
     "normal": {
      "cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
      ],
      "mandatory_cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
@@ -27183,25 +27217,33 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L05.variants.case-layouts",
+      "L05.variants.inferred-payloads",
       "L05.variants.nested"
      ],
      "mandatory_cases": [
+      "L05.variants.case-layouts",
+      "L05.variants.inferred-payloads",
       "L05.variants.nested"
      ],
      "requirement": "required"
     },
     "interaction": {
      "cases": [
+      "L05.variants.case-layouts",
       "L05.variants.evaluation",
       "L05.variants.modules",
       "L05.variants.ownership",
-      "L05.variants.payload"
+      "L05.variants.payload",
+      "L05.variants.search"
      ],
      "mandatory_cases": [
+      "L05.variants.case-layouts",
       "L05.variants.evaluation",
       "L05.variants.modules",
       "L05.variants.ownership",
-      "L05.variants.payload"
+      "L05.variants.payload",
+      "L05.variants.search"
      ],
      "requirement": "required"
     },
@@ -27220,9 +27262,11 @@
     },
     "normal": {
      "cases": [
+      "L05.variants.case-layouts",
       "L05.variants.payload"
      ],
      "mandatory_cases": [
+      "L05.variants.case-layouts",
       "L05.variants.payload"
      ],
      "requirement": "required"
@@ -27241,10 +27285,12 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L02.cast.arrays"
+      "L02.cast.arrays",
+      "L02.cast.int-arbitrary-precision"
      ],
      "mandatory_cases": [
-      "L02.cast.arrays"
+      "L02.cast.arrays",
+      "L02.cast.int-arbitrary-precision"
      ],
      "requirement": "required"
     },
@@ -27552,9 +27598,11 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L02.cast.int-arbitrary-precision",
       "L02.cast.methods"
      ],
      "mandatory_cases": [
+      "L02.cast.int-arbitrary-precision",
       "L02.cast.methods"
      ],
      "requirement": "required"
@@ -28343,9 +28391,11 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L02.cast.int-arbitrary-precision",
       "L02.cast.scalar-calls"
      ],
      "mandatory_cases": [
+      "L02.cast.int-arbitrary-precision",
       "L02.cast.scalar-calls"
      ],
      "requirement": "required"
@@ -28637,6 +28687,50 @@
    ],
    "status": "mandatory",
    "title": "length() and slice() count Unicode code points; slice never clamps"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L02.string.order-consistent"
+     ],
+     "mandatory_cases": [
+      "L02.string.order-consistent"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L02.string.order-consistent"
+     ],
+     "mandatory_cases": [
+      "L02.string.order-consistent"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: the actions accept any two strings; < on strings is VAL.ORDERING's invalid aspect"
+    },
+    "normal": {
+     "cases": [
+      "L02.string.order-consistent"
+     ],
+     "mandatory_cases": [
+      "L02.string.order-consistent"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "VAL.STRING-ORDER",
+   "discrepancies": [],
+   "family": "Values and operators",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+   ],
+   "status": "mandatory",
+   "title": "string less, less_or_equal and order compare lexicographically by code point: one order per type (#281)"
   },
   {
    "aspects": {
@@ -30975,5 +31069,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "c65a5522c23c8dcb22d350a1c1dd7984f4ab7e9a8efa9ccfc099791e1bb5a5e5"
+ "suite_tree_sha256": "5eb020c44d099eae6949a5703f0005d50f2b51949b6821498796cdebfa714ff5"
 }

@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.crlf.raw-string-keeps-cr",
+  "title": "fenced raw strings keep carriage returns: CRLF, a lone CR, mixed endings",
+  "purpose": "A fenced raw string keeps every character between its delimiters, CR included (#310).",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.CRLF",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "LEX.RAW-STRINGS",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "4:97,13,10,98\n3:97,13,98\n3:120,10,121\n9:13,10,32,32,105,10,13,106,13\n0:\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #310 from the spec text and the owner's decision",
+    "expected_basis": "spec 4.2: every character between the delimiters is retained literally; owner decision 2026-11-09 (#310) supersedes D-030's Go rule; the code points follow from the source bytes of this CRLF file."
+  },
+  "status": "mandatory"
+}

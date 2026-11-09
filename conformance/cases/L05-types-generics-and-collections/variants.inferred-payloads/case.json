@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.variants.inferred-payloads",
+  "title": "a generic enum case infers T from payloads that need an expected type: loop/last, else, reduce, nested cases",
+  "purpose": "Observe that an uninferred type parameter is not imposed as an expected type on a payload (#304).",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "TYPE.VARIANTS",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "42 7 3\n5 12 2\n3 4\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#15"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #304 from the Book (24.1, 25.2) and the owner's decision",
+    "expected_basis": "Book 24.1: T is inferred from the arguments; the payloads evaluate to 42, 7 and 0+1+2 = 3, then 5, 1*10+2 = 12 and a two-element list, then 3 and 4."
+  },
+  "status": "mandatory"
+}

@@ -14,7 +14,7 @@ use crate::{ir, source::Span};
 use okkama_sparrow::{
     BitOp, CapDecl, CapRef, CatchKind, Cmp, Constant, Dst, EnumDecl, EnumRef, FuncRef, FutOp, Function,
     Handler, Instruction as I, Intrinsic, ObjectDecl, ObjectRef, Program, Register, RoleDecl, RoleMethod,
-    GlobalDecl, RoleRef, StrFn, Target, TrapCode, Type, TypeRef, Witness,
+    GlobalDecl, RoleRef, StrFn, Target, TrapCode, Type, TypeRef, VariantDecl, VariantRef, Witness,
 };
 use std::{collections::HashMap, fmt};
 
@@ -86,6 +86,7 @@ impl Types {
             }
             ir::Type::Future(result) => Type::Future(self.result(result)),
             ir::Type::Cap(cap) => Type::Cap(CapRef(cap.0 as u32)),
+            ir::Type::Variant(variant) => Type::Variant(VariantRef(variant.0 as u32)),
         };
         let reference = TypeRef(self.table.len() as u32);
         self.table.push(entry);
@@ -223,6 +224,22 @@ impl FunctionGen<'_> {
             K::SuccTake(value) | K::Retag(value) | K::MapRetag(value) | K::CapMake(value) => I::Move { dst: dst()?, source: reg(*value) },
             K::Cvt(value) => I::Convert { dst: dst()?, source: reg(*value) },
             K::RoleWrap(value) => I::RoleWrap { dst: dst()?, source: reg(*value), role: result_role()? },
+            K::VariantNew { case, fields } => {
+                let Some(ir::Type::Variant(variant)) = inst.result.map(|value| self.value_type(value)) else {
+                    return Err(error(span, "variant.new result type is missing"));
+                };
+                I::VariantNew { dst: dst()?, variant: VariantRef(variant.0 as u32), case: *case as u32, fields: regs(fields) }
+            }
+            K::VariantTag(value) => I::VariantTag { dst: dst()?, value: reg(*value) },
+            K::VariantGet { value, case, field } => {
+                I::VariantGet { dst: dst()?, value: reg(*value), case: *case as u32, field: *field as u32 }
+            }
+            K::VariantOf(value) => {
+                let Some(ir::Type::Variant(variant)) = inst.result.map(|value| self.value_type(value)) else {
+                    return Err(error(span, "variant.of result type is missing"));
+                };
+                I::VariantOf { dst: dst()?, source: reg(*value), variant: VariantRef(variant.0 as u32) }
+            }
             K::AnyBox(value) => I::AnyBox { dst: dst()?, source: reg(*value) },
             K::FnClosure { func, captures } => I::Closure { dst: dst()?, function: FuncRef(func.0 as u32), captures: regs(captures) },
             K::CallFn { callee, args } => I::CallFn { dst: opt, callee: reg(*callee), args: regs(args) },
@@ -449,6 +466,7 @@ impl FunctionGen<'_> {
                 let (kind, ty) = match ty {
                     ir::CatchType::Object(object) => (CatchKind::Object, object.0 as u32),
                     ir::CatchType::Role(role) => (CatchKind::Role, role.0 as u32),
+                    ir::CatchType::Variant(variant) => (CatchKind::Variant, variant.0 as u32),
                 };
                 I::Catch {
                     failure: reg(*failure),
@@ -606,6 +624,14 @@ pub fn generate(module: &ir::Module) -> Result<Program, GenerateError> {
             fields: cap.fields.iter().map(|(name, function)| (name.clone(), FuncRef(function.0 as u32))).collect(),
         })
         .collect();
+    let variants = module
+        .variants
+        .iter()
+        .map(|variant| VariantDecl {
+            name: variant.name.clone(),
+            cases: variant.cases.iter().map(|(name, object)| (name.clone(), ObjectRef(object.0 as u32))).collect(),
+        })
+        .collect();
     let globals = module
         .globals
         .iter()
@@ -626,6 +652,7 @@ pub fn generate(module: &ir::Module) -> Result<Program, GenerateError> {
         enums,
         roles,
         objects,
+        variants,
         handles,
         caps,
         globals,

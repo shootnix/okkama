@@ -1014,6 +1014,13 @@ impl Checker<'_, '_> {
             self.error(span, message);
             return Self::poisoned(span);
         }
+        // A shorthand constructor takes named arguments only: a positional
+        // call no full constructor accepts is reported before inference and
+        // before the arguments are checked (#311).
+        if let Some(message) = self.named_only(object, args) {
+            self.error(span, message);
+            return Self::poisoned(span);
+        }
         let params = self.reg.objects[object.0].params.clone();
         // Известная из ожидаемого типа специализация задаёт типы аргументов.
         let type_args_given = type_args.clone();
@@ -1053,6 +1060,49 @@ impl Checker<'_, '_> {
             return Self::poisoned(span);
         }
         self.construct_values(object, resolved, call, span)
+    }
+
+    /// The diagnostic of a positional call that only a shorthand constructor
+    /// could take: `Box(5)` for `Box(:v)` names `Box(v: …)`.
+    fn named_only(&self, object: ObjectId, args: &[ast::Argument]) -> Option<String> {
+        if args.is_empty() || args.iter().any(|arg| arg.name.is_some()) {
+            return None;
+        }
+        let info = &self.reg.objects[object.0];
+        let positional = info.ctors.iter().any(|ctor| match &ctor.shape {
+            CtorShape::Full { params, defaults, variadic, .. } => {
+                let required = defaults.iter().filter(|default| default.is_none()).count();
+                *variadic || (required..=params.len()).contains(&args.len())
+            }
+            CtorShape::Shorthand { .. } => false,
+        });
+        if positional {
+            return None;
+        }
+        let shorthands: Vec<&Vec<usize>> = info
+            .ctors
+            .iter()
+            .filter_map(|ctor| match &ctor.shape {
+                CtorShape::Shorthand { fields, .. } => Some(fields),
+                CtorShape::Full { .. } => None,
+            })
+            .collect();
+        let fields = shorthands
+            .iter()
+            .find(|fields| fields.len() == args.len())
+            .or(shorthands.first())?;
+        let named: Vec<String> = fields.iter().map(|field| format!("{}: …", info.fields[*field].name)).collect();
+        let suggestion = format!("{}({})", info.name, named.join(", "));
+        // With a full constructor too, positional calls of other arities stay valid.
+        Some(if shorthands.len() == info.ctors.len() {
+            format!("Constructor of \"{}\" takes named arguments only: write {suggestion}", info.name)
+        } else {
+            format!(
+                "No constructor of \"{}\" takes {} positional argument(s); the shorthand takes named ones: write {suggestion}",
+                info.name,
+                args.len()
+            )
+        })
     }
 
     /// The end of this body can await an async destroy (#154): an async body,

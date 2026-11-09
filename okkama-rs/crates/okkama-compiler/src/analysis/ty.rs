@@ -153,11 +153,47 @@ impl Ty {
         self.is_untagged_array() || self.is_untagged_map()
     }
 
+    /// Подходит ли тип к `target`, отличаясь только местами `Never`
+    /// нетегированных пустых коллекций, на любой глубине (#297): `@[]`
+    /// (`[[]]`) подходит к `@@int`, `%string:@never` — к `%string:@int`.
+    pub fn fits_untagged(&self, target: &Ty) -> bool {
+        match (self, target) {
+            _ if self == target => true,
+            (Ty::Never, _) => true,
+            (Ty::Array(a), Ty::Array(b)) => a.fits_untagged(b),
+            (Ty::Map(k1, v1), Ty::Map(k2, v2)) => k1.fits_untagged(k2) && v1.fits_untagged(v2),
+            _ => false,
+        }
+    }
+
+    /// Общий тип, к которому оба подходят перетегированием, или `None`.
+    pub fn unify_untagged(&self, other: &Ty) -> Option<Ty> {
+        if self.fits_untagged(other) {
+            return Some(other.clone());
+        }
+        if other.fits_untagged(self) {
+            return Some(self.clone());
+        }
+        match (self, other) {
+            (Ty::Array(a), Ty::Array(b)) => Some(Ty::array(a.unify_untagged(b)?)),
+            (Ty::Map(k1, v1), Ty::Map(k2, v2)) => {
+                Some(Ty::map(k1.unify_untagged(k2)?, v1.unify_untagged(v2)?))
+            }
+            _ => None,
+        }
+    }
+
+    /// Общий тип значений по `unify_untagged`, если он есть.
+    pub fn unify_all(types: &[Ty]) -> Option<Ty> {
+        let (first, rest) = types.split_first()?;
+        rest.iter().try_fold(first.clone(), |joined, ty| joined.unify_untagged(ty))
+    }
+
     /// Ключ словаря (§6.3, D-007: `byte` ключом не бывает).
     pub fn is_map_key(&self) -> bool {
         matches!(
             self,
-            Ty::Int | Ty::Bool | Ty::Char | Ty::Float | Ty::Str | Ty::Enum(_)
+            Ty::Int | Ty::Bool | Ty::Char | Ty::Float | Ty::Rat | Ty::Str | Ty::Enum(_)
         )
     }
 
@@ -228,6 +264,25 @@ impl Ty {
             Ty::Map(key, value) => key.holds_object(object) || value.holds_object(object),
             Ty::Role(_, args) | Ty::Variant(_, args) | Ty::Cap(_, args, _) => args.iter().any(|arg| arg.holds_object(object)),
             Ty::Future(Some(inner)) => inner.holds_object(object),
+            _ => false,
+        }
+    }
+
+    /// Встречается ли один из параметров `params`.
+    pub fn mentions(&self, params: &[ParamId]) -> bool {
+        match self {
+            Ty::Param(param) => params.contains(param),
+            Ty::Array(inner) | Ty::Successor(inner) | Ty::Varargs(inner) => inner.mentions(params),
+            Ty::Map(key, value) => key.mentions(params) || value.mentions(params),
+            Ty::Object(_, args)
+            | Ty::Role(_, args)
+            | Ty::Variant(_, args)
+            | Ty::Cap(_, args, _) => args.iter().any(|arg| arg.mentions(params)),
+            Ty::Action(action) => {
+                action.params.iter().any(|param| param.mentions(params))
+                    || action.result.as_ref().is_some_and(|result| result.mentions(params))
+            }
+            Ty::Future(Some(inner)) => inner.mentions(params),
             _ => false,
         }
     }

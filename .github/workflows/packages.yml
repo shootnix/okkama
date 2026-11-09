@@ -78,6 +78,10 @@ jobs:
           else
             echo "version=$base-nightly.$(date -u +%Y%m%d).$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           fi
+      # The .rpm is built next to the .deb (#313).
+      - name: RPM tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm
       - name: Package
         run: >
           tools/package.sh --target ${{ matrix.target }} --installer
@@ -101,6 +105,19 @@ jobs:
           run "$bin/okkama" run --engine sparrow --max-steps 1000000000 okkama-rs/tools/pgo/workloads/02-calls/main.ok
           run "$bin/sparrow" --version
           run "$bin/blade" --version
+      # Install the .rpm on Fedora (glibc 2.40) and run from /usr.
+      - name: RPM smoke test
+        if: runner.os == 'Linux'
+        run: |
+          ls dist/okkama-*-${{ matrix.platform }}.rpm
+          docker run --rm -v "$PWD:/w" -w /w fedora:41 bash -euc '
+            dnf install -y -q dist/okkama-*.rpm
+            rpm -q okkama
+            okkama env
+            okkama okkama-rs/examples/hello.ok
+            okkama run --engine sparrow okkama-rs/tools/pgo/workloads/02-calls/main.ok
+            sparrow --version
+            blade --version'
       - uses: actions/upload-artifact@v5
         with:
           name: okkama-${{ matrix.platform }}
@@ -119,9 +136,12 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      # Only the packages: the gate uploads its report as an artifact too, and
+      # `gh release create dist/*` cannot upload a directory.
       - uses: actions/download-artifact@v5
         with:
           path: dist
+          pattern: okkama-*
           merge-multiple: true
       - name: Release ${{ github.ref_name }}
         if: github.ref_type == 'tag'

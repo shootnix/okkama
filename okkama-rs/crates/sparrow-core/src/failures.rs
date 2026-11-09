@@ -147,6 +147,13 @@ fn descriptor_flags(program: &Program) -> Vec<bool> {
                 roles.entry(role.0).or_default().push(index);
                 None
             }
+            // A variant value is an object of one of its cases (#290).
+            Type::Variant(variant) => {
+                for (_, case) in &program.variants[variant.0 as usize].cases {
+                    parents[offset + case.0 as usize].push(index);
+                }
+                None
+            }
             _ => {
                 pending.push(index);
                 None
@@ -910,6 +917,7 @@ pub extern "C" fn rt_catch(ctx: *mut Ctx, function: u64, pc: u64, failure: Word)
         let matches = match kind {
             CatchKind::Object => builtin == Some(*ty as usize),
             CatchKind::Role => program.roles.get(*ty as usize).is_some_and(|r| r.is_error()),
+            CatchKind::Variant => false,
         };
         if !matches {
             return 0;
@@ -930,6 +938,7 @@ pub extern "C" fn rt_catch(ctx: *mut Ctx, function: u64, pc: u64, failure: Word)
         let matches = match kind {
             CatchKind::Object => program.objects.get(*ty as usize).is_some_and(|o| o.is_native_failure()),
             CatchKind::Role => program.roles.get(*ty as usize).is_some_and(|r| r.is_error()),
+            CatchKind::Variant => false,
         };
         if matches {
             ctx.scratch = object;
@@ -948,6 +957,7 @@ pub extern "C" fn rt_catch(ctx: *mut Ctx, function: u64, pc: u64, failure: Word)
     let matches = match kind {
         CatchKind::Object => owner == *ty,
         CatchKind::Role => runtime.loaded.program.objects[owner as usize].does.iter().any(|w| w.role.0 == *ty),
+        CatchKind::Variant => runtime.loaded.program.variants[*ty as usize].cases.iter().any(|(_, o)| o.0 == owner),
     };
     if matches {
         ctx.scratch = payload;

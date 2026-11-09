@@ -195,3 +195,27 @@ fn invalid_class_names_and_jvm_size_limits_are_errors() {
         "{error}"
     );
 }
+
+/// A function over the method limit is split into parts; the root of a moved
+/// part may own its `try` handler, which moves with it (#305). Before the fix
+/// the remaining call kept an unwind edge into the moved code and the backend
+/// panicked ("unwind targets take a failure").
+#[test]
+fn split_functions_keep_try_handlers_with_their_code() {
+    let statements: Vec<String> = (0..600)
+        .map(|index| {
+            format!(
+                "let r{index} = (if true {{ let w = try {{ {index}; }} catch e is Error {{ 0; }}; w; }} else {{ 0; }}) == {index};"
+            )
+        })
+        .collect();
+    let text = format!(
+        "module p v1.0.0; object Big {{ Big(); run() is int {{ {} 0; }} }} main() is int {{ Big().run(); }}",
+        statements.join(" ")
+    );
+    let source = SourceFile::new("big.ok", &text).expect("source");
+    let program = syntax::parse(&source, &ParseOptions::default()).expect("valid syntax");
+    let module = lower_program(&program).expect("lowers");
+    codegen::generate(&module, Backend::Jvm, &Options { artifact_name: "Big".to_string(), ..Default::default() })
+        .expect("a split function generates");
+}

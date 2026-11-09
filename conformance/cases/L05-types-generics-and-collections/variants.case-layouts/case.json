@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.variants.case-layouts",
+  "title": "variant values: payload-free and payload cases, a wide variant, generic and nested variants, equality, error enums",
+  "purpose": "Observe that a variant value behaves as its active case alone, however many fields its other cases have (#290).",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "TYPE.VARIANTS",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "0,12,12\ntrue false false true\ntrue false\na0 1|a1 2x|a2 3|a3 3|hit 42\n14\ntrue false\n10\nFault.major(1, Shape.rect(2, 3))\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#15"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #290 from the Book (24.1-24.4) and the spec",
+    "expected_basis": "by hand: circle(2) is 2*2*3, rect(3, 4) is 12; equality compares the case and the active payload (Book 24.1); a3(circle(1)) has area 3, hit(20, 22) sums to 42; rect(2, 5) has area 10 plus the length of \"root\"; major(7, circle(1)) gives 7 + 3; an error enum's text is Enum.case(payload) with a nested variant shown by its own text."
+  },
+  "status": "mandatory"
+}

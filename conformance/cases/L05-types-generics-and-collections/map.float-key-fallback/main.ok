@@ -1,0 +1,22 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Probe {
+    Probe();
+
+    // Evaluated only when the key is missing: `else` is lazy.
+    boom() is int { panic "fallback evaluated for a present key"; }
+}
+
+main() is int {
+    let out = Stdout();
+    let p = Probe();
+    let m is %float:int = [1.5: 1, -0.0: 2, 1e300: 3, 5e-324: 4];
+    let key = 1.5;
+    let missing = 2.5;
+    out.writeln((m[1.5] else p.boom()).string() + " " + (m[key] else p.boom()).string() + " " + (m[missing] else -1).string());
+    out.writeln((m[0.0] else p.boom()).string() + " " + (m[1e300] else p.boom()).string() + " " + (m[5e-324] else p.boom()).string());
+    out.writeln(m[key].string() + " " + m.has(key).string() + " " + m.has(missing).string() + " " + m.has(-0.0).string());
+    0;
+}

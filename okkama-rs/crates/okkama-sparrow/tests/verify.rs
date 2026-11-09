@@ -186,3 +186,74 @@ fn rejects_runtime_tables_with_false_signatures() {
     }];
     assert!(message(&program).contains("is not a destroy of app::Thing"), "{}", message(&program));
 }
+
+/// `variant Reading = (empty, value(item: int))` (#290): `main` builds
+/// `value(7)`, reads its case and its payload.
+fn variant_program() -> okkama_sparrow::Program {
+    use okkama_sparrow::{ObjectDecl, Type, TypeRef, VariantDecl, VariantRef};
+    let main = function(
+        "main",
+        4,
+        vec![],
+        true,
+        vec![
+            I::Const { dst: d(0), value: int("7") },
+            I::VariantNew { dst: d(1), variant: VariantRef(0), case: 1, fields: vec![r(0)] },
+            I::VariantTag { dst: d(2), value: r(1) },
+            I::VariantGet { dst: d(3), value: r(1), case: 1, field: 0 },
+            I::Return { value: Some(r(3)) },
+        ],
+    );
+    let mut main = main;
+    main.registers[1] = TypeRef(4);
+    let mut program = program(vec![main]);
+    program.types.push(Type::Variant(VariantRef(0)));
+    let object = |name: &str, fields: Vec<(String, TypeRef)>| ObjectDecl {
+        name: name.into(),
+        fields,
+        does: Vec::new(),
+        destroy: None,
+        builtin: false,
+    };
+    program.objects = vec![object("Reading.empty", vec![]), object("Reading.value", vec![("item".into(), TypeRef(0))])];
+    program.variants = vec![VariantDecl {
+        name: "Reading".into(),
+        cases: vec![("empty".into(), ObjectRef(0)), ("value".into(), ObjectRef(1))],
+    }];
+    program
+}
+
+#[test]
+fn variant_accesses_must_match_the_case_layouts() {
+    use okkama_sparrow::VariantRef;
+    assert_eq!(variant_program().verify(), Ok(()));
+
+    let mut program = variant_program();
+    program.functions[0].code[3] = I::VariantGet { dst: d(3), value: r(1), case: 0, field: 0 };
+    assert!(message(&program).contains("object obj0 has no field 0"), "{}", message(&program));
+
+    let mut program = variant_program();
+    program.functions[0].code[3] = I::VariantGet { dst: d(3), value: r(1), case: 2, field: 0 };
+    assert!(message(&program).contains("variant variant0 has no case 2"), "{}", message(&program));
+
+    let mut program = variant_program();
+    program.functions[0].code[1] = I::VariantNew { dst: d(1), variant: VariantRef(0), case: 0, fields: vec![r(0)] };
+    assert!(message(&program).contains("variant.new field count does not match the case"), "{}", message(&program));
+
+    let mut program = variant_program();
+    program.functions[0].code[2] = I::VariantTag { dst: d(2), value: r(0) };
+    assert!(message(&program).contains("expected a variant"), "{}", message(&program));
+
+    let mut program = variant_program();
+    program.functions[0].code[1] = I::VariantOf { dst: d(1), source: r(0), variant: VariantRef(0) };
+    assert!(message(&program).contains("expected an object"), "{}", message(&program));
+
+    let mut program = variant_program();
+    program.functions[0].code[1] = I::VariantNew { dst: d(1), variant: VariantRef(3), case: 0, fields: vec![] };
+    assert!(message(&program).contains("variant variant3 is out of bounds"), "{}", message(&program));
+
+    // Каждый случай — свой объект раскладки.
+    let mut program = variant_program();
+    program.variants[0].cases[0].1 = ObjectRef(1);
+    assert!(message(&program).contains("needs its own plain object"), "{}", message(&program));
+}

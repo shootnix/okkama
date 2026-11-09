@@ -1,0 +1,21 @@
+module app v1.0.0;
+import "io/stdout" take Stdout;
+
+enum Inner is Error = (named(label is string));
+enum Ferr is Error = (text(s is string), pair(a is string, b is string), nested(cause is Inner), plain);
+
+object Raise {
+    Raise();
+    raise(e is Ferr) is int { throw e; }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Ferr.text("a \"q\"\n").text());
+    out.writeln(Ferr.text("back\\slash\ttab\rcr\u{1b}esc\u{7f}del").text());
+    out.writeln(Ferr.text("é😀 ok").text());
+    out.writeln(Ferr.pair("x\", \"y", "z").text());
+    out.writeln(Ferr.nested(Inner.named("in\"ner\n")).text());
+    out.writeln(Ferr.plain.text() + " " + Ferr.text("").text());
+    0;
+}

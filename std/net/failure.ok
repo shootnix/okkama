@@ -103,6 +103,6 @@ test "network failure values remain catchable with stable diagnostics" {
     let original=NetworkFailure.detailed(NetworkOperation.connecting, NetworkFailureKind.refused, "Ошибка\nсети");
     let caught=try {throw original;} catch failure is NetworkFailure {failure;};
     test.ok(caught==original);
-    test.is(caught.text(),"NetworkFailure.detailed(NetworkOperation.connecting, NetworkFailureKind.refused, \"Ошибка\nсети\")");
+    test.is(caught.text(),"NetworkFailure.detailed(NetworkOperation.connecting, NetworkFailureKind.refused, \"Ошибка\\nсети\")");
     test.is(NetworkClosed.closed.text(),"NetworkClosed.closed");
 }

@@ -754,6 +754,9 @@ fn outline(module: &mut Module, index: usize, root: usize, region: &[usize]) {
         }
         ResultType::Void => (None, None),
     };
+    // A handler of `root` inside the region moved with it: the call handles
+    // its own failures, and what leaves it leaves `root` too (#305).
+    let root_unwind = root_unwind.filter(|unwind| !inside.contains(&unwind.block.0));
     function.blocks[root] = Block {
         params: root_params,
         unwind: root_unwind,
@@ -790,9 +793,11 @@ fn outline(module: &mut Module, index: usize, root: usize, region: &[usize]) {
             continue;
         }
         for target in data.term.kind.targets_mut() {
+            debug_assert!(!removed.contains(&target.block.0), "a jump into the moved region");
             target.block = BlockId(renumber[target.block.0]);
         }
         if let Some(unwind) = &mut data.unwind {
+            debug_assert!(!removed.contains(&unwind.block.0), "an unwind into the moved region");
             unwind.block = BlockId(renumber[unwind.block.0]);
         }
         function.blocks.push(data);

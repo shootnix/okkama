@@ -185,7 +185,8 @@ impl Checker<'_, '_> {
             (Ty::Str, "repeat") => (Builtin::StrRepeat, vec![int()], Some(Ty::Str)),
             (Ty::Str, "characters") => (Builtin::StrCharacters, vec![], Some(Ty::array(Ty::Char))),
             (Ty::Char, "code") => (Builtin::CharCode, vec![], Some(Ty::Int)),
-            // Строки упорядочиваются по длине (как Perl); `more` у строк нет.
+            // Порядок строк — по code point, как у `order()` (#281); `greater`
+            // у строк нет.
             (Ty::Str, "less" | "less_or_equal") => (
                 Builtin::StrCompare(ordering(name)?),
                 vec![Param::Same],
@@ -308,8 +309,10 @@ impl Checker<'_, '_> {
             return Self::poisoned(span);
         };
         let Some((op, params, result)) = self.builtin_signature(&receiver, &name.text) else {
+            // The full type (`@Reading`), not only its category (#300).
             let message = format!(
-                "Type \"{category}\" has no builtin action \"{}\"",
+                "Type \"{}\" has no builtin action \"{}\"",
+                self.type_name(&receiver),
                 name.text
             );
             self.error(name.span, message);

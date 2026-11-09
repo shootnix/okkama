@@ -522,6 +522,7 @@ fn key_text(key: &Value, case_name: &dyn Fn(usize, usize) -> String) -> String {
         Value::Char(value) => format!("\"{value}\""),
         Value::Enum { declaration, case } => format!("\"{}\"", case_name(*declaration, *case)),
         Value::Int(value) => value.to_string(),
+        Value::Rat(value) => value.to_string(),
         other => format!("{other:?}"),
     }
 }
