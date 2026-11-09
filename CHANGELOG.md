@@ -13,7 +13,7 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `t/lang`) and generated families (`tools/t/gen.py`: strings, collections,
   nesting, control, structures, value-object keys, casts, lexical forms,
   enums, …) whose expected values come from a Python oracle, not from
-  running Okkama. 44 748 checks in 125 files; every configuration (ir,
+  running Okkama. 44 753 checks in 125 files; every configuration (ir,
   sparrow, jvm, ir-passes-off, ir-gc-stress) must print the same stream.
   `tools/t/run.py` runs it (`--cage` locally), and it is a mandatory step of
   the release gate. It found #294–#310; checks blocked by an open issue
