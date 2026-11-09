@@ -398,10 +398,11 @@ fn layout(module: &ir::Module, class_name: &str, entry: Option<ir::FuncId>) -> R
             } else if object.builtin && object.name == "Cancelled" {
                 runtime::CANCELLED.to_string()
             } else if let Some((variant, tag)) = case {
-                // Случаи error enum носят имя enum (так его видит диагностика):
-                // класс различает их по имени случая.
+                // Класс различает случаи по имени, а последний сегмент — имя
+                // enum: по нему рантайм называет тип неперехваченной ошибки.
                 let variant = &module.variants[variant.0];
-                class_for(&format!("{}.{}", variant.name, variant.cases[tag].0))?
+                let short = variant.name.rsplit([':', '.']).next().unwrap_or(&variant.name);
+                class_for(&format!("{}.{}.{short}", variant.name, variant.cases[tag].0))?
             } else {
                 class_for(&object.name)?
             },
