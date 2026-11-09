@@ -102,6 +102,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Diagnostics: `reduce` from an untyped `[]` or `[:]` says what to write
+  (#295, also #267). `(0..3).reduce([]) -> acc, i { acc + [i * i]; }` gave
+  "Reduce accumulator must be [], got @int", as if `[]` were a type the block
+  had to return; it now reads "Reduce starts from [], which has no element
+  type, and its block gives @int: start from @int() or declare the result
+  type (let name is @int = …)", at the initial value; for `[:]` it suggests
+  the declared map type. Inference is unchanged.
+- Diagnostics: an ambiguous overloaded call names the argument types and the
+  tied candidates (#273), as the Book promises (§18.3, rule 5): "Ambiguous
+  call of action "joined" on object "Pairing" with (int, int): joined(int,
+  any) and joined(any, int) fit equally well"; the same for roles and for
+  constructors. Resolution is unchanged; the candidates are recomputed only
+  on the error path.
 - Uncaught failures: every engine prints the report of the Sparrow core,
   byte for byte (#270) — the failure, its secondary cleanup failures and its
   causes (`Caused by:`), the place with its source line, and the Okkama
