@@ -7,9 +7,11 @@
 #     tools/gate/docker.sh [--quick]
 #
 # Volumes keep the cargo registry and build outputs between runs
-# (okkama-cargo-registry, okkama-gate-target). Crates must already be in the
-# registry volume (the container is offline); after a dependency change run
-# once with OKKAMA_GATE_NETWORK=bridge.
+# (okkama-cargo-registry, okkama-gate-target, okkama-gate-adapter); each source
+# gets the time its content was first seen by a gate (stamp_sources.py, #333),
+# so a tree edited before another was gated is not mistaken for built. Crates
+# must already be in the registry volume (the container is offline); after a
+# dependency change run once with OKKAMA_GATE_NETWORK=bridge.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -35,6 +37,9 @@ exec docker run --rm \
         ln -sfn /usr/local/cargo "$HOME/.cargo"; ln -sfn /usr/local/rustup "$HOME/.rustup"
         rsync -a --delete --exclude /okkama-rs/target --exclude /conformance/adapters/rust/.target \
             --exclude /conformance/reports/runs --exclude .git /src/ /work/
+        # The build volumes are shared by every gate run: give each source the
+        # time its content was first seen, so cargo rebuilds what changed (#333).
+        python3 /work/tools/gate/stamp_sources.py /work /work/okkama-rs/target/.gate-sources.json
         cd /work && status=0 && tools/gate/gate.sh "$@" || status=$?
         cp -R /work/conformance/reports/runs/gate-* /out/ 2>/dev/null || true
         exit $status' gate "$@"
