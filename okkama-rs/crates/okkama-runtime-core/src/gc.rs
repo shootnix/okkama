@@ -537,6 +537,10 @@ mod tests {
             panic!("live cycle lost its field")
         };
         assert!(matches!(child.field(0), Some(Value::Object(back)) if Rc::ptr_eq(&back, owner)));
+        // Garbage once dropped: collected, so nothing outlives the test (Miri checks leaks).
+        drop(child);
+        drop(live);
+        collect();
     }
 
     #[test]
@@ -689,6 +693,8 @@ mod tests {
             let Value::Object(object) = value else { unreachable!() };
             assert!(matches!(object.field(0), Some(Value::Object(back)) if Rc::ptr_eq(&back, object)));
         }
+        drop(kept);
+        collect();
     }
 
     #[test]
@@ -702,5 +708,7 @@ mod tests {
         }
         assert!(stats().0 > before);
         assert!(probe.unwrap().upgrade().is_none());
+        // The cycles since the last threshold are still garbage.
+        collect();
     }
 }
