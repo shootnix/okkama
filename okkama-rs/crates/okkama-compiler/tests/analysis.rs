@@ -597,7 +597,7 @@ fn captured_bindings_cannot_be_rebound() {
     }
     for body in [
         "let c = C(); let read = () is int { c.value(); }; read();",
-        "let c = C(); let bump = () is int { let next = c.inc(); next.value(); }; bump();",
+        "let c = C(); let bump = () is int { let later = c.inc(); later.value(); }; bump();",
         "let bump = () is int { let c = C(); c = c.inc(); c.value(); }; bump();",
         // Затенение локальной и параметром: привязка самого действия.
         "let c = C(); let f = () is int { let c = C(); c = c.inc(); c.value(); }; f() + c.value();",
