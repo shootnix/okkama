@@ -286,8 +286,20 @@ fn okkama_fields_method(pool: &mut ConstantPool, object: &ObjectLayout) -> Resul
     method(pool, asm, 0x0001, "okkamaFields", "(Ljava/util/List;)V", 2)
 }
 
+/// Поле, которое `equals` и `hashCode` объекта передают `Rt.equal`/`Rt.hash`:
+/// `float`, список, словарь или значение без своего `equals` (#314).
+fn deep_field(descriptor: &str) -> bool {
+    matches!(
+        descriptor,
+        "Ljava/lang/Double;" | "Ljava/util/List;" | "Ljava/util/Map;" | "Ljava/lang/Object;"
+    )
+}
+
+const FLOAT_FIELD: &str = "Ljava/lang/Double;";
+
 /// `equals(Object)`: тот же класс и равные поля в порядке объявления
-/// (`val.eq`, §16.3). Ссылочные поля сравнивает `Objects.equals`.
+/// (`val.eq`, §16.3). Ссылочные поля сравнивает `Objects.equals`, а `float`,
+/// списки и словари — `Rt.equal` (`-0.0 == 0.0`, #314).
 fn equals_method(pool: &mut ConstantPool, object: &ObjectLayout, name: &str) -> Result<Method> {
     let class = pool.class(&object.class)?;
     let any = pool.class("java/lang/Object")?;
@@ -296,6 +308,8 @@ fn equals_method(pool: &mut ConstantPool, object: &ObjectLayout, name: &str) -> 
         "equals",
         "(Ljava/lang/Object;Ljava/lang/Object;)Z",
     )?;
+    let deep_equals = pool.method_ref(runtime::RT, "equal", "(Ljava/lang/Object;Ljava/lang/Object;)Z")?;
+    let same_float = pool.method_ref(runtime::RT, "sameFloat", "(Ljava/lang/Double;Ljava/lang/Double;)Z")?;
     let mut asm = Asm::default();
     let same = asm.label();
     let differ = asm.label();
@@ -322,7 +336,14 @@ fn equals_method(pool: &mut ConstantPool, object: &ObjectLayout, name: &str) -> 
         if is_int_slot(descriptor) {
             asm.jump(0xa0, differ, 2); // if_icmpne
         } else {
-            asm.op_index(0xb8, objects_equals, 2, 1); // invokestatic
+            let equals = if descriptor == FLOAT_FIELD {
+                same_float
+            } else if deep_field(descriptor) {
+                deep_equals
+            } else {
+                objects_equals
+            };
+            asm.op_index(0xb8, equals, 2, 1); // invokestatic
             asm.jump(0x99, differ, 1); // ifeq
         }
     }
@@ -387,6 +408,7 @@ fn cyclic_hash_code_method(pool: &mut ConstantPool) -> Result<Method> {
 /// `hashCode()`, согласованный с `equals`: `h = 31 * h + hash(поле)`.
 fn hash_code_method(pool: &mut ConstantPool, object: &ObjectLayout, name: &str) -> Result<Method> {
     let objects_hash = pool.method_ref("java/util/Objects", "hashCode", "(Ljava/lang/Object;)I")?;
+    let deep_hash = pool.method_ref(runtime::RT, "hash", "(Ljava/lang/Object;)I")?;
     let mut asm = Asm::default();
     asm.op(&[0x04], 0, 1); // iconst_1
     for (name, descriptor) in &object.fields {
@@ -396,7 +418,8 @@ fn hash_code_method(pool: &mut ConstantPool, object: &ObjectLayout, name: &str) 
         asm.op(&[0x2a], 0, 1); // aload_0
         asm.op_index(0xb4, field, 1, 1); // getfield
         if !is_int_slot(descriptor) {
-            asm.op_index(0xb8, objects_hash, 1, 1); // invokestatic
+            let hash = if deep_field(descriptor) { deep_hash } else { objects_hash };
+            asm.op_index(0xb8, hash, 1, 1); // invokestatic
         }
         asm.op(&[0x60], 2, 1); // iadd
     }

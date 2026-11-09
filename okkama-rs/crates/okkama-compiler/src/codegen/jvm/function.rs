@@ -1176,14 +1176,20 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
                 self.class
                     .call_rt(&mut self.asm, name, descriptor, args.len() as i32, 1)?;
             }
-            // Объекты сравнивают поля через свой `equals`, списки — поэлементно.
+            // Объекты сравнивают поля через свой `equals`; списки, словари и
+            // `float` — `Rt.equal`: `float` численно на любой глубине (#314).
             InstKind::ValCompare { op, left, right } => {
                 self.load(*left);
                 self.load(*right);
+                let (owner, name) = if deep_equality(&self.function.values[left.0]) {
+                    (super::runtime::RT, "equal")
+                } else {
+                    ("java/util/Objects", "equals")
+                };
                 self.class.invoke_static(
                     &mut self.asm,
-                    "java/util/Objects",
-                    "equals",
+                    owner,
+                    name,
                     "(Ljava/lang/Object;Ljava/lang/Object;)Z",
                     2,
                     1,
@@ -1933,6 +1939,12 @@ impl FunctionGen<'_, '_> {
         self.goto(missing);
         Ok(())
     }
+}
+
+/// Значения, которые `==` сравнивает через `Rt.equal`: `float`, списки,
+/// словари и то, что может их содержать без своего `equals` (#314).
+fn deep_equality(ty: &Type) -> bool {
+    matches!(ty, Type::Float | Type::Array(_) | Type::Map(..) | Type::Any | Type::Never)
 }
 
 fn object_of(ty: &Type) -> usize {

@@ -340,7 +340,14 @@ pub(crate) fn equal(runtime: &Runtime, left: Word, right: Word, ty: TypeRef) -> 
                 }
                 continue;
             }
-            Kind::Float | Kind::Raw | Kind::Byte => {
+            // Numerically, as scalar `==` (#314): `-0.0 == 0.0`.
+            Kind::Float => {
+                if f64::from_bits(a) != f64::from_bits(b) {
+                    return Ok(false);
+                }
+                continue;
+            }
+            Kind::Raw | Kind::Byte => {
                 if a != b {
                     return Ok(false);
                 }
@@ -390,8 +397,23 @@ pub(crate) fn equal(runtime: &Runtime, left: Word, right: Word, ty: TypeRef) -> 
                 if x.len() != y.len() {
                     return Ok(false);
                 }
-                if a != b && seen.insert((a, b)) {
-                    pending.extend(x.iter().zip(y.iter()).rev().map(|(&x, &y)| (x, y, *element)));
+                // Scalar elements compare in place, without the pair stack.
+                match runtime.kind_of(*element) {
+                    Kind::Float => {
+                        if !x.iter().zip(y.iter()).all(|(&x, &y)| f64::from_bits(x) == f64::from_bits(y)) {
+                            return Ok(false);
+                        }
+                    }
+                    Kind::Raw | Kind::Byte => {
+                        if x != y {
+                            return Ok(false);
+                        }
+                    }
+                    Kind::Int | Kind::Ref => {
+                        if a != b && seen.insert((a, b)) {
+                            pending.extend(x.iter().zip(y.iter()).rev().map(|(&x, &y)| (x, y, *element)));
+                        }
+                    }
                 }
             }
             Some(Type::Map(_, value)) => {
@@ -403,11 +425,18 @@ pub(crate) fn equal(runtime: &Runtime, left: Word, right: Word, ty: TypeRef) -> 
                     return Ok(false);
                 }
                 if a != b && seen.insert((a, b)) {
+                    // Scalar values compare in place, as array elements do.
+                    let kind = runtime.kind_of(*value);
                     for ((k, (_, v)), (k2, (_, v2))) in x.entries.iter().zip(&y.entries) {
                         if k != k2 {
                             return Ok(false);
                         }
-                        pending.push((*v, *v2, *value));
+                        match kind {
+                            Kind::Float if f64::from_bits(*v) != f64::from_bits(*v2) => return Ok(false),
+                            Kind::Raw | Kind::Byte if v != v2 => return Ok(false),
+                            Kind::Float | Kind::Raw | Kind::Byte => {}
+                            Kind::Int | Kind::Ref => pending.push((*v, *v2, *value)),
+                        }
                     }
                 }
             }
@@ -965,8 +994,9 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
                 excluded.extend_from_slice(&runtime.heap.elements(value(part)));
             }
             let items = runtime.heap.elements(value(array)).into_owned();
-            // Scalars and strings compare by key; other elements deeply.
-            let keyed = matches!(kind, Kind::Int | Kind::Raw | Kind::Byte) || ty == Some(Type::Str);
+            // Scalars and strings compare by key (a float key is numeric, so
+            // `-0.0` and `0.0` are one, #314); other elements deeply.
+            let keyed = matches!(kind, Kind::Int | Kind::Float | Kind::Raw | Kind::Byte) || ty == Some(Type::Str);
             let mut kept = Vec::with_capacity(items.len());
             if keyed {
                 let keys: std::collections::BTreeSet<_> = excluded.iter().map(|&w| runtime.key(w, kind, ty.as_ref())).collect();
