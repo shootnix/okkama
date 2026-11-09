@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # Ворота релиза (H-08): всё, что должно пройти перед выпуском версии.
 #
-#     tools/gate/gate.sh            # полный прогон (~30 минут)
-#     tools/gate/gate.sh --quick    # без тестов Rust и без прогона sparrow-origin
+#     tools/gate/gate.sh            # полный прогон (~15 минут)
+#     tools/gate/gate.sh --quick    # без тестов Rust и clippy
 #     make gate                     # в контейнере (tools/gate/docker.sh)
 #
 # Шаги:
-#   1. release-сборка okkama и sparrow (провал — ворота останавливаются),
-#      тесты Rust всего workspace (release и debug: глубина стека и
+#   1. release-сборка okkama и sparrow с fat LTO (провал — ворота
+#      останавливаются), тесты Rust всего workspace (профиль gate —
+#      оптимизации release без fat LTO, — и debug: глубина стека и
 #      debug-проверки видны только там), clippy без предупреждений;
 #   2. conformance на IR, JVM, Sparrow (ядро; компилирует каждую функцию
-#      целиком), на IR без IR-проходов (OKKAMA_IR_PASSES=none), на IR со
-#      сборкой циклов на каждом кандидате (OKKAMA_GC=stress) и, до 0.5, на прежнем VM (`sparrow-origin`, только для
-#      сведения: у него нет нативов, добавленных с 0.4.0);
+#      целиком), на IR без IR-проходов (OKKAMA_IR_PASSES=none) и на IR со
+#      сборкой циклов на каждом кандидате (OKKAMA_GC=stress). Прежний VM
+#      (`sparrow-origin`) воротами не проверяется;
 #   3. встроенные тесты всех модулей std на IR и Sparrow (tools/gate/std-tests.py);
 #   4. t/ — самопроверяющиеся программы на Okkama (tools/t/run.py, #245) на всех
 #      конфигурациях: IR, Sparrow, JVM, IR без проходов и IR со стресс-сборкой;
@@ -104,9 +105,11 @@ else
 fi
 
 if [[ $QUICK -eq 0 ]]; then
-    step "Rust tests (release, workspace)"
+    # The gate profile: release optimizations without fat LTO, so the test
+    # binaries do not each pay a full LTO link (Cargo.toml).
+    step "Rust tests (optimized, workspace)"
     started=$SECONDS
-    if (cd "$ROOT/okkama-rs" && cargo test --release --workspace --no-fail-fast >"$LOGS/cargo-test.log" 2>&1); then
+    if (cd "$ROOT/okkama-rs" && cargo test --profile gate --workspace --no-fail-fast >"$LOGS/cargo-test.log" 2>&1); then
         record "rust tests" pass $((SECONDS - started))
         echo "ok: $(grep -c '^test result: ok' "$LOGS/cargo-test.log") test binaries"
     else
@@ -154,14 +157,8 @@ conformance() {
         return
     fi
     grep -E "^\[.*(FAIL|ERROR|CRASH|UNSUPPORTED|TIMEOUT)" "$LOGS/conformance-$name.log" | head -10
-    # The previous VM lacks natives added since 0.4.0 (removed in 0.5, #14).
-    if [[ "$name" == "sparrow-origin" ]]; then
-        record "conformance $name" informative $((SECONDS - started))
-        echo "(informative: not a gate failure)"
-    else
-        record "conformance $name" fail $((SECONDS - started))
-        fail "conformance $name"
-    fi
+    record "conformance $name" fail $((SECONDS - started))
+    fail "conformance $name"
 }
 
 step "conformance"
@@ -176,9 +173,6 @@ conformance ir-passes-off --timeout-scale 4 --adapter-env OCS_RUST_ENGINE=ir --a
 # The IR cycle collector at every candidate: an edge it miscounts frees a
 # live value at once instead of thousands of candidates later (#43).
 conformance ir-gc-stress --timeout-scale 4 --adapter-env OCS_RUST_ENGINE=ir --adapter-env OKKAMA_GC=stress
-if [[ $QUICK -eq 0 ]]; then
-    conformance sparrow-origin --adapter-env OCS_RUST_ENGINE=sparrow-origin
-fi
 
 step "std inline tests"
 started=$SECONDS

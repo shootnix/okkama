@@ -36,6 +36,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- Release gate: about 15 minutes instead of 30–40. Its optimized Rust tests
+  build with a new cargo profile `gate` (release optimizations, no fat LTO,
+  16 codegen units): the step took 20.6 minutes, of which 28 seconds were
+  tests and the rest was a full LTO link of each of ~90 test binaries. The
+  release binaries the gate builds keep fat LTO, and conformance, std and
+  the t/ suite run on them. The informative conformance run on the previous
+  VM (`sparrow-origin`) is no longer part of the gate.
+
 - Heterogeneous collection literals need an explicit `any` boundary (#315,
   owner's option 2): `let a = [1, "two"];`, `let b = [1, 2.0];` and
   `let m = ["x": 1, "y": "two"];` are compile-time errors at the literal —
