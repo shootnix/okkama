@@ -8,6 +8,14 @@
 //!
 //! `ArrayHeap` и `ObjectHeap` не хранят состояния: это операции над значениями.
 use crate::{IntValue, Value, ValueError};
+
+/// Размер тестовой структуры: Miri проходит те же пути примерно в тысячу раз
+/// медленнее и получает тысячную часть узлов (#43). Размер стека он не
+/// моделирует, так что большая глубина там ничего не доказывает.
+#[cfg(test)]
+pub(crate) const fn scaled(n: usize) -> usize {
+    if cfg!(miri) { n / 1000 } else { n }
+}
 use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
@@ -1395,11 +1403,11 @@ mod tests {
     fn builders_collect_in_place_and_finish_into_arrays() {
         let heap = ArrayHeap;
         let mut many = heap.builder_new();
-        for _ in 0..100_000 {
+        for _ in 0..scaled(100_000) {
             many = heap.builder_push(&many, Value::Byte(7)).unwrap();
         }
         let array = heap.builder_finish(&many).unwrap();
-        assert_eq!(heap.elements(&array).unwrap().len(), 100_000);
+        assert_eq!(heap.elements(&array).unwrap().len(), scaled(100_000));
     }
 
     #[test]
@@ -1407,7 +1415,7 @@ mod tests {
         let objects = ObjectHeap;
         let arrays = ArrayHeap;
         let mut chain = Value::Int(IntValue::from_i64(0));
-        for _ in 0..1_000_000 {
+        for _ in 0..scaled(1_000_000) {
             chain = objects.allocate(0, vec![chain]);
             chain = arrays.allocate(vec![chain]);
         }
@@ -1446,7 +1454,7 @@ mod equality_tests {
         let heap = ObjectHeap;
         let mut a = Value::Int(crate::IntValue::from_i64(42));
         let mut b = a.clone();
-        for _ in 0..20_000 {
+        for _ in 0..scaled(20_000) {
             a = arrays.allocate(vec![a.clone(), a]);
             b = arrays.allocate(vec![b.clone(), b]);
         }
@@ -1486,7 +1494,7 @@ mod drop_tests {
     fn drops_on_a_small_stack(build: fn(usize) -> Value) {
         std::thread::Builder::new()
             .stack_size(2 << 20)
-            .spawn(move || drop(build(200_000)))
+            .spawn(move || drop(build(scaled(200_000))))
             .unwrap()
             .join()
             .expect("dropped without overflowing the stack");

@@ -22,6 +22,12 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   (`okkama-*`). Since 0.4.1 the release gate uploads its report as an
   artifact too, and `gh release create dist/*` failed on that directory, so
   neither the v0.4.1 release nor the nightly was published.
+- CI: the Miri job (the IR heap and cycle collector, #43) never finished:
+  its tests built chains of up to a million nodes, which Miri interprets for
+  hours, and every push to develop cancelled the run. Under Miri the tests
+  take a thousandth of the nodes and the collector's threshold is 64; the
+  job is a workflow of its own (`miri.yml`) with a 30-minute limit, run when
+  the runtime core changes, every night and by hand.
 
 ## [0.4.1] — 2026-11-09
 
