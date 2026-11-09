@@ -9,7 +9,6 @@ import "io/stream" take AsyncWriting;
 import "io/decorators" take ByteSnapshot;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
-import "async/scope" take FutureGroup;
 import "error" take InvalidState;
 
 role Http2OutputStarting {start() is void;}
@@ -58,8 +57,7 @@ object Http2ConnectionOutput does Http2ControlQueuing {
     }
     async run() is bool{
         confirm !started.ready() else throw InvalidState.because("HTTP2 wire writer is single-use");started.set();defer self.abort();
-        let group is FutureGroup<bool>=FutureGroup();let cleanup=Http2OutputSettlement(group);defer await cleanup.close();
-        let pending=self.write_loop();group.start(pending);await pending;
+        let pending=self.write_loop();await pending;
     }
 
     private:
@@ -73,8 +71,7 @@ object Http2ConnectionOutput does Http2ControlQueuing {
             if !ticket.cancelled(){
                 ticket.begin();
                 for ticket.frames() -> frame{
-                    let group is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=Http2OutputSettlement(group);defer await cleanup.close();
-                    let pending=origin.write(ByteSnapshot(frame.bytes()));group.start(pending);await pending;
+                    let pending=origin.write(ByteSnapshot(frame.bytes()));await pending;
                 }
                 ticket.completed();
             }
@@ -98,7 +95,6 @@ object Http2OutputTicket {
         confirm !stopped.ready() else throw Http2OutputStopped.stopped;confirm !cancellation.ready() else throw Http2OutputCancelled.cancelled;true;
     }
 }
-object Http2OutputSettlement<T>{has group is FutureGroup<T>;Http2OutputSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
 enum Http2OutputLimit is Error = (exceeded);
 enum Http2OutputStopped is Error = (stopped);
 enum Http2OutputCancelled is Error = (cancelled);

@@ -5,7 +5,6 @@ import "http/internal/http2_flow" take Http2FlowWindow,Http2WindowIncrement;
 import "http/internal/http2_frame" take Http2Frame,Http2FrameHeader,Http2Fault,Http2FaultScope;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
-import "async/scope" take FutureGroup;
 import "error" take InvalidState;
 
 // Windows reflect physical starts; reservations are separate, so an unsent
@@ -104,7 +103,7 @@ object Http2DataSending {
     has owner is Http2DataScheduler;has slot is Http2SendingSlot;has bytes is @byte;has end_stream is bool;
     Http2DataSending(owner is Http2DataScheduler,slot is Http2SendingSlot,bytes is @byte,end_stream is bool){self.owner=owner;self.slot=slot;self.bytes=bytes;self.end_stream=end_stream;}
     async result() is bool{
-        let group is FutureGroup<bool>=FutureGroup();let cleanup=Http2SendingSettlement(group);defer await cleanup.close();let pending=self.run();group.start(pending);await pending;
+        let pending=self.run();await pending;
     }
     async run() is bool{
         confirm !slot.closed() else throw Http2SendingClosed.closed;confirm slot.busy().compare_and_replace(false,true) else throw InvalidState.because("stream already has a DATA producer");
@@ -116,7 +115,7 @@ object Http2DataSending {
             let frame=Http2Frame(Http2FrameHeader(0.byte(),(if final && end_stream{1.byte();}else{0.byte();}),slot.stream(),size),bytes.slice(offset.value(),offset.value()+size));
             let accepted is @Http2OutputTicket=try{[owner.enqueue(frame,grant)];}catch e is Http2OutputLimit{grant.cancel();let empty is @Http2OutputTicket=[];empty;};
             if accepted.size()==0{await storage.wait();next;}
-            let ticket=accepted[0];grant.attach(ticket);let group is FutureGroup<bool>=FutureGroup();let cleanup=Http2SendingSettlement(group);defer await cleanup.close();let pending=ticket.result();group.start(pending);
+            let ticket=accepted[0];grant.attach(ticket);let pending=ticket.result();
             let complete=try{await pending;}catch e is Http2OutputCancelled{false;};
             if !complete{next;}
             confirm !slot.closed() else throw Http2SendingClosed.closed;
@@ -125,5 +124,4 @@ object Http2DataSending {
     }
 }
 object Http2ProducerRelease{has slot is Http2SendingSlot;Http2ProducerRelease(slot is Http2SendingSlot){self.slot=slot;}close() is void{slot.busy().replace(false);}}
-object Http2SendingSettlement<T>{has group is FutureGroup<T>;Http2SendingSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
 enum Http2SendingClosed is Error = (closed);

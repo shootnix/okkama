@@ -51,7 +51,7 @@ object WebSocketSessionState {
     async disposing() is bool{defer owner.close();if loops.active()>0{await loops.wait();}true;}
     async settled() is bool{if started.ready(){await closing_started.wait();}if disposal.active()>0{await disposal.wait();}true;}
     async writing() is bool{
-        let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pending=output.run();group.start(pending);
+        let pending=output.run();
         try{await pending;}catch e is Cancelled{throw;}catch e is Error{self.shutdown(e);true;}catch e is NativeFailure{self.shutdown(WebSocketClosed.detailed(1006, ""));throw;}
     }
     async reading() is bool{
@@ -64,11 +64,11 @@ object WebSocketSessionState {
                     if responding{let echo is Within<bool>=Within(output.control(8,frame.payload()).result(),close_timeout,clock);await echo.result();close_sent.set();}else{await close_sent.wait();}
                     peer_closed.set();self.shutdown(received);return true;
                 }
-                if frame.opcode()==9{let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pong=output.control(10,frame.payload()).result();group.start(pong);await pong;next;}
+                if frame.opcode()==9{let pong=output.control(10,frame.payload()).result();await pong;next;}
                 if frame.opcode()==10{next;}
                 if closing.ready(){next;}
                 for assembly.accept(frame) -> message{
-                    let group is FutureGroup<Sending<WebSocketMessage>>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let sending=incoming.sending().send(message);group.start(sending);try{await sending;}catch e is ChannelClosed{if !closing.ready(){throw;}}
+                    let sending=incoming.sending().send(message);try{await sending;}catch e is ChannelClosed{if !closing.ready(){throw;}}
                 }
             }
         }catch e is Cancelled{throw;}catch e is WebSocketFailure{
@@ -77,19 +77,19 @@ object WebSocketSessionState {
         }catch e is Error{self.shutdown(e);true;}catch e is NativeFailure{self.shutdown(WebSocketClosed.detailed(1006, ""));throw;}
     }
     async message() is WebSocketMessage{
-        let group is FutureGroup<WebSocketMessage>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let receiving=incoming.receiving().item();group.start(receiving);
+        let receiving=incoming.receiving().item();
         try{await receiving;}catch e is ChannelClosed{throw failure.value();}
     }
     async send(message is WebSocketMessage) is bool{
-        confirm !self.closed() && !closing.ready() else throw failure.value();let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pending=output.message(message).result();group.start(pending);await pending;
+        confirm !self.closed() && !closing.ready() else throw failure.value();let pending=output.message(message).result();await pending;
     }
     async ping(payload is @byte) is bool{
-        confirm !self.closed() && !closing.ready() else throw failure.value();let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pending=output.control(9,payload).result();group.start(pending);await pending;
+        confirm !self.closed() && !closing.ready() else throw failure.value();let pending=output.control(9,payload).result();await pending;
     }
     async handshake(code is int,reason is string) is bool{
         if !closing.ready(){let value=WebSocketClose(code,reason);confirm client || code!=1010 else throw WebSocketFailure.because("server cannot emit client-only close code");closing.set();output.closing();failure.replace(WebSocketClosed.detailed(code, reason));incoming.sending().close();
             let payload=HttpWireBytes([IntegerBytes(value.code(),2,Signedness.unsigned,ByteOrder.big).bytes(),Utf8Encoded(value.reason()).bytes()],125).bytes();
-            let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pending=output.control(8,payload).result();group.start(pending);await pending;close_sent.set();
+            let pending=output.control(8,payload).result();await pending;close_sent.set();
         }
         await peer_closed.wait();true;
     }

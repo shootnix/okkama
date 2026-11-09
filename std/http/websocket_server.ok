@@ -44,7 +44,7 @@ object WebSocketServerOpening {
         let published=Event();let cleanup=WebSocketServerUnpublished(owner,published);defer cleanup.close();let request=head.head();let handshake=WebSocketServerHandshake(request);
         confirm upgrade.access().allowed(request.request(EmptyBody()),destination) else throw WebSocketFailure.because("Origin denied");
         let selected=WebSocketServerProtocol(handshake.protocols(),upgrade.protocols()).value();let response=handshake.response(selected);let wire=Http1ResponseHead(response.status(),response.headers(),response.version());
-        let group is FutureGroup<AsyncWriting>=FutureGroup();let settlement=WebSocketOutputSettlement(group);defer await settlement.close();let pending=Http1ResponseHeadWriting(output,wire,request.method()).result();group.start(pending);await pending;
+        let pending=Http1ResponseHeadWriting(output,wire,request.method()).result();await pending;
         let session=WebSocketSession(WebSocketPrefixedInput(input,head.remainder()),output,owner,false,SecureRandom(),upgrade.limits(),upgrade.deadline(),clock);published.set();session;
     }
 }

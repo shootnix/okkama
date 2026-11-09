@@ -37,8 +37,7 @@ object Http2Session does Closing {
     closed() is bool{state.closed();}accepting() is bool{state.accepting();}close() is void{state.close();}
     async settled() is bool{await state.settled();}
     async exchange(request is Request) is Http2Exchange{
-        let operation=Http2SessionExchange(state,request);let group is FutureGroup<Http2Exchange>=FutureGroup();let cleanup=Http2SessionSettlement(group);defer await cleanup.close();
-        let pending=operation.run();group.start(pending);await pending;
+        let operation=Http2SessionExchange(state,request);let pending=operation.run();await pending;
     }
     destroy{try{self.close();}catch e is Error{}catch e is NativeFailure{}}
 }
@@ -75,7 +74,7 @@ object Http2SessionState does Http2ReceivingEvents,Http2BodyEvents {
     }
     async writing() is bool{
         
-        let group is FutureGroup<bool>=FutureGroup();let cleanup=Http2SessionSettlement(group);defer await cleanup.close();let pending=output.run();group.start(pending);
+        let pending=output.run();
         try{await pending;}catch e is Cancelled{throw;}catch e is Error{self.shutdown(e);throw;}catch e is NativeFailure{self.shutdown(Http2SessionClosed.closed);throw;}
     }
     queue() is int{
@@ -164,11 +163,11 @@ object Http2SessionExchange {
         let declared=Http2BodyLength(request.headers(),1).known();let known is @BigInt=try{[request.body().length()];}catch e is UnknownBodyLength{let empty is @BigInt=[];empty;};
         for known -> length{confirm length.sign()>=0 && length.order(BigInt(owner.body_limit().string()))!=Order.greater else throw InvalidHttpMessage.because("outgoing body length limit");for declared -> advertised{confirm advertised.order(length)==Order.equal else throw InvalidHttpMessage.because("outgoing length contradicts Content-Length");}}
         Http2RequestFields(request,1);owner.start();let position=owner.queue();let dequeue=Http2AdmissionCleanup(owner,position);defer dequeue.close();
-        let grants is FutureGroup<Http2StreamHolding>=FutureGroup();let cleanup=Http2SessionSettlement(grants);defer await cleanup.close();let waiting=owner.admit(position,request,known,declared);grants.start(waiting);let holder=await waiting;
-        let values is FutureGroup<Http2StreamEntry>=FutureGroup();let value_cleanup=Http2SessionSettlement(values);defer await value_cleanup.close();let offered=holder.value();values.start(offered);let entry=await offered;
+        let waiting=owner.admit(position,request,known,declared);let holder=await waiting;
+        let offered=holder.value();let entry=await offered;
         let published=Event();let release=Http2ExchangeCleanup(entry,published);defer await release.close();await entry.ready().wait();entry.check();
         let head=entry.head();let opening=Http2SessionBody(entry);let response=head.response(opening);let result=Http2Exchange(request,response,entry.information(),entry);
-        if entry.buffer().wire_ended() && entry.lengths().size()==1 && entry.lengths()[0].sign()==0{let reads is FutureGroup<@byte>=FutureGroup();let settled=Http2SessionSettlement(reads);defer await settled.close();let pending=entry.buffer().bytes(1);reads.start(pending);let prime=await pending;confirm prime.size()==0 else throw InvalidState.because("unexpected payload at header-only response");}
+        if entry.buffer().wire_ended() && entry.lengths().size()==1 && entry.lengths()[0].sign()==0{let pending=entry.buffer().bytes(1);let prime=await pending;confirm prime.size()==0 else throw InvalidState.because("unexpected payload at header-only response");}
         published.set();result;
     }
 }
@@ -221,7 +220,7 @@ object Http2StreamEntry does Closing {
             let head=owner.output().headers(stream,fields,owner.budget(),16384,zero,starting);ticket.replace([head]);
             let pending=head.result();let heads is FutureGroup<bool>=FutureGroup();let cleanup=Http2SessionSettlement(heads);defer await cleanup.close();heads.start(pending);await pending;ticket.replace([]);
             if zero{written.set();owner.sent(stream);return true;}
-            let producer=Http2RequestBodySending(self,owner.sender(),request.body(),declared,known,owner.body_limit());let work is FutureGroup<bool>=FutureGroup();let settlement=Http2SessionSettlement(work);defer await settlement.close();let body=producer.run();work.start(body);await body;
+            let producer=Http2RequestBodySending(self,owner.sender(),request.body(),declared,known,owner.body_limit());let body=producer.run();await body;
             life.replace(life.value().local_data(true));written.set();owner.sent(stream);true;
         }catch e is Http2OutputCancelled{
             if !stopped.ready(){owner.source_failed(stream,e);throw;}false;
@@ -248,7 +247,7 @@ object Http2RequestBodySending {
             for declared -> length{confirm BigInt(total.string()).order(length)!=Order.greater else throw InvalidHttpMessage.because("outgoing Content-Length overflow");}
             for known -> length{confirm BigInt(total.string()).order(length)!=Order.greater else throw InvalidHttpMessage.because("outgoing body exceeds source length");}
             if bytes.size()==0{for declared -> length{confirm BigInt(total.string()).order(length)==Order.equal else throw InvalidHttpMessage.because("outgoing Content-Length underflow");}for known -> length{confirm BigInt(total.string()).order(length)==Order.equal else throw InvalidHttpMessage.because("outgoing source length underflow");}}
-            let writes is FutureGroup<bool>=FutureGroup();let writing=Http2SessionSettlement(writes);defer await writing.close();let offered=sender.data(entry.stream(),bytes,bytes.size()==0);writes.start(offered);await offered;used.replace(total);if bytes.size()==0{return true;}
+            let offered=sender.data(entry.stream(),bytes,bytes.size()==0);await offered;used.replace(total);if bytes.size()==0{return true;}
         }
     }
 }

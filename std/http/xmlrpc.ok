@@ -15,7 +15,6 @@ import "html/entities" take EscapedHtml;
 import "plist/parse" take PlistXmlSource,PlistXmlToken,PlistXmlText;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
-import "async/scope" take FutureGroup;
 import "http/client" take Exchanging;
 import "http/exchange" take ClientResponse;
 import "http/handler" take Handling,HandlingResult,ResponseHandling;
@@ -208,13 +207,13 @@ object XmlRpcClient does XmlRpcCalling {
     XmlRpcClient(origin is Exchanging,endpoint is Url,limits is XmlRpcLimits){let parts=endpoint.parts();confirm (parts.scheme()=="http" || parts.scheme()=="https") && parts.authority().present() && !parts.fragment().present() else throw InvalidXmlRpc.because("HTTP endpoint required");self.origin=origin;self.endpoint=endpoint;self.limits=limits;}
     async result(call is XmlRpcCall) is XmlRpcResult{
         let bytes=XmlRpcCallWire(call,limits).bytes();let request=Request(Method("POST"),AbsoluteTarget(endpoint),Headers([Header(HeaderName("Content-Type"),"text/xml; charset=utf-8"),Header(HeaderName("Accept"),"text/xml"),Header(HeaderName("User-Agent"),"Okkama-XMLRPC/1.0"),Header(HeaderName("Content-Length"),bytes.size().string())]),ByteBody(bytes));
-        let group is FutureGroup<ClientResponse>=FutureGroup();let cleanup=XmlRpcSettlement(group);defer await cleanup.close();let waiting=origin.response(request);group.start(waiting);let exchange=await waiting;let response=exchange.response();let input=response.body().reading();defer input.close();let code=response.status().code();confirm code>=200 && code<300 else throw XmlRpcHttpFailed.status(code);XmlRpcMedia(response.headers());let body=XmlRpcBodyBytes(input,limits);let reads is FutureGroup<@byte>=FutureGroup();let reading=XmlRpcSettlement(reads);defer await reading.close();let pending=body.bytes();reads.start(pending);ParsedXmlRpcResult(await pending,limits).result();
+        let waiting=origin.response(request);let exchange=await waiting;let response=exchange.response();let input=response.body().reading();defer input.close();let code=response.status().code();confirm code>=200 && code<300 else throw XmlRpcHttpFailed.status(code);XmlRpcMedia(response.headers());let body=XmlRpcBodyBytes(input,limits);let pending=body.bytes();ParsedXmlRpcResult(await pending,limits).result();
     }
 }
 object XmlRpcBodyBytes {
     has input is BodyReading;has limits is XmlRpcLimits;XmlRpcBodyBytes(input is BodyReading,limits is XmlRpcLimits){self.input=input;self.limits=limits;}
     async bytes() is @byte{
-        defer input.close();let text=Atomic("");loop{let remaining=limits.wire_bytes()-text.value().length();let count=if remaining>=8192{8192;}else{remaining+1;};let group is FutureGroup<@byte>=FutureGroup();let cleanup=XmlRpcSettlement(group);defer await cleanup.close();let pending=input.bytes(count);group.start(pending);let bytes=await pending;confirm bytes.size()<=count else throw InvalidReading.because("XML-RPC source exceeded limit");confirm bytes.size()<=remaining else throw XmlRpcLimitExceeded.kind("wire_bytes");if bytes.size()==0{return Latin1Encoded(text.value()).bytes();}text.replace(text.value()+Latin1Decoded(bytes).string());}
+        defer input.close();let text=Atomic("");loop{let remaining=limits.wire_bytes()-text.value().length();let count=if remaining>=8192{8192;}else{remaining+1;};let pending=input.bytes(count);let bytes=await pending;confirm bytes.size()<=count else throw InvalidReading.because("XML-RPC source exceeded limit");confirm bytes.size()<=remaining else throw XmlRpcLimitExceeded.kind("wire_bytes");if bytes.size()==0{return Latin1Encoded(text.value()).bytes();}text.replace(text.value()+Latin1Decoded(bytes).string());}
     }
 }
 object XmlRpcMedia{XmlRpcMedia(headers is Headers){let types=headers.values(HeaderName("Content-Type"));confirm types.size()==1 else throw InvalidXmlRpc.because("one XML media type required");let media=try{MediaType(types.item(0));}catch e is Error{throw InvalidXmlRpc.because("XML media type");};confirm (media.type()=="text" || media.type()=="application") && media.subtype()=="xml" else throw InvalidXmlRpc.because("XML media type required");let charsets=media.parameters().values("charset");confirm charsets.size()<=1 else throw InvalidXmlRpc.because("duplicate charset");if charsets.size()==1{let charset=HttpAsciiLowercase(charsets.item(0)).string();confirm charset=="utf-8" else throw InvalidXmlRpc.because("UTF8 charset required");}}}
@@ -225,10 +224,9 @@ object XmlRpcHandling does Handling {
         let kind=request.target().kind();let requested=if kind==RequestTargetKind.origin{request.target().string().split("?")[0];}else{if kind==RequestTargetKind.absolute{request.target().url().parts().path();}else{"";}};if requested!=path{return ResponseHandling(Response(Status(404),Headers([])));}
         if request.method().string()!="POST"{return ResponseHandling(Response(Status(405),Headers([Header(HeaderName("Allow"),"POST")])));}
         let media=try{XmlRpcMedia(request.headers());true;}catch e is Error{false;};if !media{return ResponseHandling(Response(Status(415),Headers([])));}
-        let source=request.body().reading();defer source.close();let reads is FutureGroup<@byte>=FutureGroup();let cleanup=XmlRpcSettlement(reads);defer await cleanup.close();let pending=XmlRpcBodyBytes(source,limits).bytes();reads.start(pending);
+        let source=request.body().reading();defer source.close();let pending=XmlRpcBodyBytes(source,limits).bytes();
         let calls is @XmlRpcCall=try{[ParsedXmlRpcCall(await pending,limits).call()];}catch e is InvalidXmlRpc{[];}catch e is XmlRpcLimitExceeded{return ResponseHandling(Response(Status(413),Headers([])));};if calls.size()==0{return ResponseHandling(Response(Status(400),Headers([])));}
-        let tasks is FutureGroup<XmlRpcResult>=FutureGroup();let work=XmlRpcSettlement(tasks);defer await work.close();let waiting=calling.result(calls[0]);tasks.start(waiting);let result=await waiting;let bytes=XmlRpcResultWire(result,limits).bytes();ResponseHandling(Response(Status(200),Headers([Header(HeaderName("Content-Type"),"text/xml; charset=utf-8"),Header(HeaderName("Content-Length"),bytes.size().string())]),ByteBody(bytes)));
+        let waiting=calling.result(calls[0]);let result=await waiting;let bytes=XmlRpcResultWire(result,limits).bytes();ResponseHandling(Response(Status(200),Headers([Header(HeaderName("Content-Type"),"text/xml; charset=utf-8"),Header(HeaderName("Content-Length"),bytes.size().string())]),ByteBody(bytes)));
     }
 }
-object XmlRpcSettlement<T>{has group is FutureGroup<T>;XmlRpcSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
 test "standard XMLRPC values do not require casts" {test.ok(try{XmlRpcInteger(2147483648);false;}catch e is InvalidXmlRpc{true;});test.is(XmlRpcInteger(-2147483648).value(),-2147483648);}

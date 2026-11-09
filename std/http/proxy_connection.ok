@@ -47,8 +47,7 @@ object HttpProxyConnecting does HttpConversationConnecting {
             let observation=HttpResponseObservation();let session=Http1Conversation(Http1Session(observation.reading(tcp.input()),observation.writing(tcp.output()),tcp,client.limits().http1()),observation,fields);
             let acquired=HttpConversationAcquisition(session,ExchangeDetails(tcp.endpoints(),HttpVersion.http_1_1));published.set();return acquired;
         }
-        let tunnels is FutureGroup<bool>=FutureGroup();let tunnel_cleanup=HttpProxySettlement(tunnels);defer await tunnel_cleanup.close();
-        let tunneling=HttpProxyTunnel(tcp.input(),tcp.output(),target,fields,client.limits().http1()).ready();tunnels.start(tunneling);await tunneling;
+        let tunneling=HttpProxyTunnel(tcp.input(),tcp.output(),target,fields,client.limits().http1()).ready();await tunneling;
         let adopted is FutureGroup<HttpConversationAcquisition>=FutureGroup();let empty_acquired is @Future<HttpConversationAcquisition>=[];let acquisition_pending=Atomic(empty_acquired);let acquisition_taken=Event();
         let adopted_cleanup=HttpAcquisitionCleanup(adopted,acquisition_pending,acquisition_taken,HttpConversationAcquisitionDisposal().release);defer await adopted_cleanup.close();
         let adapting=HttpConversationAdopting(tcp,target,tls,client,clock).acquisition();acquisition_pending.replace([adapting]);adopted.start(adapting);let acquired=await adapting;acquisition_taken.set();published.set();acquired;

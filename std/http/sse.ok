@@ -85,7 +85,7 @@ object ServerEvents {
             let text=tail.value();if skip_lf.value() && text!=""{skip_lf.replace(false);if text.slice(0,1)=="\n"{tail.replace(text.slice(1,text.length()));next;}}
             let cr=text.split("\r")[0].length();let lf=text.split("\n")[0].length();let at=if cr<lf{cr;}else{lf;};
             if at<text.length(){confirm at<=8192 else throw EventStreamLimit.kind("line_bytes");let raw=text.slice(0,at);skip_lf.replace(text.slice(at,at+1)=="\r");tail.replace(text.slice(at+1,text.length()));let decoded=EventUtf8(Latin1Encoded(raw).bytes()).string();if !started.ready(){started.set();if decoded!="" && decoded.slice(0,1)=="﻿"{return decoded.slice(1,decoded.length());}}return decoded;}
-            confirm text.length()<=8192 else throw EventStreamLimit.kind("line_bytes");let group is FutureGroup<@byte>=FutureGroup();let cleanup=EventGroup(group);defer await cleanup.close();let pending=input.bytes(4096);group.start(pending);let bytes=await pending;confirm bytes.size()<=4096 else throw InvalidReading.because("SSE source exceeded requested limit");if bytes.size()==0{eof.set();input.close();tail.replace("");data.replace("");throw EventStreamEnded.ended;}tail.replace(text+Latin1Decoded(bytes).string());
+            confirm text.length()<=8192 else throw EventStreamLimit.kind("line_bytes");let pending=input.bytes(4096);let bytes=await pending;confirm bytes.size()<=4096 else throw InvalidReading.because("SSE source exceeded requested limit");if bytes.size()==0{eof.set();input.close();tail.replace("");data.replace("");throw EventStreamEnded.ended;}tail.replace(text+Latin1Decoded(bytes).string());
         }
     }
     destroy{self.close();}
@@ -118,7 +118,7 @@ object EventBodyInput does BodyReading {
     async bytes(limit is int) is @byte{confirm limit>0 else throw InvalidReadLimit.limit(limit);let group is FutureGroup<@byte>=FutureGroup();let registration=EventRegistration(operations,EventGroup(group));defer registration.close();let cleanup=EventGroup(group);defer await cleanup.close();let pending=self.read(limit);group.start(pending);await pending;}
     async read(limit is int) is @byte{
         let complete=Event();let cleanup=EventBodyCleanup(self,complete);defer cleanup.close();if ended.ready(){complete.set();return [];}
-        if tail.value()==""{let group is FutureGroup<ServerEvent>=FutureGroup();let cleanup=EventGroup(group);defer await cleanup.close();let pending=input.item();group.start(pending);let values is @ServerEvent=try{[await pending];}catch e is ChannelClosed{[];};if values.size()==0{ended.set();complete.set();return [];}tail.replace(Latin1Decoded(ServerEventWire(values[0]).bytes()).string());}
+        if tail.value()==""{let pending=input.item();let values is @ServerEvent=try{[await pending];}catch e is ChannelClosed{[];};if values.size()==0{ended.set();complete.set();return [];}tail.replace(Latin1Decoded(ServerEventWire(values[0]).bytes()).string());}
         let text=tail.value();let count=if text.length()<limit{text.length();}else{limit;};tail.replace(text.slice(count,text.length()));complete.set();Latin1Encoded(text.slice(0,count)).bytes();
     }
     destroy{self.close();}

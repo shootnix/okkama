@@ -175,7 +175,7 @@ object DigestExchanging does Exchanging {
         let verified=ClientResponse(result.request(),response,result.details());retained.set();verified;
     }
     async once(request is Request) is ClientResponse{
-        let group is FutureGroup<ClientResponse>=FutureGroup();let cleanup=DigestSettlement(group);defer await cleanup.close();let pending=origin.response(request);group.start(pending);await pending;
+        let pending=origin.response(request);await pending;
     }
     result(request is Request,result is ClientResponse) is ClientResponse{
         if result.history().size()==0 && result.request().target().url().string()==request.target().url().string(){return ClientResponse(request,result.response(),result.details());}result;
