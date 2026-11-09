@@ -6,6 +6,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Fixed
+
+- Parser: a statement `match` and `try … catch` take one optional `;`, like
+  `if` and `loop` (#302); the formatter keeps the chosen spelling (it refused
+  to format such files before). `last if a { 1; } else { 2; };` leaves the
+  loop with the `if` expression instead of reading `a` as a condition; `last`
+  now parses its value like `return` and `throw` (#303). Compile time of the
+  t/ nesting and control files is unchanged (median of 10: 0.247 → 0.246 s).
+
 ### Added
 
 - `rat` is a map key type (#296): `%rat:V`, rat-key literals, indexing,

@@ -909,7 +909,12 @@ impl<'s> Printer<'s> {
                 self.expr(value);
                 self.word(";");
             }
-            StmtKind::Try(body) => self.try_body(body),
+            StmtKind::Try(body) => {
+                self.try_body(body);
+                if self.slice(stmt.span).trim_end().ends_with(';') {
+                    self.word(";");
+                }
+            }
             StmtKind::Throw { value, condition } => {
                 self.word("throw");
                 if let Some(value) = value {
@@ -973,7 +978,12 @@ impl<'s> Printer<'s> {
                     self.word(";");
                 }
             }
-            StmtKind::Match(body) => self.match_body(body),
+            StmtKind::Match(body) => {
+                self.match_body(body);
+                if self.slice(stmt.span).trim_end().ends_with(';') {
+                    self.word(";");
+                }
+            }
             StmtKind::For {
                 is_async,
                 source,

@@ -1308,8 +1308,10 @@ return if done;                // a void action: the bare form
 throw Failure.empty if items.size() == 0;
 ```
 
-Right after `return` or `throw`, `if cond;` is the bare form with a condition,
-while `return if a { 1; } else { 2; };` still returns an `if` expression.
+Right after `return`, `throw` or `last`, `if cond;` is the bare form with a
+condition, while `return if a { 1; } else { 2; };` still returns an `if`
+expression, and `last if a { 1; } else { 2; };` leaves the loop with one
+(#303).
 
 The postfix condition must be `bool`, like every condition. It is evaluated
 before a `last`, `return` or `throw` payload; a false condition does not
@@ -3130,8 +3132,9 @@ main() is int { if true { 1 } else { 0 }; }
 `{ 1 }` and `{ 1; }` produce the same value. The rule applies to action bodies,
 `match` arms and functional blocks. Between statements `;` is still required,
 and `let`, `return`, `throw`, `defer` and assignments keep it even before `}`.
-A statement-level `if` may take one optional `;`. The formatter keeps the
-chosen spelling.
+A statement-level `if`, `loop`, `match` or `try … catch` may take one
+optional `;` (#302); two are an error, and the rule is not a general one for
+expressions. The formatter keeps the chosen spelling.
 
 ### 24.3 Compact choices: `?? … !!`
 
