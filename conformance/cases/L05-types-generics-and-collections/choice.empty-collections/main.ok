@@ -1,0 +1,31 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Probe {
+    Probe();
+
+    // Never evaluated: a literal condition runs only the selected branch.
+    unused() is @int { panic "the other branch ran"; }
+
+    pick(c is bool) is @int { c ?? [1] !! []; }
+}
+
+main() is int {
+    let out = Stdout();
+    let p = Probe();
+    let c = false;
+    // A literal condition, an empty collection on the selected side.
+    out.writeln(((false ?? [1] !! []) == []).string() + " " + ((true ?? [] !! [1]) == []).string()
+        + " " + ((false ?? ["k": 1] !! [:]) == [:]).string() + " " + ((false ?? [[1]] !! []) == []).string());
+    // The same with a variable condition.
+    out.writeln(((c ?? [1] !! []) == []).string() + " " + ((!c ?? [] !! [1]) == []).string());
+    // Typed bindings, action results, method calls and a later concatenation.
+    let typed is @int = false ?? [1] !! [];
+    out.writeln(typed.size().string() + " " + p.pick(false).size().string() + " " + ((true ?? [] !! [1]) + [5]).size().string());
+    // Only the selected branch runs.
+    out.writeln(((true ?? [] !! p.unused()) == []).string() + " " + (false ?? p.unused() !! [7])[0].string());
+    // An ordinary if keeps working.
+    out.writeln(((if false { [1]; } else { []; }) == []).string());
+    0;
+}

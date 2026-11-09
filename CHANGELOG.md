@@ -6,6 +6,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Fixed
+
+- A boolean choice or `if` with a literal condition whose selected branch is
+  an untagged `[]` or `[:]` (`(false ?? [1] !! []) == []`) no longer stops
+  the compiler with invalid IR (#298). The lowered value takes the analyzed
+  type of the whole expression (retagging the empty collection), for literal
+  and variable conditions alike; a literal condition still emits only the
+  selected branch. Conformance case `L05.choice.empty-collections`; compile
+  time of branch-heavy t/ files is unchanged (median of 10: 0.386 → 0.388 s).
+
 ### Added
 
 - `rat` is a map key type (#296): `%rat:V`, rat-key literals, indexing,
