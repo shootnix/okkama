@@ -30,16 +30,22 @@ object Maker {
 }
 
 main() is int {
-    let t = Tap(11);
+    let t = Tap(12);
     let log = Atomic("");
     defer log.close();
     let maker = Maker();
-    // A bare block: an if branch that ends in a let keeps the resource (#308).
     {
         let a = Res(name: "A", log: log);
         let b = Res(name: "B", log: log);
     }
     t = t.is(log.value(), "BA", "reverse construction order at scope exit");
+    log.replace("");
+    // A branch ending in a let destroys it with the branch (#308).
+    if true {
+        let a = Res(name: "A", log: log);
+        let b = Res(name: "B", log: log);
+    }
+    t = t.is(log.value(), "BA", "an if branch destroys its lets in reverse order");
     log.replace("");
     if true {
         let outer = Res(name: "O", log: log);

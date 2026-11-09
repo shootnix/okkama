@@ -235,8 +235,7 @@ VALUE_TYPES = [
     # (type, literals, comparison, map key, constant, needs)
     ("int", [lit_int(0), lit_int(-1), lit_int(2 ** 63 - 1), lit_int(2 ** 63), lit_int(-(10 ** 30))], "is", True, True),
     ("float", [lit_float(0.5), lit_float(-1e-05), lit_float(1e16), lit_float(5e-324)], "is", False, True),
-    # `rat` is not a map key (#296).
-    ("rat", [lit_rat(fractions.Fraction(1, 3)), lit_rat(fractions.Fraction(-7, 2)), lit_rat(fractions.Fraction(10 ** 20, 3))], "is", False, True),
+    ("rat", [lit_rat(fractions.Fraction(1, 3)), lit_rat(fractions.Fraction(-7, 2)), lit_rat(fractions.Fraction(10 ** 20, 3))], "is", True, True),
     ("byte", ["byte(0)", "byte(255)"], "is", False, True),
     ("bool", ["true", "false"], "is", True, True),
     ("string", [lit_str(""), lit_str("héllo"), lit_str("😀\n\"q\"")], "is", True, True),
@@ -336,10 +335,7 @@ def values_family():
             check(f"if 1 < 2 {{ {literal}; }} else {{ {other}; }}", "the then branch")
             check(f"if 2 < 1 {{ {other}; }} else {{ {literal}; }}", "the else branch")
             check(f"match 2 {{ case 1 {{ {other}; }} case 2 {{ {literal}; }} else {{ {other}; }} }}", "a match arm")
-            if empty:
-                program.skip(298)
-            else:
-                check(f"false ?? {other} !! {literal}", "a boolean choice")
+            check(f"false ?? {other} !! {literal}", "a boolean choice")
             check(f"loop {{ last {literal}; }}", "loop last")
             check(f"(0..0).reduce({literal}) -> acc, i {{ acc; }}", "an initial reduce value")
             check(f"try {{ {literal}; }} catch e is Error {{ {other}; }}", "a try value")
@@ -1025,8 +1021,8 @@ def strings_family():
             batch.is_(f"{L} + {Rr}", lit_str(left + right), f"{label}: +")
             batch.is_(f"{L} == {Rr}", lit_bool(left == right), f"{label}: ==")
             batch.ok(f"{receiver(L)}.order({Rr}) == {ORDER[cmp(left, right)]}", f"{label}: order by code point")
-            batch.is_(f"{receiver(L)}.less({Rr})", lit_bool(len(left) < len(right)), f"{label}: less compares lengths (#281)")
-            batch.is_(f"{receiver(L)}.less_or_equal({Rr})", lit_bool(len(left) <= len(right)), f"{label}: less_or_equal")
+            batch.is_(f"{receiver(L)}.less({Rr})", lit_bool(left < right), f"{label}: less by code point")
+            batch.is_(f"{receiver(L)}.less_or_equal({Rr})", lit_bool(left <= right), f"{label}: less_or_equal by code point")
             batch.is_(f"[{L}, {Rr}].join({lit_str(',')})", lit_str(left + "," + right), f"{label}: join")
     return batch.programs
 
@@ -1050,7 +1046,7 @@ ELEMENTS = [
     ("Reading", [("empty",), ("value", 1), ("pair", 1, 2)],
      lambda v: "Reading.empty" if v[0] == "empty" else f"Reading.{v[0]}({', '.join(map(lit_int, v[1:]))})", None),
 ]
-MAP_KEYS = ["int", "string", "bool", "char", "Status", "float", "Point"]
+MAP_KEYS = ["int", "string", "bool", "char", "Status", "float", "rat", "Point"]
 SHAPES_ARRAY = [(), (0,), (0, 1), (0, 1, 0), (2, 1, 0, 1)]
 SHAPES_MAP = [(), (0,), (1, 0), (0, 1, 2), (2, 0)]
 
@@ -1096,10 +1092,6 @@ def collections_family():
                 program.ok(f"{xs}.drop({k}) == {dropped[k]}", f"{desc}.drop({k})")
             program.ok(f"{xs}.reversed() == {backwards}", f"{desc}.reversed()")
             for v in values:
-                if type_name in ("Maybe<int>", "Reading"):
-                    program.skip(300)
-                    program.skip(300)
-                    continue
                 program.is_(f"{xs}.contains({literal(v)})", lit_bool(v in vals), f"{desc}.contains({literal(v)})")
                 program.is_(f"{xs}.index_of({literal(v)}) else -1", lit_int(vals.index(v) if v in vals else -1), f"{desc}.index_of({literal(v)})")
             program.ok(f"({xs}.map() -> v {{ v; }}) == {xs}", f"{desc}: map identity")
@@ -1145,10 +1137,7 @@ def collections_family():
             program.ok(f"{m}.values() == {vs}", f"{desc}.values() follow the keys")
             for i, v in enumerate(values):
                 program.is_(f"{m}.has({literal(v)})", lit_bool(i in shape), f"{desc}.has({literal(v)})")
-                if type_name == "float":
-                    program.skip(301)
-                else:
-                    program.is_(f"{m}[{literal(v)}] else -1", lit_int(i + 1 if i in shape else -1), f"{desc}[{literal(v)}] else")
+                program.is_(f"{m}[{literal(v)}] else -1", lit_int(i + 1 if i in shape else -1), f"{desc}[{literal(v)}] else")
             program.is_(f"{m}.reduce(0) -> sum, k, v {{ sum + v; }}", lit_int(sum(i + 1 for i in set(shape))), f"{desc}: reduce over values")
             program.is_(f"({m}.filter() -> k, v {{ v > 1; }}).size()", lit_int(sum(1 for i in set(shape) if i + 1 > 1)), f"{desc}: filter")
             program.ok(f"({m}.map() -> k, v {{ v; }}) == {vs}", f"{desc}: map visits keys in order")
@@ -1232,18 +1221,6 @@ def nesting_family():
             # A map value cannot start with `(` (#263).
             if outer == "map" and inner in starts_with_paren:
                 return 263
-        # A generic enum case passes T down to loop/last, else and reduce, through
-        # the constructs that hand their expected type on (#304).
-        passing = {"paren", "if-then", "if-else", "else-if", "match-int", "match-enum", "choice-bool",
-                   "choice-maybe", "try", "loop-last", "maybe-else", "variant"}
-        for start, outer in enumerate(chain):
-            if outer not in ("variant", "maybe-else"):
-                continue
-            for inner in chain[start + 1:]:
-                if inner in ("loop-last", "maybe-else", "reduce"):
-                    return 304
-                if inner not in passing:
-                    break
         return None
 
     def forbidden(chain):
@@ -1638,9 +1615,9 @@ def cast(source, value, target):
     whole = int(exact)  # truncates toward zero
     if target == "byte":
         return whole if 0 <= whole <= 255 else None
-    if not INT64[0] <= whole <= INT64[1]:
-        # The cast checks the signed-64 range only for float sources (#309).
-        return None if source == "float" else Held(309)
+    # `int` is arbitrary-precision: only a float source has a range (#309).
+    if source == "float" and not INT64[0] <= whole <= INT64[1]:
+        return None
     return whole
 
 
@@ -1875,9 +1852,6 @@ object Box<T> {
                     assert float(spelling.replace("_", "")) == value, spelling
                 for context, template, expected in spelling_contexts(kind, value, canonical):
                     program = batch.program()
-                    if spelling.startswith("```") and "\r" in spelling:
-                        program.skip(310)
-                        continue
                     expression = template.replace("{s}", spelling)
                     if "{const}" in expression:
                         name = program.fresh("LEX")
