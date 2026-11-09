@@ -8,26 +8,6 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
-### - `contains` and `index_of` work on arrays of enums with payloads —
-
-  `@Maybe<T>`, `@Presence<T>`, user enums, generic or not (#300). They use
-  the deep equality of array `==` and `-`: the case, then the payload. A
-  `±0.0` payload is the one corner where that differs from the variant's own
-  `==` (#314). A builtin missing on a collection names its full type
-  (`Type "@any" has no builtin action "contains"`, not `"array"`).
-  Conformance case `L05.variants.search`.
-
-### - `text()` of an error enum writes string payloads as Okkama string literals
-
-  (#306): quotes, backslashes, `\n`, `\t`, `\r` and other control characters
-  (`\u{1b}`) are escaped, printable Unicode is kept, nested error enums
-  follow the same rules. `Ferr.text("a \"q\"\n")` printed a bare quote and a
-  line break, so one payload could look like two arguments and an uncaught
-  report could span lines. One shared lowering helper does it for every
-  engine; the Book (14.2) gives the rules. Conformance case
-  `L07.error-enum.text-escaping`.
-
-
 ### Changed
 
 - A fenced raw string keeps every character between its delimiters,
@@ -53,6 +33,25 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   (6.6.1) and the Book (5.1.1, EN/RU) said every source was range-checked;
   the engines never did. Conformance case `L02.cast.int-arbitrary-precision`.
 
+### - `contains` and `index_of` work on arrays of enums with payloads —
+
+  `@Maybe<T>`, `@Presence<T>`, user enums, generic or not (#300). They use
+  the deep equality of array `==` and `-`: the case, then the payload. A
+  `±0.0` payload is the one corner where that differs from the variant's own
+  `==` (#314). A builtin missing on a collection names its full type
+  (`Type "@any" has no builtin action "contains"`, not `"array"`).
+  Conformance case `L05.variants.search`.
+
+### - `text()` of an error enum writes string payloads as Okkama string literals
+
+  (#306): quotes, backslashes, `\n`, `\t`, `\r` and other control characters
+  (`\u{1b}`) are escaped, printable Unicode is kept, nested error enums
+  follow the same rules. `Ferr.text("a \"q\"\n")` printed a bare quote and a
+  line break, so one payload could look like two arguments and an uncaught
+  report could span lines. One shared lowering helper does it for every
+  engine; the Book (14.2) gives the rules. Conformance case
+  `L07.error-enum.text-escaping`.
+
 ### - Sparrow core: a map lookup with `else` on a `float` key failed JIT
 
   verification (`arg has type f64, expected i64`): the key went to the
@@ -77,6 +76,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   a mismatch with `Box<int>`. Positional overloads, variadic constructors and
   real inference failures are unchanged; compile time is unchanged (median of
   10 over constructor-heavy t/ files: 0.153 → 0.154 s).
+
+### - A boolean choice or `if` with a literal condition whose selected branch is
+
+  an untagged `[]` or `[:]` (`(false ?? [1] !! []) == []`) no longer stops
+  the compiler with invalid IR (#298). The lowered value takes the analyzed
+  type of the whole expression (retagging the empty collection), for literal
+  and variable conditions alike; a literal condition still emits only the
+  selected branch. Conformance case `L05.choice.empty-collections`; compile
+  time of branch-heavy t/ files is unchanged (median of 10: 0.386 → 0.388 s).
 
 
 ### Added

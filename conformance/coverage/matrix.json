@@ -1704,12 +1704,14 @@
      "cases": [
       "L05.collections.map-difference",
       "L05.map.int-key-order",
-      "L05.map.key-types"
+      "L05.map.key-types",
+      "L05.map.rat-keys"
      ],
      "mandatory_cases": [
       "L05.collections.map-difference",
       "L05.map.int-key-order",
-      "L05.map.key-types"
+      "L05.map.key-types",
+      "L05.map.rat-keys"
      ],
      "requirement": "required"
     },
@@ -1717,12 +1719,14 @@
      "cases": [
       "L05.collections.map-merge",
       "L05.map.fallback-lazy",
-      "L05.map.object-key"
+      "L05.map.object-key",
+      "L05.map.rat-keys"
      ],
      "mandatory_cases": [
       "L05.collections.map-merge",
       "L05.map.fallback-lazy",
-      "L05.map.object-key"
+      "L05.map.object-key",
+      "L05.map.rat-keys"
      ],
      "requirement": "required"
     },
@@ -1748,13 +1752,15 @@
       "L05.collections.map-difference",
       "L05.collections.map-merge",
       "L05.map.access",
-      "L05.map.object-key"
+      "L05.map.object-key",
+      "L05.map.rat-keys"
      ],
      "mandatory_cases": [
       "L05.collections.map-difference",
       "L05.collections.map-merge",
       "L05.map.access",
-      "L05.map.object-key"
+      "L05.map.object-key",
+      "L05.map.rat-keys"
      ],
      "requirement": "required"
     }
@@ -2909,12 +2915,10 @@
     "boundary": {
      "cases": [
       "L07.error-enum.non-exhaustive-match",
-      "L07.error-enum.text-escaping",
       "L07.error-enum.throw-and-catch"
      ],
      "mandatory_cases": [
       "L07.error-enum.non-exhaustive-match",
-      "L07.error-enum.text-escaping",
       "L07.error-enum.throw-and-catch"
      ],
      "requirement": "required"
@@ -27005,12 +27009,14 @@
     "boundary": {
      "cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
      ],
      "mandatory_cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
@@ -27020,12 +27026,14 @@
     "interaction": {
      "cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
      ],
      "mandatory_cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
@@ -27056,12 +27064,14 @@
     "normal": {
      "cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
      ],
      "mandatory_cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
@@ -27185,25 +27195,21 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L05.variants.case-layouts",
       "L05.variants.nested"
      ],
      "mandatory_cases": [
-      "L05.variants.case-layouts",
       "L05.variants.nested"
      ],
      "requirement": "required"
     },
     "interaction": {
      "cases": [
-      "L05.variants.case-layouts",
       "L05.variants.evaluation",
       "L05.variants.modules",
       "L05.variants.ownership",
       "L05.variants.payload"
      ],
      "mandatory_cases": [
-      "L05.variants.case-layouts",
       "L05.variants.evaluation",
       "L05.variants.modules",
       "L05.variants.ownership",
@@ -27226,11 +27232,9 @@
     },
     "normal": {
      "cases": [
-      "L05.variants.case-layouts",
       "L05.variants.payload"
      ],
      "mandatory_cases": [
-      "L05.variants.case-layouts",
       "L05.variants.payload"
      ],
      "requirement": "required"
@@ -28645,6 +28649,50 @@
    ],
    "status": "mandatory",
    "title": "length() and slice() count Unicode code points; slice never clamps"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L02.string.order-consistent"
+     ],
+     "mandatory_cases": [
+      "L02.string.order-consistent"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L02.string.order-consistent"
+     ],
+     "mandatory_cases": [
+      "L02.string.order-consistent"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: the actions accept any two strings; < on strings is VAL.ORDERING's invalid aspect"
+    },
+    "normal": {
+     "cases": [
+      "L02.string.order-consistent"
+     ],
+     "mandatory_cases": [
+      "L02.string.order-consistent"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "VAL.STRING-ORDER",
+   "discrepancies": [],
+   "family": "Values and operators",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+   ],
+   "status": "mandatory",
+   "title": "string less, less_or_equal and order compare lexicographically by code point: one order per type (#281)"
   },
   {
    "aspects": {
@@ -30983,5 +31031,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "68f542e63f5106a641e04fa3bbd82bb4070557c820b798ecd5d8ef33e3819c7a"
+ "suite_tree_sha256": "d3a58f919a7468c9b16c179a17c799e8bc7dfc75cf775869d55d095b75d0e4c9"
 }

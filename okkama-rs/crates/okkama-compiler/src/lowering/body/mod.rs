@@ -1642,6 +1642,17 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         }
     }
 
+    /// The value of a branching expression with the analyzed type of the whole
+    /// expression (#298): a selected or joined untagged `[]`/`[:]` is
+    /// retagged to it, whether the condition was a literal or not.
+    fn conform(&mut self, out: Out, expr: &'r thir::Expr, span: Span) -> Result<Out> {
+        let Out::Value(value) = out else {
+            return Ok(out);
+        };
+        let target = self.expr_type(expr)?;
+        Ok(Out::Value(self.normalize(&value, &target, span)))
+    }
+
     /// Тип слияния значений: тегированная коллекция, иначе `C` вместо `^C`.
     fn join_type(types: &[Type]) -> Type {
         if let Some(tagged) = types.iter().find(|ty| match ty {
@@ -2207,7 +2218,10 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 condition,
                 then_block,
                 else_block,
-            } => self.if_expr(condition, then_block, else_block.as_ref(), want, span),
+            } => {
+                let out = self.if_expr(condition, then_block, else_block.as_ref(), want, span)?;
+                self.conform(out, expr, span)
+            }
             ExprKind::Match(body) => self.match_body(body, want, span),
             ExprKind::Loop(block) => self.loop_expr(block, want, span),
             ExprKind::For {
