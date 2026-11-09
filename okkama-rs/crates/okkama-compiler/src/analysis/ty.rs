@@ -232,6 +232,25 @@ impl Ty {
         }
     }
 
+    /// Встречается ли один из параметров `params`.
+    pub fn mentions(&self, params: &[ParamId]) -> bool {
+        match self {
+            Ty::Param(param) => params.contains(param),
+            Ty::Array(inner) | Ty::Successor(inner) | Ty::Varargs(inner) => inner.mentions(params),
+            Ty::Map(key, value) => key.mentions(params) || value.mentions(params),
+            Ty::Object(_, args)
+            | Ty::Role(_, args)
+            | Ty::Variant(_, args)
+            | Ty::Cap(_, args, _) => args.iter().any(|arg| arg.mentions(params)),
+            Ty::Action(action) => {
+                action.params.iter().any(|param| param.mentions(params))
+                    || action.result.as_ref().is_some_and(|result| result.mentions(params))
+            }
+            Ty::Future(Some(inner)) => inner.mentions(params),
+            _ => false,
+        }
+    }
+
     /// Встречается ли параметр типа.
     pub fn mentions_param(&self) -> bool {
         match self {

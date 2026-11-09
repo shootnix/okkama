@@ -78,7 +78,18 @@ impl Checker<'_, '_> {
                 .filter_map(|(p, t)| t.clone().map(|t| (*p, t)))
                 .collect();
             let target = pattern.subst(&env);
-            let value = self.value(&arg.value, Some(&target));
+            // A parameter of this enum not inferred yet is no expected type:
+            // the argument itself gives the evidence (#304), and the coercion
+            // below checks it against the solved specialization.
+            let unresolved: Vec<_> = inference
+                .params
+                .iter()
+                .zip(&inference.bindings)
+                .filter(|(_, binding)| binding.is_none())
+                .map(|(param, _)| *param)
+                .collect();
+            let hint = (!target.mentions(&unresolved)).then_some(&target);
+            let value = self.value(&arg.value, hint);
             self.unify(&mut inference, pattern, &Self::ty_of(&value).taken());
             values.push(value);
         }

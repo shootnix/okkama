@@ -6,6 +6,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Fixed
+
+- Inference: a generic enum case no longer passes its uninferred `T` as the
+  expected type of a payload (#304), so `Maybe.some(loop { last 42; })`,
+  `Maybe.some(Maybe.some(42) else 0)`, `Maybe.some(xs.reduce(0) -> …)` and
+  `Slot.full(…)` with such payloads compile; `T` comes from the payload and
+  every payload is then checked against the solved specialization. Explicit
+  and contextual specializations still guide the payloads; real conflicts
+  read `cannot be both int and string`. Conformance case
+  `L05.variants.inferred-payloads`.
+
 ### Added
 
 - `rat` is a map key type (#296): `%rat:V`, rat-key literals, indexing,
