@@ -159,6 +159,9 @@ struct BodyLowerer<'c, 'r, 'a> {
     /// построенный в этой точке, и значения его полей; конец конструктора
     /// возвращает его же.
     early_self: Option<(ValueId, Vec<ValueId>)>,
+    /// Fields bound after `self` escaped: `obj.init` on every path that binds
+    /// them, so their joined value need not match `early_self` (#279).
+    escaped_inits: Vec<bool>,
     /// Scope of each `reduce` whose accumulator is a builder (#243), innermost
     /// last: what its block pushes is handed to that scope (#266).
     builder_homes: Vec<usize>,
@@ -294,6 +297,7 @@ fn lowerer_for<'c, 'r, 'a>(
         field_flags: Vec::new(),
         flag_values: None,
         early_self: None,
+        escaped_inits: Vec::new(),
         builder_homes: Vec::new(),
         ctx,
     }
@@ -1400,7 +1404,11 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                     .iter()
                     .zip(&fields)
                     .enumerate()
-                    .all(|(index, (known, bound))| Some(index) == pending || known == bound) =>
+                    .all(|(index, (known, bound))| {
+                        Some(index) == pending
+                            || known == bound
+                            || self.escaped_inits.get(index).copied().unwrap_or(false)
+                    }) =>
             {
                 if let (Some(field), Some((_, no))) = (pending, self.flag_values) {
                     self.b.emit_void(
@@ -1857,8 +1865,19 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
 
     fn stmts(&mut self, stmts: &'r [thir::Stmt], want: bool) -> Result<Out> {
         let mut out = Out::Unit;
+        // Statements of the constructor body itself: the first one that uses
+        // `self` as a value builds the object before it starts, at a point
+        // that dominates the rest of the constructor (#279), not inside a
+        // loop or a branch of that statement.
+        let body = self.kind == Kind::Ctor && std::ptr::eq(stmts.as_ptr(), self.body.block.stmts.as_ptr());
         for (index, stmt) in stmts.iter().enumerate() {
             let last = index + 1 == stmts.len();
+            if body
+                && self.early_self.is_none()
+                && thir::stmt_contains(stmt, &|expr| matches!(expr.kind, thir::ExprKind::SelfValue))
+            {
+                self.constructed_self(stmt.span)?;
+            }
             let result = self.stmt(stmt, want && last)?;
             // Код после ухода управления проверен анализом и не исполняется.
             if matches!(result, Out::Diverged) || !self.b.is_open() {
@@ -1931,6 +1950,10 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         if let Some((built, fields)) = &mut self.early_self {
             let built = *built;
             fields[field] = typed.value;
+            if self.escaped_inits.len() <= field {
+                self.escaped_inits.resize(field + 1, false);
+            }
+            self.escaped_inits[field] = true;
             self.b.emit_void(
                 InstKind::ObjInit {
                     object: built,

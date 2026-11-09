@@ -456,3 +456,32 @@ fn reduce_accumulators_grow_in_place_when_nothing_else_sees_them() {
     // Captured by an anonymous action: copied.
     assert_eq!(grows("let xs = (1..=3).reduce([0]) -> acc, n { let f = () is int { acc.size(); }; acc + [f()]; }; xs.size();"), (false, true));
 }
+
+#[test]
+fn an_early_self_inside_a_loop_or_branch_is_built_once_before_its_statement() {
+    // #279: the first `self` value in a map/filter/reduce block or in one branch
+    // built the object there, and later uses were not dominated by it.
+    let objects = "object Leaf { has up is Tree; has tag is int; Leaf(:up, :tag); }
+        object Judge { Judge(); keep(tree is Tree, tag is int) is bool { tag > 0; } }";
+    for body in [
+        "leaves = tags.map() -> tag { Leaf(up: self, tag: tag); }; extra = Maybe.none;",
+        "leaves = tags.filter() -> tag { Judge().keep(self, tag); }.map() -> tag { Leaf(up: self, tag: tag); }; extra = Maybe.none;",
+        "leaves = []; extra = Maybe.some(tags.reduce(0) -> sum, tag { if Judge().keep(self, tag) { sum + tag; } else { sum; } });",
+        "leaves = tags.map() -> row { tags.map() -> col { Leaf(up: self, tag: row + col); }[0]; }; extra = Maybe.none;",
+        "if tags.size() > 1 { extra = Maybe.some(if Judge().keep(self, 1) { 1; } else { 0; }); } else { extra = Maybe.none; } leaves = [];",
+    ] {
+        let text = format!(
+            "module app v1.0.0; {objects}
+            object Tree {{ has leaves is @Leaf; has extra is Maybe<int>;
+                Tree(tags is @int) {{ {body} }} }}
+            main() is int {{ Tree([1, 2]); 0; }}"
+        );
+        let module = lower(&text).unwrap_or_else(|error| panic!("{body}: {error}"));
+        ir::verify(&module).unwrap_or_else(|error| panic!("{body}: {error}"));
+        let listing = module.to_string();
+        let start = listing.find("func @Tree.new").expect("the constructor is printed");
+        let end = listing[start..].find("\n}\n").map_or(listing.len(), |end| start + end);
+        // One object per call, never one per iteration.
+        assert_eq!(listing[start..end].matches("obj.new").count(), 1, "{body}");
+    }
+}

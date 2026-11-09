@@ -875,6 +875,14 @@ pub fn first_expr(block: &Block, test: &dyn Fn(&Expr) -> bool) -> Option<Span> {
     found
 }
 
+/// Whether an expression of `stmt` (nested blocks included, anonymous
+/// actions not) passes `test`.
+pub fn stmt_contains(stmt: &Stmt, test: &dyn Fn(&Expr) -> bool) -> bool {
+    let mut found = false;
+    each_stmt_expr(stmt, &mut |expr| found = found || first_in(expr, test).is_some());
+    found
+}
+
 fn first_in(expr: &Expr, test: &dyn Fn(&Expr) -> bool) -> Option<Span> {
     if test(expr) {
         return Some(expr.span);

@@ -72,6 +72,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Constructors: the first `self` value inside a `map`, `filter` or `reduce`
+  block, a nested block or one branch of an `if` no longer crashes lowering
+  with "definition does not dominate" (#279). The early object is built
+  once, just before the constructor statement that holds that first use, so
+  it dominates the rest of the constructor; fields bound after it are set
+  with `obj.init` on every path, which also lifts the "field assignment
+  after `self` escaped" limitation for fields bound in branches. Bound
+  fields, `$pending` (#271), identity and cyclic equality (#278) are kept;
+  a constructor that never uses `self` as a value still builds its object
+  at the end. Conformance `L04.invariant.early-self-in-blocks` and
+  `invariant.escaped-self-in-block-failed-constructor`; Bible 12 (EN/RU).
+
 - Roles: `contains` and `index_of` on a `@Role` take an implementer, wrapped
   with `role.wrap` as an action parameter takes it (#299):
   `shapes.contains(Square(side: 2))` was rejected with "Cannot pass Square to
