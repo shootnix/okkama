@@ -373,7 +373,7 @@ drivers `std/db/sqlite.ok` (worker thread in Rust) and `std/db/postgres.ok`
 4. Merge the release branch into `develop` (fast-forward history on
    `develop`), tag `vX.Y.Z` (annotated, must match Cargo.toml), push `develop`,
    the release branch and the tag: `.github/workflows/packages.yml` builds
-   tar.gz/.pkg/.deb and the GitHub Release; pushes to `develop` publish the
+   tar.gz/.pkg/.deb/.rpm and the GitHub Release; pushes to `develop` publish the
    `nightly` pre-release.
 5. Install locally: `./install.sh` (or `make install-pgo`).
 6. Delete merged branches locally and on GitHub.

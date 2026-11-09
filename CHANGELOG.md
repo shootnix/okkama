@@ -6,6 +6,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Added
+
+- Packages: an `.rpm` for Linux next to the `.deb` (#313), built by
+  `tools/package.sh --installer` from the same tree with `rpmbuild`
+  (`GPL-3.0-only`, `Requires: glibc >= 2.35`, a nightly version written with
+  `~`), with its `.sha256`, in releases and nightlies. CI installs it on
+  Fedora 41 and runs the smoke programs. The binaries need glibc 2.35, so
+  the RPM targets Fedora 36+, RHEL 10 and openSUSE Tumbleweed; RHEL 8/9 need
+  an older-glibc build (noted in #313).
+
 ### Fixed
 
 - Packages: the publish job downloads only the package artifacts
