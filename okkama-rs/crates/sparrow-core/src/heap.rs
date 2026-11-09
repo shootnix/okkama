@@ -65,6 +65,9 @@ pub const TRIE: u64 = 1 << 24;
 /// A flat array made by `replaced` from one of [`TRIE_MIN`] elements or
 /// more: replacing in it again is a chain, which becomes a trie.
 pub const REPLACED: u64 = 1 << 25;
+/// A flat array made by prepending to an array of at least [`CHAIN_MIN`]
+/// elements (`[x] + items`): prepending to it again is a chain (#247).
+pub const PREPENDED: u64 = 1 << 26;
 /// Arrays shorter than this are copied by `replaced`, as before.
 pub const TRIE_MIN: usize = 64;
 const TRIE_BITS: u32 = 5;
@@ -562,10 +565,12 @@ impl Heap {
     }
 
     /// A buffer with room for `capacity` elements (rounded up to a power of
-    /// two) holding `parts` in order.
-    pub fn allocate_buffer(&mut self, repr: Repr, parts: &[&[Word]], capacity: usize) -> Word {
+    /// two) holding `parts` in order from slot `front` on; the slots before
+    /// them hold [`free_slot`], so that a prepend can claim them (#247) and
+    /// the collector, which traces the buffer from slot 0, finds no pointer.
+    pub fn allocate_buffer(&mut self, repr: Repr, parts: &[&[Word]], capacity: usize, front: usize) -> Word {
         let capacity = capacity.next_power_of_two();
-        let used: usize = parts.iter().map(|part| part.len()).sum();
+        let used: usize = front + parts.iter().map(|part| part.len()).sum::<usize>();
         assert!(used <= capacity, "buffer too small");
         self.counted("array buffer", 0, capacity + 1);
         let buffer = self.allocate(capacity + 1);
@@ -574,13 +579,31 @@ impl Heap {
             *(buffer as *mut u64) = header(ARRAY, repr, used as u32)
                 | BUFFER
                 | (u64::from(capacity.trailing_zeros()) << CAPACITY_SHIFT);
-            let mut at = buffer + 8;
+            std::slice::from_raw_parts_mut((buffer + 8) as *mut u64, front).fill(free_slot(repr));
+            let mut at = buffer + 8 + front as Word * 8;
             for part in parts {
                 std::ptr::copy_nonoverlapping(part.as_ptr(), at as *mut u64, part.len());
                 at += part.len() as Word * 8;
             }
         }
         buffer
+    }
+
+    /// Can `count` elements go right before slot `start` of `buffer`? Only
+    /// when `start` is the buffer's lowest written slot (the slot before it
+    /// is still free) and there is room.
+    pub fn buffer_front_free(&self, buffer: Word, start: usize, count: usize, repr: Repr) -> bool {
+        // SAFETY: slot `start - 1` is inside the buffer when `start > 0`.
+        start >= count && count > 0 && unsafe { *((buffer + 8 + (start as Word - 1) * 8) as *const u64) } == free_slot(repr)
+    }
+
+    /// Write `items` right before slot `start` (the caller checked the room).
+    pub fn buffer_prepend(&mut self, buffer: Word, start: usize, items: &[Word]) {
+        assert!(start >= items.len(), "buffer underflow");
+        // SAFETY: the slots before `start` are inside the buffer and free.
+        unsafe {
+            std::ptr::copy_nonoverlapping(items.as_ptr(), (buffer + 8 + (start - items.len()) as Word * 8) as *mut u64, items.len());
+        }
     }
 
     /// The frontier (slots written) and the capacity of a buffer.
@@ -1058,6 +1081,13 @@ impl Heap {
     }
 }
 
+/// The word of a buffer slot nothing has written (#247): no element is ever
+/// this word — an `int` or a reference is never 0, a raw word never the
+/// unbound marker — and neither is a pointer to the collector.
+pub fn free_slot(repr: Repr) -> Word {
+    if repr == Repr::Raw { crate::word::UNBOUND_RAW } else { crate::word::UNBOUND }
+}
+
 /// The two boxes of a payload cell (`Box<Box<dyn Payload>>`): the fat
 /// pointer and the allocator's rounding of each.
 const BOX_BYTES: usize = 32;
@@ -1333,7 +1363,7 @@ mod tests {
     fn shared_versions_keep_their_buffer_and_elements() {
         let mut heap = Heap::new(layouts());
         let texts: Vec<Word> = (0..40).map(|n| heap.allocate_text(&n.to_string())).collect();
-        let buffer = heap.allocate_buffer(Repr::Ref, &[&texts[..30]], 200);
+        let buffer = heap.allocate_buffer(Repr::Ref, &[&texts[..30]], 200, 0);
         assert_eq!(heap.buffer_room(buffer), (30, 256));
         let short = heap.allocate_view(Repr::Ref, buffer, 0, 30);
         heap.buffer_extend(buffer, &texts[30..40]);
@@ -1393,6 +1423,40 @@ mod tests {
             assert_eq!(&*heap.elements(newest), &model[..]);
             heap.collect(|visit| visit(newest, Repr::Ref));
             assert_eq!(&*heap.elements(newest), &model[..]);
+        }
+    }
+
+    /// Buffers grow at both ends (#247): a prepend claims the free slots right
+    /// before the lowest written one, a second prepend to the same version
+    /// finds them taken, and the free slots in front are no pointers to the
+    /// collector, whatever the representation.
+    #[test]
+    fn buffers_grow_at_both_ends() {
+        let mut heap = Heap::new(layouts());
+        for repr in [Repr::Ref, Repr::Int, Repr::Raw] {
+            let items: Vec<Word> = (0..10i64)
+                .map(|n| match repr {
+                    Repr::Ref => heap.allocate_text(&n.to_string()),
+                    Repr::Int => heap.int(n),
+                    _ => n as u64 * 3,
+                })
+                .collect();
+            let buffer = heap.allocate_buffer(repr, &[&items[5..]], 32, 20);
+            let base = heap.allocate_view(repr, buffer, 20, 5);
+            assert!(heap.buffer_front_free(buffer, 20, 2, repr));
+            heap.buffer_prepend(buffer, 20, &items[3..5]);
+            let longer = heap.allocate_view(repr, buffer, 18, 7);
+            assert!(!heap.buffer_front_free(buffer, 20, 1, repr), "the same version prepended to twice copies");
+            assert!(heap.buffer_front_free(buffer, 18, 3, repr));
+            assert!(!heap.buffer_front_free(buffer, 18, 19, repr), "no room for 19 before slot 18");
+            assert_eq!(&*heap.elements(longer), &items[3..10]);
+            assert_eq!(&*heap.elements(base), &items[5..10]);
+            heap.collect(|visit| {
+                visit(longer, Repr::Ref);
+                visit(base, Repr::Ref);
+            });
+            assert_eq!(&*heap.elements(longer), &items[3..10]);
+            assert_eq!(&*heap.elements(base), &items[5..10]);
         }
     }
 

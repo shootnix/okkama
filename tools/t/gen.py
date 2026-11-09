@@ -1225,6 +1225,11 @@ PERSISTENCE_DECLARATIONS = """object Grow {
         if i == n { return items; }
         self.front(i + 1, n, [i * 7 % 101] + items);
     }
+    alternate(i is int, n is int, items is @int) is @int {
+        if i == n { return items; }
+        let grown = if i % 2 == 0 { items + [i * 7 % 101]; } else { [i * 7 % 101] + items; };
+        self.alternate(i + 1, n, grown);
+    }
     log(i is int, n is int, log is Log) is Log {
         if i == n { return log; }
         self.log(i + 1, n, log.add(i * 7 % 101));
@@ -1315,6 +1320,20 @@ def persistence_family():
         program = batch.program()
         desc = f"{n} elements"
         program.ok(f"Grow().front(0, {n}, @int()) == {arr(list(reversed(model)))}", f"{desc} by [x] + items")
+        # Prepends (#247): branches from one version, a version extended at
+        # both ends, and the origin unchanged after all of them.
+        alternated = []
+        for i in range(n):
+            alternated = alternated + [v(i)] if i % 2 == 0 else [v(i)] + alternated
+        p, pa, pb, pc, both = (program.fresh(x) for x in ("p", "pa", "pb", "pc", "both"))
+        rev = list(reversed(model))
+        prepends = [f"let {p} = Grow().front(0, {n}, @int());", f"let {pa} = [1000] + {p};", f"let {pb} = [2000, 2001] + {p};",
+                    f"let {pc} = [3000] + {pa};", f"let {both} = [4000] + {p} + [4001];"]
+        program.ok(f"{pa} == {arr([1000] + rev)} && {pb} == {arr([2000, 2001] + rev)}", f"{desc}: two prepends to one version", prepends)
+        program.ok(f"{pc} == {arr([3000, 1000] + rev)}", f"{desc}: a prepended version prepended again")
+        program.ok(f"{both} == {arr([4000] + rev + [4001])}", f"{desc}: both ends at once")
+        program.ok(f"{p} == {arr(rev)}", f"{desc}: the origin is unchanged")
+        program.ok(f"Grow().alternate(0, {n}, @int()) == {arr(alternated)}", f"{desc} by alternating ends")
         texts = [str(x) for x in model]
         program.is_(f"Grow().texts(0, {n}, @string()).join(\",\")", lit_str(",".join(texts)), f"{desc}: strings by a chain")
         rows = program.fresh("rows")

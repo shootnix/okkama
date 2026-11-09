@@ -421,9 +421,45 @@ fn append_shared(runtime: &mut Runtime, repr: Repr, words: &[Word], size: usize)
             return Some(runtime.heap.allocate_view(repr, buffer, start, size));
         }
     }
+    // A new buffer twice the size, a quarter of its room in front, so that
+    // a chain that also prepends does not copy at every turn.
     let head = runtime.heap.elements(first).into_owned();
-    let buffer = runtime.heap.allocate_buffer(repr, &[&head, &rest], 2 * size);
-    Some(runtime.heap.allocate_view(repr, buffer, 0, size))
+    let capacity = (2 * size).next_power_of_two();
+    let front = (capacity - size) / 4;
+    let buffer = runtime.heap.allocate_buffer(repr, &[&head, &rest], capacity, front);
+    Some(runtime.heap.allocate_view(repr, buffer, front, size))
+}
+
+/// `… + [x] + items` when `items` continues a chain of prepends (#247): the
+/// mirror of [`append_shared`]. Written in place right before `items` when
+/// it starts at its buffer's lowest written slot and there is room, else
+/// into a new buffer twice the size with three quarters of its room in
+/// front. `None` for anything else.
+fn prepend_shared(runtime: &mut Runtime, repr: Repr, words: &[Word], size: usize) -> Option<Word> {
+    use crate::heap::{PREPENDED, SHARED, payload};
+    if !shared_arrays() || words.len() < 2 {
+        return None;
+    }
+    let last = words[words.len() - 1];
+    let header = runtime.heap.header_of(last);
+    if header & (SHARED | PREPENDED) == 0 {
+        return None;
+    }
+    let length = payload(header) as usize;
+    let front: Vec<Word> = words[..words.len() - 1].iter().flat_map(|&w| runtime.heap.elements(w).into_owned()).collect();
+    if header & SHARED != 0 {
+        let (buffer, start) = runtime.heap.shared(last);
+        if runtime.heap.buffer_front_free(buffer, start, front.len(), repr) {
+            runtime.heap.buffer_prepend(buffer, start, &front);
+            return Some(runtime.heap.allocate_view(repr, buffer, start - front.len(), size));
+        }
+    }
+    let tail = runtime.heap.elements(last).into_owned();
+    let capacity = (2 * size).next_power_of_two();
+    let room = (capacity - size) * 3 / 4;
+    let buffer = runtime.heap.allocate_buffer(repr, &[&front, &tail], capacity, room);
+    debug_assert_eq!(length, tail.len());
+    Some(runtime.heap.allocate_view(repr, buffer, room, size))
 }
 
 // ---- structural equality ----
@@ -1151,12 +1187,19 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             if let Some(array) = append_shared(runtime, repr, &words, size) {
                 return Ok(array);
             }
+            if let Some(array) = prepend_shared(runtime, repr, &words, size) {
+                return Ok(array);
+            }
             let mut items = Vec::with_capacity(size);
             for &w in &words {
                 items.extend_from_slice(&runtime.heap.elements(w));
             }
             let array = new_array(runtime, function, dst.0, repr, &items);
             let first = crate::heap::payload(runtime.heap.header_of(words[0])) as usize;
+            let last = crate::heap::payload(runtime.heap.header_of(words[words.len() - 1])) as usize;
+            if shared_arrays() && words.len() > 1 && first < crate::heap::CHAIN_MIN && last >= crate::heap::CHAIN_MIN {
+                runtime.heap.mark(array, crate::heap::PREPENDED);
+            }
             if shared_arrays() && words.len() > 1 && first >= crate::heap::CHAIN_MIN {
                 runtime.heap.mark_appended(array);
             }
