@@ -1,0 +1,40 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Counter {
+    has count is int;
+    Counter(:count);
+    count() is int { count; }
+    bumped() is ^Counter { ^count = count + 1; }
+}
+
+object Apply {
+    Apply();
+    call(action is () is int) is int { action(); }
+}
+
+object Maker {
+    Maker();
+    made() is () is int {
+        let later = Counter(count: 7).bumped();
+        () is int { later.count(); };
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let first = Counter(count: 1).bumped();
+    let passed = () is int { first.count(); };
+    out.writeln(Apply().call(passed).string());
+    let second = Counter(count: 2).bumped();
+    let stored = [() is int { second.count(); }];
+    out.writeln(stored.size().string());
+    let made = Maker().made();
+    out.writeln(made().string());
+    let third = Counter(count: 3).bumped();
+    let inner = () is int { third.count(); };
+    let outer = () is int { inner() * 10; };
+    out.writeln(outer().string());
+    0;
+}

@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Counter {
+    has count is int;
+    Counter(:count);
+    count() is int { count; }
+    bumped() is ^Counter { ^count = count + 1; }
+}
+
+main() is int {
+    let out = Stdout();
+    let later = Counter(count: 1).bumped();
+    let show = () is int { later.count(); };
+    let alias = show;
+    out.writeln("unreachable");
+    0;
+}

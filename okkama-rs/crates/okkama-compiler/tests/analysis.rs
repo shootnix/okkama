@@ -397,6 +397,113 @@ fn successor_obligations_are_checked_before_lowering() {
     }
 }
 
+/// Замыкание несёт обязательства захваченных successor (#322).
+#[test]
+fn closures_carry_successor_obligations() {
+    let objects = format!(
+        "{COUNTER} object Run {{ Run(); call(f is () is int) is int {{ f(); }} }} \
+         object Keep {{ has f is () is int; Keep(:f); }} \
+         object Make {{ Make(); \
+           made() is () is int {{ let c = C(); let d = c.inc(); () is int {{ d.value(); }}; }} \
+           returned() is () is int {{ let c = C(); let d = c.inc(); let show = () is int {{ d.value(); }}; return show; }} }}"
+    );
+    let unused = |name: &str| {
+        format!(
+            "Successor action result must be used; closure \"{name}\" captures it and can leave scope without being called, returned, passed or stored"
+        )
+    };
+    let start = "let c = C(); let d = c.inc(); let show = () is int { d.value(); };";
+    let leaked =
+        "Successor action result must be used; binding \"d\" can leave scope without consumption"
+            .to_string();
+    for (body, expected) in [
+        // Создание и локальная привязка не гасят.
+        (format!("{start} 0;"), unused("show")),
+        (format!("{start} let again = show; 0;"), unused("again")),
+        (format!("{start} let inner = show; let outer = () is int {{ inner(); }}; 0;"), unused("outer")),
+        // Вызов только на одной ветви, в теле цикла, которое может не выполниться.
+        (format!("{start} let f = 1 > 0; if f {{ show(); }} 0;"), unused("show")),
+        (format!("{start} for 1..=2 -> i {{ show(); }} 0;"), unused("show")),
+        (format!("{start} return 0;"), unused("show")),
+        // Сравнение — не использование.
+        (format!("{start} let same = show == show; 0;"), unused("show")),
+        // Отброшенное временное замыкание обязательство не гасит.
+        (
+            "let c = C(); let d = c.inc(); (() is int { d.value(); }); 0;".to_string(),
+            leaked.clone(),
+        ),
+        // Тело использует захват не на всех нормальных путях: замыкание его
+        // не несёт, и вызов не гасит (§11.1).
+        (
+            "let c = C(); let d = c.inc(); let f = 1 > 0; \
+             let show = () is int { if f { d.value(); } else { 0; } }; show();"
+                .to_string(),
+            leaked.clone(),
+        ),
+        (
+            "let c = C(); let d = c.inc(); let f = 1 > 0; \
+             let show = () is int { if f { return 0; } d.value(); }; show();"
+                .to_string(),
+            leaked.clone(),
+        ),
+        (
+            "let c = C(); let d = c.inc(); let show = () is int { let e = d; 0; }; show();"
+                .to_string(),
+            leaked.clone(),
+        ),
+        (
+            "let c = C(); let d = c.inc(); let show = () is int { for 1..=2 -> i { d.value(); } 0; }; show();"
+                .to_string(),
+            leaked.clone(),
+        ),
+    ] {
+        assert_eq!(
+            messages(&format!("{objects} main() is int {{ {body} }}")),
+            [expected],
+            "{body}"
+        );
+    }
+    for body in [
+        // Вызов, через алиас, сразу на месте, вложенно, на всех ветвях, в defer.
+        format!("{start} show();"),
+        format!("{start} let again = show; again();"),
+        "let c = C(); let d = c.inc(); (() is int { d.value(); })();".to_string(),
+        format!("{start} let outer = () is int {{ show(); }}; outer();"),
+        format!("{start} let f = 1 > 0; if f {{ show(); }} else {{ show() + 1; }}"),
+        format!("{start} defer show(); 0;"),
+        // Передача, хранение, возврат.
+        format!("{start} Run().call(show);"),
+        format!("{start} let all = [show]; 0;"),
+        format!("{start} let named = [\"show\": show]; 0;"),
+        format!("{start} let kept = Keep(f: show); 0;"),
+        format!("{start} let maybe = Maybe.some(show); 0;"),
+        "let made = Make().made(); made();".to_string(),
+        // Одно обязательство на два замыкания и прямое использование.
+        format!("{start} let other = () is int {{ d.value() + 1; }}; other();"),
+        format!("{start} d.value();"),
+        "let c = C(); let d = c.inc(); d.value(); let show = () is int { d.value(); }; 0;"
+            .to_string(),
+        // `panic` и `throw` — не нормальный выход; использование на всех
+        // остальных путях, в том числе через возврат и аргумент.
+        "let c = C(); let d = c.inc(); let f = 1 > 0; \
+         let show = () is int { if f { panic \"no\"; } d.value(); }; show();"
+            .to_string(),
+        "let c = C(); let d = c.inc(); let f = 1 > 0; \
+         let show = () is int { if f { return d.value(); } d.value() + 1; }; show();"
+            .to_string(),
+        "let c = C(); let d = c.inc(); \
+         let show = () is () is int { () is int { d.value(); }; }; let inner = show(); inner();"
+            .to_string(),
+        // Замыкание без successor не меняется.
+        "let n = 1; let plain = () is int { n; }; 0;".to_string(),
+    ] {
+        assert!(
+            messages(&format!("{objects} main() is int {{ {body} }}")).is_empty(),
+            "{body}"
+        );
+    }
+}
+
 #[test]
 fn constructor_fields_are_checked_before_lowering() {
     for (object, expected) in [

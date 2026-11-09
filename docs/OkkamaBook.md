@@ -2461,8 +2461,14 @@ try-entry obligations, so use only inside a try may need an additional use on
 the handler path. A reached defer can consume a binding at its own scope exit,
 after intervening rebinds. An early return from a nested scope conservatively
 cannot rely on an enclosing defer.
-Closure creation alone is not use: a closure carrying successor captures must
-be invoked, returned, passed, or stored. Await transfers a successor future's
+Closure creation alone is not use. A closure carries the obligations of the
+successors its body uses on every normal path (a body that uses a capture on
+one branch only does not carry it, and the capture must be used elsewhere).
+Binding the closure to a local or to aliases keeps them, and one obligation
+shared by several closures or aliases stays one. Invoking the closure uses
+them; returning it, passing it as an argument, or storing it in an aggregate or
+a field transfers them. A transfer, like passing a successor value, does not
+prove that the receiver ever calls it. Await transfers a successor future's
 obligation to its result. Runtime discard guards remain for dynamic cases.
 These checks concern language-level consumption, not persistence or business
 usefulness; they do not forbid using an already consumed object again.

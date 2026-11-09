@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.successor.closure-transferred",
+  "title": "passing, storing, returning or nesting a closure carries its captured successor",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "SUCC.MUST-USE",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "2\n1\n8\n40\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.1 (static successor consumption)"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #322",
+    "expected_basis": "spec 11.1: passing, returning or storing a closure through a consumer discharges what it carries; a closure captured by another closure carries its obligations along."
+  },
+  "status": "mandatory"
+}

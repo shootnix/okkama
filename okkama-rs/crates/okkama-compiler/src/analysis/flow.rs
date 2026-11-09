@@ -11,6 +11,15 @@
 //! погашение внутри тела не снимает внешнее обязательство. `throw` и `panic`
 //! вправе бросить обязательства: действие не завершилось успешно.
 //!
+//! **Замыкания (§11.1, #322).** Анонимное действие несёт непогашенные
+//! обязательства тех захваченных привязок, которые его тело использует на
+//! всех нормальных путях (повторный тихий проход тела с засеянными
+//! захватами), транзитивно через захваченные замыкания. Создание и локальная
+//! привязка их не гасят; гасит вызов значения-действия, а возврат, аргумент,
+//! элемент агрегата и поле передают их вместе с ним, как `Take` для `^C`.
+//! Передача — не исполнение: принявший код не обязан вызвать действие, как и
+//! принявший `^C` — использовать его.
+//!
 //! **Поля конструктора (§11.3).** Поле, не связанное ни на одном пути к концу
 //! конструктора, — ошибка; связанное не на всех путях проверяется во время
 //! исполнения. Чтение `self.field` до связывания на всех путях — ошибка.
@@ -110,6 +119,10 @@ struct Flow<'r, 'a> {
     loops: Vec<LoopFrame>,
     /// Объект строящегося конструктора.
     ctor_object: Option<super::ty::ObjectId>,
+    /// Тихий проход тела замыкания (#322): без сообщений; обязательства на
+    /// нормальных выходах (`return` и конец тела) собираются в `exits`.
+    silent: bool,
+    exits: Vec<Obligations>,
 }
 
 /// Проверки потока одного тела; ошибки — в `reg`.
@@ -124,6 +137,8 @@ pub(super) fn check(reg: &mut Registry<'_>, body: &Body) {
         defers: vec![Vec::new()],
         loops: Vec::new(),
         ctor_object,
+        silent: false,
+        exits: Vec::new(),
     };
     let mut state = State {
         pending: Obligations::new(),
@@ -178,8 +193,79 @@ fn initial_fields(
 
 impl<'r> Flow<'r, '_> {
     fn error(&mut self, span: Span, message: impl Into<String>) {
+        if self.silent {
+            return;
+        }
         self.reg.set_module(self.module);
         self.reg.error(span, message);
+    }
+
+    /// Обязательство уже сообщено: снять его, чтобы не повторять. Тихий
+    /// проход не снимает — иначе сообщённое выглядело бы использованным.
+    fn reported(&self, state: &mut State, obligations: impl IntoIterator<Item = u32>) {
+        if !self.silent {
+            for ob in obligations {
+                state.pending.remove(&ob);
+            }
+        }
+    }
+
+    /// Какие обязательства захватов несёт замыкание: те, что тело гасит на
+    /// всех нормальных путях. Тело уже проверено само; здесь — тихий проход,
+    /// где каждая захваченная привязка с непогашенным обязательством держит
+    /// своё (§11.1, #322).
+    fn closure_carries(
+        &mut self,
+        body: &Body,
+        captures: &[(LocalId, LocalId)],
+        state: &State,
+    ) -> Obligations {
+        let seeded: Vec<(LocalId, Obligations)> = captures
+            .iter()
+            .map(|(outer, inner)| {
+                (*inner, state.holds.get(outer.0).intersection(&state.pending).copied().collect())
+            })
+            .filter(|(_, outer): &(LocalId, Obligations)| !outer.is_empty())
+            .collect();
+        if seeded.is_empty() {
+            return Obligations::new();
+        }
+        let mut inner = Flow {
+            reg: &mut *self.reg,
+            module: body.module,
+            body,
+            next_obligation: 0,
+            scopes: vec![body.params.clone()],
+            defers: vec![Vec::new()],
+            loops: Vec::new(),
+            ctor_object: None,
+            silent: true,
+            exits: Vec::new(),
+        };
+        let mut start = State {
+            pending: Obligations::new(),
+            holds: Holds::default(),
+            fields: Vec::new(),
+        };
+        let mut seeds = Vec::new();
+        for (local, outer) in seeded {
+            let ob = inner.fresh();
+            start.pending.insert(ob);
+            start.holds.set(local.0, Obligations::from([ob]));
+            seeds.push((ob, outer));
+        }
+        if let Some(returned) = inner.block_inner(&body.block, body.returns_value, &mut start, false) {
+            inner.run_defers(&mut start);
+            inner.exits.push(start.pending.difference(&returned).copied().collect());
+        }
+        let exits = inner.exits;
+        let mut carried = Obligations::new();
+        for (seed, outer) in seeds {
+            if exits.iter().all(|pending| !pending.contains(&seed)) {
+                carried.extend(outer);
+            }
+        }
+        carried
     }
 
     fn fresh(&mut self) -> u32 {
@@ -235,15 +321,20 @@ impl<'r> Flow<'r, '_> {
                 })
                 .collect();
             if !leaking.is_empty() {
-                let message = format!(
-                    "Successor action result must be used; binding \"{}\" can leave scope without consumption",
-                    self.local_name(local)
-                );
+                let message = if matches!(self.body.locals[local.0].ty, Ty::Action(_)) {
+                    format!(
+                        "Successor action result must be used; closure \"{}\" captures it and can leave scope without being called, returned, passed or stored",
+                        self.local_name(local)
+                    )
+                } else {
+                    format!(
+                        "Successor action result must be used; binding \"{}\" can leave scope without consumption",
+                        self.local_name(local)
+                    )
+                };
                 self.error(span, message);
                 // Одно сообщение на обязательство.
-                for ob in leaking {
-                    state.pending.remove(&ob);
-                }
+                self.reported(state, leaking);
             }
         }
     }
@@ -273,9 +364,7 @@ impl<'r> Flow<'r, '_> {
         let pending: Obligations = value.intersection(&state.pending).copied().collect();
         if !pending.is_empty() && !self.held_by_any(state, &pending) {
             self.error(span, "Successor action result must be used");
-            for ob in pending {
-                state.pending.remove(&ob);
-            }
+            self.reported(state, pending);
         }
     }
 
@@ -383,6 +472,9 @@ impl<'r> Flow<'r, '_> {
                     None => Obligations::new(),
                 };
                 self.check_return(state, &returned, stmt.span);
+                if self.silent {
+                    self.exits.push(state.pending.difference(&returned).copied().collect());
+                }
                 None
             }
             StmtKind::Confirm {
@@ -405,7 +497,7 @@ impl<'r> Flow<'r, '_> {
             }
             StmtKind::Rethrow => None,
             StmtKind::BindField { field, value } | StmtKind::StageField { field, value } => {
-                self.expr(value, true, state)?;
+                self.transfer(value, state)?;
                 if let Some(bound) = state.fields.get_mut(*field) {
                     *bound = Bound::Yes;
                 }
@@ -431,9 +523,7 @@ impl<'r> Flow<'r, '_> {
                             self.local_name(*local)
                         );
                         self.error(stmt.span, message);
-                        for ob in old {
-                            state.pending.remove(&ob);
-                        }
+                        self.reported(state, old);
                     }
                 }
                 state.holds.set(local.0, new);
@@ -509,11 +599,34 @@ impl<'r> Flow<'r, '_> {
         Some(())
     }
 
+    /// Значение в передающей позиции (аргумент, элемент агрегата, поле):
+    /// значение-действие уносит обязательства своих захватов (#322).
+    fn transfer(&mut self, expr: &'r Expr, state: &mut State) -> Option<()> {
+        let held = self.expr(expr, true, state)?;
+        if matches!(expr.ty, Some(Ty::Action(_))) {
+            for ob in &held {
+                state.pending.remove(ob);
+            }
+        }
+        Some(())
+    }
+
+    fn transfers(
+        &mut self,
+        exprs: impl IntoIterator<Item = &'r Expr>,
+        state: &mut State,
+    ) -> Option<()> {
+        for expr in exprs {
+            self.transfer(expr, state)?;
+        }
+        Some(())
+    }
+
     fn expr_inner(&mut self, expr: &'r Expr, want: bool, state: &mut State) -> Option<Obligations> {
         let none = || Some(Obligations::new());
         match &expr.kind {
             ExprKind::VariantNew { values, .. } => {
-                self.values(values, state)?;
+                self.transfers(values, state)?;
                 none()
             }
             ExprKind::VariantTag(value) | ExprKind::VariantGet { value, .. } => {
@@ -753,19 +866,23 @@ impl<'r> Flow<'r, '_> {
                     | Callee::Test(_)
                     | Callee::FakeStorage(_) => {}
                 }
-                self.values(args, state)?;
+                self.transfers(args, state)?;
                 none()
             }
             ExprKind::CallValue { callee, args } => {
-                self.expr(callee, true, state)?;
-                self.values(args, state)?;
+                let carried = self.expr(callee, true, state)?;
+                self.transfers(args, state)?;
+                // Вызов значения-действия использует то, что оно несёт (#322).
+                for ob in &carried {
+                    state.pending.remove(ob);
+                }
                 none()
             }
             ExprKind::Array(parts) => {
                 for part in parts {
                     match part {
                         ArrayPart::Value(value) => {
-                            self.expr(value, true, state)?;
+                            self.transfer(value, state)?;
                         }
                         ArrayPart::Range { start, end, .. } => {
                             self.expr(start, true, state)?;
@@ -778,7 +895,7 @@ impl<'r> Flow<'r, '_> {
             ExprKind::Map(entries) => {
                 for (key, value) in entries {
                     self.expr(key, true, state)?;
-                    self.expr(value, true, state)?;
+                    self.transfer(value, state)?;
                 }
                 none()
             }
@@ -820,13 +937,14 @@ impl<'r> Flow<'r, '_> {
                 none()
             }
             ExprKind::Pack { items, spread } => {
-                self.values(items, state)?;
+                self.transfers(items, state)?;
                 if let Some(spread) = spread {
                     self.expr(spread, true, state)?;
                 }
                 none()
             }
-            ExprKind::Closure { .. } => none(),
+            // Создание не гасит: замыкание несёт обязательства захватов (#322).
+            ExprKind::Closure { body, captures } => Some(self.closure_carries(body, captures, state)),
             ExprKind::BoundAction { receiver, .. } | ExprKind::BoundRoleAction { receiver, .. } => {
                 self.expr(receiver, true, state)?;
                 none()
