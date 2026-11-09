@@ -11,14 +11,17 @@
 //! погашение внутри тела не снимает внешнее обязательство. `throw` и `panic`
 //! вправе бросить обязательства: действие не завершилось успешно.
 //!
-//! **Замыкания (§11.1, #322).** Анонимное действие несёт непогашенные
-//! обязательства тех захваченных привязок, которые его тело использует на
-//! всех нормальных путях (повторный тихий проход тела с засеянными
-//! захватами), транзитивно через захваченные замыкания. Создание и локальная
-//! привязка их не гасят; гасит вызов значения-действия, а возврат, аргумент,
-//! элемент агрегата и поле передают их вместе с ним, как `Take` для `^C`.
-//! Передача — не исполнение: принявший код не обязан вызвать действие, как и
-//! принявший `^C` — использовать его.
+//! **Значения-действия (§11.1, #322, #324).** Анонимное действие несёт
+//! непогашенные обязательства тех захваченных привязок, которые его тело
+//! использует на всех нормальных путях (повторный тихий проход тела с
+//! засеянными захватами), транзитивно через захваченные замыкания; bound
+//! action (`receiver.action` без вызова) — обязательства получателя: его
+//! внешний `Take` только приводит `^C` к `C`. Создание и локальная привязка
+//! их не гасят; гасит вызов значения-действия, а возврат, аргумент, элемент
+//! агрегата и поле передают их вместе с ним, как `Take` для `^C`. Передача —
+//! не исполнение: принявший код не обязан вызвать действие, как и принявший
+//! `^C` — использовать его. Прямой вызов `receiver.action()` гасит получателя
+//! сразу, как прежде.
 //!
 //! **Поля конструктора (§11.3).** Поле, не связанное ни на одном пути к концу
 //! конструктора, — ошибка; связанное не на всех путях проверяется во время
@@ -322,10 +325,23 @@ impl<'r> Flow<'r, '_> {
                 .collect();
             if !leaking.is_empty() {
                 let message = if matches!(self.body.locals[local.0].ty, Ty::Action(_)) {
-                    format!(
-                        "Successor action result must be used; closure \"{}\" captures it and can leave scope without being called, returned, passed or stored",
-                        self.local_name(local)
-                    )
+                    // Значение-действие несёт обязательство: назвать его и,
+                    // если есть, привязку самого successor.
+                    let successor = self.scopes.iter().flatten().rev().find(|other| {
+                        !matches!(self.body.locals[other.0].ty, Ty::Action(_))
+                            && !state.holds.get(other.0).is_disjoint(&leaking)
+                    });
+                    match successor {
+                        Some(successor) => format!(
+                            "Successor action result must be used; \"{}\" is carried by action value \"{}\", which can leave scope without being called, returned, passed or stored",
+                            self.local_name(*successor),
+                            self.local_name(local)
+                        ),
+                        None => format!(
+                            "Successor action result must be used; action value \"{}\" carries it and can leave scope without being called, returned, passed or stored",
+                            self.local_name(local)
+                        ),
+                    }
                 } else {
                     format!(
                         "Successor action result must be used; binding \"{}\" can leave scope without consumption",
@@ -945,9 +961,19 @@ impl<'r> Flow<'r, '_> {
             }
             // Создание не гасит: замыкание несёт обязательства захватов (#322).
             ExprKind::Closure { body, captures } => Some(self.closure_carries(body, captures, state)),
+            // Создание bound action — не вызов: значение несёт обязательства
+            // получателя (#324). Внешний `Take` получателя здесь только
+            // приводит тип; вложенные `Take` подвыражений гасят как обычно.
             ExprKind::BoundAction { receiver, .. } | ExprKind::BoundRoleAction { receiver, .. } => {
-                self.expr(receiver, true, state)?;
-                none()
+                let receiver = match &receiver.kind {
+                    ExprKind::Coerce {
+                        coercion: Coercion::Take,
+                        value,
+                    } => value,
+                    _ => receiver,
+                };
+                let held = self.expr(receiver, true, state)?;
+                Some(held.intersection(&state.pending).copied().collect())
             }
             ExprKind::StreamWrite { sink, source, .. } => {
                 let held = self.expr(sink, true, state)?;
