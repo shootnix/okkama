@@ -2,9 +2,12 @@
 
 Binds 127.0.0.1 on an OS-assigned port and announces it as `READY port=N`.
 For each connection: TLS handshake with the test certificate next to this
-file (self-signed, IP:127.0.0.1, test-only), then a pause of 0.8 s, then
-the 5 bytes `late!`, then it reads until the client closes. A client read
-that is cancelled during the pause must not lose those bytes.
+file (self-signed, IP:127.0.0.1, test-only); then it stays silent until the
+client sends one byte, answers with the 5 bytes `late!` and reads until the
+client closes. The client interrupts its reads (a timeout, a cancelled task)
+while the fixture is silent and only then sends the byte, so the record
+arrives after the interruptions however slowly the client runs (#312: a
+fixed pause lost the race to a loaded machine compiling the client).
 Owned by the runner: it is terminated when the case finishes.
 """
 import os
@@ -12,7 +15,6 @@ import socket
 import ssl
 import sys
 import threading
-import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -28,8 +30,8 @@ print("READY port=%d" % srv.getsockname()[1], flush=True)
 def serve(raw):
     try:
         conn = context.wrap_socket(raw, server_side=True)
-        conn.settimeout(20)
-        time.sleep(0.8)
+        conn.settimeout(60)
+        conn.recv(1)
         conn.sendall(b"late!")
         while conn.recv(4096):
             pass

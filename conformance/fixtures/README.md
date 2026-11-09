@@ -10,7 +10,7 @@ terminated by the runner after the case; their stderr log is kept in the result.
 | `tcp-echo` | replies `echo:` + one LF-terminated line, then closes |
 | `tcp-truncating-peer` | malformed peer: sends an unterminated fragment and closes |
 | `free-port` | announces a port whose listener has been closed (refused connection) |
-| `tls-late-echo` | TLS peer (test certificate for `127.0.0.1`, kept with it) that sends `late!` 0.8 s after the handshake |
+| `tls-late-echo` | TLS peer (test certificate for `127.0.0.1`, kept with it) that answers the client's first byte with `late!` |
 
 No fixture uses the public network, credentials or files outside its scratch
 directory. Database cases use in-memory or working-directory SQLite databases

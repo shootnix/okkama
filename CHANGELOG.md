@@ -157,6 +157,21 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   changes, and a recovering parse (editors) reports the one error and goes
   on.
 
+- Conformance: `L11.tls.cancelled-read-keeps-data` no longer fails on a
+  loaded machine (#312). The `tls-late-echo` fixture sent `late!` 0.8 s after
+  the handshake; when the client took longer than that to reach its timed
+  read (a dozen cases sharing two CPUs; one failing run took 50 s), that
+  read got the data instead of timing out,
+  the last read waited for a record already taken, and the fixture's socket
+  timeout closed the connection, which the client saw as `TLS peer truncated
+  input`. Not an engine race. A pause counted from a byte the client sends
+  before its timed read did not help either (342 failures in 1000): the
+  client can be slow between that byte and the read as well. The fixture now stays silent
+  until the client's byte, which the client sends after both interrupted
+  reads, so the record arrives after them at any speed. In Docker (2 CPUs,
+  12 cases at once) the case failed 506 of 1000 times before and 0 of 1000
+  after.
+
 - Sparrow core: a failed file operation reports the same message as on the
   IR engine and the JVM (#319). Opening a missing file gave
   `FileSystemFailure.detailed("not_found", "No such file or directory (os

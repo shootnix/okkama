@@ -1,7 +1,7 @@
 {
   "schema": "ocs-fixture/1",
   "kind": "service",
-  "description": "Loopback TLS peer on 127.0.0.1 (OS-assigned port) that answers late: after the handshake it waits, then sends `late!`, then waits for the client to close.",
+  "description": "Loopback TLS peer on 127.0.0.1 (OS-assigned port) that answers late: after the handshake it stays silent until the client sends one byte, then sends `late!`, then waits for the client to close.",
   "command": ["{python}", "-I", "{fixture_dir}/server.py"],
   "ready_regex": "^READY (.*)$",
   "ready_timeout_s": 20,
