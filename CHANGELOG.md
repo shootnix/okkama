@@ -8,13 +8,25 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
-- `contains` and `index_of` work on arrays of enums with payloads —
+### - `contains` and `index_of` work on arrays of enums with payloads —
+
   `@Maybe<T>`, `@Presence<T>`, user enums, generic or not (#300). They use
   the deep equality of array `==` and `-`: the case, then the payload. A
   `±0.0` payload is the one corner where that differs from the variant's own
   `==` (#314). A builtin missing on a collection names its full type
   (`Type "@any" has no builtin action "contains"`, not `"array"`).
   Conformance case `L05.variants.search`.
+
+### - `text()` of an error enum writes string payloads as Okkama string literals
+
+  (#306): quotes, backslashes, `\n`, `\t`, `\r` and other control characters
+  (`\u{1b}`) are escaped, printable Unicode is kept, nested error enums
+  follow the same rules. `Ferr.text("a \"q\"\n")` printed a bare quote and a
+  line break, so one payload could look like two arguments and an uncaught
+  report could span lines. One shared lowering helper does it for every
+  engine; the Book (14.2) gives the rules. Conformance case
+  `L07.error-enum.text-escaping`.
+
 
 ### Changed
 

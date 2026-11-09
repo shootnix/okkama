@@ -527,6 +527,54 @@ pub(super) fn lower_case_text(
     })
 }
 
+/// Строка в синтаксисе литерала Okkama без кавычек: `\`, `"`, `\n`, `\t`, `\r`
+/// и прочие управляющие символы (`\u{1b}`) экранированы, остальное — как
+/// есть. Литеральные `replace`, обратный слэш — первым.
+pub(super) fn lower_escape_text(symbol: String) -> Result<ir::Function> {
+    let span = Span::empty(0);
+    let mut escapes: Vec<(String, String)> = vec![
+        ("\\".into(), "\\\\".into()),
+        ("\"".into(), "\\\"".into()),
+        ("\n".into(), "\\n".into()),
+        ("\t".into(), "\\t".into()),
+        ("\r".into(), "\\r".into()),
+    ];
+    for code in (0u32..0x20).chain([0x7f]) {
+        if ![0x09, 0x0a, 0x0d].contains(&code) {
+            let c = char::from_u32(code).expect("ASCII control");
+            escapes.push((c.to_string(), format!("\\u{{{code:x}}}")));
+        }
+    }
+    let mut b = FnBuilder::new();
+    let text = b.new_value(Type::Str);
+    let mut value = text;
+    for (from, to) in escapes {
+        let from = text_const(&mut b, &from, span);
+        let to = text_const(&mut b, &to, span);
+        value = b.emit(
+            InstKind::Str {
+                op: StrOp::Replace,
+                args: vec![value, from, to],
+            },
+            Type::Str,
+            span,
+        );
+    }
+    b.terminate(TermKind::Ret(Some(value)), span);
+    let (values, blocks, params) = b
+        .finish(&[text])
+        .map_err(|message| internal(span, &message))?;
+    Ok(ir::Function {
+        symbol,
+        params,
+        result: ResultType::Value(Type::Str),
+        attrs: Vec::new(),
+        values,
+        blocks,
+        span,
+    })
+}
+
 /// Текст `bool` (`true`/`false`) или case enum без payload (`Enum.case`).
 pub(super) fn lower_describe(
     ctx: &mut Ctx<'_, '_>,
@@ -618,8 +666,11 @@ fn show(
     span: Span,
 ) -> Result<ValueId> {
     Ok(match ty {
+        // In Okkama literal syntax (#306): `Ferr.text("a \"q\"\n")`.
         Ty::Str => {
-            let quoted = append_to(b, "\"", value, span);
+            let func = ctx.escape_text();
+            let escaped = b.emit(InstKind::Call { func, args: vec![value] }, Type::Str, span);
+            let quoted = append_to(b, "\"", escaped, span);
             append(b, quoted, "\"", span)
         }
         Ty::Int | Ty::Byte | Ty::Float | Ty::Rat => b.emit(InstKind::Cvt(value), Type::Str, span),

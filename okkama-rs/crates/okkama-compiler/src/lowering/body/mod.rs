@@ -192,6 +192,7 @@ pub(super) fn lower_task(ctx: &mut Ctx<'_, '_>, func: FuncId) -> Result<ir::Func
         Task::VariantText { variant } => adapters::lower_variant_text(ctx, symbol, variant),
         Task::CaseText { object } => adapters::lower_case_text(ctx, symbol, object),
         Task::Describe { ty } => adapters::lower_describe(ctx, symbol, &ty),
+        Task::EscapeText => adapters::lower_escape_text(symbol),
         Task::Global { constant } => adapters::lower_global(ctx, symbol, constant),
         Task::Closure { index } => lower_closure(ctx, symbol, index),
         Task::Test { index } => lower_test(ctx, symbol, index),
