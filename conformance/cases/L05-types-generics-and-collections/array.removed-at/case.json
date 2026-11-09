@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.array.removed-at",
+  "title": "removed_at returns a new array without one element",
+  "purpose": "First, middle and last index, a one-element array becoming empty, a chain of removals, strings, nested arrays, bytes and a role array; the receiver keeps its elements, and removal is by position where `-` is by value.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.ARRAY-REMOVED-AT",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "10,20,30,20 20,30,20 10,30,20 10,20,30\n0 30\nb,c a\n2,3|4 2\n2 4 1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #251",
+    "expected_basis": "spec 6.6 and #251: removed_at(index) is the receiver's elements except the one at index, in order."
+  },
+  "status": "mandatory"
+}

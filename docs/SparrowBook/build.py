@@ -109,6 +109,7 @@ DESCRIPTIONS = {
     "arr.get": ("element by index; a bad index fails", "элемент по индексу; неверный индекс — отказ"),
     "arr.slice": ("subarray start..end", "подмассив start..end"),
     "arr.replace": ("copy with element index replaced (#250)", "копия с заменённым элементом index (#250)"),
+    "arr.remove": ("copy without element index (#251)", "копия без элемента index (#251)"),
     "arr.join": ("join an array of str with a separator", "склейка массива str через разделитель"),
     "arr.concat": ("`a + b + …`: one array allocated for the sum of the parts' lengths", "`a + b + …`: один массив, выделенный под сумму длин частей"),
     "arr.diff": ("`a - b - …`: the elements of the first array equal to no element of the others, in order", "`a - b - …`: элементы первого массива, не равные ни одному элементу остальных, по порядку"),

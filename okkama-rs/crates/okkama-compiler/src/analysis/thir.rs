@@ -512,6 +512,8 @@ pub enum Builtin {
     ArrayDrop,
     /// `replaced(index, value)`: a copy with one element replaced (#250).
     ArrayReplaced,
+    /// `removed_at(index)`: a copy without one element (#251).
+    ArrayRemovedAt,
     StrLength,
     StrEmpty,
     StrSlice,

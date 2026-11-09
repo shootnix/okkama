@@ -149,6 +149,7 @@ impl Checker<'_, '_> {
             (Ty::Array(_), "replaced") => {
                 (Builtin::ArrayReplaced, vec![int(), Param::Stored], Some(receiver.clone()))
             }
+            (Ty::Array(_), "removed_at") => (Builtin::ArrayRemovedAt, vec![int()], Some(receiver.clone())),
             (Ty::Map(..), "size") => (Builtin::MapSize, vec![], Some(Ty::Int)),
             (Ty::Map(..), "has") => (Builtin::MapHas, vec![Param::Key], Some(Ty::Bool)),
             (Ty::Map(key, _), "keys") => {

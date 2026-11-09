@@ -430,7 +430,9 @@ of the parts' lengths, `arr.diff rD, rA, [rB, rC]` keeps the elements of `rA`
 equal to none of the others, and `map.merge` and `map.diff` do the same for
 maps (a repeated key takes the rightmost value). `arr.replace rD, rA, rI, rV`
 is `replaced(index, value)` (#250): a copy of `rA` whose element `rI` is
-`rV`, failing on a bad index as `arr.get` does (format version 14).
+`rV`, failing on a bad index as `arr.get` does, and `arr.remove rD, rA, rI`
+is `removed_at(index)` (#251), the copy without element `rI` (format
+version 14).
 
 ## 11. Calls, closures and natives
 
@@ -868,6 +870,7 @@ edge moves; `[…]` a list.
 | 102 | `arr.get rD, rX, rX` | element by index; a bad index fails |
 | 103 | `arr.slice rD, rX, rX, rX` | subarray start..end |
 | 155 | `arr.replace rD, rX, rX, rX` | copy with element index replaced (#250) |
+| 156 | `arr.remove rD, rX, rX` | copy without element index (#251) |
 | 104 | `arr.join rD, rX, rX` | join an array of str with a separator |
 | 96 | `arr.concat rD, [rX, …]` | `a + b + …`: one array allocated for the sum of the parts' lengths |
 | 97 | `arr.diff rD, rX, [rX, …]` | `a - b - …`: the elements of the first array equal to no element of the others, in order |

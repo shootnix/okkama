@@ -4,7 +4,7 @@ module t v1.0.0;
 import "tap" take Tap;
 
 main() is int {
-    let t = Tap(26);
+    let t = Tap(29);
     let xs = [10, 20, 30];
     t = t.is(xs[1], 20, "indexing");
     t = t.is(xs[9] else 0, 0, "else on an index out of bounds");
@@ -40,5 +40,9 @@ main() is int {
     t = t.ok([5].replaced(0, 6) == [6], "replaced in a one-element array");
     t = t.ok(xs.replaced(0, 1).replaced(1, 2).replaced(2, 3) == [1, 2, 3], "replaced in a chain");
     t = t.ok(nested.replaced(0, []) == [[], [2, 3]], "replaced with an empty element");
+    // removed_at(index) (#251): by position; `-` removes by value.
+    t = t.ok(xs.removed_at(1) == [10, 30] && xs == [10, 20, 30], "removed_at leaves the receiver");
+    t = t.ok([5].removed_at(0) == [] && xs.removed_at(0).removed_at(1) == [20], "removed_at down to empty and in a chain");
+    t = t.ok([1, 2, 1].removed_at(0) == [2, 1] && [1, 2, 1] - [1] == [2], "removed_at is by position, - by value");
     t.done();
 }

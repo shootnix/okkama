@@ -1127,6 +1127,12 @@ pub enum InstKind {
         index: ValueId,
         value: ValueId,
     },
+    /// A copy of `array` without element `index` (#251); out of bounds is a
+    /// program error, as for `ArrayGet`.
+    ArrayRemove {
+        array: ValueId,
+        index: ValueId,
+    },
     /// `a + b + ...` над массивами одного типа: результат выделяется один раз
     /// под сумму длин частей (цепочка `+` — одна инструкция).
     ArrayConcat(Vec<ValueId>),
@@ -1465,6 +1471,7 @@ impl InstKind {
             InstKind::ArrayGet { array, index } => vec![*array, *index],
             InstKind::ArraySlice { array, start, end } => vec![*array, *start, *end],
             InstKind::ArrayReplace { array, index, value } => vec![*array, *index, *value],
+            InstKind::ArrayRemove { array, index } => vec![*array, *index],
             InstKind::ArrayJoin { array, separator } => vec![*array, *separator],
             InstKind::ArrayConcat(parts) | InstKind::MapMerge(parts) => parts.clone(),
             InstKind::ArrayDifference { array: base, removed }
@@ -1590,6 +1597,7 @@ impl InstKind {
             InstKind::ArrayGet { array, index } => vec![array, index],
             InstKind::ArraySlice { array, start, end } => vec![array, start, end],
             InstKind::ArrayReplace { array, index, value } => vec![array, index, value],
+            InstKind::ArrayRemove { array, index } => vec![array, index],
             InstKind::ArrayJoin { array, separator } => vec![array, separator],
             InstKind::ArrayConcat(parts) | InstKind::MapMerge(parts) => parts.iter_mut().collect(),
             InstKind::ArrayDifference { array: base, removed }

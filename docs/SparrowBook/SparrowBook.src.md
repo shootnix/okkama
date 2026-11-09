@@ -228,7 +228,9 @@ of the parts' lengths, `arr.diff rD, rA, [rB, rC]` keeps the elements of `rA`
 equal to none of the others, and `map.merge` and `map.diff` do the same for
 maps (a repeated key takes the rightmost value). `arr.replace rD, rA, rI, rV`
 is `replaced(index, value)` (#250): a copy of `rA` whose element `rI` is
-`rV`, failing on a bad index as `arr.get` does (format version 14).
+`rV`, failing on a bad index as `arr.get` does, and `arr.remove rD, rA, rI`
+is `removed_at(index)` (#251), the copy without element `rI` (format
+version 14).
 
 ## 11. Calls, closures and natives
 

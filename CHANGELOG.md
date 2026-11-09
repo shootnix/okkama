@@ -27,6 +27,17 @@ anything is kept. Not released until the measurements show a net gain.
   `…-past-end`, `…-negative`, `…-type-rejected`,
   `…-untyped-empty-rejected`; Book 10 (EN/RU), spec 6.6, Sparrow Book
   (EN/RU), LSP completion, t/op/array.
+- `@T.removed_at(index)` (#251, owner's spelling): a new array of the
+  receiver's elements except the one at `index`, the others in their order;
+  the receiver keeps its elements. It removes by position, where `-`
+  removes by value. An index outside the array (an empty array has none) is
+  the runtime error of indexing. Programs wrote `a.slice(0, i) + a.slice(i +
+  1, a.size())` before. One OIR instruction, `array.remove`, and one SPB
+  instruction, `arr.remove` (opcode 156, still SPB format 14, which 0.4.3
+  introduces); every engine copies the array once, `sparrow-origin` reports
+  it unsupported. OCS: contract `COLL.ARRAY-REMOVED-AT`, cases
+  `L05.array.removed-at`, `…-past-end`, `…-empty`, `…-type-rejected`; Book 10
+  (EN/RU), spec 6.6, Sparrow Book (EN/RU), LSP completion, t/op/array.
 
 ### Changed
 

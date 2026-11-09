@@ -1230,6 +1230,13 @@ impl<'a> FunctionVerifier<'a> {
                 self.expect_type(*value, &element)?;
                 self.ty(*array)?.clone()
             }
+            InstKind::ArrayRemove { array, index } => {
+                self.expect_int(*index)?;
+                match self.ty(*array)? {
+                    Type::Array(_) => self.ty(*array)?.clone(),
+                    other => return Err(format!("array.remove of {other:?}")),
+                }
+            }
             InstKind::ArrayJoin { array, separator } => {
                 self.expect_type(*array, &Type::Array(Box::new(Type::Str)))?;
                 self.expect_type(*separator, &Type::Str)?;

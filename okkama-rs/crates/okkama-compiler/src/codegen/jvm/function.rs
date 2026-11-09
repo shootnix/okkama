@@ -1117,6 +1117,17 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
                     1,
                 )?;
             }
+            InstKind::ArrayRemove { array, index } => {
+                self.load(*array);
+                self.load(*index);
+                self.class.call_rt(
+                    &mut self.asm,
+                    "removedAt",
+                    "(Ljava/util/List;Ljava/math/BigInteger;)Ljava/util/List;",
+                    2,
+                    1,
+                )?;
+            }
             InstKind::ArrayReplace { array, index, value } => {
                 self.load(*array);
                 self.load(*index);

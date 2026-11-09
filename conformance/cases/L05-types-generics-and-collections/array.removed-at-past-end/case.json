@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.array.removed-at-past-end",
+  "title": "removed_at at size() fails as indexing",
+  "purpose": "An index equal to the size is out of bounds.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.ARRAY-REMOVED-AT",
+      "aspects": [
+        "invalid",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "failure",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "runtime"
+      ]
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #251",
+    "expected_basis": "spec 6.6 and #251: an index outside 0 .. size() is the runtime error of indexing."
+  },
+  "status": "mandatory"
+}
