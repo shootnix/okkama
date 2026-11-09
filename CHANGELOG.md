@@ -6,18 +6,6 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
-### Fixed
-
-- Inference: an untagged `[]` or `[:]` takes the collection type of its
-  siblings, of the other branch or the other operand, at any depth and in
-  either order (#297): `[[1], []]` and `[[], [1]]` are `@@int` (they were
-  `@any`), `["a": [1], "b": []]` is `%string:@int`, `[[1]] == [[]]` and
-  `if c { [[]]; } else { [[2, 3]]; }` type-check. The value is retagged at
-  no cost: `retag`/`map.retag` (OIR) and `move` (Sparrow) now accept a
-  source that differs from the target only by `never` parts. Concrete
-  differences still need `any` (`[[1], ["s"]]`). Conformance case
-  `L05.literal.empty-collections`.
-
 ### Added
 
 - Packages: an `.rpm` for Linux next to the `.deb` (#313), built by
@@ -74,6 +62,25 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Inference: an untagged `[]` or `[:]` takes the collection type of its
+  siblings, of the other branch or the other operand, at any depth and in
+  either order (#297): `[[1], []]` and `[[], [1]]` are `@@int` (they were
+  `@any`), `["a": [1], "b": []]` is `%string:@int`, `[[1]] == [[]]` and
+  `if c { [[]]; } else { [[2, 3]]; }` type-check. The value is retagged at
+  no cost: `retag`/`map.retag` (OIR) and `move` (Sparrow) now accept a
+  source that differs from the target only by `never` parts. Concrete
+  differences still need `any` (`[[1], ["s"]]`). Conformance case
+  `L05.literal.empty-collections`.
+- Lifetimes: a resource bound in an `if`, `match`, `try` or `catch` branch
+  is destroyed when the branch ends, the last `let` included, unless the
+  branch's value is used (#308). A branch passed its last value (a `let` or
+  an unused expression) to the enclosing scope even as a statement, so
+  `if true { let a = Res(); let b = Res(); }` destroyed `a` at once and `b`
+  only at the end of the action — out of order, and after resources its
+  `destroy` needed could be closed. A value that is used (`let r = if … {
+  Res(); } else { Res(); };`) still moves out. Same on every engine;
+  conformance case `L07.destroy.branch-scope` (constant and dynamic
+  conditions, nested blocks, match, try, a throw, a kept value).
 - `try?` recovers from operands whose paths throw (#307). A throwing branch
   selected by a literal condition no longer erases the type of the other
   branch: `try? (if true { throw E.a; } else { 2; }) else 7` is `7` (it was

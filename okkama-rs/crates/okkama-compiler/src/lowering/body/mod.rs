@@ -1807,10 +1807,11 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
     }
 
     /// Ветвь `if`/`match`/`try`: значение последнего оператора уходит во
-    /// внешнюю область, даже если результат оператора не используется
-    /// (как в Perl-интерпретаторе: результат оператора принадлежит блоку).
+    /// внешнюю область, только если результат используется (#308). Иначе
+    /// ветвь — обычный блок: её привязки, последняя `let` тоже,
+    /// освобождаются в её конце.
     fn branch(&mut self, block: &'r thir::Block, want: bool) -> Result<Out> {
-        self.block_keeping(block, want, true)
+        self.block_keeping(block, want, want)
     }
 
     fn block_keeping(&mut self, block: &'r thir::Block, want: bool, keep: bool) -> Result<Out> {
@@ -1839,11 +1840,18 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         self.scopes.pop();
         let out = result?;
         closed?;
+        if !keep {
+            // Ненужное значение не выходит из блока: его ресурсы уже
+            // освобождены, ссылка на них наружу не уходит (#308).
+            return Ok(match out {
+                Out::Value(_) => Out::Unit,
+                other => other,
+            });
+        }
         // Значение блока освобождено его регионом: его учитывает внешняя область.
-        if let Out::Value(value) = &out
-            && keep {
-                self.track(value, block.span);
-            }
+        if let Out::Value(value) = &out {
+            self.track(value, block.span);
+        }
         Ok(out)
     }
 

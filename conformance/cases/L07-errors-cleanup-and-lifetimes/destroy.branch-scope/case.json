@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.destroy.branch-scope",
+  "title": "resources bound in if, match and try branches are destroyed when the branch ends, unless its value is used",
+  "purpose": "Observe lexical lifetimes of branch bindings, the last let included (#308).",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.DESTROY",
+      "aspects": [
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "destroy B\ndestroy A\nafter if (two lets)\ndestroy C\nafter if (dynamic, one let)\ndestroy E\ndestroy D\nafter if (trailing expression)\ndestroy F\nafter match\ndestroy G\nafter try\ndestroy H\ndestroy I\nafter nested\ndestroy J\ncaught\nkept K\nmain has K\ndestroy K\ndestroy Log\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#19"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #308 from the Book (12.2, 20) and the owner's decision",
+    "expected_basis": "Book 12.2: a block's bindings do not leak and objects owned there run destroy at its end, in reverse order; a branch passes its value out only when the value is used (K), and a throw destroys the branch's resources before the handler runs (J before caught); Log outlives every Res."
+  },
+  "status": "mandatory"
+}
