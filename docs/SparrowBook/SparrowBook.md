@@ -2,10 +2,10 @@
 # The Sparrow Assembly Book
 
 Sparrow is the bytecode of Okkama: `okkama build --target sparrow` writes it,
-the Sparrow core (`sparrow`, `okkama exec`) verifies it and runs it as machine
-code. This book teaches its text form, Sparrow assembly (`.spa`), well enough
-to read what the compiler produces and to write programs by hand. It describes
-SPB version 12, the format of Okkama 0.4.1.
+Tomato, the current Sparrow runtime (`sparrow`, `okkama exec`), verifies it
+and runs it as machine code. This book teaches its text form, Sparrow assembly
+(`.spa`), well enough to read what the compiler produces and to write programs
+by hand. It describes SPB version 12, the format of Okkama 0.4.1.
 
 Every example lives in [examples/](examples/) and is assembled, checked and
 run as part of writing this book; the result shown after each one is what
@@ -29,7 +29,7 @@ Contents:
 14. Async functions and futures
 15. Tests
 16. What the verifier guarantees
-17. How the core runs it
+17. How Tomato runs it
 18. Instruction reference
 
 ## 1. Tools
@@ -142,7 +142,7 @@ accepts them in any order, each table numbered on its own.
 | `region` | an ownership region | pointer |
 | `any`, `range`, `handle N`, `cap capN`, `never` | boxed value, integer range, host handle, cap, no value | |
 
-The core takes every register's machine form from its declared type. That is
+Tomato takes every register's machine form from its declared type. That is
 why types are checked so strictly (chapter 16): a register declared `int`
 that held a string would be read as a number.
 
@@ -361,7 +361,7 @@ $ sparrow run shapes.spb; echo $?
   payload and nothing else. `variant.new rD, variant0, 1, [r0]` makes case 1,
   `variant.tag` gives the active case number, `variant.get rD, rV, 1, 0`
   reads field 0 of case 1 and fails if another case is active, and
-  `variant.of` turns a case object into a value of its variant. The core
+  `variant.of` turns a case object into a value of its variant. Tomato
   needs the cases of a variant to be consecutive objects: it reads the case
   number from the object header.
 
@@ -478,8 +478,8 @@ $ sparrow run closures.spb; echo $?
   function's signature against it. `sparrow --native-capabilities` lists all
   natives.
 - An *intrinsic* function (`intrinsic "okkama.atomic.Atomic.get" [obj…]
-  [f…]`) is provided by the core itself — atomics, events, channels, timeouts
-  — with the objects and helper functions it works on. The core checks each
+  [f…]`) is provided by Tomato itself — atomics, events, channels, timeouts
+  — with the objects and helper functions it works on. Tomato checks each
   intrinsic's contract when it loads the program.
 
 ## 12. Failures: throw, handlers and catch
@@ -764,9 +764,9 @@ Decoding and verification are bounded in memory, and `sparrow check` also
 checks the contracts of intrinsics. What remains open is listed in the trust
 model (`docs/security-model.md`).
 
-## 17. How the core runs it
+## 17. How Tomato runs it
 
-The core compiles each function to machine code with Cranelift on its first
+Tomato compiles each function to machine code with Cranelift on its first
 call; there is no interpreter. Registers live in machine registers or the
 frame according to their types. Objects are allocated inline from size
 classes; a precise, non-moving collector finds pointers through stack maps at

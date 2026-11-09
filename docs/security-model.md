@@ -13,7 +13,7 @@ Update this document in the same change that closes or opens a boundary issue.
 |---|---|
 | Okkama source | check and compile in your process (`okkama check`, `okkama build`); every compiler phase is bounded, see §1 |
 | Bytecode `.spb` | verified before it runs, compiled under a memory bound (§2); a separate process with OS limits remains the safest way to run untrusted bytecode |
-| A program | on the Sparrow core under budgets (`--max-steps`, `--max-memory`, `--max-output`, `--timeout`); in a sandbox when it must not reach files, network or processes (§3) |
+| A program | on Tomato, the Sparrow runtime, under budgets (`--max-steps`, `--max-memory`, `--max-output`, `--timeout`); in a sandbox when it must not reach files, network or processes (§3) |
 | Embedding `sparrow-core` | `run_limited` with `Limits`: budgets and the native groups the program may use (§5) |
 
 ## 1. Source
@@ -37,9 +37,9 @@ Update this document in the same change that closes or opens a boundary issue.
 **Not guaranteed.** Compile time of very large functions ([#50]); analysis
 types have no depth limit yet ([#49]).
 
-## 2. Bytecode `.spb` on the Sparrow core
+## 2. Bytecode `.spb` on Tomato
 
-The core picks every register's machine representation from the declared
+Tomato picks every register's machine representation from the declared
 types, so the verifier is a memory-safety boundary.
 
 **Guaranteed.**
@@ -58,7 +58,7 @@ types, so the verifier is a memory-safety boundary.
   time ([#23]); exceptional edges keep the values their handlers read, also
   under a stressed collector ([#22]).
 
-- Compiling a function is bounded: the core estimates its cost (registers
+- Compiling a function is bounded: Tomato estimates its cost (registers
   live at each instruction × the blocks it emits) while generating it and
   refuses a function above 256 MiB, or above the run's memory budget, before
   the expensive phases run ([#73]).
@@ -73,7 +73,7 @@ separate process with an OS memory limit.
 ## 3. Programs
 
 **Guaranteed.**
-- On every engine (the core, IR and the JVM), `--max-steps`, `--max-memory`,
+- On every engine (Tomato, IR and the JVM), `--max-steps`, `--max-memory`,
   `--max-output` and `--timeout` stop a runaway program with its own report,
   which `catch` cannot intercept; without them nothing changes and nothing is
   spent ([#21], [#71], [#237]). Steps are counted alike on all three.
