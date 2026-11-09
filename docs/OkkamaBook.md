@@ -373,7 +373,8 @@ let document = ```
 ````
 
 Everything between the delimiters is retained exactly. Quotes, backslashes,
-comment-looking text, indentation and newlines have no special treatment.
+comment-looking text, indentation and line endings — a CRLF or a lone CR
+included (#310) — have no special treatment.
 There is no interpolation, escape processing, dedenting, trimming or fence
 modifier. The first following three-backtick sequence closes the literal, so
 that exact sequence cannot occur inside this initial form. One or two

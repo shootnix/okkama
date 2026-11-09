@@ -251,9 +251,9 @@ Summary: 4 deferred, 43 resolved.
 
 - Sources: `docs/okkama-spec-11072026.md section 8.3`; `docs/bitwise-guide.md ("Это не новая общая спецификация переполнений")`; `docs/OkkamaBook.md section 5.4`
 - Observed: okkama-pl (Perl) at git f1ad6d43: `9223372036854775807 + 1` evaluates to 9223372036854775808 (arbitrary precision).
-- Intended contract: **Superseded by R01 (OIR-1 §23, 20.10.2026): `int` is an exact bigint; arithmetic never wraps; MIN % -1 is 0.** The earlier decision (19.10.2026, "same as in Go": signed 64-bit wrap) no longer applies.
-- Authority: Language owner decision R01 (20.10.2026), replacing the decision of 19.10.2026.
-- Conformance expectation: Mandatory VAL.INT-OVERFLOW with exact results. Perl represents only −2^63…2^64−1 and fails beyond it: DEF-005.
+- Intended contract: Signed 64-bit int arithmetic wraps on overflow (two's complement), as in Go; MIN % -1 is 0. Okkama has no constant declarations, so Go's compile-time rejection of overflowing constant expressions has no counterpart: every overflowing expression wraps.
+- Authority: Language owner decision (19.10.2026): "same as in Go".
+- Conformance expectation: Mandatory VAL.INT-OVERFLOW. Perl uses arbitrary precision: DEF-005.
 - Resolution: **resolved**
 - Contracts: `VAL.INT-OVERFLOW`
 - Cases: `L02.int.overflow-wraps`
@@ -422,12 +422,12 @@ Summary: 4 deferred, 43 resolved.
 
 - Sources: `docs/okkama-spec-11072026.md section 4.2`
 - Observed: okkama-pl (Perl) at git f1ad6d43: CRLF sources run.
-- Intended contract: As in Go: CR is whitespace between tokens, so CRLF sources are accepted; CR characters inside fenced raw strings are discarded.
-- Authority: Language owner decision (19.10.2026): "same as in other langs / Go". Spec 4.2 ("every character ... retained") must be amended for CR.
-- Conformance expectation: Mandatory LEX.CRLF. Perl keeps CR in raw strings: DEF-006.
+- Intended contract: CR is whitespace between tokens, so CRLF sources are accepted; a fenced raw string keeps every character, CR included, as spec 4.2 says.
+- Authority: Language owner decision (19.10.2026): "same as in other langs / Go" — superseded for raw strings by the owner's decision of 09.11.2026 (#310): keep every character, no newline normalization in raw or ordinary literals.
+- Conformance expectation: Mandatory LEX.CRLF. DEF-006 (Perl keeps CR) is withdrawn: Perl had the intended behaviour.
 - Resolution: **resolved**
 - Contracts: `LEX.CRLF`
-- Cases: `L01.lex.crlf.line-endings`, `L01.lex.crlf.raw-string-discards-cr`
+- Cases: `L01.lex.crlf.line-endings`, `L01.lex.crlf.raw-string-keeps-cr`
 
 ## D-031
 

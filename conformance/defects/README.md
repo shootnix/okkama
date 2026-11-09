@@ -10,7 +10,7 @@ the record documents the failing implementation.
 | [DEF-003](DEF-003.md) | okkama-perl | `L05.map.int-key-order` | int map keys are ordered as text (`-1,10,100,9`) |
 | [DEF-004](DEF-004.md) | okkama-perl | `L05.map.byte-keys-rejected` | byte values are accepted as map keys |
 | [DEF-005](DEF-005.md) | okkama-perl | `L02.int.overflow-wraps` | int is not exact beyond −2^63…2^64−1 (MIN-1 fails) |
-| [DEF-006](DEF-006.md) | okkama-perl | `L01.lex.crlf.raw-string-discards-cr` | CR is kept inside raw strings |
+| [DEF-006](DEF-006.md) | okkama-perl | — | **withdrawn**: CR is kept inside raw strings, the intended behaviour since #310 |
 | [DEF-007](DEF-007.md) | okkama-perl | `L02.int.modulo-sign` | `%` is floored, not truncated |
 | [DEF-008](DEF-008.md) | okkama-perl | — | **withdrawn**: D-035 was refined so that defaults are always evaluated first |
 | [DEF-009](DEF-009.md) | okkama-perl | `L02.float.text-*` | float text uses 15 digits, no Go exponent rule, loses -0 |
