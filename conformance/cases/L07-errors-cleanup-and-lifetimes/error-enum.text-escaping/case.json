@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.error-enum.text-escaping",
+  "title": "Error.text() writes string payloads as Okkama literals: quotes, backslashes, controls, nested variants",
+  "purpose": "Observe that an error's text is unambiguous and source-compatible (#306).",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.ENUM",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "Ferr.text(\"a \\\"q\\\"\\n\")\nFerr.text(\"back\\\\slash\\ttab\\rcr\\u{1b}esc\\u{7f}del\")\nFerr.text(\"é😀 ok\")\nFerr.pair(\"x\\\", \\\"y\", \"z\")\nFerr.nested(Inner.named(\"in\\\"ner\\n\"))\nFerr.plain Ferr.text(\"\")\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.5.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #306 from the owner's decision",
+    "expected_basis": "owner decision on #306: a string payload is written in Okkama string literal syntax (backslash, quote, newline, tab and carriage return escaped, other control characters as \\u{hex}, printable Unicode unchanged), recursively in nested error variants."
+  },
+  "status": "mandatory"
+}

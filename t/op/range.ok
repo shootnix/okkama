@@ -1,0 +1,17 @@
+module t v1.0.0;
+
+// t/op: ranges (Book ch. 8.4).
+import "tap" take Tap;
+
+main() is int {
+    let t = Tap(7);
+    t = t.ok([1..5] == [1, 2, 3, 4], "an exclusive range in a literal");
+    t = t.ok([1..=5] == [1, 2, 3, 4, 5], "an inclusive range");
+    t = t.ok([3..3] == [], "an empty range");
+    t = t.ok(1..5 == 1..5, "ranges compare by bounds");
+    t = t.ok(1..5 != 1..=5, "and by inclusiveness");
+    t = t.is((0..4).map() -> i { i * i; }.size(), 4, "a range maps to an array");
+    let total = (1..=4).reduce(0) -> sum, i { sum + i; };
+    t = t.is(total, 10, "a range reduces");
+    t.done();
+}

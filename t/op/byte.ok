@@ -1,0 +1,19 @@
+module t v1.0.0;
+
+// t/op: byte — a checked octet that never wraps (Book ch. 5.3).
+import "tap" take Tap;
+
+main() is int {
+    let t = Tap(10);
+    t = t.is(byte(255).int(), 255, "byte(255)");
+    t = t.is(byte(255.9).int(), 255, "byte(float) truncates");
+    t = t.is(byte(-0.5).int(), 0, "toward zero");
+    t = t.is(byte(200) + byte(100), 300, "byte + byte is an int");
+    t = t.is(@byte(1, 2, 3).size(), 3, "@byte(...)");
+    t = t.is(@byte().size(), 0, "typed empty @byte");
+    t = t.is([10, 20, 30][byte(1).int()], 20, "a byte indexes after .int() (#294)");
+    t = t.is(byte(7).string(), "7", "byte.string()");
+    t = t.ok(byte(1) < byte(2), "byte ordering");
+    t = t.is(byte(9).float(), 9.0, "byte.float()");
+    t.done();
+}

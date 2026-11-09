@@ -6,10 +6,9 @@
 use super::matching::compare_inst;
 use super::{BodyLowerer, Out, Typed};
 use crate::analysis::thir::{self, CompareKind};
-use crate::analysis::ty::{EnumId, Ty};
 use crate::ir::{
-    CompareOp, Constant, InstKind, IntBinaryOp, IntValue, ObjectId, Target, TermKind, TrapCode,
-    Type, ValueId,
+    CompareOp, Constant, InstKind, IntBinaryOp, IntValue, Target, TermKind, TrapCode, Type, ValueId,
+    VariantId,
 };
 use crate::lowering::{LoweringError, Result};
 use crate::source::Span;
@@ -19,45 +18,24 @@ impl BodyLowerer<'_, '_, '_> {
         self.constant(Constant::Int(IntValue::from_i64(value)), span).value
     }
 
-    /// A value of the enum object `object`: the case tag, then one array per
-    /// payload field, holding the value for the fields of `case`.
-    pub(super) fn variant_of(
-        &mut self,
-        object: ObjectId,
-        id: EnumId,
-        case: usize,
-        values: &[ValueId],
-        span: Span,
-    ) -> Typed {
-        let offset = 1 + self.ctx.reg.enums[id.0].payloads[..case]
-            .iter()
-            .map(Vec::len)
-            .sum::<usize>();
-        let field_types: Vec<_> = self.ctx.objects[object.0]
-            .fields
-            .iter()
-            .map(|(_, ty, _)| ty.clone())
-            .collect();
-        let mut fields = Vec::new();
-        for (index, ty) in field_types.into_iter().enumerate() {
-            let value = if index == 0 {
-                self.int(case as i64, span)
-            } else if index >= offset && index < offset + values.len() {
-                self.emit(InstKind::ArrayNew(vec![values[index - offset]]), ty, span).value
-            } else {
-                self.emit(InstKind::ArrayNew(Vec::new()), ty, span).value
-            };
-            fields.push(value);
+    /// The case and its field for a payload field numbered across all cases
+    /// as the analysis numbers them (from 1: 0 was the tag).
+    pub(super) fn case_field(&self, id: VariantId, field: usize) -> (usize, usize) {
+        let mut offset = 1;
+        for (case, (_, object)) in self.ctx.variants[id.0].cases.iter().enumerate() {
+            let count = self.ctx.objects[object.0].fields.len();
+            if field < offset + count {
+                return (case, field - offset);
+            }
+            offset += count;
         }
-        let func = self.ctx.adapter_ctor(object);
-        self.emit(InstKind::Call { func, args: fields }, Type::Object(object), span)
+        unreachable!("a payload field of the variant")
     }
 
-    /// The `Maybe<int>` object of `expr` and its enum.
-    fn maybe_type(&mut self, expr: &thir::Expr, span: Span) -> Result<(ObjectId, EnumId)> {
-        let semantic = expr.ty.as_ref().map(|ty| ty.subst(&self.env));
-        match (self.expr_type(expr)?, semantic) {
-            (Type::Object(object), Some(Ty::Variant(id, _))) => Ok((object, id)),
+    /// The `Maybe<int>` variant of `expr`.
+    fn maybe_type(&mut self, expr: &thir::Expr, span: Span) -> Result<Type> {
+        match self.expr_type(expr)? {
+            ty @ Type::Variant(_) => Ok(ty),
             _ => Err(LoweringError::invalid(
                 span,
                 "internal compiler error: a search builtin does not produce Maybe<int>",
@@ -67,12 +45,12 @@ impl BodyLowerer<'_, '_, '_> {
 
     /// `Maybe.some(index)`, or `Maybe.none` for a negative index.
     pub(super) fn maybe_index(&mut self, index: ValueId, expr: &thir::Expr, span: Span) -> Result<Out> {
-        let (object, id) = self.maybe_type(expr, span)?;
+        let maybe = self.maybe_type(expr, span)?;
         let zero = self.int(0, span);
         let found = self
             .emit(InstKind::IntCompare { op: CompareOp::Ge, left: index, right: zero }, Type::Bool, span)
             .value;
-        let (join, params) = self.block_with(&[], &[Type::Object(object)]);
+        let (join, params) = self.block_with(&[], std::slice::from_ref(&maybe));
         let (some, none) = (self.b.new_block(), self.b.new_block());
         self.b.terminate(
             TermKind::Cond { condition: found, then_target: Target::new(some), else_target: Target::new(none) },
@@ -81,13 +59,13 @@ impl BodyLowerer<'_, '_, '_> {
         for (block, case) in [(some, 0), (none, 1)] {
             self.b.switch_to(block);
             self.sync_unwind();
-            let payload = if case == 0 { vec![index] } else { Vec::new() };
-            let value = self.variant_of(object, id, case, &payload, span).value;
+            let fields = if case == 0 { vec![index] } else { Vec::new() };
+            let value = self.emit(InstKind::VariantNew { case, fields }, maybe.clone(), span).value;
             self.b.terminate(TermKind::Br(Target { block: join, args: vec![value] }), span);
         }
         self.b.switch_to(join);
         self.sync_unwind();
-        Ok(Out::Value(Typed { value: params[0], ty: Type::Object(object) }))
+        Ok(Out::Value(Typed { value: params[0], ty: maybe }))
     }
 
     /// The index of the first element equal to `needle` (`==` of `kind`),

@@ -1,0 +1,23 @@
+module t v1.0.0;
+
+// t/op: float — IEEE 754 binary64, no NaN or infinity (Book ch. 5).
+import "tap" take Tap;
+
+main() is int {
+    let t = Tap(14);
+    t = t.is(0.5 + 0.25, 0.75, "addition");
+    t = t.is(1.5 * 2.0, 3.0, "multiplication");
+    t = t.is(7.0 / 2.0, 3.5, "float / float is a float");
+    t = t.is(1e5, 100000.0, "exponent literal");
+    t = t.is(1.5e-3, 0.0015, "negative exponent");
+    t = t.is(2E+10, 20000000000.0, "upper-case exponent");
+    t = t.is(3.0.string(), "3", "an integral float renders without .0");
+    t = t.is(2.5.string(), "2.5", "float.string()");
+    t = t.is(3.9.int(), 3, "float.int() truncates");
+    t = t.is((-3.9).int(), -3, "toward zero");
+    t = t.is((-2.5).abs(), 2.5, "abs");
+    t = t.is(2.0.pow(10.0), 1024.0, "pow");
+    t = t.ok(1.5.less(2.5), "less on floats");
+    t = t.ok(1.float() < 2.5, "an explicit conversion before mixing");
+    t.done();
+}

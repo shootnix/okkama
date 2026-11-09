@@ -3,7 +3,7 @@ use crate::asm::Parser;
 use crate::codec::{Reader, Writer};
 use crate::{
     AsmError, BitOp, CapRef, CatchKind, Cmp, CodecError, Constant, Dst, EnumRef, FuncRef, FutOp,
-    ObjectRef, Register, RoleRef, StrFn, Target, TrapCode,
+    ObjectRef, Register, RoleRef, StrFn, Target, TrapCode, VariantRef,
 };
 
 /// Что видит обход операнда.
@@ -17,6 +17,7 @@ pub enum Access<'a> {
     Role(RoleRef),
     Enum(EnumRef),
     Cap(CapRef),
+    Variant(VariantRef),
 }
 
 pub trait Operand: Sized {
@@ -94,6 +95,7 @@ table_ref!(ObjectRef, "obj", Object);
 table_ref!(RoleRef, "role", Role);
 table_ref!(EnumRef, "enum", Enum);
 table_ref!(CapRef, "cap", Cap);
+table_ref!(VariantRef, "variant", Variant);
 
 impl<T: Operand> Operand for Option<T> {
     fn encode(&self, writer: &mut Writer) {

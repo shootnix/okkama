@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.successor.bound-action-invoked",
+  "title": "a bound action carries its successor receiver until it is called or passed on",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "SUCC.MUST-USE",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "2\n5\n9\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.1 (static successor consumption)"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #324",
+    "expected_basis": "spec 11.1: creating a bound action does not consume its successor receiver; calling it or passing it through a consumer does; a direct call consumes at once (#324)."
+  },
+  "status": "mandatory"
+}

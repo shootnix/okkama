@@ -6,8 +6,52 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-11-09
+
+0.4.2 is a correctness and infrastructure release. Variants — enums with
+payloads, `Maybe`, `Presence` and error enums — keep their payload in place
+instead of one array per field (#290): a value with many payload fields is
+built up to 14× faster on Tomato. `rat` becomes a map key type,
+heterogeneous literals need an explicit `any` boundary, and
+`string.less` compares lexicographically (breaking). Anonymous actions now
+behave as the Book says: a captured successor is used when the closure is
+called or handed on (#322), a bound action carries its receiver (#324), a
+captured name cannot be rebound (#321), and an anonymous action does not
+recurse through its `let` (#318). Every engine prints the same uncaught
+failure report (#270), and `okkama check` also reports errors found while
+lowering (#317). The std drops 102 settlement wrappers around single
+awaits and hides its cleanup helpers (#264), which makes an HTTP/1 exchange
+up to 17% faster on Tomato. New tooling: the t/ suite (44 757 self-checking
+assertions on five engine configurations in the gate), micro-benchmarks for
+50 language constructs and std actions, an `.rpm` package and a 15-minute
+release gate. The current Sparrow runtime is now called Tomato, and the
+bundled SQLite is updated for CVE-2026-119375 (#330).
+
 ### Added
 
+- Micro-benchmarks (#244), next to the ladder in `okkama-docs/benchmarks/micro`:
+  29 programs of one language construct each (numeric categories,
+  comparisons, strings, constructors plain, generic and with defaults,
+  successors, method and role calls, closures, array and map literals,
+  indexing and `+`, `map`/`filter`/`reduce`, an in-place `reduce` build,
+  `match`, `try`/`catch`, `destroy`) and 11 of one std action (JSON, base64,
+  hex, SHA-256, regex, UTF-8, split, replace, `Sorted`, `ParsedInt`). Each
+  times N repetitions in-process after a warm-up; `run.py` reports net ns/op
+  over the empty loop on Tomato, the IR engine and the JVM, checks that the
+  engines agree on a checksum, and flags changes beyond the noise band
+  against a saved release; `coverage.py` lists the std modules that have no
+  benchmark yet (12 of 473 have one).
+
+- The t/ suite (#245): self-checking Okkama programs that print TAP —
+  hand-written basics, operators and language features (`t/base`, `t/op`,
+  `t/lang`) and generated families (`tools/t/gen.py`: strings, collections,
+  nesting, control, structures, value-object keys, casts, lexical forms,
+  enums, …) whose expected values come from a Python oracle, not from
+  running Okkama. 44 757 checks in 125 files; every configuration (ir,
+  sparrow, jvm, ir-passes-off, ir-gc-stress) must print the same stream.
+  `tools/t/run.py` runs it (`--cage` locally), and it is a mandatory step of
+  the release gate. It found #294–#310; checks blocked by an open issue
+  are held back by name (#263 now).
 - Packages: an `.rpm` for Linux next to the `.deb` (#313), built by
   `tools/package.sh --installer` from the same tree with `rpmbuild`
   (`GPL-3.0-only`, `Requires: glibc >= 2.35`, a nightly version written with
@@ -15,9 +59,397 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   Fedora 41 and runs the smoke programs. The binaries need glibc 2.35, so
   the RPM targets Fedora 36+, RHEL 10 and openSUSE Tumbleweed; RHEL 8/9 need
   an older-glibc build (noted in #313).
+- `rat` is a map key type (#296): `%rat:V`, rat-key literals, indexing,
+  `has()`, `keys()`/`values()`, `+`/`-` and generic maps work on every
+  engine. A key is the reduced value, so `rat(1, 2)`, `rat(2, 4)` and `2 / 4`
+  are one key, and keys sort by value. Numeric categories stay apart:
+  `%rat:int` takes no `int` key. A missing rat key reads `Map key not found:
+  1/2` on Sparrow and the IR engine (it printed a debug form or failed). The
+  specification (8.8), the Book (EN/RU), the Bible (ch. 8) and the LLM
+  context say so. Conformance: case `L05.map.rat-keys`.
+
+### Changed
+
+- std API: cleanup and settlement helpers are no longer public (#264, wave
+  D). Twelve that nothing constructs any more are removed —
+  `DigestSettlement`, `HttpResolutionCleanup`, `HttpObservationSettlement`,
+  `Http2InputSettlement`, `Http1LeaseSettlement`, both `HttpProxySettlement`s,
+  `DnsAnswerCleanup`, `DnsNameCleanup`, `StreamReadCleanup`,
+  `TcpConnectCleanup`, `TlsTaskCleanup` — and 49 that are used only inside
+  their own module are `hidden` (the `Sqlite*`, `Http1*`, `Http2*`,
+  `HttpClient*`, `Form*`, `Event*`, `Imap*`, `Pop*`, `TcpRace*` guards and
+  the others). Five that other std modules import stay public:
+  `HttpAcquisitionCleanup`, `WebSocketOutputSettlement`,
+  `WebSocketOpeningCleanup`, `RedirectResponseCleanup`, `StreamWriteCleanup`.
+  A program that took one of the removed or hidden names now fails to
+  import it; nothing in the repository did. Unused `FutureGroup` imports
+  left behind are gone.
+
+- std: `Http1BodyReading.bytes` awaits its read directly (#264, wave B). Its
+  `Http1BodyOperationCleanup` watched a group with one child awaited at once,
+  which structured await already cancels and settles. Wave B also tried
+  turning the remaining per-operation guards into `async destroy` guards and
+  stopped there: an `async destroy` costs more than `defer await
+  guard.close()` (243 against 130 ns per call on Tomato, 1 101 against 889 on
+  the IR engine), and as the server's run guard it delayed every Tomato
+  server run by about 0.8 s (#328). The guards keep their deferred close.
+
+- std: 33 more single-child settlement wrappers are gone (#264, wave A of the
+  second part). Each read, connect, accept, TLS handshake, read and shutdown,
+  DNS lookup, HTTP/2 server and session step and WebSocket output step built a
+  `FutureGroup`, a settlement object and a deferred `await close()` around one
+  future it awaited at once; under structured await (#147) a cancelled task
+  cancels and settles the future it awaits, so these are plain `await`s now
+  (`net/stream`, `net/tcp`, `net/tls`, `net/dns`, `http/http2_server`,
+  `http/http2_session`, `http/server`, `http/websocket_session`,
+  `http/internal/websocket_output`, `http/transport_observation`,
+  `http/robots`, `http/digest`, `http/endpoint`). Left as they are: groups
+  with several children, and 11 places that await a memoized future other
+  tasks may share (a frame or header reading, the HTTP/2 preface, a stored
+  ticket, a cached operation), where a group cancels it for everyone and
+  structured await would not; they need their own lifecycle review. No
+  public name changes: the settlement objects stay until the visibility wave.
+  New OCS case `L11.tcp.cancelled-read-keeps-data`. Docker, 4 CPUs, median
+  of 10 alternating runs: an HTTP/1 loopback load of 150 requests takes 17%
+  less on Tomato (1 744 → 1 446 ms) and 2% less on the IR engine, with ~400
+  fewer Rust allocations per request; 200 TCP connections × 50 round trips
+  take 6.6% less on Tomato and 1.2% less on the IR engine (−51 allocations
+  per round trip there).
+
+- The Sparrow core is now called Tomato: the current Sparrow runtime (crate `sparrow-core`, binary `sparrow`) in the docs, the Book and benchmark reports; entries below still say "Sparrow core".
+
+- std: a single await no longer needs a `FutureGroup` and a settlement
+  object (#264, first part). With structured await (#147), cancelling a task
+  already cancels the future it awaits and waits for it, so 68 places in 25
+  `http/` modules that started one future in a group, deferred an
+  `await settlement.close()` and awaited the future at once now just await
+  it: `let exchange = await waiting;` instead of a group, a settlement
+  object, a deferred close and `group.start`. That is two objects and a
+  deferred await fewer per occurrence on every HTTP/1, HTTP/2, WebSocket,
+  form, proxy, XML-RPC and SSE exchange. Six settlement objects that nothing
+  uses any more are removed (`HttpConversationSettlement`,
+  `HttpRetrySettlement`, `RouteSettlement`, `XmlRpcSettlement`,
+  `Http2OutputSettlement`, `Http2SendingSettlement`). Groups with several
+  children, races and timeouts stay.
+
+- Release gate: about 15 minutes instead of 30–40. Its optimized Rust tests
+  build with a new cargo profile `gate` (release optimizations, no fat LTO,
+  16 codegen units): the step took 20.6 minutes, of which 28 seconds were
+  tests and the rest was a full LTO link of each of ~90 test binaries. The
+  release binaries the gate builds keep fat LTO, and conformance, std and
+  the t/ suite run on them. The informative conformance run on the previous
+  VM (`sparrow-origin`) is no longer part of the gate.
+
+- Heterogeneous collection literals need an explicit `any` boundary (#315,
+  owner's option 2): `let a = [1, "two"];`, `let b = [1, 2.0];` and
+  `let m = ["x": 1, "y": "two"];` are compile-time errors at the literal —
+  "Array elements have incompatible types int and string; declare an explicit
+  @any boundary to allow heterogeneous values", and for maps "Map values have
+  incompatible types int and string; declare an explicit %string:any
+  boundary …". The compiler used to infer `@any`/`%K:any`, which the Book,
+  the spec and `COLL.LITERAL-IDENTITY` ruled out. Accepted where the expected
+  type has `any` elements: a typed binding (`let a is @any = [1, "two"];`), a
+  declared parameter or result, and nested positions under one
+  (`@@any`, `%string:@any`); an untyped local is not a boundary, and an
+  `any` element is not a collection boundary (`let x is @any = [[1, "a"]];`
+  is rejected). Homogeneous literals, `[[1], []]` (#297) and boxing at
+  explicit boundaries are unchanged. Impact audit with `okkama check`: std
+  (537 files), examples (8), the Bible examples (77), the Book's checkable
+  examples (171) and the generated t/ files (82) — no change; the only
+  programs that relied on the inferred `any` were tests of that rule itself
+  and one JVM test that passed an untyped mixed local to an `@any` parameter:
+  2 conformance cases, 2 compiler tests, one JVM test and one t/ check,
+  rewritten.
+  Conformance: `L05.literal.heterogeneous-boundaries` and five
+  `…-rejected` cases; spec 6.2/6.6.2, Book 9 and 31 (EN/RU), Bible 4.5.
+- A fenced raw string keeps every character between its delimiters,
+  carriage returns included (#310): ```` ```a<CR><LF>b``` ```` is `a\r\nb`
+  (length 4) and ```` ```a<CR>b``` ```` is `a\rb`. The lexer dropped every CR
+  (D-030, "as in Go"), while the specification and the Book said every
+  character is kept; the owner superseded D-030 for raw strings. A CR between
+  tokens is still whitespace, and nothing normalizes line endings. Conformance
+  case `L01.lex.crlf.raw-string-keeps-cr` replaces
+  `L01.lex.crlf.raw-string-discards-cr`; DEF-006 is withdrawn. Lexing a
+  3.5 MB raw literal is about 35 % faster (median of 10, LF, CRLF and mixed
+  endings alike): the per-character filter is gone.
+- **Breaking:** `string.less(other)` and `string.less_or_equal(other)`
+  compare lexicographically by Unicode code point, the order of
+  `string.order()` and `ordering()`. They compared lengths, so code that
+  mixed the two orders — a binary search with `less` over an array sorted by
+  `ordering()` — was silently wrong (#281). Compare lengths with `length()`.
+  Conformance: contract VAL.STRING-ORDER, case `L02.string.order-consistent`
+  (prefixes, equal strings, the empty string, no case folding, code points
+  past the BMP, agreement with `order()` on every pair, the binary search).
+- Variants — enums with payloads, `Maybe`, `Presence` and error enums — have
+  a representation of their own (#290). OIR gains the variant type and
+  `variant.new`, `variant.tag`, `variant.get` and `variant.of`; each case is
+  an object holding only its own payload, so a value is one allocation, and
+  building or reading one no longer depends on the fields of the other
+  cases. Before, a variant was one object with a one-element array per
+  payload field of every case. Sparrow (bytecode version 13: a variant table,
+  four instructions, `catch … variant`), the IR engine and the JVM (an
+  abstract class per variant, a subclass per case) store a value as the
+  object of its case; the Sparrow verifier rejects a case or a field outside
+  the layout, and reading the payload of an inactive case traps. Sparrow,
+  10 M steps that build and match a value: `value`/`pair` 1.46 → 0.53 s and
+  30 M → 0 arrays; a 13-case variant 7.58 → 0.64 s and 260 M → 0 arrays.
+  Conformance case `L05.variants.case-layouts`; the Sparrow Book documents
+  the instructions.
 
 ### Fixed
 
+- Compiler: a bound action (`later.count` without a call) carries the
+  obligation of its successor receiver, like a closure since #322 (#324).
+  Creating it used the receiver at once, so `let read = later.count; 0;` hid
+  an unused successor. The receiver's `Take` now only adapts the type: the
+  action value carries the obligation, a call uses it, and passing,
+  returning or storing it transfers it. A direct call `later.count()` and
+  successor chains such as `c.inc().inc().value()` use the receiver at once,
+  as before. An action value that leaves its scope unused is reported with
+  the successor it carries: `"later" is carried by action value "read",
+  which can leave scope without being called, returned, passed or stored`.
+
+- Compiler: rebinding a captured name inside an anonymous action is an error,
+  as the Book always said (#321). `let bump = () is int { counter =
+  counter.bumped(); counter.count(); };` was accepted and rebound a copy that
+  lived for one call (`bump()` twice printed `2 2`, `counter` stayed 1). It
+  now fails at the rebind: `Cannot rebind captured variable "counter" inside
+  an anonymous action: captured bindings are snapshots; return the successor
+  instead`. The check is by binding identity: the action's parameters and
+  locals, including ones that shadow a captured name, stay rebindable, and a
+  nested action cannot rebind what it captured from the enclosing one.
+
+- Compiler: a successor captured by an anonymous action is used when the
+  closure is (#322). `let later = c.bumped(); let show = () is int {
+  later.count(); }; show();` was rejected (`binding "later" can leave scope
+  without consumption`) because the flow check did not follow captures. A closure now carries the obligations of the successors its body
+  uses on every normal path (spec 11.1; found by a second, silent pass over
+  the body, run only when a capture holds one), transitively through
+  captured closures. Creating it and binding it to locals or aliases keep
+  them; calling it uses them; passing it as an argument, returning it and
+  storing it in an array, map, `Maybe` or field transfer them. A closure
+  that is never used is still an error, now naming it and the successor it
+  carries (the message is quoted under #324). A body that uses the capture on
+  one branch only does not carry it. Bound actions follow in #324.
+
+- Parser: `async` in front of an anonymous action says what is wrong (#323).
+  `let later = async () is int { 1; };` read as a call of a name `async`
+  and failed at `is` with `Expect ";" after let declaration`. It now fails
+  at `async`: `Anonymous actions cannot be async; declare a named async
+  action instead.` The check needs the anonymous action's signature
+  (`(…)` followed by `is`), so `async()`, `async(1)` and `receiver.async()`
+  stay calls of an action labelled `async`; nothing else in the grammar
+  changes, and a recovering parse (editors) reports the one error and goes
+  on.
+
+- Conformance: `L11.tls.cancelled-read-keeps-data` no longer fails on a
+  loaded machine (#312). The `tls-late-echo` fixture sent `late!` 0.8 s after
+  the handshake; when the client took longer than that to reach its timed
+  read (a dozen cases sharing two CPUs; one failing run took 50 s), that
+  read got the data instead of timing out,
+  the last read waited for a record already taken, and the fixture's socket
+  timeout closed the connection, which the client saw as `TLS peer truncated
+  input`. Not an engine race. A pause counted from a byte the client sends
+  before its timed read did not help either (342 failures in 1000): the
+  client can be slow between that byte and the read as well. The fixture now stays silent
+  until the client's byte, which the client sends after both interrupted
+  reads, so the record arrives after them at any speed. In Docker (2 CPUs,
+  12 cases at once) the case failed 506 of 1000 times before and 0 of 1000
+  after.
+
+- Sparrow core: a failed file operation reports the same message as on the
+  IR engine and the JVM (#319). Opening a missing file gave
+  `FileSystemFailure.detailed("not_found", "No such file or directory (os
+  error 2)")` on the core and `… "Cannot open file")` elsewhere; the core's
+  file providers now use the phrase of the operation (open, read, write,
+  seek, truncate, lock, the directory and path operations, temporary files),
+  with the reason in the code (`not_found`, `permission_denied`, …), and a
+  file opened lazily by a read says "Cannot open file" like the others.
+  Conformance `L10.fs.missing-file-message`.
+
+- `okkama check` reports every compile-time error, also those that only
+  lowering finds (#317): a chain of generic specializations that never ends
+  (polymorphic recursion, H-15), recursion that cannot complete, constructs
+  IR lowering does not support yet, and an internal error in lowering. They
+  passed `check` with exit 0 and failed only at `okkama run` or `build`.
+  After a clean analysis `check` now lowers the program, without the OIR
+  passes, and verifies the IR: 59 sample programs check in 1.56 s instead of
+  0.66 s (about 26 ms each instead of 11). `okkama lint` and the language
+  server keep the analysis-only path, for editor latency.
+- IR engine: reading length-prefixed records from a large byte buffer is
+  linear again (#280). The `runtime/bytes` natives behind `ByteRange`
+  (`integer`, `text`, `decimal`, `equal`) and `ByteSearch` converted the
+  whole source array to bytes on every call, so `PgInput.data_rows`, which
+  reads one 4-byte length per DataRow, cost the size of the buffer per row:
+  draining 10⁶ PostgreSQL rows took 78 s on the IR engine against 0.18 s on
+  the core. They now read only the range (or, for a search and a join, the
+  rest from the start offset). 20 000 records in one buffer: 16.0 s → 0.36 s
+  on the IR engine; the core is unchanged.
+
+- Conformance: the std inventory (`contracts/stdlib.json`) is current again
+  and cannot go stale (#282). Regenerated from `std/`: 32 new `STD.*`
+  contracts for modules that existed but were missing (`STD.CELL`,
+  `STD.JSON`, `STD.DB.POSTGRES`, the crypto and digest modules, …; 28
+  mandatory, now coverage gaps until cases observe them) and 4 removed for
+  modules that no longer exist (`STD.JSON.PARSE/READ/VALUE/WRITE`; their six
+  cases now map to `STD.JSON`). `std/json.ok` declared `module local/json`
+  although it is imported as `"json"`; it is `module json` now.
+  `tools/inventory_std.py --check` fails on a stale file, the release gate
+  runs it, and `conformance/CONTRIBUTING.md` says to regenerate the file in
+  the change that adds, removes or renames a std module.
+
+- Diagnostics: `reduce` from an untyped `[]` or `[:]` says what to write
+  (#295, also #267). `(0..3).reduce([]) -> acc, i { acc + [i * i]; }` gave
+  "Reduce accumulator must be [], got @int", as if `[]` were a type the block
+  had to return; it now reads "Reduce starts from [], which has no element
+  type, and its block gives @int: start from @int() or declare the result
+  type (let name is @int = …)", at the initial value; for `[:]` it suggests
+  the declared map type. Inference is unchanged.
+- Diagnostics: an ambiguous overloaded call names the argument types and the
+  tied candidates (#273), as the Book promises (§18.3, rule 5): "Ambiguous
+  call of action "joined" on object "Pairing" with (int, int): joined(int,
+  any) and joined(any, int) fit equally well"; the same for roles and for
+  constructors. Resolution is unchanged; the candidates are recomputed only
+  on the error path.
+- Uncaught failures: every engine prints the report of the Sparrow core,
+  byte for byte (#270) — the failure, its secondary cleanup failures and its
+  causes (`Caused by:`), the place with its source line, and the Okkama
+  stack. The IR engine left out the causes; the JVM printed only the first
+  line. A shared renderer walks the failure graph (cycles print
+  `[failure #N already shown]`, at most 64 failures); a native failure is
+  `NativeFailure: message` with `code`, `domain` and `operation` on all
+  three (the IR engine and the JVM said `NativeError`, the core gave no
+  details), and the core no longer reports "program has no NativeFailure"
+  for a native failure in a program that never names the type. On the JVM,
+  `okkama.rt.Failure` keeps the JVM stack from where it is created; each
+  method's LineNumberTable numbers its source places and `okkama-debug.tsv`
+  (next to the classes, ~2% of a jar) maps them back to files, lines and
+  columns, so the stack shows Okkama frames only, outlined `$part` methods
+  merged into their function, and `await` adds the awaiting task's frames.
+  The success path is unchanged; a throw on the JVM now costs about as much
+  as on the core (a loop of 500 000 throws twelve calls deep: 0.27 → 0.48 s;
+  the core takes 0.47 s). The JVM keeps at most 1 024 frames and says so
+  when older ones are missing; `OKKAMA_TRACE=off` leaves the place and the
+  stack out on every engine. Tests compare the full report of eight
+  programs across the engines (`tests/traces`).
+
+- Constructors: the first `self` value inside a `map`, `filter` or `reduce`
+  block, a nested block or one branch of an `if` no longer crashes lowering
+  with "definition does not dominate" (#279). The early object is built
+  once, just before the constructor statement that holds that first use, so
+  it dominates the rest of the constructor; fields bound after it are set
+  with `obj.init` on every path, which also lifts the "field assignment
+  after `self` escaped" limitation for fields bound in branches. Bound
+  fields, `$pending` (#271), identity and cyclic equality (#278) are kept;
+  a constructor that never uses `self` as a value still builds its object
+  at the end. Conformance `L04.invariant.early-self-in-blocks` and
+  `invariant.escaped-self-in-block-failed-constructor`; Bible 12 (EN/RU).
+
+- Equality: a `float` inside a composite compares numerically, as scalar `==`
+  does (#314). `[-0.0] == [0.0]`, `Point(x: -0.0) == Point(x: 0.0)`,
+  `[Reading.value(-0.0)] == [Reading.value(0.0)]` and map values with `-0.0`
+  were `false` because deep equality compared float bits on the IR engine and
+  the Sparrow core and went through `Double.equals` on the JVM; `contains`,
+  `index_of`, array `-` and `Atomic.compare_and_replace` now agree with `==`,
+  and the core and the IR engine no longer disagree on `[-0.0, 2.0] - [0.0]`.
+  Stored values keep their sign. On the JVM, `==` over floats, lists, maps
+  and `any` and the generated `equals`/`hashCode` of objects go through
+  `Rt.equal`/`Rt.hash`: scalars in place, nested lists and maps on a pair
+  stack instead of Java recursion, one hash for `-0.0` and `0.0`. Scalar
+  array elements and map values now compare in place on the core and the
+  JVM, and a float array `-` uses keys: on the core 1000-float array `==`
+  takes 72% fewer instructions, float `-` 94% fewer and map `==` 21% fewer;
+  on the JVM array `==` is 22% faster, `-` 26% and map `==` 81%; other
+  comparison paths are unchanged (within 0.5% of instructions). Conformance
+  `L02.equality.signed-zero-composite`; spec 8.4, Book 8.5 (EN/RU), OIR-1.
+- Roles: `contains` and `index_of` on a `@Role` take an implementer, wrapped
+  with `role.wrap` as an action parameter takes it (#299):
+  `shapes.contains(Square(side: 2))` was rejected with "Cannot pass Square to
+  builtin action". As decided, a role wraps an implementer only where it is
+  already the expected type — typed bindings, fields, parameters, results,
+  `Maybe<Role>` and `find()` fallbacks, branches with a declared role type —
+  and `role == implementer` and branches with no declared type stay rejected.
+  Conformance: `L04.roles.contextual-wrap`, `roles.compare-implementer-rejected`,
+  `roles.branches-no-common-role`; Book 22.1 and Bible 14.3 (EN/RU).
+- Inference: a generic enum case no longer passes its uninferred `T` as the
+  expected type of a payload (#304), so `Maybe.some(loop { last 42; })`,
+  `Maybe.some(Maybe.some(42) else 0)`, `Maybe.some(xs.reduce(0) -> …)` and
+  `Slot.full(…)` with such payloads compile; `T` comes from the payload and
+  every payload is then checked against the solved specialization. Explicit
+  and contextual specializations still guide the payloads; real conflicts
+  read `cannot be both int and string`. Conformance case
+  `L05.variants.inferred-payloads`.
+- Inference: an untagged `[]` or `[:]` takes the collection type of its
+  siblings, of the other branch or the other operand, at any depth and in
+  either order (#297): `[[1], []]` and `[[], [1]]` are `@@int` (they were
+  `@any`), `["a": [1], "b": []]` is `%string:@int`, `[[1]] == [[]]` and
+  `if c { [[]]; } else { [[2, 3]]; }` type-check. The value is retagged at
+  no cost: `retag`/`map.retag` (OIR) and `move` (Sparrow) now accept a
+  source that differs from the target only by `never` parts. Concrete
+  differences still need `any` (`[[1], ["s"]]`). Conformance case
+  `L05.literal.empty-collections`.
+- Lifetimes: a resource bound in an `if`, `match`, `try` or `catch` branch
+  is destroyed when the branch ends, the last `let` included, unless the
+  branch's value is used (#308). A branch passed its last value (a `let` or
+  an unused expression) to the enclosing scope even as a statement, so
+  `if true { let a = Res(); let b = Res(); }` destroyed `a` at once and `b`
+  only at the end of the action — out of order, and after resources its
+  `destroy` needed could be closed. A value that is used (`let r = if … {
+  Res(); } else { Res(); };`) still moves out. Same on every engine;
+  conformance case `L07.destroy.branch-scope` (constant and dynamic
+  conditions, nested blocks, match, try, a throw, a kept value).
+- `try?` recovers from operands whose paths throw (#307). A throwing branch
+  selected by a literal condition no longer erases the type of the other
+  branch: `try? (if true { throw E.a; } else { 2; }) else 7` is `7` (it was
+  rejected with "Optional fallback requires Maybe<T>"). An operand with no
+  successful path takes `T` from its `Maybe<T>` boundary or its fallback;
+  with neither, an inference error replaces the silent poison that ended in
+  "internal compiler error: unreachable expression reached lowering". A caught
+  error leaves `none`, so `try?` no longer diverges with its operand (`try!`
+  still does), and a compact choice with a literal condition diverges only
+  when its selected branch does, as lowering already assumed. Conformance case
+  `L07.try-mark.diverging-operand`; Book 14.5.
+- `contains` and `index_of` work on arrays of enums with payloads —
+  `@Maybe<T>`, `@Presence<T>`, user enums, generic or not (#300). They use
+  the deep equality of array `==` and `-`: the case, then the payload. A
+  `±0.0` payload is the one corner where that differs from the variant's own
+  `==` (#314). A builtin missing on a collection names its full type
+  (`Type "@any" has no builtin action "contains"`, not `"array"`).
+  Conformance case `L05.variants.search`.
+- `text()` of an error enum writes string payloads as Okkama string literals
+  (#306): quotes, backslashes, `\n`, `\t`, `\r` and other control characters
+  (`\u{1b}`) are escaped, printable Unicode is kept, nested error enums
+  follow the same rules. `Ferr.text("a \"q\"\n")` printed a bare quote and a
+  line break, so one payload could look like two arguments and an uncaught
+  report could span lines. One shared lowering helper does it for every
+  engine; the Book (14.2) gives the rules. Conformance case
+  `L07.error-enum.text-escaping`.
+- Sparrow core: a map lookup with `else` on a `float` key failed JIT
+  verification (`arg has type f64, expected i64`): the key went to the
+  runtime helper as a float register instead of its word (#301). The other
+  helper calls were checked for the same mistake; none takes a float.
+  Conformance case `L05.map.float-key-fallback`.
+- Parser: a statement `match` and `try … catch` take one optional `;`, like
+  `if` and `loop` (#302); the formatter keeps the chosen spelling (it refused
+  to format such files before). `last if a { 1; } else { 2; };` leaves the
+  loop with the `if` expression instead of reading `a` as a condition; `last`
+  now parses its value like `return` and `throw` (#303). Compile time of the
+  t/ nesting and control files is unchanged (median of 10: 0.247 → 0.246 s).
+- Diagnostics: a positional call that only a field-shorthand constructor
+  could take now says so before generic inference and before the arguments
+  are checked (#311): `Box(5)` for `Box(:v)` reads `Constructor of "Box"
+  takes named arguments only: write Box(v: …)` instead of `Cannot infer
+  generic parameter "T"`, and `let b is Box<int> = Box(5)` no longer reports
+  a mismatch with `Box<int>`. Positional overloads, variadic constructors and
+  real inference failures are unchanged; compile time is unchanged (median of
+  10 over constructor-heavy t/ files: 0.153 → 0.154 s).
+- A boolean choice or `if` with a literal condition whose selected branch is
+  an untagged `[]` or `[:]` (`(false ?? [1] !! []) == []`) no longer stops
+  the compiler with invalid IR (#298). The lowered value takes the analyzed
+  type of the whole expression (retagging the empty collection), for literal
+  and variable conditions alike; a literal condition still emits only the
+  selected branch. Conformance case `L05.choice.empty-collections`; compile
+  time of branch-heavy t/ files is unchanged (median of 10: 0.386 → 0.388 s).
 - Packages: the publish job downloads only the package artifacts
   (`okkama-*`). Since 0.4.1 the release gate uploads its report as an
   artifact too, and `gh release create dist/*` failed on that directory, so
@@ -28,6 +460,39 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   take a thousandth of the nodes and the collector's threshold is 64; the
   job is a workflow of its own (`miri.yml`) with a 30-minute limit, run when
   the runtime core changes, every night and by hand.
+
+### Security
+
+- SQLite: the bundled C SQLite is the one of `libsqlite3-sys` 0.39.1 instead
+  of 0.35.0, which carried CVE-2026-119375 (RUSTSEC-2026-0459, severity 6.8;
+  `cargo audit` failed CI) (#330). `rusqlite` goes from 0.37 to 0.41 in the
+  IR engine's runtime, Tomato and the previous VM; two API changes followed
+  (`Error::Utf8Error` has two fields, `Statement::columns()` is an
+  iterator).
+
+### Documentation
+
+- The Book no longer promises recursive anonymous actions (#318). A `let`
+  binding becomes visible only after its initializer is checked, so an
+  anonymous action cannot call itself through the `let` that holds it (the
+  compiler always rejected that as an undefined action); recursion goes
+  through named object actions. Book 18.5 EN/RU and spec 9.2 say so, and
+  OCS pins it: recursive `let`, parenthesized and typed forms and a later
+  local are rejected, a shadowing `let` reaches the outer binding.
+
+- `int(...)` keeps arbitrary precision (#309): casts of `int`, `byte` and
+  `rat` sources are exact at any size (a `rat` truncates toward zero); only a
+  `float` source is checked against the signed-64 range. The specification
+  (6.6.1) and the Book (5.1.1, EN/RU) said every source was range-checked;
+  the engines never did. Conformance case `L02.cast.int-arbitrary-precision`.
+- `byte` no longer mixes with other numbers in the documents either (#294,
+  decision #230): the Book (5.3, 8.1, 8.4, the builtin rules; EN/RU), the
+  specification (8.3, 8.4, ranges, 8.7) and the LLM context said that
+  arithmetic and ordering accept `byte` with `int`/`rat`/`float`, that the
+  ordering operators are broader than equality, and that a `byte` is an array
+  index and a range bound. The compiler rejects all of these; the documents
+  now say so: `byte op byte` gives `int` (`/` gives `rat`), conversions are
+  explicit (`b.int()`), and indexes and range bounds are `int`.
 
 ## [0.4.1] — 2026-11-09
 
@@ -2083,7 +2548,8 @@ First release of the Rust implementation: the compiler (lexer, parser, analysis,
 IR, Sparrow (VM with JIT) and JVM engines, the standard library, LSP, `fmt`, `lint`, the
 `blade` project manager, and packages for macOS and Linux.
 
-[Unreleased]: https://github.com/shootnix/okkama/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/shootnix/okkama/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/shootnix/okkama/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/shootnix/okkama/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/shootnix/okkama/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/shootnix/okkama/compare/v0.3.1...v0.3.2

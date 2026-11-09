@@ -14,6 +14,7 @@ import "encoding/utf" take Utf8Decoded;
 import "async/timeout" take Within, TimedOut;
 import "time/duration" take Duration, DurationUnit;
 import "time/clock" take SystemClock;
+import "io/decorators" take ByteSnapshot;
 
 const TEST_CERTIFICATE = "-----BEGIN CERTIFICATE-----\nMIIBkjCCATegAwIBAgIURogIt07I0D7JGwXcWzLXBEXMjFgwCgYIKoZIzj0EAwIw\nFDESMBAGA1UEAwwJMTI3LjAuMC4xMCAXDTI2MTEwODEwNTczN1oYDzIxMjYxMDE1\nMTA1NzM3WjAUMRIwEAYDVQQDDAkxMjcuMC4wLjEwWTATBgcqhkjOPQIBBggqhkjO\nPQMBBwNCAARtv8NBHb8FCIcSNROLXUTbsmedM4zLM/nzkiCHbR6uOtZt1Dn7DYWz\nphxuVo/0sBXDWs68/dfEbRw8Qx5Xm0gKo2UwYzAdBgNVHQ4EFgQUNSNKTCL3aw0z\nRFM0cMELBtD4vbMwDwYDVR0RBAgwBocEfwAAATAMBgNVHRMBAf8EAjAAMA4GA1Ud\nDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDATAKBggqhkjOPQQDAgNJADBG\nAiEAlr+j/XjeJ84d2yqb8L+H+ua47q10bh1HOTfdQxBNitkCIQDi5vE7gPeWyE+p\n0ENI/qirX6TILGuU7wubSq0FYu3Lmw==\n-----END CERTIFICATE-----\n";
 
@@ -39,6 +40,9 @@ async main() is int {
     task.cancel();
     let cancelled = try { await task; "read early"; } catch e is Cancelled { "cancelled"; };
     out.writeln(cancelled);
+    // The peer is silent until this byte: its record arrives after both
+    // interrupted reads, however slowly this program runs.
+    await connection.write_bytes(ByteSnapshot([103.byte()]));
     let late = await Reader(connection: connection).bytes();
     out.writeln(Utf8Decoded(origin: late).string());
     0;

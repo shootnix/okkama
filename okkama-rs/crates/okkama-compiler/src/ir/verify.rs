@@ -12,8 +12,8 @@ use std::fmt;
 
 use super::cfg::{self, Def, Dominators, UsePoint};
 use super::{
-    Attr, BlockId, CatchType, CompareOp, Function, FutOp, InstKind, IntBinaryOp, Module,
-    Object, ObjectId, ResultType, RoleId, StrOp, Target, TermKind, Type, ValueId,
+    Attr, BlockId, CompareOp, Function, FutOp, InstKind, IntBinaryOp, Module,
+    Object, ObjectId, ResultType, RoleId, StrOp, Target, TermKind, Type, ValueId, VariantId,
 };
 
 /// Ошибка верификации: функция (если ошибка внутри неё) и описание.
@@ -176,6 +176,25 @@ pub fn verify(module: &Module) -> Result<()> {
             }
         }
     }
+    // Раскладка каждого случая — свой объект, не встроенный, без `destroy`
+    // и конструктора: значения создаёт только `variant.new` (#290).
+    let mut cases = HashSet::new();
+    for variant in &module.variants {
+        if variant.cases.is_empty() {
+            return Err(module_error(format!("variant {} has no cases", variant.name)));
+        }
+        for (name, object) in &variant.cases {
+            let declared = module.object(*object).ok_or_else(|| {
+                module_error(format!("variant {} case {name} refers to a missing object", variant.name))
+            })?;
+            if declared.builtin || declared.destroy.is_some() || !cases.insert(*object) {
+                return Err(module_error(format!(
+                    "variant {} case {name}: object {} must be a plain layout of one case",
+                    variant.name, declared.name
+                )));
+            }
+        }
+    }
     for function in &module.functions {
         check_signature(module, function).map_err(|message| VerifyError {
             function: Some(function.symbol.clone()),
@@ -212,6 +231,9 @@ fn check_type(module: &Module, ty: &Type) -> std::result::Result<(), String> {
         Type::Enum(id) if module.enum_decl(*id).is_none() => {
             Err(format!("type refers to missing enum #{}", id.0))
         }
+        Type::Variant(id) if module.variant(*id).is_none() => {
+            Err(format!("type refers to missing variant #{}", id.0))
+        }
         Type::Cap(id) if module.cap(*id).is_none() => {
             Err(format!("type refers to missing cap #{}", id.0))
         }
@@ -222,7 +244,7 @@ fn check_type(module: &Module, ty: &Type) -> std::result::Result<(), String> {
         Type::Map(key, value) | Type::MapBuilder(key, value) => {
             let untagged = **key == Type::Never && **value == Type::Never;
             if !untagged && !key.is_map_key() {
-                return Err(format!("map key type {key} is not int, bool or str"));
+                return Err(format!("map key type {key} is not a key type"));
             }
             check_type(module, value)
         }
@@ -686,6 +708,29 @@ impl<'a> FunctionVerifier<'a> {
         }
     }
 
+    fn variant(&self, id: VariantId) -> std::result::Result<&'a super::Variant, String> {
+        self.module
+            .variant(id)
+            .ok_or_else(|| format!("missing variant#{}", id.0))
+    }
+
+    fn variant_of(&self, value: ValueId) -> std::result::Result<VariantId, String> {
+        match self.ty(value)? {
+            Type::Variant(id) => Ok(*id),
+            other => Err(format!("{value} has type {other}, expected a variant")),
+        }
+    }
+
+    /// Объект раскладки случая `case`.
+    fn case_object(&self, id: VariantId, case: usize) -> std::result::Result<ObjectId, String> {
+        let variant = self.variant(id)?;
+        variant
+            .cases
+            .get(case)
+            .map(|(_, object)| *object)
+            .ok_or_else(|| format!("variant {} has no case #{case}", variant.name))
+    }
+
     fn object_of(&self, value: ValueId) -> std::result::Result<ObjectId, String> {
         match self.ty(value)? {
             Type::Object(object) => Ok(*object),
@@ -1018,13 +1063,59 @@ impl<'a> FunctionVerifier<'a> {
                 let Some(result) = result else {
                     return Err("`role.wrap` must define a value".to_string());
                 };
-                let (Type::Object(object), Type::Role(role)) =
-                    (self.ty(*operand)?, self.ty(result)?)
-                else {
+                let Type::Role(role) = self.ty(result)? else {
                     return Err("role.wrap converts an object to a role reference".to_string());
                 };
-                if !self.module.does(*object, *role) {
+                // Вариант делает роль, если её делает объект каждого случая.
+                let objects = match self.ty(*operand)? {
+                    Type::Object(object) => vec![*object],
+                    Type::Variant(id) => self.variant(*id)?.cases.iter().map(|(_, case)| *case).collect(),
+                    _ => return Err("role.wrap converts an object to a role reference".to_string()),
+                };
+                if let Some(object) = objects.iter().find(|object| !self.module.does(**object, *role)) {
                     return Err(format!("object#{} does not do role#{}", object.0, role.0));
+                }
+                return Ok(());
+            }
+            InstKind::VariantNew { case, fields } => {
+                let Some(result) = result else {
+                    return Err("`variant.new` must define a value".to_string());
+                };
+                let Type::Variant(id) = self.ty(result)? else {
+                    return Err("variant.new must define a variant".to_string());
+                };
+                let object = self.case_object(*id, *case)?;
+                let declared = &self.module.objects[object.0];
+                if declared.fields.len() != fields.len() {
+                    return Err(format!(
+                        "variant.new case {case} lists {} fields, the case has {}",
+                        fields.len(),
+                        declared.fields.len()
+                    ));
+                }
+                for (value, field) in fields.iter().zip(&declared.fields) {
+                    self.expect_type(*value, &field.ty)?;
+                }
+                return Ok(());
+            }
+            InstKind::VariantTag(value) => {
+                self.variant_of(*value)?;
+                Type::Int
+            }
+            InstKind::VariantGet { value, case, field } => {
+                let id = self.variant_of(*value)?;
+                let object = self.case_object(id, *case)?;
+                self.field_type(object, *field)?.clone()
+            }
+            InstKind::VariantOf(operand) => {
+                let Some(result) = result else {
+                    return Err("`variant.of` must define a value".to_string());
+                };
+                let (Type::Object(object), Type::Variant(id)) = (self.ty(*operand)?, self.ty(result)?) else {
+                    return Err("variant.of converts a case object to its variant".to_string());
+                };
+                if self.module.variant_case(*object).map(|(variant, _)| variant) != Some(*id) {
+                    return Err(format!("object#{} is not a case of variant#{}", object.0, id.0));
                 }
                 return Ok(());
             }
@@ -1177,10 +1268,14 @@ impl<'a> FunctionVerifier<'a> {
                 let Some(result) = result else {
                     return Err("`retag` must define a value".to_string());
                 };
-                self.expect_type(*value, &Type::Array(Box::new(Type::Never)))?;
-                let Type::Array(_) = self.ty(result)? else {
+                let (source, target) = (self.ty(*value)?, self.ty(result)?);
+                let (Type::Array(_), Type::Array(_)) = (source, target) else {
                     return Err(format!("{result} must have an array type"));
                 };
+                // Only `never` parts of an untagged literal change (#297).
+                if !source.fits_untagged(target) {
+                    return Err(format!("retag of {value}: {source} does not fit {target}"));
+                }
                 return Ok(());
             }
             InstKind::BuilderNew => {
@@ -1683,11 +1778,13 @@ impl<'a> FunctionVerifier<'a> {
                 let Some(result) = result else {
                     return Err("`map.retag` must define a value".to_string());
                 };
-                let never = Box::new(Type::Never);
-                self.expect_type(*map, &Type::Map(never.clone(), never))?;
-                let Type::Map(..) = self.ty(result)? else {
+                let (source, target) = (self.ty(*map)?, self.ty(result)?);
+                let (Type::Map(..), Type::Map(..)) = (source, target) else {
                     return Err(format!("{result} must have a map type"));
                 };
+                if !source.fits_untagged(target) {
+                    return Err(format!("map.retag of {map}: {source} does not fit {target}"));
+                }
                 return Ok(());
             }
             InstKind::MapBuilderNew => {
@@ -1779,10 +1876,7 @@ impl<'a> FunctionVerifier<'a> {
             TermKind::Raise(value) => self.expect_type(*value, &Type::Failure),
             TermKind::Catch { failure, ty, .. } => {
                 self.expect_type(*failure, &Type::Failure)?;
-                let caught = match ty {
-                    CatchType::Object(object) => Type::Object(*object),
-                    CatchType::Role(role) => Type::Role(*role),
-                };
+                let caught = ty.ty();
                 if self.module.throwable(&caught) {
                     Ok(())
                 } else {

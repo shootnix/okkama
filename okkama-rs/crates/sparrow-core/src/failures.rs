@@ -147,6 +147,13 @@ fn descriptor_flags(program: &Program) -> Vec<bool> {
                 roles.entry(role.0).or_default().push(index);
                 None
             }
+            // A variant value is an object of one of its cases (#290).
+            Type::Variant(variant) => {
+                for (_, case) in &program.variants[variant.0 as usize].cases {
+                    parents[offset + case.0 as usize].push(index);
+                }
+                None
+            }
             _ => {
                 pending.push(index);
                 None
@@ -719,6 +726,7 @@ impl Runtime {
     }
 
     fn report(&self, root: Word, messages: &HashMap<Word, String>) -> String {
+        const CHAIN_ENTRIES: usize = 64;
         use std::fmt::Write;
         let mut output = String::new();
         let mut pending = vec![(root, "")];
@@ -732,6 +740,11 @@ impl Runtime {
                 let _ = write!(output, "[failure #{index} already shown]");
                 continue;
             }
+            // The same bound as the other engines' reports (#270).
+            if next_index == CHAIN_ENTRIES {
+                output.push_str("... further failures not shown");
+                break;
+            }
             shown.insert(failure, next_index);
             next_index += 1;
             let Some(record) = self.failure(failure) else {
@@ -741,7 +754,17 @@ impl Runtime {
             match &record.kind {
                 FailureKind::Cancelled => output.push_str("Cancelled: Operation was cancelled"),
                 FailureKind::Native(object) => {
-                    let _ = write!(output, "NativeFailure: {}", self.heap.text(self.heap.field(*object, 3)));
+                    // Host details as the IR engine and the JVM print them; a
+                    // nested entry keeps them indented under its label.
+                    let field = |index| self.heap.text(self.heap.field(*object, index));
+                    let text = format!(
+                        "NativeFailure: {}\ncode: {}\ndomain: {}\noperation: {}",
+                        field(3),
+                        field(1),
+                        field(0),
+                        field(2)
+                    );
+                    output.push_str(&if label.is_empty() { text } else { text.replace('\n', "\n  ") });
                 }
                 FailureKind::Program(message) => {
                     let _ = write!(output, "RuntimeError: {message}");
@@ -910,6 +933,7 @@ pub extern "C" fn rt_catch(ctx: *mut Ctx, function: u64, pc: u64, failure: Word)
         let matches = match kind {
             CatchKind::Object => builtin == Some(*ty as usize),
             CatchKind::Role => program.roles.get(*ty as usize).is_some_and(|r| r.is_error()),
+            CatchKind::Variant => false,
         };
         if !matches {
             return 0;
@@ -930,6 +954,7 @@ pub extern "C" fn rt_catch(ctx: *mut Ctx, function: u64, pc: u64, failure: Word)
         let matches = match kind {
             CatchKind::Object => program.objects.get(*ty as usize).is_some_and(|o| o.is_native_failure()),
             CatchKind::Role => program.roles.get(*ty as usize).is_some_and(|r| r.is_error()),
+            CatchKind::Variant => false,
         };
         if matches {
             ctx.scratch = object;
@@ -948,6 +973,7 @@ pub extern "C" fn rt_catch(ctx: *mut Ctx, function: u64, pc: u64, failure: Word)
     let matches = match kind {
         CatchKind::Object => owner == *ty,
         CatchKind::Role => runtime.loaded.program.objects[owner as usize].does.iter().any(|w| w.role.0 == *ty),
+        CatchKind::Variant => runtime.loaded.program.variants[*ty as usize].cases.iter().any(|(_, o)| o.0 == owner),
     };
     if matches {
         ctx.scratch = payload;

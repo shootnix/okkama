@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.equality.signed-zero-composite",
+  "title": "floats inside composites compare numerically, as scalar ==",
+  "purpose": "-0.0 == 0.0 at every nesting level: arrays, nested arrays, objects, a cycle through an escaped self, variant payloads, map values and keys; contains, index_of, array difference and Atomic.compare_and_replace agree with ==; the sign itself is kept.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.COMPOSITE-EQUALITY",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "true false -0 -0\ntrue true false true false\ntrue true false\ntrue false\ntrue true true false\ntrue true true 0 1\n1 1 1 0\ntrue true true false\ntrue z true true\ntrue 2\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "#314 (found while working on #300)",
+    "expected_basis": "spec 8.4: float compares numerically and the composite rules apply recursively; owner decision on #314: equal scalars stay equal at every nesting level, stored values keep their sign."
+  },
+  "status": "mandatory"
+}

@@ -175,7 +175,8 @@ fn ir_native_failure_runs_cleanup_and_preserves_causes() {
     let module = lower(r#"defer utf8_decode(@byte(255)); panic "primary";"#);
     assert_eq!(
         execute(&module).unwrap_err().to_string(),
-        "Panic: primary\nSecondary cleanup failure:\n  NativeFailure: Bytes are not valid UTF-8"
+        "Panic: primary\nSecondary cleanup failure:\n  NativeFailure: Bytes are not valid UTF-8\n  code: invalid_data\n  \
+         domain: core.utf\n  operation: runtime/utf@1::utf8_decode/1"
     );
     let module = lower(
         r#"try { utf8_decode(@byte(255)); 0; } catch e is NativeFailure { utf16_decode(@byte(0), "big"); 0; }"#,
@@ -205,6 +206,15 @@ fn sparrow_native_failure_unwinds_cleanup() {
         else {
             panic!("expected failure");
         };
-        assert_eq!(error.to_string(), expected);
+        assert_eq!(error.to_string(), without_native_details(&expected));
     }
+}
+
+/// The report without the host details of native failures (`code:`,
+/// `domain:`, `operation:`, #270): the previous VM prints only the message.
+fn without_native_details(text: &str) -> String {
+    text.lines()
+        .filter(|line| !["code: ", "domain: ", "operation: "].iter().any(|prefix| line.trim_start().starts_with(prefix)))
+        .collect::<Vec<_>>()
+        .join("\n")
 }

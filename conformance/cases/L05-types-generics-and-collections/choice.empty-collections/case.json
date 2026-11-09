@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.choice.empty-collections",
+  "title": "a boolean choice with an untagged [] or [:] on one side: literal and variable conditions, typed uses",
+  "purpose": "Observe that a compact choice keeps the analyzed collection type when its condition is a literal (#298).",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "TYPE.COMPACT-CHOICE",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "true true true true\ntrue true\n0 0 1\ntrue 7\ntrue\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#15"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #298 from the Book (24.3) and the spec",
+    "expected_basis": "Book 24.3: the left side is bool, the branch types agree, only the selected branch is evaluated (the other panics); an empty literal takes the collection type of the other branch, so every comparison with [] or [:] holds and sizes are 0, 0 and 1."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.try-mark.diverging-operand",
+  "title": "try? recovers from operands whose paths throw",
+  "purpose": "A throwing branch selected by a literal condition, an operand with no successful path (typed by its Maybe<T> boundary or its fallback), match, compact choices, loops, nested handlers and try! keep try? a Maybe<T> that is none on a caught error, with a lazy fallback.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.TRY-MARK",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "7 2 7 2\nnone 8 9\n-1 40 5 2 300 -2 5\n6 1 4\nfallback 60\nfallback 70\n3 60 70\nreached none\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.6.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "#307 (found by the t/ suite, #245)",
+    "expected_basis": "spec 9.6.1 and Book 14.5: try? is Maybe.some(value), or Maybe.none when evaluating its operand throws an Error; a throw ends its own path, not the try? that handles it."
+  },
+  "status": "mandatory"
+}

@@ -150,15 +150,44 @@ fn branch_values_cross_the_expected_type_one_by_one() {
 }
 
 #[test]
-fn heterogeneous_literals_box_their_elements_into_any() {
-    // R08: разнородный литерал — `@any`, каждый элемент упакован явно.
-    assert!(messages("main() is int { let xs = [1, \"a\"]; let ys is @any = xs; 0; }").is_empty());
+fn heterogeneous_literals_need_an_explicit_any_boundary() {
+    // #315: `any` never comes from inference; only a declared `@any`/`%K:any` boxes.
+    let array = "Array elements have incompatible types int and string; declare an explicit @any boundary to allow heterogeneous values";
+    let map = "Map values have incompatible types int and string; declare an explicit %string:any boundary to allow heterogeneous values";
+    assert_eq!(messages("main() is int { let xs = [1, \"a\"]; 0; }"), [array]);
     assert_eq!(
-        messages("main() is int { let xs = [1, \"a\"]; let ys is @int = xs; 0; }"),
-        ["Cannot initialize variable \"ys\" of type @int with @any"]
+        messages("main() is int { let xs = [1, 2.0]; 0; }"),
+        ["Array elements have incompatible types int and float; declare an explicit @any boundary to allow heterogeneous values"]
     );
-    // Объекты одной роли без цели — тоже `@any`: общая роль не выводится.
-    assert!(messages("main() is int { let xs is @int = [1, 2..=3]; 0; }").is_empty());
+    assert_eq!(messages("main() is int { let m = [\"a\": 1, \"b\": \"two\"]; 0; }"), [map]);
+    // An untyped local does not box: the binding is not a boundary.
+    assert_eq!(messages("main() is int { let xs = [1, \"a\"]; let ys is @any = xs; 0; }"), [array]);
+    // The error is at the literal, and nothing cascades from it.
+    let source = "module app v1.0.0; main() is int { let xs = [1, \"a\"]; let n = xs.size(); 0; }";
+    let found = errors(source);
+    assert_eq!(found.len(), 1);
+    let at = source.find("[1,").unwrap() as u32;
+    assert_eq!((found[0].span.start, found[0].span.end), (at, at + "[1, \"a\"]".len() as u32));
+    // Declared boundaries: bindings, parameters, results, constants, nested positions.
+    for accepted in [
+        "main() is int { let xs is @any = [1, \"a\"]; let m is %string:any = [\"a\": 1, \"b\": \"two\"]; 0; }",
+        "main() is int { let xs is @any = [1, 2.0]; let nested is @@any = [[1, \"a\"], [2.0]]; 0; }",
+        "main() is int { let m is %string:@any = [\"a\": [1, \"b\"]]; 0; }",
+        "object Box { Box(); size(xs is @any) is int { xs.size(); } } main() is int { Box().size([1, \"a\"]); }",
+        "object Box { Box(); row() is %string:any { [\"id\": 7, \"name\": \"Ada\"]; } } main() is int { Box().row().size(); }",
+        // Homogeneous literals and #297: an untagged `[]` is no conflict.
+        "main() is int { let xs is @int = [1, 2..=3]; let ys is @@int = [[1], []]; let zs = [[1], []]; let n is @@int = zs; 0; }",
+    ] {
+        assert!(messages(accepted).is_empty(), "{accepted}: {:?}", messages(accepted));
+    }
+    // A typed constant is a boundary too; an `any` value is never a compile-time
+    // constant (#153), and that is the only error.
+    assert_eq!(
+        messages("const MIXED is @any = [1, \"a\"]; main() is int { MIXED.size(); }"),
+        ["Constant \"MIXED\" cannot be computed by the compiler: its value has to cross a role or `any` boundary"]
+    );
+    // `any` is an element, not a collection boundary: the inner literal has none.
+    assert_eq!(messages("main() is int { let xs is @any = [[1, \"a\"]]; 0; }"), [array]);
 }
 
 #[test]
@@ -235,12 +264,10 @@ fn map_keys_have_exactly_one_type() {
         messages("main() is int { let m = [1: \"int\", \"1\": \"string\"]; 0; }"),
         ["Map keys have different types: int and string"]
     );
-    // Разнородные значения — `%K:any` (R08).
+    // Разнородные значения — только под объявленным `%K:any` (#315).
     assert!(
-        messages(
-            "main() is int { let m = [\"a\": 1, \"b\": \"two\"]; let n is %string:any = m; 0; }"
-        )
-        .is_empty()
+        messages("main() is int { let n is %string:any = [\"a\": 1, \"b\": \"two\"]; 0; }")
+            .is_empty()
     );
 }
 
@@ -362,6 +389,221 @@ fn successor_obligations_are_checked_before_lowering() {
         "let c = C(); c = c.inc(); 0;",
         "let c = C(); for 1..=2 -> i { c = c.inc(); } c.value();",
         "let c = C(); let d = if 1 > 0 { c.inc(); } else { c.inc(); }; d.value();",
+    ] {
+        assert!(
+            messages(&format!("{COUNTER} main() is int {{ {body} }}")).is_empty(),
+            "{body}"
+        );
+    }
+}
+
+/// Замыкание несёт обязательства захваченных successor (#322).
+#[test]
+fn closures_carry_successor_obligations() {
+    let objects = format!(
+        "{COUNTER} object Run {{ Run(); call(f is () is int) is int {{ f(); }} }} \
+         object Keep {{ has f is () is int; Keep(:f); }} \
+         object Make {{ Make(); \
+           made() is () is int {{ let c = C(); let d = c.inc(); () is int {{ d.value(); }}; }} \
+           returned() is () is int {{ let c = C(); let d = c.inc(); let show = () is int {{ d.value(); }}; return show; }} }}"
+    );
+    let unused = |name: &str| {
+        format!(
+            "Successor action result must be used; \"d\" is carried by action value \"{name}\", which can leave scope without being called, returned, passed or stored"
+        )
+    };
+    let start = "let c = C(); let d = c.inc(); let show = () is int { d.value(); };";
+    let leaked =
+        "Successor action result must be used; binding \"d\" can leave scope without consumption"
+            .to_string();
+    for (body, expected) in [
+        // Создание и локальная привязка не гасят.
+        (format!("{start} 0;"), unused("show")),
+        (format!("{start} let again = show; 0;"), unused("again")),
+        (format!("{start} let inner = show; let outer = () is int {{ inner(); }}; 0;"), unused("outer")),
+        // Вызов только на одной ветви, в теле цикла, которое может не выполниться.
+        (format!("{start} let f = 1 > 0; if f {{ show(); }} 0;"), unused("show")),
+        (format!("{start} for 1..=2 -> i {{ show(); }} 0;"), unused("show")),
+        (format!("{start} return 0;"), unused("show")),
+        // Сравнение — не использование.
+        (format!("{start} let same = show == show; 0;"), unused("show")),
+        // Отброшенное временное замыкание обязательство не гасит.
+        (
+            "let c = C(); let d = c.inc(); (() is int { d.value(); }); 0;".to_string(),
+            leaked.clone(),
+        ),
+        // Тело использует захват не на всех нормальных путях: замыкание его
+        // не несёт, и вызов не гасит (§11.1).
+        (
+            "let c = C(); let d = c.inc(); let f = 1 > 0; \
+             let show = () is int { if f { d.value(); } else { 0; } }; show();"
+                .to_string(),
+            leaked.clone(),
+        ),
+        (
+            "let c = C(); let d = c.inc(); let f = 1 > 0; \
+             let show = () is int { if f { return 0; } d.value(); }; show();"
+                .to_string(),
+            leaked.clone(),
+        ),
+        (
+            "let c = C(); let d = c.inc(); let show = () is int { let e = d; 0; }; show();"
+                .to_string(),
+            leaked.clone(),
+        ),
+        (
+            "let c = C(); let d = c.inc(); let show = () is int { for 1..=2 -> i { d.value(); } 0; }; show();"
+                .to_string(),
+            leaked.clone(),
+        ),
+    ] {
+        assert_eq!(
+            messages(&format!("{objects} main() is int {{ {body} }}")),
+            [expected],
+            "{body}"
+        );
+    }
+    for body in [
+        // Вызов, через алиас, сразу на месте, вложенно, на всех ветвях, в defer.
+        format!("{start} show();"),
+        format!("{start} let again = show; again();"),
+        "let c = C(); let d = c.inc(); (() is int { d.value(); })();".to_string(),
+        format!("{start} let outer = () is int {{ show(); }}; outer();"),
+        format!("{start} let f = 1 > 0; if f {{ show(); }} else {{ show() + 1; }}"),
+        format!("{start} defer show(); 0;"),
+        // Передача, хранение, возврат.
+        format!("{start} Run().call(show);"),
+        format!("{start} let all = [show]; 0;"),
+        format!("{start} let named = [\"show\": show]; 0;"),
+        format!("{start} let kept = Keep(f: show); 0;"),
+        format!("{start} let maybe = Maybe.some(show); 0;"),
+        "let made = Make().made(); made();".to_string(),
+        // Одно обязательство на два замыкания и прямое использование.
+        format!("{start} let other = () is int {{ d.value() + 1; }}; other();"),
+        format!("{start} d.value();"),
+        "let c = C(); let d = c.inc(); d.value(); let show = () is int { d.value(); }; 0;"
+            .to_string(),
+        // `panic` и `throw` — не нормальный выход; использование на всех
+        // остальных путях, в том числе через возврат и аргумент.
+        "let c = C(); let d = c.inc(); let f = 1 > 0; \
+         let show = () is int { if f { panic \"no\"; } d.value(); }; show();"
+            .to_string(),
+        "let c = C(); let d = c.inc(); let f = 1 > 0; \
+         let show = () is int { if f { return d.value(); } d.value() + 1; }; show();"
+            .to_string(),
+        "let c = C(); let d = c.inc(); \
+         let show = () is () is int { () is int { d.value(); }; }; let inner = show(); inner();"
+            .to_string(),
+        // Замыкание без successor не меняется.
+        "let n = 1; let plain = () is int { n; }; 0;".to_string(),
+    ] {
+        assert!(
+            messages(&format!("{objects} main() is int {{ {body} }}")).is_empty(),
+            "{body}"
+        );
+    }
+}
+
+/// Bound action (`d.value` без вызова) несёт обязательство получателя, как
+/// замыкание — свои захваты (#324); прямой вызов гасит сразу.
+#[test]
+fn bound_actions_carry_successor_obligations() {
+    let objects = format!(
+        "{COUNTER} role Valued {{ value() is int; }} object V does Valued {{ V(); value() is int {{ 7; }} }} \
+         object Run {{ Run(); call(f is () is int) is int {{ f(); }} }} \
+         object Keep {{ has f is () is int; Keep(:f); }} \
+         object Make {{ Make(); made() is () is int {{ let c = C(); let d = c.inc(); let r is () is int = d.value; r; }} }}"
+    );
+    let carried = |name: &str| {
+        format!(
+            "Successor action result must be used; \"d\" is carried by action value \"{name}\", which can leave scope without being called, returned, passed or stored"
+        )
+    };
+    let start = "let c = C(); let d = c.inc(); let read is () is int = d.value;";
+    for (body, expected) in [
+        ("let c = C(); let d = c.inc(); let read = d.value; 0;".to_string(), carried("read")),
+        (format!("{start} 0;"), carried("read")),
+        (format!("{start} let again = read; 0;"), carried("again")),
+        (format!("{start} let f = 1 > 0; if f {{ read(); }} 0;"), carried("read")),
+        (format!("{start} for 1..=2 -> i {{ read(); }} 0;"), carried("read")),
+        (format!("{start} return 0;"), carried("read")),
+        // Временный successor: назвать нечего, кроме значения-действия.
+        (
+            "let c = C(); let read is () is int = c.inc().value; 0;".to_string(),
+            "Successor action result must be used; action value \"read\" carries it and can leave scope without being called, returned, passed or stored"
+                .to_string(),
+        ),
+    ] {
+        assert_eq!(
+            messages(&format!("{objects} main() is int {{ {body} }}")),
+            [expected],
+            "{body}"
+        );
+    }
+    for body in [
+        format!("{start} read();"),
+        format!("{start} let again = read; again();"),
+        format!("{start} let other is () is int = d.value; other();"),
+        format!("{start} d.value();"),
+        "let c = C(); let d = c.inc(); d.value(); let read is () is int = d.value; 0;".to_string(),
+        format!("{start} Run().call(read);"),
+        format!("{start} let all = [read]; 0;"),
+        format!("{start} let kept = Keep(f: read); 0;"),
+        "let made = Make().made(); made();".to_string(),
+        format!("{start} defer read(); 0;"),
+        format!("{start} let show = () is int {{ read(); }}; show();"),
+        format!("{start} let f = 1 > 0; if f {{ read(); }} else {{ read() + 1; }}"),
+        // Bound action роли без successor не меняется.
+        "let v is Valued = V(); let read is () is int = v.value; read();".to_string(),
+        // Прямые вызовы и цепочки successor гасят получателя сразу.
+        "let c = C(); c.inc().value();".to_string(),
+        "let c = C(); c.inc().inc().value();".to_string(),
+        "let c = C(); let e = c.inc().inc(); e.value();".to_string(),
+    ] {
+        assert!(
+            messages(&format!("{objects} main() is int {{ {body} }}")).is_empty(),
+            "{body}"
+        );
+    }
+}
+
+/// Захват — снимок: перепривязать захваченное имя нельзя (#321).
+#[test]
+fn captured_bindings_cannot_be_rebound() {
+    let captured = |name: &str| {
+        format!(
+            "Cannot rebind captured variable \"{name}\" inside an anonymous action: captured bindings are snapshots; return the successor instead"
+        )
+    };
+    for (body, expected) in [
+        ("let c = C(); let bump = () is int { c = c.inc(); c.value(); }; bump();", captured("c")),
+        (
+            "let c = C(); let outer = () is int { let inner = () is int { c = c.inc(); c.value(); }; inner(); }; outer();",
+            captured("c"),
+        ),
+        // Своя локальная внешнего замыкания — захват для внутреннего.
+        (
+            "let outer = () is int { let d = C(); let inner = () is int { d = d.inc(); d.value(); }; d = d.inc(); inner() + d.value(); }; outer();",
+            captured("d"),
+        ),
+        // Сообщение о захвате важнее, чем о типе без successor.
+        ("let n = 1; let f = () is int { n = 2; n; }; f();", captured("n")),
+    ] {
+        assert_eq!(
+            messages(&format!("{COUNTER} main() is int {{ {body} }}")),
+            [expected],
+            "{body}"
+        );
+    }
+    for body in [
+        "let c = C(); let read = () is int { c.value(); }; read();",
+        "let c = C(); let bump = () is int { let later = c.inc(); later.value(); }; bump();",
+        "let bump = () is int { let c = C(); c = c.inc(); c.value(); }; bump();",
+        // Затенение локальной и параметром: привязка самого действия.
+        "let c = C(); let f = () is int { let c = C(); c = c.inc(); c.value(); }; f() + c.value();",
+        "let c = C(); let f = (c is C) is int { c = c.inc(); c.value(); }; f(c);",
+        // Внешнее имя перепривязывается снаружи, снимок не меняется.
+        "let c = C(); let read = () is int { c.value(); }; c = c.inc(); read() + c.value();",
     ] {
         assert!(
             messages(&format!("{COUNTER} main() is int {{ {body} }}")).is_empty(),
@@ -641,4 +883,201 @@ fn constants_are_computed_by_the_compiler() {
         let found = messages(text);
         assert!(found.iter().any(|m| m.contains(expected)), "{text}: {found:?}");
     }
+}
+
+#[test]
+fn positional_calls_of_shorthand_constructors_name_the_named_form() {
+    // #311: reported before generic inference and before the arguments.
+    let decls = "object Point { has x is int; has y is int; Point(:x, :y); } \
+                 object Box<T> { has v is T; Box(:v); } \
+                 object Pair { has a is int; has b is int; Pair(:a, :b); Pair(a is int) { self.a = a; self.b = 0; } } \
+                 object Bag { has xs is @int; Bag(:xs); Bag(items is ...int) { self.xs = items...; } }";
+    let check = |body: &str| messages(&format!("{decls} main() is int {{ {body} 0; }}"));
+    assert_eq!(
+        check("let p = Point(1, 2);"),
+        ["Constructor of \"Point\" takes named arguments only: write Point(x: …, y: …)"]
+    );
+    for body in ["let b = Box(5);", "let b is Box<int> = Box(5);", "let b = Box(nope);"] {
+        assert_eq!(check(body), ["Constructor of \"Box\" takes named arguments only: write Box(v: …)"], "{body}");
+    }
+    assert_eq!(
+        check("let p = Pair(1, 2);"),
+        ["No constructor of \"Pair\" takes 2 positional argument(s); the shorthand takes named ones: write Pair(a: …, b: …)"]
+    );
+    // Positional overloads, named calls and real inference failures are unchanged.
+    for body in ["let p = Pair(1);", "let g = Bag(1, 2, 3);", "let p = Point(x: 1, y: 2);", "let b = Box(v: 5);"] {
+        assert!(check(body).is_empty(), "{body}: {:?}", check(body));
+    }
+    assert_eq!(check("let b = Box(v: []);"), ["Cannot infer generic parameter \"T\" for object \"Box\""]);
+}
+
+#[test]
+fn arrays_of_payload_enums_have_searches_and_errors_name_the_full_type() {
+    // #300: contains/index_of take the equality of `==`, variants included.
+    let decls = "enum Reading = (empty, value(item is int)); enum Slot<T> = (vacant, full(item is T));";
+    for body in [
+        "let xs is @Reading = [Reading.empty]; let a = xs.contains(Reading.value(1)); let b = xs.index_of(Reading.empty);",
+        "let xs is @Maybe<int> = [Maybe.some(1)]; let a = xs.contains(Maybe<int>.none);",
+        "let xs is @Presence<int> = [Presence<int>.missing]; let a = xs.index_of(Presence.some(2));",
+        "let xs is @Slot<int> = [Slot.full(3)]; let a = xs.contains(Slot<int>.vacant);",
+    ] {
+        let found = messages(&format!("{decls} main() is int {{ {body} 0; }}"));
+        assert!(found.is_empty(), "{body}: {found:?}");
+    }
+    assert_eq!(
+        messages("main() is int { let a is any = 1; let xs is @any = [a]; let b = xs.contains(a); 0; }"),
+        ["Type \"@any\" has no builtin action \"contains\""]
+    );
+}
+
+#[test]
+fn try_optional_keeps_its_type_when_operand_paths_throw() {
+    // #307: a throw ends its own path, not the try? that recovers from it.
+    let decls = "enum E is Error = (a, b);";
+    let check = |body: &str| messages(&format!("{decls} main() is int {{ let c = 1 > 0; {body} 0; }}"));
+    for body in [
+        "let m = try? (if true { throw E.a; } else { 2; }) else 7;",
+        "let m is Maybe<int> = try? (if true { throw E.a; } else { 2; });",
+        "let m is Maybe<int> = try? (if c { throw E.a; } else { throw E.b; });",
+        "let m = try? (if c { throw E.a; } else { throw E.b; }) else 8; let n is int = m;",
+        "let m = try? loop { throw E.a; } else 9;",
+        "let m = try? (true ?? throw E.a !! 2) else 5;",
+        "let m = try! (if true { throw E.a; } else { 2; }); let n is int = m;",
+    ] {
+        assert!(check(body).is_empty(), "{body}: {:?}", check(body));
+    }
+    // No successful path and no context: an inference error, not a silent poison.
+    for body in ["let m = try? (if c { throw E.a; } else { throw E.b; });", "let m = try? loop { throw E.a; };"] {
+        assert_eq!(
+            check(body),
+            ["Cannot infer the type of try?: its operand never produces a value; declare Maybe<T> or add a fallback"],
+            "{body}"
+        );
+    }
+    // The selected throwing branch keeps the other branch's type for try?.
+    assert_eq!(
+        check("let m = try? (if true { throw E.a; } else { 2; }); let n is Maybe<string> = m;"),
+        ["Cannot initialize variable \"n\" of type Maybe<string> with Maybe<int>"]
+    );
+}
+
+#[test]
+fn untagged_empty_collections_take_their_siblings_type_at_any_depth() {
+    // #297: order, nesting, maps, branches, comparisons, constants and results.
+    for body in [
+        "let a is @@int = [[1], []];",
+        "let a is @@int = [[], [1]];",
+        "let m is %string:@int = [\"a\": [1], \"b\": []];",
+        "let y is @@@int = [[[]], [[1]]];",
+        "let z is @%string:int = [[:], [\"k\": 1]];",
+        "let v is @@int = [[]]; let ok = v == [[]];",
+        "let ok = [[1]] == [[]];",
+        "let c = true; let x is @@int = if c { [[]]; } else { [[2, 3]]; };",
+        "let x is @@int = match 1 { case 1 { [[]]; } else { [[1]]; } };",
+    ] {
+        let found = messages(&format!("main() is int {{ {body} 0; }}"));
+        assert!(found.is_empty(), "{body}: {found:?}");
+    }
+    let found = messages("const K is @@int = [[]]; object P { P(); r() is @@int { [[]]; } } main() is int { 0; }");
+    assert!(found.is_empty(), "{found:?}");
+    // Concrete differences are not taken for empty ones.
+    assert_eq!(
+        messages("main() is int { let c = true; let x = if c { [[1]]; } else { [[\"s\"]]; }; 0; }"),
+        ["Branches produce different types: @@int and @@string"]
+    );
+    assert_eq!(
+        messages("main() is int { let ok = [[1]] == [[\"s\"]]; 0; }"),
+        ["Cannot compare @@int and @@string"]
+    );
+}
+
+#[test]
+fn generic_cases_do_not_impose_an_uninferred_parameter_on_their_payloads() {
+    // #304: loop/last, else and reduce need an expected type; an uninferred T is none.
+    let decls = "enum Slot<T> = (vacant, full(item is T)); enum Two<T> = (empty, both(a is T, b is T));";
+    for body in [
+        "let a = Maybe.some(loop { last 42; });",
+        "let a = Maybe.some(Maybe.some(42) else 0);",
+        "let a = Maybe.some((0..1).reduce(0) -> acc, i { 42; });",
+        "let a = Slot.full(loop { last 42; });",
+        "let a = Two.both(loop { last 1; }, 2);",
+        "let a = Slot.full(Slot.full(loop { last 5; }));",
+        "let a = Slot<int>.full(loop { last 3; });",
+    ] {
+        let found = messages(&format!("{decls} main() is int {{ {body} 0; }}"));
+        assert!(found.is_empty(), "{body}: {found:?}");
+    }
+    // Real conflicts and missing evidence are still reported.
+    assert_eq!(
+        messages(&format!("{decls} main() is int {{ let a = Two.both(loop {{ last 1; }}, \"s\"); 0; }}")),
+        ["Generic parameter \"T\" for object \"Two\" cannot be both int and string"]
+    );
+    assert_eq!(
+        messages(&format!("{decls} main() is int {{ let a = Slot.full([]); 0; }}")),
+        ["Cannot infer type arguments for Slot.full; provide an expected type or explicit type arguments"]
+    );
+}
+
+#[test]
+fn builtin_role_parameters_wrap_implementers_and_nothing_else_does() {
+    // #299: role.wrap where the role is the declared type, as for action parameters.
+    let decls = "role Shape { area() is int; } \
+                 object Square does Shape { has side is int; Square(:side); area() is int { side * side; } } \
+                 object Rect does Shape { has w is int; Rect(:w); area() is int { w; } }";
+    let check = |body: &str| messages(&format!("{decls} main() is int {{ let c = 1 > 0; let shapes is @Shape = [Square(side: 1)]; {body} 0; }}"));
+    for body in [
+        "let a = shapes.contains(Square(side: 1));",
+        "let a = shapes.index_of(Rect(w: 2)) else -1;",
+        "let s is Shape = Rect(w: 1); let a = shapes.contains(s);",
+    ] {
+        assert!(check(body).is_empty(), "{body}: {:?}", check(body));
+    }
+    for (body, expected) in [
+        ("let a = shapes.contains(5);", "Cannot pass int to builtin action \"contains\" parameter of type Shape"),
+        ("let s is Shape = Rect(w: 1); let a = s == Rect(w: 1);", "Cannot compare Shape and Rect"),
+        ("let a = if c { Rect(w: 1); } else { Square(side: 1); };", "Branches produce different types: Rect and Square"),
+    ] {
+        assert_eq!(check(body), [expected], "{body}");
+    }
+}
+
+#[test]
+fn an_untyped_empty_reduce_accumulator_says_what_to_write() {
+    // #295: the block gives the type the initial value lacks.
+    assert_eq!(
+        messages("main() is int { let built = (0..3).reduce([]) -> acc, i { acc + [i * i]; }; 0; }"),
+        ["Reduce starts from [], which has no element type, and its block gives @int: start from @int() or declare the result type (let name is @int = …)"]
+    );
+    assert_eq!(
+        messages("main() is int { let index = (0..3).reduce([:]) -> found, i { found + [i: i]; }; 0; }"),
+        ["Reduce starts from [:], which has no key or value type, and its block gives %int:int: declare the result type (let name is %int:int = …)"]
+    );
+    for accepted in [
+        "main() is int { let built = (0..3).reduce(@int()) -> acc, i { acc + [i * i]; }; built.size(); }",
+        "main() is int { let built is @int = (0..3).reduce([]) -> acc, i { acc + [i * i]; }; built.size(); }",
+        "main() is int { let index is %int:int = (0..3).reduce([:]) -> found, i { found + [i: i]; }; index.size(); }",
+        // A block that keeps the untyped accumulator is still valid.
+        "main() is int { let same = (0..3).reduce([]) -> acc, i { acc; }; 0; }",
+    ] {
+        assert!(messages(accepted).is_empty(), "{accepted}: {:?}", messages(accepted));
+    }
+}
+
+#[test]
+fn an_ambiguous_call_names_the_argument_types_and_the_tied_candidates() {
+    // #273: as the no-match case names the argument types.
+    let pairing = "object Pairing { Pairing(); \
+        joined(left is int, right is any) is string { \"left\"; } \
+        joined(left is any, right is int) is string { \"right\"; } \
+        joined(left is string, right is string) is string { \"strings\"; } }";
+    assert_eq!(
+        messages(&format!("{pairing} main() is int {{ Pairing().joined(1, 2); 0; }}")),
+        ["Ambiguous call of action \"joined\" on object \"Pairing\" with (int, int): joined(int, any) and joined(any, int) fit equally well"]
+    );
+    let boxes = "object Box { has text is string; Box(left is int, right is any) { text = \"l\"; } \
+        Box(left is any, right is int) { text = \"r\"; } }";
+    assert_eq!(
+        messages(&format!("{boxes} main() is int {{ let b = Box(1, 2); 0; }}")),
+        ["Ambiguous construction of \"Box\" with (int, int): Box(int, any) and Box(any, int) fit equally well"]
+    );
 }

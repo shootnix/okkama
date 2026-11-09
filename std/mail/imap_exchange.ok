@@ -81,7 +81,7 @@ object ImapExchangeState {
     prefix() is @byte {prefix;}
     serial() is BigInt {serial;}
 }
-object ImapExchangeCleanup {
+hidden object ImapExchangeCleanup {
     has origin is ImapCommandChannel;has complete is Event;
     ImapExchangeCleanup(origin is ImapCommandChannel, complete is Event) {self.origin=origin;self.complete=complete;}
     close() is void {if !complete.ready() {origin.abort();}}

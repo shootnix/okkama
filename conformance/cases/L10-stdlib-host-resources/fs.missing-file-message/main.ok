@@ -1,0 +1,23 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "fs/file" take File, FileMode, FileEntry, FileContent, FileSystemFailure;
+import "fs/path" take Path;
+
+main() is int {
+    let out = Stdout();
+    // The whole failure text, not only its code: every engine says the same (#319).
+    let whole = try {
+        FileContent(origin: FileEntry(path: Path("does-not-exist.txt"))).bytes().size().string();
+    } catch e is FileSystemFailure {
+        e.text();
+    };
+    let opened = try {
+        File(mode: FileMode.reading, path: Path("does-not-exist.txt")).read_text();
+    } catch e is FileSystemFailure {
+        e.text();
+    };
+    out.writeln(whole);
+    out.writeln(opened);
+    0;
+}

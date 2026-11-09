@@ -1,0 +1,10 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    Stdout().writeln("unreachable");
+    let first = () is int { second() + 1; };
+    let second = () is int { 2; };
+    first();
+}

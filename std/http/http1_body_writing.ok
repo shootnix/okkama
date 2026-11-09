@@ -77,7 +77,7 @@ object Http1BodyWriteOperation {
         let group is FutureGroup<AsyncWriting>=FutureGroup();writes.replace([group]);let pending=destination.value().write(source);group.start(pending);pending;
     }
 }
-object Http1BodyWriteCleanup {
+hidden object Http1BodyWriteCleanup {
     has reads is Atomic<@FutureGroup<@byte>>;has writes is Atomic<@FutureGroup<AsyncWriting>>;
     Http1BodyWriteCleanup(reads is Atomic<@FutureGroup<@byte>>,writes is Atomic<@FutureGroup<AsyncWriting>>){self.reads=reads;self.writes=writes;}
     async close() is void {
@@ -88,11 +88,11 @@ object Http1BodyWriteCleanup {
         for writing -> group {group.cancel();}for reading -> group {group.cancel();}
     }
 }
-object Http1ReadSettlement {
+hidden object Http1ReadSettlement {
     has groups is @FutureGroup<@byte>;Http1ReadSettlement(groups is @FutureGroup<@byte>){self.groups=groups;}
     async close() is void{for groups -> group{await group.wait();}}
 }
-object Http1WriteSettlement {
+hidden object Http1WriteSettlement {
     has groups is @FutureGroup<AsyncWriting>;Http1WriteSettlement(groups is @FutureGroup<AsyncWriting>){self.groups=groups;}
     async close() is void{for groups -> group{await group.wait();}}
 }

@@ -57,8 +57,11 @@ impl WorkDir {
         path
     }
 
+    /// The failure report without its place and stack: the tests compare
+    /// messages; `uncaught_failures_report_causes_place_and_stack` the rest.
     fn java(&self, class: &str, args: &[&str]) -> Output {
         Command::new("java")
+            .env("OKKAMA_TRACE", "off")
             .arg("-Xverify:all")
             .arg("-cp")
             .arg(&self.0)
@@ -547,6 +550,24 @@ main() is int { throw Boom.failed(7); }",
     assert_eq!(
         String::from_utf8_lossy(&output.stderr).trim_end(),
         "Boom: Boom.failed(7)"
+    );
+}
+
+#[test]
+fn an_uncaught_error_text_escapes_its_string_payload() {
+    // #306: the payload is an Okkama literal; the report stays one line.
+    let dir = WorkDir::new();
+    dir.build_source(
+        "Escaped",
+        "module app v1.0.0;
+enum Ferr is Error = (text(s is string));
+main() is int { throw Ferr.text(\"line1\\nline2 \\\"q\\\"\"); }",
+    );
+    let output = dir.java("Escaped", &[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr).trim_end(),
+        "Ferr: Ferr.text(\"line1\\nline2 \\\"q\\\"\")"
     );
 }
 
@@ -1075,15 +1096,15 @@ fn ownership_cleanup_order_matches_the_interpreter() {
             "let r = try { let x = [Fragile(code: 3), Fragile(code: 4)]; 0; }",
             4,
         ),
-        // Значение ветви `if`/`match`/`try` принадлежит внешнему блоку.
+        // Ветвь `if`/`match`, как и блок, уничтожает свои `let` при выходе (#308).
         (
             "let r = try { if true { let f = Fragile(code: 2); } throw Boom.failed(1); }",
-            1,
+            2,
         ),
         (
             "let n = 1; let r = try { match n { case 1 { let f = Fragile(code: 2); } else { 0; } } \
              throw Boom.failed(1); }",
-            1,
+            2,
         ),
         (
             "let r = try { { let f = Fragile(code: 2); } throw Boom.failed(1); }",
@@ -1619,7 +1640,7 @@ fn native_failures_are_catchable_system_objects() {
     );
     assert_eq!(
         String::from_utf8(output.stderr).unwrap(),
-        "NativeError: BigInt division by zero\ncode: invalid_input\ndomain: core.bigint\n\
+        "NativeFailure: BigInt division by zero\ncode: invalid_input\ndomain: core.bigint\n\
          operation: runtime/bigint@1::bigint_quotient/2\n"
     );
     let build = dir.build_files(
@@ -1749,7 +1770,7 @@ fn any_values_are_opaque_boxes() {
              object Holder { has value is any; Holder(:value); }\n\
              object Relay { Relay(); count(values is @any) is int { values.size(); } echo(value is any) is any { value; } }\n\
              main() is int {\n\
-                 let mixed = [1, \"two\", 3.0];\n\
+                 let mixed is @any = [1, \"two\", 3.0];\n\
                  let row is %string:any = [\"id\": 7, \"name\": \"Ada\"];\n\
                  let echoed = Relay().echo(Holder(value: 1));\n\
                  Stdout().writeln(Relay().count(mixed).string(), \" \", row.size().string());\n\
@@ -2415,4 +2436,26 @@ fn variant_payloads_optional_fallback_and_presence_run_on_jvm() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn uncaught_failures_report_causes_place_and_stack() {
+    // #270: the JVM prints the report of the Sparrow core — causes, secondary
+    // cleanup failures, the place and the Okkama stack, not the JVM's frames.
+    for name in ["recursion", "closure", "rethrow", "task", "cause", "chain", "cleanup", "deep"] {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/traces/{name}.ok"));
+        let run = |engine: &str| {
+            Command::new(env!("CARGO_BIN_EXE_okkama"))
+                .args(["run", "--engine", engine])
+                .arg(&path)
+                .env_remove("OKKAMA_TRACE")
+                .output()
+                .unwrap()
+        };
+        let (jvm, core) = (run("jvm"), run("sparrow"));
+        assert_eq!(jvm.status.code(), Some(1), "{name}");
+        let (jvm, core) = (String::from_utf8(jvm.stderr).unwrap(), String::from_utf8(core.stderr).unwrap());
+        assert!(jvm.contains("Stack trace (most recent call first):\n"), "{name}:\n{jvm}");
+        assert_eq!(jvm, core, "{name}");
+    }
 }

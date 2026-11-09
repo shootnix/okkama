@@ -55,9 +55,8 @@ object StreamConnection does Closing {
         confirm limit>0 else throw InvalidReadLimit.limit(limit);confirm !self.input_closed() else throw NetworkClosed.closed;
         confirm reader_busy.compare_and_replace(false,true) else throw InvalidState.because("stream already has a pending read");
         let ticket=StreamReadTicket(reader_busy);defer ticket.close();
-        let group is FutureGroup<@byte>=FutureGroup();let cleanup=StreamReadCleanup(group);defer await cleanup.close();
         try {
-            let pending=network.stream_read(state,limit);group.start(pending);await pending;
+            let pending=network.stream_read(state,limit);await pending;
         }catch e is NativeFailure{let translated=StreamFailure(NetworkOperation.reading,e);if translated.applicable(){throw translated.value();}throw;}
     }
     output_closed() is bool{writer_closed.ready() || network.closed(state) || network.stream_half_closed(state,true);}
@@ -115,10 +114,6 @@ object StreamWriteTicket {
 object StreamReadTicket {
     has busy is Atomic<bool>;StreamReadTicket(busy is Atomic<bool>){self.busy=busy;}
     close() is void{busy.replace(false);}
-}
-object StreamReadCleanup {
-    has group is FutureGroup<@byte>;StreamReadCleanup(group is FutureGroup<@byte>){self.group=group;}
-    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
 }
 object StreamWriteCleanup {
     has guards is FutureGroup<LockGuard>;has writing is FutureGroup<bool>;has pending is Atomic<@Future<LockGuard>>;has taken is Event;

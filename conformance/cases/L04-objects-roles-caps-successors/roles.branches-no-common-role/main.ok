@@ -1,0 +1,25 @@
+module app v1.0.0;
+
+role Shape {
+    area() is int;
+}
+
+object Square does Shape {
+    has side is int;
+    Square(:side);
+    area() is int { side * side; }
+}
+
+object Rect does Shape {
+    has w is int;
+    has h is int;
+    Rect(:w, :h);
+    area() is int { w * h; }
+}
+
+main() is int {
+    let wide = 1 > 0;
+    // Without a declared type no common role is inferred for the branches.
+    let shape = if wide { Rect(w: 2, h: 3); } else { Square(side: 2); };
+    0;
+}

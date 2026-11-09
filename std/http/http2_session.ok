@@ -37,8 +37,7 @@ object Http2Session does Closing {
     closed() is bool{state.closed();}accepting() is bool{state.accepting();}close() is void{state.close();}
     async settled() is bool{await state.settled();}
     async exchange(request is Request) is Http2Exchange{
-        let operation=Http2SessionExchange(state,request);let group is FutureGroup<Http2Exchange>=FutureGroup();let cleanup=Http2SessionSettlement(group);defer await cleanup.close();
-        let pending=operation.run();group.start(pending);await pending;
+        let operation=Http2SessionExchange(state,request);let pending=operation.run();await pending;
     }
     destroy{try{self.close();}catch e is Error{}catch e is NativeFailure{}}
 }
@@ -69,13 +68,11 @@ object Http2SessionState does Http2ReceivingEvents,Http2BodyEvents {
     start() is void{if !started.ready(){started.set();loops.start(self.reading());loops.start(self.writing());}}
     async reading() is bool{
         
-        let group is FutureGroup<bool>=FutureGroup();let cleanup=Http2SessionSettlement(group);defer await cleanup.close();
-        let reader=Http2ConnectionInput(input,self,output,local,peer.value(),HpackBudget(limits.header_bytes(),limits.header_bytes(),128));let pending=reader.run();group.start(pending);
-        try{await pending;}catch e is Cancelled{throw;}catch e is Error{self.shutdown(e);throw;}catch e is NativeFailure{self.shutdown(Http2SessionClosed.closed);throw;}
+        let reader=Http2ConnectionInput(input,self,output,local,peer.value(),HpackBudget(limits.header_bytes(),limits.header_bytes(),128));let pending=reader.run();try{await pending;}catch e is Cancelled{throw;}catch e is Error{self.shutdown(e);throw;}catch e is NativeFailure{self.shutdown(Http2SessionClosed.closed);throw;}
     }
     async writing() is bool{
         
-        let group is FutureGroup<bool>=FutureGroup();let cleanup=Http2SessionSettlement(group);defer await cleanup.close();let pending=output.run();group.start(pending);
+        let pending=output.run();
         try{await pending;}catch e is Cancelled{throw;}catch e is Error{self.shutdown(e);throw;}catch e is NativeFailure{self.shutdown(Http2SessionClosed.closed);throw;}
     }
     queue() is int{
@@ -156,7 +153,7 @@ object Http2StreamHolding {
     async settled() is bool{if self.preserving(){for origin.value() -> entry{await entry.settled();}}else{if group.active()>0{await group.wait();}}true;}
 }
 object Http2HoldingSignal{has signal is Event;Http2HoldingSignal(signal is Event){self.signal=signal;}close() is void{signal.set();}}
-object Http2HoldingCleanup{has entry is Http2StreamEntry;Http2HoldingCleanup(entry is Http2StreamEntry){self.entry=entry;}async close() is void{if !entry.finished_consumption(){entry.close();}else{entry.cancel_writing();}await entry.settled();}}
+hidden object Http2HoldingCleanup{has entry is Http2StreamEntry;Http2HoldingCleanup(entry is Http2StreamEntry){self.entry=entry;}async close() is void{if !entry.finished_consumption(){entry.close();}else{entry.cancel_writing();}await entry.settled();}}
 object Http2SessionExchange {
     has owner is Http2SessionState;has request is Request;
     Http2SessionExchange(owner is Http2SessionState,request is Request){self.owner=owner;self.request=request;}
@@ -164,11 +161,11 @@ object Http2SessionExchange {
         let declared=Http2BodyLength(request.headers(),1).known();let known is @BigInt=try{[request.body().length()];}catch e is UnknownBodyLength{let empty is @BigInt=[];empty;};
         for known -> length{confirm length.sign()>=0 && length.order(BigInt(owner.body_limit().string()))!=Order.greater else throw InvalidHttpMessage.because("outgoing body length limit");for declared -> advertised{confirm advertised.order(length)==Order.equal else throw InvalidHttpMessage.because("outgoing length contradicts Content-Length");}}
         Http2RequestFields(request,1);owner.start();let position=owner.queue();let dequeue=Http2AdmissionCleanup(owner,position);defer dequeue.close();
-        let grants is FutureGroup<Http2StreamHolding>=FutureGroup();let cleanup=Http2SessionSettlement(grants);defer await cleanup.close();let waiting=owner.admit(position,request,known,declared);grants.start(waiting);let holder=await waiting;
-        let values is FutureGroup<Http2StreamEntry>=FutureGroup();let value_cleanup=Http2SessionSettlement(values);defer await value_cleanup.close();let offered=holder.value();values.start(offered);let entry=await offered;
+        let waiting=owner.admit(position,request,known,declared);let holder=await waiting;
+        let offered=holder.value();let entry=await offered;
         let published=Event();let release=Http2ExchangeCleanup(entry,published);defer await release.close();await entry.ready().wait();entry.check();
         let head=entry.head();let opening=Http2SessionBody(entry);let response=head.response(opening);let result=Http2Exchange(request,response,entry.information(),entry);
-        if entry.buffer().wire_ended() && entry.lengths().size()==1 && entry.lengths()[0].sign()==0{let reads is FutureGroup<@byte>=FutureGroup();let settled=Http2SessionSettlement(reads);defer await settled.close();let pending=entry.buffer().bytes(1);reads.start(pending);let prime=await pending;confirm prime.size()==0 else throw InvalidState.because("unexpected payload at header-only response");}
+        if entry.buffer().wire_ended() && entry.lengths().size()==1 && entry.lengths()[0].sign()==0{let pending=entry.buffer().bytes(1);let prime=await pending;confirm prime.size()==0 else throw InvalidState.because("unexpected payload at header-only response");}
         published.set();result;
     }
 }
@@ -221,7 +218,7 @@ object Http2StreamEntry does Closing {
             let head=owner.output().headers(stream,fields,owner.budget(),16384,zero,starting);ticket.replace([head]);
             let pending=head.result();let heads is FutureGroup<bool>=FutureGroup();let cleanup=Http2SessionSettlement(heads);defer await cleanup.close();heads.start(pending);await pending;ticket.replace([]);
             if zero{written.set();owner.sent(stream);return true;}
-            let producer=Http2RequestBodySending(self,owner.sender(),request.body(),declared,known,owner.body_limit());let work is FutureGroup<bool>=FutureGroup();let settlement=Http2SessionSettlement(work);defer await settlement.close();let body=producer.run();work.start(body);await body;
+            let producer=Http2RequestBodySending(self,owner.sender(),request.body(),declared,known,owner.body_limit());let body=producer.run();await body;
             life.replace(life.value().local_data(true));written.set();owner.sent(stream);true;
         }catch e is Http2OutputCancelled{
             if !stopped.ready(){owner.source_failed(stream,e);throw;}false;
@@ -243,12 +240,12 @@ object Http2RequestBodySending {
     async run() is bool{
         let source=opening.reading();defer source.close();let used=Atomic(0);
         loop{
-            let reads is FutureGroup<@byte>=FutureGroup();let reading=Http2SessionSettlement(reads);defer await reading.close();let remaining=maximum-used.value();let limit=if remaining>=16384{16384;}else{remaining+1;};let pending=source.bytes(limit);reads.start(pending);let bytes=await pending;
+            let remaining=maximum-used.value();let limit=if remaining>=16384{16384;}else{remaining+1;};let pending=source.bytes(limit);let bytes=await pending;
             confirm bytes.size()<=limit else throw InvalidReading.because("outgoing H2 body exceeded requested chunk");let total=used.value()+bytes.size();confirm total<=maximum else throw InvalidHttpMessage.because("outgoing body byte limit");
             for declared -> length{confirm BigInt(total.string()).order(length)!=Order.greater else throw InvalidHttpMessage.because("outgoing Content-Length overflow");}
             for known -> length{confirm BigInt(total.string()).order(length)!=Order.greater else throw InvalidHttpMessage.because("outgoing body exceeds source length");}
             if bytes.size()==0{for declared -> length{confirm BigInt(total.string()).order(length)==Order.equal else throw InvalidHttpMessage.because("outgoing Content-Length underflow");}for known -> length{confirm BigInt(total.string()).order(length)==Order.equal else throw InvalidHttpMessage.because("outgoing source length underflow");}}
-            let writes is FutureGroup<bool>=FutureGroup();let writing=Http2SessionSettlement(writes);defer await writing.close();let offered=sender.data(entry.stream(),bytes,bytes.size()==0);writes.start(offered);await offered;used.replace(total);if bytes.size()==0{return true;}
+            let offered=sender.data(entry.stream(),bytes,bytes.size()==0);await offered;used.replace(total);if bytes.size()==0{return true;}
         }
     }
 }
@@ -263,14 +260,14 @@ object Http2SessionBody does BodyOpening {
 object Http2SessionReading does BodyReading {
     has entry is Http2StreamEntry;Http2SessionReading(entry is Http2StreamEntry){self.entry=entry;}
     closed() is bool{entry.buffer().closed();}close() is void{entry.close();}trailers() is Headers{entry.buffer().trailers();}
-    async bytes(limit is int) is @byte{let group is FutureGroup<@byte>=FutureGroup();let cleanup=Http2SessionSettlement(group);defer await cleanup.close();let pending=entry.buffer().bytes(limit);group.start(pending);await pending;}
+    async bytes(limit is int) is @byte{let pending=entry.buffer().bytes(limit);await pending;}
     destroy{self.close();}
 }
-object Http2ExchangeCleanup {
+hidden object Http2ExchangeCleanup {
     has entry is Http2StreamEntry;has published is Event;Http2ExchangeCleanup(entry is Http2StreamEntry,published is Event){self.entry=entry;self.published=published;}
     async close() is void{if !published.ready(){entry.close();await entry.settled();}}
 }
-object Http2AdmissionCleanup{has owner is Http2SessionState;has position is int;Http2AdmissionCleanup(owner is Http2SessionState,position is int){self.owner=owner;self.position=position;}close() is void{owner.unqueue(position);}}
-object Http2SessionSettlement<T>{has group is FutureGroup<T>;Http2SessionSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
+hidden object Http2AdmissionCleanup{has owner is Http2SessionState;has position is int;Http2AdmissionCleanup(owner is Http2SessionState,position is int){self.owner=owner;self.position=position;}close() is void{owner.unqueue(position);}}
+hidden object Http2SessionSettlement<T>{has group is FutureGroup<T>;Http2SessionSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
 enum Http2SessionClosed is Error = (closed);
 enum Http2Unprocessed is Error = (stream(stream is int));

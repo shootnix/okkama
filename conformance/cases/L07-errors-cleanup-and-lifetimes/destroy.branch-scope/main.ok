@@ -1,0 +1,58 @@
+module app v1.0.0;
+import "io/stdout" take Stdout;
+
+enum Oops is Error = (bad);
+
+object Log {
+    Log();
+    say(text is string) is void { Stdout().writeln(text); }
+    destroy { Stdout().writeln("destroy Log"); }
+}
+
+object Res {
+    has name is string;
+    has log is Log;
+    Res(:name, :log);
+    label() is string { name; }
+    destroy { log.say("destroy " + name); }
+}
+
+object Run {
+    Run();
+
+    branches(log is Log, flag is bool) is void {
+        if true { let a = Res(name: "A", log: log); let b = Res(name: "B", log: log); }
+        log.say("after if (two lets)");
+        if flag { let c = Res(name: "C", log: log); }
+        log.say("after if (dynamic, one let)");
+        if flag { let d = Res(name: "D", log: log); Res(name: "E", log: log); }
+        log.say("after if (trailing expression)");
+        match 1 { case 1 { let f = Res(name: "F", log: log); } else { } }
+        log.say("after match");
+        try { let g = Res(name: "G", log: log); } catch e is Oops { }
+        log.say("after try");
+        if flag { { let h = Res(name: "H", log: log); } let i = Res(name: "I", log: log); }
+        log.say("after nested");
+    }
+
+    thrown(log is Log) is int {
+        if true { let j = Res(name: "J", log: log); throw Oops.bad; }
+        0;
+    }
+
+    kept(log is Log) is Res {
+        let r = if true { Res(name: "K", log: log); } else { Res(name: "L", log: log); };
+        log.say("kept " + r.label());
+        r;
+    }
+}
+
+main() is int {
+    let log = Log();
+    let run = Run();
+    run.branches(log, true);
+    let caught = try { run.thrown(log); } catch e is Oops { log.say("caught"); 1; };
+    let k = run.kept(log);
+    log.say("main has " + k.label());
+    0;
+}

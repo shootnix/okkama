@@ -1,0 +1,15 @@
+module t v1.0.0;
+
+// t/base: int.string() and bool.string(), which t/tap.ok prints with.
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln("1..5");
+    out.writeln(if 42.string() == "42" { "ok 1 - int.string()"; } else { "not ok 1 - int.string()"; });
+    out.writeln(if (-7).string() == "-7" { "ok 2 - negative int.string()"; } else { "not ok 2 - negative int.string()"; });
+    out.writeln(if (1 + 1).string() + "!" == "2!" { "ok 3 - string of an expression"; } else { "not ok 3 - string of an expression"; });
+    out.writeln(if true.string() == "true" { "ok 4 - true.string()"; } else { "not ok 4 - true.string()"; });
+    out.writeln(if false.string() == "false" { "ok 5 - false.string()"; } else { "not ok 5 - false.string()"; });
+    0;
+}

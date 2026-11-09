@@ -1,0 +1,30 @@
+module ocs/escaped_self_block_failed v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/atomic" take Atomic;
+
+enum Refused is Error = (empty);
+
+object Tree {
+    has name is string;
+    has marks is @int;
+    Tree(name is string, tags is @int, sink is Atomic<Maybe<Tree>>) {
+        self.name = name;
+        // The first `self` value is inside the block (#279); it escapes there.
+        marks = tags.map() -> tag { sink.replace(Maybe.some(self)); tag * 2; };
+        confirm name != "" else throw Refused.empty;
+    }
+    name() is string { name; }
+}
+
+main() is int {
+    let out = Stdout();
+    let sink is Atomic<Maybe<Tree>> = Atomic(Maybe.none);
+    defer sink.close();
+    out.writeln(try { Tree("", [1, 2], sink).name(); } catch e is Refused { e.text(); });
+    match sink.value() {
+        case Maybe.some(tree) { out.writeln(tree.name()); }
+        case Maybe.none { out.writeln("nothing escaped"); }
+    }
+    0;
+}

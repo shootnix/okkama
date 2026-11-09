@@ -28,12 +28,14 @@ fn place_and_stack(text: &str) -> &str {
     &text[text[..start].rfind('\n').map_or(0, |i| i + 1)..]
 }
 
+/// Programs whose uncaught failure every engine reports the same way (#270).
+const REPORTED: [&str; 8] = ["recursion", "closure", "rethrow", "task", "cause", "chain", "cleanup", "deep"];
+
 #[test]
-fn the_core_reports_the_same_place_and_stack_as_the_ir_engine() {
-    // A rethrow inside `catch` links the caught failure as its cause: the core
-    // prints the `Caused by:` chain, the IR engine does not, so only the place
-    // and the stack are compared.
-    for name in ["recursion", "closure", "rethrow", "task"] {
+fn the_core_and_the_ir_engine_print_the_same_report() {
+    // The whole report: the failure, its secondary cleanup failures and its
+    // causes (#270), then the place and the stack.
+    for name in REPORTED {
         let path = program(name);
         let ir = okkama(&["run", "--engine", "ir"], &path, true);
         let core = okkama(&["run", "--engine", "sparrow"], &path, true);
@@ -41,8 +43,19 @@ fn the_core_reports_the_same_place_and_stack_as_the_ir_engine() {
         assert_eq!(core.status.code(), Some(1), "{name}: {}", stderr(&core));
         let (ir, core) = (stderr(&ir), stderr(&core));
         assert!(core.contains("Stack trace (most recent call first):\n"), "{name}:\n{core}");
-        assert_eq!(place_and_stack(&core), place_and_stack(&ir), "{name}");
+        assert!(place_and_stack(&core).len() < core.len(), "{name}");
+        assert_eq!(core, ir, "{name}");
     }
+    let cause = stderr(&okkama(&["run", "--engine", "ir"], &program("cause"), true));
+    assert!(cause.starts_with("OrderError: OrderError.failed(7)\nCaused by:\n  StoreError: StoreError.closed\n"), "{cause}");
+    let cleanup = stderr(&okkama(&["run", "--engine", "ir"], &program("cleanup"), true));
+    assert!(
+        cleanup.starts_with(
+            "JobError: JobError.broken\nSecondary cleanup failure:\n  CloseError: CloseError.stuck(\"b\")\n\
+             Secondary cleanup failure:\n  CloseError: CloseError.stuck(\"a\")\nCaused by:\n  StoreError: StoreError.closed\n"
+        ),
+        "{cleanup}"
+    );
     let core = stderr(&okkama(&["run", "--engine", "sparrow"], &program("recursion"), true));
     let stack = &core[core.find("Stack trace").unwrap()..];
     let frames: Vec<&str> = stack.lines().skip(1).map(|line| line.split(" (").next().unwrap()).collect();

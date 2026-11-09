@@ -1,0 +1,48 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.anonymous.async-rejected",
+  "title": "an anonymous action cannot be async",
+  "purpose": "Invalid anonymous action forms are rejected before the program runs.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.ANON-ACTIONS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse"
+      ],
+      "categories": [
+        "syntax"
+      ],
+      "justification": "The anonymous action grammar has no async modifier; the parser rejects `async` in front of an anonymous action signature (#323)."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.10.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #323",
+    "expected_basis": "spec: async anonymous actions are not supported; the body would print, so empty stdout also shows it did not run."
+  },
+  "status": "mandatory"
+}

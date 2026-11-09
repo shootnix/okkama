@@ -337,6 +337,19 @@ impl Checker<'_, '_> {
             let _ = self.value(value, None);
             return (StmtKind::Expr(Self::poisoned(name.span)), Flow::unit());
         };
+        // A captured binding is the anonymous action's snapshot of an outer
+        // value: rebinding it would only change this call's copy (#321).
+        // Decided by binding identity, so shadowing locals and parameters
+        // stay rebindable.
+        if self.captures.iter().any(|(_, inner)| *inner == local) {
+            let message = format!(
+                "Cannot rebind captured variable \"{}\" inside an anonymous action: captured bindings are snapshots; return the successor instead",
+                name.text
+            );
+            self.error(name.span, message);
+            let _ = self.value(value, None);
+            return (StmtKind::Expr(Self::poisoned(name.span)), Flow::unit());
+        }
         let current = self.locals[local.0].ty.taken();
         if !self.locals[local.0].rebindable && !current.is_error() {
             let message = if matches!(current, Ty::Role(..)) {

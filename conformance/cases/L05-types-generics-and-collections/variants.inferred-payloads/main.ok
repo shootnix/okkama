@@ -1,0 +1,31 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum Slot<T> = (vacant, full(item is T));
+enum Two<T> = (empty, both(a is T, b is T), list(xs is @T));
+
+object Show {
+    Show();
+    slot(s is Slot<int>) is int { match s { case Slot.vacant { -1; } case Slot.full(v) { v; } } }
+    two(t is Two<int>) is int {
+        match t { case Two.empty { 0; } case Two.both(a, b) { a * 10 + b; } case Two.list(xs) { xs.size(); } }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let show = Show();
+    // A generic case infers T from a payload that needs an expected type itself.
+    let a = Maybe.some(loop { last 42; });
+    let b = Maybe.some(Maybe.some(7) else 0);
+    let c = Maybe.some((0..3).reduce(0) -> acc, i { acc + i; });
+    out.writeln((a else 0).string() + " " + (b else 0).string() + " " + (c else 0).string());
+    out.writeln(show.slot(Slot.full(loop { last 5; })).string() + " " + show.two(Two.both(loop { last 1; }, 2)).string()
+        + " " + show.two(Two.list([loop { last 9; }, 8])).string());
+    // Nested generic cases and an explicit specialization.
+    let nested = Slot.full(Slot.full(loop { last 3; }));
+    let inner = match nested { case Slot.vacant { Slot<int>.vacant; } case Slot.full(s) { s; } };
+    out.writeln(show.slot(inner).string() + " " + show.slot(Slot<int>.full(loop { last 4; })).string());
+    0;
+}

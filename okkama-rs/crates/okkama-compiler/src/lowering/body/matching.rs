@@ -608,14 +608,14 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 let args = args.iter().map(|arg| arg.subst(&self.env)).collect();
                 CatchType::Role(self.ctx.role_instance(*role, args, span)?)
             }
-            // Значение error enum в OIR — объект варианта, делающий Error.
+            // Значение error enum в OIR — вариант, каждый случай которого делает Error.
             thir::CatchType::Variant(id) => {
                 match self.ctx.ir_type(&crate::analysis::ty::Ty::Variant(*id, Vec::new()), span)? {
-                    Type::Object(object) => CatchType::Object(object),
+                    Type::Variant(variant) => CatchType::Variant(variant),
                     _ => {
                         return Err(LoweringError::invalid(
                             span,
-                            "internal compiler error: an error enum lowers to an object",
+                            "internal compiler error: an error enum lowers to a variant",
                         ))
                     }
                 }
@@ -735,21 +735,13 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 let matched_failure = matched_params[count];
                 let value = matched_params[count + 1];
                 if let Some(cases) = cases {
-                    let Type::Object(object) = alt_ty else {
+                    if !matches!(alt_ty, Type::Variant(_)) {
                         return Err(LoweringError::invalid(
                             catch.span,
                             "internal compiler error: a catch case filter needs an enum",
                         ));
-                    };
-                    let getter = self.ctx.variant_getter(object, 0);
-                    let tag = self.emit(
-                        InstKind::Call {
-                            func: getter,
-                            args: vec![value],
-                        },
-                        Type::Int,
-                        catch.span,
-                    );
+                    }
+                    let tag = self.emit(InstKind::VariantTag(value), Type::Int, catch.span);
                     let accept = self.b.new_block();
                     for case in cases {
                         let expected = self.constant(

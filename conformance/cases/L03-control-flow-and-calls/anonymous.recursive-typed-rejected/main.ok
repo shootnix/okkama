@@ -1,0 +1,12 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    Stdout().writeln("unreachable");
+    let fact is (int) is int = (n is int) is int {
+        if n <= 1 { return 1; }
+        n * fact(n - 1);
+    };
+    fact(5);
+}

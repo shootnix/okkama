@@ -120,7 +120,8 @@ fn ir_new_failure_keeps_handled_failure_as_its_cause() {
     let RuntimeError::Unwind { failure, .. } = error else {
         panic!("expected typed failure");
     };
-    assert_eq!(failure.to_string(), "Denied: Denied.denied");
+    // The report prints the cause, as the Sparrow core does (#270).
+    assert_eq!(failure.to_string(), "Denied: Denied.denied\nCaused by:\n  Missing: Missing.code(42)");
     assert_eq!(failure.category(), "uncaught-error");
     assert!(
         matches!(&failure.cause().unwrap().kind, okkama_runtime::FailureKind::Thrown { name, .. } if name == "Missing")
@@ -161,7 +162,8 @@ fn sparrow_typed_diagnostics_causes_and_uncatchable_failures_match_ir() {
     for body in [
         "Sender().fail();",
         "defer Sender().fail(); panic \"primary\";",
-        "try { throw Missing.code(42); 0; } catch e is Missing { throw Denied.denied; 0; }",
+        // A new error leaving a catch prints its cause on the IR engine (#270);
+        // the previous VM, kept only for comparison until 0.5, does not.
         "try { panic \"primary\"; } catch e is Error { 42; }",
         "try { 7 % 0; } catch e is Error { 42; }",
     ] {

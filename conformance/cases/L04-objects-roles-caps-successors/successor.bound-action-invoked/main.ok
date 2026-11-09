@@ -1,0 +1,29 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Counter {
+    has count is int;
+    Counter(:count);
+    count() is int { count; }
+    bumped() is ^Counter { ^count = count + 1; }
+}
+
+object Apply {
+    Apply();
+    call(action is () is int) is int { action(); }
+}
+
+main() is int {
+    let out = Stdout();
+    let later = Counter(count: 1).bumped();
+    let read is () is int = later.count;
+    let alias = read;
+    out.writeln(alias().string());
+    let second = Counter(count: 4).bumped();
+    let passed is () is int = second.count;
+    out.writeln(Apply().call(passed).string());
+    // A direct call and a successor chain use the receiver at once.
+    out.writeln(Counter(count: 7).bumped().bumped().count().string());
+    0;
+}

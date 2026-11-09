@@ -1,0 +1,17 @@
+module t v1.0.0;
+
+// t/op: the helper itself — every overload of `is` on a passing check.
+import "tap" take Tap;
+
+main() is int {
+    let t = Tap(8);
+    t = t.ok(true, "ok(true)");
+    t = t.is(1, 1, "is on int");
+    t = t.is("a", "a", "is on string");
+    t = t.is(true, true, "is on bool");
+    t = t.is(0.5, 0.5, "is on float");
+    t = t.is(rat(1, 2), rat(1, 2), "is on rat");
+    t = t.is(byte(7), byte(7), "is on byte");
+    t = t.is('x', 'x', "is on char");
+    t.done();
+}

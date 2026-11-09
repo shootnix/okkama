@@ -895,10 +895,14 @@
     "boundary": {
      "cases": [
       "L03.anon.compose",
+      "L03.anonymous.lexical-scope",
+      "L03.anonymous.own-rebind",
       "L03.return.anonymous-boundary"
      ],
      "mandatory_cases": [
       "L03.anon.compose",
+      "L03.anonymous.lexical-scope",
+      "L03.anonymous.own-rebind",
       "L03.return.anonymous-boundary"
      ],
      "requirement": "required"
@@ -919,12 +923,26 @@
       "L03.anon.named-call",
       "L03.anon.not-callable",
       "L03.anon.wrong-arity",
+      "L03.anonymous.async-rejected",
+      "L03.anonymous.captured-rebind-rejected",
+      "L03.anonymous.later-local-rejected",
+      "L03.anonymous.nested-captured-rebind-rejected",
+      "L03.anonymous.recursive-let-rejected",
+      "L03.anonymous.recursive-parenthesized-rejected",
+      "L03.anonymous.recursive-typed-rejected",
       "L03.next-last.across-anonymous-action"
      ],
      "mandatory_cases": [
       "L03.anon.named-call",
       "L03.anon.not-callable",
       "L03.anon.wrong-arity",
+      "L03.anonymous.async-rejected",
+      "L03.anonymous.captured-rebind-rejected",
+      "L03.anonymous.later-local-rejected",
+      "L03.anonymous.nested-captured-rebind-rejected",
+      "L03.anonymous.recursive-let-rejected",
+      "L03.anonymous.recursive-parenthesized-rejected",
+      "L03.anonymous.recursive-typed-rejected",
       "L03.next-last.across-anonymous-action"
      ],
      "requirement": "required"
@@ -1654,36 +1672,64 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L05.literal.empty-collections",
+      "L05.literal.heterogeneous-boundaries",
+      "L05.literal.heterogeneous-nested-rejected",
+      "L05.literal.heterogeneous-numbers-rejected",
       "L05.literal.heterogeneous-to-any"
      ],
      "mandatory_cases": [
+      "L05.literal.empty-collections",
+      "L05.literal.heterogeneous-boundaries",
+      "L05.literal.heterogeneous-nested-rejected",
+      "L05.literal.heterogeneous-numbers-rejected",
       "L05.literal.heterogeneous-to-any"
      ],
      "requirement": "required"
     },
     "interaction": {
-     "cases": [],
-     "mandatory_cases": [],
+     "cases": [
+      "L05.literal.empty-collections",
+      "L05.literal.heterogeneous-boundaries",
+      "L05.literal.heterogeneous-untyped-local-rejected"
+     ],
+     "mandatory_cases": [
+      "L05.literal.empty-collections",
+      "L05.literal.heterogeneous-boundaries",
+      "L05.literal.heterogeneous-untyped-local-rejected"
+     ],
      "requirement": "n/a: no fragile cross-feature interaction is identified in the audited sources"
     },
     "invalid": {
      "cases": [
       "L05.boundary.array-element",
       "L05.boundary.no-numeric-widening",
-      "L05.literal.heterogeneous-not-int"
+      "L05.literal.heterogeneous-map-rejected",
+      "L05.literal.heterogeneous-nested-rejected",
+      "L05.literal.heterogeneous-not-int",
+      "L05.literal.heterogeneous-numbers-rejected",
+      "L05.literal.heterogeneous-rejected",
+      "L05.literal.heterogeneous-untyped-local-rejected"
      ],
      "mandatory_cases": [
       "L05.boundary.array-element",
       "L05.boundary.no-numeric-widening",
-      "L05.literal.heterogeneous-not-int"
+      "L05.literal.heterogeneous-map-rejected",
+      "L05.literal.heterogeneous-nested-rejected",
+      "L05.literal.heterogeneous-not-int",
+      "L05.literal.heterogeneous-numbers-rejected",
+      "L05.literal.heterogeneous-rejected",
+      "L05.literal.heterogeneous-untyped-local-rejected"
      ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
+      "L05.literal.heterogeneous-boundaries",
       "L05.literal.homogeneous-inference"
      ],
      "mandatory_cases": [
+      "L05.literal.heterogeneous-boundaries",
       "L05.literal.homogeneous-inference"
      ],
      "requirement": "required"
@@ -1696,20 +1742,24 @@
     "docs/okkama-spec-11072026.md#6.6.2"
    ],
    "status": "mandatory",
-   "title": "Homogeneous literals infer exact element types; empty and heterogeneous literals stay untagged"
+   "title": "Homogeneous literals infer exact element types; empty literals stay untagged; heterogeneous literals need an explicit any boundary"
   },
   {
    "aspects": {
     "boundary": {
      "cases": [
       "L05.collections.map-difference",
+      "L05.map.float-key-fallback",
       "L05.map.int-key-order",
-      "L05.map.key-types"
+      "L05.map.key-types",
+      "L05.map.rat-keys"
      ],
      "mandatory_cases": [
       "L05.collections.map-difference",
+      "L05.map.float-key-fallback",
       "L05.map.int-key-order",
-      "L05.map.key-types"
+      "L05.map.key-types",
+      "L05.map.rat-keys"
      ],
      "requirement": "required"
     },
@@ -1717,12 +1767,14 @@
      "cases": [
       "L05.collections.map-merge",
       "L05.map.fallback-lazy",
-      "L05.map.object-key"
+      "L05.map.object-key",
+      "L05.map.rat-keys"
      ],
      "mandatory_cases": [
       "L05.collections.map-merge",
       "L05.map.fallback-lazy",
-      "L05.map.object-key"
+      "L05.map.object-key",
+      "L05.map.rat-keys"
      ],
      "requirement": "required"
     },
@@ -1748,13 +1800,17 @@
       "L05.collections.map-difference",
       "L05.collections.map-merge",
       "L05.map.access",
-      "L05.map.object-key"
+      "L05.map.float-key-fallback",
+      "L05.map.object-key",
+      "L05.map.rat-keys"
      ],
      "mandatory_cases": [
       "L05.collections.map-difference",
       "L05.collections.map-merge",
       "L05.map.access",
-      "L05.map.object-key"
+      "L05.map.float-key-fallback",
+      "L05.map.object-key",
+      "L05.map.rat-keys"
      ],
      "requirement": "required"
     }
@@ -2909,10 +2965,12 @@
     "boundary": {
      "cases": [
       "L07.error-enum.non-exhaustive-match",
+      "L07.error-enum.text-escaping",
       "L07.error-enum.throw-and-catch"
      ],
      "mandatory_cases": [
       "L07.error-enum.non-exhaustive-match",
+      "L07.error-enum.text-escaping",
       "L07.error-enum.throw-and-catch"
      ],
      "requirement": "required"
@@ -3225,10 +3283,12 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L07.try-mark.diverging-operand",
       "L07.try-mark.optional",
       "L07.try-mark.panic-passes"
      ],
      "mandatory_cases": [
+      "L07.try-mark.diverging-operand",
       "L07.try-mark.optional",
       "L07.try-mark.panic-passes"
      ],
@@ -3236,10 +3296,12 @@
     },
     "interaction": {
      "cases": [
+      "L07.try-mark.diverging-operand",
       "L07.try-mark.optional",
       "L07.try-mark.optional-successor"
      ],
      "mandatory_cases": [
+      "L07.try-mark.diverging-operand",
       "L07.try-mark.optional",
       "L07.try-mark.optional-successor"
      ],
@@ -3258,10 +3320,12 @@
     },
     "normal": {
      "cases": [
+      "L07.try-mark.diverging-operand",
       "L07.try-mark.force-panics",
       "L07.try-mark.optional"
      ],
      "mandatory_cases": [
+      "L07.try-mark.diverging-operand",
       "L07.try-mark.force-panics",
       "L07.try-mark.optional"
      ],
@@ -5469,10 +5533,10 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L01.lex.crlf.raw-string-discards-cr"
+      "L01.lex.crlf.raw-string-keeps-cr"
      ],
      "mandatory_cases": [
-      "L01.lex.crlf.raw-string-discards-cr"
+      "L01.lex.crlf.raw-string-keeps-cr"
      ],
      "requirement": "required"
     },
@@ -5506,7 +5570,7 @@
     "contracts/DISCREPANCY-LEDGER.md#d-030"
    ],
    "status": "mandatory",
-   "title": "CR LF line endings are accepted and CR inside raw strings is discarded, as in Go (owner decision)"
+   "title": "CR LF line endings are accepted; a CR between tokens is whitespace and a fenced raw string keeps its CRs (owner decision, #310)"
   },
   {
    "aspects": {
@@ -5885,11 +5949,11 @@
     },
     "interaction": {
      "cases": [
-      "L01.lex.crlf.raw-string-discards-cr",
+      "L01.lex.crlf.raw-string-keeps-cr",
       "L01.lex.raw.concatenation"
      ],
      "mandatory_cases": [
-      "L01.lex.crlf.raw-string-discards-cr",
+      "L01.lex.crlf.raw-string-keeps-cr",
       "L01.lex.raw.concatenation"
      ],
      "requirement": "required"
@@ -6324,9 +6388,11 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L07.destroy.branch-scope",
       "L07.destroy.scope-exit-lifo"
      ],
      "mandatory_cases": [
+      "L07.destroy.branch-scope",
       "L07.destroy.scope-exit-lifo"
      ],
      "requirement": "required"
@@ -6334,10 +6400,12 @@
     "interaction": {
      "cases": [
       "L07.defer.before-destroy",
+      "L07.destroy.branch-scope",
       "L07.uncaught.cleanup-first"
      ],
      "mandatory_cases": [
       "L07.defer.before-destroy",
+      "L07.destroy.branch-scope",
       "L07.uncaught.cleanup-first"
      ],
      "requirement": "required"
@@ -7353,20 +7421,28 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L04.invariant.early-self-in-blocks",
+      "L04.invariant.escaped-self-in-block-failed-constructor",
       "L04.invariant.typed-failure"
      ],
      "mandatory_cases": [
+      "L04.invariant.early-self-in-blocks",
+      "L04.invariant.escaped-self-in-block-failed-constructor",
       "L04.invariant.typed-failure"
      ],
      "requirement": "required"
     },
     "interaction": {
      "cases": [
+      "L04.invariant.early-self-in-blocks",
       "L04.invariant.escaped-self-after-construction",
+      "L04.invariant.escaped-self-in-block-failed-constructor",
       "L04.invariant.projection-not-called"
      ],
      "mandatory_cases": [
+      "L04.invariant.early-self-in-blocks",
       "L04.invariant.escaped-self-after-construction",
+      "L04.invariant.escaped-self-in-block-failed-constructor",
       "L04.invariant.projection-not-called"
      ],
      "requirement": "required"
@@ -7390,9 +7466,11 @@
     },
     "normal": {
      "cases": [
+      "L04.invariant.early-self-in-blocks",
       "L04.invariant.typed-failure"
      ],
      "mandatory_cases": [
+      "L04.invariant.early-self-in-blocks",
       "L04.invariant.typed-failure"
      ],
      "requirement": "required"
@@ -7967,29 +8045,37 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L04.roles.contextual-wrap",
       "L04.roles.dispatch-and-covariance"
      ],
      "mandatory_cases": [
+      "L04.roles.contextual-wrap",
       "L04.roles.dispatch-and-covariance"
      ],
      "requirement": "required"
     },
     "interaction": {
      "cases": [
+      "L04.roles.contextual-wrap",
       "L08.role-shape.async-dispatch"
      ],
      "mandatory_cases": [
+      "L04.roles.contextual-wrap",
       "L08.role-shape.async-dispatch"
      ],
      "requirement": "required"
     },
     "invalid": {
      "cases": [
+      "L04.roles.branches-no-common-role",
+      "L04.roles.compare-implementer-rejected",
       "L04.roles.missing-action",
       "L04.roles.nominal-only",
       "L04.roles.wrong-parameter-type"
      ],
      "mandatory_cases": [
+      "L04.roles.branches-no-common-role",
+      "L04.roles.compare-implementer-rejected",
       "L04.roles.missing-action",
       "L04.roles.nominal-only",
       "L04.roles.wrong-parameter-type"
@@ -7998,9 +8084,11 @@
     },
     "normal": {
      "cases": [
+      "L04.roles.contextual-wrap",
       "L04.roles.dispatch-and-covariance"
      ],
      "mandatory_cases": [
+      "L04.roles.contextual-wrap",
       "L04.roles.dispatch-and-covariance"
      ],
      "requirement": "required"
@@ -8938,6 +9026,41 @@
   {
    "aspects": {
     "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.CELL",
+   "discrepancies": [],
+   "family": "Standard library: cell",
+   "spec_refs": [
+    "std/cell.ok"
+   ],
+   "status": "mandatory",
+   "title": "std cell public contract (Cell)"
+  },
+  {
+   "aspects": {
+    "boundary": {
      "cases": [
       "L09.checksum.adler32"
      ],
@@ -9386,7 +9509,7 @@
     "std/collections/frequencies.ok"
    ],
    "status": "mandatory",
-   "title": "std collections/frequencies public contract (Frequencies, Frequency, FrequencyBuilding, FrequencyRevision, FrequencyTally)"
+   "title": "std collections/frequencies public contract (Frequencies, Frequency, FrequencyBuilding, FrequencyRevision, FrequencyTally, KeyedFrequencies)"
   },
   {
    "aspects": {
@@ -9649,7 +9772,7 @@
     "std/collections/set.ok"
    ],
    "status": "mandatory",
-   "title": "std collections/set public contract (AbsentFrom, ConcatenatedSetCursor, Difference, DifferentFrom, DistinctList, Intersection, OrderedSet, Set, SetMembership, SetSize, SetWith, SetWithCursor, SetWithout, SymmetricDifference, Union)"
+   "title": "std collections/set public contract (AbsentFrom, ConcatenatedSetCursor, Difference, DifferentFrom, DistinctList, Intersection, KeyedSet, OrderedSet, Set, SetMembership, SetSize, SetWith, SetWithCursor, SetWithout, SymmetricDifference, Union)"
   },
   {
    "aspects": {
@@ -9841,7 +9964,7 @@
     "std/config/document.ok"
    ],
    "status": "mandatory",
-   "title": "std config/document public contract (IniSettings, InvalidSettingDocument, JsonSettingScalar, JsonSettingVisitor, JsonSettings, SettingDocumentEntries, SettingEmission, TomlSettingScalar, TomlSettingVisitor, TomlSettings)"
+   "title": "std config/document public contract (IniSettings, InvalidSettingDocument, JsonSettingText, JsonSettingTree, JsonSettings, SettingDocumentEntries, SettingEmission, TomlSettingScalar, TomlSettingVisitor, TomlSettings)"
   },
   {
    "aspects": {
@@ -9920,7 +10043,7 @@
     "std/config/ini.ok"
    ],
    "status": "mandatory",
-   "title": "std config/ini public contract (DuplicateIniEntry, DuplicateIniSection, IniContent, IniDocument, IniEntry, IniLimitExceeded, IniOutputLimitExceeded, IniSection, IniString, IniTextEmission, IniWriting, InvalidIni, InvalidIniEmission, InvalidIniLimit, InvalidIniSize, MissingIniEntry, MissingIniSection, ParsedIni)"
+   "title": "std config/ini public contract (DuplicateIniEntry, DuplicateIniSection, IniContent, IniControls, IniDigit, IniDocument, IniEntry, IniFault, IniHex, IniLimitExceeded, IniLine, IniLineScan, IniNames, IniOutputLimitExceeded, IniParse, IniQuoted, IniRepeated, IniSection, IniString, IniTextEmission, IniToken, IniWriting, InvalidIni, InvalidIniEmission, InvalidIniLimit, InvalidIniSize, MissingIniEntry, MissingIniSection, ParsedIni)"
   },
   {
    "aspects": {
@@ -10053,6 +10176,321 @@
      "requirement": "required"
     }
    },
+   "contract": "STD.CRYPTO.AEAD",
+   "discrepancies": [],
+   "family": "Standard library: crypto",
+   "spec_refs": [
+    "std/crypto/aead.ok"
+   ],
+   "status": "mandatory",
+   "title": "std crypto/aead public contract (Sealing)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.CRYPTO.AES_GCM",
+   "discrepancies": [],
+   "family": "Standard library: crypto",
+   "spec_refs": [
+    "std/crypto/aes_gcm.ok"
+   ],
+   "status": "mandatory",
+   "title": "std crypto/aes_gcm public contract (AesGcm)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.CRYPTO.CHACHA20_POLY1305",
+   "discrepancies": [],
+   "family": "Standard library: crypto",
+   "spec_refs": [
+    "std/crypto/chacha20_poly1305.ok"
+   ],
+   "status": "mandatory",
+   "title": "std crypto/chacha20_poly1305 public contract (ChaCha20Poly1305, XChaCha20Poly1305)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.CRYPTO.CONSTANT_TIME",
+   "discrepancies": [],
+   "family": "Standard library: crypto",
+   "spec_refs": [
+    "std/crypto/constant_time.ok"
+   ],
+   "status": "mandatory",
+   "title": "std crypto/constant_time public contract (ConstantTimeEqual)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.CRYPTO.ECDSA",
+   "discrepancies": [],
+   "family": "Standard library: crypto",
+   "spec_refs": [
+    "std/crypto/ecdsa.ok"
+   ],
+   "status": "mandatory",
+   "title": "std crypto/ecdsa public contract (EcdsaCurve, EcdsaCurveName, EcdsaPrivateKey, EcdsaPublicKey, EcdsaScalar)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.CRYPTO.ED25519",
+   "discrepancies": [],
+   "family": "Standard library: crypto",
+   "spec_refs": [
+    "std/crypto/ed25519.ok"
+   ],
+   "status": "mandatory",
+   "title": "std crypto/ed25519 public contract (Ed25519PrivateKey, Ed25519PublicKey)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.CRYPTO.ERROR",
+   "discrepancies": [],
+   "family": "Standard library: crypto",
+   "spec_refs": [
+    "std/crypto/error.ok"
+   ],
+   "status": "mandatory",
+   "title": "std crypto/error public contract (AuthenticationFailed, CryptoUnavailable, DecimalArgument, HostOperation, InvalidCryptoInput)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.CRYPTO.HMAC",
+   "discrepancies": [],
+   "family": "Standard library: crypto",
+   "spec_refs": [
+    "std/crypto/hmac.ok"
+   ],
+   "status": "mandatory",
+   "title": "std crypto/hmac public contract (Hmac, HmacAlgorithm, HmacHash)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.CRYPTO.KDF",
+   "discrepancies": [],
+   "family": "Standard library: crypto",
+   "spec_refs": [
+    "std/crypto/kdf.ok"
+   ],
+   "status": "mandatory",
+   "title": "std crypto/kdf public contract (HkdfSecret, KdfHash, KdfHashName, Pbkdf2Secret)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
    "contract": "STD.CRYPTO.KEY",
    "discrepancies": [],
    "family": "Standard library: crypto",
@@ -10060,7 +10498,147 @@
     "std/crypto/key.ok"
    ],
    "status": "mandatory",
-   "title": "std crypto/key public contract (PublicKey)"
+   "title": "std crypto/key public contract (PublicKey, SigningKey, VerifyingKey)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.CRYPTO.KEY_FORMAT",
+   "discrepancies": [],
+   "family": "Standard library: crypto",
+   "spec_refs": [
+    "std/crypto/key_format.ok"
+   ],
+   "status": "mandatory",
+   "title": "std crypto/key_format public contract (KeyAlgorithm, KeyAlgorithmName, ParsedPrivateKey, ParsedPublicKey, PrivateKeyPem, PublicKeyPem)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.CRYPTO.NONCE",
+   "discrepancies": [],
+   "family": "Standard library: crypto",
+   "spec_refs": [
+    "std/crypto/nonce.ok"
+   ],
+   "status": "mandatory",
+   "title": "std crypto/nonce public contract (CounterNonce, Entropy, RandomNonce, SystemEntropy)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.CRYPTO.PASSWORD",
+   "discrepancies": [],
+   "family": "Standard library: crypto",
+   "spec_refs": [
+    "std/crypto/password.ok"
+   ],
+   "status": "mandatory",
+   "title": "std crypto/password public contract (Argon2Policy, PasswordCheck, PasswordHash)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.CRYPTO.RSA",
+   "discrepancies": [],
+   "family": "Standard library: crypto",
+   "spec_refs": [
+    "std/crypto/rsa.ok"
+   ],
+   "status": "mandatory",
+   "title": "std crypto/rsa public contract (RsaHash, RsaHashName, RsaOaepDecryption, RsaOaepEncryption, RsaPkcs1Signing, RsaPkcs1Verifying, RsaPrivateKey, RsaPssSigning, RsaPssVerifying, RsaPublicKey)"
   },
   {
    "aspects": {
@@ -10096,6 +10674,41 @@
    ],
    "status": "mandatory",
    "title": "std crypto/secret public contract (ExportedSecret, SecretBytes, SecretClosed, SecretLimit)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.CRYPTO.X25519",
+   "discrepancies": [],
+   "family": "Standard library: crypto",
+   "spec_refs": [
+    "std/crypto/x25519.ok"
+   ],
+   "status": "mandatory",
+   "title": "std crypto/x25519 public contract (X25519PrivateKey, X25519PublicKey)"
   },
   {
    "aspects": {
@@ -10507,11 +11120,10 @@
    "discrepancies": [],
    "family": "Standard library: db",
    "spec_refs": [
-    "std/db/param.ok",
-    "docs/std/db-values.md"
+    "std/db/param.ok"
    ],
    "status": "mandatory",
-   "title": "std db/param typed bound values and Maybe NULL contract"
+   "title": "std db/param public contract (Param)"
   },
   {
    "aspects": {
@@ -10556,6 +11168,111 @@
    ],
    "status": "mandatory",
    "title": "std db/pool public contract (DbChecking, DbIdle, DbPhysical, DbPool, DbPoolState, DbPreparedPool, DbRetirement, DbUnclaimedLease, DbUnpublishedPhysical, DbUnpublishedPrepared, DbUnusedPermit, InvalidPoolOptions, PoolOptions, PoolSnapshot, PooledConnection, PooledPrepared, PooledRows, PooledTransaction, PooledTransactions, UncheckedDbConnections)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.DB.POSTGRES",
+   "discrepancies": [],
+   "family": "Standard library: db",
+   "spec_refs": [
+    "std/db/postgres.ok"
+   ],
+   "status": "mandatory",
+   "title": "std db/postgres public contract (InvalidPostgresOptions, PgAuthentication, PgBegin, PgCancelRoute, PgCancelTcp, PgCommandTag, PgDescription, PgDisabledMethod, PgError, PgErrorField, PgExecute, PgFailureKind, PgFinishInterrupted, PgInterrupted, PgLost, PgMechanisms, PgNoCancelRoute, PgNonFinite, PgOutcome, PgParameter, PgPrepared, PgRequest, PgRows, PgScramRefused, PgSession, PgStartupMessage, PgTransaction, PgTransport, PgTranspo)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.DB.POSTGRES.AUTH",
+   "discrepancies": [],
+   "family": "Standard library: db",
+   "spec_refs": [
+    "std/db/postgres/auth.ok"
+   ],
+   "status": "mandatory",
+   "title": "std db/postgres/auth public contract (Md5Password, ScramExchange, ScramFailure, ScramKeys, ScramServerFirst)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.DB.POSTGRES.WIRE",
+   "discrepancies": [],
+   "family": "Standard library: db",
+   "spec_refs": [
+    "std/db/postgres/wire.ok"
+   ],
+   "status": "mandatory",
+   "title": "std db/postgres/wire public contract (PgCString, PgDataRows, PgFields, PgFrame, PgInput, PgInt16, PgInt32, PgJoined, PgMessage, PgOutput, PgUntypedFrame, PgWireFailure)"
   },
   {
    "aspects": {
@@ -10662,11 +11379,10 @@
    "discrepancies": [],
    "family": "Standard library: db",
    "spec_refs": [
-    "std/db/query.ok",
-    "docs/std/db-values.md"
+    "std/db/query.ok"
    ],
    "status": "mandatory",
-   "title": "std db/query cardinality, bounded collection and streaming ownership contract"
+   "title": "std db/query public contract (InvalidQueryLimit, NoRows, PreparedQueryOpening, Query, QueryCleanupFailure, QueryLimitExceeded, QueryOpening, QueryRows, QueryRowsCollected, StatementQueryOpening, TooManyRows)"
   },
   {
    "aspects": {
@@ -10712,7 +11428,7 @@
     "std/db/read.ok"
    ],
    "status": "mandatory",
-   "title": "std db/read public contract (RowReader, RowValueFailure)"
+   "title": "std db/read public contract (DbColumnReader, DbMaybeReader, DbPage, DbPresenceReader, DbReaderSource, RowReader, RowValueFailure, RowValues)"
   },
   {
    "aspects": {
@@ -10758,7 +11474,7 @@
     "std/db/row.ok"
    ],
    "status": "mandatory",
-   "title": "std db/row public contract (AmbiguousColumn, Column, DbColumns, InvalidRow, InvalidRowIndex, MissingColumn, Row, RowReading, RowsEnded)"
+   "title": "std db/row public contract (AmbiguousColumn, Column, DbColumns, DbRowCells, DbRowData, DbRowSchema, InvalidRow, InvalidRowIndex, MissingColumn, Row, RowReading, RowsEnded)"
   },
   {
    "aspects": {
@@ -10812,7 +11528,7 @@
     "std/db/sqlite.ok"
    ],
    "status": "mandatory",
-   "title": "std db/sqlite public contract (InvalidSqliteOptions, SqliteAcquiring, SqliteBackupCleanup, SqliteBeginCleanup, SqliteBindings, SqliteBlobHandle, SqliteBoundValue, SqliteConnection, SqliteConnector, SqliteDatabase, SqliteFailureKind, SqliteFinishCleanup, SqliteFrame, SqliteJournal, SqliteMemory, SqliteNativeError, SqliteOpening, SqliteOptions, SqliteOrigin, SqlitePrepared, SqliteRows, SqliteRowsCleanup, SqliteSession, SqliteTask)"
+   "title": "std db/sqlite public contract (InvalidSqliteOptions, SqliteAcquiring, SqliteBackupCleanup, SqliteBeginCleanup, SqliteBindings, SqliteBlobHandle, SqliteBoundValue, SqliteConnection, SqliteConnector, SqliteDatabase, SqliteFailureKind, SqliteFinishCleanup, SqliteFrame, SqliteJournal, SqliteMemory, SqliteNativeError, SqliteOpening, SqliteOptions, SqliteOrigin, SqlitePrepared, SqliteRows, SqliteRowsCleanup, SqliteSession, SqliteShap)"
   },
   {
    "aspects": {
@@ -11044,7 +11760,42 @@
     "std/db/value.ok"
    ],
    "status": "mandatory",
-   "title": "std db/value public contract (DbBoolean, DbBytes, DbDecimal, DbFloating, DbInteger, DbNull, DbText, DbValue, DbValueCapture, DbValueKind, DbValueLimit, DbValueWriting, InvalidDbValue, ObservedDbValue, WrongDbValue)"
+   "title": "std db/value public contract (DbBoolean, DbBytes, DbDecimal, DbFloating, DbInteger, DbKindCode, DbNativeKind, DbNativeValue, DbNull, DbText, DbValue, DbValueCapture, DbValueKind, DbValueLimit, DbValueWriting, InvalidDbValue, ObservedDbValue, WrongDbValue)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.DEBUG.DUMPER",
+   "discrepancies": [],
+   "family": "Standard library: debug",
+   "spec_refs": [
+    "std/debug/dumper.ok"
+   ],
+   "status": "mandatory",
+   "title": "std debug/dumper public contract (Dumper)"
   },
   {
    "aspects": {
@@ -11107,6 +11858,41 @@
      "requirement": "required"
     }
    },
+   "contract": "STD.DIGEST.BLAKE2",
+   "discrepancies": [],
+   "family": "Standard library: digest",
+   "spec_refs": [
+    "std/digest/blake2.ok"
+   ],
+   "status": "mandatory",
+   "title": "std digest/blake2 public contract (Blake2b, Blake2bMac, Blake2s, Blake2sMac, InvalidBlake2Length)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
    "contract": "STD.DIGEST.BLOCKS",
    "discrepancies": [],
    "family": "Standard library: digest",
@@ -11115,6 +11901,41 @@
    ],
    "status": "mandatory",
    "title": "std digest/blocks public contract (DigestBlocks64, DigestCompression64, DigestInputTooLong, DigestPadding64, InvalidDigestBlock, InvalidDigestPadding)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.DIGEST.HOST",
+   "discrepancies": [],
+   "family": "Standard library: digest",
+   "spec_refs": [
+    "std/digest/host.ok"
+   ],
+   "status": "mandatory",
+   "title": "std digest/host public contract (HostDigest)"
   },
   {
    "aspects": {
@@ -11156,6 +11977,146 @@
    ],
    "status": "mandatory",
    "title": "std digest/legacy public contract (Md5, Md5Compression, Sha1, Sha1Compression)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.DIGEST.READ",
+   "discrepancies": [],
+   "family": "Standard library: digest",
+   "spec_refs": [
+    "std/digest/read.ok"
+   ],
+   "status": "mandatory",
+   "title": "std digest/read public contract (AsyncReadDigest, ReadDigest)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.DIGEST.SHA2",
+   "discrepancies": [],
+   "family": "Standard library: digest",
+   "spec_refs": [
+    "std/digest/sha2.ok"
+   ],
+   "status": "mandatory",
+   "title": "std digest/sha2 public contract (Sha224, Sha256, Sha384, Sha512, Sha512_256)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.DIGEST.SHA3",
+   "discrepancies": [],
+   "family": "Standard library: digest",
+   "spec_refs": [
+    "std/digest/sha3.ok"
+   ],
+   "status": "mandatory",
+   "title": "std digest/sha3 public contract (Sha3_224, Sha3_256, Sha3_384, Sha3_512)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.DIGEST.SHAKE",
+   "discrepancies": [],
+   "family": "Standard library: digest",
+   "spec_refs": [
+    "std/digest/shake.ok"
+   ],
+   "status": "mandatory",
+   "title": "std digest/shake public contract (InvalidShakeLength, Shake128, Shake256)"
   },
   {
    "aspects": {
@@ -11361,6 +12322,41 @@
    ],
    "status": "mandatory",
    "title": "std encoding/binary public contract (FloatBytes, FloatFromBytes, FloatWidth, IntegerBytes, IntegerFromBytes, Signedness)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.ENCODING.BYTES",
+   "discrepancies": [],
+   "family": "Standard library: encoding",
+   "spec_refs": [
+    "std/encoding/bytes.ok"
+   ],
+   "status": "mandatory",
+   "title": "std encoding/bytes public contract (ByteRange, ByteSearch, InvalidByteDecimal)"
   },
   {
    "aspects": {
@@ -11644,10 +12640,12 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L10.fs.line-reading"
+      "L10.fs.line-reading",
+      "L10.fs.missing-file-message"
      ],
      "mandatory_cases": [
-      "L10.fs.line-reading"
+      "L10.fs.line-reading",
+      "L10.fs.missing-file-message"
      ],
      "requirement": "required"
     },
@@ -11658,10 +12656,12 @@
     },
     "invalid": {
      "cases": [
-      "L10.fs.missing-file"
+      "L10.fs.missing-file",
+      "L10.fs.missing-file-message"
      ],
      "mandatory_cases": [
-      "L10.fs.missing-file"
+      "L10.fs.missing-file",
+      "L10.fs.missing-file-message"
      ],
      "requirement": "required"
     },
@@ -12639,7 +13639,7 @@
     "std/http/conversation.ok"
    ],
    "status": "mandatory",
-   "title": "std http/conversation public contract (Http1Conversation, Http2Conversation, Http2ConversationConnecting, Http2ConversationDisposal, HttpConversation, HttpConversationAcquisition, HttpConversationAcquisitionDisposal, HttpConversationConnecting, HttpConversationExchange, HttpConversationRouting, HttpConversationSettlement)"
+   "title": "std http/conversation public contract (Http1Conversation, Http2Conversation, Http2ConversationConnecting, Http2ConversationDisposal, HttpConversation, HttpConversationAcquisition, HttpConversationAcquisitionDisposal, HttpConversationConnecting, HttpConversationExchange, HttpConversationRouting)"
   },
   {
    "aspects": {
@@ -12884,7 +13884,7 @@
     "std/http/digest.ok"
    ],
    "status": "mandatory",
-   "title": "std http/digest public contract (DigestAscii, DigestAuthorization, DigestBody, DigestChallenge, DigestCredentials, DigestExchanging, DigestFlag, DigestHash, DigestNonce, DigestNonces, DigestQuoted, DigestReading, DigestResponseCleanup, DigestSelection, DigestServerProof, DigestSettlement, DigestText, UnsupportedDigestChallenge)"
+   "title": "std http/digest public contract (DigestAscii, DigestAuthorization, DigestBody, DigestChallenge, DigestCredentials, DigestExchanging, DigestFlag, DigestHash, DigestNonce, DigestNonces, DigestQuoted, DigestReading, DigestResponseCleanup, DigestSelection, DigestServerProof, DigestText, UnsupportedDigestChallenge)"
   },
   {
    "aspects": {
@@ -12919,7 +13919,7 @@
     "std/http/endpoint.ok"
    ],
    "status": "mandatory",
-   "title": "std http/endpoint public contract (AllEndpoints, EndpointAllowing, EndpointDenied, EndpointSelectionLimit, HttpEndpointSelection, HttpResolutionCleanup, InvalidHttpEndpoint, ListedNetworks, PublicEndpoints)"
+   "title": "std http/endpoint public contract (AllEndpoints, EndpointAllowing, EndpointDenied, EndpointSelectionLimit, HttpEndpointSelection, InvalidHttpEndpoint, ListedNetworks, PublicEndpoints)"
   },
   {
    "aspects": {
@@ -13444,7 +14444,7 @@
     "std/http/http1_session.ok"
    ],
    "status": "mandatory",
-   "title": "std http/http1_session public contract (Http1Exchange, Http1FramerOwner, Http1HeadSettlement, Http1LeaseSettlement, Http1ReadSettlement, Http1Session, Http1SessionBody, Http1SessionCleanup, Http1SessionClosed, Http1SessionHeads, Http1SessionLease, Http1SessionReadCleanup, Http1SessionReadRelease, Http1SessionReading, Http1StartupRelease, Http1UnstartedTransport, Http1WritingSettlement)"
+   "title": "std http/http1_session public contract (Http1Exchange, Http1FramerOwner, Http1HeadSettlement, Http1ReadSettlement, Http1Session, Http1SessionBody, Http1SessionCleanup, Http1SessionClosed, Http1SessionHeads, Http1SessionLease, Http1SessionReadCleanup, Http1SessionReadRelease, Http1SessionReading, Http1StartupRelease, Http1UnstartedTransport, Http1WritingSettlement)"
   },
   {
    "aspects": {
@@ -13969,7 +14969,7 @@
     "std/http/internal/http2_frame.ok"
    ],
    "status": "mandatory",
-   "title": "std http/internal/http2_frame public contract (Http2Fault, Http2FaultScope, Http2Frame, Http2FrameHeader, Http2FrameRules, Http2HeaderRules, ParsedHttp2FrameHeader)"
+   "title": "std http/internal/http2_frame public contract (Http2Fault, Http2FaultScope, Http2FaultView, Http2Frame, Http2FrameHeader, Http2FrameRules, Http2HeaderRules, ParsedHttp2FrameHeader)"
   },
   {
    "aspects": {
@@ -14039,7 +15039,7 @@
     "std/http/internal/http2_input.ok"
    ],
    "status": "mandatory",
-   "title": "std http/internal/http2_input public contract (Http2ConnectionInput, Http2ControlQueuing, Http2InputSettlement, Http2ReadBoundary, Http2ReceivingBarrier, Http2ReceivingEvents)"
+   "title": "std http/internal/http2_input public contract (Http2ConnectionInput, Http2ControlQueuing, Http2ReadBoundary, Http2ReceivingBarrier, Http2ReceivingEvents)"
   },
   {
    "aspects": {
@@ -14109,7 +15109,7 @@
     "std/http/internal/http2_output.ok"
    ],
    "status": "mandatory",
-   "title": "std http/internal/http2_output public contract (Http2ConnectionOutput, Http2OutputCancelled, Http2OutputLimit, Http2OutputSettlement, Http2OutputStarting, Http2OutputStopped, Http2OutputTicket, Http2OutputUnreserved)"
+   "title": "std http/internal/http2_output public contract (Http2ConnectionOutput, Http2OutputCancelled, Http2OutputLimit, Http2OutputStarting, Http2OutputStopped, Http2OutputTicket, Http2OutputUnreserved)"
   },
   {
    "aspects": {
@@ -14249,7 +15249,7 @@
     "std/http/internal/http2_sending.ok"
    ],
    "status": "mandatory",
-   "title": "std http/internal/http2_sending public contract (Http2DataGrant, Http2DataScheduler, Http2DataSending, Http2ProducerRelease, Http2SendingClosed, Http2SendingSettlement, Http2SendingSlot)"
+   "title": "std http/internal/http2_sending public contract (Http2DataGrant, Http2DataScheduler, Http2DataSending, Http2ProducerRelease, Http2SendingClosed, Http2SendingSlot)"
   },
   {
    "aspects": {
@@ -14739,7 +15739,7 @@
     "std/http/proxy_connection.ok"
    ],
    "status": "mandatory",
-   "title": "std http/proxy_connection public contract (HttpProxyConnecting, HttpProxyRouting, HttpProxySettlement)"
+   "title": "std http/proxy_connection public contract (HttpProxyConnecting, HttpProxyRouting)"
   },
   {
    "aspects": {
@@ -14844,7 +15844,7 @@
     "std/http/proxy_tunnel.ok"
    ],
    "status": "mandatory",
-   "title": "std http/proxy_tunnel public contract (HttpProxySettlement, HttpProxyTunnel)"
+   "title": "std http/proxy_tunnel public contract (HttpProxyTunnel)"
   },
   {
    "aspects": {
@@ -14949,7 +15949,7 @@
     "std/http/retry.ok"
    ],
    "status": "mandatory",
-   "title": "std http/retry public contract (HttpRetrySettlement, Retrying)"
+   "title": "std http/retry public contract (Retrying)"
   },
   {
    "aspects": {
@@ -15019,7 +16019,7 @@
     "std/http/routing.ok"
    ],
    "status": "mandatory",
-   "title": "std http/routing public contract (CheckedRouteSnapshot, EmptyRouteRejection, InvalidRoute, Route, RouteConflictEntry, RouteConflictPartition, RouteGroupPosition, RouteLiteral, RouteMatch, RouteMethods, RouteParameterName, RoutePartitionValidation, RoutePattern, RouteRejecting, RouteSegment, RouteSegmentKind, RouteSettlement, RoutedPath, Routes)"
+   "title": "std http/routing public contract (CheckedRouteSnapshot, EmptyRouteRejection, InvalidRoute, Route, RouteConflictEntry, RouteConflictPartition, RouteGroupPosition, RouteLiteral, RouteMatch, RouteMethods, RouteParameterName, RoutePartitionValidation, RoutePattern, RouteRejecting, RouteSegment, RouteSegmentKind, RoutedPath, Routes)"
   },
   {
    "aspects": {
@@ -15334,7 +16334,7 @@
     "std/http/transport_observation.ok"
    ],
    "status": "mandatory",
-   "title": "std http/transport_observation public contract (HttpObservationSettlement, HttpObservedReading, HttpObservedWriting, HttpPeerGoneBeforeResponse, HttpResponseObservation)"
+   "title": "std http/transport_observation public contract (HttpObservedReading, HttpObservedWriting, HttpPeerGoneBeforeResponse, HttpResponseObservation)"
   },
   {
    "aspects": {
@@ -15829,6 +16829,41 @@
   {
    "aspects": {
     "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.IO.INPUT",
+   "discrepancies": [],
+   "family": "Standard library: io",
+   "spec_refs": [
+    "std/io/input.ok"
+   ],
+   "status": "mandatory",
+   "title": "std io/input public contract (ByteInput, ChunkReading, LineTooLong)"
+  },
+  {
+   "aspects": {
+    "boundary": {
      "cases": [
       "L10.stdin.lines"
      ],
@@ -15951,7 +16986,7 @@
     "std/io/stream.ok"
    ],
    "status": "mandatory",
-   "title": "std io/stream public contract (ByteSource, Closing, IncompleteWrite, InvalidReadLimit, Reading, ReadingText, Writing, WritingText)"
+   "title": "std io/stream public contract (AsyncReading, AsyncWriting, ByteSource, Closing, IncompleteWrite, InvalidReadLimit, Reading, ReadingText, Writing, WritingText)"
   },
   {
    "aspects": {
@@ -15992,59 +17027,17 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L09.json.rejections"
-     ],
-     "mandatory_cases": [
-      "L09.json.rejections"
-     ],
-     "requirement": "required"
-    },
-    "interaction": {
-     "cases": [],
-     "mandatory_cases": [],
-     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
-    },
-    "invalid": {
-     "cases": [
-      "L09.json.rejections"
-     ],
-     "mandatory_cases": [
-      "L09.json.rejections"
-     ],
-     "requirement": "required"
-    },
-    "normal": {
-     "cases": [
-      "L09.json.round-trip-and-order"
-     ],
-     "mandatory_cases": [
-      "L09.json.round-trip-and-order"
-     ],
-     "requirement": "required"
-    }
-   },
-   "contract": "STD.JSON.PARSE",
-   "discrepancies": [],
-   "family": "Standard library: json",
-   "spec_refs": [
-    "std/json.ok"
-   ],
-   "status": "mandatory",
-   "title": "std json parsing contract (ParsedJson, InvalidJson, DuplicateJsonMember with location)"
-  },
-  {
-   "aspects": {
-    "boundary": {
-     "cases": [
       "L09.json.codec",
       "L09.json.member-readers",
       "L09.json.parsed-reading",
+      "L09.json.rejections",
       "L09.json.typed-reading"
      ],
      "mandatory_cases": [
       "L09.json.codec",
       "L09.json.member-readers",
       "L09.json.parsed-reading",
+      "L09.json.rejections",
       "L09.json.typed-reading"
      ],
      "requirement": "required"
@@ -16059,12 +17052,14 @@
       "L09.json.codec",
       "L09.json.member-readers",
       "L09.json.parsed-reading",
+      "L09.json.rejections",
       "L09.json.typed-reading"
      ],
      "mandatory_cases": [
       "L09.json.codec",
       "L09.json.member-readers",
       "L09.json.parsed-reading",
+      "L09.json.rejections",
       "L09.json.typed-reading"
      ],
      "requirement": "required"
@@ -16074,101 +17069,27 @@
       "L09.json.codec",
       "L09.json.member-readers",
       "L09.json.parsed-reading",
+      "L09.json.round-trip-and-order",
       "L09.json.typed-reading"
      ],
      "mandatory_cases": [
       "L09.json.codec",
       "L09.json.member-readers",
       "L09.json.parsed-reading",
+      "L09.json.round-trip-and-order",
       "L09.json.typed-reading"
      ],
      "requirement": "required"
     }
    },
-   "contract": "STD.JSON.READ",
+   "contract": "STD.JSON",
    "discrepancies": [],
    "family": "Standard library: json",
    "spec_refs": [
     "std/json.ok"
    ],
    "status": "mandatory",
-   "title": "std json reading contract (Json reads, JsonOptional, JsonPointerToken, JsonKindName, JsonLocation, WrongJsonKind, MissingJsonValue, InvalidJsonNumber)"
-  },
-  {
-   "aspects": {
-    "boundary": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
-     "requirement": "required"
-    },
-    "interaction": {
-     "cases": [],
-     "mandatory_cases": [],
-     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
-    },
-    "invalid": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
-     "requirement": "required"
-    },
-    "normal": {
-     "cases": [
-      "L09.json.round-trip-and-order"
-     ],
-     "mandatory_cases": [
-      "L09.json.round-trip-and-order"
-     ],
-     "requirement": "required"
-    }
-   },
-   "contract": "STD.JSON.VALUE",
-   "discrepancies": [],
-   "family": "Standard library: json",
-   "spec_refs": [
-    "std/json.ok"
-   ],
-   "status": "mandatory",
-   "title": "std json building contract (Json constructors, JsonField, JsonKind, DuplicateJsonMember, MissingJsonLocation)"
-  },
-  {
-   "aspects": {
-    "boundary": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
-     "requirement": "required"
-    },
-    "interaction": {
-     "cases": [],
-     "mandatory_cases": [],
-     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
-    },
-    "invalid": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
-     "requirement": "required"
-    },
-    "normal": {
-     "cases": [
-      "L09.json.round-trip-and-order"
-     ],
-     "mandatory_cases": [
-      "L09.json.round-trip-and-order"
-     ],
-     "requirement": "required"
-    }
-   },
-   "contract": "STD.JSON.WRITE",
-   "discrepancies": [],
-   "family": "Standard library: json",
-   "spec_refs": [
-    "std/json.ok"
-   ],
-   "status": "mandatory",
-   "title": "std json writing contract (Json.string, Json.pretty, InvalidJsonIndentation, exact number spelling)"
+   "title": "std json public contract (DuplicateJsonMember, InvalidJson, InvalidJsonIndentation, InvalidJsonNumber, Json, JsonField, JsonInt, JsonInteger, JsonKind, JsonKindName, JsonLocation, JsonMaybeReader, JsonOptional, JsonPointerToken, JsonPresenceReader, MissingJsonLocation, MissingJsonValue, ParsedJson, WrongJsonKind)"
   },
   {
    "aspects": {
@@ -19003,7 +19924,7 @@
     "std/logging/field.ok"
    ],
    "status": "mandatory",
-   "title": "std logging/field public contract (CombinedLogFields, EmptyLogFields, InvalidLogField, LogFieldSnapshot, LogFields, MissingLogField)"
+   "title": "std logging/field public contract (CombinedLogFields, EmptyLogFields, InvalidLogField, LogFields, MissingLogField)"
   },
   {
    "aspects": {
@@ -20841,7 +21762,7 @@
     "std/net/dns.ok"
    ],
    "status": "mandatory",
-   "title": "std net/dns public contract (AddressName, DnsAddressSnapshot, DnsAnswerCleanup, DnsConfiguration, DnsFailure, DnsIndexedAddress, DnsNameCleanup, FixedResolution, HostAddresses, ResolutionLimitExceeded, Resolving, SystemResolution, UnknownAddress, UnknownHost)"
+   "title": "std net/dns public contract (AddressName, DnsAddressSnapshot, DnsConfiguration, DnsFailure, DnsIndexedAddress, FixedResolution, HostAddresses, ResolutionLimitExceeded, Resolving, SystemResolution, UnknownAddress, UnknownHost)"
   },
   {
    "aspects": {
@@ -21103,8 +22024,12 @@
      "requirement": "required"
     },
     "interaction": {
-     "cases": [],
-     "mandatory_cases": [],
+     "cases": [
+      "L11.tcp.cancelled-read-keeps-data"
+     ],
+     "mandatory_cases": [
+      "L11.tcp.cancelled-read-keeps-data"
+     ],
      "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
     },
     "invalid": {
@@ -21130,7 +22055,7 @@
     "std/net/stream.ok"
    ],
    "status": "mandatory",
-   "title": "std net/stream public contract (AsyncReading, AsyncWriting, ConnectionEndpoints, StreamConnection, StreamFailure, StreamReadCleanup, StreamReadTicket, StreamReading, StreamWriteCleanup, StreamWriteTicket, StreamWriting, TlsTcpOrigin)"
+   "title": "std net/stream public contract (ConnectionEndpoints, StreamConnection, StreamFailure, StreamReadTicket, StreamReading, StreamWriteCleanup, StreamWriteTicket, StreamWriting, TlsTcpOrigin)"
   },
   {
    "aspects": {
@@ -21141,8 +22066,12 @@
      "requirement": "required"
     },
     "interaction": {
-     "cases": [],
-     "mandatory_cases": [],
+     "cases": [
+      "L11.tcp.cancelled-read-keeps-data"
+     ],
+     "mandatory_cases": [
+      "L11.tcp.cancelled-read-keeps-data"
+     ],
      "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
     },
     "invalid": {
@@ -21171,7 +22100,7 @@
     "std/net/tcp.ok"
    ],
    "status": "mandatory",
-   "title": "std net/tcp public contract (TcpAcceptance, TcpConnectCleanup, TcpConnecting, TcpConnection, TcpEndpointWire, TcpListenerUnpublished, TcpListening, TcpListeningOptions, TcpOptions, TcpUnpublished)"
+   "title": "std net/tcp public contract (TcpAcceptance, TcpConnecting, TcpConnection, TcpEndpointWire, TcpListenerUnpublished, TcpListening, TcpListeningOptions, TcpOptions, TcpUnpublished)"
   },
   {
    "aspects": {
@@ -21245,7 +22174,7 @@
     "std/net/tls.ok"
    ],
    "status": "mandatory",
-   "title": "std net/tls public contract (InvalidTlsPolicy, TlsClientHandshake, TlsClientPolicy, TlsConnection, TlsDetails, TlsFailure, TlsPhase, TlsReadTicket, TlsReading, TlsTaskCleanup, TlsUnpublished, TlsVersion, TlsWriting)"
+   "title": "std net/tls public contract (InvalidTlsPolicy, TlsClientHandshake, TlsClientPolicy, TlsConnection, TlsDetails, TlsFailure, TlsPhase, TlsReadTicket, TlsReading, TlsUnpublished, TlsVersion, TlsWriting)"
   },
   {
    "aspects": {
@@ -22586,6 +23515,38 @@
      "requirement": "required"
     }
    },
+   "contract": "STD.RUNTIME.BYTES",
+   "discrepancies": [],
+   "family": "Standard library: runtime",
+   "spec_refs": [
+    "std/runtime/bytes.ok"
+   ],
+   "status": "informative",
+   "title": "std runtime/bytes public contract (no public declarations)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: module owns no public declarations"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: module owns no public declarations"
+    },
+    "normal": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
    "contract": "STD.RUNTIME.COLLATION",
    "discrepancies": [],
    "family": "Standard library: runtime",
@@ -22722,6 +23683,38 @@
    ],
    "status": "informative",
    "title": "std runtime/database public contract (no public declarations)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: module owns no public declarations"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: module owns no public declarations"
+    },
+    "normal": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.RUNTIME.DB",
+   "discrepancies": [],
+   "family": "Standard library: runtime",
+   "spec_refs": [
+    "std/runtime/db.ok"
+   ],
+   "status": "informative",
+   "title": "std runtime/db public contract (no public declarations)"
   },
   {
    "aspects": {
@@ -22978,6 +23971,38 @@
    ],
    "status": "informative",
    "title": "std runtime/hex public contract (no public declarations)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: module owns no public declarations"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: module owns no public declarations"
+    },
+    "normal": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.RUNTIME.HOST_CRYPTO",
+   "discrepancies": [],
+   "family": "Standard library: runtime",
+   "spec_refs": [
+    "std/runtime/host_crypto.ok"
+   ],
+   "status": "informative",
+   "title": "std runtime/host_crypto public contract (no public declarations)"
   },
   {
    "aspects": {
@@ -23426,6 +24451,38 @@
    ],
    "status": "informative",
    "title": "std runtime/pem public contract (no public declarations)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: module owns no public declarations"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: module owns no public declarations"
+    },
+    "normal": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.RUNTIME.POSTGRES",
+   "discrepancies": [],
+   "family": "Standard library: runtime",
+   "spec_refs": [
+    "std/runtime/postgres.ok"
+   ],
+   "status": "informative",
+   "title": "std runtime/postgres public contract (no public declarations)"
   },
   {
    "aspects": {
@@ -24567,7 +25624,7 @@
     "std/template/json.ok"
    ],
    "status": "mandatory",
-   "title": "std template/json public contract (InvalidTemplateJsonLimits, InvalidTemplateJsonProtocol, InvalidTemplateJsonSize, JsonTemplateObservation, JsonTemplateStrings, JsonTemplateVisitor, NonScalarTemplateValue, TemplateJsonLimitExceeded)"
+   "title": "std template/json public contract (InvalidTemplateJsonLimits, JsonTemplateStrings, NonScalarTemplateValue, TemplateJsonLimitExceeded)"
   },
   {
    "aspects": {
@@ -24742,7 +25799,7 @@
     "std/template/sections.ok"
    ],
    "status": "mandatory",
-   "title": "std template/sections public contract (InvalidTemplateSectionSize, SectionTemplate, TemplateIterationBudget, TemplateIterationLimitExceeded, TemplateOutputMeter, TemplatePartialDepthExceeded, TemplateSectionDepthExceeded, TemplateSectionLookup, TemplateSectionLookupVisitor, TemplateSectionObject, TemplateSectionOutput, TemplateSectionRun, TemplateSectionVisitor, UnsupportedTemplatePartial)"
+   "title": "std template/sections public contract (InvalidTemplateSectionSize, SectionTemplate, TemplateIterationBudget, TemplateIterationLimitExceeded, TemplateOutputMeter, TemplatePartialDepthExceeded, TemplateSection, TemplateSectionDepthExceeded, TemplateSectionLookup, TemplateSectionOutput, TemplateSectionRun, UnsupportedTemplatePartial)"
   },
   {
    "aspects": {
@@ -26309,7 +27366,7 @@
     "std/web/exception.ok"
    ],
    "status": "mandatory",
-   "title": "std web/exception public contract (Exception)"
+   "title": "std web/exception public contract (Exception, Problem)"
   },
   {
    "aspects": {
@@ -26379,7 +27436,7 @@
     "std/web/reply.ok"
    ],
    "status": "mandatory",
-   "title": "std web/reply public contract (Created, Html, Json, NoContent, Redirect, Text)"
+   "title": "std web/reply public contract (Created, Html, JsonReply, NoContent, Redirect, Text)"
   },
   {
    "aspects": {
@@ -26414,7 +27471,7 @@
     "std/web/request.ok"
    ],
    "status": "mandatory",
-   "title": "std web/request public contract (InvalidBodyLimit, MissingRouteParameter, RequestJson, WebRequest)"
+   "title": "std web/request public contract (InvalidBodyLimit, JsonProblem, MissingRouteParameter, RequestJson, RequestJsonOptional, WebRequest)"
   },
   {
    "aspects": {
@@ -26675,21 +27732,27 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L04.successor.chain"
+      "L04.successor.chain",
+      "L04.successor.closure-transferred"
      ],
      "mandatory_cases": [
-      "L04.successor.chain"
+      "L04.successor.chain",
+      "L04.successor.closure-transferred"
      ],
      "requirement": "required"
     },
     "interaction": {
      "cases": [
       "L04.harness.discarded-check-is-error",
+      "L04.successor.bound-action-invoked",
+      "L04.successor.closure-invoked",
       "L04.successor.discarded-in-branch",
       "L07.defer.discarded-successor"
      ],
      "mandatory_cases": [
       "L04.harness.discarded-check-is-error",
+      "L04.successor.bound-action-invoked",
+      "L04.successor.closure-invoked",
       "L04.successor.discarded-in-branch",
       "L07.defer.discarded-successor"
      ],
@@ -26697,10 +27760,16 @@
     },
     "invalid": {
      "cases": [
+      "L04.successor.bound-action-unused",
+      "L04.successor.closure-partial-body",
+      "L04.successor.closure-unused",
       "L04.successor.discarded",
       "L04.successor.unused-binding"
      ],
      "mandatory_cases": [
+      "L04.successor.bound-action-unused",
+      "L04.successor.closure-partial-body",
+      "L04.successor.closure-unused",
       "L04.successor.discarded",
       "L04.successor.unused-binding"
      ],
@@ -27003,12 +28072,14 @@
     "boundary": {
      "cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
      ],
      "mandatory_cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
@@ -27018,12 +28089,14 @@
     "interaction": {
      "cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
      ],
      "mandatory_cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
@@ -27054,12 +28127,14 @@
     "normal": {
      "cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
      ],
      "mandatory_cases": [
       "L05.choice.boolean",
+      "L05.choice.empty-collections",
       "L05.choice.enum",
       "L05.choice.evaluation",
       "L05.choice.variants"
@@ -27183,25 +28258,33 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L05.variants.case-layouts",
+      "L05.variants.inferred-payloads",
       "L05.variants.nested"
      ],
      "mandatory_cases": [
+      "L05.variants.case-layouts",
+      "L05.variants.inferred-payloads",
       "L05.variants.nested"
      ],
      "requirement": "required"
     },
     "interaction": {
      "cases": [
+      "L05.variants.case-layouts",
       "L05.variants.evaluation",
       "L05.variants.modules",
       "L05.variants.ownership",
-      "L05.variants.payload"
+      "L05.variants.payload",
+      "L05.variants.search"
      ],
      "mandatory_cases": [
+      "L05.variants.case-layouts",
       "L05.variants.evaluation",
       "L05.variants.modules",
       "L05.variants.ownership",
-      "L05.variants.payload"
+      "L05.variants.payload",
+      "L05.variants.search"
      ],
      "requirement": "required"
     },
@@ -27220,9 +28303,11 @@
     },
     "normal": {
      "cases": [
+      "L05.variants.case-layouts",
       "L05.variants.payload"
      ],
      "mandatory_cases": [
+      "L05.variants.case-layouts",
       "L05.variants.payload"
      ],
      "requirement": "required"
@@ -27241,10 +28326,12 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L02.cast.arrays"
+      "L02.cast.arrays",
+      "L02.cast.int-arbitrary-precision"
      ],
      "mandatory_cases": [
-      "L02.cast.arrays"
+      "L02.cast.arrays",
+      "L02.cast.int-arbitrary-precision"
      ],
      "requirement": "required"
     },
@@ -27552,9 +28639,11 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L02.cast.int-arbitrary-precision",
       "L02.cast.methods"
      ],
      "mandatory_cases": [
+      "L02.cast.int-arbitrary-precision",
       "L02.cast.methods"
      ],
      "requirement": "required"
@@ -27653,16 +28742,22 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L02.equality.composite-boundary"
+      "L02.equality.composite-boundary",
+      "L02.equality.signed-zero-composite"
      ],
      "mandatory_cases": [
-      "L02.equality.composite-boundary"
+      "L02.equality.composite-boundary",
+      "L02.equality.signed-zero-composite"
      ],
      "requirement": "required"
     },
     "interaction": {
-     "cases": [],
-     "mandatory_cases": [],
+     "cases": [
+      "L02.equality.signed-zero-composite"
+     ],
+     "mandatory_cases": [
+      "L02.equality.signed-zero-composite"
+     ],
      "requirement": "n/a: no fragile cross-feature interaction is identified in the audited sources"
     },
     "invalid": {
@@ -27676,10 +28771,12 @@
     },
     "normal": {
      "cases": [
-      "L02.equality.composite"
+      "L02.equality.composite",
+      "L02.equality.signed-zero-composite"
      ],
      "mandatory_cases": [
-      "L02.equality.composite"
+      "L02.equality.composite",
+      "L02.equality.signed-zero-composite"
      ],
      "requirement": "required"
     }
@@ -28343,9 +29440,11 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L02.cast.int-arbitrary-precision",
       "L02.cast.scalar-calls"
      ],
      "mandatory_cases": [
+      "L02.cast.int-arbitrary-precision",
       "L02.cast.scalar-calls"
      ],
      "requirement": "required"
@@ -28637,6 +29736,50 @@
    ],
    "status": "mandatory",
    "title": "length() and slice() count Unicode code points; slice never clamps"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L02.string.order-consistent"
+     ],
+     "mandatory_cases": [
+      "L02.string.order-consistent"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L02.string.order-consistent"
+     ],
+     "mandatory_cases": [
+      "L02.string.order-consistent"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: the actions accept any two strings; < on strings is VAL.ORDERING's invalid aspect"
+    },
+    "normal": {
+     "cases": [
+      "L02.string.order-consistent"
+     ],
+     "mandatory_cases": [
+      "L02.string.order-consistent"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "VAL.STRING-ORDER",
+   "discrepancies": [],
+   "family": "Values and operators",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+   ],
+   "status": "mandatory",
+   "title": "string less, less_or_equal and order compare lexicographically by code point: one order per type (#281)"
   },
   {
    "aspects": {
@@ -29480,6 +30623,9 @@
    "STD.CALENDAR [normal]",
    "STD.CALENDAR [boundary]",
    "STD.CALENDAR [invalid]",
+   "STD.CELL [normal]",
+   "STD.CELL [boundary]",
+   "STD.CELL [invalid]",
    "STD.CHECKSUM.ADLER32 [invalid]",
    "STD.CHECKSUM.STATE [normal]",
    "STD.CHECKSUM.STATE [boundary]",
@@ -29544,12 +30690,54 @@
    "STD.CONFIG.VALUE [normal]",
    "STD.CONFIG.VALUE [boundary]",
    "STD.CONFIG.VALUE [invalid]",
+   "STD.CRYPTO.AEAD [normal]",
+   "STD.CRYPTO.AEAD [boundary]",
+   "STD.CRYPTO.AEAD [invalid]",
+   "STD.CRYPTO.AES_GCM [normal]",
+   "STD.CRYPTO.AES_GCM [boundary]",
+   "STD.CRYPTO.AES_GCM [invalid]",
+   "STD.CRYPTO.CHACHA20_POLY1305 [normal]",
+   "STD.CRYPTO.CHACHA20_POLY1305 [boundary]",
+   "STD.CRYPTO.CHACHA20_POLY1305 [invalid]",
+   "STD.CRYPTO.CONSTANT_TIME [normal]",
+   "STD.CRYPTO.CONSTANT_TIME [boundary]",
+   "STD.CRYPTO.CONSTANT_TIME [invalid]",
+   "STD.CRYPTO.ECDSA [normal]",
+   "STD.CRYPTO.ECDSA [boundary]",
+   "STD.CRYPTO.ECDSA [invalid]",
+   "STD.CRYPTO.ED25519 [normal]",
+   "STD.CRYPTO.ED25519 [boundary]",
+   "STD.CRYPTO.ED25519 [invalid]",
+   "STD.CRYPTO.ERROR [normal]",
+   "STD.CRYPTO.ERROR [boundary]",
+   "STD.CRYPTO.ERROR [invalid]",
+   "STD.CRYPTO.HMAC [normal]",
+   "STD.CRYPTO.HMAC [boundary]",
+   "STD.CRYPTO.HMAC [invalid]",
+   "STD.CRYPTO.KDF [normal]",
+   "STD.CRYPTO.KDF [boundary]",
+   "STD.CRYPTO.KDF [invalid]",
    "STD.CRYPTO.KEY [normal]",
    "STD.CRYPTO.KEY [boundary]",
    "STD.CRYPTO.KEY [invalid]",
+   "STD.CRYPTO.KEY_FORMAT [normal]",
+   "STD.CRYPTO.KEY_FORMAT [boundary]",
+   "STD.CRYPTO.KEY_FORMAT [invalid]",
+   "STD.CRYPTO.NONCE [normal]",
+   "STD.CRYPTO.NONCE [boundary]",
+   "STD.CRYPTO.NONCE [invalid]",
+   "STD.CRYPTO.PASSWORD [normal]",
+   "STD.CRYPTO.PASSWORD [boundary]",
+   "STD.CRYPTO.PASSWORD [invalid]",
+   "STD.CRYPTO.RSA [normal]",
+   "STD.CRYPTO.RSA [boundary]",
+   "STD.CRYPTO.RSA [invalid]",
    "STD.CRYPTO.SECRET [normal]",
    "STD.CRYPTO.SECRET [boundary]",
    "STD.CRYPTO.SECRET [invalid]",
+   "STD.CRYPTO.X25519 [normal]",
+   "STD.CRYPTO.X25519 [boundary]",
+   "STD.CRYPTO.X25519 [invalid]",
    "STD.CRYPTO.X509.CERTIFICATE [normal]",
    "STD.CRYPTO.X509.CERTIFICATE [boundary]",
    "STD.CRYPTO.X509.CERTIFICATE [invalid]",
@@ -29573,6 +30761,15 @@
    "STD.DB.CONNECTION [invalid]",
    "STD.DB.ERROR [boundary]",
    "STD.DB.ERROR [invalid]",
+   "STD.DB.POSTGRES [normal]",
+   "STD.DB.POSTGRES [boundary]",
+   "STD.DB.POSTGRES [invalid]",
+   "STD.DB.POSTGRES.AUTH [normal]",
+   "STD.DB.POSTGRES.AUTH [boundary]",
+   "STD.DB.POSTGRES.AUTH [invalid]",
+   "STD.DB.POSTGRES.WIRE [normal]",
+   "STD.DB.POSTGRES.WIRE [boundary]",
+   "STD.DB.POSTGRES.WIRE [invalid]",
    "STD.DB.SQLITE.BACKUP [normal]",
    "STD.DB.SQLITE.BACKUP [boundary]",
    "STD.DB.SQLITE.BACKUP [invalid]",
@@ -29585,18 +30782,42 @@
    "STD.DB.TRANSACTION [invalid]",
    "STD.DB.VALUE [boundary]",
    "STD.DB.VALUE [invalid]",
+   "STD.DEBUG.DUMPER [normal]",
+   "STD.DEBUG.DUMPER [boundary]",
+   "STD.DEBUG.DUMPER [invalid]",
    "STD.DIFF [normal]",
    "STD.DIFF [boundary]",
    "STD.DIFF [invalid]",
+   "STD.DIGEST.BLAKE2 [normal]",
+   "STD.DIGEST.BLAKE2 [boundary]",
+   "STD.DIGEST.BLAKE2 [invalid]",
    "STD.DIGEST.BLOCKS [normal]",
    "STD.DIGEST.BLOCKS [boundary]",
    "STD.DIGEST.BLOCKS [invalid]",
+   "STD.DIGEST.HOST [normal]",
+   "STD.DIGEST.HOST [boundary]",
+   "STD.DIGEST.HOST [invalid]",
    "STD.DIGEST.LEGACY [invalid]",
+   "STD.DIGEST.READ [normal]",
+   "STD.DIGEST.READ [boundary]",
+   "STD.DIGEST.READ [invalid]",
+   "STD.DIGEST.SHA2 [normal]",
+   "STD.DIGEST.SHA2 [boundary]",
+   "STD.DIGEST.SHA2 [invalid]",
+   "STD.DIGEST.SHA3 [normal]",
+   "STD.DIGEST.SHA3 [boundary]",
+   "STD.DIGEST.SHA3 [invalid]",
+   "STD.DIGEST.SHAKE [normal]",
+   "STD.DIGEST.SHAKE [boundary]",
+   "STD.DIGEST.SHAKE [invalid]",
    "STD.DIGEST.STATE [boundary]",
    "STD.DIGEST.STATE [invalid]",
    "STD.ENCODING.BINARY [normal]",
    "STD.ENCODING.BINARY [boundary]",
    "STD.ENCODING.BINARY [invalid]",
+   "STD.ENCODING.BYTES [normal]",
+   "STD.ENCODING.BYTES [boundary]",
+   "STD.ENCODING.BYTES [invalid]",
    "STD.ENCODING.PEM [normal]",
    "STD.ENCODING.PEM [boundary]",
    "STD.ENCODING.PEM [invalid]",
@@ -29957,6 +31178,9 @@
    "STD.IO.DECORATORS [normal]",
    "STD.IO.DECORATORS [boundary]",
    "STD.IO.DECORATORS [invalid]",
+   "STD.IO.INPUT [normal]",
+   "STD.IO.INPUT [boundary]",
+   "STD.IO.INPUT [invalid]",
    "STD.IO.STDIN [invalid]",
    "STD.IO.STDOUT [invalid]",
    "STD.IO.STREAM [normal]",
@@ -29965,10 +31189,6 @@
    "STD.IO.TEXT [normal]",
    "STD.IO.TEXT [boundary]",
    "STD.IO.TEXT [invalid]",
-   "STD.JSON.VALUE [boundary]",
-   "STD.JSON.VALUE [invalid]",
-   "STD.JSON.WRITE [boundary]",
-   "STD.JSON.WRITE [invalid]",
    "STD.LOCALE.COLLATION [normal]",
    "STD.LOCALE.COLLATION [boundary]",
    "STD.LOCALE.COLLATION [invalid]",
@@ -30613,6 +31833,7 @@
    "STD.ASYNC.LOCK",
    "STD.ASYNC.SEMAPHORE",
    "STD.CALENDAR",
+   "STD.CELL",
    "STD.CHECKSUM.STATE",
    "STD.CLI.HELP",
    "STD.CLI.PARSE",
@@ -30632,8 +31853,22 @@
    "STD.CONFIG.KEY",
    "STD.CONFIG.SOURCE",
    "STD.CONFIG.VALUE",
+   "STD.CRYPTO.AEAD",
+   "STD.CRYPTO.AES_GCM",
+   "STD.CRYPTO.CHACHA20_POLY1305",
+   "STD.CRYPTO.CONSTANT_TIME",
+   "STD.CRYPTO.ECDSA",
+   "STD.CRYPTO.ED25519",
+   "STD.CRYPTO.ERROR",
+   "STD.CRYPTO.HMAC",
+   "STD.CRYPTO.KDF",
    "STD.CRYPTO.KEY",
+   "STD.CRYPTO.KEY_FORMAT",
+   "STD.CRYPTO.NONCE",
+   "STD.CRYPTO.PASSWORD",
+   "STD.CRYPTO.RSA",
    "STD.CRYPTO.SECRET",
+   "STD.CRYPTO.X25519",
    "STD.CRYPTO.X509.CERTIFICATE",
    "STD.CRYPTO.X509.NAME",
    "STD.CRYPTO.X509.VALUE",
@@ -30641,12 +31876,23 @@
    "STD.CSV.STREAM",
    "STD.DB.ACQUISITION",
    "STD.DB.CONNECTION",
+   "STD.DB.POSTGRES",
+   "STD.DB.POSTGRES.AUTH",
+   "STD.DB.POSTGRES.WIRE",
    "STD.DB.SQLITE.BACKUP",
    "STD.DB.SQLITE.BLOB",
    "STD.DB.SQLITE.SCRIPT",
+   "STD.DEBUG.DUMPER",
    "STD.DIFF",
+   "STD.DIGEST.BLAKE2",
    "STD.DIGEST.BLOCKS",
+   "STD.DIGEST.HOST",
+   "STD.DIGEST.READ",
+   "STD.DIGEST.SHA2",
+   "STD.DIGEST.SHA3",
+   "STD.DIGEST.SHAKE",
    "STD.ENCODING.BINARY",
+   "STD.ENCODING.BYTES",
    "STD.ENCODING.PEM",
    "STD.ENCODING.SINGLE_BYTE",
    "STD.ERROR",
@@ -30766,6 +32012,7 @@
    "STD.I18N.PLURAL",
    "STD.IO.BUFFER",
    "STD.IO.DECORATORS",
+   "STD.IO.INPUT",
    "STD.IO.STREAM",
    "STD.IO.TEXT",
    "STD.LOCALE.COLLATION",
@@ -30975,5 +32222,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "c65a5522c23c8dcb22d350a1c1dd7984f4ab7e9a8efa9ccfc099791e1bb5a5e5"
+ "suite_tree_sha256": "dd4c9964a9a46f6c5fe766f95cfc014a3cd8541618cadf61cbfac8638e5aa89f"
 }

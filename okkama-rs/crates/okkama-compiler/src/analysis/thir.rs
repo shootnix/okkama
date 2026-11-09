@@ -535,7 +535,8 @@ pub enum Builtin {
     StrCharacters,
     /// `c.code()`: code point символа (#231).
     CharCode,
-    /// Строки упорядочиваются по длине (как Perl): `less`, `less_or_equal`.
+    /// `less`, `less_or_equal` строк: тот же порядок по code point, что у
+    /// `order()` (#281).
     StrCompare(CompareOp),
     MapSize,
     MapHas,
@@ -871,6 +872,14 @@ pub fn first_expr(block: &Block, test: &dyn Fn(&Expr) -> bool) -> Option<Span> {
             found = first_in(expr, test);
         }
     });
+    found
+}
+
+/// Whether an expression of `stmt` (nested blocks included, anonymous
+/// actions not) passes `test`.
+pub fn stmt_contains(stmt: &Stmt, test: &dyn Fn(&Expr) -> bool) -> bool {
+    let mut found = false;
+    each_stmt_expr(stmt, &mut |expr| found = found || first_in(expr, test).is_some());
     found
 }
 

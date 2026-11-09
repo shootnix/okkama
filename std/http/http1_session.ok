@@ -124,15 +124,15 @@ object Http1SessionLease {
         let primes is @FutureGroup<@byte>=[];priming.replace(primes);
     }
 }
-object Http1WritingSettlement {
+hidden object Http1WritingSettlement {
     has groups is @FutureGroup<AsyncWriting>;Http1WritingSettlement(groups is @FutureGroup<AsyncWriting>){self.groups=groups;}
     async close() is void{for groups -> group{if group.active()>0{await group.wait();}}}
 }
-object Http1HeadSettlement {
+hidden object Http1HeadSettlement {
     has groups is @FutureGroup<Http1HeadRead<Http1ResponseHead>>;Http1HeadSettlement(groups is @FutureGroup<Http1HeadRead<Http1ResponseHead>>){self.groups=groups;}
     async close() is void{for groups -> group{if group.active()>0{await group.wait();}}}
 }
-object Http1SessionCleanup {
+hidden object Http1SessionCleanup {
     has lease is Http1SessionLease;has published is Event;
     Http1SessionCleanup(lease is Http1SessionLease,published is Event){self.lease=lease;self.published=published;}
     async close() is void {
@@ -144,10 +144,6 @@ object Http1SessionCleanup {
 object Http1StartupRelease {
     has lease is Http1SessionLease;Http1StartupRelease(lease is Http1SessionLease){self.lease=lease;}
     close() is void{lease.release_startup();}
-}
-object Http1LeaseSettlement {
-    has lease is Http1SessionLease;Http1LeaseSettlement(lease is Http1SessionLease){self.lease=lease;}
-    async close() is void{await lease.settle();}
 }
 object Http1FramerOwner does Closing {
     has stopped is Event;Http1FramerOwner(){stopped=Event();}closed() is bool{stopped.ready();}close() is void{stopped.set();}
@@ -172,7 +168,7 @@ object Http1SessionReading does BodyReading {
     close() is void{if !stopped.ready(){stopped.set();origin.close();lease.abort();}}
     destroy{try{self.close();}catch e is Error{}catch e is NativeFailure{}}
 }
-object Http1SessionReadCleanup {
+hidden object Http1SessionReadCleanup {
     has lease is Http1SessionLease;has group is FutureGroup<@byte>;has complete is Event;has busy is Atomic<bool>;
     Http1SessionReadCleanup(lease is Http1SessionLease,group is FutureGroup<@byte>,complete is Event,busy is Atomic<bool>){self.lease=lease;self.group=group;self.complete=complete;self.busy=busy;}
     async close() is void {
@@ -181,7 +177,7 @@ object Http1SessionReadCleanup {
         else{await Http1ReadSettlement(group).close();}
     }
 }
-object Http1ReadSettlement {
+hidden object Http1ReadSettlement {
     has group is FutureGroup<@byte>;Http1ReadSettlement(group is FutureGroup<@byte>){self.group=group;}
     async close() is void{if group.active()>0{await group.wait();}}
 }

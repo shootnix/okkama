@@ -1,0 +1,63 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum Shape = (dot, circle(r is int), rect(w is int, h is int));
+enum Wide = (a0(x is int), a1(x is int, y is string), a2(xs is @int), a3(s is Shape), hit(left is int, right is int));
+enum Tree<T> = (leaf, node(value is T, label is string));
+enum Fault is Error = (minor, major(code is int, shape is Shape));
+
+object Probe {
+    Probe();
+
+    area(s is Shape) is int {
+        match s {
+            case Shape.dot { 0; }
+            case Shape.circle(r) { r * r * 3; }
+            case Shape.rect(w, h) { w * h; }
+        }
+    }
+
+    wide(w is Wide) is string {
+        match w {
+            case Wide.a0(x) { "a0 " + x.string(); }
+            case Wide.a1(x, y) { "a1 " + x.string() + y; }
+            case Wide.a2(xs) { "a2 " + xs.size().string(); }
+            case Wide.a3(s) { "a3 " + self.area(s).string(); }
+            case Wide.hit(left, right) { "hit " + (left + right).string(); }
+        }
+    }
+
+    raise(f is Fault) is int { throw f; }
+}
+
+main() is int {
+    let out = Stdout();
+    let p = Probe();
+    // Payload-free cases and cases of one and two fields.
+    let shapes = [Shape.dot, Shape.circle(2), Shape.rect(3, 4)];
+    out.writeln(shapes.map() -> s { p.area(s).string(); }.join(","));
+    // Equality: the case, then the active payload.
+    out.writeln((Shape.rect(3, 4) == Shape.rect(3, 4)).string() + " " + (Shape.rect(3, 4) == Shape.rect(4, 3)).string()
+        + " " + (Shape.dot == Shape.circle(0)).string() + " " + (Shape.dot == Shape.dot).string());
+    // Collections of variants compare deeply.
+    out.writeln((shapes == [Shape.dot, Shape.circle(2), Shape.rect(3, 4)]).string() + " "
+        + (["k": Shape.circle(1)] == ["k": Shape.circle(2)]).string());
+    // A wide variant: a value is only its active case.
+    let wides = [Wide.a0(1), Wide.a1(2, "x"), Wide.a2([1, 2, 3]), Wide.a3(Shape.circle(1)), Wide.hit(20, 22)];
+    out.writeln(wides.map() -> w { p.wide(w); }.join("|"));
+    // Generic and nested variants.
+    let tree is Tree<Maybe<Shape>> = Tree.node(Maybe.some(Shape.rect(2, 5)), "root");
+    let inner = match tree {
+        case Tree.leaf { 0; }
+        case Tree.node(value, label) { p.area(value else Shape.dot) + label.length(); }
+    };
+    out.writeln(inner.string());
+    out.writeln((Tree<int>.leaf == Tree<int>.leaf).string() + " " + (Tree.node(1, "a") == Tree.node(1, "b")).string());
+    // Error enums: caught by case and by type; the text of a nested payload.
+    let code = try { p.raise(Fault.major(7, Shape.circle(1))); } catch Fault.minor { -1; } catch Fault.major(c, s) { c + p.area(s); };
+    out.writeln(code.string());
+    let text = try { p.raise(Fault.major(1, Shape.rect(2, 3))); "none"; } catch failure is Fault { failure.text(); };
+    out.writeln(text);
+    0;
+}

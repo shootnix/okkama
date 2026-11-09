@@ -16,8 +16,9 @@
 //! * integer literals keep their digits as text (see
 //!   [`IntLiteral`](crate::syntax::token::IntLiteral)); only based literals
 //!   are range-checked, because the grammar limits them to `INT64_MAX`;
-//! * carriage returns inside fenced raw strings are dropped from the decoded
-//!   value (language-owner decision D-030, "as in Go"); the lexeme keeps them.
+//! * a fenced raw string keeps every character between its delimiters,
+//!   carriage returns included (#310, superseding D-030's Go rule); a CR
+//!   between tokens is whitespace.
 //!
 //! After an error the lexer resynchronises locally (it finishes the current
 //! literal or skips the bad character) so one mistake produces one
@@ -650,9 +651,8 @@ impl Lexer<'_> {
             Some(length) => {
                 let content = &self.text[content_start..content_start + length];
                 self.pos = content_start + length + 3;
-                // D-030: CR characters are discarded from the value as in Go
-                // raw strings; the token span still covers them.
-                let value: String = content.chars().filter(|&c| c != '\r').collect();
+                // Every character is kept, CR included (#310).
+                let value = content.to_string();
                 self.add_value(
                     TokenKind::String,
                     TokenValue::Str(StrLiteral {

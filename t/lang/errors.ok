@@ -1,0 +1,68 @@
+module t v1.0.0;
+
+// t/lang: typed failures — throw, catch by type and pattern, rethrow,
+// confirm, try?, cleanup on unwind (Book ch. 14).
+import "tap" take Tap;
+import "cell" take Cell;
+
+enum Inner is Error = (low, high(level is int));
+enum Ferr is Error = (plain, code(n is int), text(s is string), flag(b is bool), ratio(q is rat), nested(cause is Inner));
+
+object Thrower {
+    Thrower();
+    raise(e is Ferr) is int { throw e; }
+    deep(e is Ferr, depth is int) is int { if depth == 0 { throw e; } else { self.deep(e, depth - 1) + 1; } }
+    checked(v is int) is int {
+        confirm v > 0 else throw Ferr.code(v);
+        v * 2;
+    }
+    rethrow(e is Ferr) is int {
+        try { self.raise(e); } catch failure is Ferr { throw; }
+    }
+    wrap(level is int) is int {
+        try { throw Inner.high(level); } catch Inner.high(l) { throw Ferr.nested(Inner.high(l + 1)); }
+    }
+    pick(e is Ferr) is string {
+        try { self.raise(e); "none"; }
+        catch Ferr.code(n) { "code " + n.string(); }
+        catch Ferr.text(s) { "text " + s; }
+        catch Ferr.plain, Ferr.flag(_) { "plain or flag"; }
+        catch failure is Ferr { "other " + failure.text(); }
+    }
+}
+
+main() is int {
+    let t = Tap(18);
+    let thrower = Thrower();
+    t = t.is(try { thrower.raise(Ferr.plain); } catch e is Ferr { 1; }, 1, "catch by type");
+    t = t.is(thrower.pick(Ferr.code(-7)), "code -7", "catch a case and bind its payload");
+    t = t.is(thrower.pick(Ferr.text("x")), "text x", "the second clause");
+    t = t.is(thrower.pick(Ferr.flag(true)), "plain or flag", "a clause listing cases, _ ignoring a field");
+    t = t.is(thrower.pick(Ferr.ratio(rat(1, 3))), "other Ferr.ratio(1/3)", "the fallback clause and text()");
+    t = t.is(thrower.pick(Ferr.nested(Inner.low)), "other Ferr.nested(Inner.low)", "a nested error's text");
+    t = t.is(try { thrower.deep(Ferr.code(3), 5); } catch Ferr.code(n) { n; }, 3, "unwinding through six frames");
+    t = t.is(try { thrower.checked(-2); } catch Ferr.code(n) { n; }, -2, "confirm else throw");
+    t = t.is(thrower.checked(4), 8, "confirm passes");
+    t = t.is(try { thrower.rethrow(Ferr.code(9)); } catch Ferr.code(n) { n; }, 9, "a bare rethrow keeps the value");
+    t = t.is(try { thrower.wrap(1).string(); } catch Ferr.nested(cause) { cause.text(); }, "Inner.high(2)", "a new error carries the handled one as a payload");
+    t = t.is(try { thrower.raise(Ferr.plain).string(); } catch e is Inner, Ferr { "both"; }, "both", "a clause with several types");
+    t = t.is(try? thrower.raise(Ferr.plain) else 7, 7, "try? turns a failure into none");
+    t = t.is(try? thrower.checked(3) else 7, 6, "try? keeps a value");
+    let log = Cell("");
+    let caught = try {
+        if true { defer log.replace(log.value() + "d"); thrower.raise(Ferr.plain); }
+        0;
+    } catch e is Ferr { 1; };
+    t = t.ok(caught == 1 && log.value() == "d", "defer runs while unwinding");
+    let count = Cell(0);
+    let stopped = try {
+        for 0..10 -> i { count.replace(i); thrower.checked(3 - i); }
+        "finished";
+    } catch Ferr.code(n) { "stopped at " + n.string(); };
+    t = t.ok(stopped == "stopped at 0" && count.value() == 3, "a failure leaves a loop");
+    let mapped = try { ([1, 2, 0, 3].map() -> v { thrower.checked(v); }).size(); } catch Ferr.code(n) { -1; };
+    t = t.is(mapped, -1, "a failure inside map propagates");
+    let inside = (x is int) is int { thrower.checked(x); };
+    t = t.is(try { inside(-5); } catch Ferr.code(n) { n * 10; }, -50, "a failure inside a closure");
+    t.done();
+}

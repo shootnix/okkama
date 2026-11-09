@@ -1,0 +1,37 @@
+module t v1.0.0;
+
+// t/op: let, rebinding to successors, blocks (Book ch. 12.1, 12.1a, 12.2).
+import "tap" take Tap;
+
+object Counter {
+    has value is int;
+    Counter(:value);
+    count() is int { value; }
+    increment() is ^Counter { ^value = value + 1; }
+}
+
+main() is int {
+    let t = Tap(6);
+    let counter = Counter(value: 0);
+    for 1..=3 -> n {
+        counter = counter.increment();
+    }
+    t = t.is(counter.count(), 3, "rebinding inside a loop updates the outer binding");
+    let typed is Counter = Counter(value: 5);
+    typed = typed.increment();
+    t = t.is(typed.count(), 6, "a typed binding rebinds");
+    let outer = 1;
+    {
+        let inner = outer + 1;
+        t = t.is(inner, 2, "a block sees outer bindings");
+    }
+    let shadow = "outer";
+    if true {
+        let shadow = "inner";
+        t = t.is(shadow, "inner", "shadowing in a nested scope");
+    }
+    t = t.is(shadow, "outer", "the outer binding is untouched");
+    let value = if true { let a = 2; a * 21; } else { 0; };
+    t = t.is(value, 42, "a branch block has the value of its last expression");
+    t.done();
+}

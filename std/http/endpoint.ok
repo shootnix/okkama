@@ -4,7 +4,6 @@ import "net/ip" take IpAddress,IpNetwork,IpProperty;
 import "net/endpoint" take IpEndpoint,HostEndpoint;
 import "net/dns" take Resolving;
 import "collections/sequence" take Sequencing;
-import "async/scope" take FutureGroup;
 
 // The caller can inspect both the effective URL and the exact numeric candidate.
 // This capability grants no DNS lookup, socket mutation or implicit redirect.
@@ -57,11 +56,10 @@ object HttpEndpointSelection {
     }
     url() is Url{url;}
     async endpoints() is Sequencing<IpEndpoint>{
-        let group is FutureGroup<Sequencing<IpEndpoint>>=FutureGroup();let cleanup=HttpResolutionCleanup(group);defer await cleanup.close();
         let source is Sequencing<IpEndpoint>=if host.kind()==UrlHostKind.address{
             let direct is @IpEndpoint=[IpEndpoint(host.address(),port)];direct;
         }else{
-            let pending=resolver.addresses(HostEndpoint(host.name(),port));group.start(pending);await pending;
+            let pending=resolver.addresses(HostEndpoint(host.name(),port));await pending;
         };
         let count=source.size();confirm count>=0 && count<=256 else throw EndpointSelectionLimit.stage("addresses");
         let snapshot is @IpEndpoint=(0..count).map()->index{
@@ -71,10 +69,6 @@ object HttpEndpointSelection {
         let allowed is @IpEndpoint=snapshot.filter()->endpoint{access.allowed(url,endpoint);};
         confirm allowed.size()>0 else throw EndpointDenied.denied;allowed;
     }
-}
-object HttpResolutionCleanup {
-    has group is FutureGroup<Sequencing<IpEndpoint>>;HttpResolutionCleanup(group is FutureGroup<Sequencing<IpEndpoint>>){self.group=group;}
-    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
 }
 enum InvalidHttpEndpoint is Error = (because(reason is string));
 enum EndpointDenied is Error = (denied);

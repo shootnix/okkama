@@ -1,0 +1,54 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.anonymous.captured-rebind-rejected",
+  "title": "an anonymous action cannot rebind a captured name",
+  "purpose": "Invalid anonymous action forms are rejected before the program runs.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.ANON-ACTIONS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes this an error without fixing the detection stage; static analysis may reject it, otherwise execution fails. Either way the program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.12",
+    "docs/okkama-spec-11072026.md#8.10.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #321",
+    "expected_basis": "spec 9.12: a captured binding may be read but not rebound inside the anonymous action; it compiled before #321 and printed `2 2 1`."
+  },
+  "status": "mandatory"
+}

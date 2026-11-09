@@ -1,0 +1,35 @@
+module app v1.0.0;
+import "io/stdout" take Stdout;
+
+object Index<K> {
+    has entries is %K:int;
+    Index(:entries);
+    count(key is K) is int { entries[key] else 0; }
+}
+
+object Price {
+    has amount is rat;
+    has code is string;
+    Price(:amount, :code);
+}
+
+main() is int {
+    let out = Stdout();
+    let m is %rat:string = [rat(1, 2): "half", rat(-7, 2): "neg", 0.rat(): "zero", rat(100000000000000000000, 3): "big", 1 / 3: "third"];
+    out.writeln(m.size().string() + " " + m.keys().map() -> k { k.string(); }.join(","));
+    out.writeln(m.values().join(","));
+    out.writeln((m[rat(2, 4)] else "none") + " " + (m[2 / 4] else "none") + " " + (m[rat(3, 4)] else "none"));
+    out.writeln(m.has(rat(-14, 4)).string() + " " + m.has(rat(7, 2)).string());
+    let dup = [rat(1, 2): 1, rat(2, 4): 2, rat(3, 6): 3];
+    let dupi = [1: 1, 1: 2, 1: 3];
+    out.writeln(dup.size().string() + " " + (dup[rat(1, 2)] else 0).string() + " | " + dupi.size().string() + " " + (dupi[1] else 0).string());
+    let plus = [rat(1, 2): 1] + [rat(2, 4): 9, rat(1, 3): 3];
+    let minus = [rat(1, 2): 1, rat(1, 3): 3] - [rat(2, 4): 0];
+    out.writeln(plus.size().string() + " " + (plus[rat(1, 2)] else 0).string() + " " + minus.keys().map() -> k { k.string(); }.join(","));
+    let index = Index(entries: [rat(5, 10): 7]);
+    out.writeln(index.count(rat(1, 2)).string() + " " + index.count(rat(1, 5)).string());
+    let prices = [Price(amount: rat(1, 2), code: "a"): 1, Price(amount: rat(2, 4), code: "a"): 2];
+    out.writeln(prices.size().string() + " " + (prices[Price(amount: 1 / 2, code: "a")] else 0).string());
+    out.writeln(m[1 / 3]);
+    0;
+}

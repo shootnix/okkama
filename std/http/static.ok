@@ -163,7 +163,7 @@ object StaticBodyReading does BodyReading{
     }
     destroy{self.close();}
 }
-object StaticReadCleanup{has source is StaticBodyReading;has complete is Event;StaticReadCleanup(source is StaticBodyReading,complete is Event){self.source=source;self.complete=complete;}close() is void{if !complete.ready(){source.close();}}}
+hidden object StaticReadCleanup{has source is StaticBodyReading;has complete is Event;StaticReadCleanup(source is StaticBodyReading,complete is Event){self.source=source;self.complete=complete;}close() is void{if !complete.ready(){source.close();}}}
 enum InvalidStaticPath is Error = (invalid);
 enum InvalidStaticPolicy is Error = (because(reason is string));
 enum StaticFileChanged is Error = (changed);

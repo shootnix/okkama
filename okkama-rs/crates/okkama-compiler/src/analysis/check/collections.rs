@@ -535,7 +535,18 @@ impl Checker<'_, '_> {
                 types.extend(item_types.iter().cloned());
                 let (locals, out) =
                     self.functional_body(bindings, &types, body, Some(&accumulator));
-                let out = if out.ty.is_some() && !out.diverges {
+                // An empty `[]` or `[:]` names no element type, and a block
+                // that gives a typed collection cannot supply one: say what to
+                // write instead of "must be [], got @int" (#295).
+                let typed_block = out
+                    .ty
+                    .clone()
+                    .filter(|ty| accumulator.is_untagged() && !out.diverges && !ty.is_untagged() && !ty.is_error());
+                let out = if let Some(block) = typed_block {
+                    let message = self.untyped_accumulator(&accumulator, &block);
+                    self.error(args[0].value.span, message);
+                    out
+                } else if out.ty.is_some() && !out.diverges {
                     self.coerce(out, &accumulator, body.span, "Reduce accumulator")
                 } else {
                     out
@@ -644,5 +655,25 @@ fn literal_size(expr: &Expr) -> Option<bool> {
             }
         }
         _ => None,
+    }
+}
+
+impl Checker<'_, '_> {
+    /// `reduce([])` or `reduce([:])` with no declared target: the initial
+    /// value has no element type, and the block's result says which one to
+    /// write (#295).
+    fn untyped_accumulator(&self, accumulator: &Ty, block: &Ty) -> String {
+        let name = self.type_name(block);
+        match (accumulator, block) {
+            (Ty::Array(_), Ty::Array(_)) => format!(
+                "Reduce starts from [], which has no element type, and its block gives {name}: start from {name}() or declare the result type (let name is {name} = …)"
+            ),
+            (Ty::Map(..), _) => format!(
+                "Reduce starts from [:], which has no key or value type, and its block gives {name}: declare the result type (let name is {name} = …)"
+            ),
+            _ => format!(
+                "Reduce starts from [], which has no element type, and its block gives {name}: declare the result type (let name is {name} = …)"
+            ),
+        }
     }
 }

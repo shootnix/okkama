@@ -1,7 +1,6 @@
 module net/dns v1.0.0;
 import "net/endpoint" take HostName,HostEndpoint,IpEndpoint,InvalidHostName;
 import "runtime/network" as network;
-import "async/scope" take FutureGroup;
 import "net/ip" take IpAddress;
 import "collections/sequence" take Sequencing;
 import "collections/ordering" take Sorted,SortedBy;
@@ -46,9 +45,8 @@ object FixedResolution does Resolving {
 object SystemResolution does Resolving {
     SystemResolution();
     async addresses(origin is HostEndpoint) is Sequencing<IpEndpoint> {
-        let group is FutureGroup<@@string>=FutureGroup();let cleanup=DnsAnswerCleanup(group);defer await cleanup.close();
         try {
-            let pending=network.dns_addresses(origin.host().ascii(),origin.port());group.start(pending);let records=await pending;
+            let pending=network.dns_addresses(origin.host().ascii(),origin.port());let records=await pending;
             let result is @IpEndpoint=records.map()->record{IpEndpoint(IpAddress(record[0]),origin.port(),record[2]);};result;
         }catch e is NativeFailure {
             if e.domain()=="core.net" {
@@ -59,22 +57,13 @@ object SystemResolution does Resolving {
         }
     }
     async name(origin is IpAddress) is HostName {
-        let group is FutureGroup<string>=FutureGroup();let cleanup=DnsNameCleanup(group);defer await cleanup.close();
         try {
-            let pending=network.dns_name(origin.string());group.start(pending);let value=await pending;
+            let pending=network.dns_name(origin.string());let value=await pending;
             try{HostName(value);}catch e is InvalidHostName{throw DnsFailure.because("invalid reverse hostname from system resolver");}
         }catch e is NativeFailure {
             if e.domain()=="core.net" {if e.code()=="not_found"{throw UnknownAddress.address(origin.string());}throw DnsFailure.because(e.message());}throw;
         }
     }
-}
-object DnsAnswerCleanup {
-    has group is FutureGroup<@@string>;DnsAnswerCleanup(group is FutureGroup<@@string>){self.group=group;}
-    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
-}
-object DnsNameCleanup {
-    has group is FutureGroup<string>;DnsNameCleanup(group is FutureGroup<string>){self.group=group;}
-    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
 }
 enum DnsFailure is Error = (because(message is string));
 object DnsConfiguration {

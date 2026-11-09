@@ -100,6 +100,10 @@ DESCRIPTIONS = {
     "obj.next": ("successor: a copy with fields replaced (`[N: rX, …]`)", "successor: копия с заменой полей (`[N: rX, …]`)"),
     "role.wrap": ("an object as a reference of a role it does", "объект как ссылка роли, которую он делает"),
     "role.narrow": ("a role reference as another role; fails with the message otherwise", "ссылка роли как другая роль; иначе отказ с сообщением"),
+    "variant.new": ("a variant value: an object of case N from its fields", "значение варианта: объект случая N из его полей"),
+    "variant.tag": ("the number of the active case (an int)", "номер активного случая (int)"),
+    "variant.get": ("a payload field: the case, then the field; another active case fails", "поле полезной нагрузки: сначала случай, затем поле; другой активный случай — отказ"),
+    "variant.of": ("a case object as a value of its variant", "объект случая как значение его варианта"),
     "arr.new": ("an array of the listed registers", "массив из перечисленных регистров"),
     "arr.len": ("length", "длина"),
     "arr.get": ("element by index; a bad index fails", "элемент по индексу; неверный индекс — отказ"),
@@ -157,9 +161,9 @@ DESCRIPTIONS = {
 SHAPES = {
     "Dst": "rD", "Option<Dst>": "rD/_", "Register": "rX", "Constant": "KIND VALUE", "Cmp": "CMP",
     "Option<String>": "\"…\"/_", "String": "\"…\"", "bool": "true/false", "u32": "N", "BitOp": "OP",
-    "Option<Register>": "rX/_", "EnumRef": "enumN", "ObjectRef": "objN", "RoleRef": "roleN", "CapRef": "capN",
+    "Option<Register>": "rX/_", "EnumRef": "enumN", "ObjectRef": "objN", "RoleRef": "roleN", "CapRef": "capN", "VariantRef": "variantN",
     "FuncRef": "fN", "Vec<Register>": "[rX, …]", "Vec<(u32, Register)>": "[N: rX, …]",
-    "Vec<(Register, Register)>": "[rK: rV, …]", "Target": "@T", "FutOp": "OP", "CatchKind": "object/role",
+    "Vec<(Register, Register)>": "[rK: rV, …]", "Target": "@T", "FutOp": "OP", "CatchKind": "object/role/variant",
     "TrapCode": "CODE", "StrFn": "FN",
 }
 

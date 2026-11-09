@@ -1,6 +1,6 @@
 //! `runtime/bytes`: views of a byte range (`encoding/bytes`), the same
 //! operations as the Sparrow core's; out-of-range arguments are refused.
-use super::support::{byte_array, bytes, failed, int, text};
+use super::support::{byte_array, bytes, failed, int, items, text};
 use super::Error;
 use crate::{IntValue, Value, abi::Native};
 
@@ -12,8 +12,15 @@ fn integer(n: i64) -> Value {
     Value::Int(IntValue::from_i64(n))
 }
 
+/// The bytes of `items[start..end]` only: a view reads a few bytes of a
+/// buffer that may hold megabytes, and copying all of it on every call made
+/// reading length-prefixed records quadratic (#280).
+fn slice(items: &[Value]) -> Result<Vec<u8>, Error> {
+    Ok(items.iter().map(Value::as_byte).collect::<Result<Vec<_>, _>>()?)
+}
+
 pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
-    let source = bytes(&args[0])?;
+    let source = items(&args[0])?;
     let length = source.len();
     match native.name() {
         "bytes_find" => {
@@ -22,12 +29,13 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             if needle.is_empty() {
                 return Err(failed(native));
             }
-            let found = source[start..].windows(needle.len()).position(|w| w == needle.as_slice());
+            let rest = slice(&source[start..])?;
+            let found = rest.windows(needle.len()).position(|w| w == needle.as_slice());
             return Ok(integer(found.map_or(-1, |at| (start + at) as i64)));
         }
         "bytes_join" => {
             let start = index(&args[1])?.filter(|&s| s <= length).ok_or_else(|| failed(native))?;
-            let mut joined = source[start..].to_vec();
+            let mut joined = slice(&source[start..])?;
             joined.extend(bytes(&args[2])?);
             return Ok(byte_array(joined));
         }
@@ -39,7 +47,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
     if start > end || end > length {
         return Err(failed(native));
     }
-    let range = &source[start..end];
+    let range = &slice(&source[start..end])?[..];
     match native.name() {
         "bytes_utf8_invalid" => Ok(integer(std::str::from_utf8(range).err().map_or(-1, |e| e.valid_up_to() as i64))),
         "bytes_text" => std::str::from_utf8(range).map(text).map_err(|_| failed(native)),

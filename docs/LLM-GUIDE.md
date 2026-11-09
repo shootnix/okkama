@@ -15,7 +15,7 @@ the instruction table in `okkama-sparrow`); everything else lives outside the re
   messages, CHANGELOG and documents in English unless the surrounding text is
   Russian (some scripts and the Makefile are commented in Russian — match the
   file).
-- **What you may change on your own**: the low layer — `sparrow-core`, OIR
+- **What you may change on your own**: the low layer — Tomato (`sparrow-core`), OIR
   (`okkama-compiler/src/ir`), the runtime ABI (`okkama-runtime-abi`), natives,
   runtime tooling. **Needs the owner's permission**: the language, the
   compiler's front end and checks, and the public API of `std`. When a
@@ -25,6 +25,12 @@ the instruction table in `okkama-sparrow`); everything else lives outside the re
   asks for.
 - **CHANGELOG.md**: every feature or visible change gets an entry, unprompted
   (Keep a Changelog; release sections `## [X.Y.Z] — date`).
+- **Tomato**: the current Sparrow runtime (crate `sparrow-core`, binary
+  `sparrow`, `--engine sparrow`) is called Tomato in documents, the Book, the
+  Bible, benchmark labels and new CHANGELOG entries — never "the core" or
+  «ядро». It is a proper noun: not translated, not declined in Russian («на
+  Tomato»). Crates, binaries, flags and environment variables keep their
+  names; `sparrow-origin` stays "the previous VM".
 - **After every step**: a benchmark table (before/after, against Python where
   it applies).
 - **Limitations and deferred work**: file a GitHub issue right away
@@ -52,11 +58,11 @@ okkama-new/
 │   │   ├── okkama-cli          `okkama`: run/build/exec/check/fmt/lint/lsp/repl, OCS adapter
 │   │   ├── okkama-runtime      IR interpreter (`--engine ir`, default of `okkama run`)
 │   │   ├── okkama-runtime-core values, natives (origin implementations), scheduler `sched`;
-│   │   │                       used by the IR engine and bridged by the core
+│   │   │                       used by the IR engine and bridged by Tomato
 │   │   ├── okkama-runtime-abi  native identities and signatures: src/table.rs (≈620 natives)
 │   │   ├── okkama-sparrow      SPB format: Program, Instruction, encode/decode, assembler
-│   │   ├── sparrow-core        THE Sparrow runtime: JIT (Cranelift), heap, GC, async, natives
-│   │   ├── sparrow-cli         binaries `sparrow` (core) and `sparrow-origin` (previous VM)
+│   │   ├── sparrow-core        Tomato, THE Sparrow runtime: JIT (Cranelift), heap, GC, async, natives
+│   │   ├── sparrow-cli         binaries `sparrow` (Tomato) and `sparrow-origin` (previous VM)
 │   │   ├── sparrow-vm, sparrow-runtime   previous VM (until 0.5, issue #14)
 │   │   ├── okkama-native       host cryptography (C ABI dylib)
 │   │   └── blade, blade-cli    project manager
@@ -97,14 +103,14 @@ Running programs:
 
 ```sh
 okkama hello.ok                          # IR interpreter (default; OKKAMA_ENGINE changes it)
-okkama run --engine sparrow hello.ok     # Sparrow core
+okkama run --engine sparrow hello.ok     # Tomato
 okkama run --engine sparrow-origin x.ok  # previous VM (comparison only, until 0.5)
 okkama run --engine jvm hello.ok         # JVM classes + java (JDK 22+)
 okkama run -t module.ok                  # the module's inline tests
 okkama build x.ok --target sparrow -o x.spb [--tests]
 sparrow x.spb [args]   |  sparrow --test t.spb  |  sparrow --stats x.spb
 sparrow --disassemble x.spb   |  sparrow --native-capabilities
-okkama exec x.spb      # SPB on the core inside okkama
+okkama exec x.spb      # SPB on Tomato inside okkama
 ```
 
 Environment: `OKKAMA_STDLIB_DIR` (std root), `OKKAMA_ENGINE`,
@@ -133,7 +139,7 @@ zsh does not split `$var`; use `${=var}` or a function when passing commands.
 - Image: `docker build -t okkama-dev tools/docker` (Rust, JDK 25, Python with
   psycopg2, Perl, Ruby, gdb). Older ad-hoc image `okkama-bench:latest` is the
   same idea.
-- Linux build of the core: mount the repo read-only and keep outputs in a
+- Linux build of Tomato: mount the repo read-only and keep outputs in a
   volume:
   `docker run --rm --cpus 3 --memory 6g -v $REPO:/repo:ro -v okkama-core-target:/target -v okkama-cargo-registry:/usr/local/cargo/registry -e CARGO_TARGET_DIR=/target -w /repo/okkama-rs okkama-dev cargo build --release -p sparrow-cli`
 - Run with limits: `--cpus 2 --memory 2g --pids-limit 256`, `--network none`
@@ -147,7 +153,7 @@ zsh does not split `$var`; use `${=var}` or a function when passing commands.
   attach `gdb -p PID -batch -ex "thread apply all bt 12"` in a loop and count
   top frames (JIT frames show as `??`).
 - Linux AArch64 needs frame pointers (`okkama-rs/.cargo/config.toml` sets them
-  for non-Apple targets); the core walks frame records.
+  for non-Apple targets); Tomato walks frame records.
 
 ## 5. Tests
 
@@ -155,12 +161,13 @@ zsh does not split `$var`; use `${=var}` or a function when passing commands.
 |---|---|---|
 | Rust | `cargo test --release -p <crate>`; compiler: `--test analysis`, `corpus`, `printer`, `lowering*` | `tests/analysis.rs` has `messages("…")` for diagnostics |
 | One std module | `okkama build --tests std/X.ok --target sparrow -o t.spb` then `sparrow --test t.spb` (in the cage) | `okkama run -t std/X.ok` for IR |
-| All std, core vs previous VM | `python3 okkama-rs/tools/new-runtime/std-compare.py --compiler okkama --stdlib std --reference sparrow-origin --core sparrow --work DIR [prefixes]` | runs each module caged; expected fails: `locale/collation` (ICU), `net/tcp` (network in cage) |
-| Conformance, core vs previous VM | `core-compare.py --compiler … --stdlib std --origin sparrow-origin --core sparrow --work DIR L00 … L13` | caged; skips workers/network; `SPEC` = core matches case.json where the previous VM cannot |
+| All std, Tomato vs previous VM | `python3 okkama-rs/tools/new-runtime/std-compare.py --compiler okkama --stdlib std --reference sparrow-origin --core sparrow --work DIR [prefixes]` | runs each module caged; expected fails: `locale/collation` (ICU), `net/tcp` (network in cage) |
+| Conformance, Tomato vs previous VM | `core-compare.py --compiler … --stdlib std --origin sparrow-origin --core sparrow --work DIR L00 … L13` | caged; skips workers/network; `SPEC` = Tomato matches case.json where the previous VM cannot |
 | Conformance (OCS) | `cd conformance && ./ocs run --adapter adapters/rust/adapter.json --profile full-release -j 6 --adapter-env OCS_RUST_ENGINE=sparrow` | Docker only; the adapter builds its own debug `okkama` in `adapters/rust/.target` |
 | Dependency advisories | `cd okkama-rs && cargo audit --deny warnings` | RustSec against `Cargo.lock`; CI `audit.yml` on every change and weekly. Exceptions with reason and ticket in `okkama-rs/.cargo/audit.toml` (none since #70) |
+| t/ suite (#245) | `python3 tools/t/run.py --configs ir,sparrow --cage [--okkama BIN] [t/op t/gen/strings …]` | self-checking Okkama programs printing TAP: hand-written `t/base`, `t/op`, `t/lang` and families generated by `tools/t/gen.py` into `t/gen` (not committed; the runner regenerates it) with a Python oracle. Every configuration (ir, sparrow, jvm, ir-passes-off, ir-gc-stress) must give the same stream. Locally only `--cage` (ir, sparrow); jvm in Docker. A check blocked by an open issue goes through `skip(issue)` and is listed in the file. A gate step |
 | Generated programs | `tools/gen/okgen.py run --seeds N` (`show SEED`) | terminating deterministic programs (BigInt, strings, arrays, objects, roles, closures, try/catch, recursion) on ir/sparrow/jvm; a disagreement is minimized (ddmin over `main`) into `conformance/reports/runs/okgen/<seed>`; `tools/gen/mutants.sh` checks it finds a seeded defect in each engine. Containers only |
-| Release gate | `make gate` (= `tools/gate/docker.sh`, ~40 min) | Rust tests (release and debug), clippy with `-D warnings`, conformance ir/jvm/sparrow (+ sparrow-origin, informative), std tests ir/sparrow vs `tools/gate/known-failures.txt`; logs in `conformance/reports/runs/gate-*`, statuses from exit codes in `gate.json`; a failed build stops it. On GitHub `gate.yml` runs it on the tagged commit and `packages.yml` publishes only after it passes. The Docker VM has ~8 GB: the container gets 7 GB and 2 cargo jobs (fat LTO) |
+| Release gate | `make gate` (= `tools/gate/docker.sh`, ~15 min) | Rust tests (profile `gate`: release optimizations without fat LTO; and debug), clippy with `-D warnings`, conformance ir/jvm/sparrow/ir-passes-off/ir-gc-stress (sparrow-origin is not gated), std tests ir/sparrow vs `tools/gate/known-failures.txt`, the t/ suite on all five configurations; logs in `conformance/reports/runs/gate-*`, statuses from exit codes in `gate.json`; a failed build stops it. On GitHub `gate.yml` runs it on the tagged commit and `packages.yml` publishes only after it passes. The Docker VM has ~8 GB: the container gets 7 GB and 2 cargo jobs (fat LTO for the release binaries only) |
 
 Last known state (0.4.1): conformance 927/927 on ir, jvm, sparrow, ir with
 passes off and ir under GC stress; std 232 modules pass on ir and sparrow
@@ -171,8 +178,10 @@ passes off and ir under GC stress; std 232 modules pass on ir and sparrow
 Benchmarks live outside the repository in `../okkama-docs/benchmarks`
 (`OKKAMA_REPO` points the runner at a checkout; default `../okkama-new`).
 
-- Engine ladder: `python3 run.py --runs 10 [--only 03-float] [--engines sparrow-core,sparrow,ir,jvm,python,perl,ruby]`
-  — `sparrow-core` is the core (`sparrow`), `sparrow` the previous VM
+- Micro-benchmarks (#244): `python3 micro/run.py --okkama BIN [--engines tomato,ir,jvm] [--runs 5] [--only NAME,…] [--label L] [--compare micro/results/OLD.json]` in `okkama-docs/benchmarks` — one construct (`micro/lang`) or std action (`micro/std`) per program, timed in-process, net ns/op over the empty loop; `micro/coverage.py` lists std modules without one (`STD-COVERAGE.md`)
+- Engine ladder: `python3 run.py --runs 10 [--only 03-float] [--engines tomato,sparrow,ir,jvm,python,perl,ruby]`
+  — `tomato` is Tomato (binary `sparrow`; results before 0.4.2 key it
+  `sparrow-core`, still accepted), `sparrow` the previous VM
   (`sparrow-origin`); results in `results/`; `export.py` writes a report into
   `reports/<date>-v<X.Y.Z>/` (results.json, before.json, CSVs, REPORT.md; a
   hand-written README.md with conclusions). One report per release.
@@ -181,7 +190,7 @@ Benchmarks live outside the repository in `../okkama-docs/benchmarks`
   carry raw samples, median, quartiles, σ and `real_iqr_ratio`, versions,
   build parameters, sha256 of inputs and binaries, timer bounds, `startup`
   (00-hello per configuration) and `reference_outdated` interpreters.
-  `sparrow-core-compile` is compile+run in one process (`okkama run --engine
+  `tomato-compile` is compile+run in one process (`okkama run --engine
   sparrow`). Steady state (#236): `--steady N` adds one run per configuration
   that repeats the work N times in-process and prints `iteration <ns>` per
   repetition to stderr. Okkama programs do this through a `Repeat` object
@@ -199,10 +208,11 @@ Benchmarks live outside the repository in `../okkama-docs/benchmarks`
   lines; compare medians of several alternating rounds with checksums.
 - PGO workloads are copies of the ladder in `okkama-rs/tools/pgo/workloads`.
 
-Reference numbers (0.4.1, Apple M2 Max / Docker arm64): the core is 5.5×
-Python, 8.2× Perl, 4.0× Ruby and 4.4× the JVM on the ladder (geometric mean of
-cold runs over 01–10; report `okkama-docs/benchmarks/reports/2026-11-09-v0.4.1`).
-Warmed up (`--steady`), the JVM beats the core only on 09-closures; 11-ownership
+Reference numbers (0.4.2, Apple M2 Max / Docker arm64): Tomato is 5.4×
+Python, 8.1× Perl, 4.0× Ruby and 4.4× the JVM on the ladder (geometric mean of
+cold runs over 01–10; report `okkama-docs/benchmarks/reports/2026-11-09-v0.4.2`;
+compare releases with a back-to-back A/B, not against an older report).
+Warmed up (`--steady`), the JVM beats Tomato only on 09-closures; 11-ownership
 is 2.7× slower than Python/Perl/Ruby (region tracking). PostgreSQL vs psycopg2: scans 1.3–1.7× slower, inserts faster; a
 point query is one round trip since #11 (68 µs vs psycopg2's 73 µs, Docker
 arm64). Driver checks against a live server:
@@ -214,7 +224,7 @@ early close, failures mid-stream, COPY refusal, transactions).
 **Pipeline**: source → lexer/parser (`syntax`) → registry and checker
 (`analysis`: types, roles, caps, errors; THIR) → lowering (`lowering`) to OIR
 (`ir`, verified by `ir/verify.rs`) → backends: IR interpreter
-(`okkama-runtime`), SPB (`codegen/sparrow`) executed by `sparrow-core`, JVM
+(`okkama-runtime`), SPB (`codegen/sparrow`) executed by Tomato (`sparrow-core`), JVM
 classes (`codegen/jvm` + runtime `okkama.rt` embedded in `okkama`). What each
 phase guarantees and what checks it: [phases.md](phases.md).
 
@@ -237,9 +247,16 @@ each pass alone and that `sabotage-int-add` is caught). A new pass gets a
 name there.
 
 **Language facts that shape the runtime**: objects are immutable (a successor
-`^` makes a changed copy; `Atomic` is the mutable cell); errors are enums
-(`enum E is Error = (case(payload is T), …)`, lowered to objects
-`{$tag, $<case>_<name>: array}`; runtime-raised errors are the first case);
+`^` makes a changed copy; `Atomic` is the mutable cell); an enum with
+payloads (errors included: `enum E is Error = (case(payload is T), …)`) is an
+OIR variant (#290): `module.variants` lists its cases, each with its own
+layout object holding only that case's payload, and `variant.new`,
+`variant.tag`, `variant.get` (traps on another active case) and `variant.of`
+(case object → variant) work on it. The engines store a value as the object
+of its case; the case number comes from the object's declaration (Sparrow
+needs the cases consecutive; the JVM gives each variant an abstract class with
+a `$tag` field and each case a subclass). Runtime-raised errors are the first
+case's object;
 resources (`destroy`) are released by cleanup regions that the compiler emits
 (`region.enter/track/adopt/leave/transfer`); plainness (`is_plain`) decides
 where regions are needed. Lowering decides it conservatively per type (a
@@ -247,7 +264,7 @@ function value is never plain, a role is judged over every declaration);
 the `regions` pass recomputes it over the finished module and drops what is
 not needed (#292).
 
-**sparrow-core** (`crates/sparrow-core/src`):
+**Tomato**, the Sparrow runtime (`crates/sparrow-core/src`):
 
 | File | Role |
 |---|---|
@@ -273,7 +290,7 @@ register on all paths, edges write block parameters at once, unwind handlers
 get the state common to every point of the block. It runs in debug builds
 and with `OKKAMA_CHECK_REGISTERS=1` (the gate's std tests).
 
-**Trust in SPB.** The core picks every register's machine representation
+**Trust in SPB.** Tomato picks every register's machine representation
 from the SPB's declared types, so a false type would make it read an integer
 as a pointer. `okkama_sparrow::Program::verify` (run by `decode`, `encode` and
 the assembler) checks the operand and result types of every instruction,
@@ -294,7 +311,7 @@ there ("native provider is not implemented"; the gate catches it):
 
 1. `okkama-runtime-abi/src/table.rs`: id, symbol, signature;
    `std/runtime/<module>.ok`: the `native` declaration.
-2. Sparrow core: a provider in `sparrow-core/src/host/native_*.rs`
+2. Tomato: a provider in `sparrow-core/src/host/native_*.rs`
    (registered in `host/mod.rs` `classify`), or nothing if the origin bridge
    can run the `okkama-runtime-core` implementation.
 3. IR engine: `okkama-runtime-core/src/native/*.rs` (route the module in
@@ -308,7 +325,7 @@ there ("native provider is not implemented"; the gate catches it):
 5. `sparrow-origin` (previous VM) has its own `sparrow-runtime` natives; it is
    not extended any more (#14).
 
-`sparrow --native-capabilities` lists the core's coverage.
+`sparrow --native-capabilities` lists Tomato's coverage.
 
 **DB layer**: `std/db/*` (query, row, read/DbPage, statement, transaction),
 drivers `std/db/sqlite.ok` (worker thread in Rust) and `std/db/postgres.ok`
@@ -343,13 +360,13 @@ drivers `std/db/sqlite.ok` (worker thread in Rust) and `std/db/postgres.ok`
   `SPARROW_CORE_GC_STRESS=1` and compare with `--engine ir`
   (`okkama-cli/tests/handlers.rs`, `sparrow-cli/tests/handlers/*.spa`).
 - Bytecode: `sparrow --disassemble x.spb`.
-- A wrong result on the core only (#44): run with `SPARROW_CORE_UNOPTIMIZED=*`
+- A wrong result on Tomato only (#44): run with `SPARROW_CORE_UNOPTIMIZED=*`
   (no Cranelift passes) and `SPARROW_CORE_PLAIN=*` (no inline fast paths:
   those instructions take the shared slow path). If either fixes it, bisect
   the symbol list (symbols as in `--disassemble`) down to one function, then
   read its CLIF and machine code with `SPARROW_CORE_DUMP=symbol`. A
   function that is slow to compile shows in `--stats`.
-- Temporary instrumentation in the core: copy the file to the scratchpad,
+- Temporary instrumentation in Tomato: copy the file to the scratchpad,
   add counters (print them from `stats_report`), build in Docker into
   `okkama-core-dbg`, measure, then restore the copy.
 - Quadratic behaviour around regions: count `resource_graph_into` pops per
@@ -388,7 +405,8 @@ drivers `std/db/sqlite.ok` (worker thread in Rust) and `std/db/postgres.ok`
   trust model is `docs/security-model.md` in this repository), language LLM
   context pack.
 - `runtime/` — architecture, Sparrow ISA, compatibility,
-  `new-runtime/core-rebuild.md` (journal of the core rebuild, stages 0–6).
+  `new-runtime/core-rebuild.md` (journal of the rebuild that produced Tomato,
+  stages 0–6).
 - `benchmarks/`, `examples/` (to be reworked), `experiments/`, `archive/`.
 
 Open issues worth knowing: #7 inline blocking natives, #12 TLS and terminal

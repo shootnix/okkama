@@ -4,7 +4,8 @@
 
 mod common;
 
-use common::{assert_rejects, body_sexpr, expr_sexpr};
+use common::{assert_rejects, body_sexpr, expr_sexpr, parse_in};
+use okkama_compiler::syntax::ParseMode;
 
 #[test]
 fn arithmetic_precedence_and_left_associativity() {
@@ -388,6 +389,37 @@ fn anonymous_action_errors() {
     ] {
         assert_rejects(&wrap(body), expected);
     }
+}
+
+/// An anonymous action cannot be async: the error is at `async`, not at a
+/// later token of what would otherwise read as a call of `async` (#323).
+#[test]
+fn async_anonymous_actions_are_rejected_at_async() {
+    let wrap = |body: &str| format!("module app v1.0.0; async main() is int {{ {body} 0; }}");
+    for body in [
+        "let a = async () is int { 1; };",
+        "let b = async (n is int) is int { n + 1; };",
+        "let c = async () is void { };",
+        "let d = (async () is int { 1; });",
+        "let e = [async () is int { 1; }];",
+        "let f = async (left, right is int) is int { left + right; };",
+        "let g = runner.run(async () is int { 1; });",
+        "let h = runner.run(job: async () is int { 1; });",
+        "return async () is int { 1; };",
+        "let i = () is () is int { async () is int { 1; }; };",
+    ] {
+        let (message, found, _) = parse_in(&wrap(body), ParseMode::Full).expect_err(body);
+        assert_eq!(
+            message, "Anonymous actions cannot be async; declare a named async action instead.",
+            "{body}"
+        );
+        assert_eq!(found, "async", "{body}");
+    }
+    // `async` as a contextual name is still a name.
+    assert_eq!(expr_sexpr("async()"), "(call async)");
+    assert_eq!(expr_sexpr("async(1) + 2"), "(+ (call async 1) 2)");
+    assert_eq!(expr_sexpr("receiver.async()"), "(call (. receiver async))");
+    assert_eq!(expr_sexpr("(value is int) is int { value; }"), "(fn [value int] int {value})");
 }
 
 #[test]

@@ -107,7 +107,7 @@ object CacheReaderAnchor {
     has reader is BodyReading;has retained is Event;CacheReaderAnchor(reader is BodyReading,retained is Event){self.reader=reader;self.retained=retained;}
     close() is void{if !retained.ready(){reader.close();}}
 }
-object CacheReadSettlement {
+hidden object CacheReadSettlement {
     has reader is CacheBodyReading;has group is FutureGroup<@byte>;has complete is Event;
     CacheReadSettlement(reader is CacheBodyReading,group is FutureGroup<@byte>,complete is Event){self.reader=reader;self.group=group;self.complete=complete;}
     async close() is void{if !complete.ready(){group.cancel();reader.close();}if group.active()>0{await group.wait();}reader.settled();}

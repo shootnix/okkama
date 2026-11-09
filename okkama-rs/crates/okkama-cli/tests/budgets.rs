@@ -5,7 +5,15 @@
 use std::process::{Command, Output};
 
 fn run(engine: &str, source: &str, budget: &[&str]) -> Output {
-    let path = std::env::temp_dir().join(format!("budgets-{}-{engine}-{}.ok", std::process::id(), budget.join("_").replace(['-', '/'], "")));
+    // One file per run: tests run in parallel, and two of them may run the
+    // same engine with the same budget.
+    static RUNS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let run = RUNS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "budgets-{}-{run}-{engine}-{}.ok",
+        std::process::id(),
+        budget.join("_").replace(['-', '/'], "")
+    ));
     std::fs::write(&path, source).unwrap();
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let output = Command::new(env!("CARGO_BIN_EXE_okkama"))

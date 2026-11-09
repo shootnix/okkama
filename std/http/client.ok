@@ -225,13 +225,13 @@ object HttpClientTransport {
     async settle() is void{if stopped.ready() && group.active()>0{await group.wait();}}
 }
 object HttpClientSignal {has ready is Event;HttpClientSignal(ready is Event){self.ready=ready;}close() is void{ready.set();}}
-object HttpClientTransportSettlement {
+hidden object HttpClientTransportSettlement {
     has origins is @HttpClientTransport;HttpClientTransportSettlement(origins is @HttpClientTransport){self.origins=origins;}
     async close() is void{for origins->origin{await origin.settle();}}
 }
 object HttpClientPermitDisposal {HttpClientPermitDisposal();release(permit is Permit) is void{permit.close();}}
 object HttpClientAcquisitionDisposal {HttpClientAcquisitionDisposal();release(acquired is Http1Acquisition) is void{acquired.session().close();}}
-object HttpClientStartupCleanup {
+hidden object HttpClientStartupCleanup {
     has operation is HttpClientOperation;has published is Event;
     HttpClientStartupCleanup(operation is HttpClientOperation,published is Event){self.operation=operation;self.published=published;}
     async close() is void{
@@ -268,7 +268,7 @@ object HttpClientReading does BodyReading {
     }
     destroy{try{self.close();}catch e is Error{}catch e is NativeFailure{}}
 }
-object HttpClientReadCleanup {
+hidden object HttpClientReadCleanup {
     has operation is HttpClientOperation;has successful is Event;has reads is FutureGroup<@byte>;
     HttpClientReadCleanup(operation is HttpClientOperation,successful is Event,reads is FutureGroup<@byte>){self.operation=operation;self.successful=successful;self.reads=reads;}
     async close() is void{if !successful.ready(){defer await operation.settle();defer operation.close();reads.cancel();await reads.wait();}}
@@ -403,7 +403,7 @@ object HttpSharedClientTransport {
 }
 object HttpSharedClientSignal {has ready is Event;HttpSharedClientSignal(ready is Event){self.ready=ready;}close() is void{ready.set();}}
 object HttpSharedClientAcquisitionDisposal {HttpSharedClientAcquisitionDisposal();release(acquired is HttpConversationAcquisition) is void{acquired.session().close();}}
-object HttpSharedClientStartupCleanup {
+hidden object HttpSharedClientStartupCleanup {
     has operation is HttpSharedClientOperation;has published is Event;
     HttpSharedClientStartupCleanup(operation is HttpSharedClientOperation,published is Event){self.operation=operation;self.published=published;}
     async close() is void{defer await operation.settle();if !published.ready(){operation.close();}}
@@ -428,7 +428,7 @@ object HttpSharedClientReading does BodyReading {
     }
     destroy{try{self.close();}catch e is Error{}catch e is NativeFailure{}}
 }
-object HttpSharedClientReadCleanup {
+hidden object HttpSharedClientReadCleanup {
     has operation is HttpSharedClientOperation;has successful is Event;
     HttpSharedClientReadCleanup(operation is HttpSharedClientOperation,successful is Event){self.operation=operation;self.successful=successful;}
     close() is void{if !successful.ready(){operation.close();}}

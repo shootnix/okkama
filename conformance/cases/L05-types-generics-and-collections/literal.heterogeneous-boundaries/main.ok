@@ -1,0 +1,28 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Rows {
+    Rows();
+    count(values is @any) is int { values.size(); }
+    row() is %string:any { ["id": 7, "name": "Ada", "score": 9.5]; }
+}
+
+main() is int {
+    let out = Stdout();
+    let mixed is @any = [1, "two", 3.0];
+    let numbers is @any = [1, 2.0];
+    let nested is @@any = [[1, "a"], [2.0], []];
+    let columns is %string:@any = ["a": [1, "b"], "c": [true]];
+    let row is %string:any = ["x": 1, "y": "two"];
+    out.writeln(mixed.size().string() + " " + numbers.size().string() + " " + nested.size().string() + " "
+        + columns.size().string() + " " + row.size().string());
+    out.writeln(Rows().count([1, "two"]).string() + " " + Rows().row().size().string());
+    // Homogeneous literals stay exact, and [] adds no conflict to [1].
+    let ints = [1, 2..=3];
+    let grid = [[1], []];
+    let exact is @int = ints;
+    let deep is @@int = grid;
+    out.writeln(exact.size().string() + " " + deep[0][0].string());
+    0;
+}

@@ -1,0 +1,42 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.literal.heterogeneous-rejected",
+  "title": "a heterogeneous array literal without an any boundary is rejected",
+  "purpose": "let mixed = [1, \"two\"]; has no element type, and any is not inferred.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.LITERAL-IDENTITY",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "#315",
+    "expected_basis": "Owner decision on #315: heterogeneous concrete elements without an expected any element type are a compile-time error; any is never inferred."
+  },
+  "status": "mandatory"
+}

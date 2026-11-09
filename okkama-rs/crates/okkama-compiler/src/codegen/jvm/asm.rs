@@ -45,6 +45,8 @@ pub(super) struct Assembled {
     pub max_stack: u16,
     pub stack_map: Option<Vec<u8>>,
     pub exceptions: Vec<ExceptionEntry>,
+    /// LineNumberTable: (смещение, «строка» — номер места в методе, #270).
+    pub lines: Vec<(u16, u16)>,
 }
 
 #[derive(Default)]
@@ -57,6 +59,7 @@ pub(super) struct Asm {
     fixups: Vec<(usize, usize, Label)>,
     frames: Vec<(Label, Frame)>,
     exceptions: Vec<(Label, Label, Label, u16)>,
+    lines: Vec<(usize, u16)>,
 }
 
 impl Asm {
@@ -77,6 +80,15 @@ impl Asm {
         let depth = frame.stack.len() as i32;
         self.place(label, depth);
         self.frames.push((label, frame));
+    }
+
+    /// Код с текущего смещения относится к «строке» `line` (LineNumberTable).
+    pub(super) fn line(&mut self, line: u16) {
+        match self.lines.last_mut() {
+            Some((_, last)) if *last == line => {}
+            Some((at, last)) if *at == self.code.len() => *last = line,
+            _ => self.lines.push((self.code.len(), line)),
+        }
     }
 
     pub(super) fn exception(&mut self, start: Label, end: Label, handler: Label, catch_type: u16) {
@@ -227,6 +239,7 @@ impl Asm {
                 .map_err(|_| error("operand stack exceeds the JVM u16 limit"))?,
             stack_map,
             exceptions,
+            lines: self.lines.iter().map(|&(at, line)| (at as u16, line)).collect(),
         })
     }
 }

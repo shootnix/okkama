@@ -1,0 +1,78 @@
+module t v1.0.0;
+
+// t/lang: async actions, await, spawn, cancellation, collecting futures
+// (Book ch. 21), async streams with `for await` (Book 12.5).
+import "tap" take Tap;
+import "async/collect" take AllFutures;
+import "async/atomic" take Atomic;
+
+enum Bad is Error = (late);
+
+object Work {
+    Work();
+    async double(x is int) is int { x * 2; }
+    async chain(x is int) is int { await self.double(await self.double(x)); }
+    async fail() is int { throw Bad.late; }
+    async sum(items is @int) is int {
+        let total = items.reduce(0) -> s, v { s + v; };
+        total;
+    }
+    async label(x is int) is string { "n" + x.string(); }
+}
+
+// An async stream: `for await` calls next() until Maybe.none.
+object Countdown {
+    has left is Atomic<int>;
+    Countdown(from is int) { left = Atomic(from); }
+    async next() is Maybe<int> {
+        let n = left.value();
+        if n == 0 { return Maybe<int>.none; }
+        left.replace(n - 1);
+        Maybe.some(n);
+    }
+}
+
+async main() is int {
+    let t = Tap(14);
+    let work = Work();
+    t = t.is(await work.double(21), 42, "await an async action");
+    t = t.is(await work.chain(3), 12, "await inside await");
+    // A task starts from a direct object action (an async one; a synchronous
+    // action would start a worker process, which t/ does not run).
+    let task = spawn Work().double(5);
+    t = t.is(await task, 10, "spawn and await");
+    let failed = try { await work.fail(); } catch e is Bad { -1; };
+    t = t.is(failed, -1, "a failure crosses await");
+    let cancelled = spawn Work().double(1);
+    cancelled.cancel();
+    let outcome = try { await cancelled; "ran"; } catch e is Cancelled { "cancelled"; };
+    // `spawn` starts the task at once; one that never suspends has finished
+    // before `cancel()`, which then changes nothing.
+    t = t.is(outcome, "ran", "cancelling a finished task keeps its value");
+    let pending is @Future<int> = [work.double(1), work.double(2), work.double(3)];
+    let all is AllFutures<int> = AllFutures(origins: pending);
+    let results = await all.results();
+    t = t.ok(results.size() == 3 && results.item(0) == 2 && results.item(2) == 6, "AllFutures keeps input order");
+    t = t.is(await work.sum([1, 2, 3]), 6, "an async action with a collection");
+    t = t.is(await work.label(7), "n7", "an async string result");
+    let squares is @int = (1..=3).map() -> v { v * v; };
+    t = t.is(await work.sum(squares), 14, "await on data built before");
+    let total = Atomic(0);
+    for await Countdown(4) -> n { total.replace(total.value() + n); }
+    t = t.is(total.value(), 10, "for await takes every item until none");
+    let seen = Atomic("");
+    for await Countdown(5) -> n {
+        next if n % 2 == 0;
+        last if n == 1;
+        seen.replace(seen.value() + n.string());
+    }
+    t = t.is(seen.value(), "53", "next and last in for await");
+    let empty = Atomic(0);
+    for await Countdown(0) -> n { empty.replace(empty.value() + 1); }
+    t = t.is(empty.value(), 0, "an empty stream never runs the body");
+    let source = Countdown(3);
+    for await source -> n { last if n == 2; }
+    t = t.ok(await source.next() == Maybe.some(1), "for await leaves the stream where it stopped");
+    t = t.ok(await source.next() == Maybe<int>.none, "and the stream ends after it");
+    t.done();
+}

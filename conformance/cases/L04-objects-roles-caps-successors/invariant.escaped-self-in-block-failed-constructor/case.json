@@ -1,0 +1,52 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.invariant.escaped-self-in-block-failed-constructor",
+  "title": "self escaping from an iteration block of a constructor that then fails stays unfinished",
+  "purpose": "The object built for the first self value inside map escapes into an Atomic; the constructor throws, and calling an action on the escaped value fails at run time (#271).",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.CONSTRUCTOR-INVARIANTS",
+      "aspects": [
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "runtime"
+      ],
+      "justification": "The constructor failed after its receiver escaped into an Atomic; the escaped value never completes construction, and only execution can see it."
+    },
+    "stdout": {
+      "text": "Refused.empty\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "#279",
+    "expected_basis": "Owner decision on #279: early self is built once, at a point that dominates the rest of the constructor, keeping bound fields, later obj.init, the $pending lifecycle (#271), identity and cyclic equality (#278)."
+  },
+  "status": "mandatory"
+}

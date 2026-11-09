@@ -24,13 +24,14 @@ sparrow out.spb
 ```
 
 `run` executes source with the Rust interpreter. `build` emits the selected
-bytecode; standalone Sparrow executes `.spb`. `--backend` remains an alias
+bytecode; the `sparrow` binary runs `.spb` on Tomato, the current Sparrow
+runtime. `--backend` remains an alias
 for `--target`. `sparrow check out.spb` verifies without execution.
 See the [Rust implementation guide](../okkama-rs/README.md) for building the
 tools and current runtime coverage.
 
-Every engine can bound a run, for untrusted programs or services: the Sparrow
-core (`okkama exec`, `okkama run --engine sparrow`, `sparrow run`), the IR
+Every engine can bound a run, for untrusted programs or services: Tomato
+(`okkama exec`, `okkama run --engine sparrow`, `sparrow run`), the IR
 engine (`okkama run`) and the JVM (`okkama run --engine jvm`). Every budget is
 off by default and costs nothing then:
 
@@ -40,7 +41,7 @@ okkama exec --max-steps 100000000 --max-memory 256M --timeout 5 app.spb
 
 - `--max-steps N` counts function entries and loop iterations.
 - `--max-memory SIZE` (bytes, or `K`/`M`/`G`) bounds the memory the process
-  holds beyond the start of the run — the core heap, big integers, strings and
+  holds beyond the start of the run — the Tomato heap, big integers, strings and
   collections — and the machine stack, so deep recursion that outgrows it
   ends with the same memory report.
 - `--max-output SIZE` bounds what the program writes to stdout and stderr.
@@ -373,7 +374,8 @@ let document = ```
 ````
 
 Everything between the delimiters is retained exactly. Quotes, backslashes,
-comment-looking text, indentation and newlines have no special treatment.
+comment-looking text, indentation and line endings — a CRLF or a lone CR
+included (#310) — have no special treatment.
 There is no interpolation, escape processing, dedenting, trimming or fence
 modifier. The first following three-backtick sequence closes the literal, so
 that exact sequence cannot occur inside this initial form. One or two
@@ -491,7 +493,8 @@ typed boundary. A failed byte conversion is a runtime error.
 ### 5.1.1 Scalar casts and array casts `@T(...)`
 
 Use `T(value)` for one primitive value and `@T(...)` for an immutable array.
-The supported targets are `int`, `float`, `byte`, and `string`:
+The supported targets are `int`, `float`, `byte`, and `string`; a scalar
+cast also has `char`:
 
 ```okkama
 let label is string = string(101);        // "101"
@@ -503,11 +506,17 @@ let labels = @string(101, byte(2), true);  // ["101", "2", "true"]
 ```
 
 Numeric targets accept `int`, `byte`, `float`, and `rat`. Integer casts
-truncate toward zero, then check the signed-64 range for `int` or `0..255`
-for `byte`. Thus `byte(255.9)` is 255 and `byte(-0.5)` is 0. Float casts
-round to finite binary64 and can lose integer precision. String casts accept
+truncate toward zero. `int` is arbitrary-precision, so `int(...)` of an
+`int`, a `byte` or a `rat` is exact at any size:
+`int(100000000000000000000000000000 / 3)` is
+`33333333333333333333333333333`. Only a `float` source is checked against
+the signed-64 range: `int(1e30)` fails (#309). `byte(...)` checks
+`0..255`: `byte(255.9)` is 255 and `byte(-0.5)` is 0. Float casts round to
+finite binary64 and can lose integer precision. String casts accept
 numeric primitives, bool (`"true"`/`"false"`), char and string; rational text
-is canonical.
+is canonical. `char(value)` accepts an `int` code point or a `char`: `char(65)`
+is `'A'`, and a value outside `0..0x10FFFF` or a surrogate is a runtime error.
+There is no `@char(...)`; `'A'.code()` goes back to `int`.
 
 An empty `@byte()` also provides exact `T = byte` evidence to a generic
 constructor accepting `@T`; inference does not require a first element.
@@ -580,17 +589,18 @@ let payload is @byte = @byte(0, 127, maximum);
   syntax. `byte(256)` fails.
 - `byte` satisfies the numeric umbrella `number`, but it does not satisfy
   `int`, and `int` does not satisfy `byte`.
-- Arithmetic accepts `byte` operands mixed with `byte`/`int`/`rat`/`float`,
-  but the *result* is never `byte` — it promotes to `int`, `rat` for exact
-  division, or `float`. So byte
-  arithmetic can never silently overflow within `0..255`; the result simply
-  becomes an ordinary number and must be re-checked with `byte(...)` if you
-  want a byte back.
-- Equality is exact-category: `byte(1) == 1` is a runtime error. Ordering
-  operators (`<`, `<=`, `>`, `>=`) are broader and accept mixed numeric
-  operands under the promotion rules.
-- A `byte` is a valid array index (interpreted by its integer value) and a
-  valid range bound (normalized to `int`). A `byte` is not a **map key**
+- Arithmetic takes two `byte` operands, and the *result* is never `byte`:
+  `+ - * %` give `int` and `/` gives the exact `rat`; unary `-` gives `int`.
+  So byte arithmetic can never silently overflow within `0..255`; the result
+  simply becomes an ordinary number and must be re-checked with `byte(...)`
+  if you want a byte back. Bitwise operators keep `byte` (5.4).
+- Numeric categories never mix (#230): `byte(2) + 3`, `byte(2) / 2` and
+  `byte(2) + 1.5` are compile errors. Convert one side explicitly:
+  `byte(2).int() + 3`.
+- Equality and ordering are exact-category too: `byte(1) == 1` and
+  `byte(1) < 2` are compile errors; `byte(1) < byte(2)` is `true`.
+- A `byte` is neither an array index nor a range bound — convert it:
+  `xs[b.int()]`, `0..b.int()`. A `byte` is not a **map key** either
   (`%byte:V` is a compile error; decision D-007).
 
 `@byte` is an ordinary immutable typed array of bytes — the language's raw
@@ -723,7 +733,8 @@ let empty = [];
 
 - Arrays are immutable values.
 - `@T` at a typed boundary validates every element recursively.
-- Indexing uses brackets and `int` (or `byte`) indexes:
+- Indexing uses brackets and `int` indexes (a `byte` is converted
+  explicitly, `xs[b.int()]`):
   `[10, 20, 30][1]` is `20`. Out-of-bounds indexing is a runtime error unless
   an `else` fallback is present: `xs[9] else 0;`
 - Ranges expand inside array literals: `[0, 2..=4, 9]` is `[0, 2, 3, 4, 9]`.
@@ -747,7 +758,11 @@ let empty_map = [:];
   (decision D-007: `Map key type byte is not a scalar key type`). A `byte`
   may still be a field of a key object. Map *values* may be any type
   including `any`.
-- A **value object** is a key when every field is a scalar (`byte` and `rat`
+- A `rat` key is its exact, reduced value: `rat(1, 2)`, `rat(2, 4)` and
+  `2 / 4` are one key, and `keys()` orders rat keys by value. Numeric
+  categories never mix, so `%rat:int` takes no `int` key — write `1.rat()`
+  (#296).
+- A **value object** is a key when every field is a scalar (`byte`
   included), an enum or another such object, and it has no `destroy` block and
   no capabilities. Objects are immutable, so a key compares by its fields
   exactly like `==`, and `keys()` orders object keys field by field in
@@ -829,8 +844,8 @@ tag.
 1..=5    // inclusive: 1, 2, 3, 4, 5
 ```
 
-- Bounds must be integer-like (`int` or `byte`; byte bounds normalize to
-  `int`).
+- Bounds must be `int`; a `byte` bound is converted explicitly
+  (`0..b.int()`).
 - `start` must be `<=` `end`.
 - Chained ranges are forbidden.
 - Ranges are first-class values: they compare by `start`, `end`, and
@@ -849,6 +864,9 @@ tag.
 - Futures and action values compare by handle identity without running them.
   Aliases remain equal after completion; separate invocations, closures and
   independently obtained bound references are distinct;
+- elements and fields compare exactly as they would on their own: a `float`
+  numerically at any depth, so `[-0.0] == [0.0]` is `true`, as `-0.0 == 0.0`
+  is. `contains`, `index_of` and array `-` use the same equality;
 - mixed runtime categories are runtime errors, never `false`.
 
 ## Chapter 9. The Top Type `any`
@@ -876,8 +894,12 @@ The rules:
 - Repeated `any` boundaries do not nest boxes.
 - `@any` and `%K:any` preserve the same opacity per element. Map *keys*
   cannot be `any`.
-- Untyped heterogeneous literals (`[1, "two"]`) keep concrete elements; they
-  do not infer `any` automatically. Only an explicit `any` boundary boxes.
+- A heterogeneous literal (`[1, "two"]`, `["id": 7, "name": "Ada"]`) needs
+  an explicit `any` boundary: a typed binding, a declared parameter or result,
+  a typed constant, or a nested position under one. Without it the literal is
+  a compile-time error that names the two element types; an untyped `let`
+  does not box it (`let a = [1, "two"];` is rejected, `let a is @any = [1,
+  "two"];` is accepted).
 - Role and fake signatures must spell `any` exactly; it is not variance.
 - Trusted native dispatch is the one place concrete payloads are visible: a
   native parameter declared exactly `any` (or `...any`) receives the unboxed
@@ -932,8 +954,14 @@ Rules:
 - Every transformation is immutable: it returns a new string or array.
 - The numeric comparisons `.less`, `.less_or_equal`, `.greater`,
   `.greater_or_equal` require the **exact same** numeric category on both
-  sides: `1.less(2.0)` fails. (The operators `<`/`>` are broader; the builtin action
-  form is deliberately strict.)
+  sides: `1.less(2.0)` fails. The operators `<`, `<=`, `>`, `>=` follow the
+  same rule (§11.3).
+- `string.less(other)` and `string.less_or_equal(other)` follow
+  `order(other)`: lexicographic by Unicode code point, a prefix before the
+  longer string, no case folding — `"ab".less("b")` and `"Z".less("a")` are
+  `true`. A string has one order, shared by `less`, `order` and `ordering()`;
+  compare lengths with `length()`. (Until 0.4.2 `less` and `less_or_equal`
+  compared lengths, #281.)
 - Builtin calls are positional-only and exact-arity.
 - Builtin dispatch activates only for non-object receivers, so an object's
   own action named `size` or `less` is never shadowed and never shadows.
@@ -1296,8 +1324,10 @@ return if done;                // a void action: the bare form
 throw Failure.empty if items.size() == 0;
 ```
 
-Right after `return` or `throw`, `if cond;` is the bare form with a condition,
-while `return if a { 1; } else { 2; };` still returns an `if` expression.
+Right after `return`, `throw` or `last`, `if cond;` is the bare form with a
+condition, while `return if a { 1; } else { 2; };` still returns an `if`
+expression, and `last if a { 1; } else { 2; };` leaves the loop with one
+(#303).
 
 The postfix condition must be `bool`, like every condition. It is evaluated
 before a `last`, `return` or `throw` payload; a false condition does not
@@ -1471,8 +1501,14 @@ throw DbError.query("select 1", 42);
   collections, `char`, actions and `any` are rejected.
 - `text()` is generated from the case: `DbError.closed`,
   `DbError.query("select 1", 42)`, `RepoError.db(DbError.closed)`. Strings
-  are quoted, numbers use `string()`, booleans are `true`/`false`, enum cases
-  are `Enum.case`. It is callable on the value and through `Error`.
+  are written as Okkama string literals (#306): `\\`, `\"`, `\n`, `\t` and
+  `\r` are escaped, other control characters become `\u{1b}`, printable
+  Unicode stays as is — so `Ferr.text("a \"q\"\n").text()` is
+  `Ferr.text("a \"q\"\n")`, a quote or comma inside a payload cannot pass for
+  an argument boundary, and a newline cannot split an uncaught-error report.
+  Numbers use `string()`, booleans are `true`/`false`, enum cases are
+  `Enum.case`, nested error enums use the same rules. It is callable on the
+  value and through `Error`.
 - An error enum value converts to `Error`; uncaught, it reports
   `DbError: DbError.query("select 1", 42)`.
 
@@ -1597,6 +1633,12 @@ let config = try! Config.parse(source);     // "cannot fail" → panic if it doe
   flattened. A void call is rejected (there is no value to wrap; use
   `try`/`catch`), and so is a successor result (its must-use obligation would
   be lost).
+- `T` is the type of the operand's successful paths; a branch that throws
+  does not erase it, even when a literal condition selects that branch:
+  `try? (if true { throw E.a; } else { 2; }) else 7` is `7`. When no path
+  succeeds (every branch throws), `T` comes from the `Maybe<T>` boundary or
+  from the fallback after `else`; without either it is a compile error. A
+  caught error leaves `none`, so code after a `try?` is reachable.
 - `try! value` keeps the value's type, including void and successor results.
   A thrown error becomes the panic `Unexpected error: <text()>` located at the
   `try!`.
@@ -2042,7 +2084,7 @@ collection or value-returning tail is invalid. Typed throws, panic, cancellation
 A call creates a lazy reusable completion handle: `let pending = command.commit();`
 may be followed by `await pending;` more than once. Its inferred internal
 completion contract has no source-level type spelling. `spawn` starts it eagerly.
-Async anonymous action expressions remain unsupported.
+Anonymous actions cannot be async; an action that awaits is a named `async` action.
 
 Explicit receiver result:
 
@@ -2279,8 +2321,13 @@ add_ten(5); // 15, even after make_adder's call has ended
 Parameters and local declarations shadow captured names. Each action captures
 values and declared types at creation: later rebinding outside the action does
 not change the snapshot, and declarations appearing later are not captured.
-Rebinding a captured name inside the action is an error. Capturing an object
-preserves its identity; it does not copy the object.
+Rebinding a captured name inside the action is an error (`Cannot rebind
+captured variable "counter" inside an anonymous action`): the capture is a
+snapshot, and rebinding it would change nothing outside. To keep state across
+calls, return the successor and let the caller hold it. The action's own
+parameters and locals, including ones that shadow a captured name, stay
+rebindable under the ordinary rules. Capturing an object preserves its
+identity; it does not copy the object.
 
 An escaping action transfers ownership of captured local resources through the
 same rules as an object containing those resources. Unreferenced locals are
@@ -2288,10 +2335,12 @@ not retained. A reference to `self`, or to the implicit receiver of
 `fake.storage`, retains that receiver. Access permissions from the declaring
 action remain in force even when the receiver is not captured.
 
-A `let` initialized directly with an anonymous action (optionally parenthesized)
-can refer recursively to its own name when no outer binding of that name is
-visible. That name is supplied in each invocation, without retaining the
-original scope. Mutual recursion through later declarations is not supported.
+Anonymous actions use ordinary lexical scope. A local binding becomes visible
+only after its initializer has been checked, so an anonymous action assigned to
+a `let` cannot refer to itself through that binding: inside the initializer the
+name is undefined, or it is an outer binding of the same name if one is
+visible. Names declared later are not visible either. Anonymous actions capture
+values declared before them; use named object actions for recursion.
 
 The public type of an action value is its exact signature:
 
@@ -2348,6 +2397,8 @@ Current boundaries are intentionally narrow:
 - anonymous parameters require explicit types and cannot be variadic;
 - a trailing comma in an anonymous parameter list is rejected;
 - no implicit currying, partial application, or async anonymous actions;
+- no recursion through the `let` that holds the action: the binding is not
+  visible in its own initializer (use a named action);
 - action values cannot cross `any` or the native ABI;
 - there is no automatic conversion to an arbitrary user role;
 - each call is a control boundary: `next`/`last` cannot escape into an outer
@@ -2420,8 +2471,17 @@ try-entry obligations, so use only inside a try may need an additional use on
 the handler path. A reached defer can consume a binding at its own scope exit,
 after intervening rebinds. An early return from a nested scope conservatively
 cannot rely on an enclosing defer.
-Closure creation alone is not use: a closure carrying successor captures must
-be invoked, returned, passed, or stored. Await transfers a successor future's
+Closure creation alone is not use. A closure carries the obligations of the
+successors its body uses on every normal path (a body that uses a capture on
+one branch only does not carry it, and the capture must be used elsewhere).
+Binding the closure to a local or to aliases keeps them, and one obligation
+shared by several closures or aliases stays one. Invoking the closure uses
+them; returning it, passing it as an argument, or storing it in an aggregate or
+a field transfers them. A transfer, like passing a successor value, does not
+prove that the receiver ever calls it. A bound action (`later.count` without a
+call) carries its successor receiver's obligation by the same rules, while a
+direct call `later.count()`, and a chain such as `bottle.opened().is_open()`,
+uses the receiver at once. Await transfers a successor future's
 obligation to its result. Runtime discard guards remain for dynamic cases.
 These checks concern language-level consumption, not persistence or business
 usefulness; they do not forbid using an already consumed object again.
@@ -2775,6 +2835,15 @@ parameters, fields, results, collections, bound actions, generic inference
 result `^Customer` comes back as `^Presentation` when the role declares it,
 and the must-use obligation stays.
 
+An object becomes a role reference only where the role is already the
+expected type: a typed `let`, a field, a parameter of an action or of a
+builtin (`shapes.contains(Square(side: 2))` on a `@Shape`), a result, the
+fallback of a `Maybe<Shape>` or of `find()`, and the branches of an `if`,
+`match` or choice whose value has a declared role type. Elsewhere the static
+types stay exact: `shape == Square(side: 2)` is rejected (compare through a
+role-typed binding), and `if c { Rect(w: 1, h: 2); } else { Square(side: 2); }`
+with no declared type does not look for a role the two share.
+
 There is no way back: a role cannot be assigned to the concrete type
 (`Cannot initialize variable "c" of type Customer with Presentation`), and
 `any` never narrows. A role may cross into another role only if the original
@@ -3118,8 +3187,9 @@ main() is int { if true { 1 } else { 0 }; }
 `{ 1 }` and `{ 1; }` produce the same value. The rule applies to action bodies,
 `match` arms and functional blocks. Between statements `;` is still required,
 and `let`, `return`, `throw`, `defer` and assignments keep it even before `}`.
-A statement-level `if` may take one optional `;`. The formatter keeps the
-chosen spelling.
+A statement-level `if`, `loop`, `match` or `try … catch` may take one
+optional `;` (#302); two are an error, and the rule is not a general one for
+expressions. The formatter keeps the chosen spelling.
 
 ### 24.3 Compact choices: `?? … !!`
 
@@ -6016,10 +6086,14 @@ let names = ["first": "Ada", "last": "L"];   // exact %string:string
 The fixed rules follow the language's existing philosophy:
 
 - **Exactness, not widening.** Inference only recognizes one identical exact
-  element type. `[1, 2.0]` stays untagged — no `@number`, no union, no
-  automatic `@any`.
-- **Heterogeneous collections stay legal and untagged.** `[1, "two", 3.0]`
-  keeps concrete elements; `@any` remains an explicit boundary.
+  element type. `[1, 2.0]` has none — no `@number`, no union, no automatic
+  `@any` — so without a boundary it is an error.
+- **Heterogeneous collections need an explicit boundary.**
+  `let mixed is @any = [1, "two", 3.0];` boxes each element and
+  `let row is %string:any = ["id": 7, "name": "Ada"];` each value; without the
+  declared type the compiler reports "Array elements have incompatible types
+  int and string; declare an explicit @any boundary to allow heterogeneous
+  values". `any` is never inferred.
 - **Empty collections stay untagged without context.** `[]` and `[:]` still
   take their tag from the first explicit boundary; emptiness proves nothing.
 - Inference is recursive through nesting, and the exact identity becomes

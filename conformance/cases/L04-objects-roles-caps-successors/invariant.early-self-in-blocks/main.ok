@@ -1,0 +1,126 @@
+module ocs/invariant_early_self_in_blocks v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Leaf {
+    has up is Tree;
+    has tag is int;
+    Leaf(:up, :tag);
+    up() is Tree { up; }
+    tag() is int { tag; }
+}
+
+// The first `self` value is inside the block of map (#279).
+object Tree {
+    has name is string;
+    has leaves is @Leaf;
+    Tree(name is string, tags is @int) {
+        self.name = name;
+        leaves = tags.map() -> tag { Leaf(up: self, tag: tag); };
+    }
+    size() is int { leaves.size(); }
+    leaf(index is int) is Leaf { leaves[index]; }
+}
+
+object Node {
+    has owner is Forest;
+    has tag is int;
+    Node(:owner, :tag);
+    owner() is Forest { owner; }
+}
+
+object Judge {
+    Judge();
+    keep(forest is Forest, tag is int) is bool { tag % 2 == 0; }
+    weigh(forest is Forest, tag is int) is int { tag * 2; }
+}
+
+// filter, reduce and nested map, then a conditional use, then a field bound last.
+object Forest {
+    has label is string;
+    has kept is @Node;
+    has total is int;
+    has grid is @@Node;
+    has extra is Maybe<Node>;
+    has after is int;
+    Forest(label is string, tags is @int, flag is bool) {
+        self.label = label;
+        kept = tags.filter() -> tag { Judge().keep(self, tag); }.map() -> tag { Node(owner: self, tag: tag); };
+        total = tags.reduce(0) -> sum, tag { sum + Judge().weigh(self, tag); };
+        grid = tags.map() -> row { tags.map() -> col { Node(owner: self, tag: row * 10 + col); }; };
+        if flag { extra = Maybe.some(Node(owner: self, tag: -1)); } else { extra = Maybe.none; }
+        after = self.kept.size() + 100;
+    }
+    label() is string { label; }
+    kept() is int { kept.size(); }
+    total() is int { total; }
+    rows() is int { grid.size(); }
+    cell(row is int, col is int) is Node { grid[row][col]; }
+    first() is Node { kept[0]; }
+    extra() is int { match extra { case Maybe.some(node) { node.owner().after(); } case Maybe.none { 0; } }; }
+    after() is int { after; }
+}
+
+object Back {
+    has to is Branchy;
+    Back(:to);
+    to() is Branchy { to; }
+}
+
+// The first `self` value is in one branch of an if; both branches bind the field.
+object Branchy {
+    has tag is int;
+    has back is Maybe<Back>;
+    has after is int;
+    Branchy(flag is bool) {
+        tag = 7;
+        if flag { back = Maybe.some(Back(to: self)); } else { back = Maybe.none; }
+        after = self.tag + 1;
+    }
+    after() is int { after; }
+    back() is int { match back { case Maybe.some(back) { back.to().after(); } case Maybe.none { 0; } }; }
+}
+
+object Ref {
+    has to is Twice;
+    Ref(:to);
+    to() is Twice { to; }
+}
+
+// self used before, inside and after a loop: one object.
+object Twice {
+    has first is Ref;
+    has items is @Ref;
+    has final is Ref;
+    Twice(tags is @int) {
+        let me = self;
+        first = Ref(to: me);
+        items = tags.map() -> tag { Ref(to: self); };
+        final = Ref(to: self);
+    }
+    count() is int { items.size(); }
+    first() is Ref { first; }
+    item(index is int) is Ref { items[index]; }
+    final() is Ref { final; }
+}
+
+main() is int {
+    let out = Stdout();
+    let tree = Tree("oak", [1, 2, 3]);
+    let empty = Tree("elm", []);
+    // Every leaf points at the finished tree: one object, not one per iteration.
+    out.writeln(tree.size().string() + " " + tree.leaf(2).up().size().string() + " " + tree.leaf(0).up().leaf(1).tag().string()
+        + " " + empty.size().string());
+    let forest = Forest("f", [1, 2, 3, 4], true);
+    let bare = Forest("g", [], false);
+    out.writeln(forest.kept().string() + " " + forest.total().string() + " " + forest.cell(3, 2).owner().after().string() + " "
+        + forest.first().owner().label() + " " + forest.extra().string() + " " + bare.after().string() + " " + bare.rows().string()
+        + " " + bare.extra().string());
+    out.writeln(Branchy(true).back().string() + " " + Branchy(false).back().string());
+    let twice = Twice([5, 6]);
+    out.writeln(twice.first().to().count().string() + " " + twice.item(1).to().count().string() + " " + twice.final().to().count().string());
+    // Cyclic equality (#278) of objects built through the hoisted self.
+    out.writeln((Tree("oak", [1, 2]) == Tree("oak", [1, 2])).string() + " " + (Tree("oak", [1, 2]) == Tree("oak", [1, 3])).string()
+        + " " + (Forest("f", [2], true) == Forest("f", [2], true)).string() + " " + (Forest("f", [2], true) == Forest("f", [2], false)).string());
+    0;
+}

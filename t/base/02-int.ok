@@ -1,0 +1,22 @@
+module t v1.0.0;
+
+// t/base: int literals, equality and arithmetic, checked with `if` only.
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln("1..12");
+    out.writeln(if 1 == 1 { "ok 1 - 1 == 1"; } else { "not ok 1 - 1 == 1"; });
+    out.writeln(if 1 == 2 { "not ok 2 - 1 != 2"; } else { "ok 2 - 1 != 2"; });
+    out.writeln(if 1 + 1 == 2 { "ok 3 - addition"; } else { "not ok 3 - addition"; });
+    out.writeln(if 10 - 3 == 7 { "ok 4 - subtraction"; } else { "not ok 4 - subtraction"; });
+    out.writeln(if 6 * 7 == 42 { "ok 5 - multiplication"; } else { "not ok 5 - multiplication"; });
+    out.writeln(if 7 % 3 == 1 { "ok 6 - modulo"; } else { "not ok 6 - modulo"; });
+    out.writeln(if -5 + 5 == 0 { "ok 7 - unary minus"; } else { "not ok 7 - unary minus"; });
+    out.writeln(if 1_000_000 == 1000000 { "ok 8 - digit separators"; } else { "not ok 8 - digit separators"; });
+    out.writeln(if 0xFF == 255 { "ok 9 - hexadecimal literal"; } else { "not ok 9 - hexadecimal literal"; });
+    out.writeln(if 0b1010 == 10 { "ok 10 - binary literal"; } else { "not ok 10 - binary literal"; });
+    out.writeln(if 2 + 3 * 4 == 14 { "ok 11 - * binds tighter than +"; } else { "not ok 11 - * binds tighter than +"; });
+    out.writeln(if (2 + 3) * 4 == 20 { "ok 12 - parentheses"; } else { "not ok 12 - parentheses"; });
+    0;
+}

@@ -48,7 +48,7 @@
   },
   "provenance": {
     "origin": "authored for OCS 0.1.0 by #12",
-    "expected_basis": "The fixture sends `late!` 0.8 s after the handshake. A read bounded to 0.1 s times out, a read in a cancelled task ends Cancelled, and the next read receives the 5 bytes: TLS keeps received records, and a cancelled read gives up nothing it already took."
+    "expected_basis": "The fixture stays silent until the client's byte, which the client sends after a read bounded to 0.1 s has timed out and a read in a cancelled task has ended Cancelled; the next read receives the 5 bytes `late!`: interrupted reads leave nothing pending that could take the record (#312)."
   },
   "status": "mandatory"
 }

@@ -1,0 +1,43 @@
+module t v1.0.0;
+
+// t/op: string builtins (Book ch. 6 and 10).
+import "tap" take Tap;
+import "compare" take Order;
+
+main() is int {
+    let t = Tap(30);
+    t = t.is("héllo".length(), 5, "length counts code points");
+    t = t.is("hello".slice(1, 3), "el", "slice is end-exclusive");
+    t = t.is("hello".slice(0, 0), "", "an empty slice");
+    let parts = "a,,b,".split(",");
+    t = t.is(parts.size(), 4, "split keeps empty fields");
+    t = t.is(parts[1], "", "an empty middle field");
+    t = t.is("ab".split("").join("|"), "a|b", "an empty separator splits code points");
+    t = t.is("banana".replace("na", "NA"), "baNANA", "replace");
+    t = t.is("banana".replace_first("na", "NA"), "baNAna", "replace_first");
+    t = t.is("ab".replace("", "-"), "-a-b-", "replacing the empty string");
+    t = t.is("ab".replace_first("", "-"), "-ab", "replace_first of the empty string");
+    let words is @string = ["red", "green"];
+    t = t.is(words.join(" / "), "red / green", "join");
+    let nothing is @string = [];
+    t = t.is(nothing.join(","), "", "joining nothing");
+    t = t.is("  x  ".trim(), "x", "trim");
+    t = t.is("  x  ".trim_start(), "x  ", "trim_start");
+    t = t.is("  x  ".trim_end(), "  x", "trim_end");
+    t = t.is("line\n".chomp(), "line", "chomp");
+    t = t.ok("okkama.ok".ends_with(".ok"), "ends_with");
+    t = t.ok("okkama".starts_with("ok") && "okkama".contains("kam"), "starts_with, contains");
+    t = t.ok(("мир и мир".find_last("мир") else -1) == 6, "find_last is a code point index");
+    t = t.ok(("abc".find("z") else -1) == -1, "find of a missing part is none");
+    t = t.ok(("abc".find("") else -1) == 0, "the empty part is found at the start");
+    t = t.is("Straße".upper(), "STRASSE", "upper is full Unicode case mapping");
+    t = t.is("ÀB".lower(), "àb", "lower");
+    t = t.is("ab".repeat(3), "ababab", "repeat");
+    t = t.is("ab".repeat(0), "", "repeat zero times");
+    t = t.ok("".empty() && !"x".empty(), "empty");
+    t = t.ok("abc".order("abd") == Order.less, "order is lexicographic");
+    t = t.ok("ab".less("abc"), "less");
+    t = t.is("x".string(), "x", "string() of a string");
+    t = t.is("Жук".characters().size(), 3, "characters");
+    t.done();
+}

@@ -44,8 +44,7 @@ object Http2HeaderInput {
         loop{
             if complete.value(){last;}
             confirm count.value()<1024 else throw Http2Fault.detailed(Http2FaultScope.connection, 11, 0, "field block frame count");
-            let reads is FutureGroup<Http2Frame>=FutureGroup();let cleanup=Http2HeaderSettlement(reads);defer await cleanup.close();
-            let pending=Http2FrameReading(origin,maximum).result();reads.start(pending);
+            let pending=Http2FrameReading(origin,maximum).result();
             let following=try{await pending;}
                 catch failure is EndOfHttp2Frames{throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "truncated field block");}
                 catch failure is Http2Fault{
@@ -91,8 +90,7 @@ object Http2HeaderOutput {
         self.origin=origin;self.stream=stream;self.fields=fields;self.budget=budget;self.fragment=fragment;self.end_stream=end_stream;
     }
     async emit(frame is Http2Frame) is void{
-        let group is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=Http2HeaderSettlement(group);defer await cleanup.close();
-        let pending=origin.write(ByteSnapshot(frame.bytes()));group.start(pending);await pending;
+        let pending=origin.write(ByteSnapshot(frame.bytes()));await pending;
     }
     async writing() is AsyncWriting{
         let encoded=Http2EncodedHeaderFrames(stream,fields,budget,fragment,end_stream);
@@ -119,7 +117,7 @@ object Http2EncodedHeaderFrames {
     }
     frames() is @Http2Frame{value;}
 }
-object Http2HeaderSettlement<T> {
+hidden object Http2HeaderSettlement<T> {
     has group is FutureGroup<T>;Http2HeaderSettlement(group is FutureGroup<T>){self.group=group;}
     async close() is void{if group.active()>0{group.cancel();await group.wait();}}
 }

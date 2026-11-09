@@ -47,7 +47,7 @@ object Http1Conversation does HttpConversation,Closing {
     async exchange(request is Request) is HttpConversationExchange{
         let source=Request(request.method(),request.target(),request.headers(),request.body(),HttpVersion.http_1_1);let prepared=if forward{HttpForwardRequest(source,proxy_fields).request();}else{HttpDirectRequest(source).request();};
         for observation -> value{value.begin();}
-        let group is FutureGroup<Http1Exchange>=FutureGroup();let cleanup=HttpConversationSettlement(group);defer await cleanup.close();let pending=origin.exchange(prepared);group.start(pending);let result=await pending;
+        let pending=origin.exchange(prepared);let result=await pending;
         let heads=result.informational();let information is @Response=(0..heads.size()).map()->index{heads.item(index).response(EmptyBody());};HttpConversationExchange(request,result.response(),information,origin);
     }
 }
@@ -57,11 +57,10 @@ object Http2Conversation does HttpConversation,Closing {
     async settled() is bool{await origin.settled();}
     async exchange(request is Request) is HttpConversationExchange{
         let prepared=Request(request.method(),request.target(),request.headers(),request.body(),HttpVersion.http_2);
-        let group is FutureGroup<Http2Exchange>=FutureGroup();let cleanup=HttpConversationSettlement(group);defer await cleanup.close();let pending=origin.exchange(prepared);group.start(pending);let result=await pending;
+        let pending=origin.exchange(prepared);let result=await pending;
         let heads=result.informational();let information is @Response=(0..heads.size()).map()->index{heads.item(index);};HttpConversationExchange(request,result.response(),information,result);
     }
 }
-object HttpConversationSettlement<T>{has group is FutureGroup<T>;HttpConversationSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
 
 object Http2ConversationConnecting does HttpConversationConnecting {
     has origin is Http2Connecting;Http2ConversationConnecting(origin is Http2Connecting){self.origin=origin;}

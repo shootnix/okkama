@@ -1,0 +1,11 @@
+module app v1.0.0;
+enum Bottom is Error = (reached);
+object Down {
+    Down();
+    go(n is int) is int {
+        if n == 0 { throw Bottom.reached; }
+        1 + self.other(n - 1);
+    }
+    other(n is int) is int { 2 + self.go(n); }
+}
+main() is int { Down().go(60); }

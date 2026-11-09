@@ -1,0 +1,35 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Counter {
+    has count is int;
+    Counter(:count);
+    count() is int { count; }
+    bumped() is ^Counter { ^count = count + 1; }
+}
+
+main() is int {
+    let out = Stdout();
+    let counter = Counter(count: 1);
+    let read = () is int { counter.count(); };
+    // A local of the action, even one shadowing the captured name.
+    let own = () is int {
+        let counter = Counter(count: 10);
+        counter = counter.bumped();
+        counter.count();
+    };
+    // A parameter belongs to the action as well.
+    let step = (from is Counter) is int {
+        from = from.bumped();
+        from.count();
+    };
+    // A successor under a new name, without rebinding the capture.
+    let fresh = () is int {
+        let later = counter.bumped();
+        later.count();
+    };
+    counter = counter.bumped();
+    out.writeln(read().string() + " " + own().string() + " " + step(counter).string() + " " + fresh().string() + " " + counter.count().string());
+    0;
+}

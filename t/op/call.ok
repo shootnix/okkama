@@ -1,0 +1,34 @@
+module t v1.0.0;
+
+// t/op: calls — positional, named, defaults, overloads (Book ch. 11.4).
+import "tap" take Tap;
+
+object Greeter {
+    has greeting is string = "Hello";
+    // The field has a default, so this constructor also takes no arguments.
+    Greeter(:greeting);
+
+    greet(name is string, mark is string = "!") is string { greeting + ", " + name + mark; }
+    describe(value is int) is string { "int " + value.string(); }
+    describe(value is string) is string { "string " + value; }
+    count(items is ...int) is int {
+        let all = items...;
+        all.size();
+    }
+}
+
+main() is int {
+    let t = Tap(9);
+    let greeter = Greeter();
+    t = t.is(greeter.greet("Ada"), "Hello, Ada!", "a default parameter");
+    t = t.is(greeter.greet("Ada", "?"), "Hello, Ada?", "positional override");
+    t = t.is(greeter.greet(name: "Ada", mark: "."), "Hello, Ada.", "named arguments");
+    t = t.is(greeter.greet(mark: ";", name: "Bob"), "Hello, Bob;", "named arguments in any order");
+    t = t.is(Greeter(greeting: "Hi").greet("Cy"), "Hi, Cy!", "the shorthand with its field given");
+    t = t.is(greeter.describe(3), "int 3", "overload on int");
+    t = t.is(greeter.describe("x"), "string x", "overload on string");
+    t = t.is(greeter.count(1, 2, 3), 3, "a variadic call");
+    let more = [4, 5];
+    t = t.is(greeter.count(1, more...), 3, "a spread in a variadic call");
+    t.done();
+}

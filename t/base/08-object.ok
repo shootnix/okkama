@@ -1,0 +1,30 @@
+module t v1.0.0;
+
+// t/base: an object, its constructor, an action, a successor and rebinding —
+// what t/tap.ok is made of.
+import "io/stdout" take Stdout;
+
+object Counter {
+    has count is int = 0;
+    has label is string;
+    Counter(:label);
+
+    value() is int { count; }
+    name() is string { label; }
+    next() is ^Counter { ^count = count + 1; }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln("1..5");
+    let counter = Counter(label: "c");
+    out.writeln(if counter.value() == 0 { "ok 1 - field default"; } else { "not ok 1 - field default"; });
+    out.writeln(if counter.name() == "c" { "ok 2 - shorthand constructor"; } else { "not ok 2 - shorthand constructor"; });
+    let first = counter.next();
+    out.writeln(if first.value() == 1 && counter.value() == 0 { "ok 3 - successor leaves the receiver"; } else { "not ok 3 - successor leaves the receiver"; });
+    counter = counter.next();
+    counter = counter.next();
+    out.writeln(if counter.value() == 2 { "ok 4 - rebinding to a successor"; } else { "not ok 4 - rebinding to a successor"; });
+    out.writeln(if counter.name() == "c" { "ok 5 - successor keeps other fields"; } else { "not ok 5 - successor keeps other fields"; });
+    0;
+}

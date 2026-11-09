@@ -1118,6 +1118,27 @@ fn every_project_example_parses() {
 }
 
 #[test]
+fn check_reports_errors_that_only_lowering_finds() {
+    // #317: what `okkama run` rejects at compile time, `okkama check` rejects.
+    let grow = "module app v1.0.0; \
+        object Box<T> { has value is T; Box(:value); } \
+        object Grow<T> { has value is T; Grow(:value); \
+        deeper(depth is int) is int { if depth == 0 { return 0; } Grow(value: Box(value: value)).deeper(depth - 1) + 1; } } \
+        main() is int { Grow(value: 1).deeper(3); }";
+    let output = run_stdin(&["check", "-"], grow.as_bytes());
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("semantic error: The program requests a chain of more than 256 generic specializations"),
+        "{}",
+        stderr(&output)
+    );
+    let spin = "module app v1.0.0; object Spin { Spin(); spin(n is int) is int { n + self.spin(n + 1); } } main() is int { Spin().spin(0); }";
+    let output = run_stdin(&["check", "-"], spin.as_bytes());
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    assert!(stderr(&output).contains("Infinite recursion"), "{}", stderr(&output));
+}
+
+#[test]
 fn check_reports_warnings_without_failing() {
     let source = "module app v1.0.0; main() is int { let n = 2; for 0..n -> index { index; } }";
     let output = run_stdin(&["check", "-"], source.as_bytes());
@@ -1397,4 +1418,21 @@ fn a_cell_stays_in_synchronous_code() {
     assert!(stderr.contains("Field \"count\" cannot hold a Cell"), "{stderr}");
     assert!(stderr.contains("A Cell cannot be used in an async action"), "{stderr}");
     assert_eq!(stderr.matches("error").count(), 2, "{stderr}");
+}
+
+#[test]
+fn an_uncaught_error_text_keeps_its_payload_on_one_line() {
+    // #306: a string payload is an Okkama literal, so a newline in it does
+    // not split the report.
+    let source = b"module app v1.0.0;\nenum Ferr is Error = (text(s is string));\nmain() is int { throw Ferr.text(\"line1\\nline2 \\\"q\\\"\"); }\n";
+    for engine in ["ir", "sparrow"] {
+        let mut command = okkama();
+        command.args(["run", "--engine", engine, "-"]).env("OKKAMA_TRACE", "off");
+        command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut child = command.spawn().unwrap();
+        child.stdin.take().unwrap().write_all(source).unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(output.status.code(), Some(1), "{engine}");
+        assert_eq!(stderr(&output), "Ferr: Ferr.text(\"line1\\nline2 \\\"q\\\"\")\n", "{engine}");
+    }
 }

@@ -32,6 +32,9 @@ struct FunctionGen<'c, 'f> {
     types: Vec<VType>,
     asm: Asm,
     labels: Vec<asm::Label>,
+    /// Места инструкций (#270): номер в списке + 1 — «строка» LineNumberTable.
+    sites: Vec<crate::source::Span>,
+    site_index: std::collections::HashMap<crate::source::Span, u16>,
 }
 
 impl<'c, 'f> FunctionGen<'c, 'f> {
@@ -70,6 +73,8 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
             types,
             asm,
             labels,
+            sites: Vec::new(),
+            site_index: std::collections::HashMap::new(),
         })
     }
 
@@ -125,11 +130,13 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
             }
             let ir_block = &self.function.blocks[index];
             for inst in &ir_block.insts {
+                self.site(inst.span);
                 self.inst(&inst.kind, inst.result)?;
                 if let Some(result) = inst.result {
                     self.store(result);
                 }
             }
+            self.site(ir_block.term.span);
             self.terminator(block, &ir_block.term.kind)?;
             if ir_block.unwind.is_some() {
                 let end = self.asm.label();
@@ -172,8 +179,29 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
             None => self.class.layout.signatures[self.index].clone(),
         };
         let max_locals = self.function.values.len() as u16;
-        let FunctionGen { class, asm, .. } = self;
+        let FunctionGen { class, asm, sites, index, .. } = self;
+        class.sites.push((name.clone(), index, sites));
         class.function_method(asm, &name, &descriptor, max_locals)
+    }
+
+    /// Код дальше — место `span` (#270): его номер + 1 — «строка» в
+    /// LineNumberTable, по которой отчёт об отказе найдёт место кадра.
+    fn site(&mut self, span: crate::source::Span) {
+        if span == crate::source::Span::default() {
+            return;
+        }
+        let next = self.sites.len();
+        let index = match self.site_index.get(&span) {
+            Some(index) => *index,
+            // Номер — u16 «строки»; дальше места не различаются.
+            None if next < usize::from(u16::MAX) - 1 => {
+                self.sites.push(span);
+                self.site_index.insert(span, next as u16);
+                next as u16
+            }
+            None => return,
+        };
+        self.asm.line(index + 1);
     }
 
     fn inst(&mut self, kind: &InstKind, result: Option<ValueId>) -> Result<()> {
@@ -745,7 +773,43 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
                     .invoke_interface(index, count, args.len() as i32 + 1, pushes);
             }
             // Ссылка роли на JVM — тот же объект, типизированный интерфейсом.
-            InstKind::SuccTake(value) | InstKind::RoleWrap(value) => self.load(*value),
+            InstKind::SuccTake(value) | InstKind::RoleWrap(value) | InstKind::VariantOf(value) => {
+                self.load(*value)
+            }
+            // Значение варианта — объект класса случая (#290).
+            InstKind::VariantNew { case, fields } => {
+                let Some(Type::Variant(variant)) = result.map(|value| &self.function.values[value.0]) else {
+                    return Err(error("variant.new must define a variant"));
+                };
+                let object = self.case_object(variant.0, *case);
+                self.construct(object, |generator, index| {
+                    generator.load(fields[index]);
+                    Ok(())
+                })?;
+            }
+            InstKind::VariantTag(value) => {
+                let Type::Variant(variant) = &self.function.values[value.0] else {
+                    return Err(error("variant.tag reads a variant"));
+                };
+                let class = self.class.layout.variants[variant.0].class.clone();
+                self.load(*value);
+                let tag = self.class.pool.field_ref(&class, "$tag", "Ljava/math/BigInteger;")?;
+                self.asm.op_index(0xb4, tag, 1, 1); // getfield $tag
+            }
+            InstKind::VariantGet { value, case, field } => {
+                let Type::Variant(variant) = &self.function.values[value.0] else {
+                    return Err(error("variant.get reads a variant"));
+                };
+                let object = self.case_object(variant.0, *case);
+                let layout = &self.class.layout.objects[object];
+                let (case_class, (name, descriptor)) = (layout.class.clone(), layout.fields[*field].clone());
+                self.load(*value);
+                // Другой случай — ClassCastException: поле не читается.
+                let class = self.class.pool.class(&case_class)?;
+                self.asm.op_index(0xc0, class, 1, 1); // checkcast
+                let index = self.class.pool.field_ref(&case_class, &name, &descriptor)?;
+                self.asm.op_index(0xb4, index, 1, 1); // getfield
+            }
             // Значение cap — его владелец; поле — функция над владельцем.
             InstKind::CapMake(owner) => self.load(*owner),
             InstKind::CallCap { cap, field } => {
@@ -1140,14 +1204,20 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
                 self.class
                     .call_rt(&mut self.asm, name, descriptor, args.len() as i32, 1)?;
             }
-            // Объекты сравнивают поля через свой `equals`, списки — поэлементно.
+            // Объекты сравнивают поля через свой `equals`; списки, словари и
+            // `float` — `Rt.equal`: `float` численно на любой глубине (#314).
             InstKind::ValCompare { op, left, right } => {
                 self.load(*left);
                 self.load(*right);
+                let (owner, name) = if deep_equality(&self.function.values[left.0]) {
+                    (super::runtime::RT, "equal")
+                } else {
+                    ("java/util/Objects", "equals")
+                };
                 self.class.invoke_static(
                     &mut self.asm,
-                    "java/util/Objects",
-                    "equals",
+                    owner,
+                    name,
                     "(Ljava/lang/Object;Ljava/lang/Object;)Z",
                     2,
                     1,
@@ -1490,6 +1560,11 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
         Ok(())
     }
 
+    /// Объект раскладки случая `case` варианта.
+    fn case_object(&self, variant: usize, case: usize) -> usize {
+        self.class.layout.variants[variant].cases[case]
+    }
+
     fn get_field(&mut self, object: ValueId, owner: usize, field: usize) -> Result<()> {
         self.load(object);
         let layout = &self.class.layout.objects[owner];
@@ -1778,6 +1853,7 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
         let class_name = match ty {
             CatchType::Object(object) => self.class.layout.objects[object.0].class.clone(),
             CatchType::Role(role) => self.class.layout.roles[role.0].class.clone(),
+            CatchType::Variant(variant) => self.class.layout.variants[variant.0].class.clone(),
         };
         let class = self.class.pool.class(&class_name)?;
         let miss = self.asm.label();
@@ -1891,6 +1967,12 @@ impl FunctionGen<'_, '_> {
         self.goto(missing);
         Ok(())
     }
+}
+
+/// Значения, которые `==` сравнивает через `Rt.equal`: `float`, списки,
+/// словари и то, что может их содержать без своего `equals` (#314).
+fn deep_equality(ty: &Type) -> bool {
+    matches!(ty, Type::Float | Type::Array(_) | Type::Map(..) | Type::Any | Type::Never)
 }
 
 fn object_of(ty: &Type) -> usize {

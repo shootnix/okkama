@@ -299,12 +299,60 @@ impl Checker<'_, '_> {
     /// Единственный самый специфичный кандидат (§11.8): `Ok(index)`,
     /// `Err(true)` — неоднозначно, `Err(false)` — никто не подходит.
     pub(super) fn select_overload(&self, call: &CallArgs, shapes: &[Shape]) -> Result<usize, bool> {
+        Self::most_specific(self.fitting_overloads(call, shapes))
+    }
+
+    /// Кандидаты, поделившие первое место неоднозначного вызова: ни один
+    /// другой подходящий не специфичнее их (#273). Только для сообщения.
+    pub(super) fn tied(fitting: &[(usize, Vec<u8>)]) -> Vec<usize> {
+        let dominates = |a: &[u8], b: &[u8]| {
+            a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x >= y) && a.iter().zip(b).any(|(x, y)| x > y)
+        };
+        fitting
+            .iter()
+            .filter(|(index, ranks)| {
+                !fitting.iter().any(|(other, other_ranks)| other != index && dominates(other_ranks, ranks))
+            })
+            .map(|(index, _)| *index)
+            .collect()
+    }
+
+    /// Подходящие сигнатуры вызова с рангами, как их выбирает `select_overload`.
+    fn fitting_overloads(&self, call: &CallArgs, shapes: &[Shape]) -> Vec<(usize, Vec<u8>)> {
         let fitting: Vec<(usize, Vec<u8>)> = shapes
             .iter()
             .enumerate()
             .filter_map(|(index, shape)| self.fits(call, shape).map(|ranks| (index, ranks)))
             .collect();
-        Self::most_specific(Self::fixed_first(fitting, |index| shapes[index].variadic))
+        Self::fixed_first(fitting, |index| shapes[index].variadic)
+    }
+
+    /// `Ambiguous call of … with (int, int): joined(int, any) and
+    /// joined(any, int) fit equally well` (#273).
+    pub(super) fn ambiguity(&self, what: String, call: &CallArgs, name: &str, shapes: Vec<&Shape>) -> String {
+        let candidates: Vec<String> = shapes
+            .iter()
+            .map(|shape| {
+                let params: Vec<String> = shape
+                    .params
+                    .iter()
+                    .enumerate()
+                    .map(|(index, (_, ty))| match ty {
+                        Ty::Array(element) if shape.variadic && index + 1 == shape.params.len() => {
+                            format!("...{}", self.type_name(element))
+                        }
+                        _ => self.type_name(ty),
+                    })
+                    .collect();
+                format!("{name}({})", params.join(", "))
+            })
+            .collect();
+        let list = match candidates.split_last() {
+            Some((last, rest)) if !rest.is_empty() => format!("{} and {last}", rest.join(", ")),
+            Some((last, _)) => last.clone(),
+            None => String::new(),
+        };
+        format!("{what} with ({}): {list} fit equally well", self.type_list(call))
     }
 
     /// Подошла фиксированная сигнатура — variadic-кандидаты не рассматриваются.
@@ -1014,6 +1062,13 @@ impl Checker<'_, '_> {
             self.error(span, message);
             return Self::poisoned(span);
         }
+        // A shorthand constructor takes named arguments only: a positional
+        // call no full constructor accepts is reported before inference and
+        // before the arguments are checked (#311).
+        if let Some(message) = self.named_only(object, args) {
+            self.error(span, message);
+            return Self::poisoned(span);
+        }
         let params = self.reg.objects[object.0].params.clone();
         // Известная из ожидаемого типа специализация задаёт типы аргументов.
         let type_args_given = type_args.clone();
@@ -1053,6 +1108,49 @@ impl Checker<'_, '_> {
             return Self::poisoned(span);
         }
         self.construct_values(object, resolved, call, span)
+    }
+
+    /// The diagnostic of a positional call that only a shorthand constructor
+    /// could take: `Box(5)` for `Box(:v)` names `Box(v: …)`.
+    fn named_only(&self, object: ObjectId, args: &[ast::Argument]) -> Option<String> {
+        if args.is_empty() || args.iter().any(|arg| arg.name.is_some()) {
+            return None;
+        }
+        let info = &self.reg.objects[object.0];
+        let positional = info.ctors.iter().any(|ctor| match &ctor.shape {
+            CtorShape::Full { params, defaults, variadic, .. } => {
+                let required = defaults.iter().filter(|default| default.is_none()).count();
+                *variadic || (required..=params.len()).contains(&args.len())
+            }
+            CtorShape::Shorthand { .. } => false,
+        });
+        if positional {
+            return None;
+        }
+        let shorthands: Vec<&Vec<usize>> = info
+            .ctors
+            .iter()
+            .filter_map(|ctor| match &ctor.shape {
+                CtorShape::Shorthand { fields, .. } => Some(fields),
+                CtorShape::Full { .. } => None,
+            })
+            .collect();
+        let fields = shorthands
+            .iter()
+            .find(|fields| fields.len() == args.len())
+            .or(shorthands.first())?;
+        let named: Vec<String> = fields.iter().map(|field| format!("{}: …", info.fields[*field].name)).collect();
+        let suggestion = format!("{}({})", info.name, named.join(", "));
+        // With a full constructor too, positional calls of other arities stay valid.
+        Some(if shorthands.len() == info.ctors.len() {
+            format!("Constructor of \"{}\" takes named arguments only: write {suggestion}", info.name)
+        } else {
+            format!(
+                "No constructor of \"{}\" takes {} positional argument(s); the shorthand takes named ones: write {suggestion}",
+                info.name,
+                args.len()
+            )
+        })
     }
 
     /// The end of this body can await an async destroy (#154): an async body,
@@ -1098,7 +1196,7 @@ impl Checker<'_, '_> {
         } else if typed.is_empty() {
             Err(false)
         } else {
-            Self::most_specific(typed)
+            Self::most_specific(typed.clone())
         };
         let ctor = match chosen {
             Ok(ctor) => ctor,
@@ -1111,7 +1209,9 @@ impl Checker<'_, '_> {
                 return Self::poisoned(span);
             }
             Err(true) => {
-                self.error(span, format!("Ambiguous construction of \"{name}\""));
+                let tied: Vec<&Shape> = Self::tied(&typed).into_iter().map(|index| &shapes[index].0).collect();
+                let message = self.ambiguity(format!("Ambiguous construction of \"{name}\""), &call, &name, tied);
+                self.error(span, message);
                 return Self::poisoned(span);
             }
         };
@@ -1347,9 +1447,12 @@ impl Checker<'_, '_> {
             Ok(index) => index,
             Err(ambiguous) => {
                 let message = if ambiguous {
-                    format!(
-                        "Ambiguous call of action \"{}\" on object \"{object_name}\"",
-                        name.text
+                    let tied = Self::tied(&self.fitting_overloads(&call, &plain));
+                    self.ambiguity(
+                        format!("Ambiguous call of action \"{}\" on object \"{object_name}\"", name.text),
+                        &call,
+                        &name.text,
+                        tied.into_iter().map(|index| &plain[index]).collect(),
                     )
                 } else {
                     format!(
@@ -1424,9 +1527,12 @@ impl Checker<'_, '_> {
             Ok(index) => index,
             Err(ambiguous) => {
                 let message = if ambiguous {
-                    format!(
-                        "Ambiguous call of action \"{}\" on role \"{role_name}\"",
-                        name.text
+                    let tied = Self::tied(&self.fitting_overloads(&call, &plain));
+                    self.ambiguity(
+                        format!("Ambiguous call of action \"{}\" on role \"{role_name}\"", name.text),
+                        &call,
+                        &name.text,
+                        tied.into_iter().map(|index| &plain[index]).collect(),
                     )
                 } else {
                     format!(

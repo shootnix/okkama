@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.literal.heterogeneous-untyped-local-rejected",
+  "title": "an untyped local does not box a heterogeneous literal for a later @any use",
+  "purpose": "The literal is checked where it is written; passing the local to an @any parameter later does not make it a boundary.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.LITERAL-IDENTITY",
+      "aspects": [
+        "invalid",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "#315",
+    "expected_basis": "Owner decision on #315: heterogeneous concrete elements without an expected any element type are a compile-time error; any is never inferred."
+  },
+  "status": "mandatory"
+}

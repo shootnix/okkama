@@ -86,6 +86,11 @@ fn check_types(program: &Program) -> Result<(), VerifyError> {
                     return Err(program_error(format!("type t{index} names missing cap cap{}", cap.0)));
                 }
             }
+            Type::Variant(variant) => {
+                if variant.0 as usize >= program.variants.len() {
+                    return Err(program_error(format!("type t{index} names missing variant variant{}", variant.0)));
+                }
+            }
             Type::Array(item) | Type::Builder(item) => earlier(*item)?,
             Type::Map(key, value) | Type::MapBuilder(key, value) => {
                 earlier(*key)?;
@@ -144,6 +149,23 @@ fn check_tables(program: &Program) -> Result<(), VerifyError> {
             check_function_ref(program, destroy.0)?;
         }
     }
+    // Случай варианта — свой объект раскладки (#290): существующий, не
+    // встроенный, без `destroy`, не общий с другим случаем.
+    let mut cases = std::collections::HashSet::new();
+    for variant in &program.variants {
+        if variant.cases.is_empty() {
+            return Err(program_error(format!("variant {} has no cases", variant.name)));
+        }
+        for (name, object) in &variant.cases {
+            let plain = program
+                .objects
+                .get(object.0 as usize)
+                .is_some_and(|declared| !declared.builtin && declared.destroy.is_none());
+            if !plain || !cases.insert(*object) {
+                return Err(program_error(format!("variant {} case {name} needs its own plain object", variant.name)));
+            }
+        }
+    }
     for cap in &program.caps {
         if cap.owner.0 as usize >= program.objects.len() {
             return Err(program_error(format!("cap {} owner is missing", cap.name)));
@@ -188,6 +210,9 @@ fn check_instruction(context: &Context<'_>, pc: usize, instruction: &Instruction
             Access::Cap(cap) if cap.0 as usize >= program.caps.len() => {
                 Err(context.error(Some(pc), format!("cap cap{} is out of bounds", cap.0)))
             }
+            Access::Variant(variant) if variant.0 as usize >= program.variants.len() => {
+                Err(context.error(Some(pc), format!("variant variant{} is out of bounds", variant.0)))
+            }
             _ => Ok(()),
         };
         if let Err(error) = result {
@@ -218,10 +243,19 @@ fn check_instruction(context: &Context<'_>, pc: usize, instruction: &Instruction
                 return Err(context.error(Some(pc), "obj.new field count does not match the object"));
             }
         }
+        Instruction::VariantNew { variant, case, fields, .. } => {
+            let Some((_, object)) = program.variants[variant.0 as usize].cases.get(*case as usize) else {
+                return Err(context.error(Some(pc), format!("variant.new case {case} is out of bounds")));
+            };
+            if fields.len() != program.objects[object.0 as usize].fields.len() {
+                return Err(context.error(Some(pc), "variant.new field count does not match the case"));
+            }
+        }
         Instruction::Catch { kind, ty, .. } => {
             let limit = match kind {
                 crate::CatchKind::Object => program.objects.len(),
                 crate::CatchKind::Role => program.roles.len(),
+                crate::CatchKind::Variant => program.variants.len(),
             };
             if *ty as usize >= limit {
                 return Err(context.error(Some(pc), format!("catch type {ty} is out of bounds")));

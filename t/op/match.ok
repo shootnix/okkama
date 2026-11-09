@@ -1,0 +1,47 @@
+module t v1.0.0;
+
+// t/op: match on values and enums (Book ch. 12.4, 24).
+import "tap" take Tap;
+
+enum Status = (ready, failed, done);
+enum Reading = (empty, value(item is int), pair(left is int, right is int));
+
+object Matcher {
+    Matcher();
+    code(status is Status) is int {
+        match status {
+            case Status.ready { 1; }
+            case Status.failed, Status.done { 2; }
+        }
+    }
+    word(n is int) is string {
+        match n {
+            case 1 { "one"; }
+            case 2, 3 { "two or three"; }
+            else { "many"; }
+        }
+    }
+    total(reading is Reading) is int {
+        match reading {
+            case Reading.empty { 0; }
+            case Reading.value(item) { item; }
+            case Reading.pair(left, _) { left; }
+        }
+    }
+}
+
+main() is int {
+    let t = Tap(9);
+    let matcher = Matcher();
+    t = t.is(matcher.code(Status.ready), 1, "an enum case");
+    t = t.is(matcher.code(Status.done), 2, "several values in one case");
+    t = t.is(matcher.word(1), "one", "an int case");
+    t = t.is(matcher.word(3), "two or three", "a list of ints");
+    t = t.is(matcher.word(9), "many", "else");
+    t = t.is(matcher.total(Reading.value(5)), 5, "a variant binds its field");
+    t = t.is(matcher.total(Reading.pair(2, 9)), 2, "_ ignores a field");
+    t = t.is(matcher.total(Reading.empty), 0, "a case without data");
+    let label = match "GET" { case "GET" { "read"; } else { "other"; } };
+    t = t.is(label, "read", "match on a string as an expression");
+    t.done();
+}

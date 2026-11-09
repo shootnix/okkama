@@ -159,6 +159,9 @@ struct BodyLowerer<'c, 'r, 'a> {
     /// построенный в этой точке, и значения его полей; конец конструктора
     /// возвращает его же.
     early_self: Option<(ValueId, Vec<ValueId>)>,
+    /// Fields bound after `self` escaped: `obj.init` on every path that binds
+    /// them, so their joined value need not match `early_self` (#279).
+    escaped_inits: Vec<bool>,
     /// Scope of each `reduce` whose accumulator is a builder (#243), innermost
     /// last: what its block pushes is handed to that scope (#266).
     builder_homes: Vec<usize>,
@@ -189,11 +192,10 @@ pub(super) fn lower_task(ctx: &mut Ctx<'_, '_>, func: FuncId) -> Result<ir::Func
             adapters::lower_method(ctx, symbol, object, method)
         }
         Task::AdapterNew { object } => adapters::lower_new(ctx, symbol, object),
-        Task::VariantGet { object, field } => {
-            adapters::lower_variant_get(ctx, symbol, object, field)
-        }
-        Task::VariantText { object } => adapters::lower_variant_text(ctx, symbol, object),
+        Task::VariantText { variant } => adapters::lower_variant_text(ctx, symbol, variant),
+        Task::CaseText { object } => adapters::lower_case_text(ctx, symbol, object),
         Task::Describe { ty } => adapters::lower_describe(ctx, symbol, &ty),
+        Task::EscapeText => adapters::lower_escape_text(symbol),
         Task::Global { constant } => adapters::lower_global(ctx, symbol, constant),
         Task::Closure { index } => lower_closure(ctx, symbol, index),
         Task::Test { index } => lower_test(ctx, symbol, index),
@@ -295,6 +297,7 @@ fn lowerer_for<'c, 'r, 'a>(
         field_flags: Vec::new(),
         flag_values: None,
         early_self: None,
+        escaped_inits: Vec::new(),
         builder_homes: Vec::new(),
         ctx,
     }
@@ -1071,6 +1074,10 @@ fn lower_native(ctx: &mut Ctx<'_, '_>, symbol: String, native: usize) -> Result<
         values.push(ctx.ir_type(ty, info.decl.span)?);
     }
     let result = ctx.ir_result(&info.result, &[], info.decl.span)?;
+    // A native can fail with a NativeFailure even where the program never
+    // names one: the Sparrow core builds that object from its declaration
+    // (an uncaught failure printed "program has no NativeFailure", #270).
+    ctx.object_instance(reg.system.native_failure, Vec::new(), info.decl.span)?;
     Ok(ir::Function {
         symbol,
         params: (0..values.len()).map(ValueId).collect(),
@@ -1401,7 +1408,11 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                     .iter()
                     .zip(&fields)
                     .enumerate()
-                    .all(|(index, (known, bound))| Some(index) == pending || known == bound) =>
+                    .all(|(index, (known, bound))| {
+                        Some(index) == pending
+                            || known == bound
+                            || self.escaped_inits.get(index).copied().unwrap_or(false)
+                    }) =>
             {
                 if let (Some(field), Some((_, no))) = (pending, self.flag_values) {
                     self.b.emit_void(
@@ -1632,10 +1643,11 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             return value.clone();
         }
         match (&value.ty, target) {
-            (Type::Array(element), Type::Array(_)) if **element == Type::Never => {
+            // Only `never` parts change, at any depth (#297).
+            (Type::Array(_), Type::Array(_)) if value.ty.fits_untagged(target) => {
                 self.emit(InstKind::Retag(value.value), target.clone(), span)
             }
-            (Type::Map(key, _), Type::Map(..)) if **key == Type::Never => {
+            (Type::Map(..), Type::Map(..)) if value.ty.fits_untagged(target) => {
                 self.emit(InstKind::MapRetag(value.value), target.clone(), span)
             }
             (Type::Successor(_), _) => self.take(value.clone(), span),
@@ -1643,14 +1655,24 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         }
     }
 
+    /// The value of a branching expression with the analyzed type of the whole
+    /// expression (#298): a selected or joined untagged `[]`/`[:]` is
+    /// retagged to it, whether the condition was a literal or not.
+    fn conform(&mut self, out: Out, expr: &'r thir::Expr, span: Span) -> Result<Out> {
+        let Out::Value(value) = out else {
+            return Ok(out);
+        };
+        let target = self.expr_type(expr)?;
+        Ok(Out::Value(self.normalize(&value, &target, span)))
+    }
+
     /// Тип слияния значений: тегированная коллекция, иначе `C` вместо `^C`.
     fn join_type(types: &[Type]) -> Type {
-        if let Some(tagged) = types.iter().find(|ty| match ty {
-            Type::Array(element) => **element != Type::Never,
-            Type::Map(key, _) => **key != Type::Never,
-            _ => false,
-        }) {
-            return tagged.clone();
+        // Collections: the type every arm fits by retagging (#297).
+        if types.iter().all(|ty| matches!(ty, Type::Array(_) | Type::Map(..)))
+            && let Some(joined) = types[1..].iter().try_fold(types[0].clone(), |joined, ty| joined.unify_untagged(ty))
+        {
+            return joined;
         }
         let first = types[0].clone();
         if types.iter().all(|ty| *ty == first) {
@@ -1797,10 +1819,11 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
     }
 
     /// Ветвь `if`/`match`/`try`: значение последнего оператора уходит во
-    /// внешнюю область, даже если результат оператора не используется
-    /// (как в Perl-интерпретаторе: результат оператора принадлежит блоку).
+    /// внешнюю область, только если результат используется (#308). Иначе
+    /// ветвь — обычный блок: её привязки, последняя `let` тоже,
+    /// освобождаются в её конце.
     fn branch(&mut self, block: &'r thir::Block, want: bool) -> Result<Out> {
-        self.block_keeping(block, want, true)
+        self.block_keeping(block, want, want)
     }
 
     fn block_keeping(&mut self, block: &'r thir::Block, want: bool, keep: bool) -> Result<Out> {
@@ -1829,18 +1852,36 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         self.scopes.pop();
         let out = result?;
         closed?;
+        if !keep {
+            // Ненужное значение не выходит из блока: его ресурсы уже
+            // освобождены, ссылка на них наружу не уходит (#308).
+            return Ok(match out {
+                Out::Value(_) => Out::Unit,
+                other => other,
+            });
+        }
         // Значение блока освобождено его регионом: его учитывает внешняя область.
-        if let Out::Value(value) = &out
-            && keep {
-                self.track(value, block.span);
-            }
+        if let Out::Value(value) = &out {
+            self.track(value, block.span);
+        }
         Ok(out)
     }
 
     fn stmts(&mut self, stmts: &'r [thir::Stmt], want: bool) -> Result<Out> {
         let mut out = Out::Unit;
+        // Statements of the constructor body itself: the first one that uses
+        // `self` as a value builds the object before it starts, at a point
+        // that dominates the rest of the constructor (#279), not inside a
+        // loop or a branch of that statement.
+        let body = self.kind == Kind::Ctor && std::ptr::eq(stmts.as_ptr(), self.body.block.stmts.as_ptr());
         for (index, stmt) in stmts.iter().enumerate() {
             let last = index + 1 == stmts.len();
+            if body
+                && self.early_self.is_none()
+                && thir::stmt_contains(stmt, &|expr| matches!(expr.kind, thir::ExprKind::SelfValue))
+            {
+                self.constructed_self(stmt.span)?;
+            }
             let result = self.stmt(stmt, want && last)?;
             // Код после ухода управления проверен анализом и не исполняется.
             if matches!(result, Out::Diverged) || !self.b.is_open() {
@@ -1913,6 +1954,10 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         if let Some((built, fields)) = &mut self.early_self {
             let built = *built;
             fields[field] = typed.value;
+            if self.escaped_inits.len() <= field {
+                self.escaped_inits.resize(field + 1, false);
+            }
+            self.escaped_inits[field] = true;
             self.b.emit_void(
                 InstKind::ObjInit {
                     object: built,
@@ -2132,64 +2177,42 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             }
             ExprKind::VariantNew { case, values } => {
                 let ty = self.expr_type(expr)?;
-                let Type::Object(object) = ty else {
-                    unreachable!()
-                };
-                let semantic = expr.ty.as_ref().unwrap().subst(&self.env);
-                let Ty::Variant(id, _) = semantic else {
-                    unreachable!()
-                };
-                let offset = 1 + self.ctx.reg.enums[id.0].payloads[..*case]
-                    .iter()
-                    .map(Vec::len)
-                    .sum::<usize>();
-                let field_types: Vec<_> = self.ctx.objects[object.0]
-                    .fields
-                    .iter()
-                    .map(|(_, t, _)| t.clone())
-                    .collect();
                 let mut fields = Vec::new();
-                for (index, ty) in field_types.into_iter().enumerate() {
-                    let value = if index == 0 {
-                        self.constant(
-                            Constant::Int(IntValue::parse(&case.to_string()).unwrap()),
-                            span,
-                        )
-                    } else if index >= offset && index < offset + values.len() {
-                        let Some(value) = self.value(&values[index - offset])? else {
-                            return Ok(Out::Diverged);
-                        };
-                        self.emit(InstKind::ArrayNew(vec![value.value]), ty, span)
-                    } else {
-                        self.emit(InstKind::ArrayNew(Vec::new()), ty, span)
+                for value in values {
+                    let Some(value) = self.value(value)? else {
+                        return Ok(Out::Diverged);
                     };
                     fields.push(value.value);
                 }
-                let func = self.ctx.adapter_ctor(object);
                 Ok(Out::Value(self.emit(
-                    InstKind::Call { func, args: fields },
-                    Type::Object(object),
+                    InstKind::VariantNew {
+                        case: *case,
+                        fields,
+                    },
+                    ty,
                     span,
                 )))
             }
-            ExprKind::VariantTag(value) | ExprKind::VariantGet { value, .. } => {
-                let field = if let ExprKind::VariantGet { field, .. } = &expr.kind {
-                    *field
-                } else {
-                    0
-                };
+            ExprKind::VariantTag(value) => {
                 let Some(value) = self.value(value)? else {
                     return Ok(Out::Diverged);
                 };
-                let Type::Object(object) = value.ty else {
+                Ok(Out::Value(self.emit(InstKind::VariantTag(value.value), Type::Int, span)))
+            }
+            ExprKind::VariantGet { value, field } => {
+                let Some(value) = self.value(value)? else {
+                    return Ok(Out::Diverged);
+                };
+                let Type::Variant(id) = value.ty else {
                     unreachable!()
                 };
-                let func = self.ctx.variant_getter(object, field);
+                let (case, field) = self.case_field(id, *field);
                 let ty = self.expr_type(expr)?;
                 Ok(Out::Value(self.emit(
-                    InstKind::Call {
-                        func,
-                        args: vec![value.value],
+                    InstKind::VariantGet {
+                        value: value.value,
+                        case,
+                        field,
                     },
                     ty,
                     span,
@@ -2230,7 +2253,10 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 condition,
                 then_block,
                 else_block,
-            } => self.if_expr(condition, then_block, else_block.as_ref(), want, span),
+            } => {
+                let out = self.if_expr(condition, then_block, else_block.as_ref(), want, span)?;
+                self.conform(out, expr, span)
+            }
             ExprKind::Match(body) => self.match_body(body, want, span),
             ExprKind::Loop(block) => self.loop_expr(block, want, span),
             ExprKind::For {
@@ -2713,7 +2739,8 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         if typed.ty == target {
             return Ok(typed);
         }
-        if matches!(typed.ty, Type::Object(_)) {
+        // Вариант делает роль, если её делает объект каждого его случая (#290).
+        if matches!(typed.ty, Type::Object(_) | Type::Variant(_)) {
             return Ok(self.emit(InstKind::RoleWrap(typed.value), target, span));
         }
         // Параметр с границей-ролью, специализированный ролью (`T = Authorized`

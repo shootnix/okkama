@@ -379,9 +379,9 @@ impl Drop for Map {
     }
 }
 
-/// Ключ словаря: `int`, `byte`, `char`, `bool`, `float`, enum, `str` или
-/// объект-значение (#212). У одного словаря все ключи одного статического
-/// типа.
+/// Ключ словаря: `int`, `byte`, `char`, `bool`, `float`, `rat` (#296), enum,
+/// `str` или объект-значение (#212). У одного словаря все ключи одного
+/// статического типа.
 #[derive(Clone, Debug)]
 pub enum MapKey {
     Int(IntValue),
@@ -391,7 +391,7 @@ pub enum MapKey {
     Char(char),
     Str(Rc<str>),
     Enum { declaration: usize, case: usize },
-    /// Поле-дробь ключа-объекта (сам `rat` ключом не бывает).
+    /// Дробь: несократимая, поэтому `rat(1, 2)` и `rat(2, 4)` — один ключ.
     Rat(Rc<crate::rat::Rat>),
     /// Объект: равенство и порядок — по объявлению и полям, как у `==`;
     /// сам объект хранится, чтобы `keys()` вернул его.
@@ -1241,8 +1241,8 @@ impl ObjectHeap {
             let equal = match (&left, &right) {
                 (Value::Range(a), Value::Range(b)) => a == b,
                 (Value::Int(a), Value::Int(b)) => a == b,
-                // Как `Double.equals` JVM: побитово, `-0.0 != 0.0`.
-                (Value::Float(a), Value::Float(b)) => a.to_bits() == b.to_bits(),
+                // Численно, как скалярное `==` (#314): `-0.0 == 0.0`; NaN в Okkama нет.
+                (Value::Float(a), Value::Float(b)) => a == b,
                 (Value::Rat(a), Value::Rat(b)) => a == b,
                 (Value::Handle(a), Value::Handle(b)) => std::ptr::addr_eq(Rc::as_ptr(a), Rc::as_ptr(b)),
                 (Value::Fn(a), Value::Fn(b)) => Rc::ptr_eq(a, b),
@@ -1481,6 +1481,22 @@ mod equality_tests {
             Err(EqualityError::MixedTypes)
         );
         assert!(heap.equal(&arrays, &Value::Undef, &Value::Undef).is_err());
+    }
+    #[test]
+    fn floats_compare_numerically_at_every_depth() {
+        // #314: as scalar `==`, so `-0.0 == 0.0` inside composites too.
+        let arrays = ArrayHeap;
+        let heap = ObjectHeap;
+        let (negative, positive) = (Value::Float(-0.0), Value::Float(0.0));
+        assert!(heap.equal(&arrays, &negative, &positive).unwrap());
+        let a = arrays.allocate(vec![arrays.allocate(vec![negative.clone()])]);
+        let b = arrays.allocate(vec![arrays.allocate(vec![positive.clone()])]);
+        assert!(heap.equal(&arrays, &a, &b).unwrap());
+        let x = heap.allocate(0, vec![negative.clone(), Value::Float(1.5)]);
+        let y = heap.allocate(0, vec![positive, Value::Float(1.5)]);
+        let z = heap.allocate(0, vec![negative, Value::Float(2.5)]);
+        assert!(heap.equal(&arrays, &x, &y).unwrap());
+        assert!(!heap.equal(&arrays, &x, &z).unwrap());
     }
 }
 

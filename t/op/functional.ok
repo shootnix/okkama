@@ -1,0 +1,23 @@
+module t v1.0.0;
+
+// t/op: map, filter, reduce, any, all, find (Book ch. 13).
+import "tap" take Tap;
+
+main() is int {
+    let t = Tap(9);
+    let xs = [1, 2, 3, 4];
+    t = t.ok(xs.map() -> v { v * 2; } == [2, 4, 6, 8], "map");
+    t = t.ok(xs.filter() -> v { v % 2 == 0; } == [2, 4], "filter");
+    t = t.is(xs.reduce(0) -> sum, v { sum + v; }, 10, "reduce");
+    t = t.ok(xs.any() -> v { v > 3; }, "any");
+    t = t.ok(!xs.all() -> v { v > 1; }, "all");
+    t = t.ok((xs.find() -> v { v > 2; } else -1) == 3, "find");
+    let words = ["b", "a"].map() -> w { w + "!"; };
+    t = t.is(words.join(""), "b!a!", "map to strings");
+    let built = (0..3).reduce(@int()) -> acc, i { acc + [i * i]; };
+    t = t.ok(built == [0, 1, 4], "reduce into an array");
+    // A map value cannot start with `(` yet (#263).
+    let counts is %string:int = ["a", "b", "a"].reduce([:]) -> acc, w { acc + [w: 1 + (acc[w] else 0)]; };
+    t = t.is(counts["a"], 2, "reduce into a map");
+    t.done();
+}

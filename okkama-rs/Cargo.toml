@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/okkama-compiler", "crates/okkama-cli", "crates/okkama-native", "crates/okkama-runtime", "crates/okkama-sparrow", "crates/okkama-runtime-core", "crates/okkama-runtime-abi", "crates/sparrow-vm", "crates/sparrow-runtime", "crates/sparrow-cli", "crates/blade", "crates/blade-cli", "crates/sparrow-core"]
 
 [workspace.package]
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 rust-version = "1.97"
 license = "GPL-3.0-only"
@@ -23,3 +23,13 @@ unimplemented = "warn"
 [profile.release]
 lto = "fat"
 codegen-units = 1
+
+# Release-тесты ворот (`cargo test --profile gate`): оптимизации release, но
+# без fat LTO и с параллельной кодогенерацией. Каждый из ~90 тестовых
+# бинарников иначе линкуется полной LTO (20 минут сборки на 30 секунд
+# тестов). Бинарники с fat LTO собирает шаг build ворот, и их проверяют
+# conformance, std и t/.
+[profile.gate]
+inherits = "release"
+lto = "off"
+codegen-units = 16

@@ -1,0 +1,22 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Counter {
+    has count is int;
+    Counter(:count);
+    count() is int { count; }
+    bumped() is ^Counter { ^count = count + 1; }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln("unreachable");
+    let counter = Counter(count: 1);
+    let bump = () is int {
+        counter = counter.bumped();
+        counter.count();
+    };
+    out.writeln(bump().string() + " " + bump().string() + " " + counter.count().string());
+    0;
+}

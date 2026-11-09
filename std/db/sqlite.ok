@@ -71,7 +71,7 @@ object SqliteOpening {
     }
 }
 object SqliteUnpublished{has state is sqlite.SqliteState;has published is Event;SqliteUnpublished(state is sqlite.SqliteState,published is Event){self.state=state;self.published=published;}async close() is void{if !published.ready(){sqlite.sqlite_close(state);await sqlite.sqlite_settled(state);}}}
-object SqliteTaskCleanup<T>{
+hidden object SqliteTaskCleanup<T>{
     has group is FutureGroup<T>;has state is sqlite.SqliteState;has completed is Event;
     SqliteTaskCleanup(group is FutureGroup<T>,state is sqlite.SqliteState){self.group=group;self.state=state;completed=Event();}
     SqliteTaskCleanup(group is FutureGroup<T>,state is sqlite.SqliteState,completed is Event){self.group=group;self.state=state;self.completed=completed;}
@@ -244,7 +244,7 @@ object SqliteRows does RowReading,Closing {
     }
     destroy{self.close();}
 }
-object SqliteRowsCleanup{has owner is SqliteRows;has complete is Event;SqliteRowsCleanup(owner is SqliteRows,complete is Event){self.owner=owner;self.complete=complete;}close() is void{if !complete.ready(){owner.close();}}}
+hidden object SqliteRowsCleanup{has owner is SqliteRows;has complete is Event;SqliteRowsCleanup(owner is SqliteRows,complete is Event){self.owner=owner;self.complete=complete;}close() is void{if !complete.ready(){owner.close();}}}
 object SqliteBindings {
     has cells is @native_db.DbCellState;
     SqliteBindings(values is Sequencing<DbValue>){
@@ -308,7 +308,7 @@ object SqliteTransactions {
     SqliteTransactions(origin is SqliteConnection,mode is SqliteTransactionMode){self.origin=SqliteOrigin(origin);self.mode=mode;}
     async transaction(options is TransactionOptions) is SqliteTransaction{await origin.transaction(options,mode);}
 }
-object SqliteBeginCleanup{has owner is SqliteSession;has token is Atomic<int>;has published is Event;SqliteBeginCleanup(owner is SqliteSession,token is Atomic<int>,published is Event){self.owner=owner;self.token=token;self.published=published;}close() is void{if !published.ready(){owner.abandon(token.value());}}}
+hidden object SqliteBeginCleanup{has owner is SqliteSession;has token is Atomic<int>;has published is Event;SqliteBeginCleanup(owner is SqliteSession,token is Atomic<int>,published is Event){self.owner=owner;self.token=token;self.published=published;}close() is void{if !published.ready(){owner.abandon(token.value());}}}
 object SqliteTransaction does Transaction,DbExecuting,DbPreparing,SqliteBlobOpening,SqliteScripting {
     has owner is SqliteSession;has token is int;has outcome is Atomic<int>;
     SqliteTransaction(owner is SqliteSession,token is int){self.owner=owner;self.token=token;outcome=Atomic(0);}
@@ -347,9 +347,9 @@ object SqliteBlobHandle does SqliteBlob,Closing{
     async write(offset is BigInt,source is @byte) is SqliteBlob{confirm !self.closed() else throw DbClosed.closed;confirm writable else throw DbFailure.detailed(DbFailureKind.permission, DbOperation.writing_blob, "SQLITE_BLOB_READ_ONLY", "SQLite blob is read-only");self.bounds(offset,source.size());await owner.blob_write(id,offset,source,token);self;}
     destroy{self.close();}
 }
-object SqliteBackupCleanup{has owner is SqliteSession;has id is int;SqliteBackupCleanup(owner is SqliteSession,id is int){self.owner=owner;self.id=id;}close() is void{owner.backup_close(id);}}
+hidden object SqliteBackupCleanup{has owner is SqliteSession;has id is int;SqliteBackupCleanup(owner is SqliteSession,id is int){self.owner=owner;self.id=id;}close() is void{owner.backup_close(id);}}
 
-object SqliteFinishCleanup{
+hidden object SqliteFinishCleanup{
     has owner is SqliteSession;has token is int;has commit is bool;has outcome is Atomic<int>;has confirmed is Event;
     SqliteFinishCleanup(owner is SqliteSession,token is int,commit is bool,outcome is Atomic<int>,confirmed is Event){self.owner=owner;self.token=token;self.commit=commit;self.outcome=outcome;self.confirmed=confirmed;}
     close() is void{if !confirmed.ready(){if commit{outcome.replace(3);owner.close();}else{owner.abandon(token);}}}

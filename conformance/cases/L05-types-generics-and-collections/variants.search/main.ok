@@ -1,0 +1,29 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum Reading = (empty, value(item is int), pair(left is int, right is string));
+enum Slot<T> = (vacant, full(item is T));
+
+main() is int {
+    let out = Stdout();
+    // Values built apart from the array still match: equality is by case and payload.
+    let readings is @Reading = [Reading.value(1), Reading.pair(2, "b"), Reading.empty, Reading.pair(2, "b")];
+    out.writeln(readings.contains(Reading.pair(2, "b")).string() + " " + readings.contains(Reading.pair(2, "c")).string()
+        + " " + readings.contains(Reading.value(2)).string() + " " + readings.contains(Reading.empty).string());
+    out.writeln((readings.index_of(Reading.pair(2, "b")) else -1).string() + " " + (readings.index_of(Reading.value(9)) else -1).string());
+    let maybes is @Maybe<int> = [Maybe.some(3), Maybe<int>.none];
+    out.writeln(maybes.contains(Maybe.some(3)).string() + " " + maybes.contains(Maybe.some(4)).string()
+        + " " + (maybes.index_of(Maybe<int>.none) else -1).string());
+    let presences is @Presence<int> = [Presence.some(1), Presence<int>.missing];
+    out.writeln(presences.contains(Presence<int>.missing).string() + " " + presences.contains(Presence<int>.none).string());
+    let slots is @Slot<int> = [Slot.full(5), Slot<int>.vacant];
+    out.writeln(slots.contains(Slot.full(5)).string() + " " + (slots.index_of(Slot<int>.vacant) else -1).string());
+    // A search agrees with `==` and with array difference.
+    let probe = Reading.pair(2, "b");
+    let by_equality = readings.map() -> r { (r == probe).string(); }.join(",");
+    out.writeln(by_equality + " " + (readings - [probe]).size().string());
+    let empty is @Reading = [];
+    out.writeln(empty.contains(Reading.empty).string() + " " + (empty.index_of(Reading.empty) else -1).string());
+    0;
+}

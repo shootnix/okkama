@@ -1,0 +1,24 @@
+module t v1.0.0;
+
+// t/lang: imports — take, a namespace, an alias, hidden declarations and
+// module constants (Book ch. 26).
+import "tap" take Tap;
+import "shapes" take Area, Tiles, Unit, Ruler, SIDE, AREA, PRIMES;
+import "shapes" as geo;
+
+main() is int {
+    let t = Tap(10);
+    let area is Area = Tiles().square(3);
+    t = t.is(area.value(), 9, "a hidden object behind a public role");
+    t = t.is(Ruler(unit: Unit.cm).scale(), 10, "a taken object and enum");
+    t = t.is(SIDE, 4, "a taken constant");
+    t = t.is(AREA, 16, "a constant computed from another");
+    t = t.ok(PRIMES == [2, 3, 5, 7], "an array constant");
+    t = t.is(geo.NAME, "shapes-4", "a constant through an alias namespace");
+    t = t.is(geo.LIMITS["large"], 160, "a map constant");
+    t = t.is(geo.Ruler(unit: geo.Unit.mm).scale(), 1, "an object through the namespace");
+    let typed is geo.Area = geo.Tiles().square(2);
+    t = t.is(typed.value(), 4, "a namespaced type annotation");
+    t = t.ok(geo.Unit.cm == Unit.cm, "one enum under two names");
+    t.done();
+}

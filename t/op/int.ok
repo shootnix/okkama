@@ -1,0 +1,29 @@
+module t v1.0.0;
+
+// t/op: int — exact, arbitrary precision (Book ch. 5).
+import "tap" take Tap;
+
+main() is int {
+    let t = Tap(20);
+    t = t.is(2 + 3, 5, "addition");
+    t = t.is(2 - 3, -1, "subtraction below zero");
+    t = t.is(-4 * 6, -24, "multiplication with a negative");
+    t = t.is(17 % 5, 2, "modulo");
+    t = t.is(-17 % 5, -2, "modulo keeps the sign of the dividend");
+    t = t.is(17 % -5, 2, "modulo by a negative");
+    t = t.ok(6 / 2 == 3.rat(), "int / int is an exact rat");
+    t = t.is((7 / 2).string(), "7/2", "a non-integral quotient stays a fraction");
+    t = t.is(9223372036854775807 + 1, 9223372036854775808, "no overflow past 2^63");
+    t = t.is((2).pow(100).string(), "1267650600228229401496703205376", "2^100 is exact");
+    t = t.is((-3).abs(), 3, "abs");
+    t = t.is((-3).sign(), -1, "sign of a negative");
+    t = t.is(0.sign(), 0, "sign of zero");
+    t = t.is((3).pow(0), 1, "x^0 is 1");
+    t = t.is(16.sqrt(), 4.0, "sqrt gives a float");
+    t = t.ok(1.less(2) && 2.less_or_equal(2), "less, less_or_equal");
+    t = t.ok(3.greater(1) && !3.greater_or_equal(4), "greater, greater_or_equal");
+    t = t.ok(-(-5) == 5, "double negation");
+    t = t.is(1_000 * 1_000, 1000000, "digit separators");
+    t = t.is(0xff + 0b1, 256, "hex and binary literals are ints");
+    t.done();
+}

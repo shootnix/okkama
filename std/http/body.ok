@@ -105,7 +105,7 @@ object ByteBodyInput does AsyncReading, Closing {
 }
 // One group per read: it owns exactly one child, so completed bodies never
 // accumulate read results. Group cancellation retains secondary cleanup errors.
-object BodyReadCleanup {
+hidden object BodyReadCleanup {
     has origin is StreamBodyReading;has complete is Event;
     has pending is Atomic<@Future<@byte>>;has group is FutureGroup<@byte>;
     BodyReadCleanup(origin is StreamBodyReading,complete is Event,

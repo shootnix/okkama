@@ -29,8 +29,7 @@ object Http1BodyReading does BodyReading {
         let source=Http1BodyInput(origin,plan,prefix,head,limits);input=source;reading=StreamBodyReading(source,owner,Headers([]));self.plan=plan;
     }
     async bytes(limit is int) is @byte{
-        let group is FutureGroup<@byte>=FutureGroup();let complete=Event();let cleanup=Http1BodyOperationCleanup(group,complete);defer await cleanup.close();
-        let pending=reading.bytes(limit);group.start(pending);let result=await pending;complete.set();result;
+        await reading.bytes(limit);
     }
     trailers() is Headers{reading.trailers();input.trailers();}
     remainder() is @byte{reading.trailers();input.remainder();}
@@ -141,7 +140,7 @@ object Http1LineTail {
     has origin is string;Http1LineTail(){origin="";}
     following(origin is string) is ^Http1LineTail{^origin=origin;}string() is string{origin;}
 }
-object Http1BodyOperationCleanup {
+hidden object Http1BodyOperationCleanup {
     has group is FutureGroup<@byte>;has complete is Event;
     Http1BodyOperationCleanup(group is FutureGroup<@byte>,complete is Event){self.group=group;self.complete=complete;}
     async close() is void{let pending=group.active()>0;if !complete.ready(){group.cancel();}if pending{await group.wait();}}

@@ -74,6 +74,16 @@ struct ObjectLayout {
     refs: Vec<usize>,
     /// Функция `destroy`, которую вызывает `destroyBody`.
     destroy: Option<ir::FuncId>,
+    /// Раскладка случая варианта: номер варианта и тег (#290). Класс
+    /// случая наследует абстрактный класс варианта, который хранит тег.
+    variant: Option<(usize, usize)>,
+}
+
+/// Абстрактный класс варианта: общий тип значений и поле `$tag`.
+struct VariantLayout {
+    class: String,
+    /// Объект раскладки каждого случая.
+    cases: Vec<usize>,
 }
 
 impl ObjectLayout {
@@ -129,6 +139,7 @@ struct Layout {
     main: String,
     enums: Vec<EnumLayout>,
     objects: Vec<ObjectLayout>,
+    variants: Vec<VariantLayout>,
     roles: Vec<RoleLayout>,
     /// Имя и дескриптор статического метода каждой функции модуля.
     signatures: Vec<(String, String)>,
@@ -173,6 +184,7 @@ impl Layout {
                 format!("L{};", self.objects[object.0].class)
             }
             Type::Role(role) => format!("L{};", self.roles[role.0].class),
+            Type::Variant(variant) => format!("L{};", self.variants[variant.0].class),
             Type::Enum(_) => format!("L{};", runtime::CASE),
             Type::Region => format!("L{};", runtime::REGION),
             // Native object — значение класса provider; программа его не читает.
@@ -246,6 +258,7 @@ pub fn generate(module: &ir::Module, class_name: &str, budgeted: bool) -> Result
         interfaces: Vec::new(),
         code: class.pool.utf8("Code")?,
         stack_map_table: class.pool.utf8("StackMapTable")?,
+        line_number_table: class.pool.utf8("LineNumberTable")?,
     };
     let mut methods = Vec::new();
     for (index, function) in module.functions.iter().enumerate() {
@@ -295,6 +308,9 @@ pub fn generate(module: &ir::Module, class_name: &str, budgeted: bool) -> Result
     for decl in &layout.enums {
         files.push((format!("{}.class", decl.class), classes::enum_class(decl)?));
     }
+    for variant in &layout.variants {
+        files.push((format!("{}.class", variant.class), classes::variant_class(variant)?));
+    }
     for object in layout.objects.iter().filter(|object| {
         object.class != runtime::NATIVE_FAILURE && object.class != runtime::CANCELLED
     }) {
@@ -318,7 +334,64 @@ pub fn generate(module: &ir::Module, class_name: &str, budgeted: bool) -> Result
     for (name, bytes) in runtime::RUNTIME_FILES {
         files.push((name.to_string(), bytes.to_vec()));
     }
+    files.push(("okkama-debug.tsv".to_string(), debug_table(module, class_name, &class.sites).into_bytes()));
     Ok(files)
+}
+
+/// Ресурс `okkama-debug.tsv` для отчёта об отказе (`okkama.rt.Report`, #270):
+/// на метод функции — строка `M` (класс, метод, имя кадра, функция-родитель,
+/// вынесенная ли это часть, исходник, файл ли программы), за ней строки `S`
+/// мест по номеру «строки» LineNumberTable: начало и конец (строка, колонка).
+fn debug_table(module: &ir::Module, class_name: &str, methods: &[(String, usize, Vec<crate::source::Span>)]) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    for (method, index, sites) in methods {
+        let symbol = module.functions[*index].symbol.as_str();
+        // Часть, вынесенная `outline` (`f$part7`), — кадр своей функции.
+        let mut parent = symbol;
+        while let Some((head, number)) = parent.rsplit_once("$part")
+            && !number.is_empty()
+            && number.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            parent = head;
+        }
+        let part = parent != symbol;
+        let origin = if part {
+            module.functions.iter().position(|function| function.symbol == parent).map(ir::FuncId)
+        } else {
+            Some(ir::FuncId(*index))
+        };
+        let source = origin.and_then(|func| module.source_of(func));
+        let root = origin.is_some_and(|func| module.in_root(func));
+        let _ = writeln!(
+            out,
+            "M\t{class_name}\t{method}\t{}\t{parent}\t{}\t{}\t{}",
+            frame_name(parent),
+            u8::from(part),
+            source.map_or("", |source| source.name()),
+            u8::from(root)
+        );
+        if let Some(source) = source {
+            for span in sites {
+                let (start, end) = (source.location(span.start), source.location(span.end));
+                let _ = writeln!(out, "S\t{}\t{}\t{}\t{}", start.line, start.column, end.line, end.column);
+            }
+        }
+    }
+    out
+}
+
+/// Имя функции для стека, как у IR и ядра: без номера перегрузки или
+/// конструктора (`Bag.new#1` → `Bag.new`); номер анонимного действия остаётся.
+fn frame_name(symbol: &str) -> &str {
+    match symbol.rsplit_once('#') {
+        Some((name, number))
+            if !name.ends_with("lambda") && !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()) =>
+        {
+            name
+        }
+        _ => symbol,
+    }
 }
 
 fn layout(module: &ir::Module, class_name: &str, entry: Option<ir::FuncId>) -> Result<Layout> {
@@ -356,6 +429,7 @@ fn layout(module: &ir::Module, class_name: &str, entry: Option<ir::FuncId>) -> R
         main: class_name.to_string(),
         enums,
         objects: Vec::new(),
+        variants: Vec::new(),
         roles: Vec::new(),
         signatures: Vec::new(),
         fns: Vec::new(),
@@ -367,16 +441,30 @@ fn layout(module: &ir::Module, class_name: &str, entry: Option<ir::FuncId>) -> R
             .map(|cap| cap.fields.iter().map(|(_, func)| *func).collect())
             .collect(),
     };
-    for object in &module.objects {
+    for variant in &module.variants {
+        layout.variants.push(VariantLayout {
+            class: class_for(&format!("{}.$variant", variant.name))?,
+            cases: variant.cases.iter().map(|(_, object)| object.0).collect(),
+        });
+    }
+    for (index, object) in module.objects.iter().enumerate() {
+        let case = module.variant_case(ir::ObjectId(index));
         layout.objects.push(ObjectLayout {
             // Класс системного объекта даёт рантайм (`okkama.rt.NativeFailure`).
             class: if object.is_native_failure() {
                 runtime::NATIVE_FAILURE.to_string()
             } else if object.builtin && object.name == "Cancelled" {
                 runtime::CANCELLED.to_string()
+            } else if let Some((variant, tag)) = case {
+                // Класс различает случаи по имени, а последний сегмент — имя
+                // enum: по нему рантайм называет тип неперехваченной ошибки.
+                let variant = &module.variants[variant.0];
+                let short = variant.name.rsplit([':', '.']).next().unwrap_or(&variant.name);
+                class_for(&format!("{}.{}.{short}", variant.name, variant.cases[tag].0))?
             } else {
                 class_for(&object.name)?
             },
+            variant: case.map(|(variant, tag)| (variant.0, tag)),
             name: object.name.clone(),
             field_types: object.fields.iter().map(|field| field.ty.clone()).collect(),
             fields: Vec::new(),
@@ -391,6 +479,7 @@ fn layout(module: &ir::Module, class_name: &str, entry: Option<ir::FuncId>) -> R
                         field.ty,
                         Type::Object(_)
                             | Type::Role(_)
+                            | Type::Variant(_)
                             | Type::Array(_)
                             | Type::Map(..)
                             | Type::Any
