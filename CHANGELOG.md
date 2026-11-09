@@ -64,7 +64,12 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   ticket, a cached operation), where a group cancels it for everyone and
   structured await would not; they need their own lifecycle review. No
   public name changes: the settlement objects stay until the visibility wave.
-  New OCS case `L11.tcp.cancelled-read-keeps-data`.
+  New OCS case `L11.tcp.cancelled-read-keeps-data`. Docker, 4 CPUs, median
+  of 10 alternating runs: an HTTP/1 loopback load of 150 requests takes 17%
+  less on Tomato (1 744 → 1 446 ms) and 2% less on the IR engine, with ~400
+  fewer Rust allocations per request; 200 TCP connections × 50 round trips
+  take 6.6% less on Tomato and 1.2% less on the IR engine (−51 allocations
+  per round trip there).
 
 - The Sparrow core is now called Tomato: the current Sparrow runtime (crate `sparrow-core`, binary `sparrow`) in the docs, the Book and benchmark reports; entries below still say "Sparrow core".
 
