@@ -1118,6 +1118,27 @@ fn every_project_example_parses() {
 }
 
 #[test]
+fn check_reports_errors_that_only_lowering_finds() {
+    // #317: what `okkama run` rejects at compile time, `okkama check` rejects.
+    let grow = "module app v1.0.0; \
+        object Box<T> { has value is T; Box(:value); } \
+        object Grow<T> { has value is T; Grow(:value); \
+        deeper(depth is int) is int { if depth == 0 { return 0; } Grow(value: Box(value: value)).deeper(depth - 1) + 1; } } \
+        main() is int { Grow(value: 1).deeper(3); }";
+    let output = run_stdin(&["check", "-"], grow.as_bytes());
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("semantic error: The program requests a chain of more than 256 generic specializations"),
+        "{}",
+        stderr(&output)
+    );
+    let spin = "module app v1.0.0; object Spin { Spin(); spin(n is int) is int { n + self.spin(n + 1); } } main() is int { Spin().spin(0); }";
+    let output = run_stdin(&["check", "-"], spin.as_bytes());
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    assert!(stderr(&output).contains("Infinite recursion"), "{}", stderr(&output));
+}
+
+#[test]
 fn check_reports_warnings_without_failing() {
     let source = "module app v1.0.0; main() is int { let n = 2; for 0..n -> index { index; } }";
     let output = run_stdin(&["check", "-"], source.as_bytes());

@@ -102,6 +102,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- `okkama check` reports every compile-time error, also those that only
+  lowering finds (#317): a chain of generic specializations that never ends
+  (polymorphic recursion, H-15), recursion that cannot complete, constructs
+  IR lowering does not support yet, and an internal error in lowering. They
+  passed `check` with exit 0 and failed only at `okkama run` or `build`.
+  After a clean analysis `check` now lowers the program, without the OIR
+  passes, and verifies the IR: 59 sample programs check in 1.56 s instead of
+  0.66 s (about 26 ms each instead of 11). `okkama lint` and the language
+  server keep the analysis-only path, for editor latency.
+
 - Conformance: the std inventory (`contracts/stdlib.json`) is current again
   and cannot go stale (#282). Regenerated from `std/`: 32 new `STD.*`
   contracts for modules that existed but were missing (`STD.CELL`,

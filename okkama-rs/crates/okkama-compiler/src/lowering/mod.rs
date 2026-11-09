@@ -242,8 +242,8 @@ pub struct CheckError {
 type CheckResult =
     std::result::Result<Vec<CheckError>, std::result::Result<Vec<CheckError>, String>>;
 
-/// Загружает импорты и проверяет программу целиком, без lowering: все
-/// ошибки анализа (`okkama check`). `Ok` — предупреждения корневого модуля;
+/// Загружает импорты и проверяет программу целиком: все ошибки анализа, а
+/// если их нет — ошибку lowering, если она есть (`okkama check`, #317). `Ok` — предупреждения корневого модуля;
 /// `Err` с пустым списком не бывает.
 pub fn check_linked(
     program: &ast::Program,
@@ -285,27 +285,39 @@ fn check_roots(
     let graph = modules::load_graph(roots, loader).map_err(link_error)?;
     let sources = modules::source_modules(&graph, roots);
     let first_root = graph.loaded.len();
-    crate::analysis::analyze_mode(sources, roots.len(), test_mode)
-        .map(|analysis| {
-            analysis
-                .warnings
-                .into_iter()
-                .filter(|warning| warning.module >= first_root)
-                .map(|error| CheckError {
-                    source: source_of(&graph, roots, error.module),
-                    error,
-                })
-                .collect()
+    let analysis = crate::analysis::analyze_mode(sources, roots.len(), test_mode).map_err(|errors| {
+        Ok(errors
+            .into_iter()
+            .map(|error| CheckError {
+                source: source_of(&graph, roots, error.module),
+                error,
+            })
+            .collect())
+    })?;
+    // A program that `okkama run` rejects at compile time is rejected here
+    // too: lowering finds the specialization limit, infinite recursion and
+    // what IR lowering does not support yet (#317).
+    if let Err((module, error)) = lower_analyzed(&analysis, roots[0].0, Vec::new(), test_mode, false) {
+        let error = match &error {
+            LoweringError::Unsupported { .. } => {
+                crate::analysis::SemanticError::unsupported(module, error.span(), error.message())
+            }
+            LoweringError::Invalid { .. } => crate::analysis::SemanticError::invalid(module, error.span(), error.message()),
+        };
+        return Err(Ok(vec![CheckError {
+            source: source_of(&graph, roots, module),
+            error,
+        }]));
+    }
+    Ok(analysis
+        .warnings
+        .into_iter()
+        .filter(|warning| warning.module >= first_root)
+        .map(|error| CheckError {
+            source: source_of(&graph, roots, error.module),
+            error,
         })
-        .map_err(|errors| {
-            Ok(errors
-                .into_iter()
-                .map(|error| CheckError {
-                    source: source_of(&graph, roots, error.module),
-                    error,
-                })
-                .collect())
-        })
+        .collect())
 }
 
 /// Анализ, затем lowering проверенной программы. Первой сообщается ошибка
@@ -330,6 +342,20 @@ fn lower_modules(
         };
         (first.module, error)
     })?;
+    lower_analyzed(&analysis, program, imports, test_mode, true)
+}
+
+/// Lowering of an analysed program and the checks that only lowering can
+/// make: the specialization limit, infinite recursion, an invalid IR.
+/// `optimize` runs the OIR passes; `okkama check` lowers without them (#317).
+fn lower_analyzed(
+    analysis: &crate::analysis::Analysis<'_>,
+    program: &ast::Program,
+    imports: Vec<ir::Import>,
+    test_mode: bool,
+    optimize: bool,
+) -> std::result::Result<(ir::Module, Vec<crate::analysis::SemanticError>), (usize, LoweringError)>
+{
     let root = analysis.registry.entry_module;
     let mut ctx = ctx::Ctx::new(&analysis.registry, &analysis.bodies);
     ctx.collect().map_err(|error| (root, error))?;
@@ -372,7 +398,7 @@ fn lower_modules(
         };
         return Err((owners[func.0], LoweringError::invalid(module.functions[func.0].span, message)));
     }
-    let passes = Passes::from_env();
+    let passes = if optimize { Passes::from_env() } else { Passes { enabled: Some(Vec::new()), sabotage: false } };
     // Регионы, которые ничем не владеют, не открываются и не закрываются.
     // Раньше хвостовых вызовов: в программе с `destroy` пустой `region.leave`
     // после вызова иначе оставляет его вызовом (#285).

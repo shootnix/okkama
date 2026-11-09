@@ -70,7 +70,7 @@ USAGE:
 COMMANDS:
     tokens    Print the token stream of a source file
     ast       Parse a source file and print its syntax tree
-    check     Check a program and its imports; report every semantic error
+    check     Check a program and its imports; report every compile-time error
     fmt       Format source files (`-w` rewrites them, `--check` only reports)
     lint      Check programs and report errors, warnings and lint findings
     env       Show where okkama finds std, the native library, ICU and Java
