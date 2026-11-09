@@ -90,6 +90,26 @@ anything is kept. Not released until the measurements show a net gain.
   prepends to one version from two sides, both ends at once, alternating
   ends.
 
+- Tomato: slices share their origin when they keep at least half of it
+  (#249, prototype). `slice`, and `take` and `drop`, which lower to it,
+  return a view of the origin's storage — the flat array itself or the
+  buffer of a view — when the slice has 32 elements or more and keeps at
+  least half of that storage; smaller and shorter slices, and slices of
+  tries, are copied as before. A slice therefore never keeps alive more
+  than twice what it holds, and a view never points at another view, as
+  the owner asked (trimming rather than permanent views). A loop of
+  `rest = items.drop(1)` shares until half is left, copies that half once
+  and so on: O(n) in all. Concatenating a slice is a one-off, not the start
+  of an append chain, and copies once. Persistence stand, same binary:
+  half-slices 38–48 ns at every n (flat: 0.4 µs at 1 000, 0.44 ms at 10⁶),
+  `drop(1)` and `take(size − 1)` loops 31–55 ns per step (flat: 0.56 µs at
+  1 000, 46 µs at 100 000), removing an element with two slices and `+`
+  −36…−40%; tiny slices of large arrays kept alive retain no more memory
+  than before; keeping a half of each of many arrays costs up to twice
+  their memory (192 → 276 MB at 10⁶), the price of the rule. t/ family
+  `persistence`: drop and take loops, middle slices, slices of slices, both
+  ends and `replaced` on a slice.
+
 ### Fixed
 
 - Tomato: maps no longer pile up in memory (#331). A map's entries live in

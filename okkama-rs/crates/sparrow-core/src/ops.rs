@@ -400,7 +400,7 @@ fn flattening_tries() -> bool {
 /// copied flat as before (and marked [`crate::heap::APPENDED`] when `a` is
 /// large, so that the next append starts a chain).
 fn append_shared(runtime: &mut Runtime, repr: Repr, words: &[Word], size: usize) -> Option<Word> {
-    use crate::heap::{APPENDED, PREPENDED, SHARED, payload};
+    use crate::heap::{PREPENDED, SHARED, payload};
     if !shared_arrays() || words.len() < 2 {
         return None;
     }
@@ -408,7 +408,7 @@ fn append_shared(runtime: &mut Runtime, repr: Repr, words: &[Word], size: usize)
     let header = runtime.heap.header_of(first);
     // A version made by an append or a prepend: a chain either way, also
     // one that alternates ends.
-    if header & (SHARED | APPENDED | PREPENDED) == 0 {
+    if !continues_chain(runtime, first, header) {
         return None;
     }
     let length = payload(header) as usize;
@@ -432,6 +432,14 @@ fn append_shared(runtime: &mut Runtime, repr: Repr, words: &[Word], size: usize)
     let front = if both { (capacity - size) / 4 } else { 0 };
     let buffer = runtime.heap.allocate_buffer(repr, &[&head, &rest], capacity, front);
     Some(runtime.heap.allocate_view(repr, buffer, front, size))
+}
+
+/// Was `array` made by an append or a prepend (a flat copy marked so, or a
+/// view of a buffer)? A view of a plain array — a slice (#249) or a
+/// flattened trie — is not: concatenating it is a one-off and copies once.
+fn continues_chain(runtime: &Runtime, array: Word, header: u64) -> bool {
+    use crate::heap::{APPENDED, PREPENDED, SHARED};
+    header & (APPENDED | PREPENDED) != 0 || (header & SHARED != 0 && runtime.heap.is_buffer(runtime.heap.shared(array).0))
 }
 
 /// A slice (and `take`, `drop`, which lower to it) that shares its origin's
@@ -466,13 +474,13 @@ fn slice_shared(runtime: &mut Runtime, array: Word, repr: Repr, range: std::ops:
 /// into a new buffer twice the size with three quarters of its room in
 /// front. `None` for anything else.
 fn prepend_shared(runtime: &mut Runtime, repr: Repr, words: &[Word], size: usize) -> Option<Word> {
-    use crate::heap::{APPENDED, PREPENDED, SHARED, payload};
+    use crate::heap::{SHARED, payload};
     if !shared_arrays() || words.len() < 2 {
         return None;
     }
     let last = words[words.len() - 1];
     let header = runtime.heap.header_of(last);
-    if header & (SHARED | APPENDED | PREPENDED) == 0 {
+    if !continues_chain(runtime, last, header) {
         return None;
     }
     let length = payload(header) as usize;

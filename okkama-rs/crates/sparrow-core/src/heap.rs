@@ -606,6 +606,11 @@ impl Heap {
         }
     }
 
+    /// Is `array` a buffer of shared arrays ([`BUFFER`])?
+    pub fn is_buffer(&self, array: Word) -> bool {
+        self.header_of(array) & BUFFER != 0
+    }
+
     /// The frontier (slots written) and the capacity of a buffer.
     pub fn buffer_room(&self, buffer: Word) -> (usize, usize) {
         let header = self.header_of(buffer);
