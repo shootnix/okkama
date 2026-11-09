@@ -208,9 +208,10 @@ Benchmarks live outside the repository in `../okkama-docs/benchmarks`
   lines; compare medians of several alternating rounds with checksums.
 - PGO workloads are copies of the ladder in `okkama-rs/tools/pgo/workloads`.
 
-Reference numbers (0.4.1, Apple M2 Max / Docker arm64): Tomato is 5.5×
-Python, 8.2× Perl, 4.0× Ruby and 4.4× the JVM on the ladder (geometric mean of
-cold runs over 01–10; report `okkama-docs/benchmarks/reports/2026-11-09-v0.4.1`).
+Reference numbers (0.4.2, Apple M2 Max / Docker arm64): Tomato is 5.4×
+Python, 8.1× Perl, 4.0× Ruby and 4.4× the JVM on the ladder (geometric mean of
+cold runs over 01–10; report `okkama-docs/benchmarks/reports/2026-11-09-v0.4.2`;
+compare releases with a back-to-back A/B, not against an older report).
 Warmed up (`--steady`), the JVM beats Tomato only on 09-closures; 11-ownership
 is 2.7× slower than Python/Perl/Ruby (region tracking). PostgreSQL vs psycopg2: scans 1.3–1.7× slower, inserts faster; a
 point query is one round trip since #11 (68 µs vs psycopg2's 73 µs, Docker

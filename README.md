@@ -505,19 +505,19 @@ okkama build hello.ok --target sparrow -o hello.spb && sparrow hello.spb
 
 | | IR interpreter | Tomato (Sparrow + JIT) | JVM |
 |---|---|---|---|
-| Start-up (`hello`) | 11 ms | **11 ms** | 50 ms |
-| `fib(32)`, 7 M calls | 1.32 s | **29 ms** | 186 ms |
-| Mandelbrot (float) | 0.54 s | **28 ms** | 141 ms |
-| 1 M successor steps | 0.97 s | **26 ms** | 132 ms |
-| 6-module application | 1.57 s | **130 ms** | 549 ms |
-| Peak memory, application | 9 MB | 27 MB | 284 MB |
+| Start-up (`hello`) | 13 ms | **12 ms** | 53 ms |
+| `fib(32)`, 7 M calls | 1.35 s | **30 ms** | 186 ms |
+| Mandelbrot (float) | 0.58 s | **30 ms** | 143 ms |
+| 1 M successor steps | 1.03 s | **28 ms** | 134 ms |
+| 6-module application | 1.64 s | **131 ms** | 557 ms |
+| Peak memory, application | 9 MB | 27 MB | 276 MB |
 | Needs | nothing | nothing | JDK |
 
-Median of ten cold runs on an Apple M2 Max (0.4.1, release build, start-up
+Median of ten cold runs on an Apple M2 Max (0.4.2, release build, start-up
 included). Tomato, the current Sparrow runtime, compiles every function to
 machine code (Cranelift) before it runs; calls are direct, async frames are
-stackless and the collector is precise. On the same programs written in each language it is on average 5.5×
-faster than Python 3.9, 8.2× faster than Perl 5.42 and 4.0× faster than Ruby
+stackless and the collector is precise. On the same programs written in each language it is on average 5.4×
+faster than Python 3.9, 8.1× faster than Perl 5.42 and 4.0× faster than Ruby
 2.6 (geometric mean over ten programs).
 
 ## Documentation

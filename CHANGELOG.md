@@ -6,6 +6,27 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-11-09
+
+0.4.2 is a correctness and infrastructure release. Variants — enums with
+payloads, `Maybe`, `Presence` and error enums — keep their payload in place
+instead of one array per field (#290): a value with many payload fields is
+built up to 14× faster on Tomato. `rat` becomes a map key type,
+heterogeneous literals need an explicit `any` boundary, and
+`string.less` compares lexicographically (breaking). Anonymous actions now
+behave as the Book says: a captured successor is used when the closure is
+called or handed on (#322), a bound action carries its receiver (#324), a
+captured name cannot be rebound (#321), and an anonymous action does not
+recurse through its `let` (#318). Every engine prints the same uncaught
+failure report (#270), and `okkama check` also reports errors found while
+lowering (#317). The std drops 102 settlement wrappers around single
+awaits and hides its cleanup helpers (#264), which makes an HTTP/1 exchange
+up to 17% faster on Tomato. New tooling: the t/ suite (44 757 self-checking
+assertions on five engine configurations in the gate), micro-benchmarks for
+50 language constructs and std actions, an `.rpm` package and a 15-minute
+release gate. The current Sparrow runtime is now called Tomato, and the
+bundled SQLite is updated for CVE-2026-119375 (#330).
+
 ### Added
 
 - Micro-benchmarks (#244), next to the ladder in `okkama-docs/benchmarks/micro`:
@@ -2527,7 +2548,8 @@ First release of the Rust implementation: the compiler (lexer, parser, analysis,
 IR, Sparrow (VM with JIT) and JVM engines, the standard library, LSP, `fmt`, `lint`, the
 `blade` project manager, and packages for macOS and Linux.
 
-[Unreleased]: https://github.com/shootnix/okkama/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/shootnix/okkama/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/shootnix/okkama/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/shootnix/okkama/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/shootnix/okkama/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/shootnix/okkama/compare/v0.3.1...v0.3.2
