@@ -814,86 +814,102 @@ public final class Rt {
 
     // ----- равенство значений (#314) -----
 
+    /** {@code ==} двух {@code float}: численно, {@code -0.0 == 0.0}. */
+    public static boolean sameFloat(Double left, Double right) {
+        return left.doubleValue() == right.doubleValue();
+    }
+
     /**
      * {@code ==} значений Okkama: {@code float} численно, как скалярное {@code ==}
      * ({@code -0.0 == 0.0}), списки поэлементно, словари по ключам и значениям,
-     * объекты своим {@code equals}. Вложенные списки и словари обходит стек
-     * пар, а не рекурсия Java.
+     * объекты своим {@code equals}. Скаляры сравниваются на месте; вложенные
+     * списки и словари обходит стек пар, а не рекурсия Java.
      */
     public static boolean equal(Object left, Object right) {
-        ArrayList<Object> pending = null;
-        Object a = left;
-        Object b = right;
-        while (true) {
-            if (a != b) {
-                if (a instanceof Double x) {
-                    if (!(b instanceof Double y) || x.doubleValue() != y.doubleValue()) {
-                        return false;
-                    }
-                } else if (a instanceof List<?> x) {
-                    if (!(b instanceof List<?> y) || x.size() != y.size()) {
-                        return false;
-                    }
-                    if (pending == null) {
-                        pending = new ArrayList<Object>();
-                    }
-                    for (int index = x.size() - 1; index >= 0; index--) {
-                        pending.add(y.get(index));
-                        pending.add(x.get(index));
-                    }
-                } else if (a instanceof Map<?, ?> x) {
-                    if (!(b instanceof Map<?, ?> y) || x.size() != y.size()) {
-                        return false;
-                    }
-                    if (pending == null) {
-                        pending = new ArrayList<Object>();
-                    }
-                    // Оба словаря в порядке ключей: пары сравниваются по порядку.
-                    java.util.Iterator<? extends Map.Entry<?, ?>> others = y.entrySet().iterator();
-                    for (Map.Entry<?, ?> entry : x.entrySet()) {
-                        Map.Entry<?, ?> other = others.next();
-                        pending.add(other.getValue());
-                        pending.add(entry.getValue());
-                        pending.add(other.getKey());
-                        pending.add(entry.getKey());
-                    }
-                } else if (a == null || !a.equals(b)) {
+        if (left == right) {
+            return true;
+        }
+        if (left instanceof Double x) {
+            return right instanceof Double y && x.doubleValue() == y.doubleValue();
+        }
+        if (!(left instanceof List) && !(left instanceof Map)) {
+            return left != null && left.equals(right);
+        }
+        ArrayList<Object> pending = new ArrayList<Object>();
+        pending.add(right);
+        pending.add(left);
+        while (!pending.isEmpty()) {
+            Object a = pending.remove(pending.size() - 1);
+            Object b = pending.remove(pending.size() - 1);
+            if (a instanceof List<?> x) {
+                if (!(b instanceof List<?> y) || x.size() != y.size()) {
                     return false;
                 }
+                for (int index = 0; index < x.size(); index++) {
+                    if (!step(x.get(index), y.get(index), pending)) {
+                        return false;
+                    }
+                }
+            } else {
+                Map<?, ?> x = (Map<?, ?>) a;
+                if (!(b instanceof Map<?, ?> y) || x.size() != y.size()) {
+                    return false;
+                }
+                // Оба словаря в порядке ключей: пары сравниваются по порядку.
+                java.util.Iterator<? extends Map.Entry<?, ?>> others = y.entrySet().iterator();
+                for (Map.Entry<?, ?> entry : x.entrySet()) {
+                    Map.Entry<?, ?> other = others.next();
+                    if (!step(entry.getKey(), other.getKey(), pending)
+                        || !step(entry.getValue(), other.getValue(), pending)) {
+                        return false;
+                    }
+                }
             }
-            if (pending == null || pending.isEmpty()) {
-                return true;
-            }
-            a = pending.remove(pending.size() - 1);
-            b = pending.remove(pending.size() - 1);
         }
+        return true;
+    }
+
+    /** Пара элементов: скаляр и объект — сразу, список или словарь — в стек. */
+    private static boolean step(Object a, Object b, ArrayList<Object> pending) {
+        if (a == b) {
+            return true;
+        }
+        if (a instanceof Double x) {
+            return b instanceof Double y && x.doubleValue() == y.doubleValue();
+        }
+        if (a instanceof List || a instanceof Map) {
+            pending.add(b);
+            pending.add(a);
+            return true;
+        }
+        return a != null && a.equals(b);
     }
 
     /**
      * Хеш, согласованный с {@link #equal}: {@code -0.0} и {@code 0.0} дают один
-     * хеш (#314). Списки и словари обходятся стеком в прямом порядке.
+     * хеш. Списки и словари обходятся стеком в прямом порядке.
      */
     public static int hash(Object value) {
-        ArrayList<Object> pending = null;
-        Object current = value;
+        if (value instanceof Double x) {
+            return floatHash(x.doubleValue());
+        }
+        if (!(value instanceof List) && !(value instanceof Map)) {
+            return java.util.Objects.hashCode(value);
+        }
+        ArrayList<Object> pending = new ArrayList<Object>();
+        pending.add(value);
         int hash = 1;
-        while (true) {
+        while (!pending.isEmpty()) {
+            Object current = pending.remove(pending.size() - 1);
             if (current instanceof Double x) {
-                double number = x.doubleValue();
-                hash = 31 * hash + (number == 0.0 ? 0 : Double.hashCode(number));
+                hash = 31 * hash + floatHash(x.doubleValue());
             } else if (current instanceof List<?> x) {
                 hash = 31 * hash + x.size();
-                if (pending == null) {
-                    pending = new ArrayList<Object>();
-                }
                 for (int index = x.size() - 1; index >= 0; index--) {
                     pending.add(x.get(index));
                 }
             } else if (current instanceof Map<?, ?> x) {
                 hash = 31 * hash + x.size() + 7;
-                if (pending == null) {
-                    pending = new ArrayList<Object>();
-                }
                 ArrayList<Object> entries = new ArrayList<Object>(2 * x.size());
                 for (Map.Entry<?, ?> entry : x.entrySet()) {
                     entries.add(entry.getKey());
@@ -905,12 +921,20 @@ public final class Rt {
             } else {
                 hash = 31 * hash + java.util.Objects.hashCode(current);
             }
-            if (pending == null || pending.isEmpty()) {
-                return hash;
-            }
-            current = pending.remove(pending.size() - 1);
         }
+        return hash;
     }
+
+    private static int floatHash(double value) {
+        return value == 0.0 ? 0 : Double.hashCode(value);
+    }
+
+    /** Ключ множества для {@code -}: {@code -0.0} и {@code 0.0} — один. */
+    private static Object setKey(Object item) {
+        return item instanceof Double x && x.doubleValue() == 0.0 ? ZERO : item;
+    }
+
+    private static final Double ZERO = 0.0;
 
     /** {@code a - b - ...} over arrays: elements equal to none of the removed ones, in order. */
     public static List<Object> difference(List<?> array, Object[] removed) {
@@ -920,14 +944,17 @@ public final class Rt {
             for (Object item : (List<?>) part) {
                 all.add(item);
                 hashable &= item instanceof BigInteger || item instanceof String || item instanceof Boolean
-                    || item instanceof Byte || item instanceof Character;
+                    || item instanceof Byte || item instanceof Character || item instanceof Double;
             }
         }
         ArrayList<Object> result = new ArrayList<Object>(array.size());
         if (hashable) {
-            java.util.HashSet<Object> excluded = new java.util.HashSet<Object>(all);
+            java.util.HashSet<Object> excluded = new java.util.HashSet<Object>();
+            for (Object item : all) {
+                excluded.add(setKey(item));
+            }
             for (Object item : array) {
-                if (!excluded.contains(item)) {
+                if (!excluded.contains(setKey(item))) {
                     result.add(item);
                 }
             }

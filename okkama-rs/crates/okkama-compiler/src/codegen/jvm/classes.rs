@@ -295,6 +295,8 @@ fn deep_field(descriptor: &str) -> bool {
     )
 }
 
+const FLOAT_FIELD: &str = "Ljava/lang/Double;";
+
 /// `equals(Object)`: тот же класс и равные поля в порядке объявления
 /// (`val.eq`, §16.3). Ссылочные поля сравнивает `Objects.equals`, а `float`,
 /// списки и словари — `Rt.equal` (`-0.0 == 0.0`, #314).
@@ -307,6 +309,7 @@ fn equals_method(pool: &mut ConstantPool, object: &ObjectLayout, name: &str) -> 
         "(Ljava/lang/Object;Ljava/lang/Object;)Z",
     )?;
     let deep_equals = pool.method_ref(runtime::RT, "equal", "(Ljava/lang/Object;Ljava/lang/Object;)Z")?;
+    let same_float = pool.method_ref(runtime::RT, "sameFloat", "(Ljava/lang/Double;Ljava/lang/Double;)Z")?;
     let mut asm = Asm::default();
     let same = asm.label();
     let differ = asm.label();
@@ -333,7 +336,13 @@ fn equals_method(pool: &mut ConstantPool, object: &ObjectLayout, name: &str) -> 
         if is_int_slot(descriptor) {
             asm.jump(0xa0, differ, 2); // if_icmpne
         } else {
-            let equals = if deep_field(descriptor) { deep_equals } else { objects_equals };
+            let equals = if descriptor == FLOAT_FIELD {
+                same_float
+            } else if deep_field(descriptor) {
+                deep_equals
+            } else {
+                objects_equals
+            };
             asm.op_index(0xb8, equals, 2, 1); // invokestatic
             asm.jump(0x99, differ, 1); // ifeq
         }
