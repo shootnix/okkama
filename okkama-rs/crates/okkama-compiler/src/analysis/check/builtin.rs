@@ -309,8 +309,10 @@ impl Checker<'_, '_> {
             return Self::poisoned(span);
         };
         let Some((op, params, result)) = self.builtin_signature(&receiver, &name.text) else {
+            // The full type (`@Reading`), not only its category (#300).
             let message = format!(
-                "Type \"{category}\" has no builtin action \"{}\"",
+                "Type \"{}\" has no builtin action \"{}\"",
+                self.type_name(&receiver),
                 name.text
             );
             self.error(name.span, message);

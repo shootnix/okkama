@@ -2069,8 +2069,11 @@ pub(super) fn equality_kind(ty: &Ty) -> Option<CompareKind> {
         Ty::Char => Some(CompareKind::Char),
         Ty::Str => Some(CompareKind::Str),
         Ty::Enum(_) => Some(CompareKind::Enum),
+        // A variant compares by case and payload: `==` desugars to that
+        // (`variant_compare`), searches use the same deep equality (#300).
         Ty::Object(..)
         | Ty::Role(..)
+        | Ty::Variant(..)
         | Ty::Array(_)
         | Ty::Map(..)
         | Ty::Range

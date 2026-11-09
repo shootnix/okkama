@@ -1704,14 +1704,12 @@
      "cases": [
       "L05.collections.map-difference",
       "L05.map.int-key-order",
-      "L05.map.key-types",
-      "L05.map.rat-keys"
+      "L05.map.key-types"
      ],
      "mandatory_cases": [
       "L05.collections.map-difference",
       "L05.map.int-key-order",
-      "L05.map.key-types",
-      "L05.map.rat-keys"
+      "L05.map.key-types"
      ],
      "requirement": "required"
     },
@@ -1719,14 +1717,12 @@
      "cases": [
       "L05.collections.map-merge",
       "L05.map.fallback-lazy",
-      "L05.map.object-key",
-      "L05.map.rat-keys"
+      "L05.map.object-key"
      ],
      "mandatory_cases": [
       "L05.collections.map-merge",
       "L05.map.fallback-lazy",
-      "L05.map.object-key",
-      "L05.map.rat-keys"
+      "L05.map.object-key"
      ],
      "requirement": "required"
     },
@@ -1752,15 +1748,13 @@
       "L05.collections.map-difference",
       "L05.collections.map-merge",
       "L05.map.access",
-      "L05.map.object-key",
-      "L05.map.rat-keys"
+      "L05.map.object-key"
      ],
      "mandatory_cases": [
       "L05.collections.map-difference",
       "L05.collections.map-merge",
       "L05.map.access",
-      "L05.map.object-key",
-      "L05.map.rat-keys"
+      "L05.map.object-key"
      ],
      "requirement": "required"
     }
@@ -5475,10 +5469,10 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L01.lex.crlf.raw-string-keeps-cr"
+      "L01.lex.crlf.raw-string-discards-cr"
      ],
      "mandatory_cases": [
-      "L01.lex.crlf.raw-string-keeps-cr"
+      "L01.lex.crlf.raw-string-discards-cr"
      ],
      "requirement": "required"
     },
@@ -5512,7 +5506,7 @@
     "contracts/DISCREPANCY-LEDGER.md#d-030"
    ],
    "status": "mandatory",
-   "title": "CR LF line endings are accepted; a CR between tokens is whitespace and a fenced raw string keeps its CRs (owner decision, #310)"
+   "title": "CR LF line endings are accepted and CR inside raw strings is discarded, as in Go (owner decision)"
   },
   {
    "aspects": {
@@ -5891,11 +5885,11 @@
     },
     "interaction": {
      "cases": [
-      "L01.lex.crlf.raw-string-keeps-cr",
+      "L01.lex.crlf.raw-string-discards-cr",
       "L01.lex.raw.concatenation"
      ],
      "mandatory_cases": [
-      "L01.lex.crlf.raw-string-keeps-cr",
+      "L01.lex.crlf.raw-string-discards-cr",
       "L01.lex.raw.concatenation"
      ],
      "requirement": "required"
@@ -27189,25 +27183,31 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L05.variants.case-layouts",
       "L05.variants.nested"
      ],
      "mandatory_cases": [
+      "L05.variants.case-layouts",
       "L05.variants.nested"
      ],
      "requirement": "required"
     },
     "interaction": {
      "cases": [
+      "L05.variants.case-layouts",
       "L05.variants.evaluation",
       "L05.variants.modules",
       "L05.variants.ownership",
-      "L05.variants.payload"
+      "L05.variants.payload",
+      "L05.variants.search"
      ],
      "mandatory_cases": [
+      "L05.variants.case-layouts",
       "L05.variants.evaluation",
       "L05.variants.modules",
       "L05.variants.ownership",
-      "L05.variants.payload"
+      "L05.variants.payload",
+      "L05.variants.search"
      ],
      "requirement": "required"
     },
@@ -27226,9 +27226,11 @@
     },
     "normal": {
      "cases": [
+      "L05.variants.case-layouts",
       "L05.variants.payload"
      ],
      "mandatory_cases": [
+      "L05.variants.case-layouts",
       "L05.variants.payload"
      ],
      "requirement": "required"
@@ -28643,50 +28645,6 @@
    ],
    "status": "mandatory",
    "title": "length() and slice() count Unicode code points; slice never clamps"
-  },
-  {
-   "aspects": {
-    "boundary": {
-     "cases": [
-      "L02.string.order-consistent"
-     ],
-     "mandatory_cases": [
-      "L02.string.order-consistent"
-     ],
-     "requirement": "required"
-    },
-    "interaction": {
-     "cases": [
-      "L02.string.order-consistent"
-     ],
-     "mandatory_cases": [
-      "L02.string.order-consistent"
-     ],
-     "requirement": "required"
-    },
-    "invalid": {
-     "cases": [],
-     "mandatory_cases": [],
-     "requirement": "n/a: the actions accept any two strings; < on strings is VAL.ORDERING's invalid aspect"
-    },
-    "normal": {
-     "cases": [
-      "L02.string.order-consistent"
-     ],
-     "mandatory_cases": [
-      "L02.string.order-consistent"
-     ],
-     "requirement": "required"
-    }
-   },
-   "contract": "VAL.STRING-ORDER",
-   "discrepancies": [],
-   "family": "Values and operators",
-   "spec_refs": [
-    "docs/okkama-spec-11072026.md#6.6"
-   ],
-   "status": "mandatory",
-   "title": "string less, less_or_equal and order compare lexicographically by code point: one order per type (#281)"
   },
   {
    "aspects": {
@@ -31025,5 +30983,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "01de8846d2b031f2d4f0c66c7a7904dafc1d5db51e8e267640dfa51085c32c74"
+ "suite_tree_sha256": "5e04d9146e0b825ab3423ad99b1cf435c592c29b028c73886e809aed74902529"
 }
