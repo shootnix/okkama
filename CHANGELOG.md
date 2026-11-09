@@ -8,6 +8,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- The t/ suite (#245): self-checking Okkama programs that print TAP —
+  hand-written basics, operators and language features (`t/base`, `t/op`,
+  `t/lang`) and generated families (`tools/t/gen.py`: strings, collections,
+  nesting, control, structures, value-object keys, casts, lexical forms,
+  enums, …) whose expected values come from a Python oracle, not from
+  running Okkama. 44 748 checks in 125 files; every configuration (ir,
+  sparrow, jvm, ir-passes-off, ir-gc-stress) must print the same stream.
+  `tools/t/run.py` runs it (`--cage` locally), and it is a mandatory step of
+  the release gate. It found #294–#310; checks blocked by an open issue
+  are held back by name (#263 now).
 - Packages: an `.rpm` for Linux next to the `.deb` (#313), built by
   `tools/package.sh --installer` from the same tree with `rpmbuild`
   (`GPL-3.0-only`, `Requires: glibc >= 2.35`, a nightly version written with

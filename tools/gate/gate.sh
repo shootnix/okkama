@@ -13,7 +13,10 @@
 #      целиком), на IR без IR-проходов (OKKAMA_IR_PASSES=none), на IR со
 #      сборкой циклов на каждом кандидате (OKKAMA_GC=stress) и, до 0.5, на прежнем VM (`sparrow-origin`, только для
 #      сведения: у него нет нативов, добавленных с 0.4.0);
-#   3. встроенные тесты всех модулей std на IR и Sparrow (tools/gate/std-tests.py).
+#   3. встроенные тесты всех модулей std на IR и Sparrow (tools/gate/std-tests.py);
+#   4. t/ — самопроверяющиеся программы на Okkama (tools/t/run.py, #245) на всех
+#      конфигурациях: IR, Sparrow, JVM, IR без проходов и IR со стресс-сборкой;
+#      TAP-потоки конфигураций обязаны совпадать.
 #
 # Статус каждого шага — код выхода его команды (ocs: 0 только если прошли все
 # обязательные кейсы). Итог — gate.json в каталоге журналов: коммит, шаги со
@@ -186,6 +189,16 @@ if OKKAMA_CHECK_REGISTERS=1 python3 "$ROOT/tools/gate/std-tests.py" | tee "$LOGS
 else
     record "std tests" fail $((SECONDS - started))
     fail "std inline tests"
+fi
+
+step "t/ suite"
+started=$SECONDS
+if python3 "$ROOT/tools/t/run.py" --configs ir,sparrow,jvm,ir-passes-off,ir-gc-stress --okkama "$OKKAMA" \
+        | tee "$LOGS/t-suite.log"; [[ ${PIPESTATUS[0]} -eq 0 ]]; then
+    record "t suite" pass $((SECONDS - started))
+else
+    record "t suite" fail $((SECONDS - started))
+    fail "t/ suite"
 fi
 
 finish
