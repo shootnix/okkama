@@ -551,6 +551,24 @@ main() is int { throw Boom.failed(7); }",
 }
 
 #[test]
+fn an_uncaught_error_text_escapes_its_string_payload() {
+    // #306: the payload is an Okkama literal; the report stays one line.
+    let dir = WorkDir::new();
+    dir.build_source(
+        "Escaped",
+        "module app v1.0.0;
+enum Ferr is Error = (text(s is string));
+main() is int { throw Ferr.text(\"line1\\nline2 \\\"q\\\"\"); }",
+    );
+    let output = dir.java("Escaped", &[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr).trim_end(),
+        "Ferr: Ferr.text(\"line1\\nline2 \\\"q\\\"\")"
+    );
+}
+
+#[test]
 fn collection_programs_compute_the_same_results_as_the_interpreter() {
     let dir = WorkDir::new();
     // Ожидаемые коды сверены с okkama-pl на тех же программах.

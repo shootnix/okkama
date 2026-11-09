@@ -99,6 +99,8 @@ pub(super) enum Task {
     Describe {
         ty: Ty,
     },
+    /// Строка payload ошибки в синтаксисе литерала Okkama (#306).
+    EscapeText,
     /// Тело анонимного action: `Ctx::closures[index]`.
     Closure {
         index: usize,
@@ -513,7 +515,9 @@ impl<'r, 'a> Ctx<'r, 'a> {
             Task::VariantText { variant } => self.variant_modules[variant.0],
             Task::Closure { index } => self.closures[*index].body.module,
             Task::Test { index } => self.reg.tests[*index].module,
-            Task::Runtime { .. } | Task::Member { .. } | Task::Describe { .. } => self.reg.root(),
+            Task::Runtime { .. } | Task::Member { .. } | Task::Describe { .. } | Task::EscapeText => {
+                self.reg.root()
+            }
             Task::Native { native } => self.reg.natives[*native].module,
             Task::Global { constant } => self.reg.consts[*constant].module,
         }
@@ -820,6 +824,14 @@ impl<'r, 'a> Ctx<'r, 'a> {
     }
 
     /// Функция текста `bool` (`true`/`false`) или case enum без payload.
+    /// `(str) -> str`: экранирование строки payload для `text()` ошибки.
+    pub fn escape_text(&mut self) -> FuncId {
+        if let Some(func) = self.task_map.get(&Task::EscapeText) {
+            return *func;
+        }
+        self.allocate(Task::EscapeText, "$escape.text".to_string())
+    }
+
     pub fn describe(&mut self, ty: &Ty) -> FuncId {
         let task = Task::Describe { ty: ty.clone() };
         if let Some(func) = self.task_map.get(&task) {

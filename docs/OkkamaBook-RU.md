@@ -1544,9 +1544,15 @@ throw DbError.query("select 1", 42);
   причина (`RepoError.db(cause)`). Объекты, роли, коллекции, `char`, действия
   и `any` запрещены.
 - `text()` порождается из варианта: `DbError.closed`,
-  `DbError.query("select 1", 42)`, `RepoError.db(DbError.closed)`. Строки — в
-  кавычках, числа — через `string()`, булевы — `true`/`false`, варианты enum —
-  `Enum.case`. Вызывается на значении и через `Error`.
+  `DbError.query("select 1", 42)`, `RepoError.db(DbError.closed)`. Строки
+  записываются как строковые литералы Okkama (#306): `\\`, `\"`, `\n`, `\t` и
+  `\r` экранируются, прочие управляющие символы становятся `\u{1b}`,
+  печатный Unicode остаётся как есть — поэтому `Ferr.text("a \"q\"\n").text()`
+  даёт `Ferr.text("a \"q\"\n")`, кавычка или запятая внутри payload не
+  выдаёт себя за границу аргумента, а перевод строки не разрывает отчёт о
+  неперехваченной ошибке. Числа — через `string()`, булевы — `true`/`false`,
+  варианты enum — `Enum.case`, вложенные error enum — по тем же правилам.
+  Вызывается на значении и через `Error`.
 - Значение error enum приводится к `Error`; неперехваченное, оно выводится
   как `DbError: DbError.query("select 1", 42)`.
 

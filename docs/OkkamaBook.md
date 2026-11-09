@@ -1471,8 +1471,14 @@ throw DbError.query("select 1", 42);
   collections, `char`, actions and `any` are rejected.
 - `text()` is generated from the case: `DbError.closed`,
   `DbError.query("select 1", 42)`, `RepoError.db(DbError.closed)`. Strings
-  are quoted, numbers use `string()`, booleans are `true`/`false`, enum cases
-  are `Enum.case`. It is callable on the value and through `Error`.
+  are written as Okkama string literals (#306): `\\`, `\"`, `\n`, `\t` and
+  `\r` are escaped, other control characters become `\u{1b}`, printable
+  Unicode stays as is — so `Ferr.text("a \"q\"\n").text()` is
+  `Ferr.text("a \"q\"\n")`, a quote or comma inside a payload cannot pass for
+  an argument boundary, and a newline cannot split an uncaught-error report.
+  Numbers use `string()`, booleans are `true`/`false`, enum cases are
+  `Enum.case`, nested error enums use the same rules. It is callable on the
+  value and through `Error`.
 - An error enum value converts to `Error`; uncaught, it reports
   `DbError: DbError.query("select 1", 42)`.
 
