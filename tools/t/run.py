@@ -125,6 +125,10 @@ def main():
     unknown = [config for config in configs if config not in CONFIGS]
     if unknown:
         parser.error(f"unknown configurations: {', '.join(unknown)} (known: {', '.join(CONFIGS)})")
+    # Programs run from their own directory: the binary needs an absolute path.
+    args.okkama = os.path.abspath(args.okkama)
+    if not os.access(args.okkama, os.X_OK):
+        parser.error(f"no okkama binary at {args.okkama} (build it or pass --okkama)")
     if not args.no_generate:
         subprocess.run([sys.executable, os.path.join(HERE, "gen.py")], check=True, stdout=subprocess.DEVNULL)
     tests = files(args.paths)
