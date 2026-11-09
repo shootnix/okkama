@@ -65,3 +65,14 @@ python3 runner-tests/test_schema_sync.py
 ./ocs run --adapter adapters/rust/adapter.json --profile full-release --case <your id prefix>
 ./ocs coverage
 ```
+
+## The std inventory
+
+`contracts/stdlib.json` holds one `STD.*` contract per module of `std/`. It is
+generated: run `python3 tools/inventory_std.py ../std --write` in the same
+change that adds, removes or renames a std module or changes its public
+declarations, and commit the result with it. The release gate runs
+`tools/inventory_std.py ../std --check` and fails when the file is stale or
+the scan reports a problem (#282). A new mandatory `STD.*` contract starts as
+a coverage gap until a case observes the module's behaviour.
+

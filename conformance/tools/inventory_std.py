@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Inventory the public surface of an Okkama standard library tree.
 
-Usage: tools/inventory_std.py [STD_ROOT] [--write]
+Usage: tools/inventory_std.py [STD_ROOT] [--write | --check]
+
+--check exits 1 when contracts/stdlib.json is not what --write would write
+(the release gate runs it, #282).
 
 Writes contracts/stdlib.json: one STD.* coverage contract per module, built
 from a scan of every module's directly owned declarations and public actions. The scanner is a small token-level
@@ -333,6 +336,7 @@ def contract_id(module):
 
 def main(argv):
     write = "--write" in argv
+    check = "--check" in argv
     args = [a for a in argv if not a.startswith("--")]
     root = os.path.abspath(args[0] if args else os.path.join(SUITE, "..", "std"))
     modules = []
@@ -409,11 +413,19 @@ def main(argv):
     print("modules: %(modules)d (public %(public_modules)d, substrate %(substrate_modules)d), declarations %(declarations)d, public actions %(public_actions)d" % inv["totals"])
     for p in problems:
         print("problem: " + p)
+    target = os.path.join(SUITE, "contracts", "stdlib.json")
+    text = json.dumps(doc, indent=2) + "\n"
     if write:
-        with open(os.path.join(SUITE, "contracts", "stdlib.json"), "w") as fh:
-            json.dump(doc, fh, indent=2)
-            fh.write("\n")
+        with open(target, "w") as fh:
+            fh.write(text)
         print("written contracts/stdlib.json")
+    if check:
+        with open(target) as fh:
+            current = fh.read()
+        if current != text or problems:
+            print("contracts/stdlib.json is stale: run tools/inventory_std.py ../std --write")
+            return 1
+        print("contracts/stdlib.json is current")
     return 0
 
 
