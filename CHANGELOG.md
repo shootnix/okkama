@@ -16,7 +16,7 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `match`, `try`/`catch`, `destroy`) and 11 of one std action (JSON, base64,
   hex, SHA-256, regex, UTF-8, split, replace, `Sorted`, `ParsedInt`). Each
   times N repetitions in-process after a warm-up; `run.py` reports net ns/op
-  over the empty loop on the core, the IR engine and the JVM, checks that the
+  over the empty loop on Tomato, the IR engine and the JVM, checks that the
   engines agree on a checksum, and flags changes beyond the noise band
   against a saved release; `coverage.py` lists the std modules that have no
   benchmark yet (12 of 473 have one).

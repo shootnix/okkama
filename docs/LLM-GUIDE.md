@@ -172,7 +172,7 @@ passes off and ir under GC stress; std 232 modules pass on ir and sparrow
 Benchmarks live outside the repository in `../okkama-docs/benchmarks`
 (`OKKAMA_REPO` points the runner at a checkout; default `../okkama-new`).
 
-- Micro-benchmarks (#244): `python3 micro/run.py --okkama BIN [--engines sparrow,ir,jvm] [--runs 5] [--only NAME,…] [--label L] [--compare micro/results/OLD.json]` in `okkama-docs/benchmarks` — one construct (`micro/lang`) or std action (`micro/std`) per program, timed in-process, net ns/op over the empty loop; `micro/coverage.py` lists std modules without one (`STD-COVERAGE.md`)
+- Micro-benchmarks (#244): `python3 micro/run.py --okkama BIN [--engines tomato,ir,jvm] [--runs 5] [--only NAME,…] [--label L] [--compare micro/results/OLD.json]` in `okkama-docs/benchmarks` — one construct (`micro/lang`) or std action (`micro/std`) per program, timed in-process, net ns/op over the empty loop; `micro/coverage.py` lists std modules without one (`STD-COVERAGE.md`)
 - Engine ladder: `python3 run.py --runs 10 [--only 03-float] [--engines sparrow-core,sparrow,ir,jvm,python,perl,ruby]`
   — `sparrow-core` is the core (`sparrow`), `sparrow` the previous VM
   (`sparrow-origin`); results in `results/`; `export.py` writes a report into
