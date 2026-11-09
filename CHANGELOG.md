@@ -6,6 +6,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Fixed
+
+- Lifetimes: a resource bound in an `if`, `match`, `try` or `catch` branch
+  is destroyed when the branch ends, the last `let` included, unless the
+  branch's value is used (#308). A branch passed its last value (a `let` or
+  an unused expression) to the enclosing scope even as a statement, so
+  `if true { let a = Res(); let b = Res(); }` destroyed `a` at once and `b`
+  only at the end of the action — out of order, and after resources its
+  `destroy` needed could be closed. A value that is used (`let r = if … {
+  Res(); } else { Res(); };`) still moves out. Same on every engine;
+  conformance case `L07.destroy.branch-scope` (constant and dynamic
+  conditions, nested blocks, match, try, a throw, a kept value).
+
 ### Added
 
 - `rat` is a map key type (#296): `%rat:V`, rat-key literals, indexing,
