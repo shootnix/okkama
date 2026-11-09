@@ -6,6 +6,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Fixed
+
+- Diagnostics: a positional call that only a field-shorthand constructor
+  could take now says so before generic inference and before the arguments
+  are checked (#311): `Box(5)` for `Box(:v)` reads `Constructor of "Box"
+  takes named arguments only: write Box(v: …)` instead of `Cannot infer
+  generic parameter "T"`, and `let b is Box<int> = Box(5)` no longer reports
+  a mismatch with `Box<int>`. Positional overloads, variadic constructors and
+  real inference failures are unchanged; compile time is unchanged (median of
+  10 over constructor-heavy t/ files: 0.153 → 0.154 s).
+
 ### Added
 
 - `rat` is a map key type (#296): `%rat:V`, rat-key literals, indexing,
