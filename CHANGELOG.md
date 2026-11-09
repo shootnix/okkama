@@ -6,7 +6,23 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
-### Fixed
+### Added
+
+- Packages: an `.rpm` for Linux next to the `.deb` (#313), built by
+  `tools/package.sh --installer` from the same tree with `rpmbuild`
+  (`GPL-3.0-only`, `Requires: glibc >= 2.35`, a nightly version written with
+  `~`), with its `.sha256`, in releases and nightlies. CI installs it on
+  Fedora 41 and runs the smoke programs. The binaries need glibc 2.35, so
+  the RPM targets Fedora 36+, RHEL 10 and openSUSE Tumbleweed; RHEL 8/9 need
+  an older-glibc build (noted in #313).
+- `rat` is a map key type (#296): `%rat:V`, rat-key literals, indexing,
+  `has()`, `keys()`/`values()`, `+`/`-` and generic maps work on every
+  engine. A key is the reduced value, so `rat(1, 2)`, `rat(2, 4)` and `2 / 4`
+  are one key, and keys sort by value. Numeric categories stay apart:
+  `%rat:int` takes no `int` key. A missing rat key reads `Map key not found:
+  1/2` on Sparrow and the IR engine (it printed a debug form or failed). The
+  specification (8.8), the Book (EN/RU), the Bible (ch. 8) and the LLM
+  context say so. Conformance: case `L05.map.rat-keys`.
 
 ### Changed
 
@@ -20,96 +36,6 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `L01.lex.crlf.raw-string-discards-cr`; DEF-006 is withdrawn. Lexing a
   3.5 MB raw literal is about 35 % faster (median of 10, LF, CRLF and mixed
   endings alike): the per-character filter is gone.
-
-### Fixed
-
-
-
-### Documentation
-
-- `int(...)` keeps arbitrary precision (#309): casts of `int`, `byte` and
-  `rat` sources are exact at any size (a `rat` truncates toward zero); only a
-  `float` source is checked against the signed-64 range. The specification
-  (6.6.1) and the Book (5.1.1, EN/RU) said every source was range-checked;
-  the engines never did. Conformance case `L02.cast.int-arbitrary-precision`.
-
-### - `contains` and `index_of` work on arrays of enums with payloads —
-
-  `@Maybe<T>`, `@Presence<T>`, user enums, generic or not (#300). They use
-  the deep equality of array `==` and `-`: the case, then the payload. A
-  `±0.0` payload is the one corner where that differs from the variant's own
-  `==` (#314). A builtin missing on a collection names its full type
-  (`Type "@any" has no builtin action "contains"`, not `"array"`).
-  Conformance case `L05.variants.search`.
-
-### - `text()` of an error enum writes string payloads as Okkama string literals
-
-  (#306): quotes, backslashes, `\n`, `\t`, `\r` and other control characters
-  (`\u{1b}`) are escaped, printable Unicode is kept, nested error enums
-  follow the same rules. `Ferr.text("a \"q\"\n")` printed a bare quote and a
-  line break, so one payload could look like two arguments and an uncaught
-  report could span lines. One shared lowering helper does it for every
-  engine; the Book (14.2) gives the rules. Conformance case
-  `L07.error-enum.text-escaping`.
-
-### - Sparrow core: a map lookup with `else` on a `float` key failed JIT
-
-  verification (`arg has type f64, expected i64`): the key went to the
-  runtime helper as a float register instead of its word (#301). The other
-  helper calls were checked for the same mistake; none takes a float.
-  Conformance case `L05.map.float-key-fallback`.
-
-### - Parser: a statement `match` and `try … catch` take one optional `;`, like
-
-  `if` and `loop` (#302); the formatter keeps the chosen spelling (it refused
-  to format such files before). `last if a { 1; } else { 2; };` leaves the
-  loop with the `if` expression instead of reading `a` as a condition; `last`
-  now parses its value like `return` and `throw` (#303). Compile time of the
-  t/ nesting and control files is unchanged (median of 10: 0.247 → 0.246 s).
-
-### - Diagnostics: a positional call that only a field-shorthand constructor
-
-  could take now says so before generic inference and before the arguments
-  are checked (#311): `Box(5)` for `Box(:v)` reads `Constructor of "Box"
-  takes named arguments only: write Box(v: …)` instead of `Cannot infer
-  generic parameter "T"`, and `let b is Box<int> = Box(5)` no longer reports
-  a mismatch with `Box<int>`. Positional overloads, variadic constructors and
-  real inference failures are unchanged; compile time is unchanged (median of
-  10 over constructor-heavy t/ files: 0.153 → 0.154 s).
-
-### - A boolean choice or `if` with a literal condition whose selected branch is
-
-  an untagged `[]` or `[:]` (`(false ?? [1] !! []) == []`) no longer stops
-  the compiler with invalid IR (#298). The lowered value takes the analyzed
-  type of the whole expression (retagging the empty collection), for literal
-  and variable conditions alike; a literal condition still emits only the
-  selected branch. Conformance case `L05.choice.empty-collections`; compile
-  time of branch-heavy t/ files is unchanged (median of 10: 0.386 → 0.388 s).
-
-
-### Added
-
-- Packages: an `.rpm` for Linux next to the `.deb` (#313), built by
-  `tools/package.sh --installer` from the same tree with `rpmbuild`
-  (`GPL-3.0-only`, `Requires: glibc >= 2.35`, a nightly version written with
-  `~`), with its `.sha256`, in releases and nightlies. CI installs it on
-  Fedora 41 and runs the smoke programs. The binaries need glibc 2.35, so
-  the RPM targets Fedora 36+, RHEL 10 and openSUSE Tumbleweed; RHEL 8/9 need
-  an older-glibc build (noted in #313).
-
-### Added
-
-- `rat` is a map key type (#296): `%rat:V`, rat-key literals, indexing,
-  `has()`, `keys()`/`values()`, `+`/`-` and generic maps work on every
-  engine. A key is the reduced value, so `rat(1, 2)`, `rat(2, 4)` and `2 / 4`
-  are one key, and keys sort by value. Numeric categories stay apart:
-  `%rat:int` takes no `int` key. A missing rat key reads `Map key not found:
-  1/2` on Sparrow and the IR engine (it printed a debug form or failed). The
-  specification (8.8), the Book (EN/RU), the Bible (ch. 8) and the LLM
-  context say so. Conformance: case `L05.map.rat-keys`.
-
-### Changed
-
 - **Breaking:** `string.less(other)` and `string.less_or_equal(other)`
   compare lexicographically by Unicode code point, the order of
   `string.order()` and `ordering()`. They compared lengths, so code that
@@ -136,6 +62,47 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- `contains` and `index_of` work on arrays of enums with payloads —
+  `@Maybe<T>`, `@Presence<T>`, user enums, generic or not (#300). They use
+  the deep equality of array `==` and `-`: the case, then the payload. A
+  `±0.0` payload is the one corner where that differs from the variant's own
+  `==` (#314). A builtin missing on a collection names its full type
+  (`Type "@any" has no builtin action "contains"`, not `"array"`).
+  Conformance case `L05.variants.search`.
+- `text()` of an error enum writes string payloads as Okkama string literals
+  (#306): quotes, backslashes, `\n`, `\t`, `\r` and other control characters
+  (`\u{1b}`) are escaped, printable Unicode is kept, nested error enums
+  follow the same rules. `Ferr.text("a \"q\"\n")` printed a bare quote and a
+  line break, so one payload could look like two arguments and an uncaught
+  report could span lines. One shared lowering helper does it for every
+  engine; the Book (14.2) gives the rules. Conformance case
+  `L07.error-enum.text-escaping`.
+- Sparrow core: a map lookup with `else` on a `float` key failed JIT
+  verification (`arg has type f64, expected i64`): the key went to the
+  runtime helper as a float register instead of its word (#301). The other
+  helper calls were checked for the same mistake; none takes a float.
+  Conformance case `L05.map.float-key-fallback`.
+- Parser: a statement `match` and `try … catch` take one optional `;`, like
+  `if` and `loop` (#302); the formatter keeps the chosen spelling (it refused
+  to format such files before). `last if a { 1; } else { 2; };` leaves the
+  loop with the `if` expression instead of reading `a` as a condition; `last`
+  now parses its value like `return` and `throw` (#303). Compile time of the
+  t/ nesting and control files is unchanged (median of 10: 0.247 → 0.246 s).
+- Diagnostics: a positional call that only a field-shorthand constructor
+  could take now says so before generic inference and before the arguments
+  are checked (#311): `Box(5)` for `Box(:v)` reads `Constructor of "Box"
+  takes named arguments only: write Box(v: …)` instead of `Cannot infer
+  generic parameter "T"`, and `let b is Box<int> = Box(5)` no longer reports
+  a mismatch with `Box<int>`. Positional overloads, variadic constructors and
+  real inference failures are unchanged; compile time is unchanged (median of
+  10 over constructor-heavy t/ files: 0.153 → 0.154 s).
+- A boolean choice or `if` with a literal condition whose selected branch is
+  an untagged `[]` or `[:]` (`(false ?? [1] !! []) == []`) no longer stops
+  the compiler with invalid IR (#298). The lowered value takes the analyzed
+  type of the whole expression (retagging the empty collection), for literal
+  and variable conditions alike; a literal condition still emits only the
+  selected branch. Conformance case `L05.choice.empty-collections`; compile
+  time of branch-heavy t/ files is unchanged (median of 10: 0.386 → 0.388 s).
 - Packages: the publish job downloads only the package artifacts
   (`okkama-*`). Since 0.4.1 the release gate uploads its report as an
   artifact too, and `gh release create dist/*` failed on that directory, so
@@ -143,6 +110,11 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Documentation
 
+- `int(...)` keeps arbitrary precision (#309): casts of `int`, `byte` and
+  `rat` sources are exact at any size (a `rat` truncates toward zero); only a
+  `float` source is checked against the signed-64 range. The specification
+  (6.6.1) and the Book (5.1.1, EN/RU) said every source was range-checked;
+  the engines never did. Conformance case `L02.cast.int-arbitrary-precision`.
 - `byte` no longer mixes with other numbers in the documents either (#294,
   decision #230): the Book (5.3, 8.1, 8.4, the builtin rules; EN/RU), the
   specification (8.3, 8.4, ranges, 8.7) and the LLM context said that
