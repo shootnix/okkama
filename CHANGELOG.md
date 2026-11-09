@@ -36,6 +36,8 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- The Sparrow core is now called Tomato: the current Sparrow runtime (crate `sparrow-core`, binary `sparrow`) in the docs, the Book and benchmark reports; entries below still say "Sparrow core".
+
 - std: a single await no longer needs a `FutureGroup` and a settlement
   object (#264, first part). With structured await (#147), cancelling a task
   already cancels the future it awaits and waits for it, so 68 places in 25
