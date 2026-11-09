@@ -642,3 +642,33 @@ fn constants_are_computed_by_the_compiler() {
         assert!(found.iter().any(|m| m.contains(expected)), "{text}: {found:?}");
     }
 }
+
+#[test]
+fn untagged_empty_collections_take_their_siblings_type_at_any_depth() {
+    // #297: order, nesting, maps, branches, comparisons, constants and results.
+    for body in [
+        "let a is @@int = [[1], []];",
+        "let a is @@int = [[], [1]];",
+        "let m is %string:@int = [\"a\": [1], \"b\": []];",
+        "let y is @@@int = [[[]], [[1]]];",
+        "let z is @%string:int = [[:], [\"k\": 1]];",
+        "let v is @@int = [[]]; let ok = v == [[]];",
+        "let ok = [[1]] == [[]];",
+        "let c = true; let x is @@int = if c { [[]]; } else { [[2, 3]]; };",
+        "let x is @@int = match 1 { case 1 { [[]]; } else { [[1]]; } };",
+    ] {
+        let found = messages(&format!("main() is int {{ {body} 0; }}"));
+        assert!(found.is_empty(), "{body}: {found:?}");
+    }
+    let found = messages("const K is @@int = [[]]; object P { P(); r() is @@int { [[]]; } } main() is int { 0; }");
+    assert!(found.is_empty(), "{found:?}");
+    // Concrete differences are not taken for empty ones.
+    assert_eq!(
+        messages("main() is int { let c = true; let x = if c { [[1]]; } else { [[\"s\"]]; }; 0; }"),
+        ["Branches produce different types: @@int and @@string"]
+    );
+    assert_eq!(
+        messages("main() is int { let ok = [[1]] == [[\"s\"]]; 0; }"),
+        ["Cannot compare @@int and @@string"]
+    );
+}

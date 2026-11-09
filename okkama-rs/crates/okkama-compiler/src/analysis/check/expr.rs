@@ -1490,11 +1490,11 @@ impl Checker<'_, '_> {
         let element_type = match &target {
             Some(target) => Some(target.clone()),
             None if types.iter().any(Ty::is_error) => Some(Ty::Error),
-            None => match types.first() {
-                None => None,
-                Some(first) if types.iter().all(|ty| ty == first) => Some(first.clone()),
-                Some(_) => Some(Ty::Any),
-            },
+            // Elements meet at the type each fits by retagging, so `[]` adds no
+            // conflict to `[1]` at any depth (#297); concrete differences
+            // still give `any` (R08).
+            None if types.is_empty() => None,
+            None => Some(Ty::unify_all(&types).unwrap_or(Ty::Any)),
         };
         let Some(element_type) = element_type else {
             let mut out = Self::typed(ExprKind::Array(Vec::new()), Ty::array(Ty::Never), span);
@@ -1598,10 +1598,8 @@ impl Checker<'_, '_> {
                 };
                 let value = if values.iter().any(Ty::is_error) {
                     Ty::Error
-                } else if values.iter().all(|ty| *ty == values[0]) {
-                    values[0].clone()
                 } else {
-                    Ty::Any
+                    Ty::unify_all(&values).unwrap_or(Ty::Any)
                 };
                 (key, value)
             }

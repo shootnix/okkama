@@ -1630,10 +1630,11 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             return value.clone();
         }
         match (&value.ty, target) {
-            (Type::Array(element), Type::Array(_)) if **element == Type::Never => {
+            // Only `never` parts change, at any depth (#297).
+            (Type::Array(_), Type::Array(_)) if value.ty.fits_untagged(target) => {
                 self.emit(InstKind::Retag(value.value), target.clone(), span)
             }
-            (Type::Map(key, _), Type::Map(..)) if **key == Type::Never => {
+            (Type::Map(..), Type::Map(..)) if value.ty.fits_untagged(target) => {
                 self.emit(InstKind::MapRetag(value.value), target.clone(), span)
             }
             (Type::Successor(_), _) => self.take(value.clone(), span),
@@ -1643,12 +1644,11 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
 
     /// Тип слияния значений: тегированная коллекция, иначе `C` вместо `^C`.
     fn join_type(types: &[Type]) -> Type {
-        if let Some(tagged) = types.iter().find(|ty| match ty {
-            Type::Array(element) => **element != Type::Never,
-            Type::Map(key, _) => **key != Type::Never,
-            _ => false,
-        }) {
-            return tagged.clone();
+        // Collections: the type every arm fits by retagging (#297).
+        if types.iter().all(|ty| matches!(ty, Type::Array(_) | Type::Map(..)))
+            && let Some(joined) = types[1..].iter().try_fold(types[0].clone(), |joined, ty| joined.unify_untagged(ty))
+        {
+            return joined;
         }
         let first = types[0].clone();
         if types.iter().all(|ty| *ty == first) {

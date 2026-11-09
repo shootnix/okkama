@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.literal.empty-collections",
+  "title": "untagged [] and [:] take the collection type of siblings, branches, comparisons and boundaries, at any depth",
+  "purpose": "Observe that an empty literal adds no type conflict and never turns a literal into any (#297).",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.LITERAL-IDENTITY",
+      "aspects": [
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "2 1 0 2 1\ntrue false true true true 2\n2\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #297 from the owner's decision and the Book (25.2)",
+    "expected_basis": "Book 25.2: an untagged empty collection adds no conflict to a known collection slot; the literal types are @@int, %string:@int, @@@int and @%string:int, so the sizes and lookups follow by hand; [[]] equals [[]] and differs from [[1]]."
+  },
+  "status": "mandatory"
+}

@@ -6,6 +6,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Fixed
+
+- Inference: an untagged `[]` or `[:]` takes the collection type of its
+  siblings, of the other branch or the other operand, at any depth and in
+  either order (#297): `[[1], []]` and `[[], [1]]` are `@@int` (they were
+  `@any`), `["a": [1], "b": []]` is `%string:@int`, `[[1]] == [[]]` and
+  `if c { [[]]; } else { [[2, 3]]; }` type-check. The value is retagged at
+  no cost: `retag`/`map.retag` (OIR) and `move` (Sparrow) now accept a
+  source that differs from the target only by `never` parts. Concrete
+  differences still need `any` (`[[1], ["s"]]`). Conformance case
+  `L05.literal.empty-collections`.
+
 ### Added
 
 - `rat` is a map key type (#296): `%rat:V`, rat-key literals, indexing,

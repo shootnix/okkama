@@ -175,6 +175,37 @@ pub struct FnSig {
 }
 
 impl Type {
+    /// Подходит ли тип к `target`, отличаясь от него только местами `never`
+    /// нетегированных пустых коллекций: `array<array<never>>` к
+    /// `array<array<int>>` (#297). Такое значение перетегируется без затрат.
+    pub fn fits_untagged(&self, target: &Type) -> bool {
+        match (self, target) {
+            _ if self == target => true,
+            (Type::Never, _) => true,
+            (Type::Array(a), Type::Array(b)) => a.fits_untagged(b),
+            (Type::Map(k1, v1), Type::Map(k2, v2)) => k1.fits_untagged(k2) && v1.fits_untagged(v2),
+            _ => false,
+        }
+    }
+
+    /// Общий тип двух значений, к которому оба подходят перетегированием.
+    pub fn unify_untagged(&self, other: &Type) -> Option<Type> {
+        if self.fits_untagged(other) {
+            return Some(other.clone());
+        }
+        if other.fits_untagged(self) {
+            return Some(self.clone());
+        }
+        match (self, other) {
+            (Type::Array(a), Type::Array(b)) => Some(Type::Array(Box::new(a.unify_untagged(b)?))),
+            (Type::Map(k1, v1), Type::Map(k2, v2)) => Some(Type::Map(
+                Box::new(k1.unify_untagged(k2)?),
+                Box::new(v1.unify_untagged(v2)?),
+            )),
+            _ => None,
+        }
+    }
+
     /// Тип значения после погашения обязательства `^C` → `C`.
     pub fn taken(&self) -> Type {
         match self {
