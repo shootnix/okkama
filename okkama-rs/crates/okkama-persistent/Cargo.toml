@@ -1,0 +1,16 @@
+[package]
+name = "okkama-persistent"
+description = "Prototype persistent collections for 0.4.3 (#246): a 32-way trie vector with a tail and a frontier-append flat vector, measured against the flat copy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints.rust]
+# The frontier vector appends into a buffer that other versions read (see
+# `frontier.rs` for the invariant); everything else is safe code.
+unsafe_code = "deny"
+missing_debug_implementations = "warn"

@@ -1201,6 +1201,130 @@ NEST_TYPES = [
 ]
 
 
+# ----- family: arrays built step by step (0.4.3, #246–#251) -------------------------
+
+# Arrays grown one append at a time take the engines' persistent paths (shared
+# buffers, tries) where one-shot literals and builders do not. Sizes sit on
+# both sides of every boundary those representations have: the chain
+# threshold (32), buffer capacities (powers of two) and trie levels (32,
+# 32 + 32², …).
+PERSISTENCE_SIZES = [0, 1, 2, 31, 32, 33, 34, 63, 64, 65, 66, 100, 127, 128, 129, 1023, 1024, 1025, 1056, 1057, 2049]
+
+PERSISTENCE_DECLARATIONS = """object Grow {
+    Grow();
+    chain(i is int, n is int, items is @int) is @int {
+        if i == n { return items; }
+        self.chain(i + 1, n, items + [i * 7 % 101]);
+    }
+    pairs(i is int, n is int, items is @int) is @int {
+        if i == n { return items; }
+        if i + 1 == n { return items + [i * 7 % 101]; }
+        self.pairs(i + 2, n, items + [i * 7 % 101, (i + 1) * 7 % 101]);
+    }
+    front(i is int, n is int, items is @int) is @int {
+        if i == n { return items; }
+        self.front(i + 1, n, [i * 7 % 101] + items);
+    }
+    log(i is int, n is int, log is Log) is Log {
+        if i == n { return log; }
+        self.log(i + 1, n, log.add(i * 7 % 101));
+    }
+    texts(i is int, n is int, items is @string) is @string {
+        if i == n { return items; }
+        self.texts(i + 1, n, items + [(i * 7 % 101).string()]);
+    }
+    rows(i is int, n is int, items is @@int) is @@int {
+        if i == n { return items; }
+        self.rows(i + 1, n, items + [[i, i * 7 % 101]]);
+    }
+}
+
+object Log {
+    has items is @int;
+    Log(:items);
+    add(x is int) is ^Log { ^items = items + [x]; }
+    items() is @int { items; }
+}""".splitlines()
+
+
+def persistence_family():
+    batch = Batch("arrays built one append at a time", imports=['import "cell" take Cell;'],
+                  declarations=PERSISTENCE_DECLARATIONS)
+
+    def v(i):
+        return i * 7 % 101
+
+    def arr(values):
+        return "[" + ", ".join(str(x) for x in values) + "]" if values else "@int()"
+
+    for n in PERSISTENCE_SIZES:
+        model = [v(i) for i in range(n)]
+        builds = {
+            "a chain of items + [x]": f"Grow().chain(0, {n}, @int())",
+            "a chain of items + [x, y]": f"Grow().pairs(0, {n}, @int())",
+            "a successor field": f"Grow().log(0, {n}, Log(items: @int())).items()",
+        }
+        for how, build in list(builds.items()) + [("a cell", None)]:
+            program = batch.program()
+            xs, ex = program.fresh("xs"), program.fresh("ex")
+            if build is None:
+                c = program.fresh("cell")
+                setup = [f"let {c} = Cell(@int());",
+                         f"for 0..{n} -> i {{ {c}.replace({c}.value() + [i * 7 % 101]); }}",
+                         f"let {xs} = {c}.value();"]
+            else:
+                setup = [f"let {xs} = {build};"]
+            setup.append(f"let {ex} is @int = (0..{n}).map() -> i {{ i * 7 % 101; }};")
+            # Two versions appended to the same one, and each extended again:
+            # every version keeps its own elements. One setup for the whole
+            # group, so that no part of the file loses it.
+            va, vb, vc, vd = (program.fresh(p) for p in "abcd")
+            setup += [f"let {va} = {xs} + [1000];", f"let {vb} = {xs} + [2000];",
+                      f"let {vc} = {va} + [3000];", f"let {vd} = {vb} + [4000, 5000];"]
+            desc = f"{n} elements by {how}"
+            program.ok(f"{xs} == {ex}", f"{desc} equal one map()", setup)
+            program.is_(f"{xs}.size()", lit_int(n), f"{desc}: size")
+            program.is_(f"{xs}.reduce(0) -> a, x {{ a + x; }}", lit_int(sum(model)), f"{desc}: reduce")
+            for i in sorted({0, 1, 30, 31, 32, 33, n // 2, n - 2, n - 1}):
+                if 0 <= i < n:
+                    program.is_(f"{xs}[{i}]", lit_int(model[i]), f"{desc}: [{i}]")
+            program.ok(f"({xs}[{n}] else -1) == -1", f"{desc}: [{n}] is out of bounds")
+            for a, b in sorted({(0, n), (0, min(n, 33)), (min(n, 31), n), (n // 3, n - n // 3)}):
+                if 0 <= a <= b <= n:
+                    program.ok(f"{xs}.slice({a}, {b}) == {ex}.slice({a}, {b})", f"{desc}: slice({a}, {b})")
+            for k in sorted({0, 1, 32, n // 2, n}):
+                program.ok(f"{xs}.take({k}) == {ex}.take({k})", f"{desc}: take({k})")
+                program.ok(f"{xs}.drop({k}) == {ex}.drop({k})", f"{desc}: drop({k})")
+            program.ok(f"{xs}.reversed() == {ex}.reversed()", f"{desc}: reversed")
+            program.ok(f"({xs}.map() -> x {{ x + 1; }}) == ({ex}.map() -> x {{ x + 1; }})", f"{desc}: map")
+            program.is_(f"({xs}.filter() -> x {{ x % 2 == 0; }}).size()", lit_int(sum(1 for x in model if x % 2 == 0)),
+                        f"{desc}: filter")
+            if n:
+                last = model[-1]
+                program.is_(f"{xs}.index_of({last}) else -1", lit_int(model.index(last)), f"{desc}: index_of the last")
+                program.ok(f"{xs}.contains({last})", f"{desc}: contains the last")
+            program.ok(f"!{xs}.contains(1000)", f"{desc}: does not contain 1000")
+            program.ok(f"{va} == {ex} + [1000] && {vb} == {ex} + [2000]", f"{desc}: two appends to one version")
+            program.ok(f"{vc} == {ex} + [1000, 3000] && {vd} == {ex} + [2000, 4000, 5000]", f"{desc}: each extended again")
+            program.ok(f"{xs} == {ex} && {xs}.size() == {n}", f"{desc}: the origin is unchanged")
+            program.is_(f"{va}.size() + {vb}.size() + {vc}.size() + {vd}.size()", lit_int(4 * n + 7), f"{desc}: sizes")
+            program.ok(f"{xs} + {xs} == {ex} + {ex}", f"{desc}: xs + xs")
+            program.ok(f"{va} + {vb} == {ex} + [1000] + {ex} + [2000]", f"{desc}: two versions joined")
+
+        # Other shapes of chains.
+        program = batch.program()
+        desc = f"{n} elements"
+        program.ok(f"Grow().front(0, {n}, @int()) == {arr(list(reversed(model)))}", f"{desc} by [x] + items")
+        texts = [str(x) for x in model]
+        program.is_(f"Grow().texts(0, {n}, @string()).join(\",\")", lit_str(",".join(texts)), f"{desc}: strings by a chain")
+        rows = program.fresh("rows")
+        program.is_(f"{rows}.size()", lit_int(n), f"{desc}: rows by a chain", [f"let {rows} = Grow().rows(0, {n}, [[0, 0]].take(0));"])
+        if n:
+            program.ok(f"{rows}[{n - 1}] == [{n - 1}, {model[-1]}]", f"{desc}: the last row")
+            program.ok(f"{rows}[0] == [0, 0]", f"{desc}: the first row")
+    return batch.programs
+
+
 def nesting_family():
     import itertools
     batch = Batch("constructs nested in each other: every pair for five types, every triple for int",
@@ -2084,6 +2208,7 @@ FAMILIES = {
     "casts": casts_family,
     "lexical": lexical_family,
     "enums": enums_family,
+    "persistence": persistence_family,
 }
 
 

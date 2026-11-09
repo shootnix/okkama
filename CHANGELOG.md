@@ -6,6 +6,33 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+0.4.3 is an experiment: persistent collections (#246–#255), measured before
+anything is kept. Not released until the measurements show a net gain.
+
+### Changed
+
+- Tomato: a chain of appends no longer copies the array at every step
+  (#246, prototype). `items + [x]` on an array of 32 elements or more that
+  was itself made by an append writes into a shared buffer with room to
+  grow, when `items` ends at the buffer's frontier; the new version is a
+  three-word view (the buffer, where it starts, its own length), and the old
+  one keeps its elements. A second version appended to the same one copies,
+  as before. One-shot arrays (literals, builders, `map`, `filter`, slices)
+  stay flat, so reads do not change: machine code takes one branch on a
+  header bit before the element load. `OKKAMA_ARRAYS=flat` turns it off.
+  Persistence stand (`okkama-docs/benchmarks/persistence`, same binary both
+  ways, 10 repetitions after a warm-up, M2 Max): building n elements one
+  append at a time costs 55–66 ns per append at every n (flat: 6.1 µs at
+  n = 16 000, 48 µs at 100 000, no repetition within 20 s at 10⁶); reads —
+  random and sequential indexing, a 2-D matrix, `reduce`, `map`, `filter`,
+  `==`, `contains` — move by −0.4% on geometric mean (−1.3…+1.0% per size,
+  noise); one write and R random reads per step: 10–80× faster. A native
+  prototype of the 32-way trie with a tail (`crates/okkama-persistent`)
+  reads 3–6× slower than a flat array in index loops and takes 22% more
+  memory, which is why reads stay flat. New t/ family `persistence` (3 102
+  checks: chains, pairs, successor fields, cells, prepends, branching
+  versions, at sizes around 32, 64, 128, 1 024 and 2 048).
+
 ### Fixed
 
 - Tomato: maps no longer pile up in memory (#331). A map's entries live in
@@ -29,6 +56,8 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   −32%. One scenario costs more: 4 000 versions `base - [k: 0]` thrown away
   at once (+28…40%), which the old heap did not pay because it never freed
   them.
+
+## [0.4.2] — 2026-11-09
 
 0.4.2 is a correctness and infrastructure release. Variants — enums with
 payloads, `Maybe`, `Presence` and error enums — keep their payload in place

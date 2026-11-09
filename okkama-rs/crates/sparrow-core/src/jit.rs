@@ -1297,7 +1297,7 @@ impl Emitter<'_, '_> {
                 self.check(pc);
                 self.builder.ins().jump(load, &[]);
                 self.builder.switch_to_block(load);
-                let value = self.element(array, position, self.bytes_array(array_register));
+                let value = self.element(array, header, position, self.bytes_array(array_register));
                 self.set_word(&dst.0, value);
             }
             I::ObjNew { dst, object, fields } => {
@@ -1604,7 +1604,7 @@ impl Emitter<'_, '_> {
                 let miss = self.builder.create_block();
                 self.builder.ins().brif(valid, hit, &[], miss, &[]);
                 self.builder.switch_to_block(hit);
-                let item = self.element(array, position, self.bytes_array(array_register));
+                let item = self.element(array, header, position, self.bytes_array(array_register));
                 // Edge moves read the old registers; the found value is written last.
                 self.jump_then(found, value.0, item);
                 self.builder.switch_to_block(miss);
@@ -1962,14 +1962,32 @@ impl Emitter<'_, '_> {
         matches!(self.register_type(&register), Some(Type::Array(element)) if Kind::of(&self.loaded.program, *element) == Kind::Byte)
     }
 
-    /// Element `position` (in bounds) of an array: a word, or a byte of a packed array.
-    fn element(&mut self, array: Value, position: Value, bytes: bool) -> Value {
+    /// Element `position` (in bounds) of an array whose header is `header`: a
+    /// word, or a byte of a packed array. A shared version (`heap::SHARED`,
+    /// #246) reads its buffer from its first element on; byte arrays are
+    /// never shared.
+    fn element(&mut self, array: Value, header: Value, position: Value, bytes: bool) -> Value {
         if bytes {
             let address = self.builder.ins().iadd(array, position);
             return self.builder.ins().uload8(types::I64, MEMORY, address, 8);
         }
+        let shared = self.builder.ins().band_imm_u(header, heap::SHARED as i64);
+        let (flat, view, done) = (self.builder.create_block(), self.builder.create_block(), self.builder.create_block());
+        self.builder.append_block_param(done, types::I64);
+        self.builder.ins().brif(shared, view, &[], flat, &[]);
+        self.builder.switch_to_block(flat);
         let offset = self.builder.ins().ishl_imm_u(position, 3);
         let address = self.builder.ins().iadd(array, offset);
+        self.builder.ins().jump(done, &[address.into()]);
+        self.builder.switch_to_block(view);
+        let buffer = self.builder.ins().load(types::I64, MEMORY, array, 8);
+        let start = self.builder.ins().load(types::I64, MEMORY, array, 16);
+        let slot = self.builder.ins().iadd(position, start);
+        let offset = self.builder.ins().ishl_imm_u(slot, 3);
+        let address = self.builder.ins().iadd(buffer, offset);
+        self.builder.ins().jump(done, &[address.into()]);
+        self.builder.switch_to_block(done);
+        let address = self.builder.block_params(done)[0];
         self.builder.ins().load(types::I64, MEMORY, address, 8)
     }
 

@@ -38,6 +38,22 @@ pub const ASCII: u64 = 1 << 13;
 /// A container (array, closure, map, box) with an entry in the resource walk
 /// summaries (#9): the walk looks the entry up only when this bit is set.
 pub const SUMMARY: u64 = 1 << 14;
+/// An array version whose elements live in a shared buffer (#246): word 1
+/// is the buffer, word 2 the position of the version's first element in it;
+/// the payload is the version's own length. Machine code reads elements
+/// through it (see `jit::element`), Rust code through [`Heap::elements`].
+pub const SHARED: u64 = 1 << 15;
+/// A flat array made by appending to an array of at least [`CHAIN_MIN`]
+/// elements: appending to it again is a chain, which gets a buffer.
+pub const APPENDED: u64 = 1 << 16;
+/// A buffer of shared arrays: a flat array whose payload counts the slots
+/// written so far (the frontier), with room for `1 << capacity_bits`
+/// elements. Slots below the frontier are never written again.
+pub const BUFFER: u64 = 1 << 17;
+const CAPACITY_SHIFT: u32 = 18;
+/// Arrays shorter than this are copied on append, as before: a copy of a
+/// few words costs less than a buffer and a view.
+pub const CHAIN_MIN: usize = 32;
 const PAGE_WORDS: usize = 64 * 1024 / 8;
 /// Bytes of one page of small cells.
 pub const PAGE_BYTES: usize = PAGE_WORDS * 8;
@@ -503,8 +519,84 @@ impl Heap {
         if header & PACKED != 0 {
             return std::borrow::Cow::Owned(self.bytes(array).iter().map(|&b| Word::from(b)).collect());
         }
+        if header & SHARED != 0 {
+            let (buffer, start) = self.shared(array);
+            // SAFETY: a version's slots are below its buffer's frontier, which
+            // nothing writes again.
+            return std::borrow::Cow::Borrowed(unsafe {
+                std::slice::from_raw_parts((buffer + 8 + start as Word * 8) as *const u64, length)
+            });
+        }
         // SAFETY: arrays are immutable after construction.
         std::borrow::Cow::Borrowed(unsafe { std::slice::from_raw_parts((array + 8) as *const u64, length) })
+    }
+
+    // ---- shared buffers (#246) ----
+
+    /// The buffer of a [`SHARED`] array and the position of its first element.
+    pub fn shared(&self, array: Word) -> (Word, usize) {
+        // SAFETY: a shared array has three words.
+        unsafe { (*((array + 8) as *const u64), *((array + 16) as *const u64) as usize) }
+    }
+
+    /// A buffer with room for `capacity` elements (rounded up to a power of
+    /// two) holding `parts` in order.
+    pub fn allocate_buffer(&mut self, repr: Repr, parts: &[&[Word]], capacity: usize) -> Word {
+        let capacity = capacity.next_power_of_two();
+        let used: usize = parts.iter().map(|part| part.len()).sum();
+        assert!(used <= capacity, "buffer too small");
+        self.counted("array buffer", 0, capacity + 1);
+        let buffer = self.allocate(capacity + 1);
+        // SAFETY: room for the header and `capacity` elements.
+        unsafe {
+            *(buffer as *mut u64) = header(ARRAY, repr, used as u32)
+                | BUFFER
+                | (u64::from(capacity.trailing_zeros()) << CAPACITY_SHIFT);
+            let mut at = buffer + 8;
+            for part in parts {
+                std::ptr::copy_nonoverlapping(part.as_ptr(), at as *mut u64, part.len());
+                at += part.len() as Word * 8;
+            }
+        }
+        buffer
+    }
+
+    /// The frontier (slots written) and the capacity of a buffer.
+    pub fn buffer_room(&self, buffer: Word) -> (usize, usize) {
+        let header = self.header_of(buffer);
+        (payload(header) as usize, 1 << ((header >> CAPACITY_SHIFT) & 63))
+    }
+
+    /// Write `items` at the frontier of `buffer` (the caller checked the room).
+    pub fn buffer_extend(&mut self, buffer: Word, items: &[Word]) {
+        let (used, capacity) = self.buffer_room(buffer);
+        assert!(used + items.len() <= capacity, "buffer overflow");
+        // SAFETY: the slots past the frontier are inside the buffer and no
+        // version covers them yet.
+        unsafe {
+            std::ptr::copy_nonoverlapping(items.as_ptr(), (buffer + 8 + used as Word * 8) as *mut u64, items.len());
+            let header = &mut *(buffer as *mut u64);
+            *header = (*header & 0xffff_ffff) | (((used + items.len()) as u64) << 32);
+        }
+    }
+
+    /// An array version of `length` elements of `buffer` from `start`.
+    pub fn allocate_view(&mut self, repr: Repr, buffer: Word, start: usize, length: usize) -> Word {
+        self.counted("array view", 0, 3);
+        let view = self.allocate(3);
+        // SAFETY: three words.
+        unsafe {
+            *(view as *mut u64) = header(ARRAY, repr, length as u32) | SHARED;
+            *((view + 8) as *mut u64) = buffer;
+            *((view + 16) as *mut u64) = start as u64;
+        }
+        view
+    }
+
+    /// Mark a flat array as made by an append (see [`APPENDED`]).
+    pub fn mark_appended(&mut self, array: Word) {
+        // SAFETY: `array` is a live array just allocated by the caller.
+        unsafe { *(array as *mut u64) |= APPENDED }
     }
 
     /// A byte array (`@byte`): one byte per element after the header.
@@ -694,6 +786,9 @@ impl Heap {
                 OBJECT => fields(&self.layouts.objects[payload(header) as usize], &mut push),
                 CLOSURE => fields(&self.layouts.closures[payload(header) as usize], &mut push),
                 FRAME => fields(&self.layouts.frames[payload(header) as usize], &mut push),
+                // A shared version keeps its buffer alive; the buffer traces
+                // the slots below its frontier like any array.
+                ARRAY if header & SHARED != 0 => push(unsafe { *((object + 8) as *const u64) }, Repr::Ref),
                 ARRAY => {
                     let repr = element_repr(header);
                     if repr != Repr::Raw {
@@ -1059,6 +1154,30 @@ mod tests {
         assert_eq!(heap.stats().external_live_bytes, 0);
         let total = heap.stats().external_allocated_bytes;
         assert!(total >= 9 * COLLECTION_FLOOR + live / 2 + live, "{total}");
+    }
+
+    /// Shared arrays (#246): a version reads its own slots of the buffer, the
+    /// buffer lives as long as any version and traces the slots below its
+    /// frontier, and writing past the frontier changes no version.
+    #[test]
+    fn shared_versions_keep_their_buffer_and_elements() {
+        let mut heap = Heap::new(layouts());
+        let texts: Vec<Word> = (0..40).map(|n| heap.allocate_text(&n.to_string())).collect();
+        let buffer = heap.allocate_buffer(Repr::Ref, &[&texts[..30]], 200);
+        assert_eq!(heap.buffer_room(buffer), (30, 256));
+        let short = heap.allocate_view(Repr::Ref, buffer, 0, 30);
+        heap.buffer_extend(buffer, &texts[30..40]);
+        let long = heap.allocate_view(Repr::Ref, buffer, 0, 40);
+        let tail = heap.allocate_view(Repr::Ref, buffer, 35, 5);
+        assert_eq!(heap.elements(short).len(), 30);
+        assert_eq!(heap.text(heap.elements(long)[39]), "39");
+        assert_eq!(heap.text(heap.elements(tail)[0]), "35");
+        // Only the tail view is a root: the buffer and every written slot survive.
+        heap.collect(|visit| visit(tail, Repr::Ref));
+        assert_eq!(heap.text(heap.elements(tail)[4]), "39");
+        assert_eq!(heap.buffer_room(buffer), (40, 256));
+        heap.collect(|_| {});
+        assert_eq!(heap.stats().large, 0, "the buffer dies with its last version");
     }
 
     /// Code point positions agree with a plain count from the start, in any
