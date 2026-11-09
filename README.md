@@ -87,11 +87,14 @@ crypto library.
 |---|---|---|
 | macOS, Apple Silicon | `okkama-<version>-macos-aarch64.pkg` | `okkama-<version>-macos-aarch64.tar.gz` |
 | macOS, Intel | `okkama-<version>-macos-x86_64.pkg` | `okkama-<version>-macos-x86_64.tar.gz` |
-| Linux x86_64 (glibc 2.35+) | `okkama-<version>-linux-x86_64.deb` | `okkama-<version>-linux-x86_64.tar.gz` |
+| Linux x86_64 (glibc 2.35+) | `okkama-<version>-linux-x86_64.deb`, `okkama-<version>-linux-x86_64.rpm` | `okkama-<version>-linux-x86_64.tar.gz` |
 
 ```sh
 # Debian / Ubuntu
 sudo apt install ./okkama-<version>-linux-x86_64.deb
+
+# Fedora 36+, RHEL 10, openSUSE Tumbleweed (glibc 2.35+)
+sudo dnf install ./okkama-<version>-linux-x86_64.rpm
 
 # macOS: the .pkg installs into /usr/local; or, without root, from the archive:
 tar -xzf okkama-<version>-macos-aarch64.tar.gz
