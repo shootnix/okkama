@@ -12,7 +12,8 @@ main() is int {
     t = t.ok(row.has("name"), "a map of any");
     let again is any = value;
     t = t.is([again, value].size(), 2, "boxes pass and store");
-    let mixed = [1, "two"];
-    t = t.is(mixed.size(), 2, "a heterogeneous literal without any");
+    // A heterogeneous literal needs a declared @any (#315); a nested one counts.
+    let nested is @@any = [[1, "two"], [3.0]];
+    t = t.is(nested[0].size(), 2, "a nested @any boundary boxes a heterogeneous literal");
     t.done();
 }

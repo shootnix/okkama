@@ -17,7 +17,7 @@ object Taker {
 
 main() is int {
     let out = Stdout();
-    let mixed = [1, "two"];
-    out.writeln(Taker().anything(mixed).string());
+    // The parameter is the declared boundary; an untyped local would not be (#315).
+    out.writeln(Taker().anything([1, "two"]).string());
     0;
 }

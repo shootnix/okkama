@@ -150,15 +150,44 @@ fn branch_values_cross_the_expected_type_one_by_one() {
 }
 
 #[test]
-fn heterogeneous_literals_box_their_elements_into_any() {
-    // R08: разнородный литерал — `@any`, каждый элемент упакован явно.
-    assert!(messages("main() is int { let xs = [1, \"a\"]; let ys is @any = xs; 0; }").is_empty());
+fn heterogeneous_literals_need_an_explicit_any_boundary() {
+    // #315: `any` never comes from inference; only a declared `@any`/`%K:any` boxes.
+    let array = "Array elements have incompatible types int and string; declare an explicit @any boundary to allow heterogeneous values";
+    let map = "Map values have incompatible types int and string; declare an explicit %string:any boundary to allow heterogeneous values";
+    assert_eq!(messages("main() is int { let xs = [1, \"a\"]; 0; }"), [array]);
     assert_eq!(
-        messages("main() is int { let xs = [1, \"a\"]; let ys is @int = xs; 0; }"),
-        ["Cannot initialize variable \"ys\" of type @int with @any"]
+        messages("main() is int { let xs = [1, 2.0]; 0; }"),
+        ["Array elements have incompatible types int and float; declare an explicit @any boundary to allow heterogeneous values"]
     );
-    // Объекты одной роли без цели — тоже `@any`: общая роль не выводится.
-    assert!(messages("main() is int { let xs is @int = [1, 2..=3]; 0; }").is_empty());
+    assert_eq!(messages("main() is int { let m = [\"a\": 1, \"b\": \"two\"]; 0; }"), [map]);
+    // An untyped local does not box: the binding is not a boundary.
+    assert_eq!(messages("main() is int { let xs = [1, \"a\"]; let ys is @any = xs; 0; }"), [array]);
+    // The error is at the literal, and nothing cascades from it.
+    let source = "module app v1.0.0; main() is int { let xs = [1, \"a\"]; let n = xs.size(); 0; }";
+    let found = errors(source);
+    assert_eq!(found.len(), 1);
+    let at = source.find("[1,").unwrap() as u32;
+    assert_eq!((found[0].span.start, found[0].span.end), (at, at + "[1, \"a\"]".len() as u32));
+    // Declared boundaries: bindings, parameters, results, constants, nested positions.
+    for accepted in [
+        "main() is int { let xs is @any = [1, \"a\"]; let m is %string:any = [\"a\": 1, \"b\": \"two\"]; 0; }",
+        "main() is int { let xs is @any = [1, 2.0]; let nested is @@any = [[1, \"a\"], [2.0]]; 0; }",
+        "main() is int { let m is %string:@any = [\"a\": [1, \"b\"]]; 0; }",
+        "object Box { Box(); size(xs is @any) is int { xs.size(); } } main() is int { Box().size([1, \"a\"]); }",
+        "object Box { Box(); row() is %string:any { [\"id\": 7, \"name\": \"Ada\"]; } } main() is int { Box().row().size(); }",
+        // Homogeneous literals and #297: an untagged `[]` is no conflict.
+        "main() is int { let xs is @int = [1, 2..=3]; let ys is @@int = [[1], []]; let zs = [[1], []]; let n is @@int = zs; 0; }",
+    ] {
+        assert!(messages(accepted).is_empty(), "{accepted}: {:?}", messages(accepted));
+    }
+    // A typed constant is a boundary too; an `any` value is never a compile-time
+    // constant (#153), and that is the only error.
+    assert_eq!(
+        messages("const MIXED is @any = [1, \"a\"]; main() is int { MIXED.size(); }"),
+        ["Constant \"MIXED\" cannot be computed by the compiler: its value has to cross a role or `any` boundary"]
+    );
+    // `any` is an element, not a collection boundary: the inner literal has none.
+    assert_eq!(messages("main() is int { let xs is @any = [[1, \"a\"]]; 0; }"), [array]);
 }
 
 #[test]
@@ -235,12 +264,10 @@ fn map_keys_have_exactly_one_type() {
         messages("main() is int { let m = [1: \"int\", \"1\": \"string\"]; 0; }"),
         ["Map keys have different types: int and string"]
     );
-    // Разнородные значения — `%K:any` (R08).
+    // Разнородные значения — только под объявленным `%K:any` (#315).
     assert!(
-        messages(
-            "main() is int { let m = [\"a\": 1, \"b\": \"two\"]; let n is %string:any = m; 0; }"
-        )
-        .is_empty()
+        messages("main() is int { let n is %string:any = [\"a\": 1, \"b\": \"two\"]; 0; }")
+            .is_empty()
     );
 }
 

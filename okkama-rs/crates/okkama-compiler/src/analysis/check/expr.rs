@@ -1474,7 +1474,7 @@ impl Checker<'_, '_> {
 
     /// `[a, b, 1..=3]`: элементы одного точного типа; диапазоны раскрываются.
     /// С целевым `@E` каждый элемент пересекает границу `E`; разнородные
-    /// элементы без цели — `@any` с явной упаковкой каждого (R08).
+    /// элементы — только под явным `@any`, каждый в box (R08, #315).
     fn array_literal(&mut self, elements: &[ast::Expr], expected: Option<&Ty>, span: Span) -> Expr {
         // Цель — `@E` или роль массивов `Sequencing<E>`/`Iterating<E>`.
         let target = match expected {
@@ -1523,10 +1523,22 @@ impl Checker<'_, '_> {
             Some(target) => Some(target.clone()),
             None if types.iter().any(Ty::is_error) => Some(Ty::Error),
             // Elements meet at the type each fits by retagging, so `[]` adds no
-            // conflict to `[1]` at any depth (#297); concrete differences
-            // still give `any` (R08).
+            // conflict to `[1]` at any depth (#297); concrete differences need
+            // an explicit `@any` (#315).
             None if types.is_empty() => None,
-            None => Some(Ty::unify_all(&types).unwrap_or(Ty::Any)),
+            None => Some(match Ty::unify_all(&types) {
+                Some(ty) => ty,
+                None => {
+                    let (first, other) = conflict(&types);
+                    let message = format!(
+                        "Array elements have incompatible types {} and {}; declare an explicit @any boundary to allow heterogeneous values",
+                        self.type_name(&first),
+                        self.type_name(&other)
+                    );
+                    self.error(span, message);
+                    Ty::Error
+                }
+            }),
         };
         let Some(element_type) = element_type else {
             let mut out = Self::typed(ExprKind::Array(Vec::new()), Ty::array(Ty::Never), span);
@@ -1568,7 +1580,8 @@ impl Checker<'_, '_> {
     }
 
     /// `[k: v, …]`: ключи и значения — по одному точному типу; повтор ключа —
-    /// последнее значение (R05). Разнородные значения без цели — `any` (R08).
+    /// последнее значение (R05). Разнородные значения — только под явным
+    /// `%K:any` (#315).
     fn map_literal(
         &mut self,
         entries: &[ast::MapEntry],
@@ -1630,8 +1643,19 @@ impl Checker<'_, '_> {
                 };
                 let value = if values.iter().any(Ty::is_error) {
                     Ty::Error
+                } else if let Some(value) = Ty::unify_all(&values) {
+                    value
                 } else {
-                    Ty::unify_all(&values).unwrap_or(Ty::Any)
+                    // Разнородные значения — только под явным `%K:any` (#315).
+                    let (first, other) = conflict(&values);
+                    let message = format!(
+                        "Map values have incompatible types {} and {}; declare an explicit %{}:any boundary to allow heterogeneous values",
+                        self.type_name(&first),
+                        self.type_name(&other),
+                        self.type_name(&key)
+                    );
+                    self.error(span, message);
+                    Ty::Error
                 };
                 (key, value)
             }
@@ -2086,6 +2110,19 @@ fn expr_path(expr: &ast::Expr) -> Option<Vec<ast::Name>> {
 
 /// Как сравниваются на равенство два значения типа `ty` (`==`, `contains`).
 /// `any` не распаковывается: коллекция из `any` не сравнима никогда.
+/// Первая пара типов без общего: объединение предыдущих и элемент, который
+/// с ним не сходится (`unify_all` уже вернул `None`, #315).
+fn conflict(types: &[Ty]) -> (Ty, Ty) {
+    let mut joined = types[0].clone();
+    for ty in &types[1..] {
+        match joined.unify_untagged(ty) {
+            Some(next) => joined = next,
+            None => return (joined, ty.clone()),
+        }
+    }
+    unreachable!("the types have no common type")
+}
+
 pub(super) fn equality_kind(ty: &Ty) -> Option<CompareKind> {
     if holds_any(ty) {
         return None;

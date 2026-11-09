@@ -36,6 +36,26 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- Heterogeneous collection literals need an explicit `any` boundary (#315,
+  owner's option 2): `let a = [1, "two"];`, `let b = [1, 2.0];` and
+  `let m = ["x": 1, "y": "two"];` are compile-time errors at the literal —
+  "Array elements have incompatible types int and string; declare an explicit
+  @any boundary to allow heterogeneous values", and for maps "Map values have
+  incompatible types int and string; declare an explicit %string:any
+  boundary …". The compiler used to infer `@any`/`%K:any`, which the Book,
+  the spec and `COLL.LITERAL-IDENTITY` ruled out. Accepted where the expected
+  type has `any` elements: a typed binding (`let a is @any = [1, "two"];`), a
+  declared parameter or result, and nested positions under one
+  (`@@any`, `%string:@any`); an untyped local is not a boundary, and an
+  `any` element is not a collection boundary (`let x is @any = [[1, "a"]];`
+  is rejected). Homogeneous literals, `[[1], []]` (#297) and boxing at
+  explicit boundaries are unchanged. Impact audit with `okkama check`: std
+  (537 files), examples (8), the Bible examples (77), the Book's checkable
+  examples (171) and the generated t/ files (82) — no change; the only
+  programs that relied on the inferred `any` were tests of that rule itself:
+  2 conformance cases, 2 compiler tests and one t/ check, rewritten.
+  Conformance: `L05.literal.heterogeneous-boundaries` and five
+  `…-rejected` cases; spec 6.2/6.6.2, Book 9 and 31 (EN/RU), Bible 4.5.
 - A fenced raw string keeps every character between its delimiters,
   carriage returns included (#310): ```` ```a<CR><LF>b``` ```` is `a\r\nb`
   (length 4) and ```` ```a<CR>b``` ```` is `a\rb`. The lexer dropped every CR

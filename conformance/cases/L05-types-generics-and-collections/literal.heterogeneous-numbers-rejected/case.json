@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.literal.heterogeneous-numbers-rejected",
+  "title": "int and float elements do not widen: [1, 2.0] needs an @any boundary",
+  "purpose": "Mixed numeric categories get no common numeric type, no union and no automatic @any.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.LITERAL-IDENTITY",
+      "aspects": [
+        "invalid",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "#315",
+    "expected_basis": "Owner decision on #315: heterogeneous concrete elements without an expected any element type are a compile-time error; any is never inferred."
+  },
+  "status": "mandatory"
+}
