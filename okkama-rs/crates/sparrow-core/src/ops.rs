@@ -400,13 +400,15 @@ fn flattening_tries() -> bool {
 /// copied flat as before (and marked [`crate::heap::APPENDED`] when `a` is
 /// large, so that the next append starts a chain).
 fn append_shared(runtime: &mut Runtime, repr: Repr, words: &[Word], size: usize) -> Option<Word> {
-    use crate::heap::{APPENDED, SHARED, payload};
+    use crate::heap::{APPENDED, PREPENDED, SHARED, payload};
     if !shared_arrays() || words.len() < 2 {
         return None;
     }
     let first = words[0];
     let header = runtime.heap.header_of(first);
-    if header & (SHARED | APPENDED) == 0 {
+    // A version made by an append or a prepend: a chain either way, also
+    // one that alternates ends.
+    if header & (SHARED | APPENDED | PREPENDED) == 0 {
         return None;
     }
     let length = payload(header) as usize;
@@ -421,11 +423,13 @@ fn append_shared(runtime: &mut Runtime, repr: Repr, words: &[Word], size: usize)
             return Some(runtime.heap.allocate_view(repr, buffer, start, size));
         }
     }
-    // A new buffer twice the size, a quarter of its room in front, so that
-    // a chain that also prepends does not copy at every turn.
+    // A new buffer twice the size; a chain that has grown at the front too
+    // keeps a quarter of the room there, so that alternating ends does not
+    // copy at every turn.
     let head = runtime.heap.elements(first).into_owned();
     let capacity = (2 * size).next_power_of_two();
-    let front = (capacity - size) / 4;
+    let both = header & PREPENDED != 0 || (header & SHARED != 0 && runtime.heap.shared(first).1 > 0);
+    let front = if both { (capacity - size) / 4 } else { 0 };
     let buffer = runtime.heap.allocate_buffer(repr, &[&head, &rest], capacity, front);
     Some(runtime.heap.allocate_view(repr, buffer, front, size))
 }
@@ -436,13 +440,13 @@ fn append_shared(runtime: &mut Runtime, repr: Repr, words: &[Word], size: usize)
 /// into a new buffer twice the size with three quarters of its room in
 /// front. `None` for anything else.
 fn prepend_shared(runtime: &mut Runtime, repr: Repr, words: &[Word], size: usize) -> Option<Word> {
-    use crate::heap::{PREPENDED, SHARED, payload};
+    use crate::heap::{APPENDED, PREPENDED, SHARED, payload};
     if !shared_arrays() || words.len() < 2 {
         return None;
     }
     let last = words[words.len() - 1];
     let header = runtime.heap.header_of(last);
-    if header & (SHARED | PREPENDED) == 0 {
+    if header & (SHARED | APPENDED | PREPENDED) == 0 {
         return None;
     }
     let length = payload(header) as usize;

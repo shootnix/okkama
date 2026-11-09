@@ -73,6 +73,23 @@ anything is kept. Not released until the measurements show a net gain.
   gains replacement chains up to 33 000 elements with branches from older
   versions (3 481 checks), also under GC stress.
 
+- Tomato: a chain of prepends (`[x] + items`) no longer copies the array at
+  every step either (#247, prototype). A shared buffer keeps room at both
+  ends; its free slots hold a word no element can be (0 for `int` and
+  reference elements, the unbound raw word for the others), which the
+  collector does not take for a pointer. `[x] + items`, where `items` has at
+  least 32 elements and was made by an append or a prepend, writes right
+  before `items` when it starts at its buffer's lowest written slot and
+  there is room, else into a new buffer twice the size with three quarters
+  of its room in front; a chain that alternates ends is recognised from
+  either end, and a buffer that has grown at the front keeps a quarter of
+  its room there when an append outgrows it. Persistence stand, same binary:
+  a chain of prepends 61–92 ns per step at every n (flat: 4.6 µs at 16 000,
+  32 µs at 100 000), alternating ends 63–82 ns (flat: the same O(n)); reading
+  an array after prepends is as fast as a flat one. t/ family `persistence`:
+  prepends to one version from two sides, both ends at once, alternating
+  ends.
+
 ### Fixed
 
 - Tomato: maps no longer pile up in memory (#331). A map's entries live in
