@@ -378,6 +378,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Documentation
 
+- The Book no longer promises recursive anonymous actions (#318). A `let`
+  binding becomes visible only after its initializer is checked, so an
+  anonymous action cannot call itself through the `let` that holds it (the
+  compiler always rejected that as an undefined action); recursion goes
+  through named object actions. Book 18.5 EN/RU and spec 9.2 say so, and
+  OCS pins it: recursive `let`, parenthesized and typed forms and a later
+  local are rejected, a shadowing `let` reaches the outer binding.
+
 - `int(...)` keeps arbitrary precision (#309): casts of `int`, `byte` and
   `rat` sources are exact at any size (a `rat` truncates toward zero); only a
   `float` source is checked against the signed-64 range. The specification

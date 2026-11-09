@@ -1,0 +1,54 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.anonymous.recursive-typed-rejected",
+  "title": "an explicitly typed let does not make its anonymous action recursive",
+  "purpose": "Invalid anonymous action forms are rejected before the program runs.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.ANON-ACTIONS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes this an error without fixing the detection stage; static analysis may reject it, otherwise execution fails. Either way the program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.2",
+    "docs/okkama-spec-11072026.md#8.10.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #318",
+    "expected_basis": "spec 9.2: a local binding becomes visible only after its initializer has been checked; an anonymous action cannot refer to the let that will hold it (#318). The program would print, so empty stdout also shows it did not run."
+  },
+  "status": "mandatory"
+}

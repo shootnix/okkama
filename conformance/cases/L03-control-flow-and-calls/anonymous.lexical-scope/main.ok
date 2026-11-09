@@ -1,0 +1,37 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Math {
+    Math();
+    fact(n is int) is int {
+        if n <= 1 { return 1; }
+        n * self.fact(n - 1);
+    }
+    adder(amount is int) is (int) is int { (value is int) is int { value + amount; }; }
+}
+
+main() is int {
+    let out = Stdout();
+    let base = 10;
+    let add = (value is int) is int { value + base; };
+    // An earlier action value is captured like any value.
+    let twice = (value is int) is int { add(add(value)); };
+    out.writeln(twice(1).string());
+    let step = (value is int) is int { value + 1; };
+    {
+        // The new `step` is not visible in its own initializer: this calls
+        // the outer one.
+        let step = (value is int) is int { step(value) * 2; };
+        out.writeln(step(3).string());
+    }
+    let nested = (a is int) is int {
+        let inner = (b is int) is int { a + b + base; };
+        inner(1);
+    };
+    out.writeln(nested(2).string());
+    let escaped = Math().adder(5);
+    out.writeln(escaped(1).string());
+    out.writeln(Math().fact(5).string());
+    0;
+}
