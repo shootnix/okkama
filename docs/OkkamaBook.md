@@ -2478,7 +2478,10 @@ Binding the closure to a local or to aliases keeps them, and one obligation
 shared by several closures or aliases stays one. Invoking the closure uses
 them; returning it, passing it as an argument, or storing it in an aggregate or
 a field transfers them. A transfer, like passing a successor value, does not
-prove that the receiver ever calls it. Await transfers a successor future's
+prove that the receiver ever calls it. A bound action (`later.count` without a
+call) carries its successor receiver's obligation by the same rules, while a
+direct call `later.count()`, and a chain such as `bottle.opened().is_open()`,
+uses the receiver at once. Await transfers a successor future's
 obligation to its result. Runtime discard guards remain for dynamic cases.
 These checks concern language-level consumption, not persistence or business
 usefulness; they do not forbid using an already consumed object again.
