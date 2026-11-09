@@ -481,6 +481,23 @@ impl Checker<'_, '_> {
         )
     }
 
+    /// Give a `try?` with no successful path (`Maybe<never>`) the type its
+    /// fallback decided: the expression and the `none` its handler makes.
+    fn settle_try(value: &mut Expr, ty: &Ty) {
+        value.ty = Some(ty.clone());
+        if let ExprKind::Try(found) = &mut value.kind {
+            for catch in &mut found.catches {
+                for stmt in &mut catch.body.stmts {
+                    if let StmtKind::Expr(none) = &mut stmt.kind
+                        && matches!(none.kind, ExprKind::VariantNew { case: 1, .. })
+                    {
+                        none.ty = Some(ty.clone());
+                    }
+                }
+            }
+        }
+    }
+
     pub(super) fn optional_fallback(
         &mut self,
         source: &ast::Expr,
@@ -489,8 +506,10 @@ impl Checker<'_, '_> {
         span: Span,
     ) -> Expr {
         let optional_expected = expected.map(|t| Ty::Variant(EnumId(0), vec![t.clone()]));
-        let value = self.value(source, optional_expected.as_ref());
-        let Ty::Variant(id, args) = Self::ty_of(&value) else {
+        self.open_try = matches!(strip_grouping(source).kind, ast::ExprKind::TryMark { force: false, .. });
+        let mut value = self.value(source, optional_expected.as_ref());
+        self.open_try = false;
+        let Ty::Variant(id, mut args) = Self::ty_of(&value) else {
             self.error(span, "Optional fallback requires Maybe<T>");
             return Self::poisoned(span);
         };
@@ -501,6 +520,19 @@ impl Checker<'_, '_> {
             );
             return Self::poisoned(span);
         }
+        // `try?` with no successful path is always `none`: the fallback gives `T`.
+        let settled = if args[0] == Ty::Never {
+            let other = self.value(fallback, expected);
+            let ty = Self::ty_of(&other);
+            if ty.is_error() {
+                return Self::poisoned(span);
+            }
+            Self::settle_try(&mut value, &Ty::Variant(EnumId(0), vec![ty.clone()]));
+            args = vec![ty];
+            Some(other)
+        } else {
+            None
+        };
         self.push_scope();
         let (binding, local) = self.variant_temp(value);
         let payload = Self::typed(
@@ -511,8 +543,13 @@ impl Checker<'_, '_> {
             args[0].clone(),
             span,
         );
-        let other = self.value(fallback, Some(&args[0]));
-        let other = self.coerce(other, &args[0], fallback.span, "Fallback");
+        let other = match settled {
+            Some(other) => other,
+            None => {
+                let other = self.value(fallback, Some(&args[0]));
+                self.coerce(other, &args[0], fallback.span, "Fallback")
+            }
+        };
         let result = Self::typed(
             ExprKind::Match(Box::new(Match {
                 subject: Self::typed(ExprKind::VariantTag(Box::new(local)), Ty::Int, span),

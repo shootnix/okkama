@@ -101,6 +101,9 @@ pub(super) struct Checker<'r, 'a> {
     /// Scopes below this index are hidden: a parameter's default value is
     /// checked at the call without the caller's locals (#149).
     pub barrier: Option<usize>,
+    /// The `try?` being checked is the operand of a fallback (`try? x else y`):
+    /// with no successful path its type may come from the fallback (#307).
+    pub open_try: bool,
 }
 
 /// Проверить все тела программы: зависимости раньше корня, в порядке исходника.
@@ -356,6 +359,7 @@ impl<'r, 'a> Checker<'r, 'a> {
             shorthand_fields: Vec::new(),
             cap_external: false,
             barrier: None,
+            open_try: false,
         }
     }
 

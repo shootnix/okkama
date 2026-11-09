@@ -62,6 +62,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- `try?` recovers from operands whose paths throw (#307). A throwing branch
+  selected by a literal condition no longer erases the type of the other
+  branch: `try? (if true { throw E.a; } else { 2; }) else 7` is `7` (it was
+  rejected with "Optional fallback requires Maybe<T>"). An operand with no
+  successful path takes `T` from its `Maybe<T>` boundary or its fallback;
+  with neither, an inference error replaces the silent poison that ended in
+  "internal compiler error: unreachable expression reached lowering". A caught
+  error leaves `none`, so `try?` no longer diverges with its operand (`try!`
+  still does), and a compact choice with a literal condition diverges only
+  when its selected branch does, as lowering already assumed. Conformance case
+  `L07.try-mark.diverging-operand`; Book 14.5.
 - `contains` and `index_of` work on arrays of enums with payloads —
   `@Maybe<T>`, `@Presence<T>`, user enums, generic or not (#300). They use
   the deep equality of array `==` and `-`: the case, then the payload. A

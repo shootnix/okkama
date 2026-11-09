@@ -91,13 +91,19 @@ impl Checker<'_, '_> {
                     self.expect(&check, &Ty::Bool, condition.span, "Choice condition");
                     let yes = self.block(then_block, true, expected);
                     let no = self.block(else_block, true, expected);
-                    let (ty, diverges) = self.join(&[&yes, &no], true, span);
-                    if ty.is_none() && !diverges {
+                    let (ty, joined) = self.join(&[&yes, &no], true, span);
+                    if ty.is_none() && !joined {
                         self.error(
                             span,
                             "Compact choice branches must produce a value or diverge",
                         );
                     }
+                    // A literal condition selects the branch that runs, as in lowering.
+                    let diverges = match literal_condition(condition) {
+                        Some(true) => yes.diverges,
+                        Some(false) => no.diverges,
+                        None => joined,
+                    };
                     return Expr {
                         diverges: check.diverges || diverges,
                         kind: ExprKind::If {
@@ -844,9 +850,9 @@ impl Checker<'_, '_> {
             (Some(Ty::Never), true)
         } else {
             match literal_condition(condition) {
-                Some(true) => (then_value.ty.clone(), then_value.diverges),
+                Some(true) => Self::selected(&then_value, else_value.as_ref()),
                 Some(false) => match &else_value {
-                    Some(value) => (value.ty.clone(), value.diverges),
+                    Some(value) => Self::selected(value, Some(&then_value)),
                     None => (None, false),
                 },
                 None => {
@@ -868,6 +874,17 @@ impl Checker<'_, '_> {
             diverges,
             span,
         }
+    }
+
+    /// The flow of an `if` whose literal condition selects `chosen`: when it
+    /// diverges, the other branch still gives the type (#307), so an
+    /// enclosing `try?` recovering from a `throw` there keeps its `Maybe<T>`.
+    fn selected(chosen: &Expr, other: Option<&Expr>) -> (Option<Ty>, bool) {
+        let ty = match other {
+            Some(other) if chosen.diverges && !other.diverges && other.ty.is_some() => other.ty.clone(),
+            _ => chosen.ty.clone(),
+        };
+        (ty, chosen.diverges)
     }
 
     fn loop_expr(
@@ -1155,6 +1172,7 @@ impl Checker<'_, '_> {
         span: Span,
     ) -> Expr {
         let maybe = crate::analysis::ty::EnumId(0);
+        let open = std::mem::take(&mut self.open_try);
         let inner = match expected {
             Some(ty) if force => Some(ty.clone()),
             Some(Ty::Variant(id, args)) if *id == maybe => args.first().cloned(),
@@ -1164,7 +1182,9 @@ impl Checker<'_, '_> {
         let checked = self.expr(value, want || !force, inner.as_ref());
         self.pop_scope();
         let operand = checked.ty.clone();
-        let diverges = checked.diverges;
+        // A caught error leaves `try?` with `none`, so only `try!` (whose
+        // handler panics) diverges with its operand, as `try/catch` joins.
+        let diverges = force && checked.diverges;
         let result = if force {
             operand.clone()
         } else {
@@ -1184,7 +1204,18 @@ impl Checker<'_, '_> {
                     return Self::poisoned(span);
                 }
                 Some(ty) if ty.is_error() => return Self::poisoned(span),
-                Some(Ty::Never) | None => Some(Ty::Error),
+                // No successful path: the boundary gives `T`, or the fallback
+                // does (`Maybe<never>` until `optional_fallback` settles it).
+                Some(Ty::Never) | None => match inner.clone().or(open.then_some(Ty::Never)) {
+                    Some(ty) => Some(Ty::Variant(maybe, vec![ty])),
+                    None => {
+                        self.error(
+                            value.span,
+                            "Cannot infer the type of try?: its operand never produces a value; declare Maybe<T> or add a fallback",
+                        );
+                        return Self::poisoned(span);
+                    }
+                },
                 Some(ty) => Some(Ty::Variant(maybe, vec![ty.clone()])),
             }
         };
@@ -1192,7 +1223,8 @@ impl Checker<'_, '_> {
             return Self::poisoned(span);
         }
         let body_value = match &result {
-            Some(maybe_ty) if !force => Self::typed(
+            // An operand that never gives a value is not wrapped in `some`.
+            Some(maybe_ty) if !force && !checked.diverges => Self::typed(
                 ExprKind::VariantNew {
                     case: 0,
                     values: vec![checked],
