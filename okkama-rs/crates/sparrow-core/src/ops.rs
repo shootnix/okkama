@@ -434,6 +434,32 @@ fn append_shared(runtime: &mut Runtime, repr: Repr, words: &[Word], size: usize)
     Some(runtime.heap.allocate_view(repr, buffer, front, size))
 }
 
+/// A slice (and `take`, `drop`, which lower to it) that shares its origin's
+/// storage (#249): a view of the flat array, or of the buffer of a view,
+/// when the slice keeps at least half of that storage, so a slice never
+/// keeps alive more than twice what it holds. Views always point at the
+/// storage itself, never at another view. Smaller slices, short ones and
+/// slices of tries are copied, as before. `rest = items.drop(1)` in a loop
+/// shares until half is left, copies that half once, and so on: O(n) in all.
+fn slice_shared(runtime: &mut Runtime, array: Word, repr: Repr, range: std::ops::Range<usize>) -> Option<Word> {
+    use crate::heap::{CHAIN_MIN, SHARED, TRIE, payload};
+    let header = runtime.heap.header_of(array);
+    if !shared_arrays() || range.len() < CHAIN_MIN || header & TRIE != 0 {
+        return None;
+    }
+    let (storage, start, kept) = if header & SHARED != 0 {
+        let (buffer, start) = runtime.heap.shared(array);
+        let (used, capacity) = runtime.heap.buffer_room(buffer);
+        (buffer, start, capacity.max(used))
+    } else {
+        (array, 0, payload(header) as usize)
+    };
+    if 2 * range.len() < kept {
+        return None;
+    }
+    Some(runtime.heap.allocate_view(repr, storage, start + range.start, range.len()))
+}
+
 /// `… + [x] + items` when `items` continues a chain of prepends (#247): the
 /// mirror of [`append_shared`]. Written in place right before `items` when
 /// it starts at its buffer's lowest written slot and there is room, else
@@ -1078,6 +1104,9 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
                 return Ok(runtime.heap.allocate_bytes(&bytes));
             }
             let repr = element_repr(runtime, array);
+            if let Some(view) = slice_shared(runtime, array, repr, range.clone()) {
+                return Ok(view);
+            }
             let items: Vec<Word> = runtime.heap.elements(array)[range].to_vec();
             Ok(runtime.heap.allocate_array(repr, &items))
         }

@@ -1225,6 +1225,14 @@ PERSISTENCE_DECLARATIONS = """object Grow {
         if i == n { return items; }
         self.front(i + 1, n, [i * 7 % 101] + items);
     }
+    drops(xs is @int, left is int) is @int {
+        if left == 0 { return xs; }
+        self.drops(xs.drop(1), left - 1);
+    }
+    takes(xs is @int, left is int) is @int {
+        if left == 0 { return xs; }
+        self.takes(xs.take(xs.size() - 1), left - 1);
+    }
     alternate(i is int, n is int, items is @int) is @int {
         if i == n { return items; }
         let grown = if i % 2 == 0 { items + [i * 7 % 101]; } else { [i * 7 % 101] + items; };
@@ -1334,6 +1342,28 @@ def persistence_family():
         program.ok(f"{both} == {arr([4000] + rev + [4001])}", f"{desc}: both ends at once")
         program.ok(f"{p} == {arr(rev)}", f"{desc}: the origin is unchanged")
         program.ok(f"Grow().alternate(0, {n}, @int()) == {arr(alternated)}", f"{desc} by alternating ends")
+        # Slices (#249): drop and take loops, slices of slices, and versions
+        # made from a slice; the origin keeps its elements.
+        if n:
+            src, d, t, m, mm = (program.fresh(x) for x in ("src", "d", "t", "m", "mm"))
+            half, third = n // 2, n // 3
+            slices = [f"let {src} is @int = (0..{n}).map() -> i {{ i * 7 % 101; }};",
+                      f"let {d} = Grow().drops({src}, {half});", f"let {t} = Grow().takes({src}, {half});",
+                      f"let {m} = {src}.slice({third}, {n - third});"]
+            if n - 2 * third >= 2:
+                slices.append(f"let {mm} = {m}.slice(1, {m}.size() - 1);")
+            program.ok(f"{d} == {arr(model[half:])} && {t} == {arr(model[:n - half])}", f"{desc}: drop and take loops", slices)
+            program.ok(f"{m} == {arr(model[third:n - third])}", f"{desc}: a middle slice")
+            if n - 2 * third >= 2:
+                program.ok(f"{mm} == {arr(model[third:n - third][1:-1])}", f"{desc}: a slice of a slice")
+            program.ok(f"{d} + [1] == {arr(model[half:] + [1])} && [2] + {d} == {arr([2] + model[half:])}", f"{desc}: both ends of a dropped version")
+            program.ok(f"{m} + [3] == {arr(model[third:n - third] + [3])} && [4] + {m} == {arr([4] + model[third:n - third])}", f"{desc}: both ends of a middle slice")
+            if n - 2 * third > 0:
+                changed = model[third:n - third]
+                changed = [5] + changed[1:]
+                program.ok(f"{m}.replaced(0, 5) == {arr(changed)}", f"{desc}: replaced in a slice")
+            program.ok(f"{src} == {arr(model)}", f"{desc}: the origin of the slices is unchanged")
+            program.is_(f"{d}.reduce(0) -> a, x {{ a + x; }} + {m}.reduce(0) -> a, x {{ a + x; }}", lit_int(sum(model[half:]) + sum(model[third:n - third])), f"{desc}: reduce over slices")
         texts = [str(x) for x in model]
         program.is_(f"Grow().texts(0, {n}, @string()).join(\",\")", lit_str(",".join(texts)), f"{desc}: strings by a chain")
         rows = program.fresh("rows")
