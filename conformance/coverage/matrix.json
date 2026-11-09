@@ -5475,10 +5475,10 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L01.lex.crlf.raw-string-discards-cr"
+      "L01.lex.crlf.raw-string-keeps-cr"
      ],
      "mandatory_cases": [
-      "L01.lex.crlf.raw-string-discards-cr"
+      "L01.lex.crlf.raw-string-keeps-cr"
      ],
      "requirement": "required"
     },
@@ -5512,7 +5512,7 @@
     "contracts/DISCREPANCY-LEDGER.md#d-030"
    ],
    "status": "mandatory",
-   "title": "CR LF line endings are accepted and CR inside raw strings is discarded, as in Go (owner decision)"
+   "title": "CR LF line endings are accepted; a CR between tokens is whitespace and a fenced raw string keeps its CRs (owner decision, #310)"
   },
   {
    "aspects": {
@@ -5891,11 +5891,11 @@
     },
     "interaction": {
      "cases": [
-      "L01.lex.crlf.raw-string-discards-cr",
+      "L01.lex.crlf.raw-string-keeps-cr",
       "L01.lex.raw.concatenation"
      ],
      "mandatory_cases": [
-      "L01.lex.crlf.raw-string-discards-cr",
+      "L01.lex.crlf.raw-string-keeps-cr",
       "L01.lex.raw.concatenation"
      ],
      "requirement": "required"
@@ -27247,12 +27247,10 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L02.cast.arrays",
-      "L02.cast.int-arbitrary-precision"
+      "L02.cast.arrays"
      ],
      "mandatory_cases": [
-      "L02.cast.arrays",
-      "L02.cast.int-arbitrary-precision"
+      "L02.cast.arrays"
      ],
      "requirement": "required"
     },
@@ -27560,11 +27558,9 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L02.cast.int-arbitrary-precision",
       "L02.cast.methods"
      ],
      "mandatory_cases": [
-      "L02.cast.int-arbitrary-precision",
       "L02.cast.methods"
      ],
      "requirement": "required"
@@ -28353,11 +28349,9 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L02.cast.int-arbitrary-precision",
       "L02.cast.scalar-calls"
      ],
      "mandatory_cases": [
-      "L02.cast.int-arbitrary-precision",
       "L02.cast.scalar-calls"
      ],
      "requirement": "required"
@@ -31031,5 +31025,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "9367c51315fcbdeef3e5d3356621b0f9cdea2f249a8461cf44ea7b970ef938b3"
+ "suite_tree_sha256": "01de8846d2b031f2d4f0c66c7a7904dafc1d5db51e8e267640dfa51085c32c74"
 }

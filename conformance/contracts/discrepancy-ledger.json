@@ -553,13 +553,13 @@
         "docs/okkama-spec-11072026.md section 4.2"
       ],
       "observed": "okkama-pl (Perl) at git f1ad6d43: CRLF sources run.",
-      "intended_contract": "As in Go: CR is whitespace between tokens, so CRLF sources are accepted; CR characters inside fenced raw strings are discarded.",
-      "authority": "Language owner decision (19.10.2026): \"same as in other langs / Go\". Spec 4.2 (\"every character ... retained\") must be amended for CR.",
-      "conformance_expectation": "Mandatory LEX.CRLF. Perl keeps CR in raw strings: DEF-006.",
+      "intended_contract": "CR is whitespace between tokens, so CRLF sources are accepted; a fenced raw string keeps every character, CR included, as spec 4.2 says.",
+      "authority": "Language owner decision (19.10.2026): \"same as in other langs / Go\" — superseded for raw strings by the owner's decision of 09.11.2026 (#310): keep every character, no newline normalization in raw or ordinary literals.",
+      "conformance_expectation": "Mandatory LEX.CRLF. DEF-006 (Perl keeps CR) is withdrawn: Perl had the intended behaviour.",
       "resolution": "resolved",
       "cases": [
         "L01.lex.crlf.line-endings",
-        "L01.lex.crlf.raw-string-discards-cr"
+        "L01.lex.crlf.raw-string-keeps-cr"
       ],
       "contracts": [
         "LEX.CRLF"

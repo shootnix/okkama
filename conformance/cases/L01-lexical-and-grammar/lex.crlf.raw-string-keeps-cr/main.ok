@@ -1,0 +1,24 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Show {
+    Show();
+    codes(s is string) is string { s.length().string() + ":" + s.characters().map() -> c { c.code().string(); }.join(","); }
+}
+
+main() is int {
+    let out = Stdout();
+    let show = Show();
+    let crlf = ```a
+b```;
+    out.writeln(show.codes(crlf));
+    out.writeln(show.codes(```ab```));
+    out.writeln(show.codes(```x
+y```));
+    out.writeln(show.codes(```
+  i
+j```));
+    out.writeln(show.codes(``````));
+    0;
+}

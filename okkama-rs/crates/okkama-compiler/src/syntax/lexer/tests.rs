@@ -566,12 +566,20 @@ fn fenced_raw_strings() {
 }
 
 #[test]
-fn fenced_raw_strings_discard_carriage_returns() {
-    let text = "```a\r\nb```";
-    let token = single(text);
-    assert_eq!(string_value(&token), ("a\nb", StringForm::Fenced));
-    // The lexeme still covers every source byte.
-    assert_eq!(&text[token.span.range()], text);
+fn fenced_raw_strings_keep_carriage_returns() {
+    // #310: CRLF, a lone CR and mixed line endings stay as written.
+    for (text, value) in [
+        ("```a\r\nb```", "a\r\nb"),
+        ("```a\rb```", "a\rb"),
+        ("```a\nb```", "a\nb"),
+        ("```\r\n  x\n\ry\r```", "\r\n  x\n\ry\r"),
+        ("``````", ""),
+        ("```é\r\n😀```", "é\r\n😀"),
+    ] {
+        let token = single(text);
+        assert_eq!(string_value(&token), (value, StringForm::Fenced), "{text:?}");
+        assert_eq!(&text[token.span.range()], text);
+    }
 }
 
 #[test]

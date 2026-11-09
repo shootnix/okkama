@@ -6,7 +6,22 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Changed
+
+- A fenced raw string keeps every character between its delimiters,
+  carriage returns included (#310): ```` ```a<CR><LF>b``` ```` is `a\r\nb`
+  (length 4) and ```` ```a<CR>b``` ```` is `a\rb`. The lexer dropped every CR
+  (D-030, "as in Go"), while the specification and the Book said every
+  character is kept; the owner superseded D-030 for raw strings. A CR between
+  tokens is still whitespace, and nothing normalizes line endings. Conformance
+  case `L01.lex.crlf.raw-string-keeps-cr` replaces
+  `L01.lex.crlf.raw-string-discards-cr`; DEF-006 is withdrawn. Lexing a
+  3.5 MB raw literal is about 35 % faster (median of 10, LF, CRLF and mixed
+  endings alike): the per-character filter is gone.
+
 ### Fixed
+
+
 
 ### Documentation
 
