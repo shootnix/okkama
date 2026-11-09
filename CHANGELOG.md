@@ -31,6 +31,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   now parses its value like `return` and `throw` (#303). Compile time of the
   t/ nesting and control files is unchanged (median of 10: 0.247 → 0.246 s).
 
+### - Diagnostics: a positional call that only a field-shorthand constructor
+
+  could take now says so before generic inference and before the arguments
+  are checked (#311): `Box(5)` for `Box(:v)` reads `Constructor of "Box"
+  takes named arguments only: write Box(v: …)` instead of `Cannot infer
+  generic parameter "T"`, and `let b is Box<int> = Box(5)` no longer reports
+  a mismatch with `Box<int>`. Positional overloads, variadic constructors and
+  real inference failures are unchanged; compile time is unchanged (median of
+  10 over constructor-heavy t/ files: 0.153 → 0.154 s).
+
 
 ### Added
 

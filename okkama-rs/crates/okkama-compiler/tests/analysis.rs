@@ -642,3 +642,29 @@ fn constants_are_computed_by_the_compiler() {
         assert!(found.iter().any(|m| m.contains(expected)), "{text}: {found:?}");
     }
 }
+
+#[test]
+fn positional_calls_of_shorthand_constructors_name_the_named_form() {
+    // #311: reported before generic inference and before the arguments.
+    let decls = "object Point { has x is int; has y is int; Point(:x, :y); } \
+                 object Box<T> { has v is T; Box(:v); } \
+                 object Pair { has a is int; has b is int; Pair(:a, :b); Pair(a is int) { self.a = a; self.b = 0; } } \
+                 object Bag { has xs is @int; Bag(:xs); Bag(items is ...int) { self.xs = items...; } }";
+    let check = |body: &str| messages(&format!("{decls} main() is int {{ {body} 0; }}"));
+    assert_eq!(
+        check("let p = Point(1, 2);"),
+        ["Constructor of \"Point\" takes named arguments only: write Point(x: …, y: …)"]
+    );
+    for body in ["let b = Box(5);", "let b is Box<int> = Box(5);", "let b = Box(nope);"] {
+        assert_eq!(check(body), ["Constructor of \"Box\" takes named arguments only: write Box(v: …)"], "{body}");
+    }
+    assert_eq!(
+        check("let p = Pair(1, 2);"),
+        ["No constructor of \"Pair\" takes 2 positional argument(s); the shorthand takes named ones: write Pair(a: …, b: …)"]
+    );
+    // Positional overloads, named calls and real inference failures are unchanged.
+    for body in ["let p = Pair(1);", "let g = Bag(1, 2, 3);", "let p = Point(x: 1, y: 2);", "let b = Box(v: 5);"] {
+        assert!(check(body).is_empty(), "{body}: {:?}", check(body));
+    }
+    assert_eq!(check("let b = Box(v: []);"), ["Cannot infer generic parameter \"T\" for object \"Box\""]);
+}
