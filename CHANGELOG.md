@@ -116,6 +116,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Sparrow core: a failed file operation reports the same message as on the
+  IR engine and the JVM (#319). Opening a missing file gave
+  `FileSystemFailure.detailed("not_found", "No such file or directory (os
+  error 2)")` on the core and `… "Cannot open file")` elsewhere; the core's
+  file providers now use the phrase of the operation (open, read, write,
+  seek, truncate, lock, the directory and path operations, temporary files),
+  with the reason in the code (`not_found`, `permission_denied`, …), and a
+  file opened lazily by a read says "Cannot open file" like the others.
+  Conformance `L10.fs.missing-file-message`.
+
 - IR engine: reading length-prefixed records from a large byte buffer is
   linear again (#280). The `runtime/bytes` natives behind `ByteRange`
   (`integer`, `text`, `decimal`, `equal`) and `ByteSearch` converted the

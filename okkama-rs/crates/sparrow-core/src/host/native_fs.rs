@@ -36,6 +36,17 @@ pub(crate) fn fail(n: Native, code: &str, message: &str) -> ProviderError {
         message: message.into(),
     })
 }
+/// [`host`] with the phrase of the step that failed, where one native does
+/// several (`file_state_read_text` opens the file lazily, #319).
+pub(crate) fn host_as(n: Native, e: std::io::Error, message: &str) -> ProviderError {
+    match host(n, e) {
+        ProviderError::Native(mut failure) => {
+            failure.message = message.into();
+            ProviderError::Native(failure)
+        }
+        other => other,
+    }
+}
 pub(crate) fn host(n: Native, e: std::io::Error) -> ProviderError {
     use std::io::ErrorKind::*;
     let code = match e.kind() {
@@ -55,7 +66,47 @@ pub(crate) fn host(n: Native, e: std::io::Error) -> ProviderError {
             _ => "unexpected",
         },
     };
-    fail(n, code, &e.to_string())
+    match host_message(n) {
+        Some(message) => fail(n, code, message),
+        None => fail(n, code, &e.to_string()),
+    }
+}
+
+/// The message of a failed host file operation, the phrase the IR engine and
+/// the JVM write for it; the reason is in the code (#319). Other natives keep
+/// the host's own text.
+fn host_message(n: Native) -> Option<&'static str> {
+    Some(match n.name() {
+        "open" | "file_content" => "Cannot open file",
+        "read" | "file_state_read" | "file_state_read_text" | "file_state_read_line" => "Cannot read file",
+        "write" | "file_state_write" | "file_state_write_text" => "Cannot write file",
+        "close" | "file_state_close" => "Cannot close file",
+        "seek" | "file_state_seek" => "Cannot seek file",
+        "truncate" | "file_state_truncate" => "Cannot truncate file",
+        "sync" => "Cannot synchronize file",
+        "unlock" => "Cannot unlock file",
+        "file_state_lock" => "Cannot acquire file lock",
+        "file_lock_close" => "Cannot release file lock",
+        "file_state_position" => "Cannot inspect file position",
+        "opendir" | "directory_entries" | "matching_paths" => "Cannot open directory",
+        "mkdir" => "Cannot create directory",
+        "rmdir" => "Cannot rmdir path",
+        "directory_remove_tree" => "Cannot remove directory tree",
+        "unlink" => "Cannot unlink path",
+        "rename" => "Cannot rename path",
+        "link" => "Cannot link path",
+        "symlink" => "Cannot symlink path",
+        "readlink" => "Cannot read symbolic link",
+        "stat" => "Cannot stat path",
+        "lstat" => "Cannot lstat path",
+        "chmod" => "Cannot change path permissions",
+        "chown" => "Cannot change path ownership",
+        "chdir" => "Cannot change current directory",
+        "temporary_file_create" => "Cannot create temporary file",
+        "temporary_directory_create" => "Cannot create temporary directory",
+        "file_watch_create" => "Cannot inspect watched path",
+        _ => return None,
+    })
 }
 impl Heap {
     pub(crate) fn native_fs(&mut self, n: Native, a: &[Slot]) -> Result<Outcome, Error> {

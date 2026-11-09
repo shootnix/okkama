@@ -1,5 +1,5 @@
 //! Owned OS files; the VM stores a typed handle, never a legacy runtime object.
-use crate::host::native_fs::{fail, host};
+use crate::host::native_fs::{fail, host, host_as};
 use crate::host::{Error, handle::Handle, ProviderError, *};
 use num_traits::ToPrimitive;
 use okkama_runtime_abi::Native;
@@ -50,7 +50,7 @@ impl RawFile {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(mode);
         }
-        let file = options.open(path).map_err(|e| host(n, e))?;
+        let file = options.open(path).map_err(|e| host_as(n, e, "Cannot open file"))?;
         Ok(Self {
             file: Some(file),
             #[cfg(unix)]
