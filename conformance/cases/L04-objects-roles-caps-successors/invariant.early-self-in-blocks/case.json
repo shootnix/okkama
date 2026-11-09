@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.invariant.early-self-in-blocks",
+  "title": "the first self value inside map, filter, reduce, nested blocks or one branch builds one object",
+  "purpose": "Leaves and nodes made in iteration blocks and branches all point at the finished object; empty collections, fields bound before and after the escape, uses before and after a loop and cyclic equality behave as with an early let.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.CONSTRUCTOR-INVARIANTS",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "3 3 2 0\n2 20 102 f 102 100 0 0\n8 0\n2 2 2\ntrue false true false\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "#279",
+    "expected_basis": "Owner decision on #279: early self is built once, at a point that dominates the rest of the constructor, keeping bound fields, later obj.init, the $pending lifecycle (#271), identity and cyclic equality (#278)."
+  },
+  "status": "mandatory"
+}
