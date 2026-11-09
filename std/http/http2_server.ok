@@ -108,7 +108,7 @@ object Http2ServerState does Http2ReceivingEvents,Http2ReceivingBarrier,Http2Bod
     }
     async writing() is bool{
         defer self.close();
-        let group is FutureGroup<bool>=FutureGroup();let cleanup=Http2ServerSettlement(group);defer await cleanup.close();let pending=output.run();group.start(pending);
+        let pending=output.run();
         try{await pending;}catch e is Cancelled{if !stopped.ready(){throw;}false;}catch e is Error{failures.replace([e]);self.close();false;}catch e is NativeFailure{self.close();throw;}
     }
     headers(block is Http2HeaderBlock) is void{
@@ -190,14 +190,14 @@ object Http2ServerStream {
         let known is @BigInt=if suppressed{[];}else{try{[response.body().length()];}catch e is UnknownBodyLength{[];}};
         if !suppressed{for known -> length{confirm length.sign()>=0 && length.order(BigInt(owner.body_limit().string()))!=Order.greater else throw InvalidHttpMessage.because("response source length limit");for declared -> expected{confirm length.order(expected)==Order.equal else throw InvalidHttpMessage.because("response source length mismatch");}}}
         let zero=suppressed || (known.size()==1 && known[0].sign()==0);let ticket=owner.output().headers(self.stream(),fields,owner.budget(),16384,zero);sent.replace(true);
-        let heads is FutureGroup<bool>=FutureGroup();let cleanup=Http2ServerSettlement(heads);defer await cleanup.close();let pending=ticket.result();heads.start(pending);await pending;if zero{return true;}
-        let producer=Http2ServerBodySending(owner.sender(),owner.output(),owner.budget(),self.stream(),response.body(),declared,known,owner.body_limit());let writers is FutureGroup<bool>=FutureGroup();let writer_cleanup=Http2ServerSettlement(writers);defer await writer_cleanup.close();let sending=producer.run();writers.start(sending);await sending;
+        let pending=ticket.result();await pending;if zero{return true;}
+        let producer=Http2ServerBodySending(owner.sender(),owner.output(),owner.budget(),self.stream(),response.body(),declared,known,owner.body_limit());let sending=producer.run();await sending;
     }
 
     async send_continue() is bool{
         let expected=head.headers().values(HeaderName("expect"));if expected.size()==0 || self.ended(){return true;}
         let output=owner.output();let ticket=output.headers(self.stream(),[HpackField(":status","100")],owner.budget(),16384,false);
-        let group is FutureGroup<bool>=FutureGroup();let cleanup=Http2ServerSettlement(group);defer await cleanup.close();let pending=ticket.result();group.start(pending);await pending;
+        let pending=ticket.result();await pending;
     }
 }
 object Http2ServerBodySending {

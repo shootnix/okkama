@@ -48,7 +48,7 @@ object WebSocketOutput {
     release() is void{current.replace([]);space.value().set();space.replace(Event());}
     async frame(frame is WebSocketFrame) is bool{
         let mask is @byte=if masked{random.bytes(4);}else{let empty is @byte=[];empty;};let wire=frame.bytes(mask);
-        let group is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let writing=origin.write(ByteSnapshot(wire));group.start(writing);await writing;true;
+        let writing=origin.write(ByteSnapshot(wire));await writing;true;
     }
     async emit(ticket is WebSocketOutputTicket) is bool{
         let payload=ticket.payload();let kind=ticket.opcode();
@@ -63,7 +63,7 @@ object WebSocketOutput {
         confirm !started.ready() else throw InvalidState.because("WebSocket writer is single-use");started.set();defer self.abort();
         loop{
             let available=self.take();if available.size()==0{if stopped.ready(){return true;}let signal=Event();changed.replace(signal);await signal.wait();next;}
-            let ticket=available[0];if !ticket.cancelled(){let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pending=self.emit(ticket);group.start(pending);await pending;ticket.completed();}self.release();
+            let ticket=available[0];if !ticket.cancelled(){let pending=self.emit(ticket);await pending;ticket.completed();}self.release();
         }
     }
 }

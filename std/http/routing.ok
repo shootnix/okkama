@@ -14,7 +14,6 @@ import "async/atomic" take Atomic;
 import "url/percent" take PercentDecoded;
 import "encoding/utf" take Utf8Encoded;
 import "runtime/collections" take string_map_snapshot;
-import "async/scope" take FutureGroup;
 
 enum RouteSegmentKind=(literal,parameter,wildcard);
 enum InvalidRoute is Error = (because(reason is string));
@@ -244,7 +243,7 @@ object Routes does Handling {
         self.routes=snapshot;self.fallback=fallback;self.rejection=rejection;
     }
     async invoke(handler is Handling,request is Request,context is HttpRequestContext) is HandlingResult{
-        let group is FutureGroup<HandlingResult>=FutureGroup();let cleanup=RouteSettlement(group);defer await cleanup.close();let pending=handler.handling(request,context);group.start(pending);await pending;
+        let pending=handler.handling(request,context);await pending;
     }
     async handling(request is Request,context is HttpRequestContext) is HandlingResult{
         context.cancelling().check();let target=request.target();if target.kind()!=RequestTargetKind.origin && target.kind()!=RequestTargetKind.absolute{return await self.invoke(fallback,request,context);}
@@ -270,7 +269,6 @@ object RouteMethods {
     has names is @string;RouteMethods(){names=[];}names() is @string{names;}
     added(name is string) is ^RouteMethods{if !(names.reduce(false)->found,value{found || value==name;}){let following is @string=(0..names.size()+1).map()->index{if index<names.size(){names[index];}else{name;}};^names=following;}}
 }
-object RouteSettlement<T>{has group is FutureGroup<T>;RouteSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
 test "encoded separators are one decoded route coordinate" {
     let matched=RoutePattern("/:id").match("/a%2Fb");test.ok(matched.matched());test.is(matched.parameters()["id"],"a/b");test.ok(!RoutePattern("/:id").match("/a/b").matched());
 }

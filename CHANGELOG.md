@@ -36,6 +36,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- std: a single await no longer needs a `FutureGroup` and a settlement
+  object (#264, first part). With structured await (#147), cancelling a task
+  already cancels the future it awaits and waits for it, so 68 places in 25
+  `http/` modules that started one future in a group, deferred an
+  `await settlement.close()` and awaited the future at once now just await
+  it: `let exchange = await waiting;` instead of a group, a settlement
+  object, a deferred close and `group.start`. That is two objects and a
+  deferred await fewer per occurrence on every HTTP/1, HTTP/2, WebSocket,
+  form, proxy, XML-RPC and SSE exchange. Six settlement objects that nothing
+  uses any more are removed (`HttpConversationSettlement`,
+  `HttpRetrySettlement`, `RouteSettlement`, `XmlRpcSettlement`,
+  `Http2OutputSettlement`, `Http2SendingSettlement`). Groups with several
+  children, races and timeouts stay.
+
 - Release gate: about 15 minutes instead of 30–40. Its optimized Rust tests
   build with a new cargo profile `gate` (release optimizations, no fat LTO,
   16 codegen units): the step took 20.6 minutes, of which 28 seconds were

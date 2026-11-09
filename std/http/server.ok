@@ -77,14 +77,14 @@ object HttpServerPeer {
         defer server.remove(id);defer ready.set();defer cancelled.cancel();
         let connections is FutureGroup<TcpConnection>=FutureGroup();let taken=Event();let empty_connections is @Future<TcpConnection>=[waiting];let pending=Atomic(empty_connections);let cleanup=HttpAcquisitionCleanup(connections,pending,taken,HttpTcpDisposal().release);defer await cleanup.close();connections.start(waiting);
         let available is @TcpConnection=try{[await waiting];}catch e is NetworkClosed{[];};if available.size()==0{return true;}let connection=available[0];taken.set();defer connection.close();ready.set();await dispatch.wait();
-        let requests is FutureGroup<bool>=FutureGroup();let settlement=WebSocketOutputSettlement(requests);defer await settlement.close();let processing=self.requests(connection);requests.start(processing);
+        let processing=self.requests(connection);
         try{await processing;}catch e is Cancelled{throw;}catch e is HttpServerBodyTimedOut{await self.failure_response(connection,408);}catch e is TimedOut{await self.failure_response(connection,if phase.value()==0{408;}else{503;});}
         catch e is InvalidHttpMessage{await self.failure_response(connection,if phase.value()<2{400;}else{500;});}
         catch Http1LimitExceeded.kind(kind) {await self.failure_response(connection,if phase.value()>=2{500;}else{if kind=="body_bytes"{413;}else{431;}});}
         catch e is Error{await self.failure_response(connection,if phase.value()==0{400;}else{500;});}
     }
     async failure_response(connection is TcpConnection,status is int) is bool{
-        if !sent.value() && !(phase.value()==0 && seen.value()==0){let response=Response(Status(status),Headers([Header(HeaderName("Connection"),"close")]));let writing is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=WebSocketOutputSettlement(writing);defer await cleanup.close();let pending=Http1ResponseWriting(connection.output(),response,Method("GET"),policy.limits().http1()).result();writing.start(pending);try{await pending;}catch e is Error{}}true;
+        if !sent.value() && !(phase.value()==0 && seen.value()==0){let response=Response(Status(status),Headers([Header(HeaderName("Connection"),"close")]));let pending=Http1ResponseWriting(connection.output(),response,Method("GET"),policy.limits().http1()).result();try{await pending;}catch e is Error{}}true;
     }
     async h2_drain(session is Http2ServerSession) is bool{await server.drain_signal();await session.drained();true;}
     async h2_requests(connection is TcpConnection) is bool{
@@ -105,17 +105,17 @@ object HttpServerPeer {
             cancelled.cancelling().check();let heads is FutureGroup<Http1HeadRead<Http1RequestHead>>=FutureGroup();let head_cleanup=WebSocketOutputSettlement(heads);defer await head_cleanup.close();
             let reading=Http1RequestHeadReading(HttpServerObservedInput(connection.input(),seen),prefix.value(),policy.limits().http1(),4096).result();let deadline is HttpServerDeadline<Http1HeadRead<Http1RequestHead>>=HttpServerDeadline(reading,policy.timeouts().headers_timeout(),clock);let bounded=deadline.result();heads.start(bounded);let received=await bounded;let head=received.head();confirm head.version()==HttpVersion.http_1_1 else throw BadRequest.because("HTTP1.1 request required");confirm head.target().kind()==RequestTargetKind.origin else throw BadRequest.because("direct server origin target required");let plan=Http1RequestFraming(head,policy.limits().http1()).plan();
             let expectations=head.headers().values(HeaderName("Expect"));let expected=expectations.size()>0;
-            if expected && (expectations.size()!=1 || HttpAsciiLowercase(expectations.item(0)).string()!="100-continue" || head.version()!=HttpVersion.http_1_1){let response=Response(Status(417),Headers([Header(HeaderName("Connection"),"close")]));let writes is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=WebSocketOutputSettlement(writes);defer await cleanup.close();let pending=Http1ResponseWriting(connection.output(),response,head.method(),policy.limits().http1()).result();writes.start(pending);await pending;return true;}
+            if expected && (expectations.size()!=1 || HttpAsciiLowercase(expectations.item(0)).string()!="100-continue" || head.version()!=HttpVersion.http_1_1){let response=Response(Status(417),Headers([Header(HeaderName("Connection"),"close")]));let pending=Http1ResponseWriting(connection.output(),response,head.method(),policy.limits().http1()).result();await pending;return true;}
             let continuing=HttpServerContinueInput(connection.input(),connection.output(),expected);let lease=HttpServerBodyLease();let body=Http1BodyReading(HttpServerTimedInput(continuing,policy.timeouts().body_idle_timeout(),clock),lease,plan,received.remainder(),head.headers(),policy.limits().http1());let request=head.request(Http1IncomingBody(body));let details=ExchangeDetails(connection.endpoints(),head.version());let context=HttpRequestContext(details,cancelled.cancelling());
             phase.replace(1);let handlers is FutureGroup<HandlingResult>=FutureGroup();let handler_cleanup=WebSocketOutputSettlement(handlers);defer await handler_cleanup.close();let handler_deadline is HttpServerDeadline<HandlingResult>=HttpServerDeadline(handling.handling(request,context),policy.timeouts().handling_timeout(),clock);let waiting=handler_deadline.result();handlers.start(waiting);
             let result is HandlingResult=try{await waiting;}catch e is Cancelled{throw;}catch e is TimedOut{throw;}catch e is HttpServerBodyTimedOut{throw;}catch e is InvalidHttpMessage{throw;}catch e is Http1LimitExceeded{throw;}catch e is Error{ResponseHandling(Response(Status(500),Headers([Header(HeaderName("Connection"),"close")])));};
             if result.kind()==HandlingKind.websocket{
                 confirm plan.kind()==Http1BodyKind.empty || (plan.kind()==Http1BodyKind.fixed && plan.length().string()=="0") else throw BadRequest.because("WebSocket request body prohibited");confirm destinations.size()==1 else throw BadRequest.because("trusted WebSocket destination required");let destination=destinations[0];let connecting=WebSocketAccepting(connection.input(),connection.output(),connection,received,destination,result.websocket(),clock);sent.replace(true);let socket=await connecting.connection();
-                let applications is FutureGroup<WebSocketHandling>=FutureGroup();let app_cleanup=WebSocketOutputSettlement(applications);defer await app_cleanup.close();let pending=result.application().handle(socket,request,context);applications.start(pending);await pending;await socket.close(1000,"");return true;
+                let pending=result.application().handle(socket,request,context);await pending;await socket.close(1000,"");return true;
             }
             phase.replace(2);let original=result.response();let response=if expected && !continuing.started(){Response(original.status(),ReplacedHeader(original.headers(),Header(HeaderName("Connection"),"close")).result(),original.body(),original.version());}else{original;};let writing is FutureGroup<AsyncWriting>=FutureGroup();let write_cleanup=WebSocketOutputSettlement(writing);defer await write_cleanup.close();let sending=Http1ResponseWriting(connection.output(),response,head.method(),policy.limits().http1()).result();sent.replace(true);writing.start(sending);await sending;
             let outgoing=Http1ResponseFraming(Http1ResponseHead(response.status(),response.headers(),response.version()),head.method(),policy.limits().http1()).plan();if server.stopping_acceptance() || !plan.reuse_after_eof() || !outgoing.reuse_after_eof(){return true;}
-            loop{if body.closed(){last;}let reads is FutureGroup<@byte>=FutureGroup();let cleanup=WebSocketOutputSettlement(reads);defer await cleanup.close();let reading=body.bytes(65536);reads.start(reading);let bytes=await reading;if bytes.size()==0{last;}}
+            loop{if body.closed(){last;}let reading=body.bytes(65536);let bytes=await reading;if bytes.size()==0{last;}}
             prefix.replace(body.remainder());completed.replace(completed.value()+1);
         }
     }
@@ -138,8 +138,8 @@ object HttpServerContinueInput does AsyncReading{
     HttpServerContinueInput(origin is AsyncReading,output is AsyncWriting,expected is bool){self.origin=origin;self.output=output;self.expected=expected;started=Event();}
     started() is bool{started.ready();}
     async bytes(limit is int) is @byte{
-        if expected && !started.ready(){started.set();let writes is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=WebSocketOutputSettlement(writes);defer await cleanup.close();let sending=Http1ResponseHeadWriting(output,Http1ResponseHead(Status(100),Headers([]),HttpVersion.http_1_1),Method("POST")).result();writes.start(sending);await sending;}
-        let group is FutureGroup<@byte>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let reading=origin.bytes(limit);group.start(reading);await reading;
+        if expected && !started.ready(){started.set();let sending=Http1ResponseHeadWriting(output,Http1ResponseHead(Status(100),Headers([]),HttpVersion.http_1_1),Method("POST")).result();await sending;}
+        let reading=origin.bytes(limit);await reading;
     }
 }
 

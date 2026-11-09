@@ -30,8 +30,7 @@ object Http2PrefaceOperation {
     has input is AsyncReading;has output is AsyncWriting;has settings is Http2Settings;
     Http2PrefaceOperation(input is AsyncReading,output is AsyncWriting,settings is Http2Settings){self.input=input;self.output=output;self.settings=settings;}
     async emit(bytes is @byte) is void{
-        let group is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=Http2PrefaceSettlement(group);
-        defer await cleanup.close();let pending=output.write(ByteSnapshot(bytes));group.start(pending);await pending;
+        let pending=output.write(ByteSnapshot(bytes));await pending;
     }
     async run() is Http2PeerSettings{
         let magic=Utf8Encoded("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n").bytes();
@@ -66,12 +65,10 @@ object Http2ServerPrefaceOperation {
     has input is AsyncReading;has output is AsyncWriting;has settings is Http2Settings;
     Http2ServerPrefaceOperation(input is AsyncReading,output is AsyncWriting,settings is Http2Settings){self.input=input;self.output=output;self.settings=settings;}
     async emit(bytes is @byte) is void{
-        let group is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=Http2PrefaceSettlement(group);
-        defer await cleanup.close();let pending=output.write(ByteSnapshot(bytes));group.start(pending);await pending;
+        let pending=output.write(ByteSnapshot(bytes));await pending;
     }
     async chunk(limit is int) is @byte{
-        let group is FutureGroup<@byte>=FutureGroup();let cleanup=StreamReadCleanup(group);
-        defer await cleanup.close();let pending=input.bytes(limit);group.start(pending);await pending;
+        let pending=input.bytes(limit);await pending;
     }
     async run() is Http2PeerSettings{
         let payload=Http2SettingsWire(settings,false).bytes();

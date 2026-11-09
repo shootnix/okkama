@@ -102,7 +102,7 @@ object MultipartState {
     consume(count is int) is string{let value=tail.value();let result=value.slice(0,count);tail.replace(value.slice(count,value.length()));result;}
     async fill() is bool{
         self.check();if eof.ready(){return false;}let remaining=total_limit-wire.value();let limit=if remaining>=8192{8192;}else{remaining+1;};
-        let group is FutureGroup<@byte>=FutureGroup();let cleanup=FormSettlement(group);defer await cleanup.close();let pending=origin.bytes(limit);group.start(pending);let bytes=await pending;
+        let pending=origin.bytes(limit);let bytes=await pending;
         confirm bytes.size()<=limit else throw InvalidReading.because("form source exceeded requested limit");confirm bytes.size()<=remaining else throw FormLimitExceeded.kind("total_bytes");wire.replace(wire.value()+bytes.size());
         if bytes.size()==0{eof.set();return false;}tail.replace(tail.value()+Latin1Decoded(bytes).string());true;
     }
@@ -211,7 +211,7 @@ object FormText {
     FormText(part is FormPart,charset is string,maximum is int){confirm !part.file() && maximum>=0 && maximum<=1048576 else throw InvalidMultipartForm.because("text field projection limit");self.part=part;self.charset=charset;self.maximum=maximum;let declared=FormTextCharset(part.headers());if declared.declared(){confirm FormCharset(charset).name()==FormCharset(declared.string()).name() else throw UnsupportedFormCharset.unsupported;}FormCharset(charset);}
     async text() is string{
         let input=part.body();defer input.close();let text=Atomic("");loop{
-            let remaining=maximum-text.value().length();let limit=if remaining>=8192{8192;}else{remaining+1;};let group is FutureGroup<@byte>=FutureGroup();let cleanup=FormSettlement(group);defer await cleanup.close();let pending=input.bytes(limit);group.start(pending);let bytes=await pending;confirm bytes.size()<=remaining else throw FormLimitExceeded.kind("text_bytes");if bytes.size()==0{last;}text.replace(text.value()+Latin1Decoded(bytes).string());
+            let remaining=maximum-text.value().length();let limit=if remaining>=8192{8192;}else{remaining+1;};let pending=input.bytes(limit);let bytes=await pending;confirm bytes.size()<=remaining else throw FormLimitExceeded.kind("text_bytes");if bytes.size()==0{last;}text.replace(text.value()+Latin1Decoded(bytes).string());
         }FormCharset(charset).decoded(Latin1Encoded(text.value()).bytes());
     }
 }
@@ -229,12 +229,12 @@ object FormCharset {
 object ParsedUrlEncodedForm {
     has origin is BodyReading;has limits is FormLimits;has pending is Atomic<@Future<QueryParameters>>;
     ParsedUrlEncodedForm(origin is BodyReading,limits is FormLimits){confirm !origin.closed() else throw MultipartFormClosed.closed;self.origin=origin;self.limits=limits;let empty is @Future<QueryParameters>=[];pending=Atomic(empty);}
-    async parameters() is QueryParameters{let group is FutureGroup<QueryParameters>=FutureGroup();let cleanup=FormSettlement(group);defer await cleanup.close();let task=self.operation();group.start(task);await task;}
+    async parameters() is QueryParameters{let task=self.operation();await task;}
     closed() is bool{origin.closed();}close() is void{for pending.value() -> task{task.cancel();}origin.close();}
     destroy{self.close();}
     async read() is QueryParameters{
         defer origin.close();let maximum=ParsedInt(limits.total_bytes().string()).value();let cap=if maximum<1048576{maximum;}else{1048576;};let text=Atomic("");
-        loop{let remaining=cap-text.value().length();let limit=if remaining>=8192{8192;}else{remaining+1;};let group is FutureGroup<@byte>=FutureGroup();let cleanup=FormSettlement(group);defer await cleanup.close();let reading=origin.bytes(limit);group.start(reading);let bytes=await reading;confirm bytes.size()<=limit else throw InvalidReading.because("form source exceeded requested limit");confirm bytes.size()<=remaining else throw FormLimitExceeded.kind("total_bytes");if bytes.size()==0{last;}text.replace(text.value()+Latin1Decoded(bytes).string());}
+        loop{let remaining=cap-text.value().length();let limit=if remaining>=8192{8192;}else{remaining+1;};let reading=origin.bytes(limit);let bytes=await reading;confirm bytes.size()<=limit else throw InvalidReading.because("form source exceeded requested limit");confirm bytes.size()<=remaining else throw FormLimitExceeded.kind("total_bytes");if bytes.size()==0{last;}text.replace(text.value()+Latin1Decoded(bytes).string());}
         let parameters=try{ParsedForm(Latin1Encoded(text.value()).bytes(),limits.fields(),cap).parameters();}catch e is QueryLimitExceeded{throw FormLimitExceeded.kind("fields");};let entries=parameters.entries();let field_limit=ParsedInt(limits.field_bytes().string()).value();
         for (0..entries.size()) -> index{let entry=entries.item(index);confirm Utf8Encoded(entry.value()).bytes().size()<=field_limit else throw FormLimitExceeded.kind("field_bytes");confirm Utf8Encoded(entry.name()).bytes().size()<=256 else throw FormLimitExceeded.kind("metadata_bytes");}parameters;
     }
@@ -246,10 +246,10 @@ object ParsedUrlEncodedForm {
 object FormFileSpooling {
     has part is FormPart;has directory is DirectoryLocating;has prefix is string;has pending is Atomic<@Future<TemporaryFile>>;
     FormFileSpooling(part is FormPart,directory is DirectoryLocating,prefix is string){confirm part.file() else throw InvalidMultipartForm.because("only file parts can be spooled");self.part=part;self.directory=directory;self.prefix=prefix;let empty is @Future<TemporaryFile>=[];pending=Atomic(empty);}
-    async file() is TemporaryFile{let group is FutureGroup<TemporaryFile>=FutureGroup();let cleanup=FormSettlement(group);defer await cleanup.close();let task=self.operation();group.start(task);await task;}
+    async file() is TemporaryFile{let task=self.operation();await task;}
     async copy() is TemporaryFile{
         let input=part.body();defer input.close();let file=TemporaryFile(directory,prefix);let complete=Event();let guard=FormSpoolCleanup(file,complete);defer guard.close();
-        loop{let group is FutureGroup<@byte>=FutureGroup();let cleanup=FormSettlement(group);defer await cleanup.close();let reading=input.bytes(8192);group.start(reading);let bytes=await reading;if bytes.size()==0{last;}file.write(ByteSnapshot(bytes));}file.flush();complete.set();file;
+        loop{let reading=input.bytes(8192);let bytes=await reading;if bytes.size()==0{last;}file.write(ByteSnapshot(bytes));}file.flush();complete.set();file;
     }
     private:
     operation() is Future<TemporaryFile>{let known=pending.value();if known.size()>0{known[0];}else{let task=self.copy();pending.replace([task]);task;}}

@@ -63,10 +63,10 @@ object WebSocketOpening {
         let prefix=await self.upgrade(tcp.input(),tcp.output(),handshake);let session=WebSocketSession(WebSocketPrefixedInput(tcp.input(),prefix),tcp.output(),tcp,true,random,policy.limits(),policy.closing_timeout(),clock);published.set();session;
     }
     async upgrade(input is AsyncReading,output is AsyncWriting,handshake is WebSocketClientHandshake) is @byte{
-        let writing is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=WebSocketOutputSettlement(writing);defer await cleanup.close();let pending=Http1RequestWriting(output,handshake.request()).result();writing.start(pending);await pending;
+        let pending=Http1RequestWriting(output,handshake.request()).result();await pending;
         let empty is @byte=[];let prefix=Atomic(empty);let count=Atomic(0);
         loop{
-            let group is FutureGroup<Http1HeadRead<Http1ResponseHead>>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pending=Http1ResponseHeadReading(input,prefix.value(),Http1Limits(),4096).result();group.start(pending);let received=await pending;let status=received.head().status().code();
+            let pending=Http1ResponseHeadReading(input,prefix.value(),Http1Limits(),4096).result();let received=await pending;let status=received.head().status().code();
             if status<200 && status!=101{confirm count.value()<16 else throw WebSocketFailure.because("informational handshake limit");count.replace(count.value()+1);prefix.replace(received.remainder());next;}
             handshake.selected(received.head().response(EmptyBody()));return received.remainder();
         }
