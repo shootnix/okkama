@@ -60,11 +60,11 @@ fn main() {
         }));
         add("get-miss", "btree", n, reads, measure(|| {
             let mut x = 1u64;
-            (0..reads).filter(|_| btree.get(&(spot(&mut x, n) * 2 + 1)).is_some()).count() as u64
+            (0..reads).filter(|_| btree.contains_key(&(spot(&mut x, n) * 2 + 1))).count() as u64
         }));
         add("get-miss", "pmap", n, reads, measure(|| {
             let mut x = 1u64;
-            (0..reads).filter(|_| pmap.get(&(spot(&mut x, n) * 2 + 1)).is_some()).count() as u64
+            (0..reads).filter(|_| pmap.contains_key(&(spot(&mut x, n) * 2 + 1))).count() as u64
         }));
         let passes = (8_000_000 / n).max(1);
         add("iterate", "btree", n, passes * n, measure(|| (0..passes).fold(0u64, |a, _| btree.values().fold(a, |a, v| a.wrapping_add(*v)))));

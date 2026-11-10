@@ -959,6 +959,7 @@ impl Heap {
     }
 
     fn collect_inner(&mut self, roots: impl FnOnce(&mut dyn FnMut(Word, Repr))) {
+        crate::maps::begin_pass();
         let mut worklist = std::mem::take(&mut self.worklist);
         roots(&mut |word, repr| {
             if let Some(pointer) = repr.pointer(word) {

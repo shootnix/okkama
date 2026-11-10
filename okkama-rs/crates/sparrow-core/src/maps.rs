@@ -4,10 +4,14 @@
 //!
 //! A persistent map is cloned in O(1); a write copies one path from the
 //! root, or changes nodes in place while no other version holds them (a map
-//! being built). Its nodes' memory is counted exactly per thread
-//! (`okkama_persistent::pmap::memory`), which the heap reads instead of an
-//! estimate per map, so versions that share nodes are not charged twice.
+//! being built). Its nodes' memory, with what their keys own, is counted
+//! exactly per thread (`okkama_persistent::pmap::memory`), which the heap
+//! reads instead of an estimate per map, so versions that share nodes are
+//! not charged twice; and the collector traces a shared node once per
+//! collection ([`Entries::trace`]).
 
+use std::cell::Cell;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, btree_map};
 
 use okkama_persistent::{PMap, pmap};
@@ -28,6 +32,22 @@ pub fn persistent_maps() -> bool {
 /// and live now.
 pub fn node_memory() -> (usize, usize) {
     pmap::memory()
+}
+
+thread_local! {
+    static PASS: Cell<u32> = const { Cell::new(0) };
+}
+
+/// A collection starts marking: nodes visited from here on are visited in a
+/// new pass ([`PMap::for_each_unvisited`]).
+pub fn begin_pass() {
+    PASS.with(|pass| pass.set(pass.get().checked_add(1).unwrap_or(1)));
+}
+
+impl pmap::Weigh for Key {
+    fn weight(&self) -> usize {
+        self.data_bytes()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +131,31 @@ impl Entries {
         }
     }
 
+    /// Each entry for the collector to trace; of a persistent map, only the
+    /// entries of nodes this collection has not traced through another
+    /// version.
+    pub fn trace(&self, mut visit: impl FnMut(&Entry)) {
+        match self {
+            Entries::BTree(map) => map.values().for_each(visit),
+            Entries::Persistent(map) => map.for_each_unvisited(PASS.with(Cell::get), |_, entry| visit(entry)),
+        }
+    }
+
+    /// Merge `right` in: its values win, the key words of `self` stay
+    /// (#254). Into a standard map, entry by entry; persistent maps by the
+    /// cheaper of inserting the smaller into the larger and one ordered pass
+    /// over both.
+    pub fn merge(&mut self, right: &Entries) {
+        match (self, right) {
+            (Entries::Persistent(left), Entries::Persistent(right)) => *left = merged(left, right),
+            (this, right) => {
+                for (key, &entry) in right.iter() {
+                    this.upsert(key.clone(), entry);
+                }
+            }
+        }
+    }
+
     pub fn iter(&self) -> Iter<'_> {
         match self {
             Entries::BTree(map) => Iter::BTree(map.iter()),
@@ -143,4 +188,42 @@ impl<'a> Iterator for Iter<'a> {
             Iter::Persistent(iter) => iter.next(),
         }
     }
+}
+
+/// An insert costs about as much as copying this many entries in an ordered
+/// pass, so a part this many times smaller is inserted entry by entry.
+const INSERT_COST: usize = 32;
+
+fn merged(left: &PMap<Key, Entry>, right: &PMap<Key, Entry>) -> PMap<Key, Entry> {
+    if right.len() * INSERT_COST < left.len() {
+        let mut out = left.clone();
+        for (key, &(word, value)) in right.iter() {
+            out.upsert(key.clone(), || (word, value), |stored| stored.1 = value);
+        }
+        return out;
+    }
+    if left.len() * INSERT_COST < right.len() {
+        let mut out = right.clone();
+        for (key, &(word, value)) in left.iter() {
+            out.upsert(key.clone(), || (word, value), |stored| stored.0 = word);
+        }
+        return out;
+    }
+    let mut entries = Vec::with_capacity(left.len() + right.len());
+    let (mut a, mut b) = (left.iter().peekable(), right.iter().peekable());
+    loop {
+        let order = match (a.peek(), b.peek()) {
+            (Some((x, _)), Some((y, _))) => x.cmp(y),
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => break,
+        };
+        let entry = match order {
+            Ordering::Less => a.next().map(|(key, &entry)| (key.clone(), entry)),
+            Ordering::Greater => b.next().map(|(key, &entry)| (key.clone(), entry)),
+            Ordering::Equal => a.next().zip(b.next()).map(|((key, &(word, _)), (_, &(_, value)))| (key.clone(), (word, value))),
+        };
+        entries.extend(entry);
+    }
+    PMap::from_sorted(entries)
 }

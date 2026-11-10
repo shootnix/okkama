@@ -78,16 +78,18 @@ payload! {
         owns |this| { this.items.capacity() * 8 }
     AnyBox => |this, visit| { visit(this.value, this.repr); }
     MapValue => |this, visit| {
-        for &(key, value) in this.entries.values() {
+        this.entries.trace(|&(key, value)| {
             visit(key, this.key);
             visit(value, this.value);
-        }
+        });
     }, owns |this| {
+        // A persistent map's nodes and their keys are counted exactly by the
+        // heap (`maps::node_memory`), shared ones once.
+        if this.entries.is_persistent() {
+            return 0;
+        }
         this.owned.get().unwrap_or_else(|| {
-            // A persistent map's nodes are counted exactly by the heap
-            // (`maps::node_memory`), shared ones once; only its keys' data here.
-            let nodes = if this.entries.is_persistent() { 0 } else { this.entries.len() * MAP_ENTRY_BYTES };
-            let bytes = nodes + this.entries.keys().map(Key::owned_bytes).sum::<usize>();
+            let bytes = this.entries.len() * MAP_ENTRY_BYTES + this.entries.keys().map(Key::owned_bytes).sum::<usize>();
             this.owned.set(Some(bytes));
             bytes
         })
@@ -144,6 +146,19 @@ impl Key {
                 let own = 16 + fields.len() * std::mem::size_of::<Key>() + fields.iter().map(Key::owned_bytes).sum::<usize>();
                 own / std::rc::Rc::strong_count(fields)
             }
+        }
+    }
+
+    /// Rust memory this key's data takes, shared or not: what a persistent
+    /// map node counts for its keys, the same when it takes them on and when
+    /// it lets them go.
+    pub fn data_bytes(&self) -> usize {
+        match self {
+            Self::Small(_) | Self::Float(_) | Self::Raw(_) => 0,
+            Self::Int(n) => n.bits().div_ceil(64) as usize * 8,
+            Self::Str(text) => text.len() + 16,
+            Self::Rat(value) => rational_bytes(value),
+            Self::Object(_, fields) => 16 + fields.len() * std::mem::size_of::<Key>() + fields.iter().map(Key::data_bytes).sum::<usize>(),
         }
     }
 }
@@ -1292,14 +1307,12 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             // later part's entries: the rightmost value wins, the leftmost key
             // word stays (#254).
             let mut map = map_for(runtime, function, dst.0)?;
-            if let Some(first) = parts.first() {
-                map.entries = runtime.heap.payload::<MapValue>(value(first)).expect("map").entries.clone();
+            let mut parts = parts.iter().map(|part| &runtime.heap.payload::<MapValue>(value(part)).expect("map").entries);
+            if let Some(first) = parts.next() {
+                map.entries = first.clone();
             }
-            for part in parts.iter().skip(1) {
-                let entries = &runtime.heap.payload::<MapValue>(value(part)).expect("map").entries;
-                for (key, &entry) in entries.iter() {
-                    map.entries.upsert(key.clone(), entry);
-                }
+            for entries in parts {
+                map.entries.merge(entries);
             }
             Ok(runtime.heap.allocate_payload(Box::new(map)))
         }
@@ -1323,11 +1336,11 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             let (key_kind, key_type) = map_key(runtime, function, *builder_register(instruction));
             let k = runtime.checked_key(key, key_kind, key_type.as_ref())?;
             let map = runtime.heap.payload_mut::<MapValue>(builder).expect("map builder");
-            let nodes = if map.entries.is_persistent() { 0 } else { MAP_ENTRY_BYTES };
-            let bytes = nodes + k.owned_bytes();
+            // A new entry of a standard map is Rust memory the builder took
+            // on (#331); persistent map nodes count themselves.
+            let charged = (!map.entries.is_persistent()).then(|| MAP_ENTRY_BYTES + k.owned_bytes());
             let fresh = map.entries.upsert(k, (key, item));
-            // A new entry is Rust memory the builder took on (#331).
-            if fresh {
+            if let (true, Some(bytes)) = (fresh, charged) {
                 map.owned.set(map.owned.get().map(|owned| owned + bytes));
                 runtime.heap.charge_external(bytes);
             }

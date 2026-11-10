@@ -18,6 +18,7 @@
 
 pub mod frontier;
 pub mod pmap;
+mod slots;
 pub mod trie;
 
 pub use frontier::Frontier;

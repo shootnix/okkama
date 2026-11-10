@@ -1454,6 +1454,20 @@ def persistence_family():
         program.ok(f"{m}.size() == {n} && !{m}.has(1)", f"{desc}: the origin is unchanged")
         program.is_(f"({m} + [1: 1]).size()", lit_int(n + 1), f"{desc}: merged with one key")
         program.ok(f"({mb} + {m}) == {m} && ({m} - {m}).size() == 0", f"{desc}: merged with itself and removed from itself")
+        if n:
+            # Equal float keys show whose key word a merge keeps: the left
+            # one, with the right value, whichever part is the larger.
+            fm, fz = program.fresh("fm"), program.fresh("fz")
+            fsetup = [f"let {fm} is %float:int = (0..{n}).reduce([:]) -> acc, i {{ acc + [i.float(): i]; }};",
+                      f"let {fz} is %float:int = (0..{n}).reduce([-0.0: -1]) -> acc, i {{ acc + [i.float() + 0.5: i]; }};"]
+            neg, pos = "(-0.0).string()", "(0.0).string()"
+            program.ok(f"([-0.0: 7] + {fm}).keys()[0].string() == {neg} && ([-0.0: 7] + {fm})[0.0] == 0 && ([-0.0: 7] + {fm}).size() == {n}",
+                       f"{desc} of floats: a small map merged with it keeps its key, takes the value", fsetup)
+            program.ok(f"({fm} + [-0.0: 7]).keys()[0].string() == {pos} && ({fm} + [-0.0: 7])[-0.0] == 7 && ({fm} + [-0.0: 7]).size() == {n}",
+                       f"{desc} of floats: merged with a small map, keeps its key, takes the value")
+            program.ok(f"({fm} + {fz}).keys()[0].string() == {pos} && ({fm} + {fz})[0.0] == -1 && ({fz} + {fm}).keys()[0].string() == {neg} && ({fz} + {fm})[0.0] == 0",
+                       f"{desc} of floats: merged with a map of its size, both ways")
+            program.is_(f"({fm} + {fz}).size() + ({fz} + {fm}).size()", lit_int(4 * n), f"{desc} of floats: merged with a map of its size, sizes")
     program = batch.program()
     program.ok('([-0.0: 1] + [0.0: 2]).keys()[0].string() == (-0.0).string() && ([0.0: 1] + [-0.0: 2]).keys()[0].string() == (0.0).string()', "a merge keeps the left key of equal float keys")
     program.ok('([-0.0: 1] + [0.0: 2])[0.0] == 2', "and takes the right value")
