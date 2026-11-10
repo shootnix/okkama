@@ -123,7 +123,12 @@ Environment: `OKKAMA_STDLIB_DIR` (std root), `OKKAMA_ENGINE`,
 `SPARROW_CORE_STATS=1` (= `--stats`: counts of natives, intrinsics, slow paths,
 regions, awaits, heap bytes, compile time and code size per function),
 `SPARROW_CORE_DUMP`/`SPARROW_CORE_UNOPTIMIZED`/`SPARROW_CORE_PLAIN=symbol,…|*`
-(§9), `SPARROW_CORE_GC_STRESS=1` (collect at every
+(§9), `SPARROW_CORE_PROFILE_COMPILE=1` (a line per compiled function on
+stderr — instructions, registers, suspensions, CLIF blocks and instructions,
+safepoints, code and frame bytes, microseconds per compile stage — and
+Cranelift's passes summed at exit, #345), `SPARROW_CORE_VERIFY=1` (Cranelift's
+IR verifier in a release build; debug builds always run it),
+`SPARROW_CORE_GC_STRESS=1` (collect at every
 safepoint and poison reclaimed cells: values kept alive by mistake fail at
 once), `OKKAMA_ARRAYS=flat|shared|trie`, `OKKAMA_MAPS=btree`,
 `OKKAMA_STRINGS=flat` (Sparrow's persistent representations of 0.4.3 off or

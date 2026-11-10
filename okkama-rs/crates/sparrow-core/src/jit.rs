@@ -150,6 +150,18 @@ pub struct Jit {
     /// Allocations of each inline allocation site compiled under `--stats`:
     /// its label and the count and bytes machine code adds there (#55).
     alloc_sites: Vec<(String, Box<[u64; 2]>)>,
+    /// Where compilation spends its time (`SPARROW_CORE_PROFILE_COMPILE=1`,
+    /// #345): a line per function on stderr, and Cranelift's own passes,
+    /// summed, when the JIT is dropped.
+    profile: Option<cranelift_codegen::timing::PassTimes>,
+}
+
+impl Drop for Jit {
+    fn drop(&mut self) {
+        if let Some(passes) = &self.profile {
+            eprintln!("; Cranelift passes, all compiled functions\n{passes}");
+        }
+    }
 }
 
 /// Functions chosen by symbol in an environment variable: a comma-separated
@@ -192,6 +204,12 @@ fn target(opt_level: &str) -> Result<std::sync::Arc<dyn cranelift_codegen::isa::
     set(&mut flags, "use_colocated_libcalls", "false")?;
     // The collector walks frame records to find each frame's stack map.
     set(&mut flags, "preserve_frame_pointers", "true")?;
+    // Cranelift's IR verifier checks the emitter, not the program: a quarter
+    // of the compile time of a large async program (#345). Debug builds,
+    // and so the gate's debug tests, keep it; `SPARROW_CORE_VERIFY=1` turns
+    // it on in a release build.
+    let verify = cfg!(debug_assertions) || std::env::var("SPARROW_CORE_VERIFY").is_ok_and(|value| value == "1");
+    set(&mut flags, "enable_verifier", if verify { "true" } else { "false" })?;
     cranelift_native::builder()
         .map_err(|e| Error(format!("JIT target: {e}")))?
         .finish(settings::Flags::new(flags))
@@ -247,6 +265,12 @@ impl Jit {
             unoptimized_isa,
             plain: Chosen::from_env("SPARROW_CORE_PLAIN"),
             alloc_sites: Vec::new(),
+            profile: std::env::var("SPARROW_CORE_PROFILE_COMPILE")
+                .is_ok_and(|value| !value.is_empty() && value != "0")
+                .then(|| {
+                    eprintln!("; compile\tfunction\tinstructions\tregisters\tsuspensions\tclif blocks\tclif instructions\tsafepoints\tcode bytes\tframe bytes\tdeclare\tliveness\temit\tfinalize\tcodegen\tmaps\tdefinitions\ttables (microseconds)");
+                    cranelift_codegen::timing::PassTimes::default()
+                }),
         })
     }
 
@@ -387,6 +411,17 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     }
     let Runtime { heap, loaded, jit, code, constants, resources, limits, budget, stats, .. } = runtime;
     let started = stats.is_some().then(std::time::Instant::now);
+    // Stage boundaries under `SPARROW_CORE_PROFILE_COMPILE` (#345).
+    let profiling = jit.profile.is_some();
+    let mut marks: Vec<std::time::Instant> = Vec::new();
+    macro_rules! mark {
+        () => {
+            if profiling {
+                marks.push(std::time::Instant::now());
+            }
+        };
+    }
+    mark!();
     let program = &loaded.program;
     let source = &program.functions[function];
     let symbol = source.symbol.as_str();
@@ -407,6 +442,7 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
             id
         }
     };
+    mark!();
     // Live registers per instruction, for the cost of large functions only:
     // a function whose instructions × registers × blocks cannot reach the
     // limit skips the analysis.
@@ -421,6 +457,7 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     } else {
         None
     };
+    mark!();
     let plain = jit.plain.has(symbol);
     let config = jit.module.target_config();
     let mut context = jit.module.make_context();
@@ -454,9 +491,12 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
             plain,
         };
         emit.body()?;
+        mark!();
         builder.seal_all_blocks();
         builder.finalize(config);
     }
+    mark!();
+    let clif = (context.func.layout.blocks().count(), context.func.dfg.num_insts());
     let dump = jit.dump.has(symbol);
     if dump {
         // Callees by their CLIF names: the runtime's helpers and the program's functions.
@@ -492,6 +532,7 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
         }
         _ => jit.module.define_function(id, &mut context).map_err(|e| Error(format!("{symbol}: {e:?}")))?,
     }
+    mark!();
     let compiled = context.compiled_code().expect("compiled function");
     let maps: Vec<(u32, Vec<u32>)> = compiled
         .buffer
@@ -513,9 +554,12 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     }
     jit.largest_frame = jit.largest_frame.max(fp_to_sp);
     let size = compiled.code_info().total_size;
+    mark!();
     jit.module
         .finalize_definitions()
         .map_err(|e| Error(format!("JIT finalize: {e}")))?;
+    mark!();
+    let safepoints = maps.len();
     let address = jit.module.get_finalized_function(id) as u64;
     for (ret, slots) in maps {
         jit.maps.push((address + u64::from(ret), fp_to_sp, slots));
@@ -524,6 +568,20 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     jit.ranges.push((address, address + u64::from(size)));
     jit.ranges.sort_unstable();
     code[function] = address;
+    mark!();
+    if let Some(passes) = jit.profile.as_mut() {
+        passes.add(&cranelift_codegen::timing::take_current());
+        let micros: Vec<String> = marks.windows(2).map(|pair| (pair[1] - pair[0]).as_micros().to_string()).collect();
+        eprintln!(
+            "; compile\t{symbol}\t{}\t{}\t{}\t{}\t{}\t{safepoints}\t{size}\t{fp_to_sp}\t{}",
+            source.code.len(),
+            source.registers.len(),
+            source.code.iter().filter(|instruction| suspends(instruction)).count(),
+            clif.0,
+            clif.1,
+            micros.join("\t")
+        );
+    }
     if dump && let Some(listing) = &compiled.vcode {
         eprintln!("; machine code of {symbol} at {address:#x}, {size} bytes, frame {fp_to_sp} bytes\n{listing}");
     }

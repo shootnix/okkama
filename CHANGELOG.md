@@ -92,6 +92,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Performance
 
+- Tomato compiles a quarter faster (#345): release builds no longer run
+  Cranelift's IR verifier, which checks the JIT's own output and took a
+  quarter of the compile time. A small HTTP server and client (a loopback
+  server and 50 requests, #328) runs in 582 ms instead of 757; its 601
+  functions compile in 595 ms instead of 792, to the same machine code.
+  Debug builds, and the gate's debug tests, keep the verifier;
+  `SPARROW_CORE_VERIFY=1` turns it on in a release build.
+  `SPARROW_CORE_PROFILE_COMPILE=1` prints where compilation spends its time:
+  a line per function and Cranelift's passes.
+
 - Tomato looks a map up by a string key without making the key (#343). The
   text is compared where it lies against the stored keys, in the order of
   keys exactly, in both kinds of map entries: the standard B-tree through a
