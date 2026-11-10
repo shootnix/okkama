@@ -1,9 +1,13 @@
 //! The entries of a map value (#252–#254): a persistent B+ tree whose nodes
 //! versions share (the default), or the standard B-tree that every version
 //! copies (`OKKAMA_MAPS=btree`, kept so that one binary measures both).
-//! Under the default a map starts as a standard B-tree and turns persistent
-//! past [`SMALL`] entries: a small map is copied whole as cheaply as a path
-//! of nodes, and is made, read and dropped faster.
+//! Under the default a map is a standard B-tree until a write makes a new
+//! version of it while it holds more than [`SMALL`] entries; it then turns
+//! persistent in place ([`Entries::make_persistent`]), and it and its
+//! versions share nodes from there on. A map that is only built and read —
+//! by a builder, a literal, or a version of a small map — costs what it
+//! did before; its first version costs the copy it did before, the next
+//! ones a path (the owner's decision on #252–#254, 2026-11-10).
 //!
 //! A persistent map is cloned in O(1); a write copies one path from the
 //! root, or changes nodes in place while no other version holds them (a map
@@ -25,8 +29,8 @@ use crate::word::Word;
 /// A key's word and the value's word, as stored.
 pub type Entry = (Word, Word);
 
-/// Entries a standard map holds at most before it turns persistent, as
-/// many as an array keeps flat before it becomes a trie.
+/// Entries a standard map holds at most and still makes its versions by a
+/// copy, as many as an array keeps flat before it becomes a trie.
 pub const SMALL: usize = 64;
 
 /// Persistent maps unless `OKKAMA_MAPS=btree`.
@@ -107,7 +111,6 @@ impl Entries {
         match self {
             Entries::BTree(map) => {
                 map.insert(key, entry);
-                self.settle();
             }
             Entries::Persistent(map) => {
                 map.insert(key, entry);
@@ -115,23 +118,17 @@ impl Entries {
         }
     }
 
-    /// A standard map past [`SMALL`] entries turns persistent.
-    fn settle(&mut self) {
+    /// A standard map of more than [`SMALL`] entries that a new version is
+    /// about to be made from turns persistent, in place: the same entries,
+    /// built bottom-up into full nodes as the B-tree hands them over, so it
+    /// and every later version share them. A Tomato heap has one thread, so
+    /// no reader sees the change.
+    pub fn make_persistent(&mut self) {
         if let Entries::BTree(map) = self
             && map.len() > SMALL
             && persistent_maps()
         {
             *self = Entries::Persistent(PMap::from_sorted(std::mem::take(map)));
-        }
-    }
-
-    /// Rebuild a persistent map whose leaves its writes left emptier than a
-    /// bulk build would ([`PMap::packed`]): a builder that is finished.
-    pub fn pack(&mut self) {
-        if let Entries::Persistent(map) = self
-            && let Some(packed) = map.packed()
-        {
-            *map = packed;
         }
     }
 
@@ -147,7 +144,6 @@ impl Entries {
                 }
                 btree_map::Entry::Vacant(slot) => {
                     slot.insert(entry);
-                    self.settle();
                     true
                 }
             },
@@ -295,31 +291,30 @@ mod tests {
     }
 
     #[test]
-    fn small_maps_turn_persistent_as_they_grow() {
+    fn large_maps_turn_persistent_in_place() {
+        // Built entry by entry, as a builder does: still the standard map.
         let mut map = Entries::default();
-        for i in 0..SMALL as i64 {
-            map.upsert(Key::Small(i), (i as Word, 0));
+        for i in (0..1_000i64).rev() {
+            map.upsert(Key::Small(i * 7 % 1_000), (i as Word, 0));
         }
-        assert!(!map.is_persistent() && map.len() == SMALL);
-        map.upsert(Key::Small(-1), (0, 0));
-        assert!(map.is_persistent() && map.len() == SMALL + 1);
-        assert!(map.keys().zip(map.keys().skip(1)).all(|(a, b)| a < b));
-        // A small left part merged into a persistent one keeps its key words.
+        assert!(!map.is_persistent() && map.len() == 1_000);
+        let before: Vec<(Key, Entry)> = map.iter().map(|(k, e)| (k.clone(), *e)).collect();
+        map.make_persistent();
+        assert!(map.is_persistent());
+        assert!(map.iter().map(|(k, e)| (k.clone(), *e)).eq(before));
+        // A small map stays standard.
         let mut small = Entries::default();
-        small.upsert(Key::Small(3), (77, 1));
-        small.merge(&map);
-        assert!(small.is_persistent() && small.len() == SMALL + 1);
-        assert_eq!(small.get(&Key::Small(3)), Some(&(77, 0)));
-        // Out of order inserts leave room that a pack takes back.
-        let mut loose = Entries::default();
-        for i in 0..10_000i64 {
-            loose.upsert(Key::Small(i.wrapping_mul(7919) % 10_007), (0, 0));
+        for i in 0..SMALL as i64 {
+            small.upsert(Key::Small(i), (i as Word, 0));
         }
-        let before: Vec<Key> = loose.keys().cloned().collect();
-        loose.pack();
-        assert!(loose.keys().cloned().eq(before));
-        let Entries::Persistent(packed) = &loose else { panic!("persistent") };
-        assert!(packed.packed().is_none());
+        small.make_persistent();
+        assert!(!small.is_persistent());
+        // A small left part merged into a persistent one keeps its key words.
+        let mut left = Entries::default();
+        left.upsert(Key::Small(3), (77, 1));
+        left.merge(&map);
+        assert!(left.is_persistent() && left.len() == 1_000);
+        assert_eq!(left.get(&Key::Small(3)).map(|e| e.0), Some(77));
     }
 
     /// Both kinds of entries with Tomato's own keys (#252): run with

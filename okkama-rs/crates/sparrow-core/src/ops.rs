@@ -1440,6 +1440,11 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             // later part's entries: the rightmost value wins, the leftmost key
             // word stays (#254).
             let mut map = map_for(runtime, function, dst.0)?;
+            // A large standard map a version is made from turns persistent
+            // in place, so that this and later versions share its nodes.
+            for part in parts {
+                runtime.heap.payload_mut::<MapValue>(value(part)).expect("map").entries.make_persistent();
+            }
             let mut parts = parts.iter().map(|part| &runtime.heap.payload::<MapValue>(value(part)).expect("map").entries);
             if let Some(first) = parts.next() {
                 map.entries = first.clone();
@@ -1451,6 +1456,7 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
         }
         I::MapDiff { dst, map: base, removed } => {
             let mut map = map_for(runtime, function, dst.0)?;
+            runtime.heap.payload_mut::<MapValue>(value(base)).expect("map").entries.make_persistent();
             map.entries = runtime.heap.payload::<MapValue>(value(base)).expect("map").entries.clone();
             for part in removed {
                 let entries = &runtime.heap.payload::<MapValue>(value(part)).expect("map").entries;
@@ -1486,11 +1492,7 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
         I::MapBuilderFinish { builder, .. } => {
             let map = runtime.heap.payload_mut::<MapValue>(value(builder)).expect("map builder");
             let owned = map.owned.replace(Some(0));
-            let mut entries = std::mem::take(&mut map.entries);
-            // Keys put out of order leave a persistent map's leaves part
-            // empty: a finished map is read more than it is written.
-            entries.pack();
-            let finished = MapValue { key: map.key, value: map.value, entries, owned: owned.into() };
+            let finished = MapValue { key: map.key, value: map.value, entries: std::mem::take(&mut map.entries), owned: owned.into() };
             // The entries were charged as the builder took them.
             Ok(runtime.heap.allocate_payload_moved(Box::new(finished)))
         }

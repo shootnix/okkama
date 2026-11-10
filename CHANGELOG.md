@@ -129,40 +129,45 @@ anything is kept. Not released until the measurements show a net gain.
   representations below gain. Persistence stand, today's maps: random
   lookups −15…−21% and lookups by string key −28…−41% (n = 10³…10⁵).
 
-- Tomato: maps of more than 64 entries are persistent B+ trees (#252–#254,
-  prototype). A new version shares every node but one path with the map it
-  was made from: putting, replacing and removing a key cost O(log n)
-  instead of a copy of the whole map, and old versions keep their entries.
-  - Smaller maps stay as they were: a standard B-tree that every version
-    copies, which makes, reads and drops small maps as fast as today. A map
-    turns persistent past 64 entries, as many as an array keeps flat before
-    it becomes a trie.
-  - Nodes hold up to 16 keys and values inline. A lookup scans a node from
-    the left: one comparison per key for small integers, three-way for
-    other keys.
-  - A finished builder packs a map whose keys arrived out of order.
-  - The collector counts node memory exactly, shared nodes once, and visits
-    a shared node once per collection.
-  - Merges insert the much smaller part into the larger one, or make one
-    ordered pass over both. The left key word stays.
+- Tomato: versions of large maps share their nodes (#252–#254, prototype).
+  A map of more than 64 entries turns into a persistent B+ tree the first
+  time a new version is made from it: `m + [k: v]`, `m - [k: _]`, a merge.
+  From then on, putting, replacing and removing a key cost O(log n) instead
+  of a copy of the whole map, and old versions keep their entries.
+  - **What stays as it was.** A map that is only built and read stays the
+    standard B-tree. That covers a builder, a `reduce`, a literal, and a
+    version of a small map. Building and reading therefore cost what they
+    did. The first version of a large map costs the copy it did before; the
+    tree is built full from the ordered entries, and the map turns in place,
+    so it and its later versions share the nodes.
+  - **Tree.** Up to 16 keys and values per node, inline. A lookup scans a
+    node from the left: one comparison per key for small integers,
+    three-way for other keys. The collector counts node memory exactly,
+    shared nodes once, and visits a shared node once per collection.
+  - **Merges.** A much smaller part is inserted into the larger one; parts
+    of comparable size are merged in one ordered pass. The left key word
+    stays.
   - `OKKAMA_MAPS=btree` turns it off.
+  - This is the revision decided on 2026-11-10. The first cut turned maps
+    persistent as they grew, which made builds 9–11% slower and raised the
+    peak memory of packing unordered string-keyed maps by 35–50%; both
+    costs are gone.
 
-  Persistence stand, same binary both ways (M2 Max, 10 repetitions):
-  - **Writes:** a version put on a shared map takes 0.74 µs at n = 10³
-    (standard: 12.7 µs) and 1.6 µs at 10⁵ (standard: 2.0 ms). Every version
-    kept alive at 10⁶: 55.6 ms → 1.0 µs per version, 3.3 GB → 70 MB. Merging
-    two equal maps: −46…−55%.
-  - **Reads:** −8.7% on geometric mean (−2.6…−22.9% per size). Lookups by
-    string key: −2…+6%. Iteration and `==` at 10⁶: −9…−44%.
-  - **Small maps made and dropped:** ±0.
-  - **Costs, left to the decision on 0.4.3:**
-    - building a map in `reduce` is +9…+11% at 10³–10⁵ and on par at 10⁶;
-    - a string-keyed map built out of order peaks 35–50% higher in memory
-      while the builder packs it.
+  Persistence stand, same binary both ways (M2 Max, 2 processes):
+  - **Writes:** −98.3% on geometric mean. A version put on a shared map
+    takes 0.85 µs at n = 10³ (standard: 13.2 µs) and 0.79 µs at 10⁵
+    (standard: 2.5 ms). Merging two equal maps is −44…−56%.
+  - **Every version kept** at 10⁵: 4.1 ms → 0.9 µs per version, and
+    353 → 23 MB.
+  - **No change:** building in `reduce` (−0.1…+0.5%), reads (−0.1%), and
+    small maps made and dropped (±0).
+  - **One cost:** merging two equal maps of 10⁵ entries peaks at 106 MB
+    instead of 97.
 
   t/ family `persistence`: chains of puts and removals, branching
   versions, merges of every relative size with float keys (the left key
-  word stays), sizes across the 64-entry turn, also under GC stress.
+  word stays), sizes across the 64-entry turn, in both modes and under GC
+  stress.
 
 - Tomato: a chain of `+` on strings no longer copies the string at every
   step (#255, prototype).

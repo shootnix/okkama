@@ -310,22 +310,6 @@ impl<K: NodeKey + Clone, V: Clone> PMap<K, V> {
         Self { root: level.pop().map(|(_, node)| node), len }
     }
 
-    /// The map built anew as a bulk build fills it, when its leaves are
-    /// emptier than that on average (keys that arrived out of order leave
-    /// them about two thirds full): fewer nodes for every later lookup to
-    /// pass. `None` when it is as full already.
-    pub fn packed(&self) -> Option<Self> {
-        fn leaves<K, V>(node: &Node<K, V>) -> usize {
-            match node {
-                Node::Leaf { .. } => 1,
-                Node::Branch { kids, .. } => kids.iter().map(|kid| leaves(&kid.node)).sum(),
-            }
-        }
-        let root = self.root.as_ref()?;
-        (leaves(&root.node) > self.len.div_ceil(BULK))
-            .then(|| Self::from_sorted(self.iter().map(|(k, v)| (k.clone(), v.clone()))))
-    }
-
     /// The stored key equal to `key` and its value.
     pub fn get_key_value(&self, key: &K) -> Option<(&K, &V)> {
         let mut node = &self.root.as_ref()?.node;
