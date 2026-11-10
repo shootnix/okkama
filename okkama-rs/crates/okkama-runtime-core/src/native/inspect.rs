@@ -67,7 +67,7 @@ fn type_name(context: &Context, value: &Value) -> String {
             .map_or_else(|| "enum".to_string(), |(name, _)| name.clone()),
         Value::Object(object) => object_name(context, object.declaration),
         Value::NativeFailure(_) => "NativeFailure".to_string(),
-        Value::Array(array) => format!("@{}", common(context, array.0.iter())),
+        Value::Array(array) => format!("@{}", common(context, array.items().iter())),
         Value::Map(map) => {
             let keys: Vec<Value> = map.0.keys().map(|key| key.to_value()).collect();
             format!("%{}:{}", common(context, keys.iter()), common(context, map.0.values()))
@@ -124,7 +124,7 @@ pub fn short_type(name: &str) -> String {
 
 fn size(context: &Context, value: &Value) -> usize {
     match plain(value) {
-        Value::Array(array) => array.0.len(),
+        Value::Array(array) => array.len(),
         Value::Map(map) => map.0.len(),
         Value::Str(text) => text.chars().count(),
         Value::Object(_) | Value::NativeFailure(_) => names(context, value).len(),
@@ -172,7 +172,7 @@ fn keys(value: &Value) -> Vec<Value> {
 
 fn items(value: &Value) -> Vec<Value> {
     match plain(value) {
-        Value::Array(array) => array.0.clone(),
+        Value::Array(array) => array.items().to_vec(),
         Value::Map(map) => map.0.values().cloned().collect(),
         Value::Object(object) => (0..object.field_count())
             .map(|index| object.field(index).unwrap_or(Value::Undef))

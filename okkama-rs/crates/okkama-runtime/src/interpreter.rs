@@ -1146,7 +1146,7 @@ pub(crate) fn execute_function(
                 let index = read(slots, *index, span)?.int(span)?;
                 match state.array_lookup(read(slots, *array, span)?, index, span)? {
                     Some(value) => {
-                        payload = Some(value.clone());
+                        payload = Some(value);
                         found
                     }
                     None => missing,

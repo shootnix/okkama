@@ -50,7 +50,7 @@ pub fn float(value: &Value) -> Result<f64, Error> {
     Ok(value.as_float()?)
 }
 
-pub fn items(value: &Value) -> Result<&[Value], Error> {
+pub fn items(value: &Value) -> Result<crate::heap::Items<'_>, Error> {
     Ok(ArrayHeap.elements(value)?)
 }
 

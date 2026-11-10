@@ -996,10 +996,10 @@ pub fn same(host: &dyn Host, left: &Value, right: &Value) -> Result<bool> {
     match (left, right) {
         (Value::Any(a), Value::Any(b)) => same(host, a, b),
         (Value::Array(a), Value::Array(b)) => {
-            if a.0.len() != b.0.len() {
+            if a.len() != b.len() {
                 return Ok(false);
             }
-            for (x, y) in a.0.iter().zip(&b.0) {
+            for (x, y) in a.items().iter().zip(b.items().iter()) {
                 if !same(host, x, y)? {
                     return Ok(false);
                 }

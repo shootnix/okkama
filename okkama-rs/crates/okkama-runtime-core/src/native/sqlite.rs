@@ -1261,7 +1261,7 @@ fn params(tags: &Value, payloads: &Value, name: &str, arity: usize) -> Result<Ve
     }
     let mut out = Vec::new();
     let mut used = 0usize;
-    for (tag, payload) in tags.iter().zip(payloads) {
+    for (tag, payload) in tags.iter().zip(payloads.iter()) {
         let tag = int(tag).map_err(|_| invalid("Invalid SQLite binding kind"))?;
         let Some(tag) = tag.to_i64().filter(|tag| (0..=6).contains(tag)) else {
             return Err(invalid("Invalid SQLite binding kind"));
@@ -1296,7 +1296,7 @@ fn cell_params(value: &Value, name: &str) -> Result<Vec<(&'static str, Param)>, 
     }
     let mut used = 0usize;
     let mut params = Vec::with_capacity(cells.len());
-    for value in cells {
+    for value in cells.iter() {
         let cell = handle::<DbCell>(value).map_err(|_| invalid())?;
         let (width, payload) = match cell {
             DbCell::Null => (0, Param::Text(String::new())),
@@ -1369,7 +1369,7 @@ fn prepared_statement(args: &[Value], rows: bool, name: &'static str) -> Value {
     let attempt = || -> Result<Value, Rc<Failure>> {
         let state = connection(&args[0], name, 4)?;
         let id = int(&args[1]).map_err(|_| fail("invalid_input", name, 4, "Invalid SQLite bindings"))?;
-        let counts = (items(&args[2]).map(<[Value]>::len).unwrap_or(0), items(&args[3]).map(<[Value]>::len).unwrap_or(0));
+        let counts = (items(&args[2]).map(|items| items.len()).unwrap_or(0), items(&args[3]).map(|items| items.len()).unwrap_or(0));
         if id.signum() < 1 || counts.0 != counts.1 || counts.0 > 1024 {
             return Err(fail("invalid_input", name, 4, "Invalid SQLite bindings"));
         }

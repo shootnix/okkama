@@ -197,15 +197,8 @@ impl State {
         end: &ir::IntValue,
         span: Span,
     ) -> Result<Value, RuntimeError> {
-        let elements = self.array(array, span)?;
-        let range = okkama_runtime_core::integer::slice_range(elements.len(), start, end).map_err(
-            |message| RuntimeError::Trap {
-                span,
-                message: message.into(),
-            },
-        )?;
-        let elements = elements[range].to_vec();
-        Ok(self.arrays.allocate(elements))
+        // A slice that keeps half of its origin shares it (#335).
+        okkama_runtime_core::ops::array_slice(array, start, end).map_err(crate::operations::fault(span))
     }
     pub(crate) fn str_split(&self, text: &str, separator: &str) -> Value {
         self.arrays.split(text, separator)
@@ -226,7 +219,7 @@ impl State {
         self.arrays.allocate(elements)
     }
 
-    fn array<'a>(&self, value: &'a Value, span: Span) -> Result<&'a [Value], RuntimeError> {
+    fn array<'a>(&self, value: &'a Value, span: Span) -> Result<okkama_runtime_core::heap::Items<'a>, RuntimeError> {
         self.arrays
             .elements(value)
             .map_err(|e| invalid_state(span, e.message))
@@ -238,17 +231,13 @@ impl State {
         )))
     }
 
-    pub(crate) fn array_lookup<'a>(
-        &self,
-        array: &'a Value,
-        index: &ir::IntValue,
-        span: Span,
-    ) -> Result<Option<&'a Value>, RuntimeError> {
+    pub(crate) fn array_lookup(&self, array: &Value, index: &ir::IntValue, span: Span) -> Result<Option<Value>, RuntimeError> {
         let elements = self.array(array, span)?;
         Ok(index
             .to_i64()
             .and_then(|i| usize::try_from(i).ok())
-            .and_then(|i| elements.get(i)))
+            .and_then(|i| elements.get(i))
+            .cloned())
     }
 
     pub(crate) fn array_get(
@@ -258,7 +247,6 @@ impl State {
         span: Span,
     ) -> Result<Value, RuntimeError> {
         self.array_lookup(array, index, span)?
-            .cloned()
             .ok_or_else(|| RuntimeError::Trap {
                 span,
                 message: "Array index out of bounds".into(),
@@ -273,15 +261,13 @@ impl State {
         value: Value,
         span: Span,
     ) -> Result<Value, RuntimeError> {
-        let elements = self.array(array, span)?;
+        let array = self.arrays.array(array).map_err(|e| invalid_state(span, e.message))?;
         let at = index
             .to_i64()
             .and_then(|i| usize::try_from(i).ok())
-            .filter(|&i| i < elements.len())
+            .filter(|&i| i < array.len())
             .ok_or_else(|| RuntimeError::Trap { span, message: "Array index out of bounds".into() })?;
-        let mut copy = elements.to_vec();
-        copy[at] = value;
-        Ok(self.array_new(copy))
+        Ok(array.replaced(at, value))
     }
 
     /// `arr.remove` (#251): a copy of `array` without element `index`.

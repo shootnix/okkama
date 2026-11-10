@@ -92,6 +92,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Performance
 
+- The IR engine keeps arrays as Tomato has since 0.4.3 (#335, arrays): a
+  chain of appends or prepends (`xs = xs + [x]`, `[x] + xs`, both ends in
+  turn) writes into a shared buffer in place instead of copying the array at
+  every step, and a slice that keeps at least half of its array shares its
+  storage (`take`, `drop`, `slice`). On the persistence stand these steps cost
+  200–400 ns at 100 000 elements, where each was a copy of the whole array
+  before (27 µs at 16 000, 60–250 times more); reads, branches off old
+  versions and one-off copies cost what they did. Every version still sees
+  only its own elements. An array of plain values (numbers, strings) is no
+  longer a node of the cycle collector. `OKKAMA_ARRAYS=flat` keeps every
+  append and slice a copy.
+
 - Tomato compiles a quarter faster (#345): release builds no longer run
   Cranelift's IR verifier, which checks the JIT's own output and took a
   quarter of the compile time. A small HTTP server and client (a loopback

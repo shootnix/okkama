@@ -99,7 +99,7 @@ fn java_text(names: &Names<'_>, value: &Value) -> String {
         Value::Array(array) => format!(
             "[{}]",
             array
-                .0
+                .items()
                 .iter()
                 .map(|item| java_text(names, item))
                 .collect::<Vec<_>>()

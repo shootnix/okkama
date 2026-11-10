@@ -316,7 +316,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             }
             let mut width = 0;
             let mut names = Vec::new();
-            for part in parts {
+            for part in parts.iter() {
                 let part = part.as_string()?;
                 if !component(part) {
                     return Err(failure(ROOT, "invalid_input", native, "Invalid root coordinate"));

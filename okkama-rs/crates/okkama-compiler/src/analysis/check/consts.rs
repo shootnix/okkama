@@ -292,8 +292,8 @@ fn binary(op: BinaryOp, left: &Value, right: &Value) -> Outcome {
         BinaryOp::Concat => ops::concat(left, right),
         BinaryOp::ArrayConcat => ops::array_concat(&[left, right]),
         BinaryOp::ArrayDifference => {
-            let removed: Vec<&Value> = ArrayHeap.elements(right).map_err(fault)?.iter().collect();
-            ops::array_difference(left, &removed)
+            let removed = ArrayHeap.elements(right).map_err(fault)?.to_vec();
+            ops::array_difference(left, &removed.iter().collect::<Vec<_>>())
         }
         BinaryOp::MapMerge => ops::map_merge(&[left, right]),
         BinaryOp::MapDifference => ops::map_difference(left, &[right]),
@@ -337,8 +337,8 @@ fn tree(value: &Value) -> ConstValue {
             let values = ops::map_values(value).ok();
             match (keys, values) {
                 (Some(keys), Some(values)) => {
-                    let keys = ArrayHeap.elements(&keys).map(<[Value]>::to_vec).unwrap_or_default();
-                    let values = ArrayHeap.elements(&values).map(<[Value]>::to_vec).unwrap_or_default();
+                    let keys = ArrayHeap.elements(&keys).map(|items| items.to_vec()).unwrap_or_default();
+                    let values = ArrayHeap.elements(&values).map(|items| items.to_vec()).unwrap_or_default();
                     ConstValue::Map(keys.iter().map(tree).zip(values.iter().map(tree)).collect())
                 }
                 _ => ConstValue::Map(Vec::new()),

@@ -177,9 +177,352 @@ impl Object {
     }
 }
 
-/// Неизменяемый массив.
+/// Неизменяемый массив (#335): плоский вектор, версия общего буфера или
+/// срез плоского массива. Цепочки `a + [x]` и `[x] + a` пишут в буфер на
+/// месте, у его границы; срез, который держит не меньше половины источника,
+/// разделяет его хранилище. Версия видит только свои элементы, и они не
+/// меняются — представления Tomato из 0.4.3 (#246, #247, #249) на `Rc`.
 #[derive(Debug, Default)]
-pub struct Array(pub Vec<Value>);
+pub struct Array(Repr, Plain);
+
+/// Держит ли массив только простые значения (числа, строки…): такой
+/// массив не узел сборщика циклов — цикла через него не бывает. Известно
+/// сразу у сделанного из массивов с известным ответом (сцепление, срез,
+/// замена элемента); иначе выясняется при первом вопросе и запоминается.
+#[derive(Debug, Default)]
+struct Plain(Cell<Option<bool>>);
+
+impl Plain {
+    fn known(plain: Option<bool>) -> Plain {
+        Plain(Cell::new(plain))
+    }
+}
+
+#[derive(Debug)]
+enum Repr {
+    /// `chain`: копия, сделанная добавлением в конец или в начало; следующее
+    /// добавление к ней начинает буфер.
+    Flat { items: Vec<Value>, chain: Chain },
+    View { buffer: Rc<Buffer>, start: usize, len: usize },
+    /// Срез плоского массива `origin` (никогда — другого среза или версии).
+    Slice { origin: Rc<Array>, start: usize, len: usize },
+}
+
+impl Default for Repr {
+    fn default() -> Self {
+        Repr::Flat { items: Vec::new(), chain: Chain::None }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Chain {
+    None,
+    Appended,
+    Prepended,
+}
+
+/// Хранилище цепочки добавлений: `slots` до `capacity`, записаны
+/// `front..` (впереди — `Undef`, место для добавлений в начало; позади —
+/// невыделенная ёмкость вектора, без заполнения). Записанный слот не
+/// меняется, пока буфер жив, поэтому версии, видящие его, не меняются тоже;
+/// запись идёт только за границы, и только у версии, которая кончается
+/// (начинается) ровно на границе.
+#[derive(Debug)]
+pub struct Buffer {
+    slots: RefCell<Vec<Value>>,
+    front: Cell<usize>,
+    capacity: usize,
+    /// Все записанные значения простые (см. [`Plain`]); `None` — не
+    /// выяснено.
+    plain: Cell<Option<bool>>,
+}
+
+impl Drop for Buffer {
+    fn drop(&mut self) {
+        let mut pending = Vec::new();
+        take_deep(self.slots.get_mut(), &mut pending);
+        if !pending.is_empty() {
+            release_all(pending);
+        }
+    }
+}
+
+impl Buffer {
+    /// Записанные значения: рёбра узла для сборщика циклов.
+    pub(crate) fn written(&self) -> Option<std::cell::Ref<'_, [Value]>> {
+        let slots = self.slots.try_borrow().ok()?;
+        let front = self.front.get();
+        Some(std::cell::Ref::map(slots, |slots| &slots[front..]))
+    }
+
+    /// Отдать записанные значения мусорного буфера.
+    pub(crate) fn clear(&self, sink: &mut Vec<Value>) {
+        if let Ok(mut slots) = self.slots.try_borrow_mut() {
+            let front = self.front.get();
+            sink.extend(slots[front..].iter_mut().map(|slot| std::mem::replace(slot, Value::Undef)));
+        }
+    }
+
+    /// Конец записанного: граница добавлений в конец.
+    fn back(&self) -> usize {
+        self.slots.borrow().len()
+    }
+
+    /// Буфер на `capacity` значений с `parts` подряд начиная со слота `front`.
+    fn new(parts: &[&[Value]], capacity: usize, front: usize, plain: Option<bool>) -> Rc<Buffer> {
+        let mut slots = Vec::with_capacity(capacity);
+        slots.resize(front, Value::Undef);
+        for part in parts {
+            slots.extend_from_slice(part);
+        }
+        Rc::new(Buffer { slots: RefCell::new(slots), front: Cell::new(front), capacity, plain: Cell::new(plain) })
+    }
+
+    fn plain(&self) -> bool {
+        if let Some(plain) = self.plain.get() {
+            return plain;
+        }
+        let plain = self.slots.borrow()[self.front.get()..].iter().all(|value| !crate::gc::traced(value));
+        self.plain.set(Some(plain));
+        plain
+    }
+
+    /// Записать `items` за концом записанного или перед `front`; `false`,
+    /// если места нет или буфер сейчас читают.
+    fn write(self: &Rc<Self>, items: &[Value], at_back: bool) -> bool {
+        let Ok(mut slots) = self.slots.try_borrow_mut() else {
+            return false;
+        };
+        let front = self.front.get();
+        if at_back {
+            if slots.len() + items.len() > self.capacity {
+                return false;
+            }
+            // В пределах `capacity` вектор не перевыделяется.
+            slots.extend_from_slice(items);
+        } else {
+            if front < items.len() {
+                return false;
+            }
+            slots[front - items.len()..front].clone_from_slice(items);
+            self.front.set(front - items.len());
+        }
+        drop(slots);
+        // Новое ребро старого буфера может замкнуть цикл через версию,
+        // записанную в него; простые значения цикла не замкнут.
+        if items.iter().any(crate::gc::traced) {
+            self.plain.set(Some(false));
+            crate::gc::track_buffer(self);
+        }
+        true
+    }
+}
+
+/// Элементы массива: срез плоского вектора или заимствование буфера.
+#[derive(Debug)]
+pub enum Items<'a> {
+    Flat(&'a [Value]),
+    Shared(std::cell::Ref<'a, [Value]>),
+}
+
+impl std::ops::Deref for Items<'_> {
+    type Target = [Value];
+    fn deref(&self) -> &[Value] {
+        match self {
+            Items::Flat(items) => items,
+            Items::Shared(items) => items,
+        }
+    }
+}
+
+/// Массивы короче этого копируются при добавлении, как прежде: копия
+/// нескольких значений дешевле буфера и версии (`CHAIN_MIN` Tomato).
+pub const CHAIN_MIN: usize = 32;
+
+/// Общие буферы и срезы, если не `OKKAMA_ARRAYS=flat`, при котором каждое
+/// добавление и срез — копия (для замеров на одном бинарнике).
+pub fn shared_arrays() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("OKKAMA_ARRAYS").map_or(true, |v| v != "flat"))
+}
+
+impl Array {
+    pub fn new(items: Vec<Value>) -> Array {
+        Array::flat(items, Chain::None, None)
+    }
+
+    fn flat(items: Vec<Value>, chain: Chain, plain: Option<bool>) -> Array {
+        Array(Repr::Flat { items, chain }, Plain::known(plain))
+    }
+
+    fn shared(repr: Repr) -> Value {
+        Value::Array(Rc::new(Array(repr, Plain::known(None))))
+    }
+
+    /// Массив только простых значений (см. [`Plain`]).
+    pub fn plain(&self) -> bool {
+        match &self.0 {
+            Repr::Flat { items, .. } => {
+                if let Some(plain) = self.1.0.get() {
+                    return plain;
+                }
+                let plain = items.iter().all(|value| !crate::gc::traced(value));
+                self.1.0.set(Some(plain));
+                plain
+            }
+            Repr::View { buffer, .. } => buffer.plain(),
+            Repr::Slice { origin, .. } => origin.plain(),
+        }
+    }
+
+    /// Может ли массив быть частью цикла: держит ли он, сам или через
+    /// буфер и источник, хоть одно непростое значение.
+    pub fn holds_nodes(&self) -> bool {
+        !self.plain()
+    }
+
+    /// `items.replaced(at, value)`: копия с заменённым элементом; ответ
+    /// [`Plain`] — от источника и нового значения, без обхода.
+    pub fn replaced(&self, at: usize, value: Value) -> Value {
+        let plain = self.plain() && !crate::gc::traced(&value);
+        let mut items = self.items().to_vec();
+        items[at] = value;
+        Value::Array(Rc::new(Array::flat(items, Chain::None, Some(plain))))
+    }
+
+    pub fn items(&self) -> Items<'_> {
+        match &self.0 {
+            Repr::Flat { items, .. } => Items::Flat(items),
+            Repr::View { buffer, start, len } => {
+                Items::Shared(std::cell::Ref::map(buffer.slots.borrow(), |slots| &slots[*start..*start + *len]))
+            }
+            Repr::Slice { origin, start, len } => match origin.items() {
+                Items::Flat(items) => Items::Flat(&items[*start..*start + *len]),
+                Items::Shared(items) => Items::Shared(std::cell::Ref::map(items, |items| &items[*start..*start + *len])),
+            },
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match &self.0 {
+            Repr::Flat { items, .. } => items.len(),
+            Repr::View { len, .. } | Repr::Slice { len, .. } => *len,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Что ещё держит массив, кроме своих элементов: буфер версии или
+    /// источник среза (рёбра узла для сборщика циклов).
+    pub(crate) fn storage(&self) -> Storage<'_> {
+        match &self.0 {
+            Repr::Flat { items, .. } => Storage::Items(items),
+            Repr::View { buffer, .. } => Storage::Buffer(buffer),
+            Repr::Slice { origin, .. } => Storage::Origin(origin),
+        }
+    }
+
+    /// Сделан ли массив добавлением: копия с пометкой или версия буфера.
+    fn continues_chain(&self) -> bool {
+        matches!(self.0, Repr::Flat { chain: Chain::Appended | Chain::Prepended, .. } | Repr::View { .. })
+    }
+}
+
+pub(crate) enum Storage<'a> {
+    Items(&'a [Value]),
+    Buffer(&'a Rc<Buffer>),
+    Origin(&'a Rc<Array>),
+}
+
+/// `a + b + …`, когда `a` продолжает цепочку добавлений в конец (#246):
+/// запись на месте за границей буфера `a`, если `a` кончается на ней и
+/// место есть, иначе — в новый буфер вдвое больше. Иначе — то же для
+/// цепочки добавлений в начало (#247), зеркально. `None` — копия, как
+/// прежде; так и ветка от версии, которая кончается не на границе: её
+/// копия помечена, и цепочка от неё начнёт свой буфер на следующем шаге —
+/// новый буфер на каждую ветку стоил бы вдвое больше памяти.
+pub fn concat_shared(parts: &[&Rc<Array>], size: usize) -> Option<Value> {
+    if !shared_arrays() || parts.len() < 2 || size < CHAIN_MIN {
+        return None;
+    }
+    let (first, last) = (parts[0], parts[parts.len() - 1]);
+    if first.continues_chain() {
+        // Добавляемые части копируются заранее: одна из них может быть
+        // версией того же буфера.
+        let rest: Vec<Value> = parts[1..].iter().flat_map(|part| part.items().to_vec()).collect();
+        if let Repr::View { buffer, start, len } = &first.0 {
+            if start + len != buffer.back() {
+                return None;
+            }
+            if buffer.write(&rest, true) {
+                return Some(Array::shared(Repr::View { buffer: buffer.clone(), start: *start, len: size }));
+            }
+        }
+        let head = first.items().to_vec();
+        let capacity = (2 * size).next_power_of_two();
+        let both = matches!(first.0, Repr::Flat { chain: Chain::Prepended, .. })
+            || matches!(&first.0, Repr::View { start, .. } if *start > 0);
+        let front = if both { (capacity - size) / 4 } else { 0 };
+        let buffer = Buffer::new(&[&head, &rest], capacity, front, Some(parts.iter().all(|part| part.plain())));
+        return Some(Array::shared(Repr::View { buffer, start: front, len: size }));
+    }
+    if last.continues_chain() {
+        let rest: Vec<Value> = parts[..parts.len() - 1].iter().flat_map(|part| part.items().to_vec()).collect();
+        if let Repr::View { buffer, start, len } = &last.0 {
+            if *start != buffer.front.get() {
+                return None;
+            }
+            if buffer.write(&rest, false) {
+                let start = start - rest.len();
+                return Some(Array::shared(Repr::View { buffer: buffer.clone(), start, len: len + rest.len() }));
+            }
+        }
+        let tail = last.items().to_vec();
+        let capacity = (2 * size).next_power_of_two();
+        // Три четверти места — впереди, где растёт цепочка.
+        let front = (capacity - size) * 3 / 4;
+        let buffer = Buffer::new(&[&rest, &tail], capacity, front, Some(parts.iter().all(|part| part.plain())));
+        return Some(Array::shared(Repr::View { buffer, start: front, len: size }));
+    }
+    None
+}
+
+/// Пометка плоской копии `a + b + …` (#246, #247): большой первый
+/// операнд — добавление в конец, большой последний — в начало.
+pub fn concat_flat(parts: &[&Rc<Array>], items: Vec<Value>) -> Value {
+    let chain = if !shared_arrays() || parts.len() < 2 {
+        Chain::None
+    } else if parts[0].len() >= CHAIN_MIN {
+        Chain::Appended
+    } else if parts[parts.len() - 1].len() >= CHAIN_MIN {
+        Chain::Prepended
+    } else {
+        Chain::None
+    };
+    let plain = parts.iter().all(|part| part.plain());
+    Value::Array(Rc::new(Array::flat(items, chain, Some(plain))))
+}
+
+/// Срез, который разделяет хранилище источника (#249): версию того же
+/// буфера или срез плоского массива, если он держит не меньше половины
+/// хранилища — так срез не держит живым больше чем вдвое против своего.
+/// Короткие и малые срезы копируются, как прежде.
+pub fn slice_shared(array: &Rc<Array>, range: std::ops::Range<usize>) -> Option<Value> {
+    if !shared_arrays() || range.len() < CHAIN_MIN {
+        return None;
+    }
+    let shared = match &array.0 {
+        Repr::Flat { items, .. } => (2 * range.len() >= items.len())
+            .then(|| Repr::Slice { origin: array.clone(), start: range.start, len: range.len() })?,
+        Repr::Slice { origin, start, .. } => (2 * range.len() >= origin.len())
+            .then(|| Repr::Slice { origin: origin.clone(), start: start + range.start, len: range.len() })?,
+        Repr::View { buffer, start, .. } => (2 * range.len() >= buffer.capacity)
+            .then(|| Repr::View { buffer: buffer.clone(), start: start + range.start, len: range.len() })?,
+    };
+    Some(Value::Array(Rc::new(Array(shared, Plain::known(None)))))
+}
 
 /// Неизменяемый словарь в естественном порядке ключей (OIR-1 §12.3, R06).
 #[derive(Debug, Default)]
@@ -297,7 +640,18 @@ fn release(value: Value, pending: &mut Vec<Value>) {
         }
         Value::Array(array) => {
             if let Some(mut array) = Rc::into_inner(array) {
-                take_deep(&mut array.0, pending);
+                match std::mem::take(&mut array.0) {
+                    Repr::Flat { mut items, .. } => take_deep(&mut items, pending),
+                    Repr::View { buffer, .. } => {
+                        if let Some(mut buffer) = Rc::into_inner(buffer) {
+                            take_deep(buffer.slots.get_mut(), pending);
+                        }
+                    }
+                    Repr::Slice { origin, .. } => {
+                        let mut origin = [Value::Array(origin)];
+                        take_deep(&mut origin, pending);
+                    }
+                }
             }
         }
         Value::Map(map) => {
@@ -363,7 +717,11 @@ impl Drop for Object {
 impl Drop for Array {
     fn drop(&mut self) {
         let mut pending = Vec::new();
-        take_deep(&mut self.0, &mut pending);
+        match &mut self.0 {
+            Repr::Flat { items, .. } => take_deep(items, &mut pending),
+            // Буфер и источник освобождают своё сами, тоже без рекурсии.
+            Repr::View { .. } | Repr::Slice { .. } => {}
+        }
         if !pending.is_empty() {
             release_all(pending);
         }
@@ -578,26 +936,31 @@ impl ArrayHeap {
     }
 
     pub fn allocate(&self, elements: Vec<Value>) -> Value {
-        Value::Array(Rc::new(Array(elements)))
+        Value::Array(Rc::new(Array::new(elements)))
     }
 
-    pub fn elements<'a>(&self, array: &'a Value) -> Result<&'a [Value], ValueError> {
+    pub fn elements<'a>(&self, array: &'a Value) -> Result<Items<'a>, ValueError> {
         match array {
-            Value::Array(array) => Ok(&array.0),
+            Value::Array(array) => Ok(array.items()),
             _ => Err(invalid("expected array value")),
         }
     }
 
-    pub fn lookup<'a>(
-        &self,
-        array: &'a Value,
-        index: &IntValue,
-    ) -> Result<Option<&'a Value>, ValueError> {
+    /// Массив значения `array`.
+    pub fn array<'a>(&self, array: &'a Value) -> Result<&'a Rc<Array>, ValueError> {
+        match array {
+            Value::Array(array) => Ok(array),
+            _ => Err(invalid("expected array value")),
+        }
+    }
+
+    pub fn lookup(&self, array: &Value, index: &IntValue) -> Result<Option<Value>, ValueError> {
         let elements = self.elements(array)?;
         Ok(index
             .to_i64()
             .and_then(|i| usize::try_from(i).ok())
-            .and_then(|i| elements.get(i)))
+            .and_then(|i| elements.get(i))
+            .cloned())
     }
 }
 
@@ -1052,7 +1415,7 @@ fn collect(value: &Value, out: &mut Vec<Rc<Object>>, via: Option<(u64, u64)>) {
                     continue;
                 }
                 match &value {
-                    Value::Array(array) => pending.extend(array.0.iter().rev().cloned()),
+                    Value::Array(array) => pending.extend(array.items().iter().rev().cloned()),
                     Value::Map(map) => pending.extend(map.0.values().rev().cloned()),
                     Value::Any(value) => pending.push((**value).clone()),
                     Value::Fn(closure) => pending.extend(closure.captures.iter().rev().cloned()),
@@ -1297,13 +1660,13 @@ impl ObjectHeap {
                     true
                 }
                 (Value::Array(x), Value::Array(y)) => {
-                    if x.0.len() != y.0.len() {
+                    if x.len() != y.len() {
                         return Ok(false);
                     }
                     if !Rc::ptr_eq(x, y)
                         && seen.insert((1, Rc::as_ptr(x) as usize, Rc::as_ptr(y) as usize))
                     {
-                        pending.extend(x.0.iter().cloned().zip(y.0.iter().cloned()).rev());
+                        pending.extend(x.items().iter().cloned().zip(y.items().iter().cloned()).rev());
                     }
                     true
                 }
@@ -1347,6 +1710,75 @@ impl ObjectHeap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Versions of shared arrays (#335): appends and prepends written in
+    /// place, branches that copy, slices that share, and no version that
+    /// ever changes.
+    #[test]
+    fn shared_arrays_keep_every_version_as_it_was() {
+        use crate::ops::{array_concat, array_slice};
+        let int = |i: i64| Value::Int(crate::IntValue::from_i64(i));
+        let ints = |value: &Value| -> Vec<i64> {
+            ArrayHeap.elements(value).unwrap().iter().map(|v| v.as_int().unwrap().to_i64().unwrap()).collect()
+        };
+        let one = |i: i64| ArrayHeap.allocate(vec![int(i)]);
+        let base = ArrayHeap.allocate((0..40).map(int).collect());
+        let mut versions = vec![base.clone()];
+        let mut value = base;
+        for i in 40..100 {
+            value = array_concat(&[&value, &one(i)]).unwrap();
+            versions.push(value.clone());
+        }
+        for (n, version) in versions.iter().enumerate() {
+            assert_eq!(ints(version), (0..40 + n as i64).collect::<Vec<_>>(), "append version {n}");
+        }
+        // The third and later appends share one buffer, written in place.
+        let storage = |value: &Value| match value {
+            Value::Array(array) => match array.storage() {
+                Storage::Buffer(buffer) => Some(Rc::as_ptr(buffer) as usize),
+                _ => None,
+            },
+            _ => None,
+        };
+        assert!(storage(&versions[3]).is_some());
+        assert_eq!(storage(&versions[3]), storage(&versions[60]));
+        // A branch off an older version copies: neither version changes.
+        let branch = array_concat(&[&versions[30], &one(-1)]).unwrap();
+        assert_ne!(storage(&branch), storage(&versions[60]));
+        assert_eq!(ints(&branch).last(), Some(&-1));
+        assert_eq!(ints(&versions[31]).last(), Some(&70));
+        // Prepends mirror appends, and alternating ends keep both.
+        let mut front = ArrayHeap.allocate((0..40).map(int).collect());
+        for i in 1..=50 {
+            front = array_concat(&[&one(-i), &front]).unwrap();
+            front = array_concat(&[&front, &one(100 + i)]).unwrap();
+        }
+        let expected: Vec<i64> = (-50..=-1).chain(0..40).chain(101..=150).collect();
+        assert_eq!(ints(&front), expected);
+        // A slice keeping half shares the storage; a smaller one copies.
+        let big = ArrayHeap.allocate((0..100).map(int).collect());
+        let at = |i: i64| crate::IntValue::from_i64(i);
+        let half = array_slice(&big, &at(10), &at(70)).unwrap();
+        let small = array_slice(&big, &at(10), &at(30)).unwrap();
+        let shares = |value: &Value| matches!(value, Value::Array(array) if matches!(array.storage(), Storage::Origin(_)));
+        assert!(shares(&half) && !shares(&small));
+        assert_eq!(ints(&half), (10..70).collect::<Vec<_>>());
+        let inner = array_slice(&half, &at(5), &at(60)).unwrap();
+        assert_eq!(ints(&inner), (15..70).collect::<Vec<_>>());
+        // A slice of a slice points at the origin itself, while it keeps
+        // half of it; less is copied.
+        assert!(!shares(&array_slice(&half, &at(5), &at(45)).unwrap()));
+        if let (Value::Array(inner), Value::Array(big)) = (&inner, &big)
+            && let Storage::Origin(origin) = inner.storage()
+        {
+            assert!(Rc::ptr_eq(origin, big));
+        } else {
+            panic!("the slice of a slice shares the origin");
+        }
+        // Equal to a flat array with the same elements.
+        let flat = ArrayHeap.allocate((15..70).map(int).collect());
+        assert!(crate::ops::equal(&inner, &flat).unwrap());
+    }
 
     #[test]
     fn walk_cache_clears_values_on_unwind_and_is_reentrant() {

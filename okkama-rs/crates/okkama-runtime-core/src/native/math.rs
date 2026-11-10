@@ -75,7 +75,7 @@ fn source(native: Native, context: &Context, value: &Value) -> Result<String, Er
         }
         Value::Array(array) => {
             let parts = array
-                .0
+                .items()
                 .iter()
                 .map(|item| source(native, context, item))
                 .collect::<Result<Vec<_>, _>>()?;
@@ -574,7 +574,7 @@ pub fn execute(native: Native, args: &[Value], context: &Context) -> Result<Valu
             native,
             context,
             string(&args[0])?,
-            items(&args[1])?,
+            &items(&args[1])?,
         )?)),
         "statistics_mean" => Ok(Value::Float(mean(&numbers(&args[0])?))),
         "statistics_geometric_mean" => {

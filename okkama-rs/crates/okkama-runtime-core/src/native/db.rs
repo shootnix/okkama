@@ -176,7 +176,7 @@ pub fn execute(n: Native, a: &[Value]) -> Result<Value, Error> {
     }
     if name == "db_cells_bytes" {
         let mut size = 0i64;
-        for v in items(&a[0])? {
+        for v in items(&a[0])?.iter() {
             size += match handle::<Cell>(v)? {
                 Cell::Null => 0,
                 Cell::Boolean(_) => 1,

@@ -81,7 +81,7 @@ fn encode(out: &mut Vec<u8>, value: &Value, type_name: TypeName<'_>) -> Result<(
             let items = ArrayHeap.elements(value).map_err(|error| trap(error.message))?;
             out.push(ARRAY);
             out.extend((items.len() as u32).to_be_bytes());
-            for item in items {
+            for item in items.iter() {
                 encode(out, item, type_name)?;
             }
         }

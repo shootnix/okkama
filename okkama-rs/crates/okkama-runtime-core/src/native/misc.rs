@@ -98,7 +98,7 @@ pub(super) fn dump(native: Native, context: &Context, value: &Value) -> Result<S
         }
         Value::Array(array) => {
             let parts = array
-                .0
+                .items()
                 .iter()
                 .map(|item| dump(native, context, item))
                 .collect::<Result<Vec<_>, _>>()?;
@@ -223,7 +223,7 @@ fn diff_lines(native: Native, value: &Value) -> Result<Vec<String>, Error> {
     }
     let mut out = Vec::new();
     let mut scalars = 0;
-    for value in values {
+    for value in values.iter() {
         let line = value.as_string()?;
         let size = length(line);
         if size > 4096 || line.contains('\n') {

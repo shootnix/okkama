@@ -352,7 +352,7 @@ fn client(args: &[Value]) -> Result<Value, Error> {
         && server.encode_utf16().count() <= 253
         && server.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');
     let mut names: Vec<String> = Vec::new();
-    for protocol in protocols {
+    for protocol in protocols.iter() {
         let name = protocol.as_string()?.to_string();
         let units = name.encode_utf16().count();
         if name.is_empty() || units > 255 || name.chars().any(|c| u32::from(c) >= 256) || names.contains(&name) {
@@ -487,7 +487,7 @@ fn authorize(native: Native, args: &[Value]) -> Result<Value, Error> {
             return Err(as_error(fail("resource_exhausted", &operation, "TLS root count limit")));
         }
         let mut total = 0usize;
-        for root in roots {
+        for root in roots.iter() {
             let size = items(root)?.len();
             total += size;
             if size > 1_048_576 || total > 16_777_216 {

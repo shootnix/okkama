@@ -242,7 +242,7 @@ fn map_snapshot(native: Native, args: &[Value]) -> Result<Value, Error> {
     let mut seen = std::collections::HashSet::new();
     let mut used: i64 = 0;
     let mut out = Vec::new();
-    for (key, value) in keys.iter().zip(values) {
+    for (key, value) in keys.iter().zip(values.iter()) {
         let (key, value) = (key.as_string()?, value.as_string()?);
         if !seen.insert(key) {
             return Err(invalid("invalid_input", "String map has duplicate keys"));
