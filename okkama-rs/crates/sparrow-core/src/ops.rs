@@ -490,12 +490,15 @@ pub(crate) fn shared_strings() -> bool {
 ///
 /// A chain of appends writes at the high end of a text buffer when `left`
 /// ends there and there is room, a chain of prepends right before the low
-/// end when `right` starts there; else into a new buffer twice the size
-/// (three quarters of the room in front for prepends, a quarter for a
-/// chain that has grown at both ends). The string a chain starts from is a
-/// flat copy marked [`APPENDED`](crate::heap::APPENDED) or
-/// [`PREPENDED`](crate::heap::PREPENDED); strings shorter than
-/// [`TEXT_CHAIN_MIN`](crate::heap::TEXT_CHAIN_MIN) are copied, as before.
+/// end when `right` starts there. A chain that outgrows its buffer moves to
+/// one twice the size (three quarters of the room in front for prepends, a
+/// quarter for a chain that has grown at both ends), but only when the part
+/// added is at most half the other: `s + s`, or a version made from an
+/// older one (a branch), is copied flat as before, and so is everything
+/// shorter than [`TEXT_CHAIN_MIN`](crate::heap::TEXT_CHAIN_MIN). A flat
+/// string made by `+` from a long part is marked
+/// [`APPENDED`](crate::heap::APPENDED) or [`PREPENDED`](crate::heap::PREPENDED):
+/// its next `+` starts a buffer.
 pub(crate) fn concat_text(runtime: &mut Runtime, left: Word, right: Word, fits: impl Fn(&Runtime, usize) -> bool) -> Option<Word> {
     use crate::heap::{APPENDED, ASCII, PREPENDED, SHARED, TEXT_CHAIN_MIN, payload};
     let (lh, rh) = (runtime.heap.header_of(left), runtime.heap.header_of(right));
@@ -503,6 +506,9 @@ pub(crate) fn concat_text(runtime: &mut Runtime, left: Word, right: Word, fits: 
     let (size, ascii) = (ll + rl, lh & rh & ASCII != 0);
     let chains = shared_strings() && 2 * size <= u32::MAX as usize;
     let chained = |header: u64| header & (APPENDED | PREPENDED | SHARED) != 0;
+    // A new buffer for a chain that outgrew its own: the share of the room
+    // it keeps in front, as a fraction.
+    let mut grow = None;
     if chains && chained(lh) && ll >= rl {
         if lh & SHARED != 0 {
             let (buffer, start) = runtime.heap.text_shared(left);
@@ -513,20 +519,13 @@ pub(crate) fn concat_text(runtime: &mut Runtime, left: Word, right: Word, fits: 
                 runtime.heap.text_buffer_write(buffer, unsafe { &*text }, false);
                 return Some(runtime.heap.allocate_text_view(buffer, start, size, ascii));
             }
+            if start + ll == high && 2 * rl <= ll {
+                grow = Some(if start > 0 { (1, 4) } else { (0, 1) });
+            }
+        } else if 2 * rl <= ll {
+            grow = Some(if lh & PREPENDED != 0 { (1, 4) } else { (0, 1) });
         }
-        let capacity = (2 * size).next_power_of_two();
-        if !fits(runtime, capacity) {
-            return None;
-        }
-        let both = lh & PREPENDED != 0 || (lh & SHARED != 0 && runtime.heap.text_shared(left).1 > 0);
-        let front = if both { (capacity - size) / 4 } else { 0 };
-        let (l, r) = (runtime.heap.text(left) as *const str, runtime.heap.text(right) as *const str);
-        // SAFETY: allocation neither moves nor collects the parts.
-        let parts: [&str; 2] = unsafe { [&*l, &*r] };
-        let buffer = runtime.heap.allocate_text_buffer(&parts, capacity, front);
-        return Some(runtime.heap.allocate_text_view(buffer, front, size, ascii));
-    }
-    if chains && chained(rh) && rl > ll {
+    } else if chains && chained(rh) && rl > ll {
         if rh & SHARED != 0 {
             let (buffer, start) = runtime.heap.text_shared(right);
             let (low, _, _) = runtime.heap.text_buffer_room(buffer);
@@ -536,24 +535,28 @@ pub(crate) fn concat_text(runtime: &mut Runtime, left: Word, right: Word, fits: 
                 runtime.heap.text_buffer_write(buffer, unsafe { &*text }, true);
                 return Some(runtime.heap.allocate_text_view(buffer, start - ll, size, ascii));
             }
+            if start == low && 2 * ll <= rl {
+                grow = Some((3, 4));
+            }
+        } else if 2 * ll <= rl {
+            grow = Some((3, 4));
         }
+    }
+    let (l, r) = (runtime.heap.text(left) as *const str, runtime.heap.text(right) as *const str);
+    // SAFETY: allocation neither moves nor collects the parts.
+    let parts: [&str; 2] = unsafe { [&*l, &*r] };
+    if let Some((share, of)) = grow {
         let capacity = (2 * size).next_power_of_two();
         if !fits(runtime, capacity) {
             return None;
         }
-        let room = (capacity - size) * 3 / 4;
-        let (l, r) = (runtime.heap.text(left) as *const str, runtime.heap.text(right) as *const str);
-        // SAFETY: as above.
-        let parts: [&str; 2] = unsafe { [&*l, &*r] };
-        let buffer = runtime.heap.allocate_text_buffer(&parts, capacity, room);
-        return Some(runtime.heap.allocate_text_view(buffer, room, size, ascii));
+        let front = (capacity - size) * share / of;
+        let buffer = runtime.heap.allocate_text_buffer(&parts, capacity, front);
+        return Some(runtime.heap.allocate_text_view(buffer, front, size, ascii));
     }
     if !fits(runtime, size) {
         return None;
     }
-    let (l, r) = (runtime.heap.text(left) as *const str, runtime.heap.text(right) as *const str);
-    // SAFETY: as above.
-    let parts: [&str; 2] = unsafe { [&*l, &*r] };
     let string = runtime.heap.allocate_text_of(&parts);
     if chains && ll >= TEXT_CHAIN_MIN {
         runtime.heap.mark(string, APPENDED);

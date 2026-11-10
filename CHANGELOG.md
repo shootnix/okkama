@@ -164,6 +164,43 @@ anything is kept. Not released until the measurements show a net gain.
   versions, merges of every relative size with float keys (the left key
   word stays), sizes across the 64-entry turn, also under GC stress.
 
+- Tomato: a chain of `+` on strings no longer copies the string at every
+  step (#255, prototype).
+  - **Buffer.** A string of 256 bytes or more made by `+` starts a chain.
+    The next `+` puts both parts into a text buffer twice the size. From
+    then on, a version that ends at the buffer's high end appends in place,
+    and one that starts at its low end prepends in place.
+  - **When it copies instead.** A chain moves to a buffer twice the size
+    only when the part added is at most half the other. `s + s`, a version
+    made from an older one, and short strings are copied, as before.
+  - **Reads unchanged.** A version is a three-word string: its first byte's
+    address and the buffer. So every string operation still reads one
+    contiguous text, and machine code still reads the header alone.
+  - `OKKAMA_STRINGS=flat` turns it off.
+  - A native prototype (`okkama-persistent/examples/sbench`) also measured
+    a rope of 1 KB chunks. It appends at 80–186 ns per piece against 5–9 ns
+    for the buffer, and reads twice as slow wherever a string must be one
+    text. It wins only on branches of huge texts.
+
+  Persistence stand, same binary both ways, 2 processes:
+  - **Appends.** Building a string one `+` at a time costs 20–48 ns per
+    piece of 1–13 bytes at every n (flat: 0.8 µs at n = 16 000, 3.5 µs at
+    100 000). Pieces of 128 bytes cost 41–122 ns. Prepending costs the
+    same.
+  - **Every version kept** at 100 000: 3.6 µs → 112 ns per version, and
+    1 166 → 15 MB.
+  - **No change:** branches, `s + s` and short strings (49.1 vs 48.7 ns,
+    4 processes).
+  - **Reads:** `length`, slices, `find`, `split`, `==`, `less`,
+    `characters` and `replace` on strings built by `+` move by −0.7% on
+    geometric mean.
+
+  t/ family `persistence`: strings appended, prepended and alternated
+  0–4 097 times, in 1-, 2- and 4-byte, combining and 600-byte pieces, with
+  every version kept and branches. They are checked against `repeat()` by
+  equality, order, map keys, `length`, `slice`, `find`, `find_last`,
+  `replace`, `split`, `trim` and `chomp`, also under GC stress.
+
 ### Fixed
 
 - Release gate: it no longer runs on binaries built from another tree
