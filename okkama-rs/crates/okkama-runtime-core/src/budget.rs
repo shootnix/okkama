@@ -2,20 +2,110 @@
 //! of the Sparrow core (`--max-steps`, `--max-memory`, `--max-output`,
 //! `--timeout`). Steps are function entries and backward branches; memory is
 //! what the process allocator holds beyond the start of the run (the
-//! embedder's probe); output is bytes written to stdout and stderr; the
+//! embedder's probe), or what this run's thread holds through [`Counted`]
+//! ([`MemoryScope::Runtime`], #269); output is bytes written to stdout and stderr; the
 //! interrupt flag is set by the host (the CLI's timer). Running out stops the
 //! run with an error no handler catches.
-use std::cell::RefCell;
+use std::alloc::{GlobalAlloc, Layout};
+use std::cell::{Cell, RefCell};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 
 /// Budgets of one run; `None` is unbounded.
 #[derive(Debug, Clone, Default)]
 pub struct Limits {
     pub steps: Option<u64>,
     pub memory: Option<u64>,
+    /// What `memory` measures.
+    pub memory_scope: MemoryScope,
     pub output: Option<u64>,
     pub interrupt: Option<Arc<AtomicBool>>,
+}
+
+/// What a memory budget measures (#269).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum MemoryScope {
+    /// What the process allocator holds, through the embedder's probe:
+    /// every thread's memory counts. The CLIs run one runtime per process.
+    #[default]
+    Process,
+    /// This runtime's own memory, so that runtimes in one process keep
+    /// budgets of their own. On the IR engine: what the run's thread has
+    /// allocated through [`Counted`] and not freed (its values never leave
+    /// that thread); on the Sparrow core: its heap. Memory a runtime cannot
+    /// see, such as native libraries' and other threads', does not count.
+    Runtime,
+}
+
+/// Net bytes allocated through [`Counted`], by every thread and by this one.
+static NET: AtomicIsize = AtomicIsize::new(0);
+
+thread_local! {
+    static THREAD_NET: Cell<isize> = const { Cell::new(0) };
+}
+
+/// A counting global allocator for embedders without a probe of their own
+/// (and tests): [`counted_bytes`] is its process probe and
+/// [`thread_counted_bytes`] the measure of [`MemoryScope::Runtime`] on the IR
+/// engine. It costs an atomic and a thread-local add per call, so the CLIs
+/// use their allocator's statistics instead.
+#[derive(Debug)]
+pub struct Counted<A>(pub A);
+
+#[inline]
+fn count(bytes: isize) {
+    NET.fetch_add(bytes, Ordering::Relaxed);
+    // A thread being torn down has no counter left to keep.
+    let _ = THREAD_NET.try_with(|net| net.set(net.get() + bytes));
+}
+
+// SAFETY: every call forwards to the wrapped allocator unchanged.
+#[allow(unsafe_code)]
+unsafe impl<A: GlobalAlloc> GlobalAlloc for Counted<A> {
+    #[inline]
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        count(layout.size() as isize);
+        unsafe { self.0.alloc(layout) }
+    }
+
+    #[inline]
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        count(layout.size() as isize);
+        unsafe { self.0.alloc_zeroed(layout) }
+    }
+
+    #[inline]
+    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+        count(-(layout.size() as isize));
+        unsafe { self.0.dealloc(pointer, layout) }
+    }
+
+    #[inline]
+    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+        count(size as isize - layout.size() as isize);
+        unsafe { self.0.realloc(pointer, layout, size) }
+    }
+}
+
+/// The process probe of [`Counted`].
+pub fn counted_bytes() -> usize {
+    NET.load(Ordering::Relaxed).max(0) as usize
+}
+
+/// Net bytes this thread has allocated through [`Counted`]; a thread that
+/// frees what another allocated can go below zero, read as 0.
+pub fn thread_counted_bytes() -> usize {
+    THREAD_NET.with(Cell::get).max(0) as usize
+}
+
+/// Whether [`Counted`] is the global allocator: an allocation moves this
+/// thread's counter.
+fn counting() -> bool {
+    let before = THREAD_NET.with(Cell::get);
+    let probe = std::hint::black_box(Box::new(0u64));
+    let moved = THREAD_NET.with(Cell::get) != before;
+    drop(probe);
+    moved
 }
 
 /// What ran out.
@@ -70,14 +160,22 @@ thread_local! {
 }
 
 /// The budgets of the run on this thread, until the guard is dropped.
-/// A memory budget without a probe is an error.
+/// A memory budget of the process without a probe, or of the runtime
+/// without [`Counted`], is an error.
 pub fn begin(limits: &Limits) -> Result<Guard, String> {
-    let memory = match limits.memory {
-        Some(limit) => {
+    let memory = match (limits.memory, limits.memory_scope) {
+        (Some(limit), MemoryScope::Process) => {
             let probe = *PROBE.get().ok_or("a memory budget needs the embedder's memory probe")?;
             Some((limit, probe(), probe))
         }
-        None => None,
+        (Some(limit), MemoryScope::Runtime) => {
+            if !counting() {
+                return Err("a runtime memory budget needs the Counted global allocator".into());
+            }
+            let probe: MemoryProbe = thread_counted_bytes;
+            Some((limit, probe(), probe))
+        }
+        (None, _) => None,
     };
     let state = State {
         steps: limits.steps,

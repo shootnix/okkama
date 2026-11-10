@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+// Thirty rounds of 20 000 short strings: a few megabytes live at a time.
+object Work {
+    Work();
+    round(i is int, n is int, acc is int) is int {
+        if i == n { return acc; }
+        let words = (0..20000).map() -> k { "word-" + k.string(); };
+        self.round(i + 1, n, acc + words.size());
+    }
+}
+
+main() is int {
+    let total = Work().round(0, 30, 0);
+    if total == 600000 { 0; } else { 1; }
+}

@@ -375,13 +375,13 @@ pub extern "C" fn rt_allocate(ctx: *mut Ctx, words: u64) -> Word {
     let frame = frame_pointer!();
     let (ctx, runtime) = unsafe { runtime(ctx) };
     runtime.count(|_| "allocation slow path".into());
-    if let (Some(limit), Some(meter)) = (runtime.limits.memory, &runtime.budget.meter) {
+    if let (Some(limit), Some(used)) = (runtime.limits.memory, runtime.memory_used()) {
         // A small cell comes from a new page when its free list is empty.
         let bytes = match Heap::class_of(words as usize) {
             Some(_) => crate::heap::PAGE_BYTES,
             None => words as usize * 8,
         };
-        if meter.used().saturating_add(bytes as isize) > limit as isize {
+        if used.saturating_add(bytes as isize) > limit as isize {
             return runtime.exhaust(ctx, Exhausted::Memory);
         }
     }
@@ -423,10 +423,20 @@ impl Runtime {
         self.budget.fuel.set(0);
     }
 
+    /// What the memory budget measures now (#269): the process allocator's
+    /// bytes beyond the start of the run, or this runtime's heap.
+    pub(crate) fn memory_used(&self) -> Option<isize> {
+        self.limits.memory?;
+        match self.limits.memory_scope {
+            crate::budget::MemoryScope::Process => self.budget.meter.as_ref().map(crate::budget::Meter::used),
+            crate::budget::MemoryScope::Runtime => Some(self.heap.held_bytes() as isize),
+        }
+    }
+
     /// Would `bytes` more cross the memory budget?
     pub(crate) fn would_exceed(&self, bytes: u64) -> bool {
-        match (self.limits.memory, &self.budget.meter) {
-            (Some(limit), Some(meter)) => meter.used().saturating_add(bytes.min(isize::MAX as u64) as isize) > limit as isize,
+        match (self.limits.memory, self.memory_used()) {
+            (Some(limit), Some(used)) => used.saturating_add(bytes.min(isize::MAX as u64) as isize) > limit as isize,
             _ => false,
         }
     }
@@ -439,8 +449,8 @@ impl Runtime {
         if self.limits.interrupted() {
             return Some(Exhausted::Interrupted);
         }
-        match (self.limits.memory, &self.budget.meter) {
-            (Some(limit), Some(meter)) if meter.used() > limit as isize => Some(Exhausted::Memory),
+        match (self.limits.memory, self.memory_used()) {
+            (Some(limit), Some(used)) if used > limit as isize => Some(Exhausted::Memory),
             _ => None,
         }
     }
@@ -462,10 +472,16 @@ impl Runtime {
     /// Start the budgets of a run: the first slice of steps.
     fn start_budget(&mut self) -> Result<i64, Error> {
         if let Some(limit) = self.limits.memory {
-            let probe = crate::budget::memory_probe().ok_or_else(|| {
-                Error("a memory budget needs a memory probe (sparrow_core::budget::set_memory_probe)".into())
-            })?;
-            let meter = *self.budget.meter.get_or_insert_with(|| crate::budget::Meter::start(probe));
+            // A budget of the runtime reads its heap and needs no probe.
+            let meter = match self.limits.memory_scope {
+                crate::budget::MemoryScope::Process => {
+                    let probe = crate::budget::memory_probe().ok_or_else(|| {
+                        Error("a memory budget needs a memory probe (sparrow_core::budget::set_memory_probe)".into())
+                    })?;
+                    Some(*self.budget.meter.get_or_insert_with(|| crate::budget::Meter::start(probe)))
+                }
+                crate::budget::MemoryScope::Runtime => None,
+            };
             self.heap.watch = Some(crate::budget::Watch::new(meter, limit, &self.budget.fuel));
         }
         Ok(match self.limits.steps {

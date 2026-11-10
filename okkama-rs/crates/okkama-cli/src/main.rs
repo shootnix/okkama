@@ -1539,6 +1539,7 @@ fn run_command(args: &[String]) -> Outcome {
             memory: limits.memory,
             output: limits.output,
             interrupt: limits.interrupt.clone(),
+            ..Default::default()
         };
         if limits.interrupt.is_some() {
             // A run blocked in a native (sleeping, waiting for input) does not

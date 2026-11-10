@@ -168,6 +168,8 @@ pub struct Heap {
     /// Free list heads per class; a free cell's second word links the next.
     free: [Word; CLASSES.len()],
     large: Vec<Box<[u64]>>,
+    /// Bytes of the large objects, live or not yet swept.
+    large_bytes: usize,
     /// Allocation pressure since the last collection, in two parts (#331):
     /// heap cells (pages and large objects) and Rust memory owned by heap
     /// objects (payloads as they are made or grow, big integer digits). A
@@ -266,6 +268,7 @@ impl Heap {
             pages: Vec::new(),
             free: [0; CLASSES.len()],
             large: Vec::new(),
+            large_bytes: 0,
             allocated: 0,
             external: 0,
             threshold: COLLECTION_FLOOR,
@@ -290,6 +293,14 @@ impl Heap {
     /// Allocation-triggered collection is proportional to the live heap.
     pub fn needs_collection(&self) -> bool {
         self.allocated + self.external + self.node_growth() >= self.threshold
+    }
+
+    /// What this heap holds now, the measure of a runtime's own memory
+    /// budget (#269): its pages and large objects, the Rust memory its
+    /// objects owned after the last collection, and what has been charged
+    /// since (garbage among it until the next collection).
+    pub fn held_bytes(&self) -> usize {
+        self.pages.len() * PAGE_BYTES + self.large_bytes + self.external_live + self.external + self.node_growth()
     }
 
     /// Bytes of persistent map nodes allocated since the last collection.
@@ -338,8 +349,10 @@ impl Heap {
     pub fn allocate(&mut self, words: usize) -> Word {
         let Some(class) = Self::class_of(words) else {
             self.allocated += words * 8;
+            self.large_bytes += words * 8;
+            let held = self.held_bytes();
             if let Some(watch) = &mut self.watch {
-                watch.grow(words * 8);
+                watch.grow(words * 8, held);
             }
             let mut memory = vec![0u64; words].into_boxed_slice();
             let address = memory.as_mut_ptr() as Word;
@@ -374,8 +387,9 @@ impl Heap {
     /// pops free cells inline, and only an empty list reaches the heap.
     fn add_page(&mut self, class: usize) {
         self.allocated += PAGE_WORDS * 8;
+        let held = self.held_bytes() + PAGE_BYTES;
         if let Some(watch) = &mut self.watch {
-            watch.grow(PAGE_BYTES);
+            watch.grow(PAGE_BYTES, held);
         }
         let size = CLASSES[class];
         let mut memory = vec![0u64; PAGE_WORDS - PAGE_WORDS % size].into_boxed_slice();
@@ -1183,12 +1197,14 @@ impl Heap {
                 self.free[page.class] = address;
             }
         }
+        let mut large_bytes = 0;
         self.large.retain_mut(|memory| {
             let address = memory.as_mut_ptr() as Word;
             let header = memory[0];
             if header & MARK != 0 {
                 memory[0] = header & !MARK;
                 live += memory.len() * 8;
+                large_bytes += memory.len() * 8;
                 external_live += unsafe { owned_bytes(address, header) };
                 true
             } else {
@@ -1202,6 +1218,7 @@ impl Heap {
         if self.stress {
             self.poison();
         }
+        self.large_bytes = large_bytes;
         self.live = live;
         self.live_sum += live;
         // Map nodes freed by this sweep are already gone from the live count.

@@ -1,0 +1,14 @@
+module app v1.0.0;
+
+// Doubles a string until the memory budget stops it; it is never empty.
+object Grow {
+    Grow();
+    double(text is string) is int {
+        if text == "" { return 0; }
+        self.double(text + text);
+    }
+}
+
+main() is int {
+    Grow().double("x");
+}

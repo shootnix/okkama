@@ -6,6 +6,22 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Added
+
+- Memory budgets per runtime (#269). `Limits::memory_scope` chooses what
+  `memory` measures: `MemoryScope::Process`, the default and what the CLIs
+  use, is the process allocator through the embedder's probe, as before;
+  `MemoryScope::Runtime` is one runtime's own memory, so an embedder can run
+  several runtimes in one process with budgets of their own. On Tomato it is
+  the heap's pages and large objects plus the Rust memory its objects own
+  (`Heap::held_bytes`), and needs no probe; on the IR engine it is what the
+  run's thread holds through `budget::Counted`, which now counts per thread
+  as well and moved to `okkama-runtime-core` (re-exported where it was).
+  Tested: two Tomato runtimes on two threads, one past a 64 MiB budget and
+  one running three times within 16 MiB; two IR runs on two threads, where a
+  budget of the runtime ignores the neighbour's 16 MiB and a budget of the
+  process does not.
+
 ### Changed
 
 - Sparrow (Tomato): `rat` values are the engines' shared exact fraction

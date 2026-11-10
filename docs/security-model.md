@@ -112,8 +112,15 @@ passed on the same commit ([#26]).
   ([#31]).
 - A panic inside a native provider stops the run with an internal error, and
   that runtime refuses further runs; a fresh runtime works ([#31]).
-- A memory budget needs a probe: `budget::set_memory_probe` (the CLIs read
-  mimalloc; `budget::Counted` is a counting allocator for others).
+- A memory budget measures the process by default and needs a probe:
+  `budget::set_memory_probe` (the CLIs read mimalloc; `budget::Counted` is a
+  counting allocator for others). With `memory_scope: MemoryScope::Runtime`
+  it measures one runtime instead, so that runtimes in one process keep
+  budgets of their own ([#269]): on Tomato its heap (pages, large objects and
+  the Rust memory its objects own), which needs no probe; on the IR engine
+  what the run's thread holds through `Counted`, which must then be the
+  global allocator. Memory a runtime cannot see (native libraries, other
+  threads) does not count against it.
 
 **Not guaranteed.**
 - A panic in another runtime helper aborts the process at the `extern "C"`
@@ -123,6 +130,7 @@ passed on the same commit ([#26]).
 - `run_worker` is the CLIs' worker entry, not an embedding API.
 
 [#16]: https://github.com/shootnix/okkama/issues/16
+[#269]: https://github.com/shootnix/okkama/issues/269
 [#17]: https://github.com/shootnix/okkama/issues/17
 [#18]: https://github.com/shootnix/okkama/issues/18
 [#19]: https://github.com/shootnix/okkama/issues/19

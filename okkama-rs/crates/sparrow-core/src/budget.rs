@@ -11,7 +11,9 @@
 //!   Rust-side values (BigInt, builders, maps). Polls check it; machine-code
 //!   allocation is refused before it would cross it; large heap allocations
 //!   from Rust probe it ([`Watch`]); a BigInt product is checked before the
-//!   multiplication.
+//!   multiplication. [`MemoryScope::Runtime`] measures this runtime's heap
+//!   instead (#269): its pages and large objects, and the Rust memory its
+//!   objects own, so that runtimes in one process keep budgets of their own.
 //! - Output: bytes written to stdout and stderr by the program.
 //! - Interruption: a flag the host sets from any thread ([`Limits::interrupt`]);
 //!   polls and the scheduler's waits see it.
@@ -20,9 +22,10 @@
 //! catch it, destroys do not run, and the runtime is discarded with its heap.
 #![allow(unsafe_code)]
 
-use std::alloc::{GlobalAlloc, Layout};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+pub use okkama_runtime_core::budget::{Counted, MemoryScope, counted_bytes, thread_counted_bytes};
 
 /// Steps between two polls when no step budget is nearer.
 pub const SLICE: u64 = 1 << 16;
@@ -32,9 +35,12 @@ pub const SLICE: u64 = 1 << 16;
 pub struct Limits {
     /// Function entries and loop back-edges.
     pub steps: Option<u64>,
-    /// Allocator bytes beyond the start of the run; also caps the machine
-    /// stack, so deep recursion fails as a stack overflow within it.
+    /// Allocator bytes beyond the start of the run, or the runtime's own
+    /// heap ([`MemoryScope`]); also caps the machine stack, so deep recursion
+    /// fails as a stack overflow within it.
     pub memory: Option<u64>,
+    /// What `memory` measures.
+    pub memory_scope: MemoryScope,
     /// Bytes written to stdout and stderr.
     pub output: Option<u64>,
     /// Set by the host to stop the run.
@@ -227,47 +233,6 @@ pub fn mimalloc_committed() -> usize {
     commit
 }
 
-/// Net bytes allocated through [`Counted`].
-static NET: AtomicIsize = AtomicIsize::new(0);
-
-/// A counting global allocator for embedders without a probe of their own
-/// (and tests): [`counted_bytes`] is its probe. It costs one atomic add per
-/// call, so the CLIs use their allocator's statistics instead.
-#[derive(Debug)]
-pub struct Counted<A>(pub A);
-
-// SAFETY: every call forwards to the wrapped allocator unchanged.
-unsafe impl<A: GlobalAlloc> GlobalAlloc for Counted<A> {
-    #[inline]
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        NET.fetch_add(layout.size() as isize, Ordering::Relaxed);
-        unsafe { self.0.alloc(layout) }
-    }
-
-    #[inline]
-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        NET.fetch_add(layout.size() as isize, Ordering::Relaxed);
-        unsafe { self.0.alloc_zeroed(layout) }
-    }
-
-    #[inline]
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        NET.fetch_sub(layout.size() as isize, Ordering::Relaxed);
-        unsafe { self.0.dealloc(pointer, layout) }
-    }
-
-    #[inline]
-    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, size: usize) -> *mut u8 {
-        NET.fetch_add(size as isize - layout.size() as isize, Ordering::Relaxed);
-        unsafe { self.0.realloc(pointer, layout, size) }
-    }
-}
-
-/// The probe of [`Counted`].
-pub fn counted_bytes() -> usize {
-    NET.load(Ordering::Relaxed).max(0) as usize
-}
-
 /// The fuel cell of a runtime: machine code decrements it at every step (its
 /// address is a constant of the code) and polls below zero. It is touched only
 /// through its raw pointer, never borrowed.
@@ -318,10 +283,11 @@ impl Meter {
 
 /// The heap's check of large allocations against a memory budget: past it,
 /// the fuel is emptied so the next step polls and stops the run. Probing is
-/// a system call, so it happens once per `PROBE_BYTES` of heap growth.
+/// a system call, so it happens once per `PROBE_BYTES` of heap growth. A
+/// budget of the runtime (`meter` None) reads the heap's own count instead.
 #[derive(Debug)]
 pub struct Watch {
-    pub meter: Meter,
+    pub meter: Option<Meter>,
     pub limit: u64,
     pub fuel: *mut i64,
     unprobed: usize,
@@ -331,18 +297,19 @@ pub struct Watch {
 const PROBE_BYTES: usize = 256 << 10;
 
 impl Watch {
-    pub fn new(meter: Meter, limit: u64, fuel: &Fuel) -> Self {
+    pub fn new(meter: Option<Meter>, limit: u64, fuel: &Fuel) -> Self {
         Self { meter, limit, fuel: fuel.0, unprobed: 0 }
     }
 
-    /// `bytes` more are being allocated.
-    pub fn grow(&mut self, bytes: usize) {
+    /// `bytes` more are being allocated; `held` is what the heap holds.
+    pub fn grow(&mut self, bytes: usize, held: usize) {
         self.unprobed += bytes;
         if self.unprobed < PROBE_BYTES {
             return;
         }
         self.unprobed = 0;
-        if self.meter.used() > self.limit as isize {
+        let used = self.meter.map_or(held as isize, |meter| meter.used());
+        if used > self.limit as isize {
             // SAFETY: the runtime owns both the heap and its fuel cell.
             unsafe { self.fuel.write_volatile(0) };
         }
