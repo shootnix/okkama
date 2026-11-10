@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.regions.role-instances",
+  "title": "values known only through a generic role are destroyed once, in order, whether or not another instance of the role is plain",
+  "purpose": "Run the program and observe the order of its cleanup.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.OWNERSHIP",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "LIFE.DESTROY",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ints: 3\nnested: 3 2\ndestroy m1\ndestroy a2\ndestroy a1\nafter nested\npassed: owned\nouter: owned\nclosure: captured\nmain ends 8\ndestroy captured\ndestroy passed\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #268 (role plainness per instance, done by #292)",
+    "expected_basis": "Source<int> has only plain implementers and Source<string> one that owns a Res; resources reached through Source<string> in arrays, maps, a returned value and a closure are destroyed exactly once when their owning scope ends, in reverse order of the bindings, with IR passes on and off."
+  },
+  "status": "mandatory"
+}

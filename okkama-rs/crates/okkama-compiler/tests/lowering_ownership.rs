@@ -178,6 +178,29 @@ fn plain_closures_are_not_tracked() {
     assert_eq!(count(main, |kind| matches!(kind, InstKind::RegionTrack { .. })), 1, "only Res");
 }
 
+/// Plainness of a role is per instance (#268, done by #292): `Source<int>`
+/// has only plain implementers, so a value known as one is not tracked,
+/// although `Source<string>` has one that owns a resource and is.
+#[test]
+fn role_plainness_is_per_instance() {
+    let module = module(&format!(
+        "{RES} role Source<T> {{ item() is T; }} \
+         object Plain<T> does Source<T> {{ has value is T; Plain(:value); item() is T {{ value; }} }} \
+         object Leaky does Source<string> {{ has res is Res; Leaky(:res); item() is string {{ \"x\"; }} }} \
+         object Factory {{ Factory(); ints() is Source<int> {{ Plain(value: 1); }} strings(owned is bool) is Source<string> {{ \
+             if owned {{ Leaky(res: Res(n: 1)); }} else {{ Plain(value: \"y\"); }} }} }} \
+         object Reader {{ Reader(); \
+             ints(factory is Factory) is int {{ let source = factory.ints(); source.item(); }} \
+             strings(factory is Factory) is int {{ let source = factory.strings(true); source.item().length(); }} }} \
+         main() is int {{ let factory = Factory(); let reader = Reader(); reader.ints(factory) + reader.strings(factory); }}"
+    ));
+    let ownership = |kind: &InstKind| {
+        matches!(kind, InstKind::RegionTrack { .. } | InstKind::RegionAdopt { .. } | InstKind::RegionTransfer { .. })
+    };
+    assert_eq!(count(function(&module, "Reader.ints"), ownership), 0, "Source<int> is plain");
+    assert!(count(function(&module, "Reader.strings"), ownership) >= 1, "Source<string> is not");
+}
+
 /// Замыкание, захватившее объект с `destroy`, владеет им: функции программы
 /// по-прежнему учитываются регионами (#292).
 #[test]

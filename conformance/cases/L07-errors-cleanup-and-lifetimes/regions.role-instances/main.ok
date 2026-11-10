@@ -1,0 +1,99 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Res {
+    has name is string;
+
+    Res(:name);
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        Stdout().writeln("destroy " + name);
+    }
+}
+
+role Source<T> {
+    item() is T;
+}
+
+object Plain<T> does Source<T> {
+    has value is T;
+
+    Plain(:value);
+
+    item() is T {
+        value;
+    }
+}
+
+object Owning does Source<string> {
+    has res is Res;
+
+    Owning(:res);
+
+    item() is string {
+        "owned";
+    }
+}
+
+object Factory {
+    Factory();
+
+    ints(n is int) is Source<int> {
+        Plain(value: n);
+    }
+
+    strings(name is string) is Source<string> {
+        if name == "" {
+            Plain(value: "plain");
+        }
+        else {
+            Owning(res: Res(name: name));
+        }
+    }
+
+    keeper(res is Res) is () is string {
+        () is string {
+            res.label();
+        };
+    }
+}
+
+object Scopes {
+    Scopes();
+
+    // A value known only through the role crosses a function boundary and
+    // is destroyed by the scope that ends up owning it.
+    passed(factory is Factory) is Source<string> {
+        let inner = factory.strings("passed");
+        Stdout().writeln("passed: " + inner.item());
+        inner;
+    }
+
+    nested(factory is Factory) is int {
+        let sources is @Source<string> = [factory.strings("a1"), factory.strings(""), factory.strings("a2")];
+        let byName is %string:Source<string> = ["m1": factory.strings("m1"), "plain": factory.strings("")];
+        Stdout().writeln("nested: " + sources.size().string() + " " + byName.size().string());
+        sources.size() + byName.size();
+    }
+}
+
+main() is int {
+    let factory = Factory();
+    let ints = [factory.ints(1), factory.ints(2)];
+    let total = ints.reduce(0) -> sum, source { sum + source.item(); };
+    Stdout().writeln("ints: " + total.string());
+    let scopes = Scopes();
+    let count = scopes.nested(factory);
+    Stdout().writeln("after nested");
+    let outer = scopes.passed(factory);
+    Stdout().writeln("outer: " + outer.item());
+    let keep = factory.keeper(Res(name: "captured"));
+    Stdout().writeln("closure: " + keep());
+    Stdout().writeln("main ends " + (total + count).string());
+    0;
+}

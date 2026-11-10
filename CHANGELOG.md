@@ -82,6 +82,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- Compiler: role plainness per instance, asked for by #268, is what the
+  regions pass of #292 already does; verified and measured, no new
+  lowering. A test checks that `Source<int>` with only plain implementers is
+  not tracked while `Source<string>` with one that owns a resource is, and
+  conformance case `L07.regions.role-instances` checks the cleanup of such
+  values in arrays, maps, returned values and closures on every engine, with
+  IR passes on and off.
+
 - Removed: the previous Sparrow VM (#14). The crates `sparrow-vm` and
   `sparrow-runtime`, the `sparrow-origin` binary, `okkama run --engine
   sparrow-origin`, the OCS engine of that name and the comparison tools
