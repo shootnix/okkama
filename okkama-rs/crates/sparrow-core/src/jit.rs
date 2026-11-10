@@ -97,7 +97,7 @@ helpers! {
     trace = runtime::rt_trace as (ctx, function: u64, pc: u64, frame: u64); [];
     native = runtime::rt_native as (ctx, function: u64, arguments: *const Word, count: u64) -> Word; [Allocates, Collects, Fails];
     float = runtime::rt_float as (ctx, op: u64, left: u64, right: u64) -> u64; [Allocates, Fails];
-    exec = crate::ops::rt_exec as (ctx, function: u64, pc: u64, uses: *const Word) -> Word; [Allocates, Collects, Reenters, Fails];
+    exec = crate::ops::rt_exec as (ctx, function: u64, pc: u64, uses: *const Word, registers: *const okkama_sparrow::Register, count: u64) -> Word; [Allocates, Collects, Reenters, Fails];
     closure = runtime::rt_closure as (ctx, function: u64, captures: *const Word, count: u64) -> Word; [Allocates, Collects];
     call_closure = runtime::rt_call_closure as (ctx, closure: Word, arguments: *const Word, count: u64) -> Word; [Allocates, Collects, Reenters, Fails];
     map_find = runtime::rt_map_find as (ctx, function: u64, pc: u64, map: Word, key: Word) -> u64; [];
@@ -128,6 +128,10 @@ pub struct Jit {
     ranges: Vec<(u64, u64)>,
     /// (role, slot) → function index by object descriptor (u64::MAX: none).
     dispatch: BTreeMap<(u32, u32), Box<[u64]>>,
+    /// The registers each `rt_exec` call site passes, in visit order: the
+    /// helper reads them instead of visiting the instruction on every call
+    /// (#325). Machine code holds their addresses, so they live as long.
+    operands: Vec<Box<[okkama_sparrow::Register]>>,
     /// Calls of each helper (`HELPERS` order) from code compiled under
     /// `--stats`; machine code increments them, other code does not count.
     helper_counts: Box<[u64]>,
@@ -235,6 +239,7 @@ impl Jit {
             maps: Vec::new(),
             ranges: Vec::new(),
             dispatch: BTreeMap::new(),
+            operands: Vec::new(),
             helper_counts: vec![0; HELPERS.len()].into_boxed_slice(),
             largest_frame: 0,
             dump: Chosen::from_env("SPARROW_CORE_DUMP"),
@@ -2090,7 +2095,11 @@ impl Emitter<'_, '_> {
         let address = self.spill(&uses);
         let function = self.iconst(self.function as i64);
         let at = self.iconst(pc as i64);
-        let result = self.helper(|h| h.exec, &[ctx, function, at, address]).expect("result");
+        let count = self.iconst(uses.len() as i64);
+        let registers: Box<[okkama_sparrow::Register]> = uses.into_boxed_slice();
+        let table = self.iconst(registers.as_ptr() as i64);
+        self.jit.operands.push(registers);
+        let result = self.helper(|h| h.exec, &[ctx, function, at, address, table, count]).expect("result");
         self.check(pc);
         result
     }

@@ -6,6 +6,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Changed
+
+- Sparrow (Tomato): an instruction that machine code runs through the shared
+  slow path (`rt_exec`) no longer visits the instruction on every call to
+  find its operands; the call site passes the list it computed when it was
+  compiled. A map literal also counts what its keys own as it is built
+  instead of walking them again when it is allocated (#325). Micro
+  benchmarks, median of 10 against release/0.5.1: map literal −24%, map
+  lookup −20%, `keys()` −21%, map `+` −18%, string slice −22%, string length
+  −17%, SHA-256 −16%, JSON round trip −14%; nothing slower beyond noise.
+
 ### Fixed
 
 - Sparrow (Tomato): a payload's Rust memory was charged twice toward the

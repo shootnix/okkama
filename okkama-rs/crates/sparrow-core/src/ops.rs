@@ -848,7 +848,14 @@ fn grow_builder(heap: &mut crate::heap::Heap, builder: Word, grow: impl FnOnce(&
 /// SAFETY: called from machine code with its context; `uses` holds one word
 /// per `Access::Use` of the instruction, in `visit` order.
 #[inline(never)]
-pub extern "C" fn rt_exec(ctx: *mut Ctx, function: u64, pc: u64, uses: *const Word) -> Word {
+pub extern "C" fn rt_exec(
+    ctx: *mut Ctx,
+    function: u64,
+    pc: u64,
+    uses: *const Word,
+    registers: *const okkama_sparrow::Register,
+    count: u64,
+) -> Word {
     let frame = crate::runtime::frame_pointer!();
     let ctx = unsafe { &mut *ctx };
     let runtime = unsafe { &mut *ctx.runtime };
@@ -857,34 +864,20 @@ pub extern "C" fn rt_exec(ctx: *mut Ctx, function: u64, pc: u64, uses: *const Wo
     // the instruction stays valid while the runtime is borrowed mutably.
     let instruction: &I = unsafe { &*(&runtime.loaded.program.functions[function].code[pc as usize] as *const I) };
     runtime.count(|_| format!("exec {}", instruction.mnemonic()));
-    if runtime.limits.memory.is_some()
-        && let Some(bytes) = result_bytes(runtime, instruction, uses)
-            && runtime.would_exceed(bytes) {
-                return runtime.exhaust(ctx, crate::budget::Exhausted::Memory);
-            }
-    // Uses in visit order: inline for the common case, spilled past 16 (map
-    // and array literals can use any number of registers).
-    let mut inline = [okkama_sparrow::Register(u32::MAX); 16];
-    let mut spilled = Vec::new();
-    let mut count = 0;
-    instruction.visit(&mut |access| {
-        if let Access::Use(register) = access {
-            if count < inline.len() {
-                inline[count] = register;
-            } else {
-                if spilled.is_empty() {
-                    spilled.extend_from_slice(&inline);
-                }
-                spilled.push(register);
-            }
-            count += 1;
-        }
-    });
-    let registers: &[okkama_sparrow::Register] = if count <= inline.len() { &inline[..count] } else { &spilled };
-    let words = unsafe { std::slice::from_raw_parts(uses, count) };
+    // The instruction's uses in visit order, as the call site recorded them
+    // when it was compiled, and one word for each.
+    // SAFETY: the table lives with the machine code; the caller spilled one
+    // word per register.
+    let registers = unsafe { std::slice::from_raw_parts(registers, count as usize) };
+    let words = unsafe { std::slice::from_raw_parts(uses, count as usize) };
     let value = |register: &okkama_sparrow::Register| {
         words[registers.iter().position(|r| r == register).expect("used register")]
     };
+    if runtime.limits.memory.is_some()
+        && let Some(bytes) = result_bytes(runtime, instruction, &value)
+            && runtime.would_exceed(bytes) {
+                return runtime.exhaust(ctx, crate::budget::Exhausted::Memory);
+            }
     let outcome = match instruction {
         // Spawning runs the worker's driver now: it needs the context.
         I::WorkerSpawn { entry, args, direct, .. } => {
@@ -919,16 +912,7 @@ pub extern "C" fn rt_exec(ctx: *mut Ctx, function: u64, pc: u64, uses: *const Wo
 /// The size of the result of an instruction whose result can be much larger
 /// than its operands (#72) — a join, a replacement — before it is built,
 /// so a memory budget stops it instead of the allocation it would make.
-fn result_bytes(runtime: &Runtime, instruction: &I, uses: *const Word) -> Option<u64> {
-    let mut registers = Vec::new();
-    instruction.visit(&mut |access| {
-        if let Access::Use(register) = access {
-            registers.push(register);
-        }
-    });
-    // SAFETY: rt_exec's caller passes one word per use.
-    let words = unsafe { std::slice::from_raw_parts(uses, registers.len()) };
-    let value = |register: &okkama_sparrow::Register| words[registers.iter().position(|r| r == register).expect("used register")];
+fn result_bytes(runtime: &Runtime, instruction: &I, value: &dyn Fn(&okkama_sparrow::Register) -> Word) -> Option<u64> {
     let text = |register| runtime.heap.text(value(register));
     match instruction {
         I::ArrayJoin { array, separator, .. } => {
@@ -1361,11 +1345,18 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
         I::MapNew { dst, entries } => {
             let mut map = map_for(runtime, function, dst.0)?;
             let (key_kind, key_type) = map_key(runtime, function, dst.0);
+            // What the entries own, counted as they go in, so the heap does
+            // not walk the keys again to charge them (#325).
+            let mut owned = 0;
             for (key, item) in entries {
                 let (key, item) = (value(key), value(item));
                 let k = runtime.checked_key(key, key_kind, key_type.as_ref())?;
-                map.entries.upsert(k, (key, item));
+                let bytes = MAP_ENTRY_BYTES + k.owned_bytes();
+                if map.entries.upsert(k, (key, item)) {
+                    owned += bytes;
+                }
             }
+            map.owned.set(Some(owned));
             Ok(runtime.heap.allocate_payload(Box::new(map)))
         }
         I::ArrayConcat { dst, parts } => {
