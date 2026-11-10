@@ -220,9 +220,22 @@ pub(super) struct Ctx<'r, 'a> {
     /// В программе есть `destroy`: lowering выпускает регионы владения (§7).
     pub ownership: bool,
     /// В программе есть `async destroy`: области async-функций закрываются
-    /// `region.settle` (#154).
+    /// `region.settle` (#154), если в них может попасть значение, которое
+    /// достаёт объект с асинхронным destroy (#328).
     pub settles: bool,
     plain_objects: Vec<bool>,
+    /// Специализации объектов и ролей, чьи значения могут достать объект с
+    /// `async destroy` (#328): неподвижная точка, как у plain-ности, по
+    /// всем специализациям программы, когда тела уже опущены.
+    async_objects: Vec<bool>,
+    async_roles: Vec<bool>,
+    /// Типы значений, принятых областями каждой задачи, чьи области
+    /// закрываются `region.settle` (#328); решение — после всех тел.
+    pub settle_types: Vec<Option<Vec<Type>>>,
+    /// Some value that may reach an object with an `async destroy` is boxed
+    /// as `any`, captured by a function value or owns a capability somewhere
+    /// in the program (#328): then values of those types may too.
+    pub dynamic_async: bool,
     plain_roles: Vec<bool>,
     /// Plain-ность объявлений ролей по всем объявлениям объектов программы
     /// (не только уже специализированным): роль, которую делает объект с
@@ -285,6 +298,10 @@ impl<'r, 'a> Ctx<'r, 'a> {
             plain_roles: Vec::new(),
             decl_plain_roles,
             decl_plain_objects,
+            async_objects: Vec::new(),
+            async_roles: Vec::new(),
+            settle_types: Vec::new(),
+            dynamic_async: false,
         }
     }
 
@@ -1357,6 +1374,70 @@ impl<'r, 'a> Ctx<'r, 'a> {
             if !changed {
                 break;
             }
+        }
+    }
+
+    /// Какие специализации могут достать объект с `async destroy` (#328):
+    /// объект — свой асинхронный destroy или такое поле; роль — её делает
+    /// такой объект. Считается, когда все тела опущены: значение роли
+    /// держит только объект, чья специализация уже есть.
+    pub fn compute_async(&mut self) {
+        self.async_objects = vec![false; self.objects.len()];
+        self.async_roles = vec![false; self.roles.len()];
+        if !self.settles {
+            return;
+        }
+        loop {
+            let mut changed = false;
+            for index in 0..self.objects.len() {
+                // System objects (`Cancelled`, `NativeFailure`) have no destroy.
+                let own = self.reg.objects.get(self.objects[index].decl.0)
+                    .is_some_and(|info| info.destroy.is_some_and(|destroy| destroy.is_async));
+                let reaching = own || self.objects[index].fields.iter().any(|(_, ty, _)| self.may_async_destroy(ty));
+                if !self.async_objects[index] && reaching {
+                    self.async_objects[index] = true;
+                    changed = true;
+                }
+            }
+            for index in 0..self.objects.len() {
+                if self.async_objects[index] {
+                    for (role, _) in &self.objects[index].does {
+                        if !self.async_roles[role.0] {
+                            self.async_roles[role.0] = true;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+    }
+
+    /// Значение типа может достать объект с `async destroy`, так что
+    /// область, которая им владеет, закрывается `region.settle` (#328).
+    /// Ошибка в сторону `true` стоит только лишней точки ожидания, в
+    /// сторону `false` — пропущенного destroy, поэтому всё, что не доказано,
+    /// — может: неизвестные специализации, и `any`, замыкания и cap, если в
+    /// программе в них попадает хоть одно такое значение.
+    pub fn may_async_destroy(&self, ty: &Type) -> bool {
+        if !self.settles {
+            return false;
+        }
+        match ty {
+            Type::Object(object) | Type::Successor(object) => self.async_objects.get(object.0).copied().unwrap_or(true),
+            Type::Role(role) => self.async_roles.get(role.0).copied().unwrap_or(true),
+            Type::Variant(id) => self.variants.get(id.0).is_none_or(|variant| {
+                variant
+                    .cases
+                    .iter()
+                    .any(|(_, object)| self.async_objects.get(object.0).copied().unwrap_or(true))
+            }),
+            Type::Array(element) | Type::Builder(element) => self.may_async_destroy(element),
+            Type::Map(_, value) | Type::MapBuilder(_, value) => self.may_async_destroy(value),
+            Type::Any | Type::Fn(_) | Type::Cap(_) => self.dynamic_async,
+            _ => false,
         }
     }
 

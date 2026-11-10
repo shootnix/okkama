@@ -102,9 +102,17 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         }
     }
 
+    /// A region of this body takes a value of `ty` (#328).
+    pub(super) fn note_owned(&mut self, ty: &Type) {
+        if self.settles && !self.owned_types.contains(ty) {
+            self.owned_types.push(ty.clone());
+        }
+    }
+
     pub(super) fn adopt(&mut self, region: ValueId, value: &Typed, span: Span) {
         // A builder is never walked: what it holds is handed over on push.
         if !self.ctx.is_plain(&value.ty) && !value.ty.is_builder() {
+            self.note_owned(&value.ty);
             self.b.emit_void(
                 InstKind::RegionAdopt {
                     region,
@@ -139,6 +147,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         let Some(root) = self.region_at(0) else {
             return;
         };
+        self.note_owned(&value.ty);
         let nested: Vec<ValueId> = self
             .cleanups
             .iter()
@@ -170,6 +179,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         let Some(home) = self.region_at(scope) else {
             return;
         };
+        self.note_owned(&value.ty);
         let nested: Vec<ValueId> = self.cleanups[scope + 1..]
             .iter()
             .filter_map(|cleanup| cleanup.region)
@@ -187,6 +197,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             return;
         }
         if let Some(region) = self.region_at(self.cleanups.len() - 1) {
+            self.note_owned(&value.ty);
             self.b.emit_void(
                 InstKind::RegionTrack {
                     region,

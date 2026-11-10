@@ -92,6 +92,60 @@ pub enum LinkError {
 ///
 /// Тестовые объявления должны быть удалены заранее
 /// ([`crate::syntax::prune::strip_test_items`]): production-модуль OIR их не содержит.
+/// Region closes of async bodies await async destroys only where one may be
+/// owned (#328). Each body recorded the types its regions took; with every
+/// body lowered, every specialisation a value can be of exists, so a body
+/// none of whose types may reach an object with an `async destroy` closes
+/// with `region.leave` and `region.unwind`, on every path. A value hidden
+/// in `any`, a function value or a capability counts only if some value
+/// that may reach one is boxed, captured or made a capability's owner
+/// anywhere in the program (a fixed point: closures capture closures).
+fn settle_where_needed(ctx: &mut ctx::Ctx<'_, '_>, functions: &mut [ir::Function]) {
+    if !ctx.settles {
+        return;
+    }
+    let mut hidden: Vec<ir::Type> = Vec::new();
+    for function in functions.iter() {
+        for inst in function.blocks.iter().flat_map(|block| &block.insts) {
+            let operands: &[ir::ValueId] = match &inst.kind {
+                ir::InstKind::AnyBox(value) | ir::InstKind::CapMake(value) => std::slice::from_ref(value),
+                ir::InstKind::FnClosure { captures, .. } => captures,
+                _ => &[],
+            };
+            for value in operands {
+                let ty = &function.values[value.0];
+                if !hidden.contains(ty) {
+                    hidden.push(ty.clone());
+                }
+            }
+        }
+    }
+    ctx.dynamic_async = false;
+    loop {
+        ctx.compute_async();
+        let dynamic = hidden.iter().any(|ty| ctx.may_async_destroy(ty));
+        if dynamic == ctx.dynamic_async {
+            break;
+        }
+        ctx.dynamic_async = dynamic;
+    }
+    for (index, function) in functions.iter_mut().enumerate() {
+        let Some(Some(types)) = ctx.settle_types.get(index) else { continue };
+        if types.iter().any(|ty| ctx.may_async_destroy(ty)) {
+            continue;
+        }
+        for inst in function.blocks.iter_mut().flat_map(|block| block.insts.iter_mut()) {
+            match inst.kind {
+                ir::InstKind::RegionSettle { region, keep } => inst.kind = ir::InstKind::RegionLeave { region, keep },
+                ir::InstKind::RegionSettleUnwind { region, failure } => {
+                    inst.kind = ir::InstKind::RegionUnwind { region, failure }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 pub fn lower_program(program: &ast::Program) -> Result<ir::Module> {
     let modules = vec![crate::analysis::SourceModule {
         path: modules::module_path(program),
@@ -376,6 +430,7 @@ fn lower_analyzed(
         next += 1;
     }
     ctx.current = None;
+    settle_where_needed(&mut ctx, &mut functions);
     let owners: Vec<usize> = (0..functions.len()).map(|index| ctx.task_module(index)).collect();
     let mut module = ctx.module(program, imports, functions);
     module.debug.function_modules = owners.clone();

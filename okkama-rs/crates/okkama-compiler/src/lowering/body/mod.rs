@@ -123,6 +123,10 @@ struct BodyLowerer<'c, 'r, 'a> {
     body: &'r thir::Body,
     /// Scope exits await async destroys: `region.settle` (#154).
     settles: bool,
+    /// Types of the values this body's regions took (#328): once every body
+    /// is lowered, a body none of whose may reach an object with an `async
+    /// destroy` closes its regions synchronously.
+    owned_types: Vec<Type>,
     kind: Kind,
     object: Option<ObjectId>,
     /// Подстановка параметров типа специализации.
@@ -276,6 +280,7 @@ fn lowerer_for<'c, 'r, 'a>(
 ) -> BodyLowerer<'c, 'r, 'a> {
     BodyLowerer {
         settles: ctx.settles && body.is_async,
+        owned_types: Vec::new(),
         body,
         kind,
         object,
@@ -310,6 +315,16 @@ fn finish(
     span: Span,
 ) -> Result<ir::Function> {
     lowerer.close_cleanup(span)?;
+    if lowerer.settles
+        && let Some(task) = lowerer.ctx.current
+    {
+        let types = std::mem::take(&mut lowerer.owned_types);
+        let settle_types = &mut lowerer.ctx.settle_types;
+        if settle_types.len() <= task {
+            settle_types.resize(task + 1, None);
+        }
+        settle_types[task] = Some(types);
+    }
     if let Some((yes, no)) = lowerer.flag_values {
         lowerer.b.drop_unused(&[yes, no]);
     }
@@ -3047,6 +3062,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         if let Some(value) = &payload
             && let Some(region) = self.region_at(depth.saturating_sub(1))
                 && !self.ctx.is_plain(&value.ty) && !value.ty.is_builder() {
+                    self.note_owned(&value.ty);
                     self.b.emit_void(
                         InstKind::RegionTrack {
                             region,
@@ -3073,6 +3089,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             && !self.ctx.is_plain(&value.ty)
             && !value.ty.is_builder()
         {
+            self.note_owned(&value.ty);
             self.b.emit_void(InstKind::RegionTrack { region, value: value.value }, span);
         }
         let arm = self.arm(Out::Value(value)).expect("the loop is left from an open block");

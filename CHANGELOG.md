@@ -24,6 +24,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- Compiler: an `async destroy` anywhere in a program no longer makes every
+  scope of every async body close with `region.settle` (#328). Each body
+  records the types of the values its regions take; once every body is
+  lowered, a body settles only if one of them may reach an object with an
+  async destroy: the object itself, an object with such a field, an array,
+  map, variant or successor of one, a role such an object does, a generic
+  instance over one. `any`, function values and capabilities count when some
+  such value is boxed, captured or made a capability's owner anywhere in the
+  program (a needless settle costs a suspension point, a missing one would
+  skip a destroy). Other bodies close with `region.leave` and
+  `region.unwind`. With one `async destroy` guard in the HTTP server, the
+  HTTP stack's settles fall from 314 to 12, all in `HttpServerState.run`.
+
 - JVM: a task hands control to another through a baton that spins for up
   to 20 µs before parking its thread, instead of a `Semaphore` that parked
   at once (#327). Control usually comes back within microseconds, and

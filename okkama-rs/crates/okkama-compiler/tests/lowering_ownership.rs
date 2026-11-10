@@ -269,3 +269,83 @@ fn reduce_builders_hand_pushed_resources_to_their_scope() {
     let bound = function(&built, "Maker.bound");
     assert!(count(bound, |kind| matches!(kind, InstKind::RegionTransfer { .. })) >= 1, "{text}");
 }
+
+/// Whether `function` closes its regions with `region.settle` (#328): every
+/// close of a body is one or the other, never a mix.
+fn settles(module: &ir::Module, symbol: &str) -> bool {
+    let body = function(module, symbol);
+    let settles = count(body, |kind| matches!(kind, InstKind::RegionSettle { .. } | InstKind::RegionSettleUnwind { .. }));
+    let leaves = count(body, |kind| matches!(kind, InstKind::RegionLeave { .. } | InstKind::RegionUnwind { .. }));
+    assert!(settles == 0 || leaves == 0, "{symbol} mixes settles and leaves:\n{module}");
+    settles > 0
+}
+
+/// `async destroy` in a program no longer makes every async body settle
+/// (#328): only a body whose regions may take a value that reaches an
+/// object with an async destroy does. Anything the analysis cannot rule out
+/// — roles such objects do, generics instantiated with them, `any`,
+/// closures — still settles.
+#[test]
+fn only_bodies_that_may_own_an_async_destroy_settle() {
+    let prelude = "module app v1.0.0; \
+        role Closing { ok() is bool; } \
+        role Plain { ok() is bool; } \
+        object Conn does Closing { has n is int; Conn(:n); ok() is bool { n > 0; } async destroy { confirm n > 0; } } \
+        object Res does Plain { has n is int; Res(:n); ok() is bool { n > 0; } destroy { confirm n > 0; } } \
+        object Holder { has conn is Conn; Holder(:conn); ok() is bool { conn.ok(); } } \
+        object Box<T> { has item is T; Box(:item); } \
+        object Maker { Maker(); async conn() is Conn { Conn(n: 1); } async res() is Res { Res(n: 1); } }";
+    let bodies = "object Job { Job(); \
+        async unrelated() is int { let r = Res(n: 1); let rs = [Res(n: 2)]; for 0..3 -> i { let inner = Res(n: i + 1); confirm inner.ok(); } confirm r.ok(); rs.size(); } \
+        async failing() is int { let r = Res(n: 1); if r.ok() { throw Broken.broken; } 1; } \
+        async direct() is int { let c = Conn(n: 1); confirm c.ok(); 1; } \
+        async transitive() is int { let h = Holder(conn: Conn(n: 1)); confirm h.ok(); 1; } \
+        async array() is int { let all = [Conn(n: 1)]; all.size(); } \
+        async map() is int { let all = [\"a\": Conn(n: 1)]; all.size(); } \
+        async role() is bool { let c is Closing = Conn(n: 1); c.ok(); } \
+        async plain_role() is bool { let p is Plain = Res(n: 1); p.ok(); } \
+        async boxed_res() is int { let b = Box(item: Res(n: 1)); 1; } \
+        async boxed_conn() is int { let b = Box(item: Conn(n: 1)); 1; } \
+        async closure() is int { let r = Res(n: 1); let f = () is bool { r.ok(); }; if f() { 1; } else { 0; } } \
+        async returned() is int { let c = await Maker().conn(); confirm c.ok(); 1; } \
+        async returned_res() is int { let r = await Maker().res(); confirm r.ok(); 1; } \
+        async nested() is int { for 0..2 -> i { let c = Conn(n: i + 1); confirm c.ok(); } 1; } \
+        sync_conn() is int { 1; } }";
+    let program = format!(
+        "{prelude} enum Broken is Error = (broken); {bodies} \
+         async main() is int {{ let job = Job(); await job.unrelated(); await job.direct(); 0; }}"
+    );
+    let module = module(&program);
+    for symbol in ["Job.unrelated", "Job.failing", "Job.plain_role", "Job.boxed_res", "Job.closure", "Job.returned_res", "Maker.res"] {
+        assert!(!settles(&module, symbol), "{symbol} owns nothing with an async destroy:\n{module}");
+    }
+    for symbol in [
+        "Job.direct", "Job.transitive", "Job.array", "Job.map", "Job.role", "Job.boxed_conn",
+        "Job.returned", "Job.nested", "Maker.conn",
+    ] {
+        assert!(settles(&module, symbol), "{symbol} may own an async destroy:\n{module}");
+    }
+    // The unrelated body still closes its regions, synchronously, on every
+    // exit: block, loop iteration, failure.
+    let unrelated = function(&module, "Job.unrelated");
+    assert!(count(unrelated, |kind| matches!(kind, InstKind::RegionLeave { .. })) >= 2, "{module}");
+    assert!(count(unrelated, |kind| matches!(kind, InstKind::RegionUnwind { .. })) >= 1, "{module}");
+    let failing = function(&module, "Job.failing");
+    assert!(count(failing, |kind| matches!(kind, InstKind::RegionUnwind { .. })) >= 1, "{module}");
+
+    // A function value hides what it captures: once a value that may reach
+    // an async destroy is captured (or boxed as `any`) anywhere, every body
+    // owning a function value settles, the one capturing `Res` included.
+    let captured = crate::module(&format!(
+        "{prelude} object Job {{ Job(); \
+         async res_closure() is int {{ let r = Res(n: 1); let f = () is bool {{ r.ok(); }}; if f() {{ 1; }} else {{ 0; }} }} \
+         async conn_closure() is int {{ let c = Conn(n: 1); let f = () is bool {{ c.ok(); }}; if f() {{ 1; }} else {{ 0; }} }} \
+         async boxed() is int {{ let a is any = Conn(n: 1); 1; }} \
+         async plain() is int {{ let r = Res(n: 1); confirm r.ok(); 1; }} }} \
+         async main() is int {{ await Job().res_closure(); }}"
+    ));
+    for symbol in ["Job.res_closure", "Job.conn_closure", "Job.boxed"] {
+        assert!(settles(&captured, symbol), "{symbol} owns a value that may hide an async destroy:\n{captured}");
+    }
+    assert!(!settles(&captured, "Job.plain"), "{captured}");
+}
