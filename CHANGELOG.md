@@ -16,6 +16,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   benchmarks, median of 10 against release/0.5.1: map literal −24%, map
   lookup −20%, `keys()` −21%, map `+` −18%, string slice −22%, string length
   −17%, SHA-256 −16%, JSON round trip −14%; nothing slower beyond noise.
+- Sparrow (Tomato): a map of at most 8 entries is one sorted vector of its
+  own size instead of a B-tree leaf, and becomes the B-tree when it grows
+  past that; a literal of more entries starts as the B-tree (#325). Against
+  the shared slow path above, median of 10: map lookup −16%, `keys()` −18%,
+  map literal −15% (8 entries −21%, 12 entries unchanged), map `+` −22%;
+  the persistence stand's small-map churn −20% with 1 MB less peak memory,
+  its large maps (1 000–100 000 entries, 9 scenarios) unchanged. Both steps
+  together: map operations on small maps 33–38% faster than in 0.5.0.
 
 ### Fixed
 

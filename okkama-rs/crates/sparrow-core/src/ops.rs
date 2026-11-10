@@ -1344,6 +1344,7 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
         }
         I::MapNew { dst, entries } => {
             let mut map = map_for(runtime, function, dst.0)?;
+            map.entries = crate::maps::Entries::with_capacity(entries.len());
             let (key_kind, key_type) = map_key(runtime, function, dst.0);
             // What the entries own, counted as they go in, so the heap does
             // not walk the keys again to charge them (#325).

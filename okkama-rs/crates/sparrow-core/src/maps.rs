@@ -9,6 +9,11 @@
 //! did before; its first version costs the copy it did before, the next
 //! ones a path (the owner's decision on #252–#254, 2026-11-10).
 //!
+//! A map of at most [`TINY`] entries is neither: it is one sorted vector of
+//! its own size, cloned and searched in place, and becomes the standard
+//! B-tree when it grows past that; a literal of more entries starts as the
+//! B-tree (#325).
+//!
 //! A persistent map is cloned in O(1); a write copies one path from the
 //! root, or changes nodes in place while no other version holds them (a map
 //! being built). Its nodes' memory, with what their keys own, is counted
@@ -32,6 +37,10 @@ pub type Entry = (Word, Word);
 /// Entries a standard map holds at most and still makes its versions by a
 /// copy, as many as an array keeps flat before it becomes a trie.
 pub const SMALL: usize = 64;
+
+/// Entries a map keeps in one sorted vector before it becomes a B-tree: a
+/// small map is one allocation of its own size, not a B-tree leaf (#325).
+pub const TINY: usize = 8;
 
 /// Persistent maps unless `OKKAMA_MAPS=btree`.
 pub fn persistent_maps() -> bool {
@@ -69,19 +78,27 @@ impl pmap::NodeKey for Key {
 
 #[derive(Debug, Clone)]
 pub enum Entries {
+    Tiny(Vec<(Key, Entry)>),
     BTree(BTreeMap<Key, Entry>),
     Persistent(PMap<Key, Entry>),
 }
 
 impl Default for Entries {
     fn default() -> Self {
-        Entries::BTree(BTreeMap::new())
+        Entries::Tiny(Vec::new())
     }
 }
 
 impl Entries {
+    /// Room for `count` entries, as a literal knows them: a tiny map of its
+    /// own size, or at once the B-tree that more entries would turn it into.
+    pub fn with_capacity(count: usize) -> Self {
+        if count <= TINY { Entries::Tiny(Vec::with_capacity(count)) } else { Entries::BTree(BTreeMap::new()) }
+    }
+
     pub fn len(&self) -> usize {
         match self {
+            Entries::Tiny(list) => list.len(),
             Entries::BTree(map) => map.len(),
             Entries::Persistent(map) => map.len(),
         }
@@ -97,6 +114,7 @@ impl Entries {
 
     pub fn get(&self, key: &Key) -> Option<&Entry> {
         match self {
+            Entries::Tiny(list) => tiny_seek(list, key).ok().map(|at| &list[at].1),
             Entries::BTree(map) => map.get(key),
             Entries::Persistent(map) => map.get(key),
         }
@@ -109,6 +127,10 @@ impl Entries {
     /// Insert or replace the entry of `key`.
     pub fn insert(&mut self, key: Key, entry: Entry) {
         match self {
+            Entries::Tiny(list) => match tiny_seek(list, &key) {
+                Ok(at) => list[at].1 = entry,
+                Err(at) => self.tiny_insert(at, key, entry),
+            },
             Entries::BTree(map) => {
                 map.insert(key, entry);
             }
@@ -137,6 +159,16 @@ impl Entries {
     /// its key representatives, as `BTreeMap::entry` did.
     pub fn upsert(&mut self, key: Key, entry: Entry) -> bool {
         match self {
+            Entries::Tiny(list) => match tiny_seek(list, &key) {
+                Ok(at) => {
+                    list[at].1.1 = entry.1;
+                    false
+                }
+                Err(at) => {
+                    self.tiny_insert(at, key, entry);
+                    true
+                }
+            },
             Entries::BTree(map) => match map.entry(key) {
                 btree_map::Entry::Occupied(mut found) => {
                     found.get_mut().1 = entry.1;
@@ -153,6 +185,11 @@ impl Entries {
 
     pub fn remove(&mut self, key: &Key) {
         match self {
+            Entries::Tiny(list) => {
+                if let Ok(at) = tiny_seek(list, key) {
+                    list.remove(at);
+                }
+            }
             Entries::BTree(map) => {
                 map.remove(key);
             }
@@ -167,6 +204,7 @@ impl Entries {
     /// version.
     pub fn trace(&self, mut visit: impl FnMut(&Entry)) {
         match self {
+            Entries::Tiny(list) => list.iter().for_each(|(_, entry)| visit(entry)),
             Entries::BTree(map) => map.values().for_each(visit),
             Entries::Persistent(map) => map.for_each_unvisited(PASS.with(Cell::get), |_, entry| visit(entry)),
         }
@@ -183,6 +221,10 @@ impl Entries {
                 let left = PMap::from_sorted(std::mem::take(left));
                 *self = Entries::Persistent(merged(&left, right));
             }
+            (Entries::Tiny(left), Entries::Persistent(right)) => {
+                let left = PMap::from_sorted(std::mem::take(left));
+                *self = Entries::Persistent(merged(&left, right));
+            }
             (this, right) => {
                 for (key, &entry) in right.iter() {
                     this.upsert(key.clone(), entry);
@@ -193,8 +235,22 @@ impl Entries {
 
     pub fn iter(&self) -> Iter<'_> {
         match self {
+            Entries::Tiny(list) => Iter::Tiny(list.iter()),
             Entries::BTree(map) => Iter::BTree(map.iter()),
             Entries::Persistent(map) => Iter::Persistent(map.iter()),
+        }
+    }
+
+    /// Put a new key at `at` of a tiny map, which past [`TINY`] entries
+    /// becomes a B-tree.
+    fn tiny_insert(&mut self, at: usize, key: Key, entry: Entry) {
+        let Entries::Tiny(list) = self else { unreachable!() };
+        if list.len() < TINY {
+            list.insert(at, (key, entry));
+        } else {
+            let mut map: BTreeMap<Key, Entry> = std::mem::take(list).into_iter().collect();
+            map.insert(key, entry);
+            *self = Entries::BTree(map);
         }
     }
 
@@ -210,6 +266,7 @@ impl Entries {
 /// Entries in key order.
 #[derive(Debug)]
 pub enum Iter<'a> {
+    Tiny(std::slice::Iter<'a, (Key, Entry)>),
     BTree(btree_map::Iter<'a, Key, Entry>),
     Persistent(pmap::Iter<'a, Key, Entry>),
 }
@@ -219,10 +276,15 @@ impl<'a> Iterator for Iter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
+            Iter::Tiny(iter) => iter.next().map(|(key, entry)| (key, entry)),
             Iter::BTree(iter) => iter.next(),
             Iter::Persistent(iter) => iter.next(),
         }
     }
+}
+
+fn tiny_seek(list: &[(Key, Entry)], key: &Key) -> Result<usize, usize> {
+    list.binary_search_by(|(k, _)| k.cmp(key))
 }
 
 /// An insert costs about as much as copying this many entries in an ordered
@@ -315,6 +377,28 @@ mod tests {
         left.merge(&map);
         assert!(left.is_persistent() && left.len() == 1_000);
         assert_eq!(left.get(&Key::Small(3)).map(|e| e.0), Some(77));
+    }
+
+    #[test]
+    fn tiny_maps_keep_key_order_and_grow_into_b_trees() {
+        let mut map = Entries::default();
+        for i in (0..TINY as i64).rev() {
+            assert!(map.upsert(Key::Small(i), (i as Word, 0)));
+        }
+        assert!(matches!(map, Entries::Tiny(_)));
+        // A new value for an equal key keeps the stored key word.
+        assert!(!map.upsert(Key::Small(3), (99, 7)));
+        assert_eq!(map.get(&Key::Small(3)), Some(&(3, 7)));
+        map.remove(&Key::Small(0));
+        assert!(map.get(&Key::Small(0)).is_none() && map.len() == TINY - 1);
+        map.insert(Key::Small(0), (0, 0));
+        assert!(map.keys().cloned().eq((0..TINY as i64).map(Key::Small)));
+        map.upsert(Key::Small(TINY as i64), (0, 0));
+        assert!(matches!(map, Entries::BTree(_)) && map.len() == TINY + 1);
+        assert!(map.keys().cloned().eq((0..=TINY as i64).map(Key::Small)));
+        // A literal that holds more than a tiny map starts as the B-tree.
+        assert!(matches!(Entries::with_capacity(TINY), Entries::Tiny(_)));
+        assert!(matches!(Entries::with_capacity(TINY + 1), Entries::BTree(_)));
     }
 
     /// Both kinds of entries with Tomato's own keys (#252): run with
