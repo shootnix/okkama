@@ -1,0 +1,43 @@
+# The persistent representations of 0.4.3 on and off on an x86-64 runner
+# (tools/perf/persistence_ab.py): the stand's read, build and write points and
+# the ladder workloads, one binary, ABBA. Run by hand, or by pushing a branch
+# perf/<anything>. CI runners are shared machines: read the ratios, not the
+# absolute times.
+name: Perf x86-64
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["perf/**"]
+
+jobs:
+  persistence:
+    name: Persistence on/off
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - name: Rust
+        run: |
+          toolchain="$(cat tools/release-toolchain.txt)"
+          rustup toolchain install "$toolchain" --profile minimal && rustup default "$toolchain"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            okkama-rs/target
+          key: perf-${{ runner.os }}-${{ hashFiles('okkama-rs/Cargo.lock') }}
+          restore-keys: perf-${{ runner.os }}-
+      - name: Build
+        working-directory: okkama-rs
+        run: cargo build --release --locked -p okkama-cli
+      - name: Measure
+        run: |
+          lscpu | sed -n '1,20p'
+          python3 tools/perf/persistence_ab.py --okkama okkama-rs/target/release/okkama --out persistence-ab.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: persistence-ab
+          path: persistence-ab.json
