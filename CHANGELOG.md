@@ -6,6 +6,27 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-11-10
+
+0.5.1 makes Sparrow and the JVM faster where 0.5.0 left them slowest, and
+lets an embedder give each runtime a memory budget of its own. On Sparrow
+(Tomato) exact rationals are the engines' shared fraction with machine-integer
+parts: a small `rat` expression costs 312 ns instead of 1 954, level with the
+IR engine, and the ladder's 10-app runs 15% faster (#326). Instructions that
+machine code runs through the shared slow path read their operands from the
+call site, so map literals, lookups and `+` are 15–24% faster (#325), and a
+payload's Rust memory is charged once (#332). On the JVM a task hands control
+to the next through a baton that spins before it parks: an `await` costs
+0.77 µs instead of 6.9, a channel round trip 1.15 µs instead of 13.3, and
+10-app runs 29% faster (#327). The compiler settles a scope only where it may
+own an object with an `async destroy`, so one async cleanup guard no longer
+slows the compilation of every async action (#328). `Limits::memory_scope`
+gives each runtime of a process its own memory budget (#269). A deadlock is
+reported the same way on every engine (#342), and a dependency's git source
+can no longer inject options into Blade's git commands (#346). Conformance has
+992 mandatory cases (2 new), the t/ suite 50 562 checks per configuration
+(38 new).
+
 ### Added
 
 - Memory budgets per runtime (#269). `Limits::memory_scope` chooses what
@@ -3036,7 +3057,8 @@ First release of the Rust implementation: the compiler (lexer, parser, analysis,
 IR, Sparrow (VM with JIT) and JVM engines, the standard library, LSP, `fmt`, `lint`, the
 `blade` project manager, and packages for macOS and Linux.
 
-[Unreleased]: https://github.com/shootnix/okkama/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/shootnix/okkama/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/shootnix/okkama/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/shootnix/okkama/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/shootnix/okkama/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/shootnix/okkama/compare/v0.4.1...v0.4.2
