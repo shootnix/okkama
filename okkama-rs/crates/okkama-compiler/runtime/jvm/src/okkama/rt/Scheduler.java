@@ -31,6 +31,8 @@ public final class Scheduler {
     static final java.util.LinkedHashSet<Future> registered = new java.util.LinkedHashSet<Future>();
     /** Разбуженные задачи по порядку пробуждения: их продолжает цикл запуска. */
     static final ArrayDeque<Task> ready = new ArrayDeque<Task>();
+    /** Корень {@code async main}, пока его ведёт цикл запуска. */
+    private static Future root;
     /** События внешних операций; их число — {@link #external}. */
     static final LinkedBlockingQueue<Runnable> events = new LinkedBlockingQueue<Runnable>();
     /** Внешние операции, исхода которых ждёт программа. */
@@ -236,8 +238,34 @@ public final class Scheduler {
         Task me = current;
         Task back = me.resumer;
         me.resumer = null;
-        back.wake.release();
+        if (!handOff(back)) {
+            back.wake.release();
+        }
         me.wake.acquireUninterruptibly();
+    }
+
+    /**
+     * Задача, которую продолжил цикл запуска, остановилась: управление сразу
+     * следующей готовой задаче, которая вернёт его туда же. Это тот порядок,
+     * что дал бы цикл, без двух переключений потоков через него (#340). Задача,
+     * запущенная другой задачей ({@code spawn}, первый {@code await}),
+     * возвращается к ней: та продолжает свой код раньше любой готовой.
+     */
+    private static boolean handOff(Task back) {
+        if (back.future != null) {
+            return false;
+        }
+        Task next;
+        while ((next = ready.poll()) != null) {
+            next.queued = false;
+            if (next.awaiting != null) {
+                next.resumer = back;
+                current = next;
+                next.wake.release();
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Запустить холодный Future: тело исполняется до первой приостановки. */
@@ -266,7 +294,12 @@ public final class Scheduler {
                 task.resumer = null;
                 // В запас до передачи управления: дальше носитель уже свободен.
                 retire(self[0]);
-                back.wake.release();
+                // Завершённый корень возвращает управление циклу: готовые
+                // задачи дальше отменяет завершение запуска.
+                boolean running = root != null && root.state == Future.RUNNING;
+                if (!running || !handOff(back)) {
+                    back.wake.release();
+                }
             }
         };
         // Тело ждёт task.wake, поэтому носитель известен ему до начала.
@@ -383,8 +416,13 @@ public final class Scheduler {
      */
     public static Object runMain(Future root) {
         observe(root);
-        start(root, null);
-        drive(root);
+        Scheduler.root = root;
+        try {
+            start(root, null);
+            drive(root);
+        } finally {
+            Scheduler.root = null;
+        }
         Failure unobserved = shutdown();
         registered.clear();
         if (root.state == Future.FAILED) {
