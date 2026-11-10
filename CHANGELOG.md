@@ -212,6 +212,12 @@ anything is kept. Not released until the measurements show a net gain.
   t/ suite on the release build passed). `tools/gate/stamp_sources.py` gives
   each source the time a gate first saw its present content and drops the
   adapter's cache when anything changed.
+- Release gate: a gate run from a tree older than #333 no longer leaves
+  the next gate on stale binaries (#334). Such a run builds into the shared
+  volumes without stamping, and the next gate took its newer artifacts for
+  its own. Every gate now seals its record when it ends, failed or not. The
+  next one rebuilds everything once when a build output changed after the
+  seal, or when there is no seal (a killed gate, a #333 manifest).
 
 - Tomato: maps no longer pile up in memory (#331). A map's entries live in
   Rust memory that the collector did not count, so a program that made many
