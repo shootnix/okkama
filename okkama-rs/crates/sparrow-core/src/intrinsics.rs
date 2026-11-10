@@ -862,7 +862,7 @@ fn ordering(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, source: Word)
             Ok(match element_type {
                 Some(Type::Int) => runtime.big_value(a).cmp(&runtime.big_value(b)),
                 Some(Type::Float) => f64::from_bits(a).partial_cmp(&f64::from_bits(b)).unwrap_or(Ordering::Equal),
-                Some(Type::Rat) => runtime.rational(a).cmp(runtime.rational(b)),
+                Some(Type::Rat) => runtime.rational(a).compare(runtime.rational(b)),
                 Some(Type::Str) => runtime.heap.text(a).cmp(runtime.heap.text(b)),
                 _ => a.cmp(&b),
             })

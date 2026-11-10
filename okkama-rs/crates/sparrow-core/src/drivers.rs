@@ -824,8 +824,7 @@ fn timeout_start(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: us
         runtime.roots.push((limit, Repr::Ref));
         let amount = call_function(ctx, runtime, helpers[offset], &[limit]);
         let result = amount.and_then(|amount| {
-            use num_traits::Signed;
-            if runtime.rational(amount).is_positive() {
+            if runtime.rational(amount).sign() > 0 {
                 call_function(ctx, runtime, helpers[offset + 1], &[clock, limit]).map(Some)
             } else {
                 Some(None)

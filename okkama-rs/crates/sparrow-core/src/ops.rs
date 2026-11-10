@@ -11,9 +11,10 @@ use crate::program::Kind;
 use crate::runtime::{Ctx, FailureKind, Runtime};
 use crate::word::{self, Repr, UNBOUND, Word};
 use num_bigint::BigInt;
-use num_integer::Integer as _;
-use num_rational::BigRational;
-use num_traits::{Signed, ToPrimitive, Zero};
+use num_traits::{Signed, ToPrimitive};
+use okkama_runtime_core::IntValue;
+use okkama_runtime_core::bignum::Big;
+use okkama_runtime_core::rat::Rat;
 use okkama_sparrow::{Access, Cmp, Instruction as I, StrFn, Type, TypeRef};
 use std::cmp::Ordering;
 use std::rc::Rc;
@@ -23,7 +24,9 @@ type Outcome = Result<Word, String>;
 // ---- payload values ----
 
 #[derive(Debug)]
-pub struct Rational(pub BigRational);
+/// A `rat`: the engines' shared exact fraction, whose small parts are
+/// machine integers (#326).
+pub struct Rational(pub Rat);
 #[derive(Debug)]
 pub struct Builder {
     pub repr: Repr,
@@ -101,8 +104,10 @@ payload! {
 /// 10³–10⁵ entries, Rust 1.97's `BTreeMap`); the estimate errs high.
 pub const MAP_ENTRY_BYTES: usize = 2 * std::mem::size_of::<(Key, (Word, Word))>();
 
-fn rational_bytes(value: &BigRational) -> usize {
-    (value.numer().bits() + value.denom().bits()).div_ceil(64) as usize * 8 + 32
+/// What a fraction owns outside itself: the digits of a part beyond 64 bits.
+fn rational_bytes(value: &Rat) -> usize {
+    let part = |n: &IntValue| if n.to_i64().is_some() { 0 } else { 48 + n.as_big().bits().div_ceil(64) as usize * 8 };
+    part(value.numerator()) + part(value.denominator())
 }
 
 /// Map keys own immutable data; order follows the previous engine. An
@@ -123,7 +128,7 @@ pub enum Key {
     /// alone, inline, without reading either text.
     Str(u64, Rc<str>),
     /// A `rat` field of an object key.
-    Rat(Rc<BigRational>),
+    Rat(Rc<Rat>),
     Object(u32, Rc<[Key]>),
 }
 impl Key {
@@ -197,7 +202,7 @@ impl Key {
             (Self::Float(a), Self::Float(b)) => a.partial_cmp(b).expect("finite float key"),
             (Self::Raw(a), Self::Raw(b)) => a.cmp(b),
             (Self::Str(_, a), Self::Str(_, b)) => a.cmp(b),
-            (Self::Rat(a), Self::Rat(b)) => a.cmp(b),
+            (Self::Rat(a), Self::Rat(b)) => a.compare(b),
             (Self::Object(a, x), Self::Object(b, y)) => a.cmp(b).then_with(|| x.iter().cmp(y.iter())),
             _ => self.rank().cmp(&other.rank()),
         }
@@ -238,16 +243,23 @@ impl Runtime {
             Integer::Big(n) => n.clone(),
         }
     }
+    /// An `int` word as the shared integer type: small ones need no digits.
+    pub fn int_value(&self, word: Word) -> IntValue {
+        match self.heap.integer(word) {
+            Integer::Small(n) => IntValue::from_i64(n),
+            Integer::Big(n) => IntValue::from_big(Big::from_bigint(n.clone())),
+        }
+    }
     pub fn small_or_big(&self, word: Word) -> Option<i64> {
         match self.heap.integer(word) {
             Integer::Small(n) => Some(n),
             Integer::Big(n) => n.to_i64(),
         }
     }
-    pub fn rational(&self, word: Word) -> &BigRational {
+    pub fn rational(&self, word: Word) -> &Rat {
         &self.heap.payload::<Rational>(word).expect("rational value").0
     }
-    pub fn rational_new(&mut self, value: BigRational) -> Word {
+    pub fn rational_new(&mut self, value: Rat) -> Word {
         self.heap.allocate_payload(Box::new(Rational(value)))
     }
     pub fn text_new(&mut self, text: &str) -> Word {
@@ -312,67 +324,6 @@ impl Runtime {
 
 fn integer_word(runtime: &mut Runtime, value: BigInt) -> Word {
     runtime.heap.big(value)
-}
-
-fn decimal_parts(value: f64) -> (i128, i32) {
-    let text = crate::scalar::float_text(value);
-    let (mantissa, exponent) = text.split_once('e').map_or((text.as_str(), 0), |(m, e)| {
-        (m, e.parse::<i32>().expect("float decimal exponent"))
-    });
-    let fraction = mantissa.split_once('.').map_or(0, |(_, f)| f.len() as i32);
-    let digits = mantissa
-        .replace('.', "")
-        .parse()
-        .expect("shortest binary64 decimal fits i128");
-    (digits, exponent - fraction)
-}
-
-fn decimal_ratio(value: f64) -> BigRational {
-    let (digits, exponent) = decimal_parts(value);
-    let power = BigInt::from(10).pow(exponent.unsigned_abs());
-    if exponent >= 0 {
-        BigRational::from_integer(BigInt::from(digits) * power)
-    } else {
-        BigRational::new(BigInt::from(digits), power)
-    }
-}
-
-/// DECIMAL128 half-even (34 significant digits), then binary64: the Okkama/JVM
-/// conversion contract.
-fn rational_to_float(value: &BigRational) -> Result<f64, String> {
-    if value.is_zero() {
-        return Ok(0.0);
-    }
-    let n = value.numer().abs();
-    let d = value.denom();
-    let mut scale = 33 - (n.to_string().len() as i64 - d.to_string().len() as i64);
-    let minimum = BigInt::from(10).pow(33);
-    let (mut quotient, remainder, divisor) = loop {
-        let power = BigInt::from(10).pow(
-            u32::try_from(scale.unsigned_abs()).map_err(|_| "rational conversion exponent too large")?,
-        );
-        let (numerator, divisor) = if scale >= 0 { (&n * power, d.clone()) } else { (n.clone(), d * power) };
-        let (q, r) = numerator.div_rem(&divisor);
-        if q < minimum {
-            scale += 1;
-        } else if q.to_string().len() > 34 {
-            scale -= 1;
-        } else {
-            break (q, r, divisor);
-        }
-    };
-    let twice = remainder * 2;
-    if twice > divisor || (twice == divisor && quotient.is_odd()) {
-        quotient += 1;
-    }
-    let sign = if value.is_negative() { "-" } else { "" };
-    let result: f64 = format!("{sign}{quotient}e{}", -scale)
-        .parse()
-        .map_err(|_| "invalid rational conversion")?;
-    if !result.is_finite() {
-        return Err("Cannot convert rat to float: expected a finite binary64 value".into());
-    }
-    Ok(result)
 }
 
 fn finite(value: f64) -> Outcome {
@@ -1085,11 +1036,7 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
                     let n = f64::from_bits(word);
                     if n > 0.0 { 1 } else if n < 0.0 { -1 } else { 0 }
                 }
-                _ => match runtime.rational(word).numer().sign() {
-                    num_bigint::Sign::Minus => -1,
-                    num_bigint::Sign::NoSign => 0,
-                    num_bigint::Sign::Plus => 1,
-                },
+                _ => runtime.rational(word).sign(),
             };
             Ok(runtime.heap.int(sign))
         }
@@ -1113,11 +1060,8 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
         I::Convert { dst, source } => convert(runtime, function, *source, dst.0, value(source)),
         I::ByteFrom { source, context, .. } => byte_from(runtime, kinds[source.0 as usize], value(source), context.as_deref()),
         I::RatNew { left, right, .. } => {
-            let (n, d) = (runtime.big_value(value(left)), runtime.big_value(value(right)));
-            if d.is_zero() {
-                return Err("Division by zero".into());
-            }
-            Ok(runtime.rational_new(BigRational::new(n, d)))
+            let ratio = Rat::new(&runtime.int_value(value(left)), &runtime.int_value(value(right)))?;
+            Ok(runtime.rational_new(ratio))
         }
         I::RatAdd { left, right, .. }
         | I::RatSub { left, right, .. }
@@ -1128,31 +1072,28 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             // is borrowed again to allocate it (#326).
             let result = {
                 let (a, b) = (runtime.rational(value(left)), runtime.rational(value(right)));
-                if b.is_zero() && matches!(instruction, I::RatDiv { .. } | I::RatMod { .. }) {
-                    return Err(if matches!(instruction, I::RatDiv { .. }) { "Division by zero" } else { "Modulo by zero" }.into());
-                }
                 match instruction {
-                    I::RatAdd { .. } => a + b,
-                    I::RatSub { .. } => a - b,
-                    I::RatMul { .. } => a * b,
-                    I::RatDiv { .. } => a / b,
-                    _ => a % b,
+                    I::RatAdd { .. } => a.add(b),
+                    I::RatSub { .. } => a.sub(b),
+                    I::RatMul { .. } => a.mul(b),
+                    I::RatDiv { .. } => a.div(b)?,
+                    _ => a.modulo(b)?,
                 }
             };
             Ok(runtime.rational_new(result))
         }
         I::RatNeg { operand, .. } | I::RatAbs { operand, .. } => {
             let n = runtime.rational(value(operand));
-            let result = if matches!(instruction, I::RatNeg { .. }) { -n } else { n.abs() };
+            let result = if matches!(instruction, I::RatNeg { .. }) { n.neg() } else { n.abs() };
             Ok(runtime.rational_new(result))
         }
         I::RatCmp { op, left, right, .. } => {
-            let order = runtime.rational(value(left)).cmp(runtime.rational(value(right)));
+            let order = runtime.rational(value(left)).compare(runtime.rational(value(right)));
             Ok(compare_flag(*op, order))
         }
         I::RatPart { value: source, denominator, .. } => {
             let ratio = runtime.rational(value(source));
-            let text = if *denominator { ratio.denom() } else { ratio.numer() }.to_string();
+            let text = if *denominator { ratio.denominator() } else { ratio.numerator() }.to_string();
             Ok(runtime.text_new(&text))
         }
         I::StrCmp { op, left, right, .. } => {
@@ -1618,16 +1559,19 @@ fn convert(runtime: &mut Runtime, function: usize, source: okkama_sparrow::Regis
             Ok(runtime.text_new(&text))
         }
         (Some(Type::Int), Some(Type::Rat)) => {
-            let n = runtime.big_value(word);
-            Ok(runtime.rational_new(BigRational::from_integer(n)))
+            let n = runtime.int_value(word);
+            Ok(runtime.rational_new(Rat::from_int(&n)))
         }
-        (Some(Type::Byte), Some(Type::Rat)) => Ok(runtime.rational_new(BigRational::from_integer(BigInt::from(word)))),
-        (Some(Type::Float), Some(Type::Rat)) => Ok(runtime.rational_new(decimal_ratio(f64::from_bits(word)))),
+        (Some(Type::Byte), Some(Type::Rat)) => Ok(runtime.rational_new(Rat::from_int(&IntValue::from_i64(word as i64)))),
+        (Some(Type::Float), Some(Type::Rat)) => Ok(runtime.rational_new(Rat::from_float(f64::from_bits(word)))),
         (Some(Type::Rat), Some(Type::Int)) => {
-            let n = runtime.rational(word).to_integer();
-            Ok(integer_word(runtime, n))
+            let n = runtime.rational(word).to_int();
+            Ok(match n.to_i64() {
+                Some(small) => runtime.heap.int(small),
+                None => integer_word(runtime, n.as_big().as_bigint().clone()),
+            })
         }
-        (Some(Type::Rat), Some(Type::Float)) => rational_to_float(runtime.rational(word)).map(f64::to_bits),
+        (Some(Type::Rat), Some(Type::Float)) => runtime.rational(word).to_float().map(f64::to_bits),
         (Some(Type::Byte), Some(Type::Int)) => Ok(runtime.heap.int(word as i64)),
         // `char` ↔ text and code point (#231).
         (Some(Type::Char), Some(Type::Int)) => Ok(runtime.heap.int(word as i64)),
@@ -1718,7 +1662,7 @@ fn byte_from(runtime: &mut Runtime, kind: Kind, word: Word, context: Option<&str
         }
         _ => {
             let n = runtime.rational(word);
-            if let Some(byte) = n.to_integer().to_u8() {
+            if let Some(byte) = n.to_int().to_i64().and_then(|n| u8::try_from(n).ok()) {
                 return Ok(Word::from(byte));
             }
             ("rat", n.to_string())

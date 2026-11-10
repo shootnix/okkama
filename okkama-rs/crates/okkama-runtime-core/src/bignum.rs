@@ -14,6 +14,16 @@ use std::cmp::Ordering;
 pub struct Big(BigInt);
 
 impl Big {
+    /// A `num-bigint` value as it is, for an engine that keeps its big
+    /// integers that way (Tomato, #326).
+    pub fn from_bigint(value: BigInt) -> Self {
+        Self(value)
+    }
+
+    pub fn as_bigint(&self) -> &BigInt {
+        &self.0
+    }
+
     pub fn zero() -> Self {
         Self(BigInt::zero())
     }

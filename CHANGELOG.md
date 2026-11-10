@@ -8,6 +8,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- Sparrow (Tomato): `rat` values are the engines' shared exact fraction
+  (`okkama_runtime_core::rat::Rat`, the IR engine's), whose parts are machine
+  integers while they fit, instead of `num-rational`'s `BigRational`, which
+  normalized every result through big-integer gcd (#326). Arithmetic borrows
+  its operands instead of cloning them. Micro benchmarks, release build,
+  median of 10: the `rat` expression 1 954 → 312 ns (the IR engine 303),
+  `+` −79%, `*` −83%, `/` −84%, `%` −59%, comparison −72%, `rat(n, d)` −82%,
+  beyond 64 bits −48%; the ladder's 10-app −15%. Results are unchanged: 38 new
+  checks in `t/op/rat-edges.ok` (signs, 64-bit boundaries, promotion and
+  reduction back, conversions, keys, aliases) pass on every engine.
+
 - Sparrow (Tomato): an instruction that machine code runs through the shared
   slow path (`rt_exec`) no longer visits the instruction on every call to
   find its operands; the call site passes the list it computed when it was

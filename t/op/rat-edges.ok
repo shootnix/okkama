@@ -1,0 +1,65 @@
+module t v1.0.0;
+
+// t/op: rat — signs, reduction, 64-bit boundaries, promotion to big parts
+// and back, conversions, keys and aliases (#326: Tomato keeps small parts as
+// machine integers and must agree with the other engines everywhere).
+import "tap" take Tap;
+
+main() is int {
+    let t = Tap(38);
+    // Signs and canonical forms.
+    t = t.is(rat(0, -5).string(), "0", "zero is 0/1 whatever the denominator's sign");
+    t = t.is((1 / 3 - 1 / 3).string(), "0", "a difference that cancels is canonical zero");
+    t = t.is(rat(-1, -2), 1 / 2, "two negative parts make a positive fraction");
+    t = t.is(rat(1, -2).string(), "-1/2", "the sign moves to the numerator");
+    t = t.is(rat(-12, 18).string(), "-2/3", "reduced by the gcd, sign kept");
+    t = t.is(rat(2, 4), rat(1, 2), "equivalent fractions are equal");
+    t = t.ok(rat(-1, 2) < rat(-1, 3), "negative fractions order by value");
+    t = t.ok(rat(-1, 3) < rat(1, 1000000), "a negative is below a tiny positive");
+    // Arithmetic in every sign combination.
+    t = t.is((rat(-1, 2) + rat(1, 3)).string(), "-1/6", "negative plus positive");
+    t = t.is((rat(1, 2) - rat(-1, 3)).string(), "5/6", "minus a negative");
+    t = t.is((rat(-2, 3) * rat(-3, 4)).string(), "1/2", "negative times negative");
+    t = t.is((rat(-2, 3) / rat(4, 9)).string(), "-3/2", "negative divided by positive");
+    t = t.is((rat(5, 7) * 1.rat()).string(), "5/7", "times one");
+    t = t.is((rat(5, 7) / 1.rat()).string(), "5/7", "divided by one");
+    // Modulo keeps the dividend's sign: a - b * trunc(a / b).
+    t = t.is((rat(-7, 2) % 1.rat()).string(), "-1/2", "modulo of a negative dividend");
+    t = t.is((rat(7, 2) % rat(-1, 1)).string(), "1/2", "modulo by a negative divisor");
+    t = t.is((rat(7, 3) % rat(1, 2)).string(), "1/3", "modulo of fractions");
+    // Truncation toward zero.
+    t = t.is(rat(-1, 3).int(), 0, "-1/3 truncates to 0");
+    t = t.is(rat(-4, 3).int(), -1, "-4/3 truncates to -1");
+    t = t.is(rat(4, 3).int(), 1, "4/3 truncates to 1");
+    // Around the 64-bit boundary.
+    let max = 9223372036854775807;
+    let min = -9223372036854775807 - 1;
+    t = t.is((rat(max, 1) + 1.rat()).string(), "9223372036854775808", "past the largest 64-bit numerator");
+    t = t.is((rat(min, 1) - 1.rat()).string(), "-9223372036854775809", "below the smallest 64-bit numerator");
+    t = t.is((rat(min, 1) * rat(-1, 1)).string(), "9223372036854775808", "negating the smallest 64-bit value");
+    t = t.is((rat(max, 2) * rat(max, 3)).string(), "85070591730234615847396907784232501249/6", "a product past 128 bits");
+    t = t.is((rat(1, max) + rat(1, max - 1)).string(), "18446744073709551613/85070591730234615838173535747377725442", "denominators whose product is wide");
+    // Big parts that reduce back to small ones.
+    let big = rat(1000000000000000000000000000000, 100000000000000000000000000000);
+    t = t.is(big, 10.rat(), "a big fraction reduces to a small one");
+    t = t.is((big + 1.rat()).string(), "11", "and keeps computing small");
+    t = t.is(((rat(max, 1) + 1.rat()) - 1.rat()).string(), "9223372036854775807", "back inside 64 bits");
+    t = t.is((rat(max, 1) + 1.rat()).int(), max + 1, "a big rat converts to a big int");
+    // Conversions.
+    t = t.is((1 / 3).float(), 0.3333333333333333, "rat.float() rounds half-even through 34 digits");
+    t = t.is((-2.5e-7).rat().string(), "-1/4000000", "float.rat() of a small negative");
+    t = t.is(0.1.rat(), rat(1, 10), "float.rat() takes the decimal value");
+    t = t.is(rat(max, 2).numerator(), "9223372036854775807", "numerator text of a 64-bit value");
+    // Keys and containers.
+    let halves = [1 / 2: "half", rat(2, 4): "again"];
+    t = t.is(halves.size(), 1, "equal rat keys are one key");
+    t = t.is(halves[rat(3, 6)] else "none", "again", "the later value wins, looked up by an equal key");
+    let parts = [1 / 2, 1 / 3, 1 / 6];
+    t = t.is(parts.reduce(0.rat()) -> sum, part { sum + part; }, 1.rat(), "a sum over an array");
+    // Values are immutable: a result never changes its operands.
+    let a = 1 / 2;
+    let b = a + 1.rat();
+    t = t.is(a.string() + " " + b.string(), "1/2 3/2", "an alias keeps its value");
+    t = t.is((2 / 3).pow(40).denominator(), "12157665459056928801", "pow grows past 64 bits");
+    t.done();
+}
