@@ -32,6 +32,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- Blade's commands follow the package model (#351):
+  - `blade add NAME GIT [MIN]` declares a git dependency and installs it.
+    Without `MIN` the minimum is the newest tag; adding the name again moves
+    its minimum, up or down, and another URL is refused;
+  - `blade update NAME…` resolves the named packages again with every other
+    one at its locked version unless they must move, and reports each move;
+    a moved tag it accepts is reported as `(tag moved: … -> …)`; an unknown
+    name is an error;
+  - `blade remove NAME` keeps what another package still needs.
+
+  **Migration:** `blade install` is now `blade sync` and `blade install SOURCE
+  [VERSION]` is now `blade add NAME SOURCE [MIN]`; the old spellings still
+  work for one release and print their replacement.
 - Blade changes only what changes in `pkg/` (#350): packages that stay are not
   touched, so their files keep their inodes and times, and an install that
   changes nothing writes nothing. `blade remove` leaves `blade.toml` as it was

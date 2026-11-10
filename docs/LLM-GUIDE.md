@@ -69,7 +69,8 @@ okkama-new/
 │   │   ├── sparrow-core        Sparrow, THE runtime (version Tomato): JIT (Cranelift), heap, GC, async, natives
 │   │   ├── sparrow-cli         binary `sparrow` (Tomato)
 │   │   ├── okkama-native       host cryptography (C ABI dylib)
-│   │   └── blade, blade-cli    project manager
+│   │   └── blade, blade-cli    project manager: new/add/sync/update/remove/build/run;
+│   │                           git packages, minimum versions, blade.lock (install.rs)
 │   ├── examples/               small programs used by compiler tests (printer, corpus)
 │   └── tools/
 │       ├── new-runtime/        caged.py (the cage), core-compare.py, std-compare.py

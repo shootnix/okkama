@@ -327,10 +327,75 @@ pub fn remove(root: &Path, name: &str) -> Result<Report, String> {
     })
 }
 
-/// `blade install <source> [version]`: add the package at `source` to
-/// `[dependencies]`, then install. Its name is the `[module] name` of its
-/// `blade.toml`, or else the last part of the URL or directory.
-pub fn add(
+/// `blade add NAME GIT [MIN]` (#351): declare `NAME = { git = GIT, version =
+/// MIN }` in the project's `[dependencies]`, then install it with every other
+/// package where it is. Without `MIN` the minimum is the newest `vX.Y.Z` tag
+/// of `GIT`, so a new dependency starts current and the manifest says so.
+/// Adding a name declared from the same URL moves its minimum, up or down;
+/// from another source it is an error. A failure leaves `blade.toml` as it
+/// was.
+pub fn add(root: &Path, name: &str, git: &str, min: Option<&str>) -> Result<Report, String> {
+    manifest::check_package_name(name)?;
+    check_git_url(git)?;
+    let source = Source::Git(git.to_string());
+    let min = match min {
+        Some(min) => Requirement::parse(min)?.min(),
+        None => Work::new()?
+            .versions(&source)?
+            .into_keys()
+            .next_back()
+            .ok_or_else(|| format!("{} has no versions (no vX.Y.Z tags)", source.id()))?,
+    };
+    let _busy = Busy::take(root)?;
+    if let Some(declared) = Manifest::read(root)?.dependencies.get(name)
+        && declared.git.as_deref() != Some(git)
+    {
+        let from = declared
+            .git
+            .as_deref()
+            .or(declared.path.as_deref())
+            .unwrap_or("nowhere");
+        return Err(format!(
+            "\"{name}\" is already a dependency, from {from}; `blade remove {name}` first to take it from {git}"
+        ));
+    }
+    let dependency = Dependency {
+        version: Some(min.to_string()),
+        git: Some(git.to_string()),
+        path: None,
+    };
+    let file = root.join(MANIFEST);
+    let before = std::fs::read(&file).map_err(io(&file))?;
+    manifest::add_dependency(root, name, &dependency)?;
+    install_busy(root, &Unlock::Packages(BTreeSet::from([name.to_string()]))).inspect_err(|_| {
+        let _ = std::fs::write(&file, &before);
+    })
+}
+
+/// `blade update [NAME...]`: resolve again without the locked versions of
+/// `names`, the others staying where they are unless the new requirements
+/// force them up; without names, nothing stays.
+pub fn update(root: &Path, names: &[String]) -> Result<Report, String> {
+    let _busy = Busy::take(root)?;
+    let unlock = if names.is_empty() {
+        Unlock::All
+    } else {
+        let (manifest, lock) = (Manifest::read(root)?, Lock::read(root)?);
+        if let Some(name) = names.iter().find(|name| {
+            !lock.packages.contains_key(*name) && !manifest.dependencies.contains_key(*name)
+        }) {
+            return Err(format!("\"{name}\" is not a dependency of this project"));
+        }
+        Unlock::Packages(names.iter().cloned().collect())
+    };
+    install_busy(root, &unlock)
+}
+
+/// `blade install SOURCE [VERSION]`, as before `blade add` (kept for one
+/// release): add the package at `source`, a git repository or a local
+/// directory, to `[dependencies]`, then install. Its name is the `[module]
+/// name` of its `blade.toml`, or else the last part of the URL or directory.
+pub fn add_source(
     root: &Path,
     source: &str,
     version: Option<&str>,
@@ -1642,7 +1707,7 @@ fn report(old: &Lock, new: &Lock) -> Report {
                         .collect::<String>()
                 };
                 lines.push(format!(
-                    "~ {name} {} (commit {} -> {})",
+                    "~ {name} {} (tag moved: {} -> {})",
                     package.version,
                     short(&before.commit),
                     short(&package.commit)

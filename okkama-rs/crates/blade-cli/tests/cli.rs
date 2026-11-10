@@ -213,3 +213,92 @@ fn sync_runs_no_git_when_pkg_matches_the_lock() {
     assert!(vendored.status.success(), "{}", text(&vendored.stderr));
     assert_eq!(text(&vendored.stdout), "dependencies are up to date\n");
 }
+
+/// The walk-through of #351 through the binary: a new project, a package
+/// that brings another, a build, a higher minimum, an update, a removal and
+/// a sync; then the old spellings, the help and the exit codes.
+#[test]
+fn a_project_walks_through_add_update_remove_and_sync() {
+    let tree = Tree::new("walk");
+    let git = |dir: &Path, args: &[&str]| {
+        let done = Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert!(done.status.success(), "git {args:?}: {}", text(&done.stderr));
+    };
+    let repo = |name: &str| tree.0.join("repos").join(name);
+    let release = |name: &str, version: &str, dependencies: &str| {
+        tree.write(&format!("repos/{name}/src/{name}.ok"), &format!("module {name}; // {version}\n"));
+        if !dependencies.is_empty() {
+            tree.write(&format!("repos/{name}/blade.toml"), &format!("[dependencies]\n{dependencies}"));
+        }
+        if !repo(name).join(".git").exists() {
+            git(&repo(name), &["init", "-q"]);
+        }
+        git(&repo(name), &["add", "-A"]);
+        git(&repo(name), &["commit", "-qm", version]);
+        git(&repo(name), &["tag", &format!("v{version}")]);
+    };
+    for version in ["1.2.0", "1.3.0", "1.4.0"] {
+        release("json", version, "");
+    }
+    let json = repo("json").display().to_string();
+    release("http", "2.1.0", &format!("json = {{ git = \"{json}\", version = \"1.2.0\" }}\n"));
+    let http = repo("http").display().to_string();
+    let blade = |args: &[&str]| {
+        let output = tree.blade("app", args);
+        assert!(output.status.success(), "blade {args:?}: {}", text(&output.stderr));
+        text(&output.stdout)
+    };
+    let locked = || -> Vec<(String, String)> {
+        blade::lock::Lock::read(&tree.0.join("app"))
+            .unwrap()
+            .packages
+            .into_iter()
+            .map(|(name, package)| (name, package.version.to_string()))
+            .collect()
+    };
+    let pair = |name: &str, version: &str| (name.to_string(), version.to_string());
+    let manifest = || std::fs::read_to_string(tree.0.join("app/blade.toml")).unwrap();
+    let installed = |name: &str| tree.0.join("app/pkg").join(name).join("src").is_dir();
+
+    assert!(tree.blade(".", &["new", "app"]).status.success());
+    assert_eq!(blade(&["add", "http", &http]), "+ http 2.1.0\n+ json 1.2.0\n");
+    assert!(manifest().contains(&format!("http = {{ git = \"{http}\", version = \"2.1.0\" }}")), "{}", manifest());
+    assert_eq!(locked(), [pair("http", "2.1.0"), pair("json", "1.2.0")]);
+    assert!(installed("http") && installed("json"));
+    assert_eq!(blade(&["build"]), "built target/app.spb\n");
+    assert_eq!(blade(&["add", "json", &json, "1.4.0"]), "~ json 1.2.0 -> 1.4.0\n");
+    assert!(manifest().contains(&format!("json = {{ git = \"{json}\", version = \"1.4.0\" }}")), "{}", manifest());
+    assert_eq!(blade(&["update"]), "dependencies are up to date\n");
+    assert_eq!(blade(&["remove", "http"]), "- http 2.1.0\n");
+    assert!(!manifest().contains("http ="), "{}", manifest());
+    assert_eq!(locked(), [pair("json", "1.4.0")]);
+    assert!(!installed("http") && installed("json"));
+    assert_eq!(blade(&["sync"]), "dependencies are up to date\n");
+
+    // The old spellings say what replaced them, and still work.
+    let old = tree.blade("app", &["install"]);
+    assert!(old.status.success());
+    assert_eq!(text(&old.stderr), "blade: `blade install` is now `blade sync`\n");
+    assert_eq!(text(&old.stdout), "dependencies are up to date\n");
+    let old = tree.blade("app", &["install", "--git", &http, "2.1.0"]);
+    assert!(old.status.success(), "{}", text(&old.stderr));
+    assert_eq!(
+        text(&old.stderr),
+        format!("blade: `blade install SOURCE` is now `blade add http {http} 2.1.0`\n")
+    );
+    assert_eq!(text(&old.stdout), "+ http 2.1.0\n");
+
+    let help = tree.blade(".", &["--help"]);
+    assert_eq!(help.status.code(), Some(0));
+    assert!(text(&help.stdout).contains("blade add NAME GIT [MIN]"));
+    for wrong in [&["add"][..], &["add", "json"], &["add", "a", "b", "c", "d"], &["sync", "x"], &["bogus"]] {
+        let output = tree.blade("app", wrong);
+        assert_eq!(output.status.code(), Some(2), "{wrong:?}");
+        assert!(text(&output.stderr).contains("USAGE:"), "{wrong:?}");
+    }
+}

@@ -58,11 +58,14 @@ pub(crate) fn pkg_completions(text: &str, offset: u32, file: &Path) -> Option<Ve
                                 .map(|path| format!("path {path}"))
                         })
                         .unwrap_or_default();
-                    let version = dependency.version.as_deref().unwrap_or("*");
+                    let version = dependency
+                        .version
+                        .as_deref()
+                        .map_or_else(|| "no version".to_string(), |min| format!("≥ {min}"));
                     let state = if installed.join(name).is_dir() {
                         String::new()
                     } else {
-                        " — not installed, run blade install".to_string()
+                        " — not installed, run blade sync".to_string()
                     };
                     PathCompletion {
                         label: name.clone(),
@@ -148,7 +151,7 @@ mod tests {
         };
         write(
             "blade.toml",
-            "[dependencies]\nweb = { git = \"https://x/web\", version = \"12.3.0\" }\njson = { path = \"../json\", version = \"1.*\" }\n",
+            "[dependencies]\nweb = { git = \"https://x/web\", version = \"12.3.0\" }\njson = { path = \"../json\", version = \"1.0.0\" }\n",
         );
         write("pkg/web/blade.toml", "[module]\nname = \"web\"\n");
         write("pkg/web/router.ok", "module web/router;\n");
@@ -169,9 +172,9 @@ mod tests {
         );
         assert_eq!(
             deps[0].detail,
-            "1.* · path ../json — not installed, run blade install"
+            "≥ 1.0.0 · path ../json — not installed, run blade sync"
         );
-        assert_eq!(deps[1].detail, "12.3.0 · git https://x/web");
+        assert_eq!(deps[1].detail, "≥ 12.3.0 · git https://x/web");
         assert_eq!(deps[1].insert, "web/");
         let modules = at("import \"pkg/web/").unwrap();
         assert_eq!(

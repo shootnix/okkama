@@ -3440,16 +3440,24 @@ without `blade.toml` is installed with a generated one (`[module] name` and
 
 ### 26.2.1 Building and running a Blade project
 
-`blade` manages a project: `blade new NAME` creates one (`blade.toml`,
-`src/main.ok`), `blade install` puts its dependencies into `pkg/` and records
-them in `blade.lock`, `blade sync` installs exactly what `blade.lock` records
-(offline when `pkg/` already matches it, otherwise by the locked commits),
-`blade build` compiles the project and `blade run` runs it. A
-dependency's `version` is a minimum: `"1.2.0"` means 1.2.0 or a later 1.x.
+`blade` manages a project:
+
+- `blade new NAME` creates one (`blade.toml`, `src/main.ok`);
+- `blade add NAME GIT [MIN]` declares a dependency on the package in git
+  repository `GIT`, version `MIN` or later (by default its newest tag), and
+  installs it into `pkg/`, recording it in `blade.lock`; adding it again with
+  another `MIN` moves it;
+- `blade sync` installs exactly what `blade.lock` records (offline when `pkg/`
+  already matches it, otherwise by the locked commits);
+- `blade update [NAME…]` resolves the named packages again, or all of them;
+- `blade remove NAME` drops a dependency and what only it needed;
+- `blade build` compiles the project and `blade run` runs it.
+
+A dependency's `version` is a minimum: `"1.2.0"` means 1.2.0 or a later 1.x.
 Blade installs the lowest version that meets every minimum in the project and
 its dependencies, so a new release of a dependency changes nothing until some
-`blade.toml` raises its minimum. Every setting of `blade build` and `blade run`
-lives in `blade.toml`; all keys are optional:
+`blade.toml` raises its minimum: `blade add json URL 1.5.0`. Every setting of
+`blade build` and `blade run` lives in `blade.toml`; all keys are optional:
 
 ```toml
 [build]
