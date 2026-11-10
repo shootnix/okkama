@@ -124,6 +124,214 @@ fn install_busy(root: &Path, unlock: &Unlock) -> Result<Report, String> {
     Ok(report(&lock, &new_lock))
 }
 
+/// `blade sync` (#349): install exactly what `blade.lock` records.
+///
+/// A package already in `pkg/` with its locked checksum stays as it is, so a
+/// project whose `pkg/` matches the lock syncs without the network. Any other
+/// is fetched by its locked commit, whatever its tags say now, and must have
+/// its locked checksum; a local `path` package is copied again. Packages the
+/// lock does not have leave `pkg/`. Without `blade.lock` this is the first
+/// install: resolve, install, write the lock.
+///
+/// A lock that does not match the manifests changes nothing: the error says
+/// what disagrees and what to run. A sync never picks a version.
+pub fn sync(root: &Path) -> Result<Report, String> {
+    let _busy = Busy::take(root)?;
+    recover(root)?;
+    if !root.join(LOCK).exists() {
+        return install_busy(root, &Unlock::Nothing);
+    }
+    let manifest = Manifest::read(root)?;
+    let lock = Lock::read(root)?;
+    let roots = wants_of(&manifest, Some(root), MANIFEST)?;
+
+    // What the lock reaches from the project by its own lists: no network.
+    let mut lines = Vec::new();
+    disagreements(&roots, &lock, &mut lines);
+    let mut reached = BTreeSet::new();
+    let mut queue: Vec<&String> = roots.iter().map(|want| &want.name).collect();
+    while let Some(name) = queue.pop() {
+        if let Some(locked) = lock.packages.get(name)
+            && reached.insert(name.clone())
+        {
+            queue.extend(&locked.dependencies);
+        }
+    }
+    unrequired(&lock, &reached, &mut lines);
+    if !lines.is_empty() {
+        return Err(disagree(&lines));
+    }
+
+    // The locked version of each package, through the manifests it has.
+    let mut work = Work::new()?;
+    let mut kept: BTreeMap<String, Package> = BTreeMap::new();
+    let mut fetched: BTreeMap<String, Package> = BTreeMap::new();
+    let mut queue = roots;
+    while let Some(want) = queue.pop() {
+        let name = want.name.clone();
+        if kept.contains_key(&name) || fetched.contains_key(&name) {
+            continue;
+        }
+        // A requirement the lock does not meet already has its line.
+        let Some(locked) = lock.packages.get(&name) else {
+            continue;
+        };
+        if locked.source != want.source.id() || !want.requirement.matches(&locked.version) {
+            continue;
+        }
+        let installed = installed_checksum(root, &name, &lock)?;
+        let package = match &want.source {
+            Source::Path(_) => {
+                // A local package is live: its files may change, its version
+                // may not.
+                let version = work.versions(&want.source)?.into_keys().next();
+                if version != Some(locked.version) {
+                    lines.push(format!(
+                        "{name}: {} is version {}, {LOCK} has {} — run `blade update {name}`",
+                        want.source.id(),
+                        version.map_or("none".to_string(), |version| version.to_string()),
+                        locked.version
+                    ));
+                    continue;
+                }
+                work.fetch_locked(&name, &want.source, locked)?
+            }
+            Source::Git(_) if installed.as_ref() == Some(&locked.checksum) => {
+                let dir = root.join(PKG).join(&name);
+                let manifest = Manifest::read_package(&dir)?;
+                Package {
+                    version: locked.version,
+                    source: want.source.clone(),
+                    commit: locked.commit.clone(),
+                    dir,
+                    manifest,
+                    checksum: locked.checksum.clone(),
+                }
+            }
+            Source::Git(_) => work.fetch_locked(&name, &want.source, locked)?,
+        };
+        let by = format!("{name} {}", locked.version);
+        let wants = wants_of(&package.manifest, package.base(), &by)?;
+        disagreements(&wants, &lock, &mut lines);
+        queue.extend(wants);
+        if installed.as_ref() == Some(&package.checksum) {
+            kept.insert(name, package);
+        } else {
+            fetched.insert(name, package);
+        }
+    }
+    let names: BTreeSet<String> = kept.keys().chain(fetched.keys()).cloned().collect();
+    unrequired(&lock, &names, &mut lines);
+    if !lines.is_empty() {
+        return Err(disagree(&lines));
+    }
+
+    let leftovers = leftovers(root, &lock)?;
+    if fetched.is_empty() && leftovers.is_empty() {
+        return Ok(Report::default());
+    }
+    let mut report = Vec::new();
+    for (name, package) in &fetched {
+        let state = if !root.join(PKG).join(name).is_dir() {
+            ""
+        } else if lock.packages[name].checksum == package.checksum {
+            " (restored)"
+        } else {
+            " (files changed)"
+        };
+        report.push(format!("+ {name} {}{state}", package.version));
+    }
+    report.extend(leftovers.iter().map(|entry| format!("- {entry}")));
+    // Kept packages go into the new pkg/ too, without what is nested in them.
+    for (name, package) in &mut kept {
+        work.count += 1;
+        let copy = work.dir.join(format!("kept-{}", work.count));
+        copy_tree(&package.dir, &copy, false)?;
+        for inner in nested_in(name, &lock) {
+            let inside = copy.join(&inner);
+            if inside.exists() {
+                std::fs::remove_dir_all(&inside).map_err(io(&inside))?;
+            }
+        }
+        package.dir = copy;
+    }
+    let chosen: BTreeMap<String, Package> = kept.into_iter().chain(fetched).collect();
+    let new_lock = Lock {
+        packages: chosen
+            .iter()
+            .map(|(name, package)| (name.clone(), package.locked()))
+            .collect(),
+    };
+    swap_in(root, &chosen, &new_lock)?;
+    Ok(Report { lines: report })
+}
+
+/// Requirements that the lock does not meet, one line each.
+fn disagreements(wants: &[Want], lock: &Lock, lines: &mut Vec<String>) {
+    for want in wants {
+        let (name, by, min) = (&want.name, &want.by, want.requirement.min());
+        let line = match lock.packages.get(name) {
+            None => format!("{name}: {by} wants ≥ {min}, {LOCK} has none"),
+            Some(locked) if locked.source != want.source.id() => format!(
+                "{name}: {by} wants it from {}, {LOCK} has {}",
+                want.source.id(),
+                locked.source
+            ),
+            Some(locked) if !want.requirement.matches(&locked.version) => {
+                format!("{name}: {by} wants ≥ {min}, {LOCK} has {}", locked.version)
+            }
+            Some(_) => continue,
+        };
+        let line = format!("{line} — run `blade update {name}`");
+        if !lines.contains(&line) {
+            lines.push(line);
+        }
+    }
+}
+
+/// Locked packages that nothing requires any more.
+fn unrequired(lock: &Lock, required: &BTreeSet<String>, lines: &mut Vec<String>) {
+    for name in lock
+        .packages
+        .keys()
+        .filter(|name| !required.contains(*name))
+    {
+        let line = format!("{name}: no longer required — run `blade update`");
+        if !lines.contains(&line) {
+            lines.push(line);
+        }
+    }
+}
+
+fn disagree(lines: &[String]) -> String {
+    format!(
+        "{LOCK} does not match {MANIFEST}:\n  {}",
+        lines.join("\n  ")
+    )
+}
+
+/// Entries of `pkg/` that hold no locked package.
+fn leftovers(root: &Path, lock: &Lock) -> Result<Vec<String>, String> {
+    let pkg = root.join(PKG);
+    if !pkg.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(&pkg).map_err(io(&pkg))? {
+        let entry = entry.map_err(io(&pkg))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let holds = lock
+            .packages
+            .keys()
+            .any(|locked| locked == &name || locked.starts_with(&format!("{name}/")));
+        if !holds {
+            found.push(name);
+        }
+    }
+    found.sort();
+    Ok(found)
+}
+
 /// `blade install <source> [version]`: add the package at `source` to
 /// `[dependencies]`, then install. Its name is the `[module] name` of its
 /// `blade.toml`, or else the last part of the URL or directory.
@@ -556,14 +764,78 @@ impl Work {
         Ok(manifest.name)
     }
 
-    /// Copy version `version` of package `name` from `source` into the
-    /// scratch space and check it. `expected` — what `blade.lock` says this
-    /// version is.
+    /// Copy version `version` of package `name` from `source`, by its tag,
+    /// into the scratch space and check it. `expected` — what `blade.lock`
+    /// says this version is.
     fn fetch(
         &mut self,
         name: &str,
         source: &Source,
         version: &Version,
+        expected: Option<&Locked>,
+    ) -> Result<Package, String> {
+        let commit = match source {
+            Source::Path(_) => None,
+            Source::Git(url) => {
+                let commit = self.versions(source)?[version].clone().unwrap_or_default();
+                if let Some(locked) = expected.and_then(|locked| locked.commit.as_ref())
+                    && *locked != commit
+                {
+                    return Err(format!(
+                        "tag v{version} of {url} now points at {commit}, but {LOCK} has {locked}; \
+                             the tag was moved — check the package, then run `blade update`"
+                    ));
+                }
+                Some(commit)
+            }
+        };
+        self.build(name, source, version, commit, expected)
+    }
+
+    /// The version `blade.lock` records, by its commit and never by its tag
+    /// (#349): no tags are listed, and the files must have the locked
+    /// checksum.
+    fn fetch_locked(
+        &mut self,
+        name: &str,
+        source: &Source,
+        locked: &Locked,
+    ) -> Result<Package, String> {
+        let version = locked.version;
+        let commit = match source {
+            Source::Path(_) => None,
+            Source::Git(url) => {
+                let commit = locked.commit.clone().unwrap_or_default();
+                check_commit(&commit)
+                    .map_err(|error| format!("{name} {version}: {LOCK}: {error}"))?;
+                let clone = self.clone_of(url)?;
+                let clone = path_str(&clone)?;
+                let object = format!("{commit}^{{commit}}");
+                let present = || git(&["-C", clone, "cat-file", "-e", &object]).is_ok();
+                if !present() {
+                    // A server may still give a commit that no ref reaches.
+                    let _ = git(&["-C", clone, "fetch", "--quiet", "origin", &commit]);
+                }
+                if !present() {
+                    return Err(format!(
+                        "{name} {version}: the locked commit {commit} is not in {url} any more; \
+                         run `blade update {name}` to choose a version again"
+                    ));
+                }
+                Some(commit)
+            }
+        };
+        self.build(name, source, &version, commit, Some(locked))
+    }
+
+    /// Copy a version of package `name` into the scratch space, from its
+    /// directory or its git `commit`, and check it.
+    fn build(
+        &mut self,
+        name: &str,
+        source: &Source,
+        version: &Version,
+        commit: Option<String>,
         expected: Option<&Locked>,
     ) -> Result<Package, String> {
         let key = (name.to_string(), source.id(), *version);
@@ -577,22 +849,13 @@ impl Work {
         };
         self.count += 1;
         let dir = self.dir.join(format!("package-{}", self.count));
-        let commit = match source {
+        match source {
             Source::Path(origin) => {
                 copy_package(origin, &dir).map_err(|error| format!("{label}: {error}"))?;
-                None
             }
             Source::Git(url) => {
-                let commit = self.versions(source)?[version].clone().unwrap_or_default();
-                if let Some(locked) = expected.and_then(|locked| locked.commit.as_ref())
-                    && *locked != commit
-                {
-                    return Err(format!(
-                        "tag v{version} of {url} now points at {commit}, but {} has {locked}; \
-                             the tag was moved — check the package, then run `blade update`",
-                        crate::lock::LOCK
-                    ));
-                }
+                let commit = commit.as_deref().unwrap_or_default();
+                check_commit(commit).map_err(|error| format!("{label}: {error}"))?;
                 let clone = self.clone_of(url)?;
                 git(&[
                     "-C",
@@ -600,12 +863,11 @@ impl Work {
                     "checkout",
                     "--quiet",
                     "--force",
-                    &commit,
+                    commit,
                 ])?;
                 copy_package(&clone, &dir).map_err(|error| format!("{label}: {error}"))?;
-                Some(commit)
             }
-        };
+        }
         let manifest = Manifest::read_package(&dir).map_err(|error| format!("{label}: {error}"))?;
         if let Some(declared) = &manifest.name
             && declared != name
@@ -634,9 +896,7 @@ impl Work {
             && locked.checksum != checksum
         {
             return Err(format!(
-                "{name} {version}: the files differ from {} ({} != {})",
-                crate::lock::LOCK,
-                checksum,
+                "{name} {version}: the files differ from {LOCK} ({checksum} != {})",
                 locked.checksum
             ));
         }
@@ -673,6 +933,15 @@ impl Work {
 impl Drop for Work {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// A commit id as `blade.lock` may hold it: hex, never an option for git.
+fn check_commit(commit: &str) -> Result<(), String> {
+    if commit.len() >= 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        Ok(())
+    } else {
+        Err(format!("{commit:?} is not a commit id"))
     }
 }
 
@@ -862,9 +1131,41 @@ fn check_package(dir: &Path, name: &str) -> Result<(), String> {
 }
 
 fn checksum(dir: &Path) -> Result<String, String> {
+    checksum_of(dir, &files(dir)?)
+}
+
+/// The checksum of `pkg/<name>` as it is installed, without the packages
+/// nested in it (`acme/web` in `acme`); `None` when it is not there.
+fn installed_checksum(root: &Path, name: &str, lock: &Lock) -> Result<Option<String>, String> {
+    let dir = root.join(PKG).join(name);
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+    let nested = nested_in(name, lock);
+    let own: Vec<String> = files(&dir)?
+        .into_iter()
+        .filter(|file| {
+            !nested
+                .iter()
+                .any(|inner| file.starts_with(&format!("{inner}/")))
+        })
+        .collect();
+    checksum_of(&dir, &own).map(Some)
+}
+
+/// The locked packages inside `pkg/<name>`, relative to it.
+fn nested_in(name: &str, lock: &Lock) -> Vec<String> {
+    let prefix = format!("{name}/");
+    lock.packages
+        .keys()
+        .filter_map(|other| other.strip_prefix(&prefix).map(str::to_string))
+        .collect()
+}
+
+fn checksum_of(dir: &Path, files: &[String]) -> Result<String, String> {
     let mut hasher = Sha256::new();
-    for file in files(dir)? {
-        let bytes = std::fs::read(dir.join(&file)).map_err(|error| format!("{file}: {error}"))?;
+    for file in files {
+        let bytes = std::fs::read(dir.join(file)).map_err(|error| format!("{file}: {error}"))?;
         hasher.update(file.as_bytes());
         hasher.update([0]);
         hasher.update((bytes.len() as u64).to_le_bytes());
@@ -1019,7 +1320,7 @@ pub fn settled(root: &Path) -> Result<(), String> {
     for name in [COMMIT, STAGED, STAGED_LOCK, OLD] {
         if root.join(name).exists() {
             return Err(format!(
-                "an earlier blade was interrupted ({name} exists); run `blade install` to finish it"
+                "an earlier blade was interrupted ({name} exists); run `blade sync` to finish it"
             ));
         }
     }

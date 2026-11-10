@@ -659,6 +659,178 @@ fn a_package_is_a_repository_with_its_modules_in_src() {
     }
 }
 
+/// Every file under `dir` with its bytes, sorted.
+fn snapshot(dir: &Path) -> Vec<(String, Vec<u8>)> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        for entry in std::fs::read_dir(&next).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let name = path.strip_prefix(dir).unwrap().display().to_string();
+                out.push((name, std::fs::read(&path).unwrap()));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// `blade sync` (#349): without a lock, the first install; then exactly what
+/// the lock records, by commit, whatever the tags say now.
+#[test]
+fn sync_installs_exactly_what_the_lock_records() {
+    let (tree, app, web) = world("sync");
+    let declare = |min: &str| {
+        let dependency = manifest::Dependency {
+            git: Some(web.display().to_string()),
+            version: Some(min.to_string()),
+            path: None,
+        };
+        manifest::add_dependency(&app, "web", &dependency).unwrap();
+    };
+    declare("12.3.0");
+    let report = install::sync(&app).unwrap();
+    assert_eq!(report.lines, ["+ json 1.0.0", "+ web 12.3.0"]);
+    assert!(install::sync(&app).unwrap().lines.is_empty());
+    let (pkg, lock) = (
+        snapshot(&app.join("pkg")),
+        std::fs::read(app.join("blade.lock")).unwrap(),
+    );
+
+    // Restored from the locked commits, with one tag deleted and one moved.
+    let json = tree.path("repos/json");
+    git(&json, &["tag", "-d", "v1.0.0"]);
+    git(&web, &["checkout", "-q", "v12.3.0"]);
+    std::fs::write(web.join("src/router.ok"), "module web/router;\n").unwrap();
+    git(&web, &["commit", "-qam", "moved"]);
+    git(&web, &["tag", "-f", "v12.3.0"]);
+    git(&web, &["checkout", "-q", "main"]);
+    std::fs::remove_dir_all(app.join("pkg")).unwrap();
+    let report = install::sync(&app).unwrap();
+    assert_eq!(report.lines, ["+ json 1.0.0", "+ web 12.3.0"]);
+    assert_eq!(snapshot(&app.join("pkg")), pkg);
+    assert_eq!(std::fs::read(app.join("blade.lock")).unwrap(), lock);
+
+    // What the lock does not have leaves pkg/.
+    tree.write("app/pkg/stale/src/stale.ok", "module stale;\n");
+    let report = install::sync(&app).unwrap();
+    assert_eq!(report.lines, ["- stale"]);
+    assert_eq!(snapshot(&app.join("pkg")), pkg);
+
+    // A locked commit that is gone is an error that names it.
+    let commit = Lock::read(&app).unwrap().packages["json"]
+        .commit
+        .clone()
+        .unwrap();
+    std::fs::remove_dir_all(&json).unwrap();
+    for version in ["1.0.0", "1.2.0"] {
+        let (file, text) = codec(&format!("json {version}, again"));
+        release(&json, "json", version, "", &[(file, &text)]);
+    }
+    std::fs::remove_dir_all(app.join("pkg")).unwrap();
+    let error = install::sync(&app).unwrap_err();
+    assert!(
+        error.contains(&format!("json 1.0.0: the locked commit {commit} is not in")),
+        "{error}"
+    );
+    assert!(!app.join("pkg").exists());
+    assert_eq!(std::fs::read(app.join("blade.lock")).unwrap(), lock);
+}
+
+/// A lock that disagrees with the manifests: each disagreement has its line,
+/// and nothing changes (#349).
+#[test]
+fn a_lock_that_disagrees_with_the_manifests_changes_nothing() {
+    let (tree, app, web) = world("disagree");
+    install::add(&app, web.to_str().unwrap(), Some("12.3.0"), true).unwrap();
+    let before = (
+        std::fs::read_to_string(app.join("blade.toml")).unwrap(),
+        std::fs::read(app.join("blade.lock")).unwrap(),
+        snapshot(&app.join("pkg")),
+    );
+    tree.write("local/util/blade.toml", &manifest_text("util", "2.1.0", ""));
+    tree.write("local/util/src/util.ok", "module util;\n");
+    git(
+        &tree.path("repos"),
+        &["clone", "-q", web.to_str().unwrap(), "fork-web"],
+    );
+    let edit = |name: &str, git: Option<PathBuf>, path: Option<&str>, version: &str| {
+        let dependency = manifest::Dependency {
+            git: git.map(|url| url.display().to_string()),
+            version: Some(version.to_string()),
+            path: path.map(str::to_string),
+        };
+        manifest::add_dependency(&app, name, &dependency).unwrap();
+    };
+    let fork = tree.path("repos/fork-web");
+    let cases: [(&dyn Fn(), &[&str]); 4] = [
+        (
+            &|| edit("web", Some(web.clone()), None, "12.3.1"),
+            &["web: blade.toml wants ≥ 12.3.1, blade.lock has 12.3.0 — run `blade update web`"],
+        ),
+        (
+            &|| edit("util", None, Some("../local/util"), "2.1.0"),
+            &["util: blade.toml wants ≥ 2.1.0, blade.lock has none — run `blade update util`"],
+        ),
+        (
+            &|| {
+                manifest::remove_dependency(&app, "web").unwrap();
+            },
+            &[
+                "json: no longer required — run `blade update`",
+                "web: no longer required — run `blade update`",
+            ],
+        ),
+        (
+            &|| edit("web", Some(fork.clone()), None, "12.3.0"),
+            &["web: blade.toml wants it from git+"],
+        ),
+    ];
+    for (change, expected) in cases {
+        change();
+        let error = install::sync(&app).unwrap_err();
+        assert!(
+            error.starts_with("blade.lock does not match blade.toml:\n"),
+            "{error}"
+        );
+        for line in expected {
+            assert!(error.contains(line), "{error}\nexpected: {line}");
+        }
+        assert_eq!(
+            (
+                std::fs::read(app.join("blade.lock")).unwrap(),
+                snapshot(&app.join("pkg"))
+            ),
+            (before.1.clone(), before.2.clone())
+        );
+        std::fs::write(app.join("blade.toml"), &before.0).unwrap();
+    }
+    assert!(install::sync(&app).unwrap().lines.is_empty());
+}
+
+#[test]
+fn an_interrupted_sync_recovers_to_one_consistent_state() {
+    for step in ["staged", "lock", "marker", "pkg-moved", "pkg-in", "lock-in"] {
+        let (_tree, app, web) = world(&format!("sync-{step}"));
+        install::add(&app, web.to_str().unwrap(), Some("12.3.0"), true).unwrap();
+        let pkg = snapshot(&app.join("pkg"));
+        std::fs::remove_dir_all(app.join("pkg")).unwrap();
+        install::fail_after(Some(step));
+        let error = install::sync(&app).unwrap_err();
+        assert!(
+            error.contains(&format!("interrupted after {step}")),
+            "{error}"
+        );
+        install::sync(&app).unwrap();
+        install::settled(&app).unwrap();
+        assert_eq!(snapshot(&app.join("pkg")), pkg, "{step}");
+        assert!(install::sync(&app).unwrap().lines.is_empty(), "{step}");
+    }
+}
+
 /// S01 (#15): a package name is a module path, never a file system path.
 #[test]
 fn package_names_cannot_leave_the_project() {

@@ -174,7 +174,7 @@ fn check_installed(project: &Project) -> Result<(), String> {
         .find(|name| !lock.packages.contains_key(*name) || !project.root.join(PKG).join(name).is_dir());
     match missing {
         Some(name) => Err(format!(
-            "dependency \"{name}\" is not installed (no {LOCK} entry or {PKG}/{name}); run `blade install`"
+            "dependency \"{name}\" is not installed (no {LOCK} entry or {PKG}/{name}); run `blade sync`"
         )),
         None => Ok(()),
     }

@@ -6,6 +6,22 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Added
+
+- `blade sync` installs exactly what `blade.lock` records (#349). A package
+  already in `pkg/` with its locked checksum is kept, so a project with a
+  committed `pkg/` syncs with no network and starts no git. Any other package
+  is fetched by its locked commit, not its tag, so deleted or moved tags change
+  nothing; its files must have the locked checksum, and a commit that is gone
+  is an error that names it. What the lock does not have leaves `pkg/`.
+  Without `blade.lock`, `sync` resolves, installs and writes it. A lock that
+  does not match the manifests changes nothing: `sync` lists each
+  disagreement (a minimum above the locked version, a dependency added or
+  removed by hand, a changed URL) with the `blade update` to run. A sync never
+  picks a version. `blade build` and `blade run` point to `blade sync` for a
+  missing dependency. A commit id from `blade.lock` reaches git only if it is
+  hex.
+
 ### Changed
 
 - Blade selects versions by minimum version selection (#347). A dependency's

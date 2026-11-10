@@ -18,6 +18,8 @@ blade — Blade command-line tool
 
 USAGE:
     blade new NAME                   create a project NAME
+    blade sync                       install exactly what blade.lock records into
+                                     pkg/; without blade.lock, resolve and write it
     blade install                    install the dependencies of blade.toml into pkg/
     blade install SOURCE [VERSION]   add a dependency and install it; SOURCE is a
                                      package directory or a git repository
@@ -66,6 +68,10 @@ struct CommandNew {
 }
 
 struct CommandInstall {
+    args: Vec<String>,
+}
+
+struct CommandSync {
     args: Vec<String>,
 }
 
@@ -205,6 +211,19 @@ impl Command for CommandInstall {
             }
         };
         finish(result)
+    }
+}
+
+impl Command for CommandSync {
+    fn execute(&self) -> ExitCode {
+        if !self.args.is_empty() {
+            eprint!("{HELP}");
+            return ExitCode::from(2);
+        }
+        match project_root() {
+            Ok(root) => finish(install::sync(&root)),
+            Err(e) => failure(&e),
+        }
     }
 }
 
@@ -390,6 +409,7 @@ impl Cli {
             Some(_) if help                       => Box::new(CommandUsage::new(false)),
             Some("new")                           => Box::new(CommandNew::new(args)),
             Some("install")                       => Box::new(CommandInstall { args: args.collect() }),
+            Some("sync")                          => Box::new(CommandSync { args: args.collect() }),
             Some("remove")                        => Box::new(CommandRemove { args: args.collect() }),
             Some("update")                        => Box::new(CommandUpdate { args: args.collect() }),
             Some("build")                         => Box::new(CommandBuild { args: args.collect() }),
