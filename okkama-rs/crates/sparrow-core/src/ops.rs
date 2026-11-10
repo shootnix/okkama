@@ -16,7 +16,6 @@ use num_rational::BigRational;
 use num_traits::{Signed, ToPrimitive, Zero};
 use okkama_sparrow::{Access, Cmp, Instruction as I, StrFn, Type, TypeRef};
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
 use std::rc::Rc;
 
 type Outcome = Result<Word, String>;
@@ -46,7 +45,7 @@ pub struct AnyBox {
 pub struct MapValue {
     pub key: Repr,
     pub value: Repr,
-    pub entries: BTreeMap<Key, (Word, Word)>,
+    pub entries: crate::maps::Entries,
     /// The Rust memory estimate (#331), computed once: a finished map does
     /// not change, and a builder adds each new entry's share as it goes.
     pub owned: std::cell::Cell<Option<usize>>,
@@ -85,7 +84,10 @@ payload! {
         }
     }, owns |this| {
         this.owned.get().unwrap_or_else(|| {
-            let bytes = this.entries.len() * MAP_ENTRY_BYTES + this.entries.keys().map(Key::owned_bytes).sum::<usize>();
+            // A persistent map's nodes are counted exactly by the heap
+            // (`maps::node_memory`), shared ones once; only its keys' data here.
+            let nodes = if this.entries.is_persistent() { 0 } else { this.entries.len() * MAP_ENTRY_BYTES };
+            let bytes = nodes + this.entries.keys().map(Key::owned_bytes).sum::<usize>();
             this.owned.set(Some(bytes));
             bytes
         })
@@ -616,7 +618,7 @@ pub(crate) fn equal(runtime: &Runtime, left: Word, right: Word, ty: TypeRef) -> 
                 if a != b && seen.insert((a, b)) {
                     // Scalar values compare in place, as array elements do.
                     let kind = runtime.kind_of(*value);
-                    for ((k, (_, v)), (k2, (_, v2))) in x.entries.iter().zip(&y.entries) {
+                    for ((k, (_, v)), (k2, (_, v2))) in x.entries.iter().zip(y.entries.iter()) {
                         if k != k2 {
                             return Ok(false);
                         }
@@ -1205,7 +1207,7 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             for (key, item) in entries {
                 let (key, item) = (value(key), value(item));
                 let k = runtime.checked_key(key, key_kind, key_type.as_ref())?;
-                map.entries.entry(k).and_modify(|e| e.1 = item).or_insert((key, item));
+                map.entries.upsert(k, (key, item));
             }
             Ok(runtime.heap.allocate_payload(Box::new(map)))
         }
@@ -1286,11 +1288,17 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             Ok(new_array(runtime, function, dst.0, kind.repr(), &kept))
         }
         I::MapMerge { dst, parts } => {
+            // The first part as it is (O(1) for a persistent map), then each
+            // later part's entries: the rightmost value wins, the leftmost key
+            // word stays (#254).
             let mut map = map_for(runtime, function, dst.0)?;
-            for part in parts {
+            if let Some(first) = parts.first() {
+                map.entries = runtime.heap.payload::<MapValue>(value(first)).expect("map").entries.clone();
+            }
+            for part in parts.iter().skip(1) {
                 let entries = &runtime.heap.payload::<MapValue>(value(part)).expect("map").entries;
-                for (key, (key_word, item)) in entries {
-                    map.entries.entry(key.clone()).and_modify(|e| e.1 = *item).or_insert((*key_word, *item));
+                for (key, &entry) in entries.iter() {
+                    map.entries.upsert(key.clone(), entry);
                 }
             }
             Ok(runtime.heap.allocate_payload(Box::new(map)))
@@ -1314,18 +1322,10 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             let (builder, key, item) = (value(builder), value(key), value(item));
             let (key_kind, key_type) = map_key(runtime, function, *builder_register(instruction));
             let k = runtime.checked_key(key, key_kind, key_type.as_ref())?;
-            let bytes = MAP_ENTRY_BYTES + k.owned_bytes();
             let map = runtime.heap.payload_mut::<MapValue>(builder).expect("map builder");
-            let fresh = match map.entries.entry(k) {
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    entry.get_mut().1 = item;
-                    false
-                }
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert((key, item));
-                    true
-                }
-            };
+            let nodes = if map.entries.is_persistent() { 0 } else { MAP_ENTRY_BYTES };
+            let bytes = nodes + k.owned_bytes();
+            let fresh = map.entries.upsert(k, (key, item));
             // A new entry is Rust memory the builder took on (#331).
             if fresh {
                 map.owned.set(map.owned.get().map(|owned| owned + bytes));
@@ -1404,7 +1404,7 @@ fn map_for(runtime: &Runtime, function: usize, register: okkama_sparrow::Registe
         Some(Type::Map(key, value) | Type::MapBuilder(key, value)) => Ok(MapValue {
             key: runtime.kind_of(*key).repr(),
             value: runtime.kind_of(*value).repr(),
-            entries: BTreeMap::new(),
+            entries: Default::default(),
             owned: Default::default(),
         }),
         _ => Err("map instruction needs a map type".into()),

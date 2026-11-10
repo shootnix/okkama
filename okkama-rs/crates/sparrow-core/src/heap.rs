@@ -180,6 +180,10 @@ pub struct Heap {
     external_collections: usize,
     allocated_before: usize,
     external_before: usize,
+    /// Persistent map nodes allocated by this thread when the last
+    /// collection ended (`maps::node_memory`): their growth since is
+    /// pressure, their live bytes part of `external_live`.
+    nodes_at_collection: usize,
     live_sum: usize,
     worklist: Vec<Word>,
     /// Objects whose death must be reported (resource identities).
@@ -266,6 +270,7 @@ impl Heap {
             external_collections: 0,
             allocated_before: 0,
             external_before: 0,
+            nodes_at_collection: 0,
             live_sum: 0,
             worklist: Vec::new(),
             watched: crate::word::FastSet::default(),
@@ -279,7 +284,12 @@ impl Heap {
 
     /// Allocation-triggered collection is proportional to the live heap.
     pub fn needs_collection(&self) -> bool {
-        self.allocated + self.external >= self.threshold
+        self.allocated + self.external + self.node_growth() >= self.threshold
+    }
+
+    /// Bytes of persistent map nodes allocated since the last collection.
+    fn node_growth(&self) -> usize {
+        crate::maps::node_memory().0.saturating_sub(self.nodes_at_collection)
     }
 
     /// Charge Rust memory that a heap object owns and just took on (a
@@ -1073,13 +1083,18 @@ impl Heap {
         }
         self.live = live;
         self.live_sum += live;
-        if self.external > self.allocated {
+        // Map nodes freed by this sweep are already gone from the live count.
+        let (nodes_allocated, nodes_live) = crate::maps::node_memory();
+        let external = self.external + nodes_allocated.saturating_sub(self.nodes_at_collection);
+        if external > self.allocated {
             self.external_collections += 1;
         }
         self.allocated_before += self.allocated;
         self.allocated = 0;
-        self.external_before += self.external;
+        self.external_before += external;
         self.external = 0;
+        self.nodes_at_collection = nodes_allocated;
+        let external_live = external_live + nodes_live;
         self.external_live = external_live;
         self.threshold = if self.stress { 0 } else { (live + external_live).max(COLLECTION_FLOOR) };
         self.collections += 1;

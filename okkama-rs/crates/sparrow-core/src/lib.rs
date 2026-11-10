@@ -34,6 +34,7 @@ pub mod io;
 pub mod intrinsics;
 pub mod jit;
 pub mod natives;
+pub mod maps;
 pub mod ops;
 pub mod primitives;
 pub mod program;

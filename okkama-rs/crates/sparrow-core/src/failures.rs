@@ -295,7 +295,8 @@ impl Runtime {
                 }
                 _ => {
                     if let Some(map) = self.heap.payload::<crate::ops::MapValue>(object) {
-                        pending.extend(map.entries.values().rev().map(|(_, v)| (*v, map.value)));
+                        let values: Vec<Word> = map.entries.values().map(|(_, v)| *v).collect();
+                        pending.extend(values.into_iter().rev().map(|v| (v, map.value)));
                     } else if let Some(boxed) = self.heap.payload::<crate::ops::AnyBox>(object) {
                         pending.push((boxed.value, boxed.repr));
                     } else {

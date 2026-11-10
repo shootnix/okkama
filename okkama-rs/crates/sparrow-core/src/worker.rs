@@ -81,7 +81,8 @@ fn encode(runtime: &Runtime, out: &mut Vec<u8>, value: Word, ty: TypeRef) -> Res
                 let map = runtime.heap.payload::<MapValue>(value).ok_or_else(|| NOT_TRANSFERABLE.to_owned())?;
                 out.push(8);
                 count(out, map.entries.len())?;
-                for &(k, v) in map.entries.values().rev() {
+                let entries: Vec<(Word, Word)> = map.entries.values().copied().collect();
+                for &(k, v) in entries.iter().rev() {
                     work.push((v, *item));
                     work.push((k, *key));
                 }

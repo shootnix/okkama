@@ -17,7 +17,9 @@
 //! operation. `examples/pbench.rs` measures all three.
 
 pub mod frontier;
+pub mod pmap;
 pub mod trie;
 
 pub use frontier::Frontier;
+pub use pmap::PMap;
 pub use trie::Trie;

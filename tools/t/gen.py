@@ -1233,6 +1233,14 @@ PERSISTENCE_DECLARATIONS = """object Grow {
         if left == 0 { return xs; }
         self.takes(xs.take(xs.size() - 1), left - 1);
     }
+    puts(i is int, n is int, m is %int:int) is %int:int {
+        if i == n { return m; }
+        self.puts(i + 1, n, m + [i * 37 % 1000003: i]);
+    }
+    takes_out(i is int, n is int, m is %int:int) is %int:int {
+        if i == n { return m; }
+        self.takes_out(i + 1, n, m - [i * 37 % 1000003: 0]);
+    }
     alternate(i is int, n is int, items is @int) is @int {
         if i == n { return items; }
         let grown = if i % 2 == 0 { items + [i * 7 % 101]; } else { [i * 7 % 101] + items; };
@@ -1415,6 +1423,44 @@ def persistence_family():
         program.is_(f"({last} + [5, 6]).reduce(0) -> a, x {{ a + x; }}", lit_int(sum(final) + 11), f"{desc}: appended to")
         program.ok(f"{last} == {ex}.map() -> x {{ x; }}.replaced(0, {final[0]}).replaced({n - 1}, {final[n - 1]}).replaced({n // 2}, {final[n // 2]}).replaced({min(31, n - 1)}, {final[min(31, n - 1)]}).replaced({min(32, n - 1)}, {final[min(32, n - 1)]}).replaced({max(n - 33, 0)}, {final[max(n - 33, 0)]})",
                    f"{desc}: equal to the same replacements made again")
+    # Maps (#252–#254): chains of puts and removals, versions branched from
+    # one, merges; every version keeps its entries.
+    for n in [0, 1, 2, 23, 24, 25, 32, 33, 64, 100, 600, 601, 1056, 2049]:
+        program = batch.program()
+        key = lambda i: i * 37 % 1000003
+        model = {key(i): i for i in range(n)}
+        half = n // 2
+        removed = {k: v for k, v in model.items() if k not in {key(i) for i in range(half)}}
+        m, r, a, b, mb = (program.fresh(x) for x in ("m", "r", "a", "b", "mb"))
+        desc = f"a map of {n} keys"
+        setup = [f"let {m} = Grow().puts(0, {n}, [0: 0] - [0: 0]);", f"let {r} = Grow().takes_out(0, {half}, {m});",
+                 f"let {a} = {m} + [1: 1000];", f"let {b} = {m} + [1: 2000, 3: 3000];",
+                 f"let {mb} is %int:int = (0..{n}).reduce([:]) -> acc, i {{ acc + [i * 37 % 1000003: i]; }};"]
+        program.is_(f"{m}.size()", lit_int(n), f"{desc} by puts: size", setup)
+        program.ok(f"{m} == {mb}", f"{desc}: puts equal a reduce-built map")
+        program.is_(f"{m}.keys().reduce(0) -> s, k {{ s + k; }}", lit_int(sum(model)), f"{desc}: keys")
+        program.ok(f"{m}.keys() == {arr(sorted(model))}" if n <= 100 else f"{m}.keys().size() == {n}", f"{desc}: keys in order")
+        program.is_(f"{m}.values().reduce(0) -> s, v {{ s + v; }}", lit_int(sum(model[k] for k in sorted(model))), f"{desc}: values")
+        for i in sorted({0, 1, half, n - 1}):
+            if 0 <= i < n:
+                program.is_(f"{m}[{key(i)}]", lit_int(i), f"{desc}: [{key(i)}]")
+        program.ok(f"!{m}.has(1) && !{m}.has(5)", f"{desc}: missing keys")
+        program.is_(f"{r}.size()", lit_int(len(removed)), f"{desc}: after {half} removals, size")
+        program.is_(f"{r}.keys().reduce(0) -> s, k {{ s + k; }}", lit_int(sum(removed)), f"{desc}: after {half} removals, keys")
+        if half:
+            program.ok(f"!{r}.has({key(0)}) && ({r}[{key(half - 1)}] else -1) == -1", f"{desc}: removed keys are gone")
+        program.ok(f"{a}[1] == 1000 && {b}[1] == 2000 && {b}[3] == 3000 && !{a}.has(3)", f"{desc}: two versions of one map")
+        program.is_(f"{a}.size() + {b}.size()", lit_int(2 * n + 3), f"{desc}: their sizes")
+        program.ok(f"{m}.size() == {n} && !{m}.has(1)", f"{desc}: the origin is unchanged")
+        program.is_(f"({m} + [1: 1]).size()", lit_int(n + 1), f"{desc}: merged with one key")
+        program.ok(f"({mb} + {m}) == {m} && ({m} - {m}).size() == 0", f"{desc}: merged with itself and removed from itself")
+    program = batch.program()
+    program.ok('([-0.0: 1] + [0.0: 2]).keys()[0].string() == (-0.0).string() && ([0.0: 1] + [-0.0: 2]).keys()[0].string() == (0.0).string()', "a merge keeps the left key of equal float keys")
+    program.ok('([-0.0: 1] + [0.0: 2])[0.0] == 2', "and takes the right value")
+    big = program.fresh("big")
+    program.is_(f"{big}.size()", lit_int(33000), "a map of 33 000 keys built in a reduce", [f"let {big} is %int:int = (0..33000).reduce([:]) -> acc, i {{ acc + [i * 37 % 1000003: i]; }};"])
+    program.is_(f"({big} + [1: 1] - [37: 0]).size()", lit_int(33000), "a version of it with one key more and one less")
+    program.is_(f"{big}[{32999 * 37 % 1000003}]", lit_int(32999), "its last key")
     return batch.programs
 
 
