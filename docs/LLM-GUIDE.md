@@ -172,9 +172,9 @@ zsh does not split `$var`; use `${=var}` or a function when passing commands.
 | Generated programs | `tools/gen/okgen.py run --seeds N` (`show SEED`) | terminating deterministic programs (BigInt, strings, arrays, objects, roles, closures, try/catch, recursion) on ir/sparrow/jvm; a disagreement is minimized (ddmin over `main`) into `conformance/reports/runs/okgen/<seed>`; `tools/gen/mutants.sh` checks it finds a seeded defect in each engine. Containers only |
 | Release gate | `make gate` (= `tools/gate/docker.sh`, ~15 min) | Rust tests (profile `gate`: release optimizations without fat LTO; and debug), clippy with `-D warnings`, conformance ir/jvm/sparrow/ir-passes-off/ir-gc-stress, std tests ir/sparrow vs `tools/gate/known-failures.txt`, the t/ suite on all five configurations; logs in `conformance/reports/runs/gate-*`, statuses from exit codes in `gate.json`; a failed build stops it. On GitHub `gate.yml` runs it on the tagged commit and `packages.yml` publishes only after it passes. The Docker VM has ~8 GB: the container gets 7 GB and 2 cargo jobs (fat LTO for the release binaries only) |
 
-Last known state (0.4.3): conformance 977/977 on ir, jvm, sparrow, ir with
+Last known state (0.5.0): conformance 990/990 on ir, jvm, sparrow, ir with
 passes off and ir under GC stress; std 232 modules pass on ir and sparrow
-(collation is a known failure); the t/ suite 49 981 checks on each of the
+(collation is a known failure); the t/ suite 50 524 checks on each of the
 five configurations.
 
 ## 6. Benchmarks

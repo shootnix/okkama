@@ -6,6 +6,25 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-10
+
+0.5.0 makes async scheduling cooperative on every engine and removes the
+previous Sparrow VM. On the IR engine and the JVM a woken task now runs after
+the task that woke it suspends, as it always did on Sparrow, so the code of a
+task between two `await`s is never interleaved with another task's (#340); on
+the JVM a stopping task hands control straight to the next ready one, and
+wake-ups and cancellations are 7–22% faster than before. The previous VM
+(`sparrow-origin`, crates `sparrow-vm` and `sparrow-runtime`, about 37 000
+lines) is gone (#14). Tests gain `test.skip`, `okkama run -t --filter` and
+tests among private actions (#277). Diagnostics name the enum cases a `match`
+leaves out in an action's tail and in compact choices (#291), report an
+unconsumed successor at its binding (#272) and a fake's mistakes in terms of
+its role (#276). A map value may start with a parenthesis (#263). The channel
+documentation describes the std that exists, with examples checked on three
+engines (#341), and role plainness per instance is verified and measured
+(#268). Conformance has 990 mandatory cases (10 new), the t/ suite 50 524
+checks per configuration.
+
 ### Added
 
 - Tests: `test.skip("reason")` ends a test and reports it as skipped
@@ -2919,7 +2938,8 @@ First release of the Rust implementation: the compiler (lexer, parser, analysis,
 IR, Sparrow (VM with JIT) and JVM engines, the standard library, LSP, `fmt`, `lint`, the
 `blade` project manager, and packages for macOS and Linux.
 
-[Unreleased]: https://github.com/shootnix/okkama/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/shootnix/okkama/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/shootnix/okkama/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/shootnix/okkama/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/shootnix/okkama/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/shootnix/okkama/compare/v0.4.0...v0.4.1
