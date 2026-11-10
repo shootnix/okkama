@@ -23,6 +23,9 @@ the instruction table in `okkama-sparrow`); everything else lives outside the re
 - **Commits**: the owner commits, unless the task explicitly includes merging
   or a release. Commit messages end with the attribution line the harness
   asks for.
+- **Working on `std/`**: read `docs/std-principles.md` first and follow it
+  (objects are mechanisms, not records: no accessors or mutators unless
+  unavoidable; flat APIs; the review plan and its inventory tool).
 - **CHANGELOG.md**: every feature or visible change gets an entry, unprompted
   (Keep a Changelog; release sections `## [X.Y.Z] — date`).
 - **Sparrow and Tomato**: the virtual machine is Sparrow (crate `sparrow-core`,
@@ -73,7 +76,8 @@ okkama-new/
 │       ├── pgo/                build.sh, json.ok, workloads/NN-*/ (PGO training)
 │       ├── allocation-counter/ counting allocator (feature allocation-stats)
 │       └── check-sparrow-boundary.py   dependency boundaries between crates
-├── std/                        standard library (.ok); std/runtime/*.ok declare natives
+├── std/                        standard library (.ok); std/runtime/*.ok declare natives;
+│                               principles of the review: docs/std-principles.md
 ├── conformance/                OCS: cases/L00…L13, runner `ocs`, adapters/rust, profiles
 ├── tools/                      gate/ (gate.sh, docker.sh, std-tests.py, known-failures.txt),
 │                               docker/Dockerfile, package.sh, CLDR/IANA/ICU generators
