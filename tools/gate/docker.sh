@@ -9,7 +9,9 @@
 # Volumes keep the cargo registry and build outputs between runs
 # (okkama-cargo-registry, okkama-gate-target, okkama-gate-adapter); each source
 # gets the time its content was first seen by a gate (stamp_sources.py, #333),
-# so a tree edited before another was gated is not mistaken for built. Crates
+# so a tree edited before another was gated is not mistaken for built, and
+# every gate seals the record when it ends, so that a build no gate recorded
+# (a tree older than #333) makes the next one rebuild everything (#334). Crates
 # must already be in the registry volume (the container is offline); after a
 # dependency change run once with OKKAMA_GATE_NETWORK=bridge.
 set -euo pipefail
@@ -39,8 +41,11 @@ exec docker run --rm \
             --exclude /conformance/reports/runs --exclude .git /src/ /work/
         # The build volumes are shared by every gate run: give each source the
         # time its content was first seen, so cargo rebuilds what changed (#333).
-        python3 /work/tools/gate/stamp_sources.py /work /work/okkama-rs/target/.gate-sources.json \
-            /work/conformance/adapters/rust/.target/ocs-probe.json
+        python3 /work/tools/gate/stamp_sources.py stamp /work /work/okkama-rs/target/.gate-sources.json \
+            --outputs /work/okkama-rs/target /work/conformance/adapters/rust/.target \
+            --stale /work/conformance/adapters/rust/.target/ocs-probe.json
         cd /work && status=0 && tools/gate/gate.sh "$@" || status=$?
+        # Whatever the outcome, the volumes now hold what this tree built.
+        python3 /work/tools/gate/stamp_sources.py seal /work/okkama-rs/target/.gate-sources.json
         cp -R /work/conformance/reports/runs/gate-* /out/ 2>/dev/null || true
         exit $status' gate "$@"
