@@ -1505,3 +1505,38 @@ fn an_uncaught_error_text_keeps_its_payload_on_one_line() {
         assert_eq!(stderr(&output), "Ferr: Ferr.text(\"line1\\nline2 \\\"q\\\"\")\n", "{engine}");
     }
 }
+
+/// A cancelled process worker (#359): its Future settles Cancelled once the
+/// child has stopped and been reaped, as on Tomato, and a worker cancelled
+/// before its process started never starts (it used to run to its end and
+/// print after the cancel on the IR engine).
+#[test]
+fn a_cancelled_worker_stops_before_its_future_settles() {
+    let source = "module app v1.0.0;\n\
+        import \"io/stdout\" take Stdout;\n\
+        import \"time/clock\" take SystemClock;\n\
+        import \"time/duration\" take Duration, DurationUnit;\n\
+        object W {\n    W();\n\
+            noisy() is int { Stdout().writeln(\"worker ran\"); 1; }\n\
+            slow(count is int) is int { (0..count).reduce(0) -> total, i { total + i; }; }\n}\n\
+        async main() is int {\n\
+            let early = spawn W().noisy();\n\
+            early.cancel();\n\
+            let first = try { await early; } catch e is Cancelled { -1; };\n\
+            let late = spawn W().slow(count: 100000000000);\n\
+            await SystemClock().wait(Duration(1.rat(), DurationUnit.second));\n\
+            late.cancel();\n\
+            let second = try { await late; } catch e is Cancelled { -1; };\n\
+            Stdout().writeln(first.string() + \" \" + second.string() + \" \" + early.cancelled().string() + \" \" + late.cancelled().string());\n\
+            await SystemClock().wait(Duration(2.rat(), DurationUnit.second));\n\
+            Stdout().writeln(\"end\");\n\
+            0;\n}\n";
+    let file = TempFile::new("cancelled-worker.ok", source.as_bytes());
+    for engine in ["ir", "sparrow"] {
+        let started = std::time::Instant::now();
+        let output = okkama().args(["run", "--engine", engine]).arg(&file.0).output().unwrap();
+        assert_eq!(output.status.code(), Some(0), "{engine}: {}", stderr(&output));
+        assert_eq!(stdout(&output), "-1 -1 true true\nend\n", "{engine}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(20), "{engine}");
+    }
+}

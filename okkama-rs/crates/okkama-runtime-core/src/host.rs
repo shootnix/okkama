@@ -212,6 +212,12 @@ pub fn signal(pid: u32, number: i32) -> bool {
     unsafe { libc::kill(pid as i32, number) == 0 }
 }
 
+/// SIGKILL группе процессов потомка, который её возглавляет (#359).
+pub fn kill_group(pid: u32) -> bool {
+    // SAFETY: kill(2) с отрицательным pid — группе процессов `pid`.
+    unsafe { libc::kill(-(pid as i32), libc::SIGKILL) == 0 }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

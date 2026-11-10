@@ -381,8 +381,15 @@ public final class Scheduler {
         future.cancelRequested = true;
         Task task = future.task;
         if (task == null) {
-            // Обещание рантайма: отмена завершает его отказом `Cancelled`.
-            complete(future, null, Rt.thrown(new Cancelled()));
+            // Обещание рантайма: отмена завершает его отказом `Cancelled`, или
+            // его отменяет и потом завершает тот, кто его выдал.
+            Runnable canceller = future.canceller;
+            future.canceller = null;
+            if (canceller != null) {
+                canceller.run();
+            } else {
+                complete(future, null, Rt.thrown(new Cancelled()));
+            }
             return;
         }
         task.cancelPending = true;

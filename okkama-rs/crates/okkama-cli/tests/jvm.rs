@@ -2420,6 +2420,7 @@ fn worker_receivers_are_destroyed_and_cancelled_workers_stop() {
                  W(:n);\n\
                  f(x is int) is int { n + x; }\n\
                  slow(count is int) is int { (0..count).reduce(0) -> total, i { total + i; }; }\n\
+                 noisy() is int { Stdout().writeln(\"worker ran\"); n; }\n\
                  destroy { Stdout().writeln(\"destroy \" + n.string()); }\n\
              }\n\
              async main() is int {\n\
@@ -2427,7 +2428,13 @@ fn worker_receivers_are_destroyed_and_cancelled_workers_stop() {
                  let job = spawn W(n: 7).slow(count: 1000000000);\n\
                  await SystemClock().wait(Duration(1.rat(), DurationUnit.second));\n\
                  job.cancel();\n\
-                 Stdout().writeln(job.cancelled().string());\n\
+                 let r = try { await job; } catch e is Cancelled { -1; };\n\
+                 Stdout().writeln(r.string() + \" \" + job.cancelled().string());\n\
+                 let early = spawn W(n: 9).noisy();\n\
+                 early.cancel();\n\
+                 let stopped = try { await early; } catch e is Cancelled { -1; };\n\
+                 await SystemClock().wait(Duration(2.rat(), DurationUnit.second));\n\
+                 Stdout().writeln(stopped.string() + \" \" + early.cancelled().string());\n\
                  0;\n\
              }\n",
         )],
@@ -2449,7 +2456,9 @@ fn worker_receivers_are_destroyed_and_cancelled_workers_stop() {
     );
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "destroy 1\n3\ntrue\n"
+        // Cancelled Futures settle after their workers stop (#359); one
+        // cancelled before its process started never runs.
+        "destroy 1\n3\n-1 true\n-1 true\n"
     );
     assert!(started.elapsed() < std::time::Duration::from_secs(20));
 }

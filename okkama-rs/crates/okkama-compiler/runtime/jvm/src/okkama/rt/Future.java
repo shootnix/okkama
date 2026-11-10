@@ -30,6 +30,11 @@ public final class Future {
     boolean cancelRequested;
     /** Закрытие области ждёт его без отмены: {@code async destroy} (#154). */
     boolean shielded;
+    /**
+     * Отмена обещания, которое рантайм завершит сам, когда отменённое
+     * действительно остановится (процесс-воркер, #359).
+     */
+    Runnable canceller;
 
     private Future() {}
 

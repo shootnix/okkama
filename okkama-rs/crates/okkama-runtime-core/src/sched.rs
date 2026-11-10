@@ -54,6 +54,9 @@ pub struct FutureCell {
     cancel_requested: Cell<bool>,
     /// Закрытие области ждёт его без отмены: `async destroy` (#154).
     shielded: Cell<bool>,
+    /// Отмена обещания, которое рантайм завершит сам, когда отменённое
+    /// действительно остановится (процесс-воркер, #359).
+    canceller: RefCell<Option<Box<dyn FnOnce()>>>,
 }
 
 pub type Future = Rc<FutureCell>;
@@ -269,7 +272,15 @@ impl FutureCell {
             observed: Cell::new(false),
             cancel_requested: Cell::new(false),
             shielded: Cell::new(false),
+            canceller: RefCell::new(None),
         })
+    }
+
+    /// Отмена этого обещания вызывает `cancel` вместо немедленного отказа
+    /// `Cancelled`: обещание остаётся незавершённым, пока его не завершит
+    /// тот, кто отменял (#359).
+    pub fn on_cancel(&self, cancel: impl FnOnce() + 'static) {
+        *self.canceller.borrow_mut() = Some(Box::new(cancel));
     }
 
     pub fn state(&self) -> State {
@@ -630,8 +641,13 @@ pub fn cancel(future: &Future) {
     future.cancel_requested.set(true);
     let task = future.task.borrow().clone();
     let Some(task) = task else {
-        // Обещание рантайма: отмена завершает его отказом `Cancelled`.
-        complete(future, Err(cancelled_failure()));
+        // Обещание рантайма: отмена завершает его отказом `Cancelled`, или
+        // его отменяет и потом завершает тот, кто его выдал.
+        let canceller = future.canceller.borrow_mut().take();
+        match canceller {
+            Some(canceller) => canceller(),
+            None => complete(future, Err(cancelled_failure())),
+        }
         return;
     };
     task.cancel_pending.set(true);

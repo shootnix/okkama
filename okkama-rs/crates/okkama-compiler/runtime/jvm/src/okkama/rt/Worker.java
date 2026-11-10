@@ -105,13 +105,24 @@ public final class Worker {
         }
         final Future promise = Future.promise();
         Scheduler.register(promise);
-        final Process[] child = new Process[1];
-        final Scheduler.Op op = Scheduler.offload(new Callable<Object>() {
+        final Child child = new Child();
+        // The Future settles when the worker has stopped and been reaped, a
+        // cancelled one too (#359): what follows an await of it never runs
+        // beside the worker.
+        Scheduler.offload(new Callable<Object>() {
             public Object call() throws Exception {
                 return run(request, child);
             }
         }, new Scheduler.Outcome() {
             public void deliver(Object value, Throwable error) {
+                boolean cancelled;
+                synchronized (child) {
+                    cancelled = child.cancelled;
+                }
+                if (cancelled) {
+                    Scheduler.settle(promise, null, Rt.thrown(new Cancelled()));
+                    return;
+                }
                 if (error != null) {
                     Failure failure = error instanceof Failure ? (Failure) error
                         : Rt.trap("cannot execute spawn worker: " + error.getMessage());
@@ -126,21 +137,34 @@ public final class Worker {
                 }
             }
         });
-        promise.listen(new Runnable() {
+        promise.canceller = new Runnable() {
             public void run() {
-                op.detach();
                 synchronized (child) {
-                    if (child[0] != null && child[0].isAlive()) {
-                        child[0].destroy();
+                    child.cancelled = true;
+                    // Its descendants go with it, as on Tomato. One not
+                    // started yet never starts.
+                    if (child.process != null) {
+                        kill(child.process);
                     }
                 }
             }
-        });
+        };
         return promise;
     }
 
+    /** The worker process of a spawn and whether the spawn was cancelled. */
+    private static final class Child {
+        Process process;
+        boolean cancelled;
+    }
+
+    private static void kill(Process process) {
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        process.destroyForcibly();
+    }
+
     /** Исполнить запрос в дочерней JVM: {@code {значение, текст отказа}}. */
-    private static Object[] run(byte[] request, Process[] child) throws Exception {
+    private static Object[] run(byte[] request, Child child) throws Exception {
         ArrayList<String> command = new ArrayList<String>();
         command.add(System.getProperty("java.home") + File.separator + "bin" + File.separator + "java");
         command.addAll(java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments());
@@ -153,9 +177,14 @@ public final class Worker {
         builder.environment().put(MODE, "1");
         builder.directory(new File(Host.cwd));
         final Process process;
+        // Started under the lock: a cancel sees either no process and no
+        // start, or the process to kill.
         synchronized (child) {
+            if (child.cancelled) {
+                return new Object[] {null, "cancelled"};
+            }
             process = builder.start();
-            child[0] = process;
+            child.process = process;
         }
         final ByteArrayOutputStream errors = new ByteArrayOutputStream();
         Thread drain = new Thread(new Runnable() {
@@ -174,6 +203,9 @@ public final class Worker {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         copy(process.getInputStream(), output);
         int status = process.waitFor();
+        synchronized (child) {
+            child.process = null;
+        }
         drain.join();
         String stderr = new String(errors.toByteArray(), StandardCharsets.UTF_8);
         byte[] bytes = output.toByteArray();

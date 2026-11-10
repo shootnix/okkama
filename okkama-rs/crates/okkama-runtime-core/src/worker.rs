@@ -203,13 +203,19 @@ pub fn spawn(target: String, args: Vec<Value>, type_name: TypeName<'_>) -> Resul
     let cwd = crate::host::cwd();
     let promise = sched::promise();
     sched::register(&promise);
-    let child: std::sync::Arc<Mutex<Option<u32>>> = std::sync::Arc::new(Mutex::new(None));
+    let child: std::sync::Arc<Mutex<Child>> = std::sync::Arc::default();
     let running = child.clone();
     let target_promise = promise.clone();
-    let op = sched::offload(
+    let settled = child.clone();
+    // The Future settles when the worker has stopped and been reaped, a
+    // cancelled one too (#359): what follows an await of it never runs
+    // beside the worker.
+    sched::offload(
         move || run(&command, &environment, &cwd, &request, &running),
         move |outcome: Result<Result<Vec<u8>, String>, String>| {
+            let cancelled = settled.lock().is_ok_and(|child| child.cancelled);
             let result = match outcome {
+                _ if cancelled => Err(sched::cancelled_failure()),
                 Err(error) => Err(trap(format!("cannot execute spawn worker: {error}"))),
                 Ok(Err(message)) => Err(trap(message)),
                 Ok(Ok(value)) => {
@@ -220,15 +226,25 @@ pub fn spawn(target: String, args: Vec<Value>, type_name: TypeName<'_>) -> Resul
             sched::settle(&target_promise, result);
         },
     );
-    promise.listen(move || {
-        op.detach();
-        if let Ok(pid) = child.lock()
-            && let Some(pid) = *pid {
-                // SIGTERM ещё не собранному потомку (как `destroy` JVM).
-                crate::host::signal(pid, 15);
+    promise.on_cancel(move || {
+        if let Ok(mut child) = child.lock() {
+            child.cancelled = true;
+            // The worker leads its process group: its descendants go with it,
+            // as on Tomato. One not started yet never starts.
+            if let Some(pid) = child.pid {
+                crate::host::kill_group(pid);
             }
+        }
     });
     Ok(Value::Future(promise))
+}
+
+/// The worker process of a spawn: its pid while it runs, and whether the
+/// spawn was cancelled.
+#[derive(Debug, Default)]
+struct Child {
+    pid: Option<u32>,
+    cancelled: bool,
 }
 
 /// Исполнить запрос в дочернем процессе: значение или текст отказа.
@@ -237,39 +253,54 @@ fn run(
     environment: &std::collections::BTreeMap<String, String>,
     cwd: &std::path::Path,
     request: &[u8],
-    child: &Mutex<Option<u32>>,
+    child: &Mutex<Child>,
 ) -> Result<Result<Vec<u8>, String>, String> {
+    use std::os::unix::process::CommandExt;
     let (program, rest) = command.split_first().ok_or("empty worker command")?;
-    let mut process = std::process::Command::new(program)
-        .args(rest)
-        .env_clear()
-        .envs(environment)
-        .env(MODE, "1")
-        .current_dir(cwd)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|error| error.to_string())?;
-    if let Ok(mut slot) = child.lock() {
-        *slot = Some(process.id());
-    }
-    let mut errors = process.stderr.take().expect("stderr");
-    let drain = std::thread::spawn(move || {
-        let mut buffer = Vec::new();
-        let _ = errors.read_to_end(&mut buffer);
-        buffer
-    });
+    let mut process = {
+        // Started under the lock: a cancel sees either no process and no
+        // start, or the pid to kill.
+        let mut slot = child.lock().map_err(|error| error.to_string())?;
+        if slot.cancelled {
+            return Err("cancelled".into());
+        }
+        let process = std::process::Command::new(program)
+            .args(rest)
+            .env_clear()
+            .envs(environment)
+            .env(MODE, "1")
+            .current_dir(cwd)
+            .process_group(0)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        slot.pid = Some(process.id());
+        process
+    };
+    let read = |mut stream: Box<dyn Read + Send>| {
+        std::thread::spawn(move || {
+            let mut buffer = Vec::new();
+            let _ = stream.read_to_end(&mut buffer);
+            buffer
+        })
+    };
+    let errors = read(Box::new(process.stderr.take().expect("stderr")));
+    let out = read(Box::new(process.stdout.take().expect("stdout")));
     if let Some(mut input) = process.stdin.take() {
         let _ = input.write_all(request);
     }
-    let mut output = Vec::new();
-    let _ = process.stdout.take().expect("stdout").read_to_end(&mut output);
     let status = process.wait().map_err(|error| error.to_string())?;
     if let Ok(mut slot) = child.lock() {
-        *slot = None;
+        // A descendant must not keep the pipes open after the worker exits
+        // (as on Tomato); then its pid may be another process's.
+        if let Some(pid) = slot.pid.take() {
+            crate::host::kill_group(pid);
+        }
     }
-    let stderr = String::from_utf8_lossy(&drain.join().unwrap_or_default()).into_owned();
+    let output = out.join().unwrap_or_default();
+    let stderr = String::from_utf8_lossy(&errors.join().unwrap_or_default()).into_owned();
     let frame = if output.len() >= FRAME.len() {
         (0..=output.len() - FRAME.len()).rev().find(|&at| output[at..].starts_with(FRAME))
     } else {

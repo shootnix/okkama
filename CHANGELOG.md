@@ -86,6 +86,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- A cancelled process worker stops before its Future settles on the IR
+  engine and the JVM too (#359), as on Tomato and as the Book says: `await`
+  of a cancelled `spawn` returns `Cancelled` only once the child has been
+  killed and reaped, so what follows never runs beside the worker. The IR
+  engine kills the worker's process group (its descendants with it), the JVM
+  the worker and its descendants; both used to send TERM and settle at once.
+  A worker cancelled before its process started never starts: it used to
+  start anyway, run to its end and print after the cancel. The IR engine also
+  reads a worker's output beside waiting for it, so a descendant that keeps
+  the pipe open no longer hangs the parent.
+
 - Tomato no longer crashes in a collection while a role fake keeps an integer
   key in `fake.storage` (#355): the key was reported to the collector as a
   pointer, so a small integer such as `1` (the word 3) was read as an object.
