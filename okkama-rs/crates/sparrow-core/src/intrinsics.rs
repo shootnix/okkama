@@ -539,7 +539,7 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
 
 /// Per-fake storage of test fakes (`fake.storage.*`): typed values by key,
 /// owned by the fake object.
-type FakeMap = std::collections::BTreeMap<crate::ops::Key, (Word, Word, okkama_sparrow::TypeRef, Repr)>;
+type FakeMap = std::collections::BTreeMap<crate::ops::Key, (Word, Repr, Word, okkama_sparrow::TypeRef, Repr)>;
 
 fn fake_map(runtime: &mut Runtime, receiver: Word) -> Option<&mut FakeMap> {
     match runtime.states.get_mut(&receiver) {
@@ -585,14 +585,15 @@ fn fake_storage(runtime: &mut Runtime, function: usize, intrinsic: Intrinsic, ar
         if fake_map(runtime, receiver).is_none() {
             runtime.state_new(receiver, State::FakeStorage(Default::default()));
         }
-        fake_map(runtime, receiver).expect("storage").insert(indexed, (args[1], args[2], value_type, repr));
+        let entry = (args[1], key_kind.repr(), args[2], value_type, repr);
+        fake_map(runtime, receiver).expect("storage").insert(indexed, entry);
         return VOID;
     }
     let found = fake_map(runtime, receiver).and_then(|s| s.get(&indexed)).copied();
     if intrinsic == FakeHas {
         return boolean(found.is_some());
     }
-    let Some((_, value, stored, repr)) = found else {
+    let Some((_, _, value, stored, repr)) = found else {
         let shown = show(runtime, args[1], key_type);
         return program_failure(&format!("Fake storage has no key {shown}"));
     };

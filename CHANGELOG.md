@@ -79,6 +79,11 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Tomato no longer crashes in a collection while a role fake keeps an integer
+  key in `fake.storage` (#355): the key was reported to the collector as a
+  pointer, so a small integer such as `1` (the word 3) was read as an object.
+  Two conformance cases failed under `SPARROW_CORE_GC_STRESS=1`.
+
 - Diagnostics tell apart two types of one name (#338). A nominal type whose
   name another declaration of the program also has is written as the module
   of the diagnostic can name it: `shop.Money` through its namespace, `Money`

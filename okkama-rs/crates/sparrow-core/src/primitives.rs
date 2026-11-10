@@ -34,7 +34,9 @@ pub enum State {
     Group(Group),
     Stream(Box<Stream>),
     /// `fake.storage` of a role fake: key → (key word, value word, its type, repr).
-    FakeStorage(std::collections::BTreeMap<crate::ops::Key, (Word, Word, okkama_sparrow::TypeRef, Repr)>),
+    /// Per key: the key's word and representation, the value's word, its
+    /// type and representation (#355: a key is reported as what it is).
+    FakeStorage(std::collections::BTreeMap<crate::ops::Key, (Word, Repr, Word, okkama_sparrow::TypeRef, Repr)>),
     /// A bound action (`worker.bind`): its worker entry and receiver fields.
     WorkerBinding { entry: Word, fields: Vec<(Word, Repr)> },
 }
@@ -127,8 +129,8 @@ impl State {
                 fields.iter().for_each(|&(w, repr)| visit(w, repr));
             }
             Self::FakeStorage(storage) => {
-                for &(key, value, _, repr) in storage.values() {
-                    visit(key, Repr::Ref);
+                for &(key, key_repr, value, _, repr) in storage.values() {
+                    visit(key, key_repr);
                     visit(value, repr);
                 }
             }
