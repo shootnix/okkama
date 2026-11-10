@@ -110,6 +110,49 @@ anything is kept. Not released until the measurements show a net gain.
   `persistence`: drop and take loops, middle slices, slices of slices, both
   ends and `replaced` on a slice.
 
+- Tomato: map keys compare inline when they can. Two small integers, and two
+  strings whose first 8 bytes differ, are compared in place. A string key
+  now carries those bytes as a big-endian number, zeros past the end, so
+  that most string comparisons read neither text. Every other key compares
+  out of line, as before, and the order is unchanged. Both map
+  representations below gain. Persistence stand, today's maps: random
+  lookups −15…−21% and lookups by string key −28…−41% (n = 10³…10⁵).
+
+- Tomato: maps of more than 64 entries are persistent B+ trees (#252–#254,
+  prototype). A new version shares every node but one path with the map it
+  was made from: putting, replacing and removing a key cost O(log n)
+  instead of a copy of the whole map, and old versions keep their entries.
+  - Smaller maps stay as they were: a standard B-tree that every version
+    copies, which makes, reads and drops small maps as fast as today. A map
+    turns persistent past 64 entries, as many as an array keeps flat before
+    it becomes a trie.
+  - Nodes hold up to 16 keys and values inline. A lookup scans a node from
+    the left: one comparison per key for small integers, three-way for
+    other keys.
+  - A finished builder packs a map whose keys arrived out of order.
+  - The collector counts node memory exactly, shared nodes once, and visits
+    a shared node once per collection.
+  - Merges insert the much smaller part into the larger one, or make one
+    ordered pass over both. The left key word stays.
+  - `OKKAMA_MAPS=btree` turns it off.
+
+  Persistence stand, same binary both ways (M2 Max, 10 repetitions):
+  - **Writes:** a version put on a shared map takes 0.74 µs at n = 10³
+    (standard: 12.7 µs) and 1.6 µs at 10⁵ (standard: 2.0 ms). Every version
+    kept alive at 10⁶: 55.6 ms → 1.0 µs per version, 3.3 GB → 70 MB. Merging
+    two equal maps: −46…−55%.
+  - **Reads:** −8.7% on geometric mean (−2.6…−22.9% per size). Lookups by
+    string key: −2…+6%. Iteration and `==` at 10⁶: −9…−44%.
+  - **Small maps made and dropped:** ±0.
+  - **Costs, left to the decision on 0.4.3:**
+    - building a map in `reduce` is +9…+11% at 10³–10⁵ and on par at 10⁶;
+    - a string-keyed map built out of order peaks 35–50% higher in memory
+      while the builder packs it.
+
+  t/ family `persistence`: chains of puts and removals, branching
+  versions, merges of every relative size with float keys (the left key
+  word stays), sizes across the 64-entry turn, also under GC stress.
+
 ### Fixed
 
 - Tomato: maps no longer pile up in memory (#331). A map's entries live in
