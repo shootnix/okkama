@@ -1,5 +1,6 @@
 //! Вызовы проверенного OIR: кадры, аргументы, продолжение и рекурсия.
 //! Свободные helper-функции существуют в IR; исходный синтаксис их не требует.
+mod support;
 use okkama_compiler::{SourceFile, ir::*, lowering, source::Span, syntax};
 use okkama_runtime::{RuntimeError, execute};
 
@@ -318,9 +319,6 @@ fn assert_sparrow(program: &Module, expected: &str) {
     let bytecode = okkama_compiler::codegen::sparrow::generate(program).unwrap();
     let bytes = okkama_sparrow::encode(&bytecode).unwrap();
     assert_eq!(&bytes[4..6], &okkama_sparrow::VERSION.to_be_bytes());
-    let loaded = okkama_sparrow::decode(&bytes).unwrap();
-    assert_eq!(
-        sparrow_vm::execute(&loaded).unwrap().to_string(),
-        expected
-    );
+    assert_eq!(okkama_sparrow::decode(&bytes).unwrap(), bytecode);
+    support::assert_value(program, expected);
 }

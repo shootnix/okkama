@@ -187,8 +187,8 @@ fn uncaught_failures_are_reported_like_okkama() {
     );
     let result = file.run("run");
     assert_eq!(result.status.code(), Some(1));
-    // The core and the previous VM add the Sparrow stack (the core since #10);
-    // `OKKAMA_TRACE=off` — only the failure.
+    // The core adds the Sparrow stack (since #10); `OKKAMA_TRACE=off` — only
+    // the failure.
     assert_eq!(
         String::from_utf8_lossy(&result.stderr),
         "RuntimeError: confirm failed\n\
@@ -196,14 +196,6 @@ fn uncaught_failures_are_reported_like_okkama() {
     );
     let quiet_core = Command::new(env!("CARGO_BIN_EXE_sparrow")).arg("run").arg(&file.0).env("OKKAMA_TRACE", "off").output().unwrap();
     assert_eq!(String::from_utf8_lossy(&quiet_core.stderr), "RuntimeError: confirm failed\n");
-    let origin = Command::new(env!("CARGO_BIN_EXE_sparrow-origin")).arg("run").arg(&file.0).output().unwrap();
-    assert_eq!(
-        String::from_utf8_lossy(&origin.stderr),
-        "RuntimeError: confirm failed\n\
-         Stack trace (Sparrow, most recent call first):\n  at main [f0 @0: trap confirm, \"confirm failed\"]\n"
-    );
-    let quiet = Command::new(env!("CARGO_BIN_EXE_sparrow-origin")).arg("run").arg(&file.0).env("OKKAMA_TRACE", "off").output().unwrap();
-    assert_eq!(String::from_utf8_lossy(&quiet.stderr), "RuntimeError: confirm failed\n");
 }
 
 /// An Atomic read on an object the program builds itself: the core would

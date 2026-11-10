@@ -112,11 +112,10 @@ BUILD OPTIONS:
 RUN OPTIONS:
     --engine ir           Execute IR inside the Rust process (default)
     --engine sparrow      Compile to Sparrow and execute it on the core (JIT)
-    --engine sparrow-origin  The previous Sparrow VM (until 0.5, for comparison)
     --engine jvm          Compile to JVM classes and execute them with `java`
                           Place engine options before FILE; every engine runs
                           tests (-t), program arguments and `spawn` workers.
-                          OKKAMA_ENGINE=ir|sparrow|sparrow-origin|jvm sets the default.
+                          OKKAMA_ENGINE=ir|sparrow|jvm sets the default.
     --filter TEXT         With -t: run only the tests whose name contains
                           TEXT (literally, case-sensitive); repeated, the
                           tests that contain any of the texts
@@ -132,7 +131,7 @@ RUN OPTIONS:
     --timeout SECONDS     Interrupt the run after SECONDS of wall-clock time
                           Running out exits 1: \"Execution budget exhausted:
                           steps|memory|output\" or \"Execution interrupted\".
-                          An uncaught failure on ir and sparrow-origin also
+                          An uncaught failure on ir and sparrow also
                           prints its source line and the call stack;
                           OKKAMA_TRACE=off prints the failure alone.
 
@@ -355,19 +354,6 @@ fn with_trace(mut outcome: Outcome, trace: impl FnOnce() -> String) -> Outcome {
         outcome.stderr.push_str(&trace());
     }
     outcome
-}
-
-fn sparrow_outcome(result: Result<sparrow_vm::IntValue, sparrow_vm::Error>) -> Outcome {
-    match result {
-        Ok(value) => match value.to_i64().and_then(|code| u8::try_from(code).ok()) {
-            Some(code) => Outcome { stdout: String::new(), stderr: String::new(), code },
-            None => Outcome::failure(format!("RuntimeError: main() must return an int in 0..255, got {value}\n"), 1),
-        },
-        Err(error) => match sparrow_vm::report(&error) {
-            Some(text) => Outcome::failure(text, 1),
-            None => Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
-        },
-    }
 }
 
 /// Исход программы IR/Sparrow — как у JVM-рантайма (`Rt.exit`, `Rt.report`):
@@ -1424,7 +1410,6 @@ fn run_command(args: &[String]) -> Outcome {
     let mut engine = match default.as_str() {
         "ir" => "ir",
         "sparrow" => "sparrow",
-        "sparrow-origin" => "sparrow-origin",
         "jvm" => "jvm",
         _ => "ir",
     };
@@ -1440,10 +1425,10 @@ fn run_command(args: &[String]) -> Outcome {
             }
             "--engine" => {
                 let Some(value) = rest.get(1) else {
-                    return Outcome::usage("--engine needs a value: ir, sparrow, sparrow-origin or jvm");
+                    return Outcome::usage("--engine needs a value: ir, sparrow or jvm");
                 };
-                if !matches!(value.as_str(), "ir" | "sparrow" | "sparrow-origin" | "jvm") {
-                    return Outcome::usage("unknown engine (use ir, sparrow, sparrow-origin or jvm)");
+                if !matches!(value.as_str(), "ir" | "sparrow" | "jvm") {
+                    return Outcome::usage("unknown engine (use ir, sparrow or jvm)");
                 }
                 engine = value;
                 rest = &rest[1..];
@@ -1530,8 +1515,6 @@ fn run_command(args: &[String]) -> Outcome {
         if let Some(icu) = pinned_icu() {
             if engine == "sparrow" {
                 sparrow_core::default_environment("OKKAMA_ICU_LIBDIR", &icu.display().to_string());
-            } else if engine == "sparrow-origin" {
-                sparrow_runtime::host::default_environment("OKKAMA_ICU_LIBDIR", &icu.display().to_string());
             } else {
                 okkama_runtime::default_environment("OKKAMA_ICU_LIBDIR", &icu.display().to_string());
             }
@@ -1588,32 +1571,6 @@ fn run_command(args: &[String]) -> Outcome {
         // Номера функций и инструкций ядра совпадают с OIR: место — по исходнику.
         let (outcome, trace) = core_described(sparrow_core::run_described(bytes, arguments, false, command, limits));
         return with_trace(outcome, || okkama_runtime::render_trace(&module, &trace));
-    }
-    if engine == "sparrow-origin" {
-        let program = match codegen::sparrow::generate(&module) {
-            Ok(program) => program,
-            Err(error) => return Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
-        };
-        sparrow_vm::set_worker_command(worker_command("sparrow-origin", tests, &line));
-        if tests {
-            let mut stdout = io::stdout();
-            return match sparrow_vm::run_tests(&program, &mut stdout) {
-                Ok(passed) => Outcome {
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    code: u8::from(!passed),
-                },
-                Err(error) => Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
-            };
-        }
-        // Номера функций и инструкций Sparrow совпадают с OIR: место — по исходнику.
-        let (result, trace) =
-            sparrow_vm::execute_traced(&program, program_args.to_vec());
-        return with_trace(sparrow_outcome(result), || {
-            okkama_runtime::render_trace(&module, &trace.iter().map(|site| okkama_runtime::Site {
-                function: site.function, pc: site.pc,
-            }).collect::<Vec<_>>())
-        });
     }
     let options = CodegenOptions {
         artifact_name: "Main".to_string(),

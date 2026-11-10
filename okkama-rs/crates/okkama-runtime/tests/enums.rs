@@ -1,4 +1,5 @@
 //! Enum identity remains nominal when values pass through collections and calls.
+mod support;
 use okkama_compiler::{SourceFile, ir, lowering, syntax};
 use okkama_runtime::execute;
 
@@ -66,8 +67,5 @@ fn check(module: &ir::Module, expected: &str) {
     assert_eq!(&bytes[4..6], &okkama_sparrow::VERSION.to_be_bytes());
     let decoded = okkama_sparrow::decode(&bytes).unwrap();
     assert_eq!(program, decoded);
-    assert_eq!(
-        sparrow_vm::execute(&decoded).unwrap().to_string(),
-        expected
-    );
+    support::assert_value(module, expected);
 }

@@ -1,8 +1,8 @@
 //! Native providers of std modules through IR (and SPB where its types allow):
 //! encodings, bigint, decimal, host crypto, buffer.
-use okkama_compiler::{SourceFile, codegen, ir, lowering, syntax};
+mod support;
+use okkama_compiler::{SourceFile, ir, lowering, syntax};
 use okkama_runtime::{RuntimeError, execute};
-use sparrow_vm as sparrow;
 
 fn lower(module: &str, natives: &str, body: &str) -> ir::Module {
     let source = SourceFile::new(
@@ -18,15 +18,7 @@ fn lower(module: &str, natives: &str, body: &str) -> ir::Module {
 fn both(module: &str, natives: &str, body: &str, expected: &str) {
     let lowered = lower(module, natives, body);
     assert_eq!(execute(&lowered).unwrap().to_string(), expected, "{body}");
-    let program = codegen::sparrow::generate(&lowered).unwrap();
-    let bytes = okkama_sparrow::encode(&program).unwrap();
-    assert_eq!(
-        sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap())
-            .unwrap()
-            .to_string(),
-        expected,
-        "{body}"
-    );
+    support::assert_value(&lowered, expected);
 }
 
 const HEX: &str = "native hex_encode(origin is @byte) is string;
@@ -134,14 +126,8 @@ fn buffers_are_mutable_handles_with_typed_close_failures() {
         let twice = buffer_state_close(buffer);
         if added == 1 && head.size() == 2 && closed && !twice { buffer_state_size(buffer); } else { 0; }";
     let module = lower("runtime/buffer", natives, body);
-    let program = codegen::sparrow::generate(&module).unwrap();
-    match sparrow::execute(&okkama_sparrow::decode(&okkama_sparrow::encode(&program).unwrap()).unwrap()) {
-        Err(sparrow::Error::Operation {
-            error: sparrow_vm::OperationError::NativeFailure(failure),
-            ..
-        }) => assert_eq!(failure.code, "already_closed"),
-        other => panic!("{other:?}"),
-    }
+    let report = support::report(&module);
+    assert!(report.contains("already_closed"), "{report}");
     match execute(&module) {
         Err(RuntimeError::NativeFailure { failure, .. }) => {
             assert_eq!(

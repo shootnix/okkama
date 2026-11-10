@@ -1,9 +1,8 @@
 # Sparrow: байткод и верификатор
 
 Независимый crate без внешних зависимостей. Его используют генератор
-`okkama-compiler/src/codegen/sparrow` и самостоятельный исполнитель
-`sparrow-vm`. Совместимый адаптер находится в `okkama-runtime/src/sparrow`.
-VM не зависит от компилятора. Бинарник `sparrow` поставляется crate `sparrow-cli`.
+`okkama-compiler/src/codegen/sparrow` и Sparrow (`sparrow-core`), который не
+зависит от компилятора. Бинарник `sparrow` поставляется crate `sparrow-cli`.
 
 ## Запуск
 

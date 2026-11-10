@@ -1,7 +1,7 @@
 //! Native ABI calls use the same provider through IR and serialized SPB.
+mod support;
 use okkama_compiler::{SourceFile, codegen, ir, lowering, syntax};
 use okkama_runtime::{RuntimeError, execute};
-use sparrow_vm as sparrow;
 
 fn lower(body: &str) -> ir::Module {
     let source = SourceFile::new(
@@ -28,14 +28,7 @@ fn lower(body: &str) -> ir::Module {
 fn both(body: &str, expected: &str) {
     let module = lower(body);
     assert_eq!(execute(&module).unwrap().to_string(), expected);
-    let program = codegen::sparrow::generate(&module).unwrap();
-    let bytes = okkama_sparrow::encode(&program).unwrap();
-    assert_eq!(
-        sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap())
-            .unwrap()
-            .to_string(),
-        expected
-    );
+    support::assert_value(&module, expected);
 }
 
 #[test]
@@ -56,11 +49,8 @@ fn native_identity_and_signature_are_checked_before_execution() {
         execute(&module),
         Err(RuntimeError::Unsupported { .. })
     ));
-    // Как IR: неизвестный provider — ошибка вызова, а не генерации.
-    assert!(matches!(
-        sparrow::execute(&codegen::sparrow::generate(&module).unwrap()),
-        Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::Unsupported { .. }, .. })
-    ));
+    // Как IR: неизвестный provider — ошибка запуска, а не генерации.
+    assert!(!matches!(support::sparrow(&module), support::Ending::Value(_)));
 
     let source = SourceFile::new("bad-native.ok", "module runtime/utf v1.0.0; native utf8_encode(text is int) is int; main() is int { utf8_encode(1); }").unwrap();
     let module =
@@ -140,15 +130,8 @@ fn malformed_native_data_keeps_structured_failure_fields() {
         assert_eq!(failure.code, "invalid_data");
         assert_eq!(failure.operation, format!("runtime/utf@1::{operation}"));
         assert_eq!(failure.message, format!("Bytes are not valid {encoding}"));
-        let bytes = okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
-        let Err(sparrow::Error::Operation {
-            error: sparrow_vm::OperationError::NativeFailure(actual),
-            ..
-        }) = sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap())
-        else {
-            panic!("expected VM native failure");
-        };
-        assert_eq!(actual, failure);
+        let report = support::report(&module);
+        assert!(report.contains(&failure.message) && report.contains(&failure.code), "{report}");
     }
     both(
         r#"if false { utf8_decode(@byte(255)).length(); } else { 42; }"#,
@@ -200,21 +183,6 @@ fn sparrow_native_failure_unwinds_cleanup() {
     ] {
         let module = lower(body);
         let expected = execute(&module).unwrap_err().to_string();
-        let bytes = okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
-        let Err(sparrow::Error::Operation { error, .. }) =
-            sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap())
-        else {
-            panic!("expected failure");
-        };
-        assert_eq!(error.to_string(), without_native_details(&expected));
+        assert_eq!(support::report(&module), expected, "{body}");
     }
-}
-
-/// The report without the host details of native failures (`code:`,
-/// `domain:`, `operation:`, #270): the previous VM prints only the message.
-fn without_native_details(text: &str) -> String {
-    text.lines()
-        .filter(|line| !["code: ", "domain: ", "operation: "].iter().any(|prefix| line.trim_start().starts_with(prefix)))
-        .collect::<Vec<_>>()
-        .join("\n")
 }

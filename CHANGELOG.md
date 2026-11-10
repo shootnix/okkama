@@ -77,6 +77,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- Removed: the previous Sparrow VM (#14). The crates `sparrow-vm` and
+  `sparrow-runtime`, the `sparrow-origin` binary, `okkama run --engine
+  sparrow-origin`, the OCS engine of that name and the comparison tools
+  `core-compare.py` and `std-compare.py` are gone; Sparrow is `sparrow-core`
+  (version Tomato) alone. The IR engine's tests that also ran each program
+  on the previous VM now run it on Sparrow (`okkama-runtime/tests/support`):
+  the same result, or a failure of the same category and message. Checks of
+  the previous VM's own error types are dropped; Sparrow's reports are
+  covered by the CLI tests and conformance. The benchmark ladder loses the
+  engines `sparrow` and `sparrow-interp`.
+
 - The Okkama Book (EN/RU): the section «Completed test execution and
   snapshots» described the runner of the Perl implementation (`--workers`,
   `--seed`, `--report`, deadlines, `fake.reading`/`fake.writing`) and links

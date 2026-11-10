@@ -1,15 +1,11 @@
 //! Объекты проходят весь путь от исходника до исполнения методов в Rust.
+mod support;
 use okkama_compiler::{SourceFile, ir, lowering, syntax};
 use okkama_runtime::{RuntimeError, execute};
 
 fn result(module: &ir::Module) -> ir::IntValue {
     let result = execute(module).unwrap();
-    let program = okkama_compiler::codegen::sparrow::generate(module).unwrap();
-    let bytes = okkama_sparrow::encode(&program).unwrap();
-    assert_eq!(
-        sparrow_vm::execute(&okkama_sparrow::decode(&bytes).unwrap()).unwrap().to_string(),
-        result.to_string()
-    );
+    support::assert_value(module, &result.to_string());
     result
 }
 

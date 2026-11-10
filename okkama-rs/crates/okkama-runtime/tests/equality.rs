@@ -1,6 +1,6 @@
-use okkama_compiler::{SourceFile, codegen, lowering, syntax};
+mod support;
+use okkama_compiler::{SourceFile, lowering, syntax};
 use okkama_runtime::execute;
-use sparrow_vm as sparrow;
 
 fn check(declarations: &str, body: &str) {
     let source = SourceFile::new("equality.ok", format!("module app v1.0.0; {declarations} main() is int {{ if {body} {{ 42; }} else {{ 1; }} }}")).unwrap();
@@ -8,14 +8,7 @@ fn check(declarations: &str, body: &str) {
         lowering::lower_program(&syntax::parse(&source, &syntax::ParseOptions::default()).unwrap())
             .unwrap();
     assert_eq!(execute(&module).unwrap().to_string(), "42");
-    let program = codegen::sparrow::generate(&module).unwrap();
-    let bytes = okkama_sparrow::encode(&program).unwrap();
-    assert_eq!(
-        sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap())
-            .unwrap()
-            .to_string(),
-        "42"
-    );
+    support::assert_value(&module, "42");
 }
 
 #[test]

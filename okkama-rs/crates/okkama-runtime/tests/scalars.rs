@@ -1,7 +1,7 @@
 //! Exact scalar conversions through both engines and the bytecode file format.
-use okkama_compiler::{SourceFile, codegen, ir, lowering, syntax};
+mod support;
+use okkama_compiler::{SourceFile, ir, lowering, syntax};
 use okkama_runtime::{RuntimeError, execute};
-use sparrow_vm as sparrow;
 
 fn lower(declarations: &str, body: &str) -> ir::Module {
     let source = SourceFile::new(
@@ -15,13 +15,7 @@ fn lower(declarations: &str, body: &str) -> ir::Module {
 
 fn check(module: &ir::Module, expected: &str) {
     assert_eq!(execute(module).unwrap().to_string(), expected);
-    let bytes = okkama_sparrow::encode(&codegen::sparrow::generate(module).unwrap()).unwrap();
-    assert_eq!(
-        sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap())
-            .unwrap()
-            .to_string(),
-        expected
-    );
+    support::assert_value(module, expected);
 }
 
 #[test]
@@ -53,12 +47,7 @@ fn integer_bitwise_operations_use_signed_words_and_exact_shift_counts() {
             matches!(execute(&module), Err(RuntimeError::Trap { message, .. }) if message == expected),
             "{expression}"
         );
-        let bytes = okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
-        let error = sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()).unwrap_err();
-        assert!(
-            matches!(error, sparrow::Error::Operation { error: sparrow_vm::OperationError::Trap { message, .. }, .. } if message == expected),
-            "{expression}"
-        );
+        support::assert_trap(&module, expected);
     }
     for operator in ["<<", ">>", ">>>"] {
         for count in ["-1", "64", "18446744073709551616"] {
@@ -67,12 +56,7 @@ fn integer_bitwise_operations_use_signed_words_and_exact_shift_counts() {
             assert!(
                 matches!(execute(&module), Err(RuntimeError::Trap { message, .. }) if message == expected)
             );
-            let bytes =
-                okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
-            let error = sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()).unwrap_err();
-            assert!(
-                matches!(error, sparrow::Error::Operation { error: sparrow_vm::OperationError::Trap { message, .. }, .. } if message == expected)
-            );
+            support::assert_trap(&module, expected);
         }
     }
 }
@@ -101,11 +85,7 @@ fn byte_bitwise_operations_are_eight_bit_and_shifts_check_exact_counts() {
             assert!(
                 matches!(execute(&module), Err(RuntimeError::Trap { message: actual, .. }) if actual == message)
             );
-            let bytes =
-                okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
-            assert!(
-                matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()), Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::Trap { message: actual, .. }, .. }) if actual == message)
-            );
+            support::assert_trap(&module, message);
         }
     }
     check(
@@ -140,10 +120,7 @@ fn ranges_in_arrays_preserve_exact_endpoints_and_order() {
     assert!(
         matches!(execute(&module), Err(RuntimeError::Trap { message: actual, .. }) if actual == message)
     );
-    let bytes = okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
-    assert!(
-        matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()), Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::Trap { message: actual, .. }, .. }) if actual == message)
-    );
+    support::assert_trap(&module, message);
     check(
         &lower("", "if false { let xs = [3..2]; xs.size(); } else { 42; }"),
         "42",
@@ -227,10 +204,7 @@ fn byte_casts_trap_without_truncation_and_keep_argument_context() {
         if body.contains("@byte") {
             assert!(message.contains("argument 2"), "{message}");
         }
-        let bytes = okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
-        assert!(
-            matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()), Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::Trap { message: actual, .. }, .. }) if actual == message)
-        );
+        support::assert_trap(&module, &message);
     }
     check(
         &lower("", "if false { byte(256).int(); } else { 42; }"),

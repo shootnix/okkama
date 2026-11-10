@@ -12,8 +12,7 @@
 #      debug-проверки видны только там), clippy без предупреждений;
 #   2. conformance на IR, JVM, Sparrow (ядро; компилирует каждую функцию
 #      целиком), на IR без IR-проходов (OKKAMA_IR_PASSES=none) и на IR со
-#      сборкой циклов на каждом кандидате (OKKAMA_GC=stress). Прежний VM
-#      (`sparrow-origin`) воротами не проверяется;
+#      сборкой циклов на каждом кандидате (OKKAMA_GC=stress);
 #   3. перечень std в conformance актуален (conformance/tools/inventory_std.py
 #      --check, #282); встроенные тесты всех модулей std на IR и Sparrow
 #      (tools/gate/std-tests.py);

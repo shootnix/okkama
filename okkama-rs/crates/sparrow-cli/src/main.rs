@@ -50,7 +50,6 @@ check        Verify bytecode (types, calls, intrinsic contracts) without
 
 SPB 9 is supported. Source files, the Okkama compiler and Java are not
 required. Format/runtime errors exit 1, usage errors 2, I/O errors 3.
-`sparrow-origin` is the previous VM, kept until 0.5 for comparison.
 ";
 
 type Failure = (u8, String);

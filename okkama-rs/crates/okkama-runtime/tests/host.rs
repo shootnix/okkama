@@ -1,7 +1,7 @@
 //! Host state belongs to one run (#40): a second program on the same thread
 //! does not see the environment or working directory the first one changed.
-use okkama_compiler::{SourceFile, codegen, ir, lowering, syntax};
-use sparrow_vm as sparrow;
+mod support;
+use okkama_compiler::{SourceFile, ir, lowering, syntax};
 
 const ENVIRONMENT: &str = "native environment_get(name is @byte) is @byte;
     native environment_set(name is @byte, value is @byte) is bool;";
@@ -14,13 +14,13 @@ fn lower(module: &str, natives: &str, body: &str) -> ir::Module {
     lowering::lower_program(&syntax::parse(&source, &syntax::ParseOptions::default()).unwrap()).unwrap()
 }
 
-/// Result of `main` on IR and on the Sparrow VM, or `None` when it failed.
+/// Result of `main` on IR and on Sparrow, or `None` when it failed.
 fn run(module: &ir::Module) -> [Option<String>; 2] {
-    let program = okkama_sparrow::decode(&okkama_sparrow::encode(&codegen::sparrow::generate(module).unwrap()).unwrap()).unwrap();
-    [
-        okkama_runtime::execute(module).ok().map(|value| value.to_string()),
-        sparrow::execute(&program).ok().map(|value| value.to_string()),
-    ]
+    let sparrow = match support::sparrow(module) {
+        support::Ending::Value(value) => Some(value.to_string()),
+        _ => None,
+    };
+    [okkama_runtime::execute(module).ok().map(|value| value.to_string()), sparrow]
 }
 
 #[test]

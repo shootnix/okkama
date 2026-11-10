@@ -1,4 +1,5 @@
 //! Строки: исходник → анализ → OIR → исполнение внутри Rust.
+mod support;
 use okkama_compiler::{SourceFile, lowering, syntax};
 use okkama_runtime::{RuntimeError, execute};
 
@@ -11,14 +12,7 @@ fn run(declarations: &str, body: &str) -> String {
     let ast = syntax::parse(&source, &syntax::ParseOptions::default()).unwrap();
     let module = lowering::lower_program(&ast).unwrap();
     let result = execute(&module).unwrap();
-    {
-        let program = okkama_compiler::codegen::sparrow::generate(&module).unwrap();
-        let bytes = okkama_sparrow::encode(&program).unwrap();
-        assert_eq!(
-            sparrow_vm::execute(&okkama_sparrow::decode(&bytes).unwrap()).unwrap().to_string(),
-            result.to_string()
-        );
-    }
+    support::assert_value(&module, &result.to_string());
     result.to_string().to_owned()
 }
 
@@ -208,12 +202,7 @@ fn invalid_slice_bounds_return_program_errors_with_source_spans() {
                 expected_span = Some(inst.span);
             }
         }
-        let program = okkama_compiler::codegen::sparrow::generate(&module).unwrap();
-        let bytes = okkama_sparrow::encode(&program).unwrap();
-        assert!(
-            matches!(sparrow_vm::execute(&okkama_sparrow::decode(&bytes).unwrap()),
-            Err(sparrow_vm::Error::Operation { error: sparrow_vm::OperationError::Trap { message: actual, .. }, .. }) if actual == message)
-        );
+        support::assert_trap(&module, message);
         let error = execute(&module).unwrap_err();
         assert_eq!(
             error,

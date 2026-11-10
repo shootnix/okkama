@@ -1,4 +1,5 @@
 //! Successor создаёт новое значение, не меняя исходник и его алиасы.
+mod support;
 use okkama_compiler::{SourceFile, ir, lowering, syntax};
 use okkama_runtime::{RuntimeError, execute};
 
@@ -27,12 +28,7 @@ fn lower(decls: &str, body: &str) -> ir::Module {
 
 fn result(module: &okkama_compiler::ir::Module) -> okkama_compiler::ir::IntValue {
     let result = execute(module).unwrap();
-    let program = okkama_compiler::codegen::sparrow::generate(module).unwrap();
-    let bytes = okkama_sparrow::encode(&program).unwrap();
-    assert_eq!(
-        sparrow_vm::execute(&okkama_sparrow::decode(&bytes).unwrap()).unwrap().to_string(),
-        result.to_string()
-    );
+    support::assert_value(module, &result.to_string());
     result
 }
 

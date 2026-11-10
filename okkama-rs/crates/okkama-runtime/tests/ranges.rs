@@ -1,5 +1,6 @@
 //! Range values retain their bounds across serialization and use exact loop counters.
-use okkama_compiler::{SourceFile, codegen, lowering, syntax};
+mod support;
+use okkama_compiler::{SourceFile, lowering, syntax};
 
 fn check(declarations: &str, body: &str, expected: &str) {
     let source = SourceFile::new(
@@ -10,14 +11,7 @@ fn check(declarations: &str, body: &str, expected: &str) {
     let ast = syntax::parse(&source, &syntax::ParseOptions::default()).unwrap();
     let module = lowering::lower_program(&ast).unwrap();
     assert_eq!(okkama_runtime::execute(&module).unwrap().to_string(), expected);
-    let program = codegen::sparrow::generate(&module).unwrap();
-    let bytes = okkama_sparrow::encode(&program).unwrap();
-    assert_eq!(
-        sparrow_vm::execute(&okkama_sparrow::decode(&bytes).unwrap())
-            .unwrap()
-            .to_string(),
-        expected
-    );
+    support::assert_value(&module, expected);
 }
 
 #[test]

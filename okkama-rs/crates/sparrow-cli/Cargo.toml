@@ -1,6 +1,6 @@
 [package]
 name = "sparrow-cli"
-description = "Sparrow command line: the core runtime (`sparrow`) and, for one release, the previous VM (`sparrow-origin`)"
+description = "Sparrow command line: the core runtime (`sparrow`)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,7 +13,6 @@ allocation-stats = ["dep:okkama-allocation-counter"]
 [dependencies]
 okkama-allocation-counter = { path = "../../tools/allocation-counter", optional = true }
 okkama-sparrow = { path = "../okkama-sparrow" }
-sparrow-vm = { path = "../sparrow-vm" }
 sparrow-core = { path = "../sparrow-core", features = ["mimalloc"] }
 mimalloc = { version = "0.1.52", default-features = false }
 
@@ -23,7 +22,3 @@ workspace = true
 [[bin]]
 name = "sparrow"
 path = "src/main.rs"
-
-[[bin]]
-name = "sparrow-origin"
-path = "src/origin.rs"

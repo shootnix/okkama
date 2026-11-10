@@ -1,6 +1,6 @@
+mod support;
 use okkama_compiler::{SourceFile, codegen, ir, lowering, syntax};
 use okkama_runtime::execute;
-use sparrow_vm as sparrow;
 use okkama_sparrow::{Constant, Dst, FuncRef, Function, Instruction::*, Program, Register as R, Type, TypeRef};
 
 /// Программа SPB 9 из одного `main` над `registers` регистрами `int`.
@@ -85,17 +85,9 @@ fn source_ir_sparrow_and_vm_agree_on_exact_arithmetic() {
         let module = lower(body);
         let program = codegen::sparrow::generate(&module).unwrap();
         let bytes = okkama_sparrow::encode(&program).unwrap();
-        let loaded = okkama_sparrow::decode(&bytes).unwrap();
-        assert_eq!(sparrow::execute(&loaded).unwrap().to_string(), expected);
-        assert_eq!(
-            sparrow::execute(&program).unwrap().to_string(),
-            expected,
-            "{body}"
-        );
-        assert_eq!(
-            sparrow::execute(&program).unwrap().to_string(),
-            execute(&module).unwrap().to_string()
-        );
+        assert_eq!(okkama_sparrow::decode(&bytes).unwrap(), program);
+        assert_eq!(execute(&module).unwrap().to_string(), expected, "{body}");
+        support::assert_program_value(&program, expected);
         assert_eq!(program, codegen::sparrow::generate(&module).unwrap());
     }
 }
@@ -107,18 +99,11 @@ fn modulo_by_zero_fails_only_on_the_executed_path() {
         matches!(execute(&module), Err(okkama_runtime::RuntimeError::Trap { message, .. }) if message == "Modulo by zero")
     );
     let bytes = okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
-    assert!(
-        matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()),
-        Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::Trap { message, .. }, .. }) if message == "Modulo by zero")
-    );
+    assert_eq!(okkama_sparrow::decode(&bytes).unwrap(), codegen::sparrow::generate(&module).unwrap());
+    support::assert_trap(&module, "Modulo by zero");
     let module = lower("if false { 7 % 0; } else { 42; }");
     assert_eq!(execute(&module).unwrap().to_string(), "42");
-    assert_eq!(
-        sparrow::execute(&codegen::sparrow::generate(&module).unwrap())
-            .unwrap()
-            .to_string(),
-        "42"
-    );
+    support::assert_value(&module, "42");
 }
 
 #[test]
@@ -134,7 +119,7 @@ fn subtraction_and_negation_read_before_overwriting() {
     );
     let bytes = okkama_sparrow::encode(&program).unwrap();
     assert_eq!(okkama_sparrow::decode(&bytes).unwrap(), program);
-    assert_eq!(sparrow::execute(&program).unwrap().to_string(), "0");
+    support::assert_program_value(&program, "0");
     for instruction in [
         IntNeg { dst: d(0), operand: R(0) },
         IntSub { dst: d(0), left: R(0), right: R(0) },
@@ -173,7 +158,7 @@ fn register_reuse_and_signed_constants_work_without_ir_execution() {
             Return { value: Some(R(100)) },
         ],
     );
-    assert_eq!(sparrow::execute(&program).unwrap().to_string(), "-999999999999999999999998");
+    support::assert_program_value(&program, "-999999999999999999999998");
 }
 
 #[test]
@@ -181,9 +166,9 @@ fn malformed_sparrow_is_rejected_before_register_access() {
     let mut program = codegen::sparrow::generate(&lower("1 + 1;")).unwrap();
     let main = program.entry.unwrap().0 as usize;
     program.functions[main].code[0] = Const { dst: d(999), value: int("1") };
-    assert!(matches!(sparrow::execute(&program), Err(sparrow::Error::InvalidProgram(_))));
+    assert!(matches!(support::run_program(&program), support::Ending::Error(_)));
     program.functions[main].code = vec![Return { value: Some(R(0)) }];
-    assert!(matches!(sparrow::execute(&program), Err(sparrow::Error::InvalidProgram(_))));
+    assert!(matches!(support::run_program(&program), support::Ending::Error(_)));
 }
 
 #[test]
@@ -191,7 +176,7 @@ fn generation_covers_floats_and_rationals_and_rejects_invalid_ir() {
     for body in ["let text = 1.5; 2;", "let x = 1 / 2; 0;", "(1.5 * 4.0).int();", "(7 / 2 + 1 / 2).int();"] {
         let module = lower(body);
         let program = codegen::sparrow::generate(&module).unwrap_or_else(|error| panic!("{body}: {error}"));
-        assert_eq!(sparrow::execute(&program).unwrap().to_string(), execute(&module).unwrap().to_string(), "{body}");
+        support::assert_program_value(&program, &execute(&module).unwrap().to_string());
     }
     let mut module = lower("1;");
     module.functions[0].blocks[0].term.kind = ir::TermKind::Ret(Some(ir::ValueId(999)));
@@ -203,10 +188,10 @@ fn generation_covers_floats_and_rationals_and_rejects_invalid_ir() {
     module.functions.push(extra);
     let compiled = codegen::sparrow::generate(&module).unwrap();
     assert_eq!(compiled.functions.len(), 2);
-    assert_eq!(sparrow::execute(&compiled).unwrap().to_string(), "1");
+    support::assert_program_value(&compiled, "1");
     module.functions.swap(0, 1);
     module.entry = Some(ir::FuncId(1));
-    assert_eq!(sparrow::execute(&codegen::sparrow::generate(&module).unwrap()).unwrap().to_string(), "1");
+    support::assert_program_value(&codegen::sparrow::generate(&module).unwrap(), "1");
 }
 
 #[test]
@@ -235,32 +220,19 @@ fn control_flow_matches_ir_before_and_after_serialization() {
         let module = lower(body);
         let program = codegen::sparrow::generate(&module).unwrap_or_else(|e| panic!("{body}: {e}"));
         let bytes = okkama_sparrow::encode(&program).unwrap();
-        let loaded = okkama_sparrow::decode(&bytes).unwrap();
-        assert_eq!(
-            sparrow::execute(&loaded).unwrap().to_string(),
-            expected,
-            "{body}"
-        );
-        assert_eq!(
-            sparrow::execute(&loaded).unwrap().to_string(),
-            execute(&module).unwrap().to_string()
-        );
+        assert_eq!(okkama_sparrow::decode(&bytes).unwrap(), program);
+        assert_eq!(execute(&module).unwrap().to_string(), expected, "{body}");
+        support::assert_program_value(&program, expected);
     }
     for op in ["==", "!=", "<", "<=", ">", ">="] {
         let module = lower(&format!("if 2 {op} 3 {{ 1; }} else {{ 0; }}"));
         let program = codegen::sparrow::generate(&module).unwrap();
-        assert_eq!(
-            sparrow::execute(&program).unwrap().to_string(),
-            execute(&module).unwrap().to_string()
-        );
+        support::assert_program_value(&program, &execute(&module).unwrap().to_string());
     }
     for op in ["==", "!="] {
         let module = lower(&format!("if true {op} false {{ 1; }} else {{ 0; }}"));
         let program = codegen::sparrow::generate(&module).unwrap();
-        assert_eq!(
-            sparrow::execute(&program).unwrap().to_string(),
-            execute(&module).unwrap().to_string()
-        );
+        support::assert_program_value(&program, &execute(&module).unwrap().to_string());
     }
 }
 
@@ -271,14 +243,8 @@ fn selected_loop_traps_preserve_messages() {
         let function = &mut module.functions[module.entry.unwrap().0];
         function.blocks[0].insts[1].kind =
             ir::InstKind::Const(ir::Constant::Int(ir::IntValue::parse(bound).unwrap()));
-        let program = codegen::sparrow::generate(&module).unwrap();
-        let bytes = okkama_sparrow::encode(&program).unwrap();
-        let error = sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()).unwrap_err();
-        let sparrow::Error::Operation { error, .. } = error else {
-            panic!("expected runtime error")
-        };
         let ir_error = execute(&module).unwrap_err();
-        assert_eq!(error.to_string(), ir_error.to_string());
+        assert_eq!(support::report(&module), ir_error.to_string());
     }
 }
 
@@ -339,12 +305,8 @@ fn loop_edge_swaps_parameters_simultaneously() {
     assert_eq!(execute(&module).unwrap().to_string(), "1");
     let program = codegen::sparrow::generate(&module).unwrap();
     let bytes = okkama_sparrow::encode(&program).unwrap();
-    assert_eq!(
-        sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap())
-            .unwrap()
-            .to_string(),
-        "1"
-    );
+    assert_eq!(okkama_sparrow::decode(&bytes).unwrap(), program);
+    support::assert_program_value(&program, "1");
 }
 
 #[test]
@@ -355,6 +317,6 @@ fn values_of_separate_branches_share_registers() {
     let main = &program.functions[program.entry.unwrap().0 as usize];
     let values = module.functions.iter().find(|function| function.symbol == "main").unwrap().values.len();
     assert!(main.registers.len() < values, "{} registers for {values} values", main.registers.len());
-    assert_eq!(sparrow::execute(&program).unwrap().to_string(), "99");
-    assert_eq!(sparrow::execute(&program).unwrap().to_string(), execute(&module).unwrap().to_string());
+    assert_eq!(execute(&module).unwrap().to_string(), "99");
+    support::assert_program_value(&program, "99");
 }

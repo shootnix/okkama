@@ -35,9 +35,9 @@ fn engine() -> Result<String, String> {
     // Как `okkama run` и адаптер: IR по умолчанию, Sparrow и JVM — явно.
     let engine = std::env::var("OCS_RUST_ENGINE").unwrap_or_else(|_| "ir".into());
     match engine.as_str() {
-        "ir" | "sparrow" | "sparrow-origin" | "jvm" => Ok(engine),
+        "ir" | "sparrow" | "jvm" => Ok(engine),
         _ => Err(format!(
-            "unknown OCS_RUST_ENGINE `{engine}`; expected ir, sparrow, sparrow-origin or jvm"
+            "unknown OCS_RUST_ENGINE `{engine}`; expected ir, sparrow or jvm"
         )),
     }
 }
@@ -486,8 +486,7 @@ fn run_native(
             let absolute = std::fs::canonicalize(source).unwrap_or_else(|_| source.into());
             command.push(absolute.display().to_string());
         }
-        if engine == "sparrow-origin" { sparrow_vm::set_worker_command(command); }
-        else if engine == "ir" { okkama_runtime::set_worker_command(command); }
+        if engine == "ir" { okkama_runtime::set_worker_command(command); }
     }
     if let Some(cwd) = request.get("cwd").and_then(Json::as_str)
         && let Err(error) = std::env::set_current_dir(cwd) {
@@ -537,23 +536,7 @@ fn run_native(
         let arguments = args.iter().map(|a| a.clone().into_bytes()).collect();
         return core_reply(mode, sparrow_core::run_reported(bytes, arguments, command));
     } else {
-        let program = match codegen::sparrow::generate(module) {
-            Ok(program) => program,
-            Err(error) => return Reply::unsupported(mode, "check", error.to_string()),
-        };
-        // Exercise the file format as well as codegen and VM on every OCS case.
-        let loaded = match okkama_sparrow::encode(&program).and_then(|bytes| okkama_sparrow::decode(&bytes)) {
-            Ok(program) => program,
-            Err(error) => return Reply::internal(mode, error.to_string()),
-        };
-        let outcome = if mode == "test" {
-            let mut stdout = std::io::stdout();
-            sparrow_vm::run_tests(&loaded, &mut stdout)
-                .map(|passed| sparrow_vm::IntValue::from_i64(i64::from(!passed)))
-        } else {
-            sparrow_vm::execute_with_arguments(&loaded, args)
-        };
-        return sparrow_reply(mode, outcome);
+        unreachable!("run_native serves the ir and sparrow engines");
     };
     let message = match result {
         Ok(value) => match value.to_i64().and_then(|value| u8::try_from(value).ok()) {
@@ -662,75 +645,6 @@ fn core_reply(mode: &str, result: Result<Result<i64, (sparrow_core::Error, Optio
     }
 }
 
-// Convert only at the external OCS protocol boundary, never into IR runtime objects.
-fn sparrow_reply(mode: &str, result: Result<sparrow_vm::IntValue, sparrow_vm::Error>) -> Reply {
-    let message = match result {
-        Ok(value) => match value.to_i64().and_then(|value| u8::try_from(value).ok()) {
-            Some(code) => {
-                let mut reply = Reply::new(mode, "completed", "runtime");
-                reply.exit_status = Some(code);
-                reply.process_exit = code;
-                return reply;
-            }
-            None => "main result must be in 0..255".to_string(),
-        },
-        Err(sparrow_vm::Error::Operation { error: sparrow_vm::OperationError::Unsupported { message }, .. }) => {
-            return Reply::unsupported(mode, "runtime", message);
-        }
-        Err(sparrow_vm::Error::Operation { error: sparrow_vm::OperationError::Unwind(failure), .. }) => {
-            let mut reply = Reply::new(mode, "failed", "runtime");
-            reply.stderr = format!("{failure}\n");
-            reply.failure = Some(Failure {
-                stage: "runtime",
-                category: failure.category(),
-                error_type: match &failure.kind {
-                    sparrow_runtime::failure::Kind::Thrown { name, .. } => Some(name.clone()),
-                    sparrow_runtime::failure::Kind::Native(_) => Some("NativeFailure".into()),
-                    _ => None,
-                },
-                message: failure.message().into(),
-            });
-            reply.process_exit = 1;
-            return reply;
-        }
-        Err(sparrow_vm::Error::Operation { error: sparrow_vm::OperationError::Panic { message }, .. }) => {
-            let mut reply = Reply::new(mode, "failed", "runtime");
-            reply.stderr = format!("Panic: {message}\n");
-            reply.failure = Some(Failure {
-                stage: "runtime",
-                category: "panic",
-                error_type: None,
-                message,
-            });
-            reply.process_exit = 1;
-            return reply;
-        }
-        Err(sparrow_vm::Error::Operation { error: sparrow_vm::OperationError::Trap { message }, .. }) => message,
-        Err(sparrow_vm::Error::Operation { error: sparrow_vm::OperationError::NativeFailure(failure), .. }) => {
-            let mut reply = Reply::new(mode, "failed", "runtime");
-            reply.stderr = format!("{failure}\n");
-            reply.failure = Some(Failure {
-                stage: "runtime",
-                category: "runtime",
-                error_type: Some("NativeFailure".into()),
-                message: failure.message,
-            });
-            reply.process_exit = 1;
-            return reply;
-        }
-        Err(error) => return Reply::internal(mode, error.to_string()),
-    };
-    let mut reply = Reply::new(mode, "failed", "runtime");
-    reply.stderr = format!("RuntimeError: {message}\n");
-    reply.failure = Some(Failure {
-        stage: "runtime",
-        category: "runtime",
-        error_type: None,
-        message,
-    });
-    reply.process_exit = 1;
-    reply
-}
 
 fn quote(text: &str) -> String {
     let mut out = String::from("\"");

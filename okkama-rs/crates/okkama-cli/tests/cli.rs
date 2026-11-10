@@ -356,7 +356,7 @@ fn channel_examples_print_their_expected_output() {
 fn uncaught_failure_prints_place_and_call_stack() {
     let source = b"module app v1.0.0;\nobject Box {\n    Box();\n    at(i is int) is int { [1, 2][i]; }\n}\nmain() is int {\n    Box().at(5);\n}\n";
     // Every engine reports the place and the call stack (the core since #10).
-    for engine in ["ir", "sparrow", "sparrow-origin"] {
+    for engine in ["ir", "sparrow"] {
         let output = run_stdin(&["run", "--engine", engine, "-"], source);
         assert_eq!(output.status.code(), Some(1));
         let text = stderr(&output);
@@ -1431,13 +1431,14 @@ fn blade_project_rejects_undeclared_dependencies_and_file_versions() {
     assert_eq!(output.status.code(), Some(4), "{}", stderr(&output));
 }
 
-/// H-02: a function with more registers than the JIT accepts stays with the
-/// interpreter, and a direct call to it from machine code goes through the
-/// helper instead of an area in the caller's frame; the result is the same in
-/// every mode. 20 000 values that are live together make the register
-/// allocator fall back to one register per value (H-28).
+/// H-02: a function with 20 000 values that are live together (the register
+/// allocator falls back to one register per value, H-28) runs on the IR
+/// engine. Sparrow compiles every function and refuses one whose live
+/// registers would need more than its compile budget, with a message that
+/// says what to change. Until 0.5 the previous VM's JIT left such a function
+/// to its interpreter (#14).
 #[test]
-fn functions_with_huge_frames_stay_interpreted_under_eager_jit() {
+fn functions_with_huge_frames_run_on_ir_and_are_refused_by_sparrow() {
     let count = 20_000;
     let lets: String = (0..count).map(|i| format!("        let v{i} = seed + {i};\n")).collect();
     let values: Vec<String> = (0..count).map(|i| format!("v{i}")).collect();
@@ -1448,19 +1449,15 @@ fn functions_with_huge_frames_stay_interpreted_under_eager_jit() {
     // Σ(seed + i) for seed 1 and 2 over i < 20 000, modulo 251.
     let expected = (count * (count - 1) + 3 * count) % 251;
     let file = TempFile::new("wide-frame.ok", source.as_bytes());
-    for mode in ["off", "eager"] {
-        let output = okkama()
-            .args(["run", "--engine", "sparrow-origin"])
-            .arg(&file.0)
-            .env("OKKAMA_JIT", mode)
-            .env("OKKAMA_JIT_DEBUG", "1")
-            .output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(expected), "{mode}: {}", stderr(&output));
-        if mode == "eager" {
-            assert!(stderr(&output).contains("Wide.sum not compiled:"), "{}", stderr(&output));
-        }
-    }
+    let output = okkama().args(["run", "--engine", "ir"]).arg(&file.0).output().unwrap();
+    assert_eq!(output.status.code(), Some(expected), "{}", stderr(&output));
+    let output = okkama().args(["run", "--engine", "sparrow"]).arg(&file.0).output().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).contains("Wide.sum: compiling it would take more than 256 MiB"),
+        "{}",
+        stderr(&output)
+    );
 }
 
 /// A `cell::Cell` stays in synchronous code (#152): a field cannot hold one

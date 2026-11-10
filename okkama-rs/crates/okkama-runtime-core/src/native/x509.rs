@@ -2148,8 +2148,7 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
 
-    /// Сертификаты `okkama-runtime-core/tests/x509-search` (`gen.sh`); путь от
-    /// соседнего крейта, чтобы копия модуля в sparrow-runtime видела те же файлы.
+    /// Сертификаты `okkama-runtime-core/tests/x509-search` (`gen.sh`).
     fn der(name: &str) -> Vec<u8> {
         let path = format!("{}/../okkama-runtime-core/tests/x509-search/{name}.der", env!("CARGO_MANIFEST_DIR"));
         std::fs::read(&path).unwrap_or_else(|error| panic!("{path}: {error}"))

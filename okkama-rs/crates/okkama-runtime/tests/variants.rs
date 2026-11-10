@@ -1,4 +1,5 @@
 //! Variant values use the same typed representation on IR and Sparrow.
+mod support;
 use okkama_compiler::{SourceFile, ir, lowering, syntax};
 
 fn lower(body: &str) -> Result<ir::Module, String> {
@@ -13,14 +14,7 @@ fn check(source: &str, expected: &str) {
         okkama_runtime::execute(&module).unwrap().to_string(),
         expected
     );
-    let program = okkama_compiler::codegen::sparrow::generate(&module).unwrap();
-    let program = okkama_sparrow::decode(&okkama_sparrow::encode(&program).unwrap()).unwrap();
-    assert_eq!(
-        sparrow_vm::execute(&program)
-            .unwrap()
-            .to_string(),
-        expected
-    );
+    support::assert_value(&module, expected);
 }
 #[test]
 fn payload_patterns_and_generic_inference() {

@@ -1,4 +1,5 @@
 //! R01: int is exact — arithmetic never wraps at signed 64 bits.
+mod support;
 use okkama_compiler::{SourceFile, lowering, syntax};
 use okkama_runtime::execute;
 
@@ -11,13 +12,7 @@ fn evaluate(body: &str) -> String {
     let ast = syntax::parse(&source, &syntax::ParseOptions::default()).unwrap();
     let module = lowering::lower_program(&ast).unwrap();
     let actual = execute(&module).unwrap();
-    let bytes =
-        okkama_sparrow::encode(&okkama_compiler::codegen::sparrow::generate(&module).unwrap())
-            .unwrap();
-    assert_eq!(
-        sparrow_vm::execute(&okkama_sparrow::decode(&bytes).unwrap()).unwrap().to_string(),
-        actual.to_string()
-    );
+    support::assert_value(&module, &actual.to_string());
     actual.to_string().to_owned()
 }
 

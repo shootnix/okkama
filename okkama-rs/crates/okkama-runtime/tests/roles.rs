@@ -1,7 +1,7 @@
 //! Limited role references retain the object and dispatch through checked witnesses.
+mod support;
 use okkama_compiler::{SourceFile, codegen, ir, lowering, syntax};
 use okkama_runtime::execute;
-use sparrow_vm as sparrow;
 
 fn lower(declarations: &str, body: &str) -> ir::Module {
     let source = SourceFile::new(
@@ -20,7 +20,7 @@ fn check(module: &ir::Module, expected: &str) {
     assert_eq!(&bytes[4..6], &okkama_sparrow::VERSION.to_be_bytes());
     let loaded = okkama_sparrow::decode(&bytes).unwrap();
     assert_eq!(loaded, program);
-    assert_eq!(sparrow::execute(&loaded).unwrap().to_string(), expected);
+    support::assert_value(module, expected);
 }
 
 #[test]
@@ -48,10 +48,7 @@ fn narrowing_checks_nominal_witness_and_keeps_the_failure_lazy() {
         panic!("expected missing role witness trap");
     };
     assert!(message.contains("Narrow"));
-    let bytes = okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
-    assert!(
-        matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()), Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::Trap { message: actual, .. }, .. }) if actual == message)
-    );
+    support::assert_trap(&module, &message);
 }
 
 #[test]

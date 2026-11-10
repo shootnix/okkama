@@ -1,6 +1,6 @@
+mod support;
 use okkama_compiler::{SourceFile, codegen, ir, lowering, syntax};
 use okkama_runtime::{RuntimeError, execute};
-use sparrow_vm as sparrow;
 
 fn lower(body: &str) -> ir::Module {
     let source = SourceFile::new("failures.ok", format!("module app v1.0.0; object Worker {{ Worker(); fail(message is string) is int {{ panic message; }} }} main() is int {{ {body} }}")).unwrap();
@@ -14,24 +14,14 @@ fn panic_preserves_computed_unicode_message_across_calls() {
     assert!(
         matches!(execute(&module), Err(RuntimeError::Panic { message, .. }) if message == "ошибка: 42")
     );
-    let bytes = okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
-    assert!(
-        matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()), Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::Panic { message, .. }, .. }) if message == "ошибка: 42")
-    );
+    support::assert_panic(&module, "ошибка: 42");
 }
 
 #[test]
 fn untaken_panic_is_lazy_and_bytecode_message_must_be_a_string() {
     let module = lower("if false { Worker().fail(\"unused\"); } else { 42; }");
     assert_eq!(execute(&module).unwrap().to_string(), "42");
-    let program = codegen::sparrow::generate(&module).unwrap();
-    let bytes = okkama_sparrow::encode(&program).unwrap();
-    assert_eq!(
-        sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap())
-            .unwrap()
-            .to_string(),
-        "42"
-    );
+    support::assert_value(&module, "42");
     // Проверка SPB 9 типизирована: не строка в `panic` отвергается до
     // исполнения (#16).
     let module = lower("panic \"stop\";");
@@ -96,7 +86,7 @@ fn ir_typed_failure_matches_nominal_catches_and_role_references() {
         "try { try { throw Missing.code(42); 0; } catch e is Missing { throw; 1; } } catch e is Missing { 42; }",
     ] {
         assert_eq!(execute(&typed(body)).unwrap().to_string(), "42", "{body}");
-        assert_eq!(run_sparrow(&typed(body)).unwrap().to_string(), "42", "{body}");
+        support::assert_value(&typed(body), "42");
     }
 }
 
@@ -140,38 +130,23 @@ fn sparrow_unwind_preserves_primary_and_cleanup_failures_across_calls() {
         let program = codegen::sparrow::generate(&module).unwrap();
         let bytes = okkama_sparrow::encode(&program).unwrap();
         assert_eq!(&bytes[4..6], &okkama_sparrow::VERSION.to_be_bytes());
-        let decoded = okkama_sparrow::decode(&bytes).unwrap();
-        let Err(sparrow::Error::Operation { error, .. }) = sparrow::execute(&decoded) else {
-            panic!("expected failure");
-        };
-        assert_eq!(error.to_string(), expected, "{body}");
+        assert_eq!(okkama_sparrow::decode(&bytes).unwrap(), program);
+        assert_eq!(support::report(&module), expected, "{body}");
     }
 }
 
-fn run_sparrow(module: &ir::Module) -> Result<sparrow_vm::IntValue, sparrow_vm::OperationError> {
-    let program = codegen::sparrow::generate(module).unwrap();
-    let bytes = okkama_sparrow::encode(&program).unwrap();
-    match sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()) {
-        Ok(value) => Ok(value),
-        Err(sparrow::Error::Operation { error, .. }) => Err(error),
-        Err(error) => panic!("{error}"),
-    }
-}
+
 #[test]
 fn sparrow_typed_diagnostics_causes_and_uncatchable_failures_match_ir() {
     for body in [
         "Sender().fail();",
         "defer Sender().fail(); panic \"primary\";",
-        // A new error leaving a catch prints its cause on the IR engine (#270);
-        // the previous VM, kept only for comparison until 0.5, does not.
+        // A new error leaving a catch prints its cause (#270).
         "try { panic \"primary\"; } catch e is Error { 42; }",
         "try { 7 % 0; } catch e is Error { 42; }",
     ] {
         let module = typed(body);
-        assert_eq!(
-            run_sparrow(&module).unwrap_err().to_string(),
-            execute(&module).unwrap_err().to_string()
-        );
+        assert_eq!(support::report(&module), execute(&module).unwrap_err().to_string(), "{body}");
     }
 }
 
@@ -215,11 +190,10 @@ fn uncaught_failure_reports_place_and_call_stack_on_both_engines() {
     let (result, trace) = okkama_runtime::execute_traced(&module, Vec::new());
     assert!(matches!(result, Err(RuntimeError::Panic { .. })));
     assert_eq!(okkama_runtime::render_trace(&module, &trace), expected);
-    let program = codegen::sparrow::generate(&module).unwrap();
-    let (result, sparrow_trace) = sparrow::execute_traced(&program, Vec::new());
-    assert!(result.is_err());
+    let (program, uncaught) = support::uncaught(&module);
+    let sparrow_trace = uncaught.trace;
     assert_eq!(sparrow_trace.iter().map(|s| (s.function, s.pc)).collect::<Vec<_>>(), trace.iter().map(|s| (s.function, s.pc)).collect::<Vec<_>>());
-    let text = sparrow::render_trace(&program, &sparrow_trace);
+    let text = sparrow_core::render_trace(&program, &sparrow_trace);
     assert!(text.starts_with("Stack trace (Sparrow, most recent call first):\n  at Worker.fail [f"), "{text}");
     assert!(text.contains(": panic r"), "{text}");
 }

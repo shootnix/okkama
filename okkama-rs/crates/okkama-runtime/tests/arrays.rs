@@ -1,26 +1,11 @@
 //! Неизменяемые массивы: создание, размер, индекс и перенос через вызовы.
+mod support;
 use okkama_compiler::{SourceFile, ir, lowering, syntax};
 use okkama_runtime::{RuntimeError, execute as execute_ir};
 
 fn execute(module: &ir::Module) -> Result<ir::IntValue, RuntimeError> {
     let result = execute_ir(module);
-    let program = okkama_compiler::codegen::sparrow::generate(module).unwrap();
-    let bytes = okkama_sparrow::encode(&program).unwrap();
-    let actual = sparrow_vm::execute(&okkama_sparrow::decode(&bytes).unwrap());
-    match (&result, actual) {
-        (Ok(expected), Ok(actual)) => assert_eq!(expected.to_string(), actual.to_string()),
-        (
-            Err(RuntimeError::Trap { message, .. }),
-            Err(sparrow_vm::Error::Operation {
-                error:
-                    sparrow_vm::OperationError::Trap {
-                        message: actual, ..
-                    },
-                ..
-            }),
-        ) => assert_eq!(*message, actual),
-        (_, actual) => panic!("IR {result:?} differs from Sparrow {actual:?}"),
-    }
+    support::assert_agrees(module, &result);
     result
 }
 

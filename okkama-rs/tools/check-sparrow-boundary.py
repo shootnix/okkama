@@ -6,10 +6,11 @@ import subprocess
 manifest = Path(__file__).resolve().parents[1] / 'Cargo.toml'
 for package, forbidden in (
     # The core bridges natives to okkama-runtime-core, never to an interpreter.
-    ('sparrow-core', {'okkama-compiler', 'okkama-runtime',
-                      'sparrow-vm', 'sparrow-runtime', 'sparrow-cli', 'corosensei'}),
+    # (corosensei comes with okkama-runtime-core's scheduler, which the core
+    # uses only for the promises of bridged natives.)
+    ('sparrow-core', {'okkama-compiler', 'okkama-runtime', 'sparrow-cli'}),
     ('sparrow-cli', {'okkama-compiler', 'okkama-runtime'}),
-    ('okkama-runtime', {'sparrow-vm', 'sparrow-runtime', 'sparrow-cli'}),
+    ('okkama-runtime', {'sparrow-core', 'sparrow-cli'}),
 ):
     result = subprocess.run(
         ['cargo', 'tree', '--offline', '--manifest-path', str(manifest),
