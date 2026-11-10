@@ -17,6 +17,7 @@
 //! not charged twice; and the collector traces a shared node once per
 //! collection ([`Entries::trace`]).
 
+use std::borrow::Borrow;
 use std::cell::Cell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, btree_map};
@@ -67,6 +68,67 @@ impl pmap::NodeKey for Key {
     }
 }
 
+/// What a standard map is searched by (#343): a stored key, or the text of a
+/// string being looked up, which needs no key built for it. Its order is
+/// the order of [`Key`] exactly, as `Borrow` requires.
+pub trait Query {
+    fn probe(&self) -> Probe<'_>;
+}
+
+#[derive(Debug)]
+pub enum Probe<'a> {
+    Key(&'a Key),
+    /// A text and its [`Key::prefix`].
+    Text(u64, &'a str),
+}
+
+impl Query for Key {
+    #[inline]
+    fn probe(&self) -> Probe<'_> {
+        Probe::Key(self)
+    }
+}
+
+struct Text<'a>(u64, &'a str);
+
+impl Query for Text<'_> {
+    #[inline]
+    fn probe(&self) -> Probe<'_> {
+        Probe::Text(self.0, self.1)
+    }
+}
+
+impl<'a> Borrow<dyn Query + 'a> for Key {
+    fn borrow(&self) -> &(dyn Query + 'a) {
+        self
+    }
+}
+
+impl Ord for dyn Query + '_ {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self.probe(), other.probe()) {
+            (Probe::Key(a), Probe::Key(b)) => a.cmp(b),
+            (Probe::Key(a), Probe::Text(prefix, text)) => a.cmp_text(prefix, text),
+            (Probe::Text(prefix, text), Probe::Key(b)) => b.cmp_text(prefix, text).reverse(),
+            (Probe::Text(a, x), Probe::Text(b, y)) => a.cmp(&b).then_with(|| x.cmp(y)),
+        }
+    }
+}
+
+impl PartialOrd for dyn Query + '_ {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for dyn Query + '_ {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl Eq for dyn Query + '_ {}
+
 #[derive(Debug, Clone)]
 pub enum Entries {
     BTree(BTreeMap<Key, Entry>),
@@ -104,6 +166,16 @@ impl Entries {
 
     pub fn contains_key(&self, key: &Key) -> bool {
         self.get(key).is_some()
+    }
+
+    /// The entry of the string key `text`, found without making the key
+    /// (#343): no allocation, no copy of the text.
+    pub fn get_text(&self, text: &str) -> Option<&Entry> {
+        let prefix = Key::prefix(text);
+        match self {
+            Entries::BTree(map) => map.get(&Text(prefix, text) as &dyn Query),
+            Entries::Persistent(map) => map.get_by(|stored| stored.cmp_text(prefix, text)),
+        }
     }
 
     /// Insert or replace the entry of `key`.
@@ -290,6 +362,73 @@ mod tests {
         t[3]
     }
 
+    /// A string looked up by its text (#343) finds what its key finds, in
+    /// both kinds of entries, beside keys of every other kind; and the
+    /// order a lookup by text sees is the order of [`Key`].
+    #[test]
+    fn borrowed_text_lookups_find_what_owned_keys_find() {
+        let long = "x".repeat(1_000);
+        let texts: Vec<String> = [
+            "", "a", "abcdefg", "abcdefgh", "abcdefghi", "abcdefghz", "abc\0def", "abc\0", "ключ", "日本語のテキスト",
+        ]
+        .iter()
+        .map(|text| text.to_string())
+        .chain([long.clone(), format!("{long}y")])
+        .collect();
+        let misses = ["abcdefgh\0", "abcdefgi", "abcdefg\0", "ключи", "zzz", "\0", &long[1..], &format!("{long}x")]
+            .map(str::to_string);
+        let rat = |n: i64, d: i64| {
+            let big = okkama_runtime_core::IntValue::from_i64;
+            Key::Rat(Rc::new(okkama_runtime_core::rat::Rat::new(&big(n), &big(d)).unwrap()))
+        };
+        let others = vec![
+            Key::Small(-5),
+            Key::Small(0),
+            Key::Small(7),
+            Key::Int(num_bigint::BigInt::from(1u8) << 80usize),
+            Key::Int(-(num_bigint::BigInt::from(1u8) << 80usize)),
+            Key::Float(-0.0),
+            Key::Float(2.5),
+            Key::Raw(3),
+            rat(1, 3),
+            Key::Object(1, Rc::from(vec![Key::text(Rc::from("abcdefgh")), Key::Small(1)])),
+            Key::Object(1, Rc::from(vec![Key::Object(2, Rc::from(vec![Key::Small(2)]))])),
+        ];
+        for padding in [0usize, SMALL * 3] {
+            let mut keys: Vec<Key> = texts.iter().map(|text| Key::text(Rc::from(text.as_str()))).collect();
+            keys.extend(others.iter().cloned());
+            keys.extend((0..padding).map(|i| Key::text(Rc::from(format!("key-{i:05}")))));
+            for persistent in [false, true] {
+                let mut map = if persistent { Entries::Persistent(PMap::new()) } else { Entries::BTree(BTreeMap::new()) };
+                for (i, key) in keys.iter().enumerate() {
+                    map.insert(key.clone(), (i as Word, i as Word));
+                }
+                let queries = texts.iter().chain(&misses).cloned().chain((0..padding).step_by(17).map(|i| format!("key-{i:05}")));
+                for query in queries {
+                    let owned = map.get(&Key::text(Rc::from(query.as_str()))).copied();
+                    assert_eq!(map.get_text(&query).copied(), owned, "{query:?} persistent={persistent} padding={padding}");
+                }
+                assert!(map.get_text("ключ").is_some());
+                assert_eq!(map.get_text("ключи"), None);
+            }
+            for a in &keys {
+                for b in &keys {
+                    assert_eq!(<dyn Query>::cmp(a, b), a.cmp(b), "{a:?} {b:?}");
+                }
+                for text in texts.iter().chain(&misses) {
+                    let owned = a.cmp(&Key::text(Rc::from(text.as_str())));
+                    assert_eq!(a.cmp_text(Key::prefix(text), text), owned, "{a:?} {text:?}");
+                    let probe = Text(Key::prefix(text), text);
+                    assert_eq!(<dyn Query>::cmp(a, &probe), owned, "{a:?} {text:?}");
+                    assert_eq!(<dyn Query>::cmp(&probe, a), owned.reverse(), "{a:?} {text:?}");
+                }
+            }
+        }
+        // Empty entries find nothing.
+        assert_eq!(Entries::default().get_text("a"), None);
+        assert_eq!(Entries::Persistent(PMap::new()).get_text(""), None);
+    }
+
     #[test]
     fn large_maps_turn_persistent_in_place() {
         // Built entry by entry, as a builder does: still the standard map.
@@ -315,6 +454,58 @@ mod tests {
         left.merge(&map);
         assert!(left.is_persistent() && left.len() == 1_000);
         assert_eq!(left.get(&Key::Small(3)).map(|e| e.0), Some(77));
+    }
+
+    /// A string key looked up by its text against one made for the lookup,
+    /// as Tomato did before #343: run with `cargo test --release -p
+    /// sparrow-core maps::tests::text_costs -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn text_costs() {
+        let shapes: [(&str, fn(usize) -> String); 3] = [
+            ("short", |i| format!("k{i}")),
+            ("prefix", |i| format!("prefix--{i}")),
+            ("long", |i| format!("{}{i}", "a long key that shares its first fifty-six bytes .......")),
+        ];
+        for (shape, name) in shapes {
+            for n in [1usize, 8, 16, 64, 1_000, 16_000, 100_000] {
+                let texts: Vec<String> = (0..n).map(name).collect();
+                let absent: Vec<String> = (0..n).map(|i| name(i) + "~").collect();
+                let mut line = format!("{shape:<6} n={n:<7}");
+                for (label, persistent) in [("btree", false), ("pmap", true)] {
+                    if persistent && n <= SMALL && n > 1 {
+                        line += "  pmap: (small maps stay standard)";
+                        continue;
+                    }
+                    let mut map = if persistent { Entries::Persistent(PMap::new()) } else { Entries::BTree(BTreeMap::new()) };
+                    for (i, text) in texts.iter().enumerate() {
+                        map.insert(Key::text(Rc::from(text.as_str())), (i as Word, i as Word));
+                    }
+                    let reads = 200_000;
+                    let time = |queries: &[String], borrowed: bool| {
+                        median(|| {
+                            let mut x = 1;
+                            (0..reads)
+                                .filter(|_| {
+                                    let query = queries[spot(&mut x, n)].as_str();
+                                    if borrowed {
+                                        map.get_text(black_box(query)).is_some()
+                                    } else {
+                                        map.get(&Key::text(Rc::from(black_box(query)))).is_some()
+                                    }
+                                })
+                                .count()
+                        }) / reads as f64
+                    };
+                    let (owned, borrowed) = (time(&texts, false), time(&texts, true));
+                    let (owned_miss, borrowed_miss) = (time(&absent, false), time(&absent, true));
+                    line += &format!(
+                        "  {label}: hit {owned:5.1} -> {borrowed:5.1}  miss {owned_miss:5.1} -> {borrowed_miss:5.1}"
+                    );
+                }
+                println!("{line}");
+            }
+        }
     }
 
     /// Both kinds of entries with Tomato's own keys (#252): run with

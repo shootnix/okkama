@@ -90,6 +90,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   shop.Money)`, up to four of them. Names in the IR and messages at run time
   do not change.
 
+### Performance
+
+- Tomato looks a map up by a string key without making the key (#343). The
+  text is compared where it lies against the stored keys, in the order of
+  keys exactly, in both kinds of map entries: the standard B-tree through a
+  borrowed view and the persistent map through a search by comparison.
+  Before, each lookup copied the text into a key of its own and freed it.
+  In-process, a lookup by a short string key costs 22.8 ns instead of 47.8
+  in a map of 8 entries, 55 instead of 75 in a map of 1 000 and 190 instead
+  of 225 in a persistent map of 100 000; keys sharing their first 8 bytes
+  gain as much. The key's type is borrowed instead of copied on every map
+  instruction.
+
 
 ## [0.5.1] — 2026-11-10
 

@@ -577,8 +577,8 @@ fn fake_storage(runtime: &mut Runtime, function: usize, intrinsic: Intrinsic, ar
     let registers = &runtime.loaded.program.functions[function].registers;
     let key_type = registers[params[1]];
     let key_kind = runtime.loaded.functions[function].kinds[params[1]];
-    let key_ty = runtime.loaded.program.ty(key_type).cloned();
-    let indexed = runtime.key(args[1], key_kind, key_ty.as_ref());
+    let key_ty = runtime.loaded.program.ty(key_type);
+    let indexed = runtime.key(args[1], key_kind, key_ty);
     if intrinsic == FakeSet {
         let value_type = runtime.loaded.program.functions[function].registers[params[2]];
         let repr = runtime.loaded.functions[function].kinds[params[2]].repr();

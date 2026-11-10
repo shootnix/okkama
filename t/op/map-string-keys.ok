@@ -1,0 +1,46 @@
+module t v1.0.0;
+
+// t/op: maps looked up by string keys (#343) — texts built apart from the
+// stored ones, small maps and maps made by versions, and the edges of the
+// key order: the empty string, the first eight bytes, UTF-8, long keys.
+import "tap" take Tap;
+
+main() is int {
+    let t = Tap(18);
+    let edge is %string:int = ["": 0, "a": 1, "abcdefg": 7, "abcdefgh": 8, "abcdefghi": 9, "abcdefghz": 10, "ключ": 11, "日本語": 12];
+    t = t.is(edge[""], 0, "the empty string");
+    t = t.is(edge["abc" + "defg"], 7, "seven bytes, built apart");
+    t = t.is(edge["abcd" + "efgh"], 8, "exactly eight bytes");
+    t = t.is(edge["abcdefgh" + "i"], 9, "nine bytes sharing the first eight");
+    t = t.is(edge["abcdefgh" + "z"], 10, "the last byte decides");
+    t = t.is(edge["abcdefgh" + "j"] else -1, -1, "a miss sharing the first eight bytes");
+    t = t.is(edge["клю" + "ч"], 11, "UTF-8");
+    t = t.ok(!edge.has("ключи") && !edge.has("abcdefg" + "h" + "h"), "longer misses");
+    t = t.ok(edge.has("日本" + "語") && edge.has("a"), "has");
+
+    // More than 64 entries, made by versions: the persistent entries.
+    let many is %string:int = (0..200).reduce([:]) -> acc, i { acc + ["key-" + i.string(): i]; };
+    t = t.is(many["key-" + 137.string()], 137, "a large map, a key built apart");
+    t = t.is(many["key-200"] else -1, -1, "a large map, a miss");
+    t = t.ok(many.has("key-0") && many.has("key-199") && !many.has("key-"), "the first, the last and a prefix");
+    // 64 entries, the most a standard map keeps, and one more.
+    let edge64 is %string:int = (0..64).reduce([:]) -> acc, i { acc + ["k" + i.string(): i]; };
+    let edge65 = edge64 + ["k64": 64];
+    t = t.ok(edge64["k" + 63.string()] == 63 && !edge64.has("k64"), "64 entries");
+    t = t.ok(edge65["k" + 64.string()] == 64 && edge65["k0"] == 0, "65 entries");
+
+    let long = (0..100).reduce("") -> s, i { s + "abcde"; };
+    let keyed is %string:int = [long: 1, long + "!": 2];
+    t = t.is(keyed[(0..100).reduce("") -> s, i { s + "abcde"; }], 1, "a long key built apart");
+    t = t.is(keyed[long + "!"], 2, "a long key and one more byte");
+    t = t.is(keyed[long + "?"] else -1, -1, "a long miss");
+    // A generic lookup reaches the same entries.
+    t = t.is(Lookup(map: many).at("key-" + 42.string()), 42, "a generic map");
+    t.done();
+}
+
+object Lookup<K, V> {
+    has map is %K:V;
+    Lookup(:map);
+    at(key is K) is V { map[key]; }
+}

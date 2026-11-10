@@ -312,13 +312,43 @@ impl<K: NodeKey + Clone, V: Clone> PMap<K, V> {
 
     /// The stored key equal to `key` and its value.
     pub fn get_key_value(&self, key: &K) -> Option<(&K, &V)> {
+        self.search(|keys| K::seek(keys, key))
+    }
+
+    /// The value of the key `order` finds, without a key to look up (#343):
+    /// `order(k)` is how a stored key `k` compares with the key sought, in
+    /// the same order as `Ord`. Each key of a node is compared once.
+    pub fn get_by(&self, order: impl Fn(&K) -> std::cmp::Ordering) -> Option<&V> {
+        let seek = |keys: &[K]| {
+            for (i, k) in keys.iter().enumerate() {
+                match order(k) {
+                    std::cmp::Ordering::Less => {}
+                    found => return (i, found.is_eq()),
+                }
+            }
+            (keys.len(), false)
+        };
+        self.search(seek).map(|(_, v)| v)
+    }
+
+    /// The entry `seek` finds: from the root, the child whose smallest key
+    /// is the last not above the key sought, then the equal key of a leaf.
+    #[inline]
+    fn search(&self, seek: impl Fn(&[K]) -> (usize, bool)) -> Option<(&K, &V)> {
         let mut node = &self.root.as_ref()?.node;
         loop {
             match node {
                 Node::Leaf { keys, vals } => {
-                    return find(keys, key).ok().map(|i| (&keys[i], &vals[i]));
+                    let (i, equal) = seek(keys);
+                    return equal.then(|| (&keys[i], &vals[i]));
                 }
-                Node::Branch { keys, kids } => node = &kids[child_of(keys, key)?].node,
+                Node::Branch { keys, kids } => {
+                    let child = match seek(keys) {
+                        (i, true) => i,
+                        (i, false) => i.checked_sub(1)?,
+                    };
+                    node = &kids[child].node;
+                }
             }
         }
     }

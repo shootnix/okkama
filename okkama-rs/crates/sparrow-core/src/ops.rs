@@ -142,10 +142,29 @@ impl Key {
 
     /// The key of a string.
     pub fn text(text: Rc<str>) -> Self {
+        Self::Str(Self::prefix(&text), text)
+    }
+
+    /// The first 8 bytes of a text as a big-endian number, zeros past its
+    /// end: the number [`Key::Str`] keeps.
+    #[inline]
+    pub fn prefix(text: &str) -> u64 {
         let mut first = [0; 8];
         let length = text.len().min(8);
         first[..length].copy_from_slice(&text.as_bytes()[..length]);
-        Self::Str(u64::from_be_bytes(first), text)
+        u64::from_be_bytes(first)
+    }
+
+    /// How this key compares with the string key of `text`, whose
+    /// [`Key::prefix`] is `prefix`, without making that key (#343): the order
+    /// of `self.cmp(&Key::text(text))`.
+    #[inline]
+    pub fn cmp_text(&self, prefix: u64, text: &str) -> Ordering {
+        match self {
+            Self::Str(own, _) if *own != prefix => own.cmp(&prefix),
+            Self::Str(_, own) => (**own).cmp(text),
+            other => other.rank().cmp(&3),
+        }
     }
 
     /// Rust memory this key owns beyond the enum itself (#331). Data shared
@@ -281,6 +300,18 @@ impl Runtime {
         } else {
             Err("map key must be a scalar, enum, string or value object".into())
         }
+    }
+
+    /// The value `map` holds under `key`: a string key is looked up by its
+    /// text in place (#343), any other is made and checked first.
+    pub(crate) fn lookup(&self, map: Word, key: Word, kind: Kind, ty: Option<&Type>) -> Result<Option<Word>, String> {
+        let entries = &self.heap.payload::<MapValue>(map).ok_or("map value expected")?.entries;
+        let found = match (kind, ty) {
+            (Kind::Int | Kind::Float | Kind::Raw | Kind::Byte, _) => entries.get(&self.key(key, kind, ty)),
+            (_, Some(Type::Str)) => entries.get_text(self.heap.text(key)),
+            _ => entries.get(&self.checked_key(key, kind, ty)?),
+        };
+        Ok(found.map(|entry| entry.1))
     }
 
     fn is_key(&self, word: Word, kind: Kind, ty: Option<&Type>) -> bool {
@@ -1295,7 +1326,7 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             let mut owned = 0;
             for (key, item) in entries {
                 let (key, item) = (value(key), value(item));
-                let k = runtime.checked_key(key, key_kind, key_type.as_ref())?;
+                let k = runtime.checked_key(key, key_kind, key_type)?;
                 let bytes = MAP_ENTRY_BYTES + k.owned_bytes();
                 if map.entries.upsert(k, (key, item)) {
                     owned += bytes;
@@ -1418,7 +1449,7 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
         I::MapBuilderPut { builder, key, value: item, .. } => {
             let (builder, key, item) = (value(builder), value(key), value(item));
             let (key_kind, key_type) = map_key(runtime, function, *builder_register(instruction));
-            let k = runtime.checked_key(key, key_kind, key_type.as_ref())?;
+            let k = runtime.checked_key(key, key_kind, key_type)?;
             let map = runtime.heap.payload_mut::<MapValue>(builder).expect("map builder");
             // A new entry of a standard map is Rust memory the builder took
             // on (#331); persistent map nodes count themselves.
@@ -1448,12 +1479,11 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
         I::MapHas { map, key, .. } | I::MapGet { map, key, .. } => {
             let (key_kind, key_type) = map_key(runtime, function, *map);
             let key_word = value(key);
-            let k = runtime.checked_key(key_word, key_kind, key_type.as_ref())?;
-            let found = runtime.heap.payload::<MapValue>(value(map)).expect("map").entries.get(&k).map(|e| e.1);
+            let found = runtime.lookup(value(map), key_word, key_kind, key_type)?;
             if matches!(instruction, I::MapHas { .. }) {
                 return Ok(bool_word(found.is_some()));
             }
-            found.ok_or_else(|| format!("Map key not found: {}", key_text(runtime, key_word, key_kind, key_type.as_ref())))
+            found.ok_or_else(|| format!("Map key not found: {}", key_text(runtime, key_word, key_kind, key_type)))
         }
         I::MapKeys { dst, map } | I::MapValues { dst, map } => {
             let map = runtime.heap.payload::<MapValue>(value(map)).expect("map");
@@ -1472,8 +1502,7 @@ pub fn map_find(runtime: &Runtime, function: usize, pc: usize, map: Word, key: W
         return None;
     };
     let (key_kind, key_type) = map_key(runtime, function, *register);
-    let k = runtime.key(key, key_kind, key_type.as_ref());
-    runtime.heap.payload::<MapValue>(map)?.entries.get(&k).map(|e| e.1)
+    runtime.lookup(map, key, key_kind, key_type).ok().flatten()
 }
 
 fn builder_register(instruction: &I) -> &okkama_sparrow::Register {
@@ -1487,11 +1516,10 @@ fn element_repr(runtime: &Runtime, array: Word) -> Repr {
     Repr::from_bits((runtime.heap.header_of(array) >> 9) & 3)
 }
 
-fn map_key(runtime: &Runtime, function: usize, map: okkama_sparrow::Register) -> (Kind, Option<Type>) {
+/// The kind and type of a map's keys, borrowed from the program (#343).
+fn map_key(runtime: &Runtime, function: usize, map: okkama_sparrow::Register) -> (Kind, Option<&Type>) {
     match runtime.ty(function, map) {
-        Some(Type::Map(key, _) | Type::MapBuilder(key, _)) => {
-            (runtime.kind_of(*key), runtime.loaded.program.ty(*key).cloned())
-        }
+        Some(Type::Map(key, _) | Type::MapBuilder(key, _)) => (runtime.kind_of(*key), runtime.loaded.program.ty(*key)),
         _ => (Kind::Raw, None),
     }
 }
