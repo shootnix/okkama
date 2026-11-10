@@ -100,7 +100,10 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   In-process, a lookup by a short string key costs 22.8 ns instead of 47.8
   in a map of 8 entries, 55 instead of 75 in a map of 1 000 and 190 instead
   of 225 in a persistent map of 100 000; keys sharing their first 8 bytes
-  gain as much. The key's type is borrowed instead of copied on every map
+  gain as much. In programs, `m[key]` by a string key runs 5–9% faster on
+  the persistence stand (80 -> 73 ns at 1 000 entries, 180 -> 167 at
+  100 000) and 4–10% faster in the micro programs; integer keys do not
+  change. The key's type is borrowed instead of copied on every map
   instruction.
 
 
