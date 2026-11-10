@@ -810,6 +810,25 @@ fn a_match_that_leaves_enum_cases_out_names_them_at_the_match() {
     }
 }
 
+/// A successor that can leave its scope unconsumed is reported at its
+/// binding, not at the start of the action (#272), also when the path that
+/// loses it is a `catch`.
+#[test]
+fn an_unconsumed_successor_is_reported_at_its_binding() {
+    let tab = "enum Denied is Error = (denied);\nobject Tab {\n has open is bool = true;\n Tab();\n closed() is ^Tab { ^open = false; }\n checked() is int { 1; }\n}\n";
+    let message = "Successor action result must be used; binding \"done\" can leave scope without consumption";
+    for body in [
+        "let tab = Tab();\n let done = tab.closed();\n 0;",
+        "let tab = Tab();\n let done = tab.closed();\n try { let again = done.closed(); again.checked(); } catch e is Denied { 0; }",
+    ] {
+        assert_eq!(
+            located(&format!("{tab}main() is int {{\n {body}\n}}")),
+            [("done".to_string(), message.to_string())],
+            "{body}"
+        );
+    }
+}
+
 /// Exponent literals are floats (#57); one that cannot be a finite float, or
 /// that is not zero but would round to 0.0, is an error.
 #[test]

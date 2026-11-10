@@ -348,7 +348,9 @@ impl<'r> Flow<'r, '_> {
                         self.local_name(local)
                     )
                 };
-                self.error(span, message);
+                // Место — сама привязка, а не выход из области (#272).
+                let declared = self.body.locals[local.0].span;
+                self.error(if declared.is_empty() { span } else { declared }, message);
                 // Одно сообщение на обязательство.
                 self.reported(state, leaking);
             }

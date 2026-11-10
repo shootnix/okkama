@@ -20,6 +20,10 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Diagnostics: "Successor action result must be used; binding \"done\" can
+  leave scope without consumption" pointed at the first line of the
+  enclosing action; it points at the binding (#272), also when the path that
+  loses the value is a `catch`.
 - Parser: a test block after `private:` was taken for an action ("Expect
   \"(\" before action parameters"). It is a test of the object like any
   other and does not become private; the formatter keeps it in its place
