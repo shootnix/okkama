@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.deadlock.two-tasks",
+  "title": "Two tasks waiting for each other's event fail the run at runtime",
+  "purpose": "Run a program whose tasks deadlock and observe the failure and the output before it.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.NO-PROGRESS",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "failure",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "runtime"
+      ]
+    },
+    "stdout": {
+      "text": "buyer: waiting\nseller: waiting\n"
+    },
+    "stderr": {
+      "text": "RuntimeError: async main cannot complete: no task can make progress\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#18"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #342; Sparrow (Tomato) is the reference behaviour",
+    "expected_basis": "#342: no task is ready and nothing external can wake one; the run fails with a runtime error and a nonzero status after the output already written."
+  },
+  "status": "mandatory"
+}

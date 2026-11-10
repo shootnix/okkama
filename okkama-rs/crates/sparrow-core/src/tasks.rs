@@ -334,8 +334,11 @@ impl Runtime {
                 if self.wait_external() {
                     continue;
                 }
+                // A runtime failure of the run, worded as the IR engine and
+                // the JVM report it (#342).
                 let ctx = unsafe { &mut *ctx };
-                crate::runtime::fatal(ctx, self, "all tasks are waiting: the program cannot make progress".into());
+                ctx.failure = self.failure_new(FailureKind::Program("async main cannot complete: no task can make progress".into()));
+                ctx.status = FAILED;
                 return;
             };
             if get(frame, STATE) != RUNNING {

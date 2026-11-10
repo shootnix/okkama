@@ -23,6 +23,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Sparrow (Tomato) reported a deadlock — no task ready and nothing outside
+  the runtime able to wake one — as an engine stop worded differently from
+  the IR engine and the JVM. It is now the same runtime failure on every
+  engine: `RuntimeError: async main cannot complete: no task can make
+  progress`, status 1, the output written before it kept (#342). The
+  contract ASYNC.NO-PROGRESS and the cases `L08.deadlock.two-tasks` and
+  `L08.deadlock.after-timer` (a pending timer is still progress) pin it on
+  every engine; the spec (section 18) and the async guide (6.4) describe it.
+
 - Sparrow (Tomato): a payload's Rust memory was charged twice toward the
   next collection, its boxes once in each of two functions, and a payload
   that took over a map builder's entries was not charged for its own struct

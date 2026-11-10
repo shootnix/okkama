@@ -1,0 +1,29 @@
+module app v1.0.0;
+
+// Each task waits for the other's event and async main awaits both: no task
+// can make progress and nothing outside the runtime can wake one (#342).
+import "io/stdout" take Stdout;
+import "async/event" take Event;
+
+object Clerk {
+    has mine is Event;
+    has theirs is Event;
+    Clerk(:mine, :theirs);
+
+    async sign(name is string) is int {
+        Stdout().writeln(name + ": waiting");
+        await theirs.wait();
+        mine.set();
+        1;
+    }
+}
+
+async main() is int {
+    let a = Event();
+    let b = Event();
+    let first = spawn Clerk(mine: a, theirs: b).sign("buyer");
+    let second = spawn Clerk(mine: b, theirs: a).sign("seller");
+    let signed = await first + await second;
+    Stdout().writeln("signed: " + signed.string());
+    0;
+}

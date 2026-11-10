@@ -1,0 +1,30 @@
+module app v1.0.0;
+
+// A pending timer can still wake a task, so waiting on it is progress; once
+// it has fired and main waits for an event nobody sets, nothing can (#342).
+import "io/stdout" take Stdout;
+import "async/event" take Event;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration, DurationUnit;
+
+object Alarm {
+    has rung is Event;
+    Alarm(:rung);
+
+    async ring() is void {
+        await SystemClock().wait(Duration(value: 20.rat(), unit: DurationUnit.millisecond));
+        Stdout().writeln("alarm: rang");
+        rung.set();
+    }
+}
+
+async main() is int {
+    let rung = Event();
+    let alarm = spawn Alarm(rung: rung).ring();
+    await rung.wait();
+    Stdout().writeln("main: woke");
+    await alarm;
+    await Event().wait();
+    Stdout().writeln("main: unreachable");
+    0;
+}

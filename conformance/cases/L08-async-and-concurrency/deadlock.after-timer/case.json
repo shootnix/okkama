@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.deadlock.after-timer",
+  "title": "A pending timer is progress; the deadlock is reported only after it has fired",
+  "purpose": "Run a program that waits on a timer, then on an event nobody sets.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.NO-PROGRESS",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "failure",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "runtime"
+      ]
+    },
+    "stdout": {
+      "text": "alarm: rang\nmain: woke\n"
+    },
+    "stderr": {
+      "text": "RuntimeError: async main cannot complete: no task can make progress\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#18"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #342; Sparrow (Tomato) is the reference behaviour",
+    "expected_basis": "#342: while a timer is pending the scheduler waits for it; after it fires, main's wait on an unset event can make no progress and the run fails at runtime."
+  },
+  "status": "mandatory"
+}
