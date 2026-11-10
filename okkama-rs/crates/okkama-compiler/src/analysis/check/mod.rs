@@ -834,13 +834,19 @@ impl<'r, 'a> Checker<'r, 'a> {
                     });
                 }
             }
-            (None, Some(ty)) => {
-                let message = format!(
-                    "Action \"{name}\" must produce a return value of type {}.",
-                    self.type_name(ty)
-                );
-                self.error(block.span, message);
-            }
+            (None, Some(ty)) => match self.missing_cases(&out) {
+                // A last `match` that leaves enum cases out names them (#291).
+                Some((span, message)) => self.error(span, message),
+                // One over a value in error has already said why.
+                None if Self::tail_match(&out).is_some_and(|(matched, _)| Self::ty_of(&matched.subject).is_error()) => {}
+                None => {
+                    let message = format!(
+                        "Action \"{name}\" must produce a return value of type {}.",
+                        self.type_name(ty)
+                    );
+                    self.error(block.span, message);
+                }
+            },
             (_, None) => {}
         }
         thir

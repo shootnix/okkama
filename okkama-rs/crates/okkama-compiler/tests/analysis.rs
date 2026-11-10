@@ -737,6 +737,79 @@ fn diagnostics_name_the_rule_and_the_fix() {
     assert!(ordering.iter().any(|m| m.contains("import \"compare\" take Comparing")), "{ordering:?}");
 }
 
+/// The source a diagnostic points at and its message.
+fn located(text: &str) -> Vec<(String, String)> {
+    let source = format!("module app v1.0.0; {text}");
+    errors(&source)
+        .into_iter()
+        .map(|error| (source[error.span.start as usize..error.span.end as usize].to_string(), error.message))
+        .collect()
+}
+
+/// A `match` over an enum that leaves cases out names them wherever its
+/// value is needed: an action's last value, a nested value, a compact
+/// choice (#229, #291), once, at the match.
+#[test]
+fn a_match_that_leaves_enum_cases_out_names_them_at_the_match() {
+    const PRIORITY: &str = "enum Priority = (low, normal, urgent);\n";
+    let action = |body: &str| format!("{PRIORITY}object Queue {{\n Queue();\n weight(p is Priority) is int {{\n{body}\n }}\n}}\nmain() is int {{ 0; }}");
+    let missing = |cases: &str, fallback: &str| {
+        format!("match over enum `Priority` does not cover {cases}, so it has no value here; add the cases or {fallback}")
+    };
+    let tail = "match p { case Priority.low { 1; } case Priority.normal { 2; } }";
+    assert_eq!(located(&action(tail)), [(tail.to_string(), missing("urgent", "an `else` branch"))]);
+    // Several cases, in declaration order, after other statements.
+    let tail = "match p { case Priority.urgent { 3; } }";
+    assert_eq!(
+        located(&action(&format!("let base = 1;\n{tail}"))),
+        [(tail.to_string(), missing("low, normal", "an `else` branch"))]
+    );
+    // Arms that all diverge still leave the other cases without a value.
+    let tail = "match p { case Priority.low { panic \"low\"; } }";
+    assert_eq!(located(&action(tail)), [(tail.to_string(), missing("normal, urgent", "an `else` branch"))]);
+    // A nested value and a `let` initializer (#229).
+    let inner = "match p { case Priority.low { 1; } }";
+    assert_eq!(
+        located(&action(&format!("let n = 1 + {inner};\nn;"))),
+        [(inner.to_string(), missing("normal, urgent", "an `else` branch"))]
+    );
+    assert_eq!(
+        located(&action(&format!("let n = {inner};\nn;"))),
+        [(inner.to_string(), missing("normal, urgent", "an `else` branch"))]
+    );
+    // A compact choice: one error, with its own fallback branch.
+    let choice = "p ?? .urgent: 1 !! .low: 2";
+    assert_eq!(
+        located(&action(&format!("let f = {choice};\nf;"))),
+        [(choice.to_string(), missing("normal", "a `_:` branch"))]
+    );
+    // Complete matches, an `else`, a `_:` and a statement are fine.
+    for body in [
+        "match p { case Priority.low { 1; } case Priority.normal { 2; } case Priority.urgent { 3; } }",
+        "match p { case Priority.low { 1; } else { 2; } }",
+        "p ?? .urgent: 1 !! .low: 2 !! .normal: 3;",
+        "p ?? .urgent: 1 !! _: 2;",
+        "match p { case Priority.low { 1; } }\n0;",
+    ] {
+        assert_eq!(located(&action(body)), [], "{body}");
+    }
+    // Other missing values keep their messages.
+    assert_eq!(
+        messages(&action("let n = 1;\nif n > 0 { }")),
+        ["Action \"weight\" must produce a return value of type int."]
+    );
+    assert_eq!(messages(&action("match missing { case Priority.low { 1; } }")), ["Undefined variable \"missing\""]);
+    assert_eq!(messages(&action("\"x\";")), ["Action result must be int, got string"]);
+    assert_eq!(messages(&action("p ?? .urgent: 1 !! .missing: 2 !! .low: 3 !! .normal: 4")), ["Unknown enum variant"]);
+    // Variants with payloads keep their own message, once.
+    let shapes = |body: &str| {
+        format!("enum Shape = (dot, circle(r is int), square(side is int));\nobject Q {{\n Q();\n f(s is Shape) is int {{\n{body}\n }}\n}}\nmain() is int {{ 0; }}")
+    };
+    for body in ["match s { case Shape.dot { 1; } case Shape.circle(r) { r; } }", "s ?? .dot: 1 !! .circle(r): r"] {
+        assert_eq!(messages(&shapes(body)), ["Non-exhaustive match: missing square"], "{body}");
+    }
+}
+
 /// Exponent literals are floats (#57); one that cannot be a finite float, or
 /// that is not zero but would round to 0.0, is an error.
 #[test]

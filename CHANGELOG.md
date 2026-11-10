@@ -24,6 +24,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   \"(\" before action parameters"). It is a test of the object like any
   other and does not become private; the formatter keeps it in its place
   (#277, conformance case `L01.gram.private.test-among-actions`).
+- Diagnostics: a `match` over an enum that leaves cases out names them also
+  as the last value of an action (#291). `weight(p is Priority) is int {
+  match p { case Priority.low { 1; } case Priority.normal { 2; } } }` said
+  `Action "weight" must produce a return value of type int`; it now says
+  ``match over enum `Priority` does not cover urgent, so it has no value
+  here; add the cases or an `else` branch``, at the match. A compact choice
+  that misses a case (`p ?? .urgent: 1 !! .low: 2`) reported two messages
+  about its form; it reports one that names `normal` and suggests a `_:`
+  branch.
 
 - Parser: a map value may start with a parenthesis (#263). `["b": (2 + 3) *
   2]`, `[1: (2) + 1]`, `["x": (-1)]` and `[x: (2)]` were rejected with the

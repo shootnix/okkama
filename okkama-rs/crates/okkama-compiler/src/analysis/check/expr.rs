@@ -17,19 +17,41 @@ impl Checker<'_, '_> {
     pub(super) fn value(&mut self, expr: &ast::Expr, expected: Option<&Ty>) -> Expr {
         let checked = self.expr(expr, true, expected);
         if checked.ty.is_none() && !checked.diverges {
-            let message = self
+            let (span, message) = self
                 .missing_cases(&checked)
-                .unwrap_or_else(|| "Expression does not produce a value".to_string());
-            self.error(expr.span, message);
+                .unwrap_or_else(|| (expr.span, "Expression does not produce a value".to_string()));
+            self.error(span, message);
             return Self::poisoned(expr.span);
         }
         checked
     }
 
-    /// Why a `match` over an enum has no value: the cases it leaves out
-    /// (#229), named as the IDE lint `non-exhaustive-match` names them.
-    fn missing_cases(&self, checked: &Expr) -> Option<String> {
-        let ExprKind::Match(matched) = &checked.kind else { return None };
+    /// The `match` that is the value of `checked`, also as the last value of
+    /// a block, and its span.
+    pub(super) fn tail_match(checked: &Expr) -> Option<(&Match, Span)> {
+        match &checked.kind {
+            ExprKind::Block(block) => match &block.stmts.last()?.kind {
+                StmtKind::Expr(last) => Self::tail_match(last),
+                _ => None,
+            },
+            ExprKind::Match(matched) => Some((matched, checked.span)),
+            _ => None,
+        }
+    }
+
+    /// Why `checked` has no value when that is a `match` over an enum that
+    /// leaves cases out (#229), also as the last value of a block (#291):
+    /// the match and a message that names the cases.
+    pub(super) fn missing_cases(&self, checked: &Expr) -> Option<(Span, String)> {
+        let (matched, span) = Self::tail_match(checked)?;
+        Some((span, self.uncovered_message(matched, "an `else` branch")?))
+    }
+
+    /// The cases of its enum a `match` without `else` leaves out, in
+    /// declaration order, as the IDE lint `non-exhaustive-match` names them;
+    /// `fallback` is the branch that would cover the rest. `None` when the
+    /// match is exhaustive or not over a payload-free enum.
+    fn uncovered_message(&self, matched: &Match, fallback: &str) -> Option<String> {
         let Some(Ty::Enum(id)) = &matched.subject.ty else { return None };
         if matched.exhaustive || matched.else_block.is_some() {
             return None;
@@ -45,7 +67,7 @@ impl Checker<'_, '_> {
         let missing: Vec<&str> = declaration.cases.iter().zip(&seen).filter(|(_, seen)| !**seen).map(|(name, _)| name.as_str()).collect();
         (!missing.is_empty()).then(|| {
             format!(
-                "match over enum `{}` does not cover {}, so it has no value here; add the cases or an `else` branch",
+                "match over enum `{}` does not cover {}, so it has no value here; add the cases or {fallback}",
                 declaration.name,
                 missing.join(", ")
             )
@@ -116,7 +138,17 @@ impl Checker<'_, '_> {
                     };
                 }
                 let result = self.expr(inner, true, expected);
-                if result.ty.is_none() && !result.diverges {
+                // A compact match that leaves cases out has no value for
+                // them: one error, that names them when it can (#291).
+                let partial = match &result.kind {
+                    ExprKind::Match(found) if !found.exhaustive && found.else_block.is_none() => Some(
+                        self.uncovered_message(found, "a `_:` branch")
+                            .unwrap_or_else(|| "Non-exhaustive compact match".to_string()),
+                    ),
+                    _ => None,
+                };
+                let valueless = partial.is_none() && result.ty.is_none() && !result.diverges;
+                if valueless {
                     self.error(
                         span,
                         "Compact choice branches must produce a value or diverge",
@@ -130,14 +162,18 @@ impl Checker<'_, '_> {
                                 self.error(name.span, "Duplicate variant pattern");
                             }
                     }
-                    if let ExprKind::Match(found) = &result.kind {
-                        if !matches!(Self::ty_of(&found.subject), Ty::Enum(_)) {
+                    if let ExprKind::Match(found) = &result.kind
+                        && !matches!(Self::ty_of(&found.subject), Ty::Enum(_)) {
                             self.error(span, "Compact patterns require an enum value");
                         }
-                        if !found.exhaustive && found.else_block.is_none() {
-                            self.error(span, "Non-exhaustive compact match");
-                        }
-                    }
+                }
+                // Reported once here: the value it lacks is not reported again.
+                if let Some(message) = partial {
+                    self.error(span, message);
+                    return Self::poisoned(span);
+                }
+                if valueless {
+                    return Self::poisoned(span);
                 }
                 result
             }
