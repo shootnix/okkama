@@ -42,7 +42,10 @@ impl Source {
     /// `base` (`None` — a git checkout, where local paths mean nothing).
     fn of(name: &str, dependency: &Dependency, base: Option<&Path>) -> Result<Source, String> {
         match (&dependency.git, &dependency.path) {
-            (Some(url), None) => Ok(Source::Git(url.clone())),
+            (Some(url), None) => {
+                check_git_url(url).map_err(|error| format!("dependency \"{name}\": {error}"))?;
+                Ok(Source::Git(url.clone()))
+            }
             (None, Some(path)) => {
                 let Some(base) = base else {
                     return Err(format!(
@@ -124,6 +127,7 @@ pub fn add(
 ) -> Result<(String, Report), String> {
     let mut work = Work::new()?;
     let (source, spelled) = if git || looks_like_git(source) {
+        check_git_url(source)?;
         (Source::Git(source.to_string()), source.to_string())
     } else {
         let dir = std::fs::canonicalize(source).map_err(|error| format!("{source}: {error}"))?;
@@ -185,6 +189,19 @@ pub fn add(
             Err(error)
         }
     }
+}
+
+/// A git source as git will see it (#346): never an option, never a
+/// transport helper (`ext::…`), no control characters. Which transports git
+/// may use is also fixed in `git`.
+fn check_git_url(url: &str) -> Result<(), String> {
+    let helper = url.split_once("::").is_some_and(|(transport, _)| !transport.contains('/'));
+    if url.is_empty() || url.starts_with('-') || url.chars().any(char::is_control) || helper {
+        return Err(format!(
+            "invalid git source {url:?}: use an https://, ssh://, git:// or file:// URL, user@host:path, or a local path"
+        ));
+    }
+    Ok(())
 }
 
 fn looks_like_git(source: &str) -> bool {
@@ -499,7 +516,7 @@ impl Work {
             return Ok(clone.clone());
         }
         let clone = self.dir.join(format!("clone-{}", self.clones.len() + 1));
-        git(&["clone", "--quiet", "--no-checkout", url, path_str(&clone)?])?;
+        git(&["clone", "--quiet", "--no-checkout", "--", url, path_str(&clone)?])?;
         self.clones.insert(url.to_string(), clone.clone());
         Ok(clone)
     }
@@ -520,6 +537,9 @@ fn git(args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
+        // The transports a package may come by (#346); `ext::` and the rest
+        // could run commands.
+        .env("GIT_ALLOW_PROTOCOL", "file:git:https:ssh")
         .output()
         .map_err(|error| format!("cannot run git: {error}"))?;
     if !output.status.success() {
@@ -536,7 +556,7 @@ fn git(args: &[&str]) -> Result<String, String> {
 fn remote_tags(url: &str) -> Result<BTreeMap<Version, String>, String> {
     let mut tags = BTreeMap::new();
     let mut peeled = BTreeMap::new();
-    for line in git(&["ls-remote", "--tags", url])?.lines() {
+    for line in git(&["ls-remote", "--tags", "--", url])?.lines() {
         let Some((commit, reference)) = line.split_once('\t') else {
             continue;
         };
@@ -547,6 +567,9 @@ fn remote_tags(url: &str) -> Result<BTreeMap<Version, String>, String> {
             Some(tag) => (tag, &mut peeled),
             None => (tag, &mut tags),
         };
+        if !commit.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            continue;
+        }
         if tag.starts_with('v')
             && let Some(version) = Version::parse(tag) {
                 target.insert(version, commit.to_string());

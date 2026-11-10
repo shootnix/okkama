@@ -76,6 +76,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Blade: the git source of a dependency, from any `blade.toml` including a
+  transitive dependency's, reached git as a plain argument, so
+  `git = "--upload-pack=…"` ran a command during `blade install` (#346).
+  Sources now follow `--`, are refused when they start with `-`, hold
+  control characters or name a transport helper (`ext::…`), and git runs
+  with `GIT_ALLOW_PROTOCOL=file:git:https:ssh`.
+
 - Sparrow (Tomato) reported a deadlock — no task ready and nothing outside
   the runtime able to wake one — as an engine stop worded differently from
   the IR engine and the JVM. It is now the same runtime failure on every

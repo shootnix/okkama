@@ -438,3 +438,27 @@ fn a_busy_project_is_not_changed() {
     assert!(Manifest::read(&app).unwrap().dependencies.is_empty());
     assert!(!app.join("pkg").exists() && !app.join("blade.lock").exists());
 }
+
+/// A git source is never an option or a transport helper (#346): a
+/// dependency declared with one is refused before git runs, and nothing it
+/// names is executed.
+#[test]
+fn git_sources_cannot_inject_options_or_transports() {
+    let (tree, app, _) = world("inject");
+    let marker = tree.path("INJECTED");
+    for url in [
+        format!("--upload-pack=touch {}; git-upload-pack", marker.display()),
+        format!("-c core.sshCommand=touch {}", marker.display()),
+        format!("ext::sh -c touch% {}", marker.display()),
+        "https://example.org/json\n--upload-pack=x".to_string(),
+    ] {
+        let text = manifest_text("app", "1.0.0", &format!("evil = {{ git = {url:?}, version = \"1.0.0\" }}\n"));
+        std::fs::write(app.join("blade.toml"), &text).unwrap();
+        let error = install::install(&app, &Unlock::Nothing).unwrap_err();
+        assert!(error.contains("invalid git source"), "{url:?}: {error}");
+        let error = install::add(&app, &url, None, true).unwrap_err();
+        assert!(error.contains("invalid git source"), "{url:?}: {error}");
+        assert!(!marker.exists(), "{url:?} ran a command");
+        assert!(!app.join("pkg").exists() && !app.join("blade.lock").exists(), "{url:?}");
+    }
+}
