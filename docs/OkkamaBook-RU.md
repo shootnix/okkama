@@ -6576,36 +6576,40 @@ POSIX-семантика `fork` в язык не выставляется.
 
 ### 31.5.2 Ограниченные типизированные каналы
 
-Модуль `async/channel` экспортирует инвариантные `Channel<T>`, `Sender<T>` и
-`Receiver<T>`, а также ошибки `ChannelClosed` и
-`InvalidChannelCapacity`. Ёмкость всегда положительна:
+Модуль `async/channel` экспортирует инвариантные `Channel<T>`, `Sending<T>` и
+`Receiving<T>`, а также ошибки `ChannelClosed` и `InvalidChannelCapacity`.
+`Sending` и `Receiving` — узкие capability над одним общим состоянием канала:
 
 ```okkama
-import "async/channel" take Channel, Sender, Receiver;
+import "async/channel" take Channel, Sending, Receiving;
 
 let channel is Channel<int> = Channel(capacity: 16);
-let sender is Sender<int> = channel.sender();
-let receiver is Receiver<int> = channel.receiver();
+let sending is Sending<int> = channel.sending();
+let receiving is Receiving<int> = channel.receiving();
 
-await sender.send(42);
-let answer = await receiver.receive();
-sender.close();
+await sending.send(42);
+let answer = await receiving.item();
+sending.close();
 answer;
 ```
 
-Сообщения, заблокированные отправители и ожидающие получатели обслуживаются
-FIFO. Отправка в заполненный буфер приостанавливается. `close()` явный,
-идемпотентный и может быть вызван через любой endpoint: новые операции и
-заблокированные отправители завершаются `ChannelClosed`, а уже
-буферизованные сообщения остаются доступными до исчерпания.
+Положительная ёмкость буферизует столько значений; ёмкость 0 — рандеву без
+буфера: `send` завершается, только когда получатель забрал значение;
+отрицательная ёмкость бросает `InvalidChannelCapacity`. Сообщения,
+заблокированные отправители и ожидающие получатели обслуживаются FIFO.
+`close()` явный, идемпотентный и может быть вызван через любой endpoint:
+новые и заблокированные отправки бросают `ChannelClosed`, буферизованные
+сообщения остаются доступными, а после их исчерпания `item()` бросает
+`ChannelClosed`. Отмена заблокированной операции снимает её из очереди
+ожидающих; состоявшаяся передача не отменяется и не повторяется.
 
 State-owner — это одна async-задача, единолично владеющая локальной
 перепривязываемой ссылкой на immutable state. Клиенты хранят только
-`Sender<Command>`, а request-response передаёт в команде отдельный
-capacity-one reply channel. Падение задачи автоматически не закрывает её
+`Sending<Command>`, а request-response передаёт в команде отдельный
+capacity-one канал ответа. Падение задачи автоматически не закрывает её
 каналы: owner регистрирует `defer ...close()`, вызывающие используют явный
-stop-протокол и ожидают Future владельца. Cancellation, timeout и supervision
-не входят в эту версию.
+stop-протокол и ожидают Future владельца. Исполняемые примеры —
+`okkama-rs/examples/channels`.
 
 ### 31.6 Decimal (отложено) и точные деньги
 

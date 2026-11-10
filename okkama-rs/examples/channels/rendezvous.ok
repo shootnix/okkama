@@ -1,0 +1,28 @@
+module examples/channels/rendezvous v1.0.0;
+
+// Capacity 0 is an unbuffered rendezvous: send() finishes only when a
+// receiver takes the value, and item() only when a sender hands one over.
+import "io/stdout" take Stdout;
+import "async/channel" take Channel, Sending;
+
+object Producer {
+    has output is Sending<string>;
+
+    Producer(:output);
+
+    async run() is int {
+        await output.send("ping");
+        Stdout().writeln("producer: handed over");
+        0;
+    }
+}
+
+async main() is int {
+    let channel is Channel<string> = Channel(capacity: 0);
+    let producer = spawn Producer(output: channel.sending()).run();
+    Stdout().writeln("main: producer is waiting: " + (!producer.done()).string());
+    let value = await channel.receiving().item();
+    Stdout().writeln("main: received " + value);
+    await producer;
+    0;
+}

@@ -1,0 +1,63 @@
+module examples/channels/state_owner v1.0.0;
+
+// One task owns the balance and rebinds it; clients send typed commands, and
+// a report carries a capacity-one reply channel.
+
+import "io/stdout" take Stdout;
+import "async/channel" take Channel, Sending, Receiving;
+
+object Balance {
+    has amount is int;
+
+    Balance(:amount);
+
+    amount() is int {
+        amount;
+    }
+
+    deposited(sum is int) is ^Balance {
+        ^amount = amount + sum;
+    }
+}
+
+enum Command = (deposit(sum is int), report(reply is Sending<int>), stop);
+
+object Ledger {
+    has inbox is Receiving<Command>;
+
+    Ledger(:inbox);
+
+    async run() is int {
+        let balance = Balance(amount: 0);
+        let served = 0;
+        loop {
+            let command = await inbox.item();
+            match command {
+                case Command.deposit(sum) {
+                    balance = balance.deposited(sum);
+                }
+                case Command.report(reply) {
+                    await reply.send(balance.amount());
+                }
+                case Command.stop {
+                    last;
+                }
+            }
+        }
+        balance.amount();
+    }
+}
+
+async main() is int {
+    let channel is Channel<Command> = Channel(capacity: 4);
+    let ledger = spawn Ledger(inbox: channel.receiving()).run();
+    let teller = channel.sending();
+    await teller.send(Command.deposit(30));
+    await teller.send(Command.deposit(12));
+    let replies is Channel<int> = Channel(capacity: 1);
+    await teller.send(Command.report(replies.sending()));
+    Stdout().writeln("balance: " + (await replies.receiving().item()).string());
+    await teller.send(Command.stop);
+    Stdout().writeln("final: " + (await ledger).string());
+    0;
+}

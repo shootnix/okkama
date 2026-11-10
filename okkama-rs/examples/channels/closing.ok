@@ -1,0 +1,34 @@
+module examples/channels/closing v1.0.0;
+
+// Closing: either endpoint may close the shared channel, closing twice is
+// harmless, values already buffered can still be received, and then item()
+// and every send() throw ChannelClosed.
+import "io/stdout" take Stdout;
+import "async/channel" take Channel, ChannelClosed;
+
+async main() is int {
+    let channel is Channel<string> = Channel(capacity: 4);
+    let sending = channel.sending();
+    let receiving = channel.receiving();
+    await sending.send("a");
+    await sending.send("b");
+    receiving.close();
+    sending.close();
+    Stdout().writeln("buffered: " + (await receiving.item()) + (await receiving.item()));
+    let drained = try {
+        await receiving.item();
+    }
+    catch e is ChannelClosed {
+        "closed";
+    };
+    Stdout().writeln("after the buffer: " + drained);
+    let refused = try {
+        await sending.send("c");
+        "sent";
+    }
+    catch e is ChannelClosed {
+        "closed";
+    };
+    Stdout().writeln("send after close: " + refused);
+    0;
+}

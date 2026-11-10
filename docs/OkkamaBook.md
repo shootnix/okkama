@@ -6291,6 +6291,42 @@ detail: a future Rust VM can use its native child-process runtime while keeping
 the same source syntax and value contract. This is process isolation, not
 exposed POSIX `fork` semantics.
 
+### 31.5.2 Bounded typed channels
+
+`async/channel` exports invariant `Channel<T>`, `Sending<T>` and
+`Receiving<T>`, and the errors `ChannelClosed` and `InvalidChannelCapacity`.
+`Sending` and `Receiving` are narrow capabilities over one shared channel
+state:
+
+```okkama
+import "async/channel" take Channel, Sending, Receiving;
+
+let channel is Channel<int> = Channel(capacity: 16);
+let sending is Sending<int> = channel.sending();
+let receiving is Receiving<int> = channel.receiving();
+
+await sending.send(42);
+let answer = await receiving.item();
+sending.close();
+answer;
+```
+
+A positive capacity buffers that many values; capacity 0 is a rendezvous
+without a buffer, where `send` completes only when a receiver takes the value;
+a negative capacity throws `InvalidChannelCapacity`. Messages, blocked senders
+and waiting receivers are served FIFO. `close()` is explicit, idempotent and
+works through either endpoint: new and blocked sends throw `ChannelClosed`,
+buffered messages stay receivable, and once they are drained `item()` throws
+`ChannelClosed`. Cancelling a blocked operation removes it from the waiters; a
+completed handoff is never undone or repeated.
+
+A state owner is one async task that alone owns a local, rebindable binding to
+immutable state. Clients hold only a `Sending<Command>`, and request-response
+puts a capacity-one reply channel in the command. A task's failure does not
+close its channels: the owner registers `defer ...close()`, and callers use an
+explicit stop protocol and await the owner's Future. Executable examples are
+in `okkama-rs/examples/channels`.
+
 ### 31.6 Decimal (deferred) and exact money
 
 A `DECIMAL` token type exists in the grammar for future exact-decimal

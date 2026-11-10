@@ -1,0 +1,46 @@
+module examples/channels/buffered v1.0.0;
+
+// A bounded producer/consumer: capacity 2, so the producer waits whenever two
+// values are buffered. Each side holds only its own capability, and the
+// producer closes the channel when it is done.
+import "io/stdout" take Stdout;
+import "async/channel" take Channel, Sending, Receiving, ChannelClosed;
+
+object Producer {
+    has output is Sending<int>;
+
+    Producer(:output);
+
+    async run() is int {
+        defer output.close();
+        for 1..=5 -> value {
+            await output.send(value);
+        }
+        5;
+    }
+}
+
+object Consumer {
+    has input is Receiving<int>;
+
+    Consumer(:input);
+
+    async total(sum is int) is int {
+        let value = try {
+            await input.item();
+        }
+        catch e is ChannelClosed {
+            return sum;
+        };
+        await self.total(sum + value);
+    }
+}
+
+async main() is int {
+    let channel is Channel<int> = Channel(capacity: 2);
+    let producer = spawn Producer(output: channel.sending()).run();
+    let total = await Consumer(input: channel.receiving()).total(0);
+    let sent = await producer;
+    Stdout().writeln("sent " + sent.string() + ", received total " + total.string());
+    0;
+}

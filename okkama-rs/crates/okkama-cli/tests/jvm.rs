@@ -1203,6 +1203,26 @@ impl WorkDir {
     }
 }
 
+/// The channel examples of the channel guide (#341) print what their
+/// `.expected` files say on the JVM too.
+#[test]
+fn channel_examples_print_their_expected_output_on_the_jvm() {
+    let examples = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/channels");
+    for name in ["buffered", "rendezvous", "closing", "lifecycle", "state-owner"] {
+        let dir = WorkDir::new();
+        let source = std::fs::read_to_string(examples.join(format!("{name}.ok"))).unwrap();
+        let build = dir.build_files(&[("main.ok", source.as_str())], "main.ok", "Example");
+        assert!(build.status.success(), "{name}: {}", String::from_utf8_lossy(&build.stderr));
+        let output = dir.java("Example", &[]);
+        assert_eq!(output.status.code(), Some(0), "{name}: {}", String::from_utf8_lossy(&output.stderr));
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            std::fs::read_to_string(examples.join(format!("{name}.expected"))).unwrap(),
+            "{name}"
+        );
+    }
+}
+
 /// Waking a task makes it ready; it runs after the waker suspends, not
 /// inside `set()` or `cancel()` (#340), as on the other engines.
 #[test]

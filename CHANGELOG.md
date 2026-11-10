@@ -32,6 +32,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   "Counter" must return int, got string`, at the action; a missing one reads
   `The fake of role "Counter" does not implement action "reset"`, at the
   `fake` block. Objects the programmer wrote keep their messages.
+- Documentation: the channel API in the Okkama Book (RU; the EN Book had no
+  section and now has one), spec §18.2, the channel guide and the LLM
+  context described `Sender<T>`/`Receiver<T>`, `sender()`/`receiver()`,
+  `receive()` and a positive-only capacity (#341). They now describe
+  `Sending<T>`/`Receiving<T>`, `sending()`/`receiving()`, `item()`, the
+  capacity-0 rendezvous and `InvalidChannelCapacity` for a negative
+  capacity. Five executable examples in `okkama-rs/examples/channels`
+  (buffered, rendezvous, closing, lifecycle, state owner) are checked against
+  their `.expected` output on the IR engine, Sparrow and the JVM.
 - Async: on the IR engine and the JVM, waking a task ran it inside the
   waking call (#340). `Event.set()`, `cancel()`, a channel handoff or a
   returned permit resumed the woken task at once, so another task's code ran

@@ -1,0 +1,40 @@
+module examples/channels/lifecycle v1.0.0;
+
+// A negative capacity is refused. A cancelled receive leaves the queue of
+// waiters, so the next value goes to the next receiver and is not lost.
+import "io/stdout" take Stdout;
+import "async/channel" take Channel, Sending, Receiving, InvalidChannelCapacity;
+
+object Reader {
+    has input is Receiving<int>;
+
+    Reader(:input);
+
+    async run() is int {
+        await input.item();
+    }
+}
+
+async main() is int {
+    let invalid = try {
+        let refused is Channel<int> = Channel(capacity: -1);
+        "accepted";
+    }
+    catch e is InvalidChannelCapacity {
+        "refused";
+    };
+    Stdout().writeln("capacity -1: " + invalid);
+    let channel is Channel<int> = Channel(capacity: 1);
+    let early = spawn Reader(input: channel.receiving()).run();
+    early.cancel();
+    let outcome = try {
+        await early;
+    }
+    catch e is Cancelled {
+        -1;
+    };
+    await channel.sending().send(42);
+    let late = await Reader(input: channel.receiving()).run();
+    Stdout().writeln("cancelled reader: " + outcome.string() + ", next reader: " + late.string());
+    0;
+}

@@ -330,6 +330,28 @@ fn skipped_and_filtered_tests_report_alike_on_every_engine() {
     assert!(stderr(&output).contains("--filter selects tests: use it with -t"));
 }
 
+/// The channel examples the channel guide shows (#341) print what their
+/// `.expected` files say on the IR engine and on Sparrow.
+#[test]
+fn channel_examples_print_their_expected_output() {
+    let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/channels");
+    let mut checked = 0;
+    for entry in std::fs::read_dir(&directory).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|extension| extension != "ok") {
+            continue;
+        }
+        let expected = std::fs::read_to_string(path.with_extension("expected")).unwrap();
+        for engine in ["ir", "sparrow"] {
+            let output = run(&["run", "--engine", engine, "--timeout", "30", path.to_str().unwrap()]);
+            assert_eq!(output.status.code(), Some(0), "{} {engine}: {}", path.display(), stderr(&output));
+            assert_eq!(stdout(&output), expected, "{} {engine}", path.display());
+        }
+        checked += 1;
+    }
+    assert_eq!(checked, 5);
+}
+
 #[test]
 fn uncaught_failure_prints_place_and_call_stack() {
     let source = b"module app v1.0.0;\nobject Box {\n    Box();\n    at(i is int) is int { [1, 2][i]; }\n}\nmain() is int {\n    Box().at(5);\n}\n";
