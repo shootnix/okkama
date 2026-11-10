@@ -1379,7 +1379,11 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
         I::MapBuilderFinish { builder, .. } => {
             let map = runtime.heap.payload_mut::<MapValue>(value(builder)).expect("map builder");
             let owned = map.owned.replace(Some(0));
-            let finished = MapValue { key: map.key, value: map.value, entries: std::mem::take(&mut map.entries), owned: owned.into() };
+            let mut entries = std::mem::take(&mut map.entries);
+            // Keys put out of order leave a persistent map's leaves part
+            // empty: a finished map is read more than it is written.
+            entries.pack();
+            let finished = MapValue { key: map.key, value: map.value, entries, owned: owned.into() };
             // The entries were charged as the builder took them.
             Ok(runtime.heap.allocate_payload_moved(Box::new(finished)))
         }

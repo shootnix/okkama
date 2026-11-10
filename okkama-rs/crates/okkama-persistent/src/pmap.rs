@@ -10,7 +10,7 @@
 //!
 //! The memory of the nodes is counted per thread ([`memory`]): what was
 //! allocated in all and what is live now, exactly, whatever the nodes are
-//! shared by, with what the keys of a leaf own besides ([`Weigh`]). An
+//! shared by, with what the keys of a leaf own besides ([`NodeKey`]). An
 //! embedding collector can use it instead of estimating what each version
 //! owns, and trace the versions it holds visiting each shared node once
 //! ([`PMap::for_each_unvisited`]).
@@ -30,37 +30,77 @@ const MIN: usize = MAX / 4;
 const BULK: usize = MAX * 3 / 4;
 
 thread_local! {
-    static ALLOCATED: Cell<usize> = const { Cell::new(0) };
-    static LIVE: Cell<usize> = const { Cell::new(0) };
+    /// Bytes allocated in all and live now: one cell, one lookup per count.
+    static MEMORY: Cell<(usize, usize)> = const { Cell::new((0, 0)) };
 }
 
 /// Bytes of map nodes allocated by this thread since it started, and live now.
 pub fn memory() -> (usize, usize) {
-    (ALLOCATED.with(Cell::get), LIVE.with(Cell::get))
+    MEMORY.with(Cell::get)
 }
 
 fn grew(bytes: usize) {
-    ALLOCATED.with(|a| a.set(a.get() + bytes));
-    LIVE.with(|l| l.set(l.get() + bytes));
+    MEMORY.with(|m| {
+        let (allocated, live) = m.get();
+        m.set((allocated + bytes, live + bytes));
+    });
 }
 
 fn shrank(bytes: usize) {
-    LIVE.with(|l| l.set(l.get().saturating_sub(bytes)));
+    MEMORY.with(|m| {
+        let (allocated, live) = m.get();
+        m.set((allocated, live.saturating_sub(bytes)));
+    });
 }
 
-/// Memory a key owns outside the node that holds it (a text, a big
-/// number), counted with the node. The keys of branches are copies of keys
-/// in leaves and are not counted again.
-pub trait Weigh {
+/// What a node asks of its keys besides their order.
+pub trait NodeKey: Ord + Sized {
+    /// Memory the key owns outside the node that holds it (a text, a big
+    /// number), counted with the node. The keys of branches are copies of
+    /// keys in leaves and are not counted again.
     fn weight(&self) -> usize {
         0
     }
+
+    /// The index of the first of the sorted `keys` not below `key`, and
+    /// whether it is equal: [`seek_scan`], or [`seek_three_way`] for keys
+    /// whose comparison may be a call.
+    #[inline]
+    fn seek(keys: &[Self], key: &Self) -> (usize, bool) {
+        seek_scan(keys, key)
+    }
 }
 
-macro_rules! weightless {
-    ($($ty:ty)*) => {$(impl Weigh for $ty {})*};
+macro_rules! plain {
+    ($($ty:ty)*) => {$(impl NodeKey for $ty {})*};
 }
-weightless!(u8 u16 u32 u64 usize i8 i16 i32 i64 isize char bool);
+plain!(u8 u16 u32 u64 usize i8 i16 i32 i64 isize char bool);
+
+/// A scan from the left for the first key not below `key`, as in the
+/// standard B-tree, then whether it is equal. The keys of a node are
+/// adjacent, so the loads of a scan go out together where a halving would
+/// wait on each one: the search for keys that compare in place (numbers).
+#[inline]
+pub fn seek_scan<K: Ord>(keys: &[K], key: &K) -> (usize, bool) {
+    let at = keys.iter().position(|k| k >= key).unwrap_or(keys.len());
+    (at, at < keys.len() && keys[at] == *key)
+}
+
+/// A scan from the left comparing each key once, three ways: the search
+/// for keys whose comparison is a call (a text with the same first bytes
+/// as the key), which the scan's `>=` and the check of the one it stopped at
+/// would make twice.
+#[inline]
+pub fn seek_three_way<K: Ord>(keys: &[K], key: &K) -> (usize, bool) {
+    for (i, k) in keys.iter().enumerate() {
+        match k.cmp(key) {
+            std::cmp::Ordering::Less => {}
+            order => return (i, order.is_eq()),
+        }
+    }
+    (keys.len(), false)
+}
+
 
 #[derive(Debug)]
 enum Node<K, V> {
@@ -84,10 +124,10 @@ impl<K, V> Node<K, V> {
     /// what the keys of a leaf own.
     fn bytes(&self) -> usize
     where
-        K: Weigh,
+        K: NodeKey,
     {
         let keys = match self {
-            Node::Leaf { keys, .. } => keys.iter().map(Weigh::weight).sum(),
+            Node::Leaf { keys, .. } => keys.iter().map(NodeKey::weight).sum(),
             Node::Branch { .. } => 0,
         };
         std::mem::size_of::<Counted<K, V>>() + 2 * std::mem::size_of::<usize>() + keys
@@ -104,11 +144,27 @@ impl<K, V> Node<K, V> {
     }
 }
 
-impl<K: Weigh, V> Counted<K, V> {
+impl<K: NodeKey, V> Counted<K, V> {
     fn new(node: Node<K, V>) -> Rc<Self> {
         let bytes = node.bytes();
         grew(bytes);
         Rc::new(Counted { node, bytes, pass: Cell::new(0) })
+    }
+
+    /// Count what a change in place moved.
+    fn reweigh(&mut self, change: Reweigh) {
+        match change {
+            Reweigh::Same | Reweigh::Gained(0) | Reweigh::Lost(0) => {}
+            Reweigh::Gained(bytes) => {
+                grew(bytes);
+                self.bytes += bytes;
+            }
+            Reweigh::Lost(bytes) => {
+                shrank(bytes);
+                self.bytes -= bytes;
+            }
+            Reweigh::Recount => self.recount(),
+        }
     }
 
     /// Count the node again after a change in place.
@@ -116,10 +172,22 @@ impl<K: Weigh, V> Counted<K, V> {
         let bytes = self.node.bytes();
         if bytes > self.bytes {
             grew(bytes - self.bytes);
-        } else {
+        } else if bytes < self.bytes {
             shrank(self.bytes - bytes);
         }
         self.bytes = bytes;
+    }
+
+    /// A leaf of one entry, made in its `Rc`.
+    fn single(key: K, value: V) -> Rc<Self> {
+        let mut rc = Rc::new(Counted { node: Node::Leaf { keys: Slots::new(), vals: Slots::new() }, bytes: 0, pass: Cell::new(0) });
+        let counted = Rc::get_mut(&mut rc).expect("a new node");
+        if let Node::Leaf { keys, vals } = &mut counted.node {
+            keys.push(key);
+            vals.push(value);
+        }
+        counted.recount();
+        rc
     }
 }
 
@@ -140,34 +208,41 @@ impl<K, V> Drop for Counted<K, V> {
     }
 }
 
-/// Change the node behind `rc`, copying it first when another version holds
-/// it.
-fn edit<K: Clone + Weigh, V: Clone, R>(rc: &mut Rc<Counted<K, V>>, change: impl FnOnce(&mut Node<K, V>) -> R) -> R {
-    let counted = Rc::make_mut(rc);
-    let result = change(&mut counted.node);
-    counted.recount();
-    result
+/// How a change in place moved what a node is counted for: the weight of
+/// one key it took or let go, or anything ([`Reweigh::Recount`], all its
+/// keys again).
+enum Reweigh {
+    Same,
+    Gained(usize),
+    Lost(usize),
+    Recount,
 }
 
-/// How many of the sorted `keys` are at most `key`: a scan from the left,
-/// as in the standard B-tree. The keys of a node are adjacent, so the loads
-/// of a scan go out together where a halving would wait on each one.
-#[inline]
-fn count_le<K: Ord>(keys: &[K], key: &K) -> usize {
-    keys.iter().position(|k| k > key).unwrap_or(keys.len())
+/// Change the node behind `rc`, copying it first when another version holds
+/// it, and count what the change moved.
+fn edit<K: NodeKey + Clone, V: Clone, R>(rc: &mut Rc<Counted<K, V>>, change: impl FnOnce(&mut Node<K, V>) -> (R, Reweigh)) -> R {
+    let counted = Rc::make_mut(rc);
+    let (result, moved) = change(&mut counted.node);
+    counted.reweigh(moved);
+    result
 }
 
 /// The child of a branch whose range holds `key`, if any.
 #[inline]
-fn child_of<K: Ord>(keys: &[K], key: &K) -> Option<usize> {
-    count_le(keys, key).checked_sub(1)
+fn child_of<K: NodeKey>(keys: &[K], key: &K) -> Option<usize> {
+    match K::seek(keys, key) {
+        (i, true) => Some(i),
+        (i, false) => i.checked_sub(1),
+    }
 }
 
 /// The index of `key` in sorted `keys`, or where it would go.
 #[inline]
-fn find<K: Ord>(keys: &[K], key: &K) -> Result<usize, usize> {
-    let at = count_le(keys, key);
-    if at > 0 && keys[at - 1] == *key { Ok(at - 1) } else { Err(at) }
+fn find<K: NodeKey>(keys: &[K], key: &K) -> Result<usize, usize> {
+    match K::seek(keys, key) {
+        (i, true) => Ok(i),
+        (i, false) => Err(i),
+    }
 }
 
 /// An immutable ordered map version; cloning it is O(1).
@@ -183,13 +258,13 @@ impl<K, V> Clone for PMap<K, V> {
     }
 }
 
-impl<K: Ord + Clone + Weigh, V: Clone> Default for PMap<K, V> {
+impl<K: NodeKey + Clone, V: Clone> Default for PMap<K, V> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<K: Ord + Clone + Weigh, V: Clone> PMap<K, V> {
+impl<K: NodeKey + Clone, V: Clone> PMap<K, V> {
     pub fn new() -> Self {
         Self { root: None, len: 0 }
     }
@@ -235,6 +310,22 @@ impl<K: Ord + Clone + Weigh, V: Clone> PMap<K, V> {
         Self { root: level.pop().map(|(_, node)| node), len }
     }
 
+    /// The map built anew as a bulk build fills it, when its leaves are
+    /// emptier than that on average (keys that arrived out of order leave
+    /// them about two thirds full): fewer nodes for every later lookup to
+    /// pass. `None` when it is as full already.
+    pub fn packed(&self) -> Option<Self> {
+        fn leaves<K, V>(node: &Node<K, V>) -> usize {
+            match node {
+                Node::Leaf { .. } => 1,
+                Node::Branch { kids, .. } => kids.iter().map(|kid| leaves(&kid.node)).sum(),
+            }
+        }
+        let root = self.root.as_ref()?;
+        (leaves(&root.node) > self.len.div_ceil(BULK))
+            .then(|| Self::from_sorted(self.iter().map(|(k, v)| (k.clone(), v.clone())).collect()))
+    }
+
     /// The stored key equal to `key` and its value.
     pub fn get_key_value(&self, key: &K) -> Option<(&K, &V)> {
         let mut node = &self.root.as_ref()?.node;
@@ -269,7 +360,7 @@ impl<K: Ord + Clone + Weigh, V: Clone> PMap<K, V> {
     /// true when the key was new.
     pub fn upsert(&mut self, key: K, make: impl FnOnce() -> V, modify: impl FnOnce(&mut V)) -> bool {
         let Some(root) = self.root.as_mut() else {
-            self.root = Some(Counted::new(Node::Leaf { keys: [key].into_iter().collect(), vals: [make()].into_iter().collect() }));
+            self.root = Some(Counted::single(key, make()));
             self.len = 1;
             return true;
         };
@@ -345,7 +436,7 @@ impl<K: Ord + Clone + Weigh, V: Clone> PMap<K, V> {
     /// Depth, and whether every node is within bounds, sorted, and labelled
     /// with its smallest key (for tests).
     pub fn check(&self) -> Result<usize, String> {
-        fn walk<K: Ord + Clone + Weigh, V: Clone>(node: &Node<K, V>, root: bool) -> Result<(usize, usize), String> {
+        fn walk<K: NodeKey + Clone, V: Clone>(node: &Node<K, V>, root: bool) -> Result<(usize, usize), String> {
             if node.len() > MAX || (!root && node.len() == 0) {
                 return Err(format!("a node of {} entries", node.len()));
             }
@@ -392,7 +483,7 @@ impl<K: Ord + Clone + Weigh, V: Clone> PMap<K, V> {
 
 type Split<K, V> = Option<(K, Rc<Counted<K, V>>)>;
 
-fn upsert_in<K: Ord + Clone + Weigh, V: Clone>(
+fn upsert_in<K: NodeKey + Clone, V: Clone>(
     rc: &mut Rc<Counted<K, V>>,
     key: K,
     make: impl FnOnce() -> V,
@@ -402,12 +493,15 @@ fn upsert_in<K: Ord + Clone + Weigh, V: Clone>(
         Node::Leaf { keys, vals } => match find(keys, &key) {
             Ok(i) => {
                 modify(&mut vals[i]);
-                (false, None)
+                ((false, None), Reweigh::Same)
             }
             Err(i) => {
+                let weight = key.weight();
                 keys.insert(i, key);
                 vals.insert(i, make());
-                (true, split_leaf(keys, vals, i))
+                let split = split_leaf(keys, vals, i);
+                let moved = if split.is_some() { Reweigh::Recount } else { Reweigh::Gained(weight) };
+                ((true, split), moved)
             }
         },
         Node::Branch { keys, kids } => {
@@ -420,7 +514,8 @@ fn upsert_in<K: Ord + Clone + Weigh, V: Clone>(
                 keys.insert(i + 1, right_key);
                 kids.insert(i + 1, right);
             }
-            (fresh, split_branch(keys, kids, i + 1))
+            // A branch is counted for its slots only.
+            ((fresh, split_branch(keys, kids, i + 1)), Reweigh::Same)
         }
     })
 }
@@ -438,7 +533,7 @@ fn split_point(len: usize, inserted: usize) -> usize {
     }
 }
 
-fn split_leaf<K: Clone + Weigh, V: Clone>(keys: &mut Slots<K, CAP>, vals: &mut Slots<V, CAP>, inserted: usize) -> Split<K, V> {
+fn split_leaf<K: NodeKey + Clone, V: Clone>(keys: &mut Slots<K, CAP>, vals: &mut Slots<V, CAP>, inserted: usize) -> Split<K, V> {
     (keys.len() > MAX).then(|| {
         let at = split_point(keys.len(), inserted);
         let (right_keys, right_vals) = (keys.split_off(at), vals.split_off(at));
@@ -446,7 +541,7 @@ fn split_leaf<K: Clone + Weigh, V: Clone>(keys: &mut Slots<K, CAP>, vals: &mut S
     })
 }
 
-fn split_branch<K: Clone + Weigh, V: Clone>(
+fn split_branch<K: NodeKey + Clone, V: Clone>(
     keys: &mut Slots<K, CAP>,
     kids: &mut Slots<Rc<Counted<K, V>>, CAP>,
     inserted: usize,
@@ -458,19 +553,27 @@ fn split_branch<K: Clone + Weigh, V: Clone>(
     })
 }
 
-fn remove_in<K: Ord + Clone + Weigh, V: Clone>(rc: &mut Rc<Counted<K, V>>, key: &K) -> Option<(K, V)> {
+fn remove_in<K: NodeKey + Clone, V: Clone>(rc: &mut Rc<Counted<K, V>>, key: &K) -> Option<(K, V)> {
     // Find before copying: a missing key changes no node.
     if !contains_in(&rc.node, key) {
         return None;
     }
     edit(rc, |node| match node {
-        Node::Leaf { keys, vals } => {
-            let i = find(keys, key).ok()?;
-            Some((keys.remove(i), vals.remove(i)))
-        }
+        Node::Leaf { keys, vals } => match find(keys, key) {
+            Ok(i) => {
+                let removed = (keys.remove(i), vals.remove(i));
+                let weight = removed.0.weight();
+                (Some(removed), Reweigh::Lost(weight))
+            }
+            Err(_) => (None, Reweigh::Same),
+        },
         Node::Branch { keys, kids } => {
-            let i = child_of(keys, key)?;
-            let removed = remove_in(&mut kids[i], key)?;
+            let Some(i) = child_of(keys, key) else {
+                return (None, Reweigh::Same);
+            };
+            let Some(removed) = remove_in(&mut kids[i], key) else {
+                return (None, Reweigh::Same);
+            };
             if kids[i].node.len() == 0 {
                 keys.remove(i);
                 kids.remove(i);
@@ -480,12 +583,12 @@ fn remove_in<K: Ord + Clone + Weigh, V: Clone>(rc: &mut Rc<Counted<K, V>>, key: 
                     rebalance(keys, kids, i);
                 }
             }
-            Some(removed)
+            (Some(removed), Reweigh::Same)
         }
     })
 }
 
-fn contains_in<K: Ord, V>(mut node: &Node<K, V>, key: &K) -> bool {
+fn contains_in<K: NodeKey, V>(mut node: &Node<K, V>, key: &K) -> bool {
     loop {
         match node {
             Node::Leaf { keys, .. } => return find(keys, key).is_ok(),
@@ -499,7 +602,7 @@ fn contains_in<K: Ord, V>(mut node: &Node<K, V>, key: &K) -> bool {
 
 /// Child `i` fell below [`MIN`]: merge it with a neighbour, or even out
 /// their entries when together they would not fit one node.
-fn rebalance<K: Ord + Clone + Weigh, V: Clone>(keys: &mut Slots<K, CAP>, kids: &mut Slots<Rc<Counted<K, V>>, CAP>, i: usize) {
+fn rebalance<K: NodeKey + Clone, V: Clone>(keys: &mut Slots<K, CAP>, kids: &mut Slots<Rc<Counted<K, V>>, CAP>, i: usize) {
     let (a, b) = if i + 1 < kids.len() { (i, i + 1) } else { (i - 1, i) };
     let total = kids[a].node.len() + kids[b].node.len();
     if total <= MAX {
@@ -509,10 +612,12 @@ fn rebalance<K: Ord + Clone + Weigh, V: Clone>(keys: &mut Slots<K, CAP>, kids: &
             (Node::Leaf { keys: lk, vals: lv }, Node::Leaf { keys: rk, vals: rv }) => {
                 lk.extend_from_slice(rk);
                 lv.extend_from_slice(rv);
+                ((), Reweigh::Recount)
             }
             (Node::Branch { keys: lk, kids: lc }, Node::Branch { keys: rk, kids: rc }) => {
                 lk.extend_from_slice(rk);
                 lc.extend_from_slice(rc);
+                ((), Reweigh::Same)
             }
             _ => unreachable!("siblings at one depth"),
         });
@@ -697,7 +802,7 @@ mod tests {
                 self.0.cmp(&other.0)
             }
         }
-        impl Weigh for Tagged {}
+        impl NodeKey for Tagged {}
         let mut map = PMap::new();
         map.insert(Tagged(1, "left"), 1);
         let fresh = map.upsert(Tagged(1, "right"), || 9, |v| *v = 2);
@@ -726,7 +831,7 @@ mod tests {
 
     #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
     struct Text(String);
-    impl Weigh for Text {
+    impl NodeKey for Text {
         fn weight(&self) -> usize {
             self.0.len()
         }

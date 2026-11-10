@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use okkama_persistent::PMap;
-use okkama_persistent::pmap::Weigh;
+use okkama_persistent::pmap::NodeKey;
 
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
@@ -45,7 +45,7 @@ impl PartialEq for Key {
     }
 }
 impl Eq for Key {}
-impl Weigh for Key {}
+impl NodeKey for Key {}
 
 fn spot(x: &mut u64, n: usize) -> u64 {
     *x ^= *x << 13;
