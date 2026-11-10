@@ -242,12 +242,12 @@ fn construction_and_access_errors_use_okkama_messages() {
     for (body, expected) in [
         (
             "C(1, 2).value();",
-            "No constructor of \"C\" accepts (int, int)",
+            "No constructor of \"C\" accepts (int, int)\nAvailable: C(); C(n is int)",
         ),
         ("C().missing();", "Object \"C\" has no action \"missing\""),
         (
             "C().add(true);",
-            "No action \"add\" on object \"C\" accepts (bool)",
+            "No action \"add\" on object \"C\" accepts (bool)\nAvailable: add(value is int); add(value is string)",
         ),
         (
             "C().helper();",

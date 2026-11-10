@@ -326,6 +326,9 @@ pub struct Registry<'a> {
     pending_keys: Vec<(usize, Ty, Span)>,
     /// Specializations whose key parameters are checked after the bodies (#242).
     pub key_uses: Vec<(usize, ObjectId, Vec<Ty>, Span)>,
+    /// Names two or more nominal declarations of the program share: their
+    /// types are qualified in diagnostics (#338).
+    shared_names: HashSet<String>,
 }
 
 /// Объекты std без конструктора: их создаёт только рантайм.
@@ -393,14 +396,22 @@ impl<'a> Registry<'a> {
             pending_bounds: Vec::new(),
             pending_keys: Vec::new(),
             key_uses: Vec::new(),
+            shared_names: HashSet::new(),
         };
         registry.entry_module = registry.root();
         registry.add_system();
+        let system = (
+            registry.objects.len(),
+            registry.roles.len(),
+            registry.enums.len(),
+            registry.handles.len(),
+        );
         let count = registry.modules.len();
         for module in 0..count {
             registry.current = module;
             registry.register_names(module);
         }
+        registry.shared_names = registry.shared_names(system);
         registry.share_root_names();
         for module in 0..count {
             registry.current = module;
@@ -3062,7 +3073,78 @@ impl<'a> Registry<'a> {
 
     // ----- имена типов для сообщений -----
 
+    /// Names that two or more nominal declarations of the program share; the
+    /// system's own declarations, before `system`, are not counted.
+    fn shared_names(&self, system: (usize, usize, usize, usize)) -> HashSet<String> {
+        let (objects, roles, enums, handles) = system;
+        let names = self.objects[objects..]
+            .iter()
+            .map(|object| object.name.as_str())
+            .chain(self.roles[roles..].iter().map(|role| role.name.as_str()))
+            .chain(self.enums[enums..].iter().map(|info| info.name.as_str()))
+            .chain(self.handles[handles..].iter().map(|handle| handle.name.as_str()));
+        let mut seen: HashMap<&str, usize> = HashMap::new();
+        for name in names {
+            *seen.entry(name).or_default() += 1;
+        }
+        seen.into_iter()
+            .filter(|(_, count)| *count > 1)
+            .map(|(name, _)| name.to_string())
+            .collect()
+    }
+
+    /// The name of `ty` in a diagnostic of the module being checked.
     pub fn type_name(&self, ty: &Ty) -> String {
+        self.type_name_in(self.current, ty)
+    }
+
+    /// The name of `ty` in a diagnostic of module `module` (#338): a nominal
+    /// type whose name another declaration of the program also has is
+    /// qualified as that module can name it — `shop.Money` through a
+    /// namespace, `Money` when that is the `Money` in its scope, otherwise
+    /// `Money from "bank/money"`. Other names stay short.
+    pub fn type_name_in(&self, module: usize, ty: &Ty) -> String {
+        self.render(ty, Some(module))
+    }
+
+    /// The source name of `ty`, never qualified: names of instances in the IR
+    /// and texts the program reports at run time.
+    pub fn plain_type_name(&self, ty: &Ty) -> String {
+        self.render(ty, None)
+    }
+
+    /// The name of a nominal declaration `of`, declared in `declared`, as
+    /// module `context` names it.
+    fn nominal(&self, name: &str, of: TypeRef, declared: usize, context: Option<usize>) -> String {
+        let Some(context) = context.filter(|_| self.shared_names.contains(name)) else {
+            return name.to_string();
+        };
+        let module = &self.modules[context];
+        if module.scope.types.get(name) == Some(&of) {
+            return name.to_string();
+        }
+        let visible = !self.modules[declared].hidden.contains(name);
+        let alias = module
+            .namespaces
+            .iter()
+            .filter(|(_, namespace)| {
+                namespace.module == declared
+                    && namespace
+                        .only
+                        .as_ref()
+                        .is_none_or(|only| only.iter().any(|taken| taken == name))
+            })
+            .map(|(alias, _)| alias)
+            .filter(|_| visible)
+            .min();
+        match alias {
+            Some(alias) => format!("{alias}.{name}"),
+            None => format!("{name} from \"{}\"", self.modules[declared].name),
+        }
+    }
+
+    fn render(&self, ty: &Ty, context: Option<usize>) -> String {
+        let name = |ty: &Ty| self.render(ty, context);
         match ty {
             Ty::Int => "int".to_string(),
             Ty::Bool => "bool".to_string(),
@@ -3074,40 +3156,40 @@ impl<'a> Registry<'a> {
             Ty::Any => "any".to_string(),
             Ty::Range => "range".to_string(),
             Ty::Array(element) if **element == Ty::Never => "[]".to_string(),
-            Ty::Array(element) => format!("@{}", self.type_name(element)),
+            Ty::Array(element) => format!("@{}", name(element)),
             Ty::Map(key, _) if **key == Ty::Never => "[:]".to_string(),
-            Ty::Map(key, value) => format!("%{}:{}", self.type_name(key), self.type_name(value)),
-            Ty::Object(id, args) => self.applied(&self.objects[id.0].name, args),
-            Ty::Role(id, args) => self.applied(&self.roles[id.0].name, args),
-            Ty::Variant(id, args) => {
-                let name = &self.enums[id.0].name;
-                if args.is_empty() {
-                    name.clone()
-                } else {
-                    format!(
-                        "{}<{}>",
-                        name,
-                        args.iter()
-                            .map(|t| self.type_name(t))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )
-                }
+            Ty::Map(key, value) => format!("%{}:{}", name(key), name(value)),
+            Ty::Object(id, args) => self.applied(&self.object_name(*id, context), args, context),
+            Ty::Role(id, args) => {
+                let info = &self.roles[id.0];
+                let role = self.nominal(&info.name, TypeRef::Role(*id), info.module, context);
+                self.applied(&role, args, context)
             }
-            Ty::Enum(id) => self.enums[id.0].name.clone(),
-            Ty::Handle(id) => self.handles[id.0].name.clone(),
-            Ty::Successor(inner) => format!("^{}", self.type_name(inner)),
+            Ty::Variant(id, args) => {
+                let info = &self.enums[id.0];
+                let variant = self.nominal(&info.name, TypeRef::Enum(*id), info.module, context);
+                self.applied(&variant, args, context)
+            }
+            Ty::Enum(id) => {
+                let info = &self.enums[id.0];
+                self.nominal(&info.name, TypeRef::Enum(*id), info.module, context)
+            }
+            Ty::Handle(id) => {
+                let info = &self.handles[id.0];
+                self.nominal(&info.name, TypeRef::Handle(*id), info.module, context)
+            }
+            Ty::Successor(inner) => format!("^{}", name(inner)),
             Ty::Param(param) => self.params[param.0].name.clone(),
             Ty::Action(action) => {
                 let params: Vec<String> = action
                     .params
                     .iter()
-                    .map(|param| self.type_name(param))
+                    .map(&name)
                     .collect();
                 let result = action
                     .result
                     .as_ref()
-                    .map_or_else(|| "void".to_string(), |result| self.type_name(result));
+                    .map_or_else(|| "void".to_string(), &name);
                 format!(
                     "{}({}) is {result}",
                     if action.is_async { "async " } else { "" },
@@ -3115,24 +3197,29 @@ impl<'a> Registry<'a> {
                 )
             }
             Ty::Future(None) => "Future<void>".to_string(),
-            Ty::Future(Some(inner)) => format!("Future<{}>", self.type_name(inner)),
+            Ty::Future(Some(inner)) => format!("Future<{}>", name(inner)),
             Ty::Cap(id, args, cap) => format!(
                 "{}::{}",
-                self.applied(&self.objects[id.0].name, args),
+                self.applied(&self.object_name(*id, context), args, context),
                 self.objects[id.0].caps[*cap].name
             ),
-            Ty::Varargs(inner) => format!("...{}", self.type_name(inner)),
+            Ty::Varargs(inner) => format!("...{}", name(inner)),
             Ty::Never => "never".to_string(),
             Ty::Test => "test".to_string(),
             Ty::Error => "<error>".to_string(),
         }
     }
 
-    fn applied(&self, name: &str, args: &[Ty]) -> String {
+    fn object_name(&self, id: ObjectId, context: Option<usize>) -> String {
+        let info = &self.objects[id.0];
+        self.nominal(&info.name, TypeRef::Object(id), info.module, context)
+    }
+
+    fn applied(&self, name: &str, args: &[Ty], context: Option<usize>) -> String {
         if args.is_empty() {
             return name.to_string();
         }
-        let args: Vec<String> = args.iter().map(|arg| self.type_name(arg)).collect();
+        let args: Vec<String> = args.iter().map(|arg| self.render(arg, context)).collect();
         format!("{name}<{}>", args.join(", "))
     }
 
@@ -3140,6 +3227,13 @@ impl<'a> Registry<'a> {
         result
             .as_ref()
             .map_or_else(|| "void".to_string(), |ty| self.type_name(ty))
+    }
+
+    /// `result_name`, never qualified (the editor's hover and completion).
+    pub fn plain_result_name(&self, result: &Option<Ty>) -> String {
+        result
+            .as_ref()
+            .map_or_else(|| "void".to_string(), |ty| self.plain_type_name(ty))
     }
 }
 

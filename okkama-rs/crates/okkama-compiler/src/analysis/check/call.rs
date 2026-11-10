@@ -329,6 +329,42 @@ impl Checker<'_, '_> {
 
     /// `Ambiguous call of … with (int, int): joined(int, any) and
     /// joined(any, int) fit equally well` (#273).
+    /// A candidate as declared (#338): `count(amount is shop.Money)`,
+    /// `greet(mark is string = …)`, `sum(items is ...int)`.
+    pub(super) fn signature(&self, name: &str, shape: &Shape) -> String {
+        let params: Vec<String> = shape
+            .params
+            .iter()
+            .enumerate()
+            .map(|(index, (param, ty))| {
+                let ty = match ty {
+                    Ty::Array(element) if shape.variadic && index + 1 == shape.params.len() => {
+                        format!("...{}", self.type_name(element))
+                    }
+                    _ => self.type_name(ty),
+                };
+                let default = if shape.has_default(index) { " = …" } else { "" };
+                format!("{param} is {ty}{default}")
+            })
+            .collect();
+        format!("{name}({})", params.join(", "))
+    }
+
+    /// The candidates a call fits none of, as a line under the error: up to
+    /// four in declaration order, then how many more.
+    pub(super) fn available(&self, name: &str, shapes: &[&Shape]) -> String {
+        const SHOWN: usize = 4;
+        let mut list: Vec<String> = shapes
+            .iter()
+            .take(SHOWN)
+            .map(|shape| self.signature(name, shape))
+            .collect();
+        if shapes.len() > SHOWN {
+            list.push(format!("and {} more", shapes.len() - SHOWN));
+        }
+        format!("\nAvailable: {}", list.join("; "))
+    }
+
     pub(super) fn ambiguity(&self, what: String, call: &CallArgs, name: &str, shapes: Vec<&Shape>) -> String {
         let candidates: Vec<String> = shapes
             .iter()
@@ -1201,9 +1237,12 @@ impl Checker<'_, '_> {
         let ctor = match chosen {
             Ok(ctor) => ctor,
             Err(false) => {
+                let declared = &self.reg.objects[object.0].name;
+                let candidates: Vec<&Shape> = shapes.iter().map(|(shape, ..)| shape).collect();
                 let message = format!(
-                    "No constructor of \"{name}\" accepts ({})",
-                    self.type_list(&call)
+                    "No constructor of \"{name}\" accepts ({}){}",
+                    self.type_list(&call),
+                    self.available(declared, &candidates)
                 );
                 self.error(span, message);
                 return Self::poisoned(span);
@@ -1456,9 +1495,10 @@ impl Checker<'_, '_> {
                     )
                 } else {
                     format!(
-                        "No action \"{}\" on object \"{object_name}\" accepts ({})",
+                        "No action \"{}\" on object \"{object_name}\" accepts ({}){}",
                         name.text,
-                        self.type_list(&call)
+                        self.type_list(&call),
+                        self.available(&name.text, &plain.iter().collect::<Vec<_>>())
                     )
                 };
                 self.error(span, message);
@@ -1536,9 +1576,10 @@ impl Checker<'_, '_> {
                     )
                 } else {
                     format!(
-                        "No action \"{}\" on role \"{role_name}\" accepts ({})",
+                        "No action \"{}\" on role \"{role_name}\" accepts ({}){}",
                         name.text,
-                        self.type_list(&call)
+                        self.type_list(&call),
+                        self.available(&name.text, &plain.iter().collect::<Vec<_>>())
                     )
                 };
                 self.error(span, message);

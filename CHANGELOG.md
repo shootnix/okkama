@@ -77,6 +77,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   **Migration:** move a package's modules into `src/`, and its importers'
   paths from `pkg/<name>/x` to `pkg/<name>/src/x`.
 
+### Fixed
+
+- Diagnostics tell apart two types of one name (#338). A nominal type whose
+  name another declaration of the program also has is written as the module
+  of the diagnostic can name it: `shop.Money` through its namespace, `Money`
+  when that is the `Money` in scope, otherwise `Money from "bank/money"`;
+  inside composite types too (`@bank.Money`, `Box<shop.Money>`,
+  `(shop.Money) is int`). Other names stay short. A call or construction that
+  fits no candidate lists the candidates: `No action "count" on object "Till"
+  accepts (bank.Money)` is followed by `Available: count(amount is
+  shop.Money)`, up to four of them. Names in the IR and messages at run time
+  do not change.
+
+
 ## [0.5.1] — 2026-11-10
 
 0.5.1 makes Sparrow and the JVM faster where 0.5.0 left them slowest, and

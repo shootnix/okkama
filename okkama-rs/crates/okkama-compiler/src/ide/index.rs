@@ -153,7 +153,7 @@ impl<'r, 'a> Builder<'r, 'a> {
     }
 
     fn ty(&self, ty: &Ty) -> String {
-        self.registry.type_name(ty)
+        self.registry.plain_type_name(ty)
     }
 
     /// Параметры подписи `name is T`; variadic-хвост — как в исходнике, `...T`.
@@ -210,9 +210,9 @@ impl<'r, 'a> Builder<'r, 'a> {
         let found = &info.methods[method];
         let params = self.params(&found.params, found.variadic);
         let result = if found.successor {
-            format!("^{}", self.registry.result_name(&found.result))
+            format!("^{}", self.registry.plain_result_name(&found.result))
         } else {
-            self.registry.result_name(&found.result)
+            self.registry.plain_result_name(&found.result)
         };
         let doc = found
             .decl
@@ -286,7 +286,7 @@ impl<'r, 'a> Builder<'r, 'a> {
                         "{}({}) is {}",
                         if method.is_async { "async " } else { "" },
                         params.join(", "),
-                        self.registry.result_name(&method.result)
+                        self.registry.plain_result_name(&method.result)
                     ),
                     doc,
                 )
@@ -883,9 +883,9 @@ impl<'r, 'a> Builder<'r, 'a> {
         let found = &info.methods[method];
         let params = self.params(&found.params, found.variadic);
         let result = if found.successor {
-            format!("^{}", self.registry.result_name(&found.result))
+            format!("^{}", self.registry.plain_result_name(&found.result))
         } else {
-            self.registry.result_name(&found.result)
+            self.registry.plain_result_name(&found.result)
         };
         let signature = format!(
             "{}{}{}.{}({}) is {result}",
@@ -931,7 +931,7 @@ impl<'r, 'a> Builder<'r, 'a> {
             )),
             found.name,
             params.join(", "),
-            self.registry.result_name(&found.result)
+            self.registry.plain_result_name(&found.result)
         );
         let module = info.module;
         let decl = info.decl.and_then(|decl| {
@@ -1182,9 +1182,9 @@ impl<'r, 'a> Builder<'r, 'a> {
                 {
                     let params = self.params(&method.params, method.variadic);
                     let result = if method.successor {
-                        format!("^{}", self.registry.result_name(&method.result))
+                        format!("^{}", self.registry.plain_result_name(&method.result))
                     } else {
-                        self.registry.result_name(&method.result)
+                        self.registry.plain_result_name(&method.result)
                     };
                     lines.push(format!(
                         "    {}{}({}) is {result}",
@@ -1216,7 +1216,7 @@ impl<'r, 'a> Builder<'r, 'a> {
                         if method.is_async { "async " } else { "" },
                         method.name,
                         params.join(", "),
-                        self.registry.result_name(&method.result)
+                        self.registry.plain_result_name(&method.result)
                     ));
                 }
                 truncate(&mut lines);

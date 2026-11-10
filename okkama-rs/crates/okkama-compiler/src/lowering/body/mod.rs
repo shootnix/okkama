@@ -2764,8 +2764,8 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             let message = match (from, to) {
                 (Some(from), Some(to)) => format!(
                     "Value must be {}, got {}",
-                    self.ctx.reg.type_name(&to.subst(&self.env)),
-                    self.ctx.reg.type_name(&from.subst(&self.env).taken())
+                    self.ctx.reg.plain_type_name(&to.subst(&self.env)),
+                    self.ctx.reg.plain_type_name(&from.subst(&self.env).taken())
                 ),
                 _ => "Value does not implement the role".to_string(),
             };

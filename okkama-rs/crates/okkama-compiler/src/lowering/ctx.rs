@@ -1009,7 +1009,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
                     span,
                     format!(
                         "internal compiler error: type {} reached lowering",
-                        self.reg.type_name(ty)
+                        self.reg.plain_type_name(ty)
                     ),
                 ));
             }
@@ -1100,7 +1100,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
         let name = if args.is_empty() {
             info.name.clone()
         } else {
-            self.reg.type_name(&Ty::Object(decl, args.clone()))
+            self.reg.plain_type_name(&Ty::Object(decl, args.clone()))
         };
         let module = info.module;
         let id = ObjectId(self.objects.len());
@@ -1291,7 +1291,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
         let name = if args.is_empty() {
             info.name.clone()
         } else {
-            reg.type_name(&Ty::Role(decl, args.clone()))
+            reg.plain_type_name(&Ty::Role(decl, args.clone()))
         };
         let id = RoleId(self.roles.len());
         self.roles.push(RoleInstance {

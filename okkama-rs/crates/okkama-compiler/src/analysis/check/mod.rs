@@ -406,8 +406,9 @@ impl<'r, 'a> Checker<'r, 'a> {
         self.reg.unsupported(span, message);
     }
 
+    /// The name of `ty` in this module's diagnostics (#338).
     pub fn type_name(&self, ty: &Ty) -> String {
-        self.reg.type_name(ty)
+        self.reg.type_name_in(self.module, ty)
     }
 
     // ----- конструкторы выражений -----
