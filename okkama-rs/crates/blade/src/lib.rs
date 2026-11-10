@@ -237,11 +237,7 @@ impl Command for CommandRemove {
             Ok(root) => root,
             Err(e) => return failure(&e),
         };
-        match manifest::remove_dependency(&root, name) {
-            Ok(true) => finish(install::install(&root, &Unlock::Nothing)),
-            Ok(false) => failure(&format!("\"{name}\" is not a dependency in {}", manifest::MANIFEST)),
-            Err(e) => failure(&e),
-        }
+        finish(install::remove(&root, name))
     }
 }
 

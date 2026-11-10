@@ -21,9 +21,21 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   picks a version. `blade build` and `blade run` point to `blade sync` for a
   missing dependency. A commit id from `blade.lock` reaches git only if it is
   hex.
+- Blade never loses work done in `pkg/` (#350). It records what it installed
+  in `pkg/.blade-installed`. A package whose files differ from that record (a
+  file edited, added or removed) stops every operation that would replace or
+  remove it, `blade sync` included, naming the first file that differs, and
+  an entry of `pkg/` that Blade did not install is never deleted: the
+  operation stops and names it. Nothing changes before the check. A pulled
+  `blade.lock` with new versions is not a local change, so `blade sync`
+  installs it. Deleting the package is how one accepts a reinstall.
 
 ### Changed
 
+- Blade changes only what changes in `pkg/` (#350): packages that stay are not
+  touched, so their files keep their inodes and times, and an install that
+  changes nothing writes nothing. `blade remove` leaves `blade.toml` as it was
+  when it fails.
 - Blade selects versions by minimum version selection (#347). A dependency's
   `version` is a minimum, `"1.2.0"`: that version or a later one of the same
   major. Blade installs, for each package, the lowest version that meets every

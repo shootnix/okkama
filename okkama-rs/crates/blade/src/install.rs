@@ -45,6 +45,18 @@ impl Source {
         }
     }
 
+    /// The source `blade.lock` records as `id`; a git URL only if it is one
+    /// git may be given (#346).
+    fn from_id(id: &str) -> Option<Source> {
+        if let Some(url) = id.strip_prefix("git+") {
+            check_git_url(url).ok()?;
+            Some(Source::Git(url.to_string()))
+        } else {
+            id.strip_prefix("path+")
+                .map(|dir| Source::Path(PathBuf::from(dir)))
+        }
+    }
+
     /// The source of dependency `name` declared in a manifest located in
     /// `base` (`None` — a git checkout, where local paths mean nothing).
     fn of(name: &str, dependency: &Dependency, base: Option<&Path>) -> Result<Source, String> {
@@ -120,7 +132,7 @@ fn install_busy(root: &Path, unlock: &Unlock) -> Result<Report, String> {
             .map(|(name, package)| (name.clone(), package.locked()))
             .collect(),
     };
-    swap_in(root, &chosen, &new_lock)?;
+    commit(root, &chosen, &lock, &new_lock, false, &mut work)?;
     Ok(report(&lock, &new_lock))
 }
 
@@ -226,43 +238,34 @@ pub fn sync(root: &Path) -> Result<Report, String> {
         return Err(disagree(&lines));
     }
 
-    let leftovers = leftovers(root, &lock)?;
-    if fetched.is_empty() && leftovers.is_empty() {
-        return Ok(Report::default());
-    }
+    // What changes in pkg/, against what Blade installed there.
+    let installed = installed_lock(root, &lock)?;
     let mut report = Vec::new();
     for (name, package) in &fetched {
-        let state = if !root.join(PKG).join(name).is_dir() {
-            ""
-        } else if lock.packages[name].checksum == package.checksum {
-            " (restored)"
-        } else {
-            " (files changed)"
-        };
-        report.push(format!("+ {name} {}{state}", package.version));
-    }
-    report.extend(leftovers.iter().map(|entry| format!("- {entry}")));
-    // Kept packages go into the new pkg/ too, without what is nested in them.
-    for (name, package) in &mut kept {
-        work.count += 1;
-        let copy = work.dir.join(format!("kept-{}", work.count));
-        copy_tree(&package.dir, &copy, false)?;
-        for inner in nested_in(name, &lock) {
-            let inside = copy.join(&inner);
-            if inside.exists() {
-                std::fs::remove_dir_all(&inside).map_err(io(&inside))?;
+        let version = package.version;
+        report.push(match installed.packages.get(name) {
+            _ if !root.join(PKG).join(name).is_dir() => format!("+ {name} {version}"),
+            Some(before) if before.version != version => {
+                format!("~ {name} {} -> {version}", before.version)
             }
-        }
-        package.dir = copy;
+            _ => format!("~ {name} {version} (files changed)"),
+        });
     }
     let chosen: BTreeMap<String, Package> = kept.into_iter().chain(fetched).collect();
+    for (name, before) in &installed.packages {
+        if !chosen.contains_key(name) && root.join(PKG).join(name).is_dir() {
+            report.push(format!("- {name} {}", before.version));
+        }
+    }
     let new_lock = Lock {
         packages: chosen
             .iter()
             .map(|(name, package)| (name.clone(), package.locked()))
             .collect(),
     };
-    swap_in(root, &chosen, &new_lock)?;
+    if !commit(root, &chosen, &lock, &new_lock, true, &mut work)? {
+        return Ok(Report::default());
+    }
     Ok(Report { lines: report })
 }
 
@@ -310,26 +313,18 @@ fn disagree(lines: &[String]) -> String {
     )
 }
 
-/// Entries of `pkg/` that hold no locked package.
-fn leftovers(root: &Path, lock: &Lock) -> Result<Vec<String>, String> {
-    let pkg = root.join(PKG);
-    if !pkg.is_dir() {
-        return Ok(Vec::new());
+/// `blade remove NAME`: drop the dependency from `blade.toml`, then install.
+/// A failure leaves `blade.toml` as it was.
+pub fn remove(root: &Path, name: &str) -> Result<Report, String> {
+    let _busy = Busy::take(root)?;
+    let file = root.join(MANIFEST);
+    let before = std::fs::read(&file).map_err(io(&file))?;
+    if !manifest::remove_dependency(root, name)? {
+        return Err(format!("\"{name}\" is not a dependency in {MANIFEST}"));
     }
-    let mut found = Vec::new();
-    for entry in std::fs::read_dir(&pkg).map_err(io(&pkg))? {
-        let entry = entry.map_err(io(&pkg))?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let holds = lock
-            .packages
-            .keys()
-            .any(|locked| locked == &name || locked.starts_with(&format!("{name}/")));
-        if !holds {
-            found.push(name);
-        }
-    }
-    found.sort();
-    Ok(found)
+    install_busy(root, &Unlock::Nothing).inspect_err(|_| {
+        let _ = std::fs::write(&file, &before);
+    })
 }
 
 /// `blade install <source> [version]`: add the package at `source` to
@@ -1180,13 +1175,20 @@ fn checksum_of(dir: &Path, files: &[String]) -> Result<String, String> {
 
 // ----- фиксация pkg/ и blade.lock -----
 //
-// pkg/ and blade.lock change together: both are prepared next to the old ones
-// (`pkg.blade-new`, `blade.lock.blade-new`), then a marker
-// (`pkg.blade-commit`) records that the new state is complete, then the
-// renames happen. A blade that finds the marker finishes the renames; without
-// it the prepared files are discarded and the old state stays.
+// pkg/ and blade.lock change together: the entries of pkg/ that change and
+// the lock are prepared next to the old ones (`pkg.blade-new`,
+// `blade.lock.blade-new`), then a marker (`pkg.blade-commit`) records that
+// the new state is complete and which entries it replaces or removes, then
+// the renames happen: the old entries into `pkg.blade-old`, the new ones in.
+// A blade that finds the marker finishes the renames; without it the prepared
+// files are discarded and the old state stays. Entries that do not change are
+// not touched (#350).
 
 const STAGED: &str = "pkg.blade-new";
+/// Blade's record of what it installed, in `pkg/`: the lock as it was when
+/// `pkg/` was last committed. A pulled `blade.lock` may say something else;
+/// local changes are what differs from this record (#350).
+const INSTALLED: &str = ".blade-installed";
 const OLD: &str = "pkg.blade-old";
 const STAGED_LOCK: &str = "blade.lock.blade-new";
 const COMMIT: &str = "pkg.blade-commit";
@@ -1225,10 +1227,233 @@ fn write_synced(file: &Path, text: &str) -> Result<(), String> {
         .map_err(io(file))
 }
 
-/// Assemble the new `pkg/` beside the old one and swap it in.
-fn swap_in(root: &Path, chosen: &BTreeMap<String, Package>, lock: &Lock) -> Result<(), String> {
+/// What a commit does to `pkg/`, by its top-level entries (`acme` holds
+/// `acme` and `acme/web`): the entries rebuilt in the staging directory and
+/// the entries removed. No other entry is touched.
+#[derive(Default)]
+struct Plan {
+    replace: Vec<String>,
+    remove: Vec<String>,
+}
+
+impl Plan {
+    fn is_empty(&self) -> bool {
+        self.replace.is_empty() && self.remove.is_empty()
+    }
+
+    /// The marker's text; `v2` tells it from the whole-`pkg/` swap of 0.5.1.
+    fn text(&self) -> String {
+        let mut text = String::from("v2\n");
+        for entry in &self.replace {
+            text.push_str(&format!("replace {entry}\n"));
+        }
+        for entry in &self.remove {
+            text.push_str(&format!("remove {entry}\n"));
+        }
+        text
+    }
+}
+
+/// The top-level entry of `pkg/` a package lives in.
+fn top(name: &str) -> &str {
+    name.split('/').next().unwrap_or(name)
+}
+
+/// What `pkg/` holds by Blade's record of it, or by `blade.lock` when there
+/// is no record (a `pkg/` of Blade 0.5.1).
+fn installed_lock(root: &Path, lock: &Lock) -> Result<Lock, String> {
+    let file = root.join(PKG).join(INSTALLED);
+    if !file.is_file() {
+        return Ok(lock.clone());
+    }
+    let text = std::fs::read_to_string(&file).map_err(io(&file))?;
+    Lock::parse(&text).map_err(|error| format!("{}: {error}", file.display()))
+}
+
+/// What going from what is installed to `new` does to `pkg/`, refusing to
+/// lose the user's work (#350): an entry of `pkg/` that Blade did not
+/// install, or a package with local changes that would be replaced or
+/// removed, stops the operation before anything changes. A `strict` commit
+/// (`blade sync`) also replaces a package whose files differ from what was
+/// installed when its entry stays.
+fn plan(
+    root: &Path,
+    old: &Lock,
+    new: &Lock,
+    strict: bool,
+    work: &mut Work,
+) -> Result<Plan, String> {
+    let installed = installed_lock(root, old)?;
+    let mut known = installed.clone();
+    for (name, locked) in &old.packages {
+        known
+            .packages
+            .entry(name.clone())
+            .or_insert_with(|| locked.clone());
+    }
+    let (old, known) = (&installed, &known);
+    let unknown = unknown_entries(root, known)?;
+    if !unknown.is_empty() {
+        let list: Vec<String> = unknown
+            .iter()
+            .map(|entry| format!("{PKG}/{entry}"))
+            .collect();
+        return Err(format!(
+            "{} {} not in {LOCK}, and Blade deletes only what it installed;\n\
+             move {} out of {PKG}/, then run the command again",
+            list.join(", "),
+            if list.len() == 1 { "is" } else { "are" },
+            if list.len() == 1 { "it" } else { "them" }
+        ));
+    }
+    let entries: BTreeSet<&str> = old
+        .packages
+        .keys()
+        .chain(new.packages.keys())
+        .map(|name| top(name))
+        .collect();
+    let mut plan = Plan::default();
+    let mut refusals = Vec::new();
+    for entry in entries {
+        let of = |lock: &Lock| -> Vec<(String, Locked)> {
+            lock.packages
+                .iter()
+                .filter(|(name, _)| top(name) == entry)
+                .map(|(name, locked)| (name.clone(), locked.clone()))
+                .collect()
+        };
+        let (before, after) = (of(old), of(new));
+        let mut changed = Vec::new();
+        for (name, locked) in known.packages.iter().filter(|(name, _)| top(name) == entry) {
+            if installed_checksum(root, name, known)?.is_some_and(|sum| sum != locked.checksum) {
+                changed.push((name, locked));
+            }
+        }
+        let missing = after
+            .iter()
+            .any(|(name, _)| !root.join(PKG).join(name).is_dir());
+        if before == after && !missing && !(strict && !changed.is_empty()) {
+            continue;
+        }
+        for (name, locked) in changed {
+            refusals.push(local_changes(root, name, locked, known, work));
+        }
+        if after.is_empty() {
+            plan.remove.push(entry.to_string());
+        } else {
+            plan.replace.push(entry.to_string());
+        }
+    }
+    if !refusals.is_empty() {
+        return Err(refusals.join("\n"));
+    }
+    Ok(plan)
+}
+
+/// Entries of `pkg/` that hold no package of `lock`, as paths inside `pkg/`.
+fn unknown_entries(root: &Path, lock: &Lock) -> Result<Vec<String>, String> {
+    let mut found = Vec::new();
+    let mut dirs = vec![String::new()];
+    while let Some(dir) = dirs.pop() {
+        let path = root.join(PKG).join(&dir);
+        if !path.is_dir() {
+            continue;
+        }
+        for entry in std::fs::read_dir(&path).map_err(io(&path))? {
+            let entry = entry.map_err(io(&path))?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let inner = if dir.is_empty() {
+                name
+            } else {
+                format!("{dir}/{name}")
+            };
+            let holds = lock
+                .packages
+                .keys()
+                .any(|locked| locked.starts_with(&format!("{inner}/")));
+            if lock.packages.contains_key(&inner) || (dir.is_empty() && inner == INSTALLED) {
+                continue;
+            } else if holds && entry.path().is_dir() {
+                dirs.push(inner);
+            } else {
+                found.push(inner);
+            }
+        }
+    }
+    found.sort();
+    Ok(found)
+}
+
+/// The refusal for a package whose files in `pkg/` are not the locked ones,
+/// with the first file that differs when the locked commit can be fetched.
+fn local_changes(root: &Path, name: &str, locked: &Locked, lock: &Lock, work: &mut Work) -> String {
+    let detail = Source::from_id(&locked.source)
+        .filter(|source| matches!(source, Source::Git(_)))
+        .and_then(|source| work.fetch_locked(name, &source, locked).ok())
+        .and_then(|original| {
+            first_difference(
+                &root.join(PKG).join(name),
+                &original.dir,
+                &nested_in(name, lock),
+            )
+        })
+        .map(|detail| format!(" ({detail})"))
+        .unwrap_or_default();
+    format!(
+        "{PKG}/{name} has local changes{detail};\n\
+         move them away or delete {PKG}/{name}, then run the command again"
+    )
+}
+
+/// The first file, in order, that differs between an installed package and
+/// the locked original, apart from the packages nested in it.
+fn first_difference(installed: &Path, original: &Path, nested: &[String]) -> Option<String> {
+    let own = |dir: &Path| -> Option<BTreeSet<String>> {
+        Some(
+            files(dir)
+                .ok()?
+                .into_iter()
+                .filter(|file| {
+                    !nested
+                        .iter()
+                        .any(|inner| file.starts_with(&format!("{inner}/")))
+                })
+                .collect(),
+        )
+    };
+    let (now, then) = (own(installed)?, own(original)?);
+    now.union(&then)
+        .find_map(|file| match (now.contains(file), then.contains(file)) {
+            (true, false) => Some(format!("{file} was added")),
+            (false, true) => Some(format!("{file} was removed")),
+            _ => {
+                let differs = std::fs::read(installed.join(file)).ok()?
+                    != std::fs::read(original.join(file)).ok()?;
+                differs.then(|| format!("{file} differs from {LOCK}"))
+            }
+        })
+}
+
+/// Commit `new`, whose packages are `chosen`, over `old`: the entries of
+/// `pkg/` that change are rebuilt beside it and moved in; the others keep
+/// their files, inodes and times (#350). False when nothing was to be done.
+fn commit(
+    root: &Path,
+    chosen: &BTreeMap<String, Package>,
+    old: &Lock,
+    new: &Lock,
+    strict: bool,
+    work: &mut Work,
+) -> Result<bool, String> {
+    let mut plan = plan(root, old, new, strict, work)?;
+    let record = root.join(PKG).join(INSTALLED);
+    let recorded = std::fs::read_to_string(&record).ok();
+    let settled = recorded.as_deref() == Some(new.text().as_str())
+        || (recorded.is_none() && !root.join(PKG).exists() && new.packages.is_empty());
+    if plan.is_empty() && old == new && root.join(LOCK).exists() && settled {
+        return Ok(false);
+    }
     let staged = root.join(STAGED);
-    let pkg = root.join(PKG);
     for dir in [&staged, &root.join(OLD)] {
         if dir.exists() {
             std::fs::remove_dir_all(dir).map_err(io(dir))?;
@@ -1238,8 +1463,12 @@ fn swap_in(root: &Path, chosen: &BTreeMap<String, Package>, lock: &Lock) -> Resu
     crate::manifest::check_distinct(chosen.keys().map(String::as_str))?;
     // Shorter names first: a nested package (`acme/web`) goes into the
     // directory of its parent (`acme`) and must not land on its files.
-    let mut names: Vec<&String> = chosen.keys().collect();
+    let mut names: Vec<&String> = chosen
+        .keys()
+        .filter(|name| plan.replace.iter().any(|entry| entry == top(name)))
+        .collect();
     names.sort_by_key(|name| name.len());
+    let pkg = root.join(PKG);
     for name in names {
         crate::manifest::check_package_name(name)?;
         let target = staged.join(name);
@@ -1248,25 +1477,62 @@ fn swap_in(root: &Path, chosen: &BTreeMap<String, Package>, lock: &Lock) -> Resu
                 "package \"{name}\" would overwrite files of another package in {PKG}/"
             ));
         }
-        copy_tree(&chosen[name].dir, &target, false)?;
+        let package = &chosen[name];
+        copy_tree(&package.dir, &target, false)?;
+        // A package kept from pkg/ comes without the packages nested in it.
+        if package.dir.starts_with(&pkg) {
+            for inner in nested_in(name, new) {
+                let inside = target.join(inner);
+                if inside.exists() {
+                    std::fs::remove_dir_all(&inside).map_err(io(&inside))?;
+                }
+            }
+        }
     }
+    write_synced(&staged.join(INSTALLED), &new.text())?;
+    plan.replace.push(INSTALLED.to_string());
     step("staged")?;
-    write_synced(&root.join(STAGED_LOCK), &lock.text())?;
+    write_synced(&root.join(STAGED_LOCK), &new.text())?;
     step("lock")?;
-    write_synced(&root.join(COMMIT), "")?;
+    write_synced(&root.join(COMMIT), &plan.text())?;
     step("marker")?;
-    if pkg.exists() {
-        std::fs::rename(&pkg, root.join(OLD)).map_err(io(&pkg))?;
-    }
-    step("pkg-moved")?;
-    finish_commit(root)
+    finish_commit(root)?;
+    Ok(true)
 }
 
 /// The renames after the marker; each is skipped when already done, so a
 /// blade interrupted anywhere here is finished by the next one.
 fn finish_commit(root: &Path) -> Result<(), String> {
     let (staged, old, pkg) = (root.join(STAGED), root.join(OLD), root.join(PKG));
-    if staged.exists() {
+    let marker = root.join(COMMIT);
+    let text = std::fs::read_to_string(&marker).map_err(io(&marker))?;
+    if let Some(lines) = text.strip_prefix("v2\n") {
+        let entries: Vec<(&str, &str)> = lines
+            .lines()
+            .filter_map(|line| line.split_once(' '))
+            .collect();
+        std::fs::create_dir_all(&old).map_err(io(&old))?;
+        // Out first: what is replaced or removed goes into pkg.blade-old.
+        for (action, entry) in &entries {
+            let (current, gone) = (pkg.join(entry), old.join(entry));
+            let pending = *action == "remove" || staged.join(entry).exists();
+            if pending && current.exists() && !gone.exists() {
+                std::fs::rename(&current, &gone).map_err(io(&current))?;
+            }
+        }
+        step("pkg-moved")?;
+        for (action, entry) in &entries {
+            let new = staged.join(entry);
+            if *action == "replace" && new.exists() {
+                std::fs::create_dir_all(&pkg).map_err(io(&pkg))?;
+                std::fs::rename(&new, pkg.join(entry)).map_err(io(&new))?;
+            }
+        }
+        if staged.exists() {
+            std::fs::remove_dir_all(&staged).map_err(io(&staged))?;
+        }
+    } else if staged.exists() {
+        // A commit of Blade 0.5.1 swaps the whole of pkg/.
         if pkg.exists() {
             if old.exists() {
                 std::fs::remove_dir_all(&old).map_err(io(&old))?;
@@ -1281,7 +1547,6 @@ fn finish_commit(root: &Path) -> Result<(), String> {
         std::fs::rename(&staged_lock, root.join(LOCK)).map_err(io(&staged_lock))?;
     }
     step("lock-in")?;
-    let marker = root.join(COMMIT);
     std::fs::remove_file(&marker).map_err(io(&marker))?;
     if old.exists() {
         std::fs::remove_dir_all(&old).map_err(io(&old))?;

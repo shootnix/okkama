@@ -659,8 +659,11 @@ fn a_package_is_a_repository_with_its_modules_in_src() {
     }
 }
 
-/// Every file under `dir` with its bytes, sorted.
-fn snapshot(dir: &Path) -> Vec<(String, Vec<u8>)> {
+/// Every file of a tree with its bytes, sorted.
+type Snapshot = Vec<(String, Vec<u8>)>;
+
+/// The files of `dir`.
+fn snapshot(dir: &Path) -> Snapshot {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(next) = stack.pop() {
@@ -714,10 +717,15 @@ fn sync_installs_exactly_what_the_lock_records() {
     assert_eq!(snapshot(&app.join("pkg")), pkg);
     assert_eq!(std::fs::read(app.join("blade.lock")).unwrap(), lock);
 
-    // What the lock does not have leaves pkg/.
+    // What Blade did not install it does not delete (#350).
     tree.write("app/pkg/stale/src/stale.ok", "module stale;\n");
-    let report = install::sync(&app).unwrap();
-    assert_eq!(report.lines, ["- stale"]);
+    let error = install::sync(&app).unwrap_err();
+    assert!(
+        error.starts_with("pkg/stale is not in blade.lock"),
+        "{error}"
+    );
+    std::fs::remove_dir_all(app.join("pkg/stale")).unwrap();
+    assert!(install::sync(&app).unwrap().lines.is_empty());
     assert_eq!(snapshot(&app.join("pkg")), pkg);
 
     // A locked commit that is gone is an error that names it.
@@ -831,6 +839,182 @@ fn an_interrupted_sync_recovers_to_one_consistent_state() {
     }
 }
 
+/// Local changes in `pkg/` are never lost (#350): an edited, added or
+/// removed file of a package stops every operation that would replace or
+/// remove it, and the project stays byte for byte as it was.
+#[test]
+fn local_changes_in_pkg_stop_what_would_lose_them() {
+    let (tree, app, _) = world("local");
+    let json = tree.path("repos/json");
+    let declare = |app: &Path, min: &str| {
+        let dependency = manifest::Dependency {
+            git: Some(json.display().to_string()),
+            version: Some(min.to_string()),
+            path: None,
+        };
+        manifest::add_dependency(app, "json", &dependency).unwrap();
+    };
+    declare(&app, "1.0.0");
+    install::sync(&app).unwrap();
+    let original = snapshot(&app.join("pkg"));
+    // The blade.toml and blade.lock of a newer commit of the project.
+    tree.write("newer/blade.toml", &manifest_text("newer", "1.0.0", ""));
+    let newer = tree.path("newer");
+    declare(&newer, "1.2.0");
+    install::sync(&newer).unwrap();
+
+    let state = |app: &Path| {
+        (
+            std::fs::read(app.join("blade.toml")).unwrap(),
+            std::fs::read(app.join("blade.lock")).unwrap(),
+            snapshot(&app.join("pkg")),
+        )
+    };
+    let package = app.join("pkg/json");
+    let changes: [(&str, &dyn Fn()); 3] = [
+        ("src/codec.ok differs from blade.lock", &|| {
+            std::fs::write(package.join("src/codec.ok"), "// patched\n").unwrap()
+        }),
+        ("notes.txt was added", &|| {
+            std::fs::write(package.join("notes.txt"), "mine\n").unwrap()
+        }),
+        ("src/json.ok was removed", &|| {
+            std::fs::remove_file(package.join("src/json.ok")).unwrap()
+        }),
+    ];
+    for (detail, change) in changes {
+        change();
+        let before = state(&app);
+        let refused = |error: String| {
+            let expected = format!(
+                "pkg/json has local changes ({detail});\nmove them away or delete pkg/json, then run the command again"
+            );
+            assert_eq!(error, expected);
+            assert_eq!(state(&app), before);
+        };
+        // blade sync: as it is, and after a pull that moves json to 1.2.0.
+        refused(install::sync(&app).unwrap_err());
+        std::fs::copy(newer.join("blade.lock"), app.join("blade.lock")).unwrap();
+        declare(&app, "1.2.0");
+        refused_after(install::sync(&app), &app, &before);
+        // blade update json after raising its minimum; blade remove json.
+        declare(&app, "1.2.0");
+        refused_after(
+            install::install(
+                &app,
+                &Unlock::Packages(BTreeSet::from(["json".to_string()])),
+            ),
+            &app,
+            &before,
+        );
+        refused(install::remove(&app, "json").unwrap_err());
+        // Deleting the package is how one accepts a reinstall.
+        std::fs::remove_dir_all(&package).unwrap();
+        assert_eq!(install::sync(&app).unwrap().lines, ["+ json 1.0.0"]);
+        assert_eq!(snapshot(&app.join("pkg")), original);
+    }
+    // Without local changes, a pulled lock is simply installed: Blade's
+    // record of pkg/ tells an old version from an edited one.
+    std::fs::copy(newer.join("blade.lock"), app.join("blade.lock")).unwrap();
+    declare(&app, "1.2.0");
+    assert_eq!(
+        install::sync(&app).unwrap().lines,
+        ["~ json 1.0.0 -> 1.2.0"]
+    );
+    assert_eq!(snapshot(&app.join("pkg")), snapshot(&newer.join("pkg")));
+}
+
+/// The project's files may already be the newer ones: the refusal still
+/// names the package, and blade.toml and blade.lock go back as they were.
+fn refused_after(
+    result: Result<install::Report, String>,
+    app: &Path,
+    before: &(Vec<u8>, Vec<u8>, Snapshot),
+) {
+    let error = result.unwrap_err();
+    assert!(error.starts_with("pkg/json has local changes ("), "{error}");
+    assert_eq!(snapshot(&app.join("pkg")), before.2);
+    std::fs::write(app.join("blade.toml"), &before.0).unwrap();
+    std::fs::write(app.join("blade.lock"), &before.1).unwrap();
+}
+
+/// An entry of `pkg/` that Blade did not install stops every install, and
+/// is kept (#350).
+#[test]
+fn unknown_entries_of_pkg_stop_every_install() {
+    let (tree, app, web) = world("unknown");
+    install::add(&app, web.to_str().unwrap(), Some("12.3.0"), true).unwrap();
+    tree.write("app/pkg/notes/todo.txt", "mine\n");
+    tree.write("app/pkg/README", "mine\n");
+    let before = (
+        std::fs::read(app.join("blade.toml")).unwrap(),
+        std::fs::read(app.join("blade.lock")).unwrap(),
+        snapshot(&app.join("pkg")),
+    );
+    let attempts = [
+        install::sync(&app),
+        install::install(&app, &Unlock::Nothing),
+        install::install(&app, &Unlock::All),
+        install::add(&app, web.to_str().unwrap(), Some("13.0.0"), true).map(|(_, report)| report),
+        install::remove(&app, "web"),
+    ];
+    for attempt in attempts {
+        let error = attempt.unwrap_err();
+        assert!(
+            error.starts_with("pkg/README, pkg/notes are not in blade.lock"),
+            "{error}"
+        );
+        let now = (
+            std::fs::read(app.join("blade.toml")).unwrap(),
+            std::fs::read(app.join("blade.lock")).unwrap(),
+            snapshot(&app.join("pkg")),
+        );
+        assert!(now == before, "the project changed");
+    }
+}
+
+/// An install that changes one package does not touch the others: the same
+/// files, inodes and times (#350).
+#[test]
+fn packages_that_do_not_change_stay_in_place() {
+    let (tree, app, web) = world("inplace");
+    install::add(&app, web.to_str().unwrap(), Some("12.3.0"), true).unwrap();
+    tree.write("local/util/blade.toml", &manifest_text("util", "2.1.0", ""));
+    tree.write("local/util/src/util.ok", "module util;\n");
+    let util = tree.path("local/util");
+    install::add(&app, util.to_str().unwrap(), None, false).unwrap();
+    let stamp = |path: &Path| {
+        let meta = std::fs::metadata(path).unwrap();
+        #[cfg(unix)]
+        let inode = std::os::unix::fs::MetadataExt::ino(&meta);
+        #[cfg(not(unix))]
+        let inode = 0;
+        (inode, meta.modified().unwrap())
+    };
+    let watched = [
+        "pkg/json",
+        "pkg/json/src/codec.ok",
+        "pkg/web",
+        "pkg/web/src/router.ok",
+    ];
+    let before: Vec<_> = watched.iter().map(|path| stamp(&app.join(path))).collect();
+    tree.write("local/util/blade.toml", &manifest_text("util", "2.2.0", ""));
+    let report = install::install(&app, &Unlock::All).unwrap();
+    assert_eq!(report.lines, ["~ util 2.1.0 -> 2.2.0"]);
+    let after: Vec<_> = watched.iter().map(|path| stamp(&app.join(path))).collect();
+    assert_eq!(after, before);
+    // Nothing to change: nothing is written.
+    let lock = stamp(&app.join("blade.lock"));
+    assert!(
+        install::install(&app, &Unlock::Nothing)
+            .unwrap()
+            .lines
+            .is_empty()
+    );
+    assert!(install::sync(&app).unwrap().lines.is_empty());
+    assert_eq!(stamp(&app.join("blade.lock")), lock);
+}
+
 /// S01 (#15): a package name is a module path, never a file system path.
 #[test]
 fn package_names_cannot_leave_the_project() {
@@ -906,7 +1090,8 @@ fn an_interrupted_install_recovers_to_one_consistent_state() {
         ("pkg-in", true),
         ("lock-in", true),
     ] {
-        let (tree, app, _) = world(&format!("interrupt-{step}"));
+        let (tree, app, web) = world(&format!("interrupt-{step}"));
+        install::add(&app, web.to_str().unwrap(), Some("12.3.0"), true).unwrap();
         let util = tree.write("local/util/blade.toml", &manifest_text("util", "2.1.0", ""));
         tree.write(
             "local/util/src/util.ok",
@@ -915,6 +1100,13 @@ fn an_interrupted_install_recovers_to_one_consistent_state() {
         let dir = util.parent().unwrap().to_str().unwrap().to_string();
         install::add(&app, &dir, Some("2.1.0"), false).unwrap();
         tree.write("local/util/blade.toml", &manifest_text("util", "2.2.0", ""));
+        let kept = |app: &Path| {
+            (
+                snapshot(&app.join("pkg/web")),
+                snapshot(&app.join("pkg/json")),
+            )
+        };
+        let untouched = kept(&app);
 
         install::fail_after(Some(step));
         let error = install::install(&app, &Unlock::All).unwrap_err();
@@ -930,8 +1122,14 @@ fn an_interrupted_install_recovers_to_one_consistent_state() {
         install::recover(&app).unwrap();
         install::settled(&app).unwrap();
         let expected = if done { "2.2.0" } else { "2.1.0" };
-        assert_eq!(locked(&app), pairs(&[("util", expected)]), "{step}");
-        assert_eq!(installed(&app), pairs(&[("util", expected)]), "{step}");
+        let all = [("json", "1.0.0"), ("util", expected), ("web", "12.3.0")];
+        assert_eq!(locked(&app), pairs(&all), "{step}");
+        assert_eq!(installed(&app), pairs(&all), "{step}");
+        assert_eq!(
+            kept(&app),
+            untouched,
+            "{step}: the packages that did not change"
+        );
         for leftover in [
             "pkg.blade-new",
             "pkg.blade-old",
@@ -942,7 +1140,8 @@ fn an_interrupted_install_recovers_to_one_consistent_state() {
         }
         // The next install starts from that state.
         install::install(&app, &Unlock::All).unwrap();
-        assert_eq!(installed(&app), pairs(&[("util", "2.2.0")]));
+        let all = [("json", "1.0.0"), ("util", "2.2.0"), ("web", "12.3.0")];
+        assert_eq!(installed(&app), pairs(&all));
     }
 }
 
