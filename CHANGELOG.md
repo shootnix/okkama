@@ -156,6 +156,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   itself after a pass of reads; sequential reads of a replaced array cost 9%
   more, random ones what they did. Arrays that hold objects are copied as
   before. `OKKAMA_ARRAYS=flat` turns tries off too.
+- The JVM keeps chains of `+` on arrays in shared buffers, as Tomato has
+  since 0.4.3 (#336, arrays): `xs = xs + [x]`, `[x] + xs` and both ends in
+  turn write in place at the buffer's frontier instead of copying the array,
+  so a step costs 45–70 ns at 100 000 elements where it cost 9 µs (125–190
+  times less), and keeping every version of a chain finishes where it timed
+  out. One-off concatenations, branches off one array, reads and builders
+  cost what they did once the JIT has compiled the new path (in the first
+  few hundred concatenations of a program they cost up to half more).
+  Builders and literals stay `ArrayList`; only steps of a chain become
+  `okkama.rt.Vec`. `OKKAMA_ARRAYS=flat` keeps every result a copy.
 - The IR engine makes a map persistent, as Tomato has since 0.4.3 (#335,
   maps): a write that makes a version of a map of more than 64 entries turns
   that map into a persistent B+ tree in place, and it and its versions share

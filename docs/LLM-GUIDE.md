@@ -139,7 +139,8 @@ one kind only, for A/B on one binary: shared array buffers and tries, maps
 that turn persistent at their first version, text buffers for chains of
 `+`; the default has all of them; on the IR engine `OKKAMA_ARRAYS=flat`
 turns off its shared array buffers, slices and tries, and `OKKAMA_MAPS=btree`
-its persistent maps, #335), `OKKAMA_TRACE=off` (no stack in failures), `OKKAMA_ICU_LIBDIR` (pinned ICU for collation;
+its persistent maps, #335; on the JVM `OKKAMA_ARRAYS=flat` turns off the
+shared buffers of `okkama.rt.Vec`, #336), `OKKAMA_TRACE=off` (no stack in failures), `OKKAMA_ICU_LIBDIR` (pinned ICU for collation;
 `tools/build-icu-collation.sh`). `OKKAMA_JIT*` switches belong to the previous
 VM only.
 

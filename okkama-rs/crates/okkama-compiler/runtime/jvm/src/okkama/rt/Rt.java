@@ -825,6 +825,11 @@ public final class Rt {
         for (Object part : parts) {
             size += ((List<?>) part).size();
         }
+        // A chain of appends or prepends shares a buffer (#336).
+        List<Object> shared = Vec.concat(parts, size);
+        if (shared != null) {
+            return shared;
+        }
         ArrayList<Object> result = new ArrayList<Object>(size);
         for (Object part : parts) {
             result.addAll((List<?>) part);
