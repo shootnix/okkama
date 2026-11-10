@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.array.removed-at-type-rejected",
+  "title": "removed_at takes an int index",
+  "purpose": "A string index is rejected.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.ARRAY-REMOVED-AT",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #251",
+    "expected_basis": "spec 6.6 and #251: removed_at(index is int)."
+  },
+  "status": "mandatory"
+}

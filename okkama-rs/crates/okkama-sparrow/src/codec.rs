@@ -15,7 +15,7 @@ pub const MAX_FILE_BYTES: usize = 256 * 1024 * 1024;
 /// in-memory size before vectors are allocated, so a small file cannot
 /// expand into a large `Program` (each encoded element is at least a byte).
 pub const MAX_DECODED_BYTES: usize = 512 * 1024 * 1024;
-/// Версия формата. 14: `arr.replace` (#250).
+/// Версия формата. 14: `arr.replace` (#250), `arr.remove` (#251).
 pub const VERSION: u16 = 14;
 const MAGIC: &[u8; 4] = b"SPRW";
 

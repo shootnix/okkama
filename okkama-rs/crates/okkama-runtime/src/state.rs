@@ -284,6 +284,19 @@ impl State {
         Ok(self.array_new(copy))
     }
 
+    /// `arr.remove` (#251): a copy of `array` without element `index`.
+    pub(crate) fn array_remove(&self, array: &Value, index: &ir::IntValue, span: Span) -> Result<Value, RuntimeError> {
+        let elements = self.array(array, span)?;
+        let at = index
+            .to_i64()
+            .and_then(|i| usize::try_from(i).ok())
+            .filter(|&i| i < elements.len())
+            .ok_or_else(|| RuntimeError::Trap { span, message: "Array index out of bounds".into() })?;
+        let mut copy = elements.to_vec();
+        copy.remove(at);
+        Ok(self.array_new(copy))
+    }
+
     pub(crate) fn object_new(
         &self,
         id: ir::ObjectId,

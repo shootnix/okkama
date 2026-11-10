@@ -343,6 +343,9 @@ instructions! {
     /// `array.replaced(index, value)` (#250): a copy with one element
     /// replaced; out of bounds is a program error, as for `arr.get`.
     ArrayReplace = 155, "arr.replace" { dst: Dst, array: Register, index: Register, value: Register }
+    /// `array.removed_at(index)` (#251): a copy without one element; out of
+    /// bounds is a program error, as for `arr.get`.
+    ArrayRemove = 156, "arr.remove" { dst: Dst, array: Register, index: Register }
     ArrayJoin = 104, "arr.join" { dst: Dst, array: Register, separator: Register }
     /// `a + b + ...`: один массив под сумму длин частей.
     ArrayConcat = 96, "arr.concat" { dst: Dst, parts: Vec<Register> }

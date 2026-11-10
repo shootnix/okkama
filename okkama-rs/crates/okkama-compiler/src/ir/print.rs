@@ -559,6 +559,7 @@ fn write_inst(
         InstKind::ArrayReplace { array, index, value } => {
             write!(f, "array.replace {array}, {index}, {value}")
         }
+        InstKind::ArrayRemove { array, index } => write!(f, "array.remove {array}, {index}"),
         InstKind::ArrayJoin { array, separator } => write!(f, "array.join {array}, {separator}"),
         InstKind::ArrayConcat(parts) => {
             f.write_str("array.concat [")?;

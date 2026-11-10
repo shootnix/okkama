@@ -286,6 +286,7 @@ impl FunctionGen<'_> {
             K::ArrayGet { array, index } => I::ArrayGet { dst: dst()?, array: reg(*array), index: reg(*index) },
             K::ArraySlice { array, start, end } => I::ArraySlice { dst: dst()?, array: reg(*array), start: reg(*start), end: reg(*end) },
             K::ArrayReplace { array, index, value } => I::ArrayReplace { dst: dst()?, array: reg(*array), index: reg(*index), value: reg(*value) },
+            K::ArrayRemove { array, index } => I::ArrayRemove { dst: dst()?, array: reg(*array), index: reg(*index) },
             K::ArrayJoin { array, separator } => I::ArrayJoin { dst: dst()?, array: reg(*array), separator: reg(*separator) },
             K::ArrayConcat(parts) => I::ArrayConcat { dst: dst()?, parts: regs(parts) },
             K::ArrayDifference { array, removed } => I::ArrayDiff { dst: dst()?, array: reg(*array), removed: regs(removed) },

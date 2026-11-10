@@ -480,6 +480,16 @@ public final class Rt {
         return copy;
     }
 
+    /** {@code array.removed_at(index)} (#251): a copy without one element. */
+    public static List<Object> removedAt(List<?> array, BigInteger index) {
+        if (!inBounds(array, index)) {
+            throw trap("Array index out of bounds");
+        }
+        List<Object> copy = new ArrayList<Object>(array);
+        copy.remove(index.intValue());
+        return copy;
+    }
+
     public static List<Object> appendRange(
             List<Object> builder, BigInteger start, BigInteger end, boolean inclusive) {
         if (start.compareTo(end) > 0) {

@@ -1,0 +1,27 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Shape { area() is int; }
+object Square does Shape { has side is int; Square(:side); area() is int { side * side; } }
+
+object Text {
+    Text();
+    ints(xs is @int) is string { (xs.map() -> x { x.string(); }).join(","); }
+}
+
+main() is int {
+    let t = Text();
+    let source = [10, 20, 30, 20];
+    Stdout().writeln(t.ints(source) + " " + t.ints(source.removed_at(0)) + " " + t.ints(source.removed_at(1)) + " " + t.ints(source.removed_at(3)));
+    let chain = [10, 20, 30].removed_at(0).removed_at(0);
+    Stdout().writeln([7].removed_at(0).size().string() + " " + t.ints(chain));
+    let names = ["a", "b", "c"];
+    Stdout().writeln(names.removed_at(0).join(",") + " " + names[0]);
+    let nested = [[1], [2, 3], [4]].removed_at(0);
+    Stdout().writeln(t.ints(nested[0]) + "|" + t.ints(nested[1]) + " " + (source - [20]).size().string());
+    let bytes = [byte(1), byte(2), byte(3)].removed_at(0);
+    let shapes is @Shape = [Square(side: 1), Square(side: 2)];
+    Stdout().writeln(bytes.size().string() + " " + shapes.removed_at(0)[0].area().string() + " " + shapes.removed_at(1).size().string());
+    0;
+}

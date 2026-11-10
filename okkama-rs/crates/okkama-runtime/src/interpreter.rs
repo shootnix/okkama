@@ -635,6 +635,11 @@ pub(crate) fn execute_function(
                         read(slots, *end, inst.span)?.int(inst.span)?,
                         inst.span,
                     )?,
+                    InstKind::ArrayRemove { array, index } => state.array_remove(
+                        read(slots, *array, inst.span)?,
+                        read(slots, *index, inst.span)?.int(inst.span)?,
+                        inst.span,
+                    )?,
                     InstKind::ArrayReplace { array, index, value } => state.array_replace(
                         read(slots, *array, inst.span)?,
                         read(slots, *index, inst.span)?.int(inst.span)?,

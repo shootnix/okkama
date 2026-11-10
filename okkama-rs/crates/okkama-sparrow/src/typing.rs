@@ -659,6 +659,13 @@ impl<'a> Typing<'a> {
                 }
                 self.define(dst.0, self.ty(*array), "arr.slice")
             }
+            I::ArrayRemove { dst, array, index } => {
+                self.expect(*index, &int)?;
+                if !matches!(self.ty(*array), Type::Array(_)) {
+                    return Err(format!("arr.remove of non-array r{}", array.0));
+                }
+                self.define(dst.0, self.ty(*array), "arr.remove")
+            }
             I::ArrayReplace { dst, array, index, value } => {
                 self.expect(*index, &int)?;
                 self.expect_ref(*value, self.element(*array)?)?;
