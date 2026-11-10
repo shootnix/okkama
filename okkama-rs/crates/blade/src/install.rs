@@ -191,7 +191,6 @@ pub fn sync(root: &Path) -> Result<Report, String> {
         if locked.source != want.source.id() || !want.requirement.matches(&locked.version) {
             continue;
         }
-        let installed = installed_checksum(root, &name, &lock)?;
         let package = match &want.source {
             Source::Path(_) => {
                 // A local package is live: its files may change, its version
@@ -208,7 +207,9 @@ pub fn sync(root: &Path) -> Result<Report, String> {
                 }
                 work.fetch_locked(&name, &want.source, locked)?
             }
-            Source::Git(_) if installed.as_ref() == Some(&locked.checksum) => {
+            Source::Git(_)
+                if installed_matches(root, &name, &lock, &locked.checksum)? == Some(true) =>
+            {
                 let dir = root.join(PKG).join(&name);
                 let manifest = Manifest::read_package(&dir)?;
                 Package {
@@ -226,7 +227,7 @@ pub fn sync(root: &Path) -> Result<Report, String> {
         let wants = wants_of(&package.manifest, package.base(), &by)?;
         disagreements(&wants, &lock, &mut lines);
         queue.extend(wants);
-        if installed.as_ref() == Some(&package.checksum) {
+        if installed_matches(root, &name, &lock, &package.checksum)? == Some(true) {
             kept.insert(name, package);
         } else {
             fetched.insert(name, package);
@@ -1194,9 +1195,16 @@ fn checksum(dir: &Path) -> Result<String, String> {
     checksum_of(dir, &files(dir)?)
 }
 
-/// The checksum of `pkg/<name>` as it is installed, without the packages
-/// nested in it (`acme/web` in `acme`); `None` when it is not there.
-fn installed_checksum(root: &Path, name: &str, lock: &Lock) -> Result<Option<String>, String> {
+/// Does `pkg/<name>` as it is installed have `checksum`, without the
+/// packages nested in it (`acme/web` in `acme`)? `None` when it is not
+/// there. Files the operating system leaves in folders it shows do not
+/// count (#353), unless the package has them itself.
+fn installed_matches(
+    root: &Path,
+    name: &str,
+    lock: &Lock,
+    checksum: &str,
+) -> Result<Option<bool>, String> {
     let dir = root.join(PKG).join(name);
     if !dir.is_dir() {
         return Ok(None);
@@ -1210,7 +1218,20 @@ fn installed_checksum(root: &Path, name: &str, lock: &Lock) -> Result<Option<Str
                 .any(|inner| file.starts_with(&format!("{inner}/")))
         })
         .collect();
-    checksum_of(&dir, &own).map(Some)
+    if checksum_of(&dir, &own)? == checksum {
+        return Ok(Some(true));
+    }
+    let without: Vec<String> = own.iter().filter(|file| !os_file(file)).cloned().collect();
+    Ok(Some(
+        without.len() != own.len() && checksum_of(&dir, &without)? == checksum,
+    ))
+}
+
+/// A file an operating system leaves in the folders it shows (#353):
+/// Finder's `.DS_Store` and `._*`, Windows' `Thumbs.db` and `desktop.ini`.
+fn os_file(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    name == ".DS_Store" || name.starts_with("._") || name == "Thumbs.db" || name == "desktop.ini"
 }
 
 /// The locked packages inside `pkg/<name>`, relative to it.
@@ -1390,7 +1411,7 @@ fn plan(
         let (before, after) = (of(old), of(new));
         let mut changed = Vec::new();
         for (name, locked) in known.packages.iter().filter(|(name, _)| top(name) == entry) {
-            if installed_checksum(root, name, known)?.is_some_and(|sum| sum != locked.checksum) {
+            if installed_matches(root, name, known, &locked.checksum)? == Some(false) {
                 changed.push((name, locked));
             }
         }
@@ -1436,7 +1457,8 @@ fn unknown_entries(root: &Path, lock: &Lock) -> Result<Vec<String>, String> {
                 .packages
                 .keys()
                 .any(|locked| locked.starts_with(&format!("{inner}/")));
-            if lock.packages.contains_key(&inner) || (dir.is_empty() && inner == INSTALLED) {
+            let ours = dir.is_empty() && inner == INSTALLED;
+            if lock.packages.contains_key(&inner) || ours || os_file(&inner) {
                 continue;
             } else if holds && entry.path().is_dir() {
                 dirs.push(inner);
@@ -1489,6 +1511,7 @@ fn first_difference(installed: &Path, original: &Path, nested: &[String]) -> Opt
     let (now, then) = (own(installed)?, own(original)?);
     now.union(&then)
         .find_map(|file| match (now.contains(file), then.contains(file)) {
+            (true, false) if os_file(file) => None,
             (true, false) => Some(format!("{file} was added")),
             (false, true) => Some(format!("{file} was removed")),
             _ => {

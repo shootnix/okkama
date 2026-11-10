@@ -28,7 +28,10 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   an entry of `pkg/` that Blade did not install is never deleted: the
   operation stops and names it. Nothing changes before the check. A pulled
   `blade.lock` with new versions is not a local change, so `blade sync`
-  installs it. Deleting the package is how one accepts a reinstall.
+  installs it. Deleting the package is how one accepts a reinstall. The files
+  an operating system leaves in folders it shows (`.DS_Store`, `._*`,
+  `Thumbs.db`, `desktop.ini`) are neither local changes nor unknown entries,
+  and stay where they are (#353).
 
 ### Changed
 

@@ -1150,6 +1150,65 @@ fn remove_keeps_what_another_package_still_needs() {
     assert!(error.contains("\"web\" is not a dependency"), "{error}");
 }
 
+/// Files the operating system leaves in `pkg/` (#353) are neither local
+/// changes nor unknown entries, and stay where they are; a package that
+/// ships one keeps its checksum.
+#[test]
+fn files_the_system_leaves_in_pkg_change_nothing() {
+    let (tree, app, web) = world("system");
+    let json = tree.path("repos/json");
+    install::add(&app, "web", web.to_str().unwrap(), Some("12.3.0")).unwrap();
+    let left = [
+        "pkg/.DS_Store",
+        "pkg/._web",
+        "pkg/Thumbs.db",
+        "pkg/json/.DS_Store",
+        "pkg/web/src/._router.ok",
+        "pkg/web/desktop.ini",
+    ];
+    for file in left {
+        tree.write(&format!("app/{file}"), "metadata");
+    }
+    assert!(install::sync(&app).unwrap().lines.is_empty());
+    assert!(
+        install::install(&app, &Unlock::Nothing)
+            .unwrap()
+            .lines
+            .is_empty()
+    );
+    assert!(install::update(&app, &[]).unwrap().lines.is_empty());
+    // A real change is still found, and named, past them.
+    std::fs::write(app.join("pkg/json/src/codec.ok"), "// patched\n").unwrap();
+    let error = install::sync(&app).unwrap_err();
+    assert!(
+        error.starts_with("pkg/json has local changes (src/codec.ok differs"),
+        "{error}"
+    );
+    std::fs::remove_dir_all(app.join("pkg/json")).unwrap();
+    install::sync(&app).unwrap();
+    // Replacing a package leaves the files beside it.
+    let report = install::add(&app, "json", json.to_str().unwrap(), Some("1.2.0")).unwrap();
+    assert_eq!(report.lines, ["~ json 1.0.0 -> 1.2.0"]);
+    for file in [
+        "pkg/.DS_Store",
+        "pkg/._web",
+        "pkg/Thumbs.db",
+        "pkg/web/desktop.ini",
+    ] {
+        assert!(app.join(file).is_file(), "{file}");
+    }
+
+    tag(
+        &tree.path("repos/finder"),
+        "1.0.0",
+        &[("src/finder.ok", "module finder;\n"), (".DS_Store", "shipped")],
+    );
+    let finder = tree.path("repos/finder");
+    install::add(&app, "finder", finder.to_str().unwrap(), None).unwrap();
+    assert!(app.join("pkg/finder/.DS_Store").is_file());
+    assert!(install::sync(&app).unwrap().lines.is_empty());
+}
+
 /// S01 (#15): a package name is a module path, never a file system path.
 #[test]
 fn package_names_cannot_leave_the_project() {
