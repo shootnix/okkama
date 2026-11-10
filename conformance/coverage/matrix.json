@@ -4815,10 +4815,12 @@
     },
     "normal": {
      "cases": [
-      "L01.gram.private.section"
+      "L01.gram.private.section",
+      "L01.gram.private.test-among-actions"
      ],
      "mandatory_cases": [
-      "L01.gram.private.section"
+      "L01.gram.private.section",
+      "L01.gram.private.test-among-actions"
      ],
      "requirement": "required"
     }
@@ -5080,9 +5082,11 @@
     },
     "interaction": {
      "cases": [
+      "L01.gram.private.test-among-actions",
       "L01.gram.test.inner-grammar-not-parsed"
      ],
      "mandatory_cases": [
+      "L01.gram.private.test-among-actions",
       "L01.gram.test.inner-grammar-not-parsed"
      ],
      "requirement": "required"
@@ -27996,10 +28000,12 @@
     "boundary": {
      "cases": [
       "L07.test-runner.isolated-failures",
+      "L07.test-runner.skip-after-failure",
       "L07.test-runner.successor-assertions"
      ],
      "mandatory_cases": [
       "L07.test-runner.isolated-failures",
+      "L07.test-runner.skip-after-failure",
       "L07.test-runner.successor-assertions"
      ],
      "requirement": "required"
@@ -28008,11 +28014,13 @@
      "cases": [
       "L01.gram.test.skipped-in-production",
       "L07.test-runner.isolated-failures",
+      "L07.test-runner.skip",
       "L07.test-runner.successor-assertions"
      ],
      "mandatory_cases": [
       "L01.gram.test.skipped-in-production",
       "L07.test-runner.isolated-failures",
+      "L07.test-runner.skip",
       "L07.test-runner.successor-assertions"
      ],
      "requirement": "required"
@@ -28031,11 +28039,13 @@
     "normal": {
      "cases": [
       "L04.fakes.storage-and-isolation",
-      "L07.test-runner.all-pass-async"
+      "L07.test-runner.all-pass-async",
+      "L07.test-runner.skip"
      ],
      "mandatory_cases": [
       "L04.fakes.storage-and-isolation",
-      "L07.test-runner.all-pass-async"
+      "L07.test-runner.all-pass-async",
+      "L07.test-runner.skip"
      ],
      "requirement": "required"
     }
@@ -28047,7 +28057,7 @@
     "docs/okkama-spec-11072026.md#14"
    ],
    "status": "mandatory",
-   "title": "-t runs root-module tests (not main); exit 0 only when every test passes; failures are isolated per test"
+   "title": "-t runs root-module tests (not main); exit 0 only when no test fails (a skipped test does not fail); failures are isolated per test"
   },
   {
    "aspects": {
@@ -32326,5 +32336,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "ce8cfd8de430366751fc673139f30e8f0170a05ec9b882136c14dcc2947457f7"
+ "suite_tree_sha256": "06be2e5674942ad587a69c79fef1505ddc1ddfac6a889638c46c590db6f40404"
 }

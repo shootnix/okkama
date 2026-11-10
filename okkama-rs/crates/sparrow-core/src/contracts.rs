@@ -49,7 +49,8 @@ fn contract(intrinsic: Intrinsic) -> Contract {
         CancellationNew | TokenNew | LockNew | GroupNew | EventNew => (false, "", 'P'),
         Cancelling | ChannelEndpoint => (false, "P", 'P'),
         EndpointNew => (false, "*", 'P'),
-        Cancel | EventSet | GrantClose | EndpointClose | GroupCancel | FakeClear | TestFail => (false, "P", '-'),
+        Cancel | EventSet | GrantClose | EndpointClose | GroupCancel | FakeClear | TestFail
+        | TestSkip => (false, "P", '-'),
         TokenRequested | LockLocked | GrantClosed => (false, "P", 'R'),
         TokenCheck => (false, "P", '-'),
         TokenWait | EventWait | LockGuard | GroupWait => (true, "P", 'P'),

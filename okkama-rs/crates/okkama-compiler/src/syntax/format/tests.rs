@@ -220,6 +220,40 @@ object A {
 }
 
 #[test]
+fn tests_among_private_actions_keep_their_place() {
+    // #277: the parser puts them after the section; they print where they
+    // were written, with their comments.
+    let text = "module app v1.0.0;\nobject A {\nA();\nprivate:\nhelper() is int { 1; }\n// checks\ntest \"t\" { test.ok(true); }\nasync test \"u\" { test.ok(true); }\nlast_one() is int { 2; }\n}\n";
+    let formatted = "module app v1.0.0;
+
+object A {
+    A();
+
+    private:
+
+    helper() is int {
+        1;
+    }
+
+    // checks
+    test \"t\" {
+        test.ok(true);
+    }
+
+    async test \"u\" {
+        test.ok(true);
+    }
+
+    last_one() is int {
+        2;
+    }
+}
+";
+    assert_eq!(fmt(text), formatted);
+    assert_eq!(fmt(formatted), formatted);
+}
+
+#[test]
 fn map_values_that_start_with_a_parenthesis_keep_it() {
     // #263: the parentheses of a map value survive formatting, and so does
     // the entry; `[LIMIT:(4)]` gains the space every entry has.

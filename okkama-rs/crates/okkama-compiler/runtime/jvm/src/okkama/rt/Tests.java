@@ -7,15 +7,16 @@ import java.util.Map;
 /**
  * Встроенный исполнитель тестов (§14): тесты корня по порядку, каждый в
  * своём состоянии; провал утверждения не прерывает тест, отказ — только
- * его. Записи {@code === RUN} / {@code --- PASS} / {@code --- FAIL} как у
- * Perl-интерпретатора; код выхода 0 — только если прошли все.
+ * его. Записи {@code === RUN} / {@code --- PASS} / {@code --- FAIL} /
+ * {@code --- SKIP}; код выхода 0 — только если ни один не провалился.
  */
 public final class Tests {
     private Tests() {}
 
-    /** Текущий тест: провалы утверждений. */
+    /** Текущий тест: провалы утверждений и причина {@code test.skip}. */
     static final class Case {
         final ArrayList<String> failures = new ArrayList<String>();
+        String skipped;
     }
 
     static Case current;
@@ -42,19 +43,27 @@ public final class Tests {
                 Object outcome = bodies[index].call(new Object[0]);
                 Scheduler.runTest(outcome instanceof Future ? (Future) outcome : null);
             } catch (Failure failure) {
-                test.failures.add(Rt.describe(failure));
+                // A skipped test ends with the failure of its test.skip.
+                if (test.skipped == null) {
+                    test.failures.add(Rt.describe(failure));
+                }
             } catch (StackOverflowError overflow) {
                 test.failures.add("RuntimeError: Stack overflow");
             }
             current = null;
-            if (test.failures.isEmpty()) {
-                System.out.println("--- PASS: " + names[index]);
-            } else {
+            if (!test.failures.isEmpty()) {
                 passed = false;
                 System.out.println("--- FAIL: " + names[index]);
                 for (String failure : test.failures) {
                     System.out.println("    " + failure.replace("\n", "\n    "));
                 }
+            } else if (test.skipped != null) {
+                System.out.println("--- SKIP: " + names[index]);
+                if (!test.skipped.isEmpty()) {
+                    System.out.println("    " + test.skipped.replace("\n", "\n    "));
+                }
+            } else {
+                System.out.println("--- PASS: " + names[index]);
             }
         }
         System.out.println(passed ? "PASS" : "FAIL");
@@ -67,6 +76,21 @@ public final class Tests {
             throw Rt.trap("The test capability is available only inside a running test");
         }
         current.failures.add(message);
+    }
+
+    /**
+     * {@code test.skip}: the test is skipped for {@code reason} and ends here.
+     * No catch takes a failure without a thrown value; cleanup runs as for
+     * any failure. The first skip's reason is kept.
+     */
+    static Failure skip(String reason) {
+        if (current == null) {
+            return Rt.trap("The test capability is available only inside a running test");
+        }
+        if (current.skipped == null) {
+            current.skipped = reason;
+        }
+        return Rt.trap("test skipped");
     }
 
     /** Строгое глубокое равенство утверждений: `any` сравнивается по содержимому. */

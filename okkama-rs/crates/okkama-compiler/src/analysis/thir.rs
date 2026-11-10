@@ -484,7 +484,8 @@ pub enum Callee {
         receiver: Box<Expr>,
         op: Builtin,
     },
-    /// `test.ok(...)`, `test.is(...)`, `test.isnt(...)`, `test.fail(...)`.
+    /// `test.ok(...)`, `test.is(...)`, `test.isnt(...)`, `test.fail(...)`,
+    /// `test.skip(...)`.
     Test(String),
     /// `fake.storage.set/get/has/remove/clear/size(...)` в action fake (§14):
     /// хранилище экземпляра `self`.

@@ -2118,6 +2118,7 @@ fn test_mode_runs_tests_with_fakes_and_reports_failures() {
          }\n\
          async test \"async\" { test.is(await Worker().value(), 7); }\n\
          test \"wrong\" { test.is(1 + 1, 3); test.ok(true); }\n\
+         test \"skipped\" { try { test.skip(\"later\"); } catch e is Denied { test.fail(\"caught\"); } test.ok(false); }\n\
          test \"throws\" { throw Denied.denied; }\n\
          main() is int { panic \"main does not run in test mode\"; }\n",
     )
@@ -2143,6 +2144,7 @@ fn test_mode_runs_tests_with_fakes_and_reports_failures() {
          === RUN   fakes keep state\n--- PASS: fakes keep state\n\
          === RUN   async\n--- PASS: async\n\
          === RUN   wrong\n--- FAIL: wrong\n    expected 3, got 2\n\
+         === RUN   skipped\n--- SKIP: skipped\n    later\n\
          === RUN   throws\n--- FAIL: throws\n    Denied: Denied.denied\nFAIL\n"
     );
 }

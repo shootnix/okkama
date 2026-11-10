@@ -5,17 +5,24 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use crate::Value;
 
+/// Исход текущего теста: провалы утверждений и причина `test.skip`.
+#[derive(Debug, Default)]
+pub struct Case {
+    pub failures: Vec<String>,
+    pub skipped: Option<String>,
+}
+
 thread_local! {
-    static CURRENT: RefCell<Option<Vec<String>>> = const { RefCell::new(None) };
+    static CURRENT: RefCell<Option<Case>> = const { RefCell::new(None) };
 }
 
 /// Начать тест: провалы утверждений копятся до `finish`.
 pub fn begin() {
-    CURRENT.with(|current| *current.borrow_mut() = Some(Vec::new()));
+    CURRENT.with(|current| *current.borrow_mut() = Some(Case::default()));
 }
 
-/// Завершить тест: его провалы утверждений.
-pub fn finish() -> Vec<String> {
+/// Завершить тест: его провалы утверждений и пропуск.
+pub fn finish() -> Case {
     CURRENT.with(|current| current.borrow_mut().take().unwrap_or_default())
 }
 
@@ -23,16 +30,34 @@ pub fn active() -> bool {
     CURRENT.with(|current| current.borrow().is_some())
 }
 
+fn outside() -> Rc<Failure> {
+    Failure::new(Kind::Program(
+        "The test capability is available only inside a running test".into(),
+    ))
+}
+
 /// `Tests.fail`: провал утверждения текущего теста.
 pub fn fail(message: String) -> Result<(), Rc<Failure>> {
     CURRENT.with(|current| match current.borrow_mut().as_mut() {
-        Some(failures) => {
-            failures.push(message);
+        Some(case) => {
+            case.failures.push(message);
             Ok(())
         }
-        None => Err(Failure::new(Kind::Program(
-            "The test capability is available only inside a running test".into(),
-        ))),
+        None => Err(outside()),
+    })
+}
+
+/// `Tests.skip`: тест пропущен по причине `reason` и кончается здесь. Отказ
+/// без брошенного значения не ловит ни один `catch`; cleanup идёт как при
+/// любом отказе, исполнитель записывает пропуск вместо отказа. Причина —
+/// первого `skip`.
+pub fn skip(reason: String) -> Result<(), Rc<Failure>> {
+    CURRENT.with(|current| match current.borrow_mut().as_mut() {
+        Some(case) => {
+            case.skipped.get_or_insert(reason);
+            Err(Failure::new(Kind::Program("test skipped".into())))
+        }
+        None => Err(outside()),
     })
 }
 

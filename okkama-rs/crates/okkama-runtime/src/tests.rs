@@ -1,7 +1,7 @@
 //! Встроенный исполнитель тестов (§14) — как `okkama.rt.Tests` JVM: тесты
 //! корня по порядку, каждый в своём состоянии; провал утверждения не
 //! прерывает тест, отказ — только его. Записи `=== RUN` / `--- PASS` /
-//! `--- FAIL`; успех — только если прошли все.
+//! `--- FAIL` / `--- SKIP`; успех — если ни один не провалился.
 use crate::interpreter::{Engine, cold_call, describe_failure, execute_function};
 use crate::{RuntimeError, invalid_state, unsupported};
 use okkama_compiler::ir;
@@ -83,16 +83,25 @@ fn run_tests_here(module: &ir::Module, out: &mut dyn Write) -> Result<bool, Runt
             Err(failure) => Some(describe(&engine, &failure)?),
         };
         crate::interpreter::take_fatal(&engine)?;
-        let mut failures = okkama_runtime_core::testing::finish();
-        failures.extend(failure);
-        if failures.is_empty() {
-            writeln!(out, "--- PASS: {name}").map_err(io)?;
-        } else {
+        let case = okkama_runtime_core::testing::finish();
+        let mut failures = case.failures;
+        // A skipped test ends with the failure of its `test.skip`.
+        if case.skipped.is_none() {
+            failures.extend(failure);
+        }
+        if !failures.is_empty() {
             passed = false;
             writeln!(out, "--- FAIL: {name}").map_err(io)?;
             for failure in failures {
                 writeln!(out, "    {}", failure.replace('\n', "\n    ")).map_err(io)?;
             }
+        } else if let Some(reason) = case.skipped {
+            writeln!(out, "--- SKIP: {name}").map_err(io)?;
+            if !reason.is_empty() {
+                writeln!(out, "    {}", reason.replace('\n', "\n    ")).map_err(io)?;
+            }
+        } else {
+            writeln!(out, "--- PASS: {name}").map_err(io)?;
         }
         out.flush().map_err(io)?;
     }

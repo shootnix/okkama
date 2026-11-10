@@ -189,7 +189,9 @@ impl ObjectMember {
 ///
 /// The section is kept as a node (rather than only flagging the actions) so
 /// the tree shows where it starts; its actions also carry
-/// [`Visibility::Private`].
+/// [`Visibility::Private`]. Tests written among the actions are not part of
+/// it: they are the object's [`ObjectMember::Test`] members right after it,
+/// and the section's span covers them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PrivateSection {
     pub actions: Vec<ActionDecl>,

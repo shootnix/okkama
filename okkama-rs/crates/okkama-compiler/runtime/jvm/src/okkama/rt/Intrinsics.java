@@ -912,6 +912,10 @@ public final class Intrinsics {
         Tests.fail((String) message);
     }
 
+    public static void test_skip(Object reason) {
+        throw Tests.skip((String) reason);
+    }
+
     /** Хранилище экземпляра fake: ключи — значения рантайма. */
     @SuppressWarnings("unchecked")
     private static java.util.HashMap<Object, Object> storage(Object self) {

@@ -6,7 +6,24 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Added
+
+- Tests: `test.skip("reason")` ends a test and reports it as skipped
+  (`--- SKIP: name` and the reason) on every engine (#277). The code after
+  it does not run, no `catch` takes it, and cleanup runs as for any failure.
+  A skipped test does not fail the run unless an assertion failed before the
+  skip. Conformance cases `L07.test-runner.skip` and
+  `L07.test-runner.skip-after-failure`.
+- `okkama run -t --filter TEXT` runs only the tests whose names contain TEXT,
+  literally; repeated, those that contain any of the texts. A filter that
+  selects no test is an error (#277).
+
 ### Fixed
+
+- Parser: a test block after `private:` was taken for an action ("Expect
+  \"(\" before action parameters"). It is a test of the object like any
+  other and does not become private; the formatter keeps it in its place
+  (#277, conformance case `L01.gram.private.test-among-actions`).
 
 - Parser: a map value may start with a parenthesis (#263). `["b": (2 + 3) *
   2]`, `[1: (2) + 1]`, `["x": (-1)]` and `[x: (2)]` were rejected with the
@@ -19,6 +36,12 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- The Okkama Book (EN/RU): the section «Completed test execution and
+  snapshots» described the runner of the Perl implementation (`--workers`,
+  `--seed`, `--report`, deadlines, `fake.reading`/`fake.writing`) and links
+  to contracts that do not exist. It now describes what the runner has; the
+  rest is planned with the new std in 0.7.0 (#339). The tests chapter runs
+  `okkama run -t` instead of `perl bin/okkama -t`.
 - Documentation names the virtual machine Sparrow; Tomato is the name of
   its current version, as Tahoe is a version of macOS. This covers the
   README, the Okkama Book (EN/RU), the Sparrow Book (EN/RU) and the guide

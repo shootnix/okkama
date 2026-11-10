@@ -1,0 +1,32 @@
+module app v1.0.0;
+
+object Account {
+    has balance is int;
+
+    Account(balance is int) {
+        self.balance = balance;
+    }
+
+    total() is int {
+        self.doubled();
+    }
+
+    private:
+
+    doubled() is int {
+        balance * 2;
+    }
+
+    test "among private actions" {
+        test.is(Account(2).total(), 4);
+        test.fail("ran");
+    }
+
+    decreased() is int {
+        balance - 1;
+    }
+}
+
+main() is int {
+    0;
+}

@@ -1,0 +1,39 @@
+module app v1.0.0;
+
+enum Denied is Error = (denied);
+
+object Lookup {
+    Lookup();
+
+    value() is int {
+        test.skip("skipped in a called action");
+        1;
+    }
+}
+
+test "skipped" {
+    test.skip("not today");
+    test.ok(false);
+}
+
+test "past a catch" {
+    try {
+        test.skip("no catch takes it");
+    }
+    catch e is Error {
+        test.fail("caught");
+    }
+    test.fail("after the try");
+}
+
+test "from an action" {
+    test.is(Lookup().value(), 2);
+}
+
+test "passes" {
+    test.is(1 + 1, 2);
+}
+
+main() is int {
+    0;
+}

@@ -210,6 +210,32 @@ fn object_members() {
 }
 
 #[test]
+fn tests_among_private_actions_are_object_tests() {
+    // #277: a test after `private:` is not private; it follows the section,
+    // which still holds every private action and covers the tests.
+    let source = "module app v1.0.0; object Cash { Cash(); \
+        private: helper() is void {} \
+        test \"first\" { test.ok(true); } \
+        value() is int { 1; } \
+        async test \"later\" { await x; } \
+        }";
+    for mode in [ParseMode::Full, ParseMode::Production] {
+        let program = parse_in(source, mode).expect("parses");
+        let Item::Object(object) = &program.items[0] else {
+            panic!()
+        };
+        let [_, ObjectMember::Private(section), ObjectMember::Test(first), ObjectMember::Test(later)] =
+            object.members.as_slice()
+        else {
+            panic!("{:?}", object.members)
+        };
+        assert_eq!(section.actions.len(), 2);
+        assert!(!first.is_async && later.is_async);
+        assert!(section.span.start < first.span.start && later.span.end <= section.span.end);
+    }
+}
+
+#[test]
 fn constructor_forms_stay_distinct() {
     let program = parse_ok(
         "module app v1.0.0; object Foo { has foo is int; has bar is string; \

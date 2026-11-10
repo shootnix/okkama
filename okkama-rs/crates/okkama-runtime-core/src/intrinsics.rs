@@ -1629,6 +1629,11 @@ pub fn call_borrowed(
             host.test_failure(message.as_string().map_err(|e| trap(e.message))?.to_owned())?;
             unit
         }
+        "test.skip" => {
+            let reason = arg(0)?;
+            crate::testing::skip(reason.as_string().map_err(|e| trap(e.message))?.to_owned())?;
+            unit
+        }
         "fake.storage.set" => {
             let (receiver, key, value) = (arg(0)?, arg(1)?, arg(2)?);
             let storage = storage(&receiver)?;

@@ -109,6 +109,7 @@ okkama run --engine sparrow hello.ok     # Sparrow
 okkama run --engine sparrow-origin x.ok  # previous VM (comparison only, until 0.5)
 okkama run --engine jvm hello.ok         # JVM classes + java (JDK 22+)
 okkama run -t module.ok                  # the module's inline tests
+okkama run -t --filter TEXT module.ok    # only the tests whose names contain TEXT
 okkama build x.ok --target sparrow -o x.spb [--tests]
 sparrow x.spb [args]   |  sparrow --test t.spb  |  sparrow --stats x.spb
 sparrow --disassemble x.spb   |  sparrow --native-capabilities

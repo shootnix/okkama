@@ -75,6 +75,7 @@ pub enum Intrinsic {
     TestIs,
     TestIsnt,
     TestFail,
+    TestSkip,
 }
 
 impl Intrinsic {
@@ -145,6 +146,7 @@ impl Intrinsic {
             "okkama.test.is" => TestIs,
             "okkama.test.isnt" => TestIsnt,
             "okkama.test.fail" => TestFail,
+            "okkama.test.skip" => TestSkip,
             _ => return None,
         })
     }
@@ -519,6 +521,17 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
                 failures.extend(message);
             }
             VOID
+        }
+        TestSkip => {
+            if runtime.host.as_ref().is_none_or(|h| h.test_failures.is_none()) {
+                return program_failure("The test capability is available only inside a running test");
+            }
+            let reason = runtime.heap.text(args[0]).to_owned();
+            if let Some(host) = runtime.host.as_mut() {
+                host.test_skipped.get_or_insert(reason);
+            }
+            // Ends the test: no `catch` takes a failure without a thrown value.
+            program_failure("test skipped")
         }
         _ => Fatal(format!("intrinsic {intrinsic:?} is async")),
     }

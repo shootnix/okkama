@@ -281,6 +281,56 @@ fn native_run_engines_execute_source_without_java() {
 }
 
 #[test]
+fn skipped_and_filtered_tests_report_alike_on_every_engine() {
+    // #277: a test after `private:` is an object test; `test.skip` ends its
+    // test past any `catch` and does not fail the run unless an assertion
+    // failed first; `--filter` keeps the tests whose names contain a text.
+    let source = TempFile::new(
+        "skip.ok",
+        b"module app v1.0.0;\n\
+          object Account {\n\
+              Account();\n\
+              test \"public\" { test.ok(true); }\n\
+              private:\n\
+              helper() is int { 1; }\n\
+              test \"among private\" { test.ok(true); }\n\
+          }\n\
+          test \"skipped\" { test.skip(\"not today\"); test.ok(false); }\n\
+          test \"through catch\" { try { test.skip(\"uncaught\"); } catch e is Error { test.fail(\"caught\"); } }\n\
+          test \"failed first\" { test.is(1, 2); test.skip(\"too late\"); }\n",
+    );
+    for engine in ["ir", "sparrow"] {
+        let output = run(&["run", "--engine", engine, "-t", source.path()]);
+        assert_eq!(output.status.code(), Some(1), "{engine}: {}", stderr(&output));
+        assert_eq!(
+            stdout(&output),
+            "=== RUN   Account :: public\n--- PASS: Account :: public\n\
+             === RUN   Account :: among private\n--- PASS: Account :: among private\n\
+             === RUN   skipped\n--- SKIP: skipped\n    not today\n\
+             === RUN   through catch\n--- SKIP: through catch\n    uncaught\n\
+             === RUN   failed first\n--- FAIL: failed first\n    expected 2, got 1\nFAIL\n",
+            "{engine}"
+        );
+        let output = run(&[
+            "run", "--engine", engine, "-t", "--filter", "skip", "--filter", "private", source.path(),
+        ]);
+        assert_eq!(output.status.code(), Some(0), "{engine}: {}", stderr(&output));
+        assert_eq!(
+            stdout(&output),
+            "=== RUN   Account :: among private\n--- PASS: Account :: among private\n\
+             === RUN   skipped\n--- SKIP: skipped\n    not today\nPASS\n",
+            "{engine}"
+        );
+        let output = run(&["run", "--engine", engine, "-t", "--filter", "nothing", source.path()]);
+        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(stderr(&output), "okkama: no test name contains \"nothing\"\n");
+    }
+    let output = run(&["run", "--filter", "skip", source.path()]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("--filter selects tests: use it with -t"));
+}
+
+#[test]
 fn uncaught_failure_prints_place_and_call_stack() {
     let source = b"module app v1.0.0;\nobject Box {\n    Box();\n    at(i is int) is int { [1, 2][i]; }\n}\nmain() is int {\n    Box().at(5);\n}\n";
     // Every engine reports the place and the call stack (the core since #10).

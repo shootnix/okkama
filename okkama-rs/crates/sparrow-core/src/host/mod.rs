@@ -192,6 +192,8 @@ pub(crate) struct Heap {
     /// Results of async natives until their driver takes them.
     pub(crate) futures: Arena<FutureCell>,
     pub(crate) test_failures: Option<Vec<String>>,
+    /// The reason of the running test's `test.skip`.
+    pub(crate) test_skipped: Option<String>,
     /// Core object of each live handle, and back.
     objects: crate::word::FastMap<u64, Word>,
     ids: crate::word::FastMap<Word, u64>,
@@ -216,6 +218,7 @@ impl Heap {
             json_nodes: Arena::default(),
             futures: Arena::default(),
             test_failures: None,
+            test_skipped: None,
             stdin: None,
             arguments: Vec::new(),
             objects: Default::default(),

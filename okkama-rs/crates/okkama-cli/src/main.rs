@@ -61,7 +61,7 @@ USAGE:
     okkama build <FILE|-> --target jvm [--budgeted] -o <FILE>
     okkama build <FILE|-> --target sparrow -o <FILE.spb>
     okkama exec [BUDGETS] <FILE.spb>
-    okkama run [-t] <FILE> [FILE.ok...] [ARGS...]
+    okkama run [-t [--filter TEXT]...] <FILE> [FILE.ok...] [ARGS...]
     okkama run --engine ir|sparrow <FILE> [FILE.ok...]
     okkama <FILE.ok> [FILE.ok...]
     okkama help [COMMAND]
@@ -117,6 +117,9 @@ RUN OPTIONS:
                           Place engine options before FILE; every engine runs
                           tests (-t), program arguments and `spawn` workers.
                           OKKAMA_ENGINE=ir|sparrow|sparrow-origin|jvm sets the default.
+    --filter TEXT         With -t: run only the tests whose name contains
+                          TEXT (literally, case-sensitive); repeated, the
+                          tests that contain any of the texts
     --max-steps N         Stop after N steps: function entries and loop
                           iterations (off by default), counted alike on
                           every engine; on the jvm only a run with this
@@ -1414,6 +1417,7 @@ fn build_command(args: &[String]) -> Outcome {
 fn run_command(args: &[String]) -> Outcome {
     let mut rest = args;
     let mut tests = false;
+    let mut filters: Vec<String> = Vec::new();
     let default = std::env::var("OKKAMA_ENGINE").unwrap_or_default();
     let mut limits = sparrow_core::budget::Limits::default();
     let mut budgeted = false;
@@ -1445,6 +1449,13 @@ fn run_command(args: &[String]) -> Outcome {
                 rest = &rest[1..];
             }
             "-t" | "--tests" => tests = true,
+            "--filter" => {
+                let Some(value) = rest.get(1) else {
+                    return Outcome::usage("--filter needs a text to look for in test names");
+                };
+                filters.push(value.clone());
+                rest = &rest[1..];
+            }
             "-h" | "--help" => return Outcome::success(HELP.to_string()),
             "--" => {
                 rest = &rest[1..];
@@ -1467,6 +1478,9 @@ fn run_command(args: &[String]) -> Outcome {
             _ => break,
         }
         rest = &rest[1..];
+    }
+    if !filters.is_empty() && !tests {
+        return Outcome::usage("--filter selects tests: use it with -t");
     }
     if budgeted && !matches!(engine, "sparrow" | "ir" | "jvm") {
         return Outcome::usage("execution budgets (--max-*, --timeout) need --engine sparrow, ir or jvm");
@@ -1493,11 +1507,24 @@ fn run_command(args: &[String]) -> Outcome {
         Ok(sources) => sources,
         Err(outcome) => return outcome,
     };
-    let (module, warnings) = match lower_source(&sources, line.tests) {
+    let (mut module, warnings) = match lower_source(&sources, line.tests) {
         Ok(lowered) => lowered,
         Err(outcome) => return outcome,
     };
     let _ = io::stderr().lock().write_all(warnings.as_bytes());
+    if let Some(tests) = module.tests.as_mut()
+        && !filters.is_empty()
+    {
+        // `--filter` (#277): the tests whose names contain one of the texts.
+        tests.retain(|(name, _)| filters.iter().any(|text| name.contains(text.as_str())));
+        if tests.is_empty() {
+            let texts: Vec<String> = filters.iter().map(|text| format!("{text:?}")).collect();
+            return Outcome::failure(
+                format!("okkama: no test name contains {}\n", texts.join(" or ")),
+                EXIT_DIAGNOSTICS,
+            );
+        }
+    }
     if engine != "jvm" && std::env::var_os("OKKAMA_ICU_LIBDIR").is_none() {
         // Как у JVM-запуска: программа видит закреплённую ICU в окружении.
         if let Some(icu) = pinned_icu() {

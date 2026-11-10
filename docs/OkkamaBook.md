@@ -3021,13 +3021,18 @@ Production parsing consumes the header and balanced body but emits no Test or
 Fake AST, so test-only inner grammar cannot affect production. Run tests with:
 
 ```text
-perl bin/okkama -t path/to/module.ok
+okkama run -t path/to/module.ok
+okkama run -t --filter parse path/to/module.ok
 ```
+
+`--filter TEXT` runs only the tests whose names contain TEXT, literally and
+case-sensitively; repeated, the tests that contain any of the texts.
 
 The runner retains test/fake AST across imports but executes only tests owned
 by the root file. It does not run or require `main`. Object/role test names are
 displayed as `Owner :: name`; this is namespacing only, with no implicit
-`self` or private-access exception. Test names must be unique within the
+`self` or private-access exception. A test may stand anywhere in an object's
+body, also among the actions after `private:`; it does not become private. Test names must be unique within the
 module (per owner for object/role tests); duplicates are semantic errors
 before any test runs.
 
@@ -3042,10 +3047,14 @@ test.ok(condition);
 test.is(actual, expected);
 test.isnt(actual, expected);
 test.fail("explanation");
+test.skip("reason");
 ```
 
 `ok` requires exact bool; `is` and `isnt` use strict/deep Okkama equality;
-`fail` records its string. At this trusted assertion boundary, values carried
+`fail` records its string. `skip` ends the test and reports it as skipped
+(`--- SKIP: name` and the reason): the code after it does not run, no `catch`
+takes it, and cleanup runs as for any failure. A skipped test does not fail the
+run, unless an assertion failed before the skip. At this trusted assertion boundary, values carried
 through `any` parameters can be compared recursively without becoming visible
 or narrowed in source code. Ordinary `any` equality remains forbidden.
 
@@ -3054,8 +3063,8 @@ from an imported module can delegate to it. It is still contextual rather than
 first-class, fresh for every case, and absent outside test execution. Failed
 assertions do not abort the block. An uncaught throw, panic, runtime, defer, or
 destroy failure ends only the current test, cleanup finishes, and the next test
-runs. The Go-like reporter returns process status 0 only for an entirely green
-suite and 1 otherwise. There is no `test.panics`: panic is intentionally
+runs. The Go-like reporter returns process status 0 when no test failed
+(skipped tests do not fail) and 1 otherwise. There is no `test.panics`: panic is intentionally
 uncatchable.
 
 `test.throws(Type) { … }` asserts that a block throws: it fails the test
@@ -7042,51 +7051,34 @@ without installing global translation functions. MessageKey("",id,true) keeps
 an explicit empty context distinct from absence. [Contract/example](std/gettext.md).
 
 
-### Completed test execution and snapshots
+### Test execution and snapshots
 
-Test blocks now support `test.skip("reason")`. Assertions keep their external
-source position, and a mismatched error assertion retains the original typed
-cause. Private actions remain available to the declaring async body after await
-and in deferred cleanup. Cancelling an owned awaited call waits for its cleanup
-before unwinding its caller.
+`test.skip("reason")` ends a test and reports it as skipped; `okkama run -t
+--filter TEXT` runs only the tests whose names contain TEXT. Tests run in
+declaration order, in the process of the run, and print `=== RUN`, then
+`--- PASS`, `--- FAIL` or `--- SKIP`; the run exits 1 when a test failed.
+Report formats, a seed, process workers and deadlines are not part of the
+runner yet.
 
 ```sh
-OKKAMA_STDLIB_DIR=std okkama-pl/bin/okkama -t examples/std-v4/testing-values.ok --workers 2 --seed 42 --report junit
+okkama run -t --filter snapshot path/to/module.ok
 ```
-
-Explicit runner options use fresh process workers, bounded byte capture, literal
-name filters and deadlines. Human, TAP, JSON and JUnit render the same nominal
-TestReport, in declaration order. The seed controls execution order; it does not
-replace a property's own PCG seed. The legacy -t invocation remains available.
 
 Snapshot checking and updating are separate commands:
 
 ```okkama
-import "testing/snapshot" take SnapshotFile,TextSnapshot,Snapshot,SnapshotUpdate;
+import "testing/snapshot" take SnapshotFile, TextSnapshot, Snapshot, SnapshotUpdate;
 // directory is an explicit DirectoryLocating capability.
-let expected=SnapshotFile(directory,"invoice.txt");
-let actual=TextSnapshot("invoice\r\n");
-Snapshot(actual,expected,4096).check();
+let expected = SnapshotFile(directory, "invoice.txt");
+let actual = TextSnapshot("invoice\r\n");
+Snapshot(actual, expected, 4096).check();
 // Use only when intentionally accepting new expected data:
-SnapshotUpdate(actual,expected,4096).update();
+SnapshotUpdate(actual, expected, 4096).update();
 ```
 
 TextSnapshot chooses UTF-8/LF normalization; RawSnapshot keeps exact bytes and
-JsonSnapshot prints explicit ordered JSON values. Checks never create missing
-files. Updates use a no-follow root descriptor and atomic sibling replacement.
-Different ManualClock owners carry distinct monotonic domains, so accidental
-cross-clock subtraction or comparison raises IncompatibleClock.
-
-Inside role fakes use fake.reading.get/has/size and fake.writing.set/remove/clear.
-The writing commands do not return a storage object; remove returns whether a
-key existed. Neither contextual capability can escape as a value. Existing
-fake.storage is deprecated but compatible.
-
-[Full testing contract](std/testing.md) specifies limits, cleanup grace, backend
-requirements and report cause projections. [Line diffs](std/diff.md) use bounded
-LCS matching and immutable std representations. LocaleDataVersion publishes the
-separate ISO snapshot, ICU, UCA and collation-CLDR coordinates in addition to
-ordinary CLDR/Unicode/IANA data versions.
+JsonSnapshot prints explicit ordered JSON values. A check never creates a
+missing file: it fails the test.
 
 ### Keep a parsed MIME result for navigation
 

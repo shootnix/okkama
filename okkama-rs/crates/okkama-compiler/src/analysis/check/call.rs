@@ -1579,12 +1579,13 @@ impl Checker<'_, '_> {
         )
     }
 
-    /// `test.ok(bool)`, `test.is(a, b)`, `test.isnt(a, b)`, `test.fail(string)` (§14).
+    /// `test.ok(bool)`, `test.is(a, b)`, `test.isnt(a, b)`, `test.fail(string)`,
+    /// `test.skip(string)` (§14).
     fn test_call(&mut self, name: &ast::Name, args: &[ast::Argument], span: Span) -> Expr {
         let params: Vec<Option<Ty>> = match name.text.as_str() {
             "ok" => vec![Some(Ty::Bool)],
             "is" | "isnt" => vec![None, None],
-            "fail" => vec![Some(Ty::Str)],
+            "fail" | "skip" => vec![Some(Ty::Str)],
             other => {
                 self.error(
                     name.span,

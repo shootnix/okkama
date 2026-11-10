@@ -279,7 +279,11 @@ impl Parser<'_> {
         let mut members = Vec::new();
         while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
             if self.eat(TokenKind::Private) {
-                members.push(ObjectMember::Private(self.private_section()?));
+                let (section, tests) = self.private_section()?;
+                members.push(ObjectMember::Private(section));
+                // A test written among the private actions is a test of the
+                // object like any other (#277); it follows the section.
+                members.extend(tests.into_iter().map(ObjectMember::Test));
                 break;
             }
             members.push(self.object_member(owner)?);
@@ -289,12 +293,22 @@ impl Parser<'_> {
     }
 
     /// After `private`: `: action*` up to the end of the body. `private` is a
-    /// section marker, not a per-action modifier.
-    fn private_section(&mut self) -> PResult<PrivateSection> {
+    /// section marker, not a per-action modifier. Tests among the actions are
+    /// not private and come back separately.
+    fn private_section(&mut self) -> PResult<(PrivateSection, Vec<TestDecl>)> {
         let keyword = self.previous().span;
         let colon = self.consume(TokenKind::Colon, "Expect \":\" after \"private\".")?;
         let mut actions = Vec::new();
+        let mut tests = Vec::new();
         while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
+            if self.eat(TokenKind::Test) {
+                tests.push(self.test_block(false)?);
+                continue;
+            }
+            if self.check_async_test() {
+                tests.push(self.async_test_block()?);
+                continue;
+            }
             self.reject_native_outside_module()?;
             if self.eat(TokenKind::Amp) {
                 let token = self.previous().clone();
@@ -308,11 +322,18 @@ impl Parser<'_> {
             }
             actions.push(self.action_declaration(Visibility::Private)?);
         }
-        let end = actions.last().map_or(colon.span, |action| action.span);
-        Ok(PrivateSection {
+        let end = actions
+            .last()
+            .map(|action| action.span)
+            .into_iter()
+            .chain(tests.last().map(|test| test.span))
+            .max_by_key(|span| span.end)
+            .unwrap_or(colon.span);
+        let section = PrivateSection {
             actions,
             span: keyword.to(end),
-        })
+        };
+        Ok((section, tests))
     }
 
     fn object_member(&mut self, owner: Option<&Name>) -> PResult<ObjectMember> {
