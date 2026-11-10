@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Give every build input the time its content was first seen by a gate (#333).
 
-    tools/gate/stamp_sources.py ROOT MANIFEST
+    tools/gate/stamp_sources.py ROOT MANIFEST [STALE ...]
 
 The gate copies the tree into its container keeping the files' times, and
 builds into volumes shared by every gate run (`okkama-gate-target`,
@@ -16,7 +16,10 @@ time kept in MANIFEST when the content is unchanged, now when it is new or
 changed. Every artifact built from older content is then older than the
 change, in any volume and whatever steps of earlier gates ran, and nothing
 unchanged is rebuilt. The manifest lives in the target volume; without it
-every file is new once.
+every file is new once. When anything changed, each STALE file is removed:
+the OCS adapter's probe cache, which maps a hash of the sources to "built"
+and so would skip cargo for sources it once saw, even if that build reused
+another tree's binary.
 """
 import hashlib
 import json
@@ -58,6 +61,11 @@ def main():
         json.dump(stamps, f)
     os.replace(manifest_path + ".tmp", manifest_path)
     print(f"stamp_sources: {changed} of {len(stamps)} build inputs new or changed since the last gate")
+    if changed:
+        for stale in sys.argv[3:]:
+            if os.path.exists(stale):
+                os.remove(stale)
+                print(f"stamp_sources: removed {stale}")
 
 
 if __name__ == "__main__":

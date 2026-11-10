@@ -39,7 +39,8 @@ exec docker run --rm \
             --exclude /conformance/reports/runs --exclude .git /src/ /work/
         # The build volumes are shared by every gate run: give each source the
         # time its content was first seen, so cargo rebuilds what changed (#333).
-        python3 /work/tools/gate/stamp_sources.py /work /work/okkama-rs/target/.gate-sources.json
+        python3 /work/tools/gate/stamp_sources.py /work /work/okkama-rs/target/.gate-sources.json \
+            /work/conformance/adapters/rust/.target/ocs-probe.json
         cd /work && status=0 && tools/gate/gate.sh "$@" || status=$?
         cp -R /work/conformance/reports/runs/gate-* /out/ 2>/dev/null || true
         exit $status' gate "$@"
