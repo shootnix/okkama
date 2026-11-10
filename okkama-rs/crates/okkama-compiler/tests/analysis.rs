@@ -829,6 +829,63 @@ fn an_unconsumed_successor_is_reported_at_its_binding() {
     }
 }
 
+/// Errors of a module in test mode: fakes become `Role$fake` objects.
+fn test_mode_located(text: &str) -> Vec<(String, String)> {
+    let text = format!("module app v1.0.0; {text}");
+    let source = SourceFile::new("test.ok", &text).expect("small source");
+    let program = prune::desugar_test_items(
+        syntax::parse(&source, &ParseOptions::default()).expect("valid syntax"),
+    );
+    let module = SourceModule {
+        path: "app".to_string(),
+        program: &program,
+        imports: Vec::new(),
+    };
+    analysis::analyze(vec![module])
+        .err()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|error| (text[error.span.start as usize..error.span.end as usize].to_string(), error.message))
+        .collect()
+}
+
+/// A mistake in a role's fake names the role, not the generated object, and
+/// points at the fake's own code (#276).
+#[test]
+fn fake_errors_name_the_role_and_point_at_the_fake() {
+    let first_line = |found: Vec<(String, String)>| -> Vec<(String, String)> {
+        found.into_iter().map(|(at, message)| (at.lines().next().unwrap_or("").to_string(), message)).collect()
+    };
+    let role = |extra: &str, fake: &str| format!("role Counter {{\n count(step is int) is int;\n{extra} fake {{\n{fake}\n }}\n}}\n");
+    assert_eq!(
+        first_line(test_mode_located(&role("", " has value is int;\n count(step is int) is int { value; }"))),
+        [("value".to_string(), "Fake field \"value\" of role \"Counter\" needs a default: a fake takes no constructor arguments".to_string())]
+    );
+    assert_eq!(
+        first_line(test_mode_located(&role("", " count(step is int) is string { \"0\"; }"))),
+        [(
+            "count(step is int) is string { \"0\"; }".to_string(),
+            "Action \"count\" of the fake of role \"Counter\" must return int, got string".to_string()
+        )]
+    );
+    assert_eq!(
+        first_line(test_mode_located(&role("", " count(step is string) is int { 0; }"))),
+        [(
+            "count(step is string) is int { 0; }".to_string(),
+            "Action \"count\" parameter 1 of the fake of role \"Counter\" must be int, got string".to_string()
+        )]
+    );
+    assert_eq!(
+        first_line(test_mode_located(&role(" reset() is void;\n", " count(step is int) is int { 0; }"))),
+        [("fake {".to_string(), "The fake of role \"Counter\" does not implement action \"reset\"".to_string())]
+    );
+    // An object the programmer wrote keeps its name and place.
+    assert_eq!(
+        messages("role Counter {\n count() is int;\n}\nobject Real does Counter {\n Real();\n count() is string { \"0\"; }\n}\nmain() is int { 0; }"),
+        ["Action \"count\" on object \"Real\" must return int for role \"Counter\", got string"]
+    );
+}
+
 /// Exponent literals are floats (#57); one that cannot be a finite float, or
 /// that is not zero but would round to 0.0, is an error.
 #[test]

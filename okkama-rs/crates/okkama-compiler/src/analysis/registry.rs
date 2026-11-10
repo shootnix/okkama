@@ -2348,22 +2348,32 @@ impl<'a> Registry<'a> {
                         continue;
                     }
                     if body.is_none() {
-                        let missing: Vec<String> = self.objects[id.0]
+                        let missing: Vec<(String, Span)> = self.objects[id.0]
                             .fields
                             .iter()
                             .enumerate()
                             .filter(|(index, field)| {
                                 !indices.contains(index) && field.default.is_none()
                             })
-                            .map(|(_, field)| field.name.clone())
+                            .map(|(_, field)| (field.name.clone(), field.span))
                             .collect();
-                        if let Some(field) = missing.first() {
-                            self.error(
-                                ctor.span,
-                                format!(
-                                    "Constructor shorthand for \"{name}\" cannot initialize required field \"{field}\""
+                        if let Some((field, at)) = missing.first() {
+                            // A fake's constructor is generated (#276): the
+                            // field is what needs fixing.
+                            match name.strip_suffix("$fake") {
+                                Some(role) => self.error(
+                                    *at,
+                                    format!(
+                                        "Fake field \"{field}\" of role \"{role}\" needs a default: a fake takes no constructor arguments"
+                                    ),
                                 ),
-                            );
+                                None => self.error(
+                                    ctor.span,
+                                    format!(
+                                        "Constructor shorthand for \"{name}\" cannot initialize required field \"{field}\""
+                                    ),
+                                ),
+                            }
                             continue;
                         }
                     }
@@ -2539,8 +2549,22 @@ impl<'a> Registry<'a> {
             .collect();
         let role_display = self.type_name(&Ty::Role(role, args.to_vec()));
         let object = decl.name.text.clone();
+        // A fake is named by its role, not by the generated object, and its
+        // errors point at the fake's own code (#276).
+        let fake = object.ends_with("$fake");
+        let (on, for_role) = if fake {
+            (format!("of the fake of role \"{role_display}\""), String::new())
+        } else {
+            (format!("on object \"{object}\""), format!(" for role \"{role_display}\""))
+        };
         let required: Vec<RoleMethod> = self.roles[role.0].methods.clone();
         for method in required {
+            let mut at = if fake { decl.span } else { decl.name.span };
+            let mut point = |candidate: &MethodInfo<'_>| {
+                if let (true, Some(action)) = (fake, candidate.decl) {
+                    at = action.span;
+                }
+            };
             let params: Vec<Ty> = method.params.iter().map(|(_, ty)| ty.subst(&env)).collect();
             let result = method.result.as_ref().map(|ty| ty.subst(&env));
             let message = {
@@ -2561,6 +2585,7 @@ impl<'a> Registry<'a> {
                 if let Some(found) = named.iter().find(|candidate| {
                     same_params(candidate) && self.result_conforms(id, &candidate.result, &result)
                 }) {
+                    point(found);
                     if found.private {
                         Some(format!(
                             "Role \"{role_display}\" has no public implementation of action \"{}\"",
@@ -2568,13 +2593,14 @@ impl<'a> Registry<'a> {
                         ))
                     } else if found.is_async != method.is_async {
                         Some(format!(
-                            "Action \"{}\" on object \"{object}\" must match async shape for role \"{role_display}\"",
+                            "Action \"{}\" {on} must match async shape{for_role}",
                             method.name
                         ))
                     } else {
                         None
                     }
                 } else if let Some(first) = named.first() {
+                    point(first);
                     // Та же арность; среди перегрузок — с той же вариадичностью.
                     let same_arity =
                         |candidate: &&&MethodInfo<'_>| candidate.params.len() == params.len();
@@ -2584,12 +2610,18 @@ impl<'a> Registry<'a> {
                         .find(|candidate| candidate.variadic == method.variadic)
                         .or_else(|| named.iter().find(same_arity))
                     {
+                        None if fake => Some(format!(
+                            "Action \"{}\" {on} does not accept {} parameter(s)",
+                            first.name,
+                            params.len()
+                        )),
                         None => Some(format!(
                             "Object \"{object}\" does role \"{role_display}\" but action \"{}\" does not accept {} parameter(s)",
                             first.name,
                             params.len()
                         )),
                         Some(candidate) => {
+                            point(candidate);
                             let mismatch = candidate
                                 .params
                                 .iter()
@@ -2605,14 +2637,14 @@ impl<'a> Registry<'a> {
                             };
                             Some(match mismatch {
                                 Some((position, ((_, actual), expected))) => format!(
-                                    "Action \"{}\" parameter {} on object \"{object}\" must be {} for role \"{role_display}\", got {}",
+                                    "Action \"{}\" parameter {} {on} must be {}{for_role}, got {}",
                                     method.name,
                                     position + 1,
                                     shown(expected, method.variadic, position),
                                     shown(actual, candidate.variadic, position)
                                 ),
                                 None => format!(
-                                    "Action \"{}\" on object \"{object}\" must return {} for role \"{role_display}\", got {}",
+                                    "Action \"{}\" {on} must return {}{for_role}, got {}",
                                     method.name,
                                     self.result_name(&result),
                                     self.result_name(&candidate.result)
@@ -2620,6 +2652,11 @@ impl<'a> Registry<'a> {
                             })
                         }
                     }
+                } else if fake {
+                    Some(format!(
+                        "The fake of role \"{role_display}\" does not implement action \"{}\"",
+                        method.name
+                    ))
                 } else {
                     Some(format!(
                         "Object \"{object}\" does role \"{role_display}\" but does not implement action \"{}\"",
@@ -2628,7 +2665,7 @@ impl<'a> Registry<'a> {
                 }
             };
             if let Some(message) = message {
-                self.error(decl.name.span, message);
+                self.error(at, message);
             }
         }
     }

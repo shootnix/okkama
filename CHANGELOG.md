@@ -24,6 +24,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   leave scope without consumption" pointed at the first line of the
   enclosing action; it points at the binding (#272), also when the path that
   loses the value is a `catch`.
+- Diagnostics: mistakes in a role's `fake` named the generated object
+  `Counter$fake` and a constructor nobody wrote (#276). A fake field without
+  a default now reads `Fake field "value" of role "Counter" needs a default:
+  a fake takes no constructor arguments`, at the field; a fake action that
+  does not match the role reads `Action "count" of the fake of role
+  "Counter" must return int, got string`, at the action; a missing one reads
+  `The fake of role "Counter" does not implement action "reset"`, at the
+  `fake` block. Objects the programmer wrote keep their messages.
 - Parser: a test block after `private:` was taken for an action ("Expect
   \"(\" before action parameters"). It is a test of the object like any
   other and does not become private; the formatter keeps it in its place
