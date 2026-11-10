@@ -55,6 +55,11 @@ const CAPACITY_SHIFT: u32 = 18;
 /// Arrays shorter than this are copied on append, as before: a copy of a
 /// few words costs less than a buffer and a view.
 pub const CHAIN_MIN: usize = 32;
+/// Strings shorter than this, in bytes, are copied by `+`, as before (#255);
+/// a longer one made by `+` starts a chain ([`APPENDED`], [`PREPENDED`]),
+/// whose next `+` gets a text buffer. A string version in a text buffer is
+/// [`SHARED`]: word 1 the address of its first byte, word 2 the buffer.
+pub const TEXT_CHAIN_MIN: usize = 256;
 /// An array version kept as a 32-way trie (#250): word 1 is the root branch,
 /// word 2 the tail (the last 1–32 elements), word 3 the root's shift; the
 /// payload is the length. Its nodes are ordinary arrays — branches of node
@@ -441,18 +446,125 @@ impl Heap {
     // ---- strings ----
 
     pub fn allocate_text(&mut self, text: &str) -> Word {
-        let bytes = text.len();
+        self.allocate_text_of(&[text])
+    }
+
+    /// A flat string of `parts` in order, copied once.
+    pub fn allocate_text_of(&mut self, parts: &[&str]) -> Word {
+        let bytes: usize = parts.iter().map(|part| part.len()).sum();
         let words = 1 + bytes.div_ceil(8).max(1);
         self.counted("string", 0, words);
         let string = self.allocate(words);
+        let ascii = parts.iter().all(|part| part.is_ascii());
         // SAFETY: room for the header and `bytes` bytes.
         unsafe {
-            *(string as *mut u64) =
-                header(STRING, Repr::Raw, bytes as u32) | if text.is_ascii() { ASCII } else { 0 };
-            std::ptr::copy_nonoverlapping(text.as_ptr(), (string + 8) as *mut u8, bytes);
+            *(string as *mut u64) = header(STRING, Repr::Raw, bytes as u32) | if ascii { ASCII } else { 0 };
+            let mut at = (string + 8) as *mut u8;
+            for part in parts {
+                std::ptr::copy_nonoverlapping(part.as_ptr(), at, part.len());
+                at = at.add(part.len());
+            }
         }
         string
     }
+
+    /// The address of the first byte of a string and its length in bytes:
+    /// inline in a flat string, in a text buffer for a [`SHARED`] one.
+    fn text_bytes(&self, string: Word) -> (*const u8, usize) {
+        let header = self.header_of(string);
+        let first = if header & SHARED != 0 {
+            // SAFETY: a shared string has three words.
+            unsafe { *((string + 8) as *const u64) }
+        } else {
+            string + 8
+        };
+        (first as *const u8, payload(header) as usize)
+    }
+
+    // ---- text buffers (#255) ----
+
+    /// A text buffer with room for `capacity` bytes (rounded up to a power of
+    /// two) holding `parts` in order from byte `front` on. Word 1 is the
+    /// lowest byte written, the payload one past the highest; bytes between
+    /// them are never written again, so versions can share them.
+    pub fn allocate_text_buffer(&mut self, parts: &[&str], capacity: usize, front: usize) -> Word {
+        let capacity = capacity.next_power_of_two();
+        let used: usize = parts.iter().map(|part| part.len()).sum();
+        assert!(front + used <= capacity, "text buffer too small");
+        let words = 2 + capacity / 8;
+        self.counted("text buffer", 0, words);
+        let buffer = self.allocate(words);
+        // SAFETY: room for two words and `capacity` bytes.
+        unsafe {
+            *(buffer as *mut u64) = header(STRING, Repr::Raw, (front + used) as u32)
+                | BUFFER
+                | (u64::from(capacity.trailing_zeros()) << CAPACITY_SHIFT);
+            *((buffer + 8) as *mut u64) = front as u64;
+            let mut at = (buffer + 16 + front as Word) as *mut u8;
+            for part in parts {
+                std::ptr::copy_nonoverlapping(part.as_ptr(), at, part.len());
+                at = at.add(part.len());
+            }
+        }
+        buffer
+    }
+
+    /// The lowest byte written, one past the highest, and the capacity of a
+    /// text buffer.
+    pub fn text_buffer_room(&self, buffer: Word) -> (usize, usize, usize) {
+        let header = self.header_of(buffer);
+        // SAFETY: a text buffer has its low mark in word 1.
+        let low = unsafe { *((buffer + 8) as *const u64) } as usize;
+        (low, payload(header) as usize, 1 << ((header >> CAPACITY_SHIFT) & 63))
+    }
+
+    /// The text buffer of a [`SHARED`] string and the offset of its first byte.
+    pub fn text_shared(&self, string: Word) -> (Word, usize) {
+        // SAFETY: a shared string has three words.
+        unsafe {
+            let (first, buffer) = (*((string + 8) as *const u64), *((string + 16) as *const u64));
+            (buffer, (first - buffer - 16) as usize)
+        }
+    }
+
+    /// Is `string` a version in a text buffer?
+    pub fn is_text_view(&self, string: Word) -> bool {
+        self.header_of(string) & SHARED != 0
+    }
+
+    /// Write `text` at the high end of `buffer`, or right before its low end
+    /// (the caller checked the room). `text` may be part of a version of the
+    /// same buffer: it lies between the marks, the write outside them.
+    pub fn text_buffer_write(&mut self, buffer: Word, text: &str, at_front: bool) {
+        let (low, high, capacity) = self.text_buffer_room(buffer);
+        let at = if at_front { low.checked_sub(text.len()).expect("text buffer underflow") } else { high };
+        assert!(at + text.len() <= capacity, "text buffer overflow");
+        // SAFETY: the bytes written are inside the buffer and outside every
+        // version, which lie between the marks.
+        unsafe {
+            std::ptr::copy_nonoverlapping(text.as_ptr(), (buffer + 16 + at as Word) as *mut u8, text.len());
+            if at_front {
+                *((buffer + 8) as *mut u64) = at as u64;
+            } else {
+                let header = &mut *(buffer as *mut u64);
+                *header = (*header & 0xffff_ffff) | (((high + text.len()) as u64) << 32);
+            }
+        }
+    }
+
+    /// A string of `length` bytes of `buffer` from byte `start`.
+    pub fn allocate_text_view(&mut self, buffer: Word, start: usize, length: usize, ascii: bool) -> Word {
+        self.counted("string view", 0, 3);
+        let view = self.allocate(3);
+        // SAFETY: three words.
+        unsafe {
+            *(view as *mut u64) = header(STRING, Repr::Raw, length as u32) | SHARED | if ascii { ASCII } else { 0 };
+            *((view + 8) as *mut u64) = buffer + 16 + start as u64;
+            *((view + 16) as *mut u64) = buffer;
+        }
+        view
+    }
+
     pub fn is_ascii_text(&self, string: Word) -> bool {
         self.header_of(string) & ASCII != 0
     }
@@ -489,9 +601,9 @@ impl Heap {
         }
         let count = self.char_count(string);
         let text: &str = {
-            let length = payload(self.header_of(string)) as usize;
+            let (first, length) = self.text_bytes(string);
             // SAFETY: as in `text`; the string outlives this call.
-            unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts((string + 8) as *const u8, length)) }
+            unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(first, length)) }
         };
         let entry = self.positions.entry(string);
         let (mut char, mut byte) = [(0, 0), (count, text.len()), (entry.char, entry.byte)]
@@ -515,14 +627,10 @@ impl Heap {
     }
 
     pub fn text(&self, string: Word) -> &str {
-        let length = payload(self.header_of(string)) as usize;
-        // SAFETY: strings are written once from valid UTF-8 and never mutated.
-        unsafe {
-            std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                (string + 8) as *const u8,
-                length,
-            ))
-        }
+        let (first, length) = self.text_bytes(string);
+        // SAFETY: strings are written once from valid UTF-8 and never mutated;
+        // the bytes of a text buffer a version covers are never written again.
+        unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(first, length)) }
     }
 
     // ---- arrays ----
@@ -993,6 +1101,8 @@ impl Heap {
                 // A shared version keeps its buffer alive; the buffer traces
                 // the slots below its frontier like any array.
                 ARRAY if header & SHARED != 0 => push(unsafe { *((object + 16) as *const u64) }, Repr::Ref),
+                // A string version keeps its text buffer alive (#255).
+                STRING if header & SHARED != 0 => push(unsafe { *((object + 16) as *const u64) }, Repr::Ref),
                 // A trie keeps its root and its tail; they trace the rest.
                 ARRAY if header & TRIE != 0 => {
                     push(unsafe { *((object + 8) as *const u64) }, Repr::Ref);
@@ -1484,6 +1594,32 @@ mod tests {
     /// Code point positions agree with a plain count from the start, in any
     /// order of access, for several strings at once and across collections
     /// (#52).
+    #[test]
+    fn text_views_share_a_buffer_and_keep_their_bytes() {
+        let mut heap = Heap::new(layouts());
+        // Room for 64 bytes, "ab" written from byte 16.
+        let buffer = heap.allocate_text_buffer(&["a", "b"], 40, 16);
+        assert_eq!(heap.text_buffer_room(buffer), (16, 18, 64));
+        let first = heap.allocate_text_view(buffer, 16, 2, true);
+        heap.text_buffer_write(buffer, "cжd", false);
+        heap.text_buffer_write(buffer, "😀", true);
+        let back = heap.allocate_text_view(buffer, 16, 6, false);
+        let both = heap.allocate_text_view(buffer, 12, 10, false);
+        assert_eq!((heap.text(first), heap.text(back), heap.text(both)), ("ab", "abcжd", "😀abcжd"));
+        assert_eq!(heap.text_shared(both), (buffer, 12));
+        assert_eq!(heap.char_count(both), 6);
+        assert_eq!(heap.char_offset(both, 2), 5);
+        // The views keep the buffer alive; their bytes stay.
+        heap.collect(|visit| {
+            visit(first, Repr::Ref);
+            visit(both, Repr::Ref);
+        });
+        heap.allocate_text(&"x".repeat(200));
+        assert_eq!((heap.text(first), heap.text(both)), ("ab", "😀abcжd"));
+        heap.collect(|_| {});
+        assert_eq!(heap.stats().live_bytes, 0, "the views and the buffer are released");
+    }
+
     #[test]
     fn code_point_positions_match_a_plain_count() {
         let mut heap = Heap::new(layouts());

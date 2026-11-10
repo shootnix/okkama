@@ -477,6 +477,92 @@ fn append_shared(runtime: &mut Runtime, repr: Repr, words: &[Word], size: usize)
     Some(runtime.heap.allocate_view(repr, buffer, front, size))
 }
 
+/// Text buffers for chains of `+` on strings (#255) unless
+/// `OKKAMA_STRINGS=flat`, which keeps every concatenation a copy.
+pub(crate) fn shared_strings() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("OKKAMA_STRINGS").map_or(true, |v| v != "flat"))
+}
+
+/// `left + right` on strings (#255): bytes the size of a new allocation,
+/// checked against the memory budget first, or `None` when it would exceed
+/// it.
+///
+/// A chain of appends writes at the high end of a text buffer when `left`
+/// ends there and there is room, a chain of prepends right before the low
+/// end when `right` starts there; else into a new buffer twice the size
+/// (three quarters of the room in front for prepends, a quarter for a
+/// chain that has grown at both ends). The string a chain starts from is a
+/// flat copy marked [`APPENDED`](crate::heap::APPENDED) or
+/// [`PREPENDED`](crate::heap::PREPENDED); strings shorter than
+/// [`TEXT_CHAIN_MIN`](crate::heap::TEXT_CHAIN_MIN) are copied, as before.
+pub(crate) fn concat_text(runtime: &mut Runtime, left: Word, right: Word, fits: impl Fn(&Runtime, usize) -> bool) -> Option<Word> {
+    use crate::heap::{APPENDED, ASCII, PREPENDED, SHARED, TEXT_CHAIN_MIN, payload};
+    let (lh, rh) = (runtime.heap.header_of(left), runtime.heap.header_of(right));
+    let (ll, rl) = (payload(lh) as usize, payload(rh) as usize);
+    let (size, ascii) = (ll + rl, lh & rh & ASCII != 0);
+    let chains = shared_strings() && 2 * size <= u32::MAX as usize;
+    let chained = |header: u64| header & (APPENDED | PREPENDED | SHARED) != 0;
+    if chains && chained(lh) && ll >= rl {
+        if lh & SHARED != 0 {
+            let (buffer, start) = runtime.heap.text_shared(left);
+            let (_, high, capacity) = runtime.heap.text_buffer_room(buffer);
+            if start + ll == high && high + rl <= capacity {
+                let text = runtime.heap.text(right) as *const str;
+                // SAFETY: `right` stays where it is; the write lies outside it.
+                runtime.heap.text_buffer_write(buffer, unsafe { &*text }, false);
+                return Some(runtime.heap.allocate_text_view(buffer, start, size, ascii));
+            }
+        }
+        let capacity = (2 * size).next_power_of_two();
+        if !fits(runtime, capacity) {
+            return None;
+        }
+        let both = lh & PREPENDED != 0 || (lh & SHARED != 0 && runtime.heap.text_shared(left).1 > 0);
+        let front = if both { (capacity - size) / 4 } else { 0 };
+        let (l, r) = (runtime.heap.text(left) as *const str, runtime.heap.text(right) as *const str);
+        // SAFETY: allocation neither moves nor collects the parts.
+        let parts: [&str; 2] = unsafe { [&*l, &*r] };
+        let buffer = runtime.heap.allocate_text_buffer(&parts, capacity, front);
+        return Some(runtime.heap.allocate_text_view(buffer, front, size, ascii));
+    }
+    if chains && chained(rh) && rl > ll {
+        if rh & SHARED != 0 {
+            let (buffer, start) = runtime.heap.text_shared(right);
+            let (low, _, _) = runtime.heap.text_buffer_room(buffer);
+            if start == low && start >= ll {
+                let text = runtime.heap.text(left) as *const str;
+                // SAFETY: as above.
+                runtime.heap.text_buffer_write(buffer, unsafe { &*text }, true);
+                return Some(runtime.heap.allocate_text_view(buffer, start - ll, size, ascii));
+            }
+        }
+        let capacity = (2 * size).next_power_of_two();
+        if !fits(runtime, capacity) {
+            return None;
+        }
+        let room = (capacity - size) * 3 / 4;
+        let (l, r) = (runtime.heap.text(left) as *const str, runtime.heap.text(right) as *const str);
+        // SAFETY: as above.
+        let parts: [&str; 2] = unsafe { [&*l, &*r] };
+        let buffer = runtime.heap.allocate_text_buffer(&parts, capacity, room);
+        return Some(runtime.heap.allocate_text_view(buffer, room, size, ascii));
+    }
+    if !fits(runtime, size) {
+        return None;
+    }
+    let (l, r) = (runtime.heap.text(left) as *const str, runtime.heap.text(right) as *const str);
+    // SAFETY: as above.
+    let parts: [&str; 2] = unsafe { [&*l, &*r] };
+    let string = runtime.heap.allocate_text_of(&parts);
+    if chains && ll >= TEXT_CHAIN_MIN {
+        runtime.heap.mark(string, APPENDED);
+    } else if chains && rl >= TEXT_CHAIN_MIN {
+        runtime.heap.mark(string, PREPENDED);
+    }
+    Some(string)
+}
+
 /// Was `array` made by an append or a prepend (a flat copy marked so, or a
 /// view of a buffer)? A view of a plain array — a slice (#249) or a
 /// flattened trie — is not: concatenating it is a one-off and copies once.

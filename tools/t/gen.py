@@ -1258,6 +1258,27 @@ PERSISTENCE_DECLARATIONS = """object Grow {
         if i == n { return items; }
         self.rows(i + 1, n, items + [[i, i * 7 % 101]]);
     }
+    text(i is int, n is int, piece is string, s is string) is string {
+        if i == n { return s; }
+        self.text(i + 1, n, piece, s + piece);
+    }
+    text_front(i is int, n is int, piece is string, s is string) is string {
+        if i == n { return s; }
+        self.text_front(i + 1, n, piece, piece + s);
+    }
+    text_alternate(i is int, n is int, s is string) is string {
+        if i == n { return s; }
+        let grown = if i % 2 == 0 { s + (i % 10).string(); } else { (i % 10).string() + s; };
+        self.text_alternate(i + 1, n, grown);
+    }
+    text_numbers(i is int, n is int, s is string) is string {
+        if i == n { return s; }
+        self.text_numbers(i + 1, n, s + (i * 7 % 101).string() + ",");
+    }
+    text_keep(i is int, n is int, piece is string, kept is @string) is @string {
+        if i == n { return kept; }
+        self.text_keep(i + 1, n, piece, kept + [kept[kept.size() - 1] + piece]);
+    }
 }
 
 object Log {
@@ -1266,6 +1287,10 @@ object Log {
     add(x is int) is ^Log { ^items = items + [x]; }
     items() is @int { items; }
 }""".splitlines()
+
+
+TEXT_PIECES = ["x", "ж", "😀", "e\u0301", "a,b", "абв" * 100]
+TEXT_SIZES = [0, 1, 2, 255, 256, 257, 300, 1000, 3000]
 
 
 def persistence_family():
@@ -1475,6 +1500,56 @@ def persistence_family():
     program.is_(f"{big}.size()", lit_int(33000), "a map of 33 000 keys built in a reduce", [f"let {big} is %int:int = (0..33000).reduce([:]) -> acc, i {{ acc + [i * 37 % 1000003: i]; }};"])
     program.is_(f"({big} + [1: 1] - [37: 0]).size()", lit_int(33000), "a version of it with one key more and one less")
     program.is_(f"{big}[{32999 * 37 % 1000003}]", lit_int(32999), "its last key")
+    # Strings built one `+` at a time (#255): versions share a text buffer
+    # once a chain passes 256 bytes; every result must equal the flat string
+    # `repeat` makes, by every string operation.
+    for piece in TEXT_PIECES:
+        P = lit_str(piece)
+        for n in TEXT_SIZES:
+            if len(piece.encode()) * n > 400_000:
+                continue
+            program = batch.program()
+            whole = piece * n
+            L = len(whole)
+            s, e, f, va, vb, kept, nums = (program.fresh(x) for x in ("s", "e", "f", "va", "vb", "kept", "nums"))
+            setup = [f"let {s} = Grow().text(0, {n}, {P}, \"\");", f"let {e} = {P}.repeat({n});",
+                     f"let {f} = Grow().text_front(0, {n}, {P}, \"\");",
+                     f"let {va} = {s} + \"A\";", f"let {vb} = {s} + \"B\";",
+                     f"let {kept} = Grow().text_keep(0, {n}, {P}, [\"\"]);",
+                     f"let {nums} = Grow().text_numbers(0, {n}, \"\");"]
+            desc = f"{lit_str(piece)} appended {n} times"
+            program.ok(f"{s} == {e}", f"{desc} equals repeat()", setup)
+            program.ok(f"{f} == {e}", f"{desc}, prepended, equals repeat()")
+            program.is_(f"{s}.length()", lit_int(L), f"{desc}: length")
+            for a, b in sorted({(0, L), (0, min(L, 1)), (L // 2, L), (L // 3, L - L // 3), (max(L - 1, 0), L)}):
+                if 0 <= a <= b <= L:
+                    program.is_(f"{s}.slice({a}, {b})", lit_str(whole[a:b]) if b - a <= 600 else f"{e}.slice({a}, {b})", f"{desc}: slice({a}, {b})")
+            twice = piece + piece
+            program.is_(f"{s}.find({lit_str(twice)}) else -1", lit_int(whole.find(twice)), f"{desc}: find")
+            program.is_(f"{s}.find_last({P}) else -1", lit_int(whole.rfind(piece)), f"{desc}: find_last")
+            program.ok(f"{va}.length() == {L + 1} && {vb}.length() == {L + 1} && {va}.slice({L}, {L + 1}) == \"A\" && {vb}.slice({L}, {L + 1}) == \"B\" && {s}.length() == {L}",
+                       f"{desc}: two versions of it, and it unchanged")
+            program.ok(f"{va}.slice(0, {L}) == {e} && {vb}.slice(0, {L}) == {e}", f"{desc}: both versions keep its text")
+            program.ok(f"{s}.less({va}) && {va}.less({vb}) && !{vb}.less({s}) && !{e}.less({s}) && !{s}.less({e})", f"{desc}: order against versions and the flat string")
+            program.ok(f"([{s}: 1][{e}] else 0) == 1 && ([{e}: 2][{s}] else 0) == 2", f"{desc}: a map key equal to the flat string")
+            program.ok(f"{s}.replace({P}, \"y\") == \"y\".repeat({n})", f"{desc}: replace")
+            program.ok(f"(\" \" + {s} + \"\\n\").chomp() == \" \" + {e} && (\"  \" + {s} + \"  \").trim() == {e}", f"{desc}: chomp and trim")
+            program.ok(f"{s}.starts_with({e}.slice(0, {min(L, 3)})) && {s}.ends_with({e}.slice({max(L - 3, 0)}, {L}))", f"{desc}: starts_with and ends_with")
+            program.is_(f"{kept}.size()", lit_int(n + 1), f"{desc}: every version kept")
+            for i in sorted({0, 1, n // 2, n}):
+                if i <= n:
+                    program.ok(f"{kept}[{i}] == {P}.repeat({i})", f"{desc}: kept version {i}")
+            numbers = "".join(f"{i * 7 % 101}," for i in range(n))
+            program.is_(f"{nums}.split(\",\").size()", lit_int(n + 1), f"{n} numbers appended with commas: split size")
+            program.ok(f"{nums}.split(\",\").join(\",\") == {nums} && {nums}.length() == {len(numbers)}", f"{n} numbers appended with commas: split and join back")
+    for n in [255, 256, 257, 1000, 4097]:
+        program = batch.program()
+        model = ""
+        for i in range(n):
+            model = model + str(i % 10) if i % 2 == 0 else str(i % 10) + model
+        alt = program.fresh("alt")
+        program.ok(f"{alt} == {lit_str(model)}", f"{n} digits added at alternating ends",
+                   [f"let {alt} = Grow().text_alternate(0, {n}, \"\");"])
     return batch.programs
 
 

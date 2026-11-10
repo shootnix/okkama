@@ -553,15 +553,11 @@ pub extern "C" fn rt_int_order(ctx: *mut Ctx, left: Word, right: Word) -> i64 {
 pub extern "C" fn rt_concat(ctx: *mut Ctx, left: Word, right: Word) -> Word {
     let frame = frame_pointer!();
     let (ctx, runtime) = unsafe { runtime(ctx) };
-    // The size is known before the copy (#72): a memory budget stops it here.
-    let size = runtime.heap.text(left).len() + runtime.heap.text(right).len();
-    if runtime.would_exceed(size as u64) {
+    // The size of what is allocated is known before the copy (#72): a
+    // memory budget stops it here.
+    let Some(word) = crate::ops::concat_text(runtime, left, right, |runtime, bytes| !runtime.would_exceed(bytes as u64)) else {
         return runtime.exhaust(ctx, Exhausted::Memory);
-    }
-    let mut text = String::with_capacity(size);
-    text.push_str(runtime.heap.text(left));
-    text.push_str(runtime.heap.text(right));
-    let word = runtime.heap.allocate_text(&text);
+    };
     runtime.safepoint(frame, ctx, &[(word, Repr::Ref)]);
     word
 }
