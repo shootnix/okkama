@@ -206,6 +206,12 @@ enum Repr {
     View { buffer: Rc<Buffer>, start: usize, len: usize },
     /// Срез плоского массива `origin` (никогда — другого среза или версии).
     Slice { origin: Rc<Array>, start: usize, len: usize },
+    /// Версия цепочки `replaced` (#250): замена копирует один путь, а не
+    /// массив. Только для массивов простых значений: узлы общие у версий,
+    /// а сборщик циклов считает каждое ребро одной сильной ссылкой.
+    /// Читаемый, а не меняемый trie сплющивается: после прохода чтений его
+    /// элементы — плоская копия в `flat`.
+    Trie { trie: okkama_persistent::Trie<Value>, reads: Cell<usize>, flat: std::cell::OnceCell<Vec<Value>> },
 }
 
 impl Default for Repr {
@@ -219,7 +225,12 @@ enum Chain {
     None,
     Appended,
     Prepended,
+    /// Копия, сделанная `replaced`: следующая замена начинает trie.
+    Replaced,
 }
+
+/// Массивы короче этого `replaced` копирует, как прежде (`TRIE_MIN` Tomato).
+pub const TRIE_MIN: usize = 64;
 
 /// Хранилище цепочки добавлений: `slots` до `capacity`, записаны
 /// `front..` (впереди — `Undef`, место для добавлений в начало; позади —
@@ -318,11 +329,14 @@ impl Buffer {
     }
 }
 
-/// Элементы массива: срез плоского вектора или заимствование буфера.
+/// Элементы массива: срез плоского вектора, заимствование буфера или
+/// копия элементов trie (для чтения целиком; по индексу trie читается
+/// без копии, см. [`Array::get`]).
 #[derive(Debug)]
 pub enum Items<'a> {
     Flat(&'a [Value]),
     Shared(std::cell::Ref<'a, [Value]>),
+    Owned(Vec<Value>),
 }
 
 impl std::ops::Deref for Items<'_> {
@@ -331,6 +345,7 @@ impl std::ops::Deref for Items<'_> {
         match self {
             Items::Flat(items) => items,
             Items::Shared(items) => items,
+            Items::Owned(items) => items,
         }
     }
 }
@@ -372,6 +387,7 @@ impl Array {
             }
             Repr::View { buffer, .. } => buffer.plain(),
             Repr::Slice { origin, .. } => origin.plain(),
+            Repr::Trie { .. } => true,
         }
     }
 
@@ -383,11 +399,29 @@ impl Array {
 
     /// `items.replaced(at, value)`: копия с заменённым элементом; ответ
     /// [`Plain`] — от источника и нового значения, без обхода.
+    ///
+    /// A chain of replacements in a large array of plain values becomes a
+    /// trie (#250), which copies one path per replacement: the first copy
+    /// is marked, the next replacement starts the trie.
     pub fn replaced(&self, at: usize, value: Value) -> Value {
         let plain = self.plain() && !crate::gc::traced(&value);
+        let tries = shared_arrays() && plain && self.len() >= TRIE_MIN;
+        if tries && let Repr::Trie { trie, .. } = &self.0 {
+            let trie = trie.set(at, value).expect("index in bounds");
+            return Value::Array(Rc::new(Array::trie(trie)));
+        }
         let mut items = self.items().to_vec();
         items[at] = value;
-        Value::Array(Rc::new(Array::flat(items, Chain::None, Some(plain))))
+        if tries && matches!(self.0, Repr::Flat { chain: Chain::Replaced, .. }) {
+            return Value::Array(Rc::new(Array::trie(okkama_persistent::Trie::from_vec(items))));
+        }
+        let chain = if tries { Chain::Replaced } else { Chain::None };
+        Value::Array(Rc::new(Array::flat(items, chain, Some(plain))))
+    }
+
+    fn trie(trie: okkama_persistent::Trie<Value>) -> Array {
+        let repr = Repr::Trie { trie, reads: Cell::new(0), flat: std::cell::OnceCell::new() };
+        Array(repr, Plain::known(Some(true)))
     }
 
     pub fn items(&self) -> Items<'_> {
@@ -399,14 +433,45 @@ impl Array {
             Repr::Slice { origin, start, len } => match origin.items() {
                 Items::Flat(items) => Items::Flat(&items[*start..*start + *len]),
                 Items::Shared(items) => Items::Shared(std::cell::Ref::map(items, |items| &items[*start..*start + *len])),
+                Items::Owned(items) => Items::Owned(items[*start..*start + *len].to_vec()),
+            },
+            Repr::Trie { trie, flat, .. } => match flat.get() {
+                Some(items) => Items::Flat(items),
+                None => Items::Owned(trie.to_vec()),
             },
         }
+    }
+
+    /// Element `index`: a trie is read by its path, not copied.
+    #[inline]
+    pub fn get(&self, index: usize) -> Option<Value> {
+        let (trie, reads, flat) = match &self.0 {
+            Repr::Flat { items, .. } => return items.get(index).cloned(),
+            Repr::View { buffer, start, len } => {
+                return (index < *len).then(|| buffer.slots.borrow()[start + index].clone());
+            }
+            Repr::Slice { origin, start, len } => return if index < *len { origin.get(start + index) } else { None },
+            Repr::Trie { trie, reads, flat } => (trie, reads, flat),
+        };
+        if let Some(items) = flat.get() {
+            return items.get(index).cloned();
+        }
+        let item = trie.get(index).cloned();
+        // Read rather than changed: flat after a pass of reads, as many as
+        // the copy costs (Tomato waits two passes; here a read by path costs
+        // more against a flat read than there).
+        reads.set(reads.get() + 1);
+        if reads.get() >= trie.len() {
+            let _ = flat.set(trie.to_vec());
+        }
+        item
     }
 
     pub fn len(&self) -> usize {
         match &self.0 {
             Repr::Flat { items, .. } => items.len(),
             Repr::View { len, .. } | Repr::Slice { len, .. } => *len,
+            Repr::Trie { trie, .. } => trie.len(),
         }
     }
 
@@ -421,6 +486,7 @@ impl Array {
             Repr::Flat { items, .. } => Storage::Items(items),
             Repr::View { buffer, .. } => Storage::Buffer(buffer),
             Repr::Slice { origin, .. } => Storage::Origin(origin),
+            Repr::Trie { .. } => Storage::Items(&[]),
         }
     }
 
@@ -520,6 +586,7 @@ pub fn slice_shared(array: &Rc<Array>, range: std::ops::Range<usize>) -> Option<
             .then(|| Repr::Slice { origin: origin.clone(), start: start + range.start, len: range.len() })?,
         Repr::View { buffer, start, .. } => (2 * range.len() >= buffer.capacity)
             .then(|| Repr::View { buffer: buffer.clone(), start: start + range.start, len: range.len() })?,
+        Repr::Trie { .. } => return None,
     };
     Some(Value::Array(Rc::new(Array(shared, Plain::known(None)))))
 }
@@ -651,6 +718,8 @@ fn release(value: Value, pending: &mut Vec<Value>) {
                         let mut origin = [Value::Array(origin)];
                         take_deep(&mut origin, pending);
                     }
+                    // Plain values only: nothing to release in depth.
+                    Repr::Trie { .. } => {}
                 }
             }
         }
@@ -719,8 +788,9 @@ impl Drop for Array {
         let mut pending = Vec::new();
         match &mut self.0 {
             Repr::Flat { items, .. } => take_deep(items, &mut pending),
-            // Буфер и источник освобождают своё сами, тоже без рекурсии.
-            Repr::View { .. } | Repr::Slice { .. } => {}
+            // Буфер и источник освобождают своё сами, тоже без рекурсии;
+            // в trie только простые значения.
+            Repr::View { .. } | Repr::Slice { .. } | Repr::Trie { .. } => {}
         }
         if !pending.is_empty() {
             release_all(pending);
@@ -955,12 +1025,8 @@ impl ArrayHeap {
     }
 
     pub fn lookup(&self, array: &Value, index: &IntValue) -> Result<Option<Value>, ValueError> {
-        let elements = self.elements(array)?;
-        Ok(index
-            .to_i64()
-            .and_then(|i| usize::try_from(i).ok())
-            .and_then(|i| elements.get(i))
-            .cloned())
+        let array = self.array(array)?;
+        Ok(index.to_i64().and_then(|i| usize::try_from(i).ok()).and_then(|i| array.get(i)))
     }
 }
 
@@ -1410,6 +1476,8 @@ fn collect(value: &Value, out: &mut Vec<Rc<Object>>, via: Option<(u64, u64)>) {
                 }
                 out.push(object);
             }
+            // An array of plain values holds no identity to walk (#335).
+            Value::Array(array) if array.plain() => {}
             Value::Array(_) | Value::Map(_) | Value::Any(_) | Value::Fn(_) => {
                 if summaries && summary_holds(&value, via) {
                     continue;
@@ -1710,6 +1778,73 @@ impl ObjectHeap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Chains of `replaced` (#335, #250): a trie from the second replacement
+    /// of a large array of plain values, every version unchanged, reads by
+    /// path until a pass of them flattens it; arrays holding objects are
+    /// copied as before.
+    #[test]
+    fn replacement_chains_become_tries_and_keep_every_version() {
+        let int = |i: i64| Value::Int(crate::IntValue::from_i64(i));
+        let ints = |value: &Value| -> Vec<i64> {
+            ArrayHeap.elements(value).unwrap().iter().map(|v| v.as_int().unwrap().to_i64().unwrap()).collect()
+        };
+        let trie = |value: &Value| matches!(value, Value::Array(array) if matches!(array.0, Repr::Trie { .. }));
+        let replace = |value: &Value, at: usize, item: i64| match value {
+            Value::Array(array) => array.replaced(at, int(item)),
+            _ => unreachable!(),
+        };
+        let mut versions = vec![ArrayHeap.allocate((0..100).map(int).collect())];
+        for step in 0..50 {
+            let next = replace(versions.last().unwrap(), (step * 7) % 100, 1000 + step as i64);
+            versions.push(next);
+        }
+        assert!(!trie(&versions[1]) && trie(&versions[2]) && trie(&versions[50]));
+        let mut expected: Vec<i64> = (0..100).collect();
+        for (step, version) in versions.iter().enumerate() {
+            assert_eq!(ints(version), expected, "version {step}");
+            if step < 50 {
+                expected[(step * 7) % 100] = 1000 + step as i64;
+            }
+        }
+        // Reads by index, then flat after two passes.
+        let Value::Array(last) = versions.last().unwrap() else { unreachable!() };
+        for pass in 0..3 {
+            for (i, &want) in expected.iter().enumerate() {
+                assert_eq!(last.get(i).and_then(|v| v.as_int().ok().and_then(|n| n.to_i64())), Some(want), "pass {pass}");
+            }
+        }
+        assert!(matches!(&last.0, Repr::Trie { flat, .. } if flat.get().is_some()));
+        assert!(last.get(100).is_none());
+        // A flattened trie still replaces by path.
+        let after = replace(versions.last().unwrap(), 3, -3);
+        assert!(trie(&after) && ints(&after)[3] == -3 && ints(versions.last().unwrap())[3] == expected[3]);
+        // Holding an object: never a trie.
+        let object = crate::heap::ObjectHeap.allocate(0, vec![]);
+        let mixed = ArrayHeap.allocate((0..99).map(int).chain([object]).collect());
+        let Value::Array(array) = &mixed else { unreachable!() };
+        let once = array.replaced(0, int(5));
+        let Value::Array(once_array) = &once else { unreachable!() };
+        let twice = once_array.replaced(1, int(6));
+        assert!(!trie(&once) && !trie(&twice));
+    }
+
+    /// The raw cost of a step of a replacement chain: run with `cargo test
+    /// --release -p okkama-runtime-core replace_costs -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn replace_costs() {
+        for n in [1_000usize, 16_000, 100_000] {
+            let mut value = ArrayHeap.allocate((0..n as i64).map(|i| Value::Int(crate::IntValue::from_i64(i))).collect());
+            let steps = 20_000;
+            let started = std::time::Instant::now();
+            for step in 0..steps {
+                let Value::Array(array) = &value else { unreachable!() };
+                value = array.replaced((step * 7919) % n, Value::Int(crate::IntValue::from_i64(step as i64)));
+            }
+            println!("n={n:<7} {:8.1} ns per replacement", started.elapsed().as_nanos() as f64 / steps as f64);
+        }
+    }
 
     /// Versions of shared arrays (#335): appends and prepends written in
     /// place, branches that copy, slices that share, and no version that

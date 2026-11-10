@@ -561,7 +561,7 @@ pub fn array_join(array: &Value, separator: &str) -> Result<Value> {
 }
 
 pub fn array_len(array: &Value) -> Result<Value> {
-    Ok(Value::Int(IntValue::from_u128(ArrayHeap.elements(array)?.len() as u128)))
+    Ok(Value::Int(IntValue::from_u128(ArrayHeap.array(array)?.len() as u128)))
 }
 
 pub fn array_lookup(array: &Value, index: &IntValue) -> Result<Option<Value>> {

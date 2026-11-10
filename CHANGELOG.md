@@ -128,6 +128,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   only its own elements. An array of plain values (numbers, strings) is no
   longer a node of the cycle collector. `OKKAMA_ARRAYS=flat` keeps every
   append and slice a copy.
+- The IR engine makes a chain of `replaced` in a large array of plain values
+  a trie, as Tomato has since 0.4.3 (#335, tries): a replacement copies one
+  path of the trie instead of the array. A chain of replacements runs 7
+  times faster at 1 000 elements and 20 times at 16 000 and 100 000, one that
+  keeps every version 5–10 times. A trie is read by its path, and flattens
+  itself after a pass of reads; sequential reads of a replaced array cost 9%
+  more, random ones what they did. Arrays that hold objects are copied as
+  before. `OKKAMA_ARRAYS=flat` turns tries off too.
 
 - Tomato compiles a quarter faster (#345): release builds no longer run
   Cranelift's IR verifier, which checks the JIT's own output and took a

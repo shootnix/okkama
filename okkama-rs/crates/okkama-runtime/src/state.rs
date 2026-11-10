@@ -226,18 +226,13 @@ impl State {
     }
 
     pub(crate) fn array_len(&self, array: &Value, span: Span) -> Result<Value, RuntimeError> {
-        Ok(Value::Int(ir::IntValue::from_u128(
-            self.array(array, span)?.len() as u128,
-        )))
+        let array = self.arrays.array(array).map_err(|e| invalid_state(span, e.message))?;
+        Ok(Value::Int(ir::IntValue::from_u128(array.len() as u128)))
     }
 
     pub(crate) fn array_lookup(&self, array: &Value, index: &ir::IntValue, span: Span) -> Result<Option<Value>, RuntimeError> {
-        let elements = self.array(array, span)?;
-        Ok(index
-            .to_i64()
-            .and_then(|i| usize::try_from(i).ok())
-            .and_then(|i| elements.get(i))
-            .cloned())
+        // A trie is read by its path (#335).
+        self.arrays.lookup(array, index).map_err(|e| invalid_state(span, e.message))
     }
 
     pub(crate) fn array_get(
