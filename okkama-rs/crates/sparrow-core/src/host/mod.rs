@@ -454,7 +454,7 @@ impl Heap {
             let k = match key.kind() {
                 SMALL => Key::Small(key.bits as i64),
                 BIG => Key::int(self.core().integer(key.bits)),
-                STR => Key::Str(self.text(key)?.into()),
+                STR => Key::text(self.text(key)?.into()),
                 FLOAT => Key::Float(f64::from_bits(key.bits)),
                 _ => Key::Raw(key.bits),
             };

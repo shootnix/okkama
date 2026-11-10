@@ -118,7 +118,10 @@ pub enum Key {
     Int(BigInt),
     Float(f64),
     Raw(u64),
-    Str(Rc<str>),
+    /// A string, and its first 8 bytes as a big-endian number, zeros past
+    /// the end ([`Key::text`]): strings whose numbers differ order by them
+    /// alone, inline, without reading either text.
+    Str(u64, Rc<str>),
     /// A `rat` field of an object key.
     Rat(Rc<BigRational>),
     Object(u32, Rc<[Key]>),
@@ -132,6 +135,14 @@ impl Key {
         }
     }
 
+    /// The key of a string.
+    pub fn text(text: Rc<str>) -> Self {
+        let mut first = [0; 8];
+        let length = text.len().min(8);
+        first[..length].copy_from_slice(&text.as_bytes()[..length]);
+        Self::Str(u64::from_be_bytes(first), text)
+    }
+
     /// Rust memory this key owns beyond the enum itself (#331). Data shared
     /// through `Rc` (copies of one map share their keys) counts its share
     /// only, so a map and its copies do not each pay for it in full.
@@ -140,7 +151,7 @@ impl Key {
             // A `BigInt` keeps its digits in a vector of its own.
             Self::Int(n) => n.bits().div_ceil(64) as usize * 8,
             Self::Small(_) | Self::Float(_) | Self::Raw(_) => 0,
-            Self::Str(text) => (text.len() + 16) / std::rc::Rc::strong_count(text),
+            Self::Str(_, text) => (text.len() + 16) / std::rc::Rc::strong_count(text),
             Self::Rat(value) => rational_bytes(value) / std::rc::Rc::strong_count(value),
             Self::Object(_, fields) => {
                 let own = 16 + fields.len() * std::mem::size_of::<Key>() + fields.iter().map(Key::owned_bytes).sum::<usize>();
@@ -156,14 +167,27 @@ impl Key {
         match self {
             Self::Small(_) | Self::Float(_) | Self::Raw(_) => 0,
             Self::Int(n) => n.bits().div_ceil(64) as usize * 8,
-            Self::Str(text) => text.len() + 16,
+            Self::Str(_, text) => text.len() + 16,
             Self::Rat(value) => rational_bytes(value),
             Self::Object(_, fields) => 16 + fields.len() * std::mem::size_of::<Key>() + fields.iter().map(Key::data_bytes).sum::<usize>(),
         }
     }
 }
 impl Ord for Key {
+    /// Small integers and strings that differ in their first bytes, the
+    /// common keys, compare inline; the rest out of line.
+    #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Self::Small(a), Self::Small(b)) => a.cmp(b),
+            (Self::Str(a, _), Self::Str(b, _)) if a != b => a.cmp(b),
+            _ => self.cmp_other(other),
+        }
+    }
+}
+impl Key {
+    #[inline(never)]
+    fn cmp_other(&self, other: &Self) -> Ordering {
         match (self, other) {
             (Self::Small(a), Self::Small(b)) => a.cmp(b),
             (Self::Int(a), Self::Int(b)) => a.cmp(b),
@@ -172,7 +196,7 @@ impl Ord for Key {
             (Self::Int(a), Self::Small(_)) => if a.is_positive() { Ordering::Greater } else { Ordering::Less },
             (Self::Float(a), Self::Float(b)) => a.partial_cmp(b).expect("finite float key"),
             (Self::Raw(a), Self::Raw(b)) => a.cmp(b),
-            (Self::Str(a), Self::Str(b)) => a.cmp(b),
+            (Self::Str(_, a), Self::Str(_, b)) => a.cmp(b),
             (Self::Rat(a), Self::Rat(b)) => a.cmp(b),
             (Self::Object(a, x), Self::Object(b, y)) => a.cmp(b).then_with(|| x.iter().cmp(y.iter())),
             _ => self.rank().cmp(&other.rank()),
@@ -185,18 +209,20 @@ impl Key {
             Self::Small(_) | Self::Int(_) => 0,
             Self::Float(_) => 1,
             Self::Raw(_) => 2,
-            Self::Str(_) => 3,
+            Self::Str(..) => 3,
             Self::Rat(_) => 4,
             Self::Object(..) => 5,
         }
     }
 }
 impl PartialOrd for Key {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 impl PartialEq for Key {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.cmp(other).is_eq()
     }
@@ -266,7 +292,7 @@ impl Runtime {
             (Kind::Int, _) => Key::int(self.heap.integer(word)),
             (Kind::Float, _) => Key::Float(f64::from_bits(word)),
             (Kind::Raw | Kind::Byte, _) => Key::Raw(word),
-            (_, Some(Type::Str)) => Key::Str(Rc::from(self.heap.text(word))),
+            (_, Some(Type::Str)) => Key::text(Rc::from(self.heap.text(word))),
             (_, Some(Type::Rat)) => Key::Rat(Rc::new(self.rational(word).clone())),
             (_, Some(Type::Object(_))) if heap::kind(self.heap.header_of(word)) == heap::OBJECT => {
                 let declaration = heap::payload(self.heap.header_of(word));
