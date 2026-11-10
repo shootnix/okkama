@@ -772,6 +772,13 @@ impl Heap {
         unsafe { *(array as *mut u64) |= flag }
     }
 
+    /// Clear representation flags of a live object: hints of how it was
+    /// made, which no reader of its value looks at (#255).
+    pub fn unmark(&mut self, object: Word, flags: u64) {
+        // SAFETY: `object` is a live object; one thread owns the heap.
+        unsafe { *(object as *mut u64) &= !flags }
+    }
+
     // ---- tries (#250) ----
 
     fn trie_parts(&self, array: Word) -> (Word, Word, u32) {

@@ -498,7 +498,9 @@ pub(crate) fn shared_strings() -> bool {
 /// shorter than [`TEXT_CHAIN_MIN`](crate::heap::TEXT_CHAIN_MIN). A flat
 /// string made by `+` from a long part is marked
 /// [`APPENDED`](crate::heap::APPENDED) or [`PREPENDED`](crate::heap::PREPENDED):
-/// its next `+` starts a buffer.
+/// its next `+` starts a buffer, and loses the mark, so that more versions
+/// made from it (branches) copy instead of each taking a buffer twice its
+/// size (x86-64 made that +80…375%).
 pub(crate) fn concat_text(runtime: &mut Runtime, left: Word, right: Word, fits: impl Fn(&Runtime, usize) -> bool) -> Option<Word> {
     use crate::heap::{APPENDED, ASCII, PREPENDED, SHARED, TEXT_CHAIN_MIN, payload};
     let (lh, rh) = (runtime.heap.header_of(left), runtime.heap.header_of(right));
@@ -509,6 +511,8 @@ pub(crate) fn concat_text(runtime: &mut Runtime, left: Word, right: Word, fits: 
     // A new buffer for a chain that outgrew its own: the share of the room
     // it keeps in front, as a fraction.
     let mut grow = None;
+    // A flat string a buffer is started from: no longer a chain's start.
+    let mut spent = None;
     if chains && chained(lh) && ll >= rl {
         if lh & SHARED != 0 {
             let (buffer, start) = runtime.heap.text_shared(left);
@@ -524,6 +528,7 @@ pub(crate) fn concat_text(runtime: &mut Runtime, left: Word, right: Word, fits: 
             }
         } else if 2 * rl <= ll {
             grow = Some(if lh & PREPENDED != 0 { (1, 4) } else { (0, 1) });
+            spent = Some(left);
         }
     } else if chains && chained(rh) && rl > ll {
         if rh & SHARED != 0 {
@@ -540,6 +545,7 @@ pub(crate) fn concat_text(runtime: &mut Runtime, left: Word, right: Word, fits: 
             }
         } else if 2 * ll <= rl {
             grow = Some((3, 4));
+            spent = Some(right);
         }
     }
     let (l, r) = (runtime.heap.text(left) as *const str, runtime.heap.text(right) as *const str);
@@ -551,6 +557,9 @@ pub(crate) fn concat_text(runtime: &mut Runtime, left: Word, right: Word, fits: 
             return None;
         }
         let front = (capacity - size) * share / of;
+        if let Some(string) = spent {
+            runtime.heap.unmark(string, APPENDED | PREPENDED);
+        }
         let buffer = runtime.heap.allocate_text_buffer(&parts, capacity, front);
         return Some(runtime.heap.allocate_text_view(buffer, front, size, ascii));
     }
