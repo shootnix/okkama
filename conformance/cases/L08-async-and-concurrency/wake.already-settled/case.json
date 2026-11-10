@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.wake.already-settled",
+  "title": "awaiting an already settled future does not suspend, so a ready task does not run in between",
+  "purpose": "Run the program and observe the order of its output.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.COOPERATIVE-WAKE",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "main: settled twice 14\nwaiter: woke\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#18"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #340; Sparrow (Tomato) is the reference behaviour",
+    "expected_basis": "#340: await of a settled future returns its cached outcome without a suspension point; the woken waiter runs only at main's next real suspension."
+  },
+  "status": "mandatory"
+}

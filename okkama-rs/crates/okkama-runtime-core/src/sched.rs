@@ -1,9 +1,12 @@
 //! Кооперативный планировщик (OIR-1 §13, §18 спецификации) — перенос
 //! `okkama.rt.Scheduler` JVM. Исполняется ровно одна задача: `transfer` отдаёт
 //! управление и возвращается, когда его вернут. Запуск Future исполняет тело
-//! до первой приостановки сразу; завершение сразу продолжает ожидающих по
-//! порядку; `spawn` запускает задачу немедленно. Внешние события (таймеры,
-//! ввод-вывод) приходят в очередь цикла `async main`.
+//! до первой приостановки сразу; `spawn` запускает задачу немедленно.
+//! Завершение не продолжает ожидающих на месте: они встают в очередь готовых
+//! задач по порядку, и её разбирает цикл запуска, когда текущая задача
+//! приостановится или закончится (#340) — код задачи между двумя точками
+//! приостановки не перемежается чужим. Внешние события (таймеры, ввод-вывод)
+//! приходят в очередь цикла `async main`.
 //!
 //! Задача — стековая корутина (`corosensei`) в том же потоке: JVM даёт каждой
 //! задаче поток и передаёт управление семафорами, здесь та же передача —
@@ -83,6 +86,8 @@ pub struct Task {
     /// Активные входы в машинный код на стеке задачи: такой стек нельзя
     /// раскручивать (у кода JIT нет таблиц раскрутки).
     native: Cell<u32>,
+    /// Задача в очереди готовых: второе пробуждение её не дублирует.
+    queued: Cell<bool>,
 }
 
 impl fmt::Debug for Task {
@@ -101,6 +106,7 @@ impl Task {
             cancel_pending: Cell::new(false),
             floor: Cell::new(0),
             native: Cell::new(0),
+            queued: Cell::new(false),
         })
     }
 }
@@ -122,6 +128,8 @@ struct Scheduler {
     external: Cell<usize>,
     /// Незавершённые задачи: их корутины освобождаются при завершении запуска.
     live: RefCell<HashMap<*const Task, Rc<Task>>>,
+    /// Разбуженные задачи по порядку пробуждения: их продолжает цикл запуска.
+    ready: RefCell<VecDeque<Rc<Task>>>,
     /// Свободные стеки корутин.
     stacks: RefCell<Vec<DefaultStack>>,
     sender: std::sync::mpsc::Sender<(u64, Delivery)>,
@@ -141,6 +149,7 @@ impl Scheduler {
             next_registration: Cell::new(0),
             external: Cell::new(0),
             live: RefCell::new(HashMap::new()),
+            ready: RefCell::new(VecDeque::new()),
             stacks: RefCell::new(Vec::new()),
             sender,
             receiver,
@@ -222,6 +231,9 @@ pub fn reset() {
         s.external.set(0);
         s.pending.borrow_mut().clear();
         while s.receiver.try_recv().is_ok() {}
+        for task in s.ready.borrow_mut().drain(..) {
+            task.queued.set(false);
+        }
         s.live.borrow_mut().drain().map(|(_, task)| task).collect()
     });
     for task in live {
@@ -439,6 +451,30 @@ fn transfer(target: &Rc<Task>) {
     with(|s| *s.current.borrow_mut() = me);
 }
 
+/// Разбудить задачу: она встаёт в очередь готовых и продолжится, когда цикл
+/// запуска до неё дойдёт, а не внутри кода, который её разбудил (#340).
+fn make_ready(task: &Rc<Task>) {
+    if task.queued.replace(true) {
+        return;
+    }
+    with(|s| s.ready.borrow_mut().push_back(task.clone()));
+}
+
+/// Продолжить первую готовую задачу; `false` — очередь пуста. Зовёт только
+/// цикл запуска: так задача не продолжается внутри другой.
+fn run_ready() -> bool {
+    debug_assert!(current().yielder.get().is_null(), "only the launch loop dispatches");
+    let Some(task) = with(|s| s.ready.borrow_mut().pop_front()) else {
+        return false;
+    };
+    task.queued.set(false);
+    // Задачу могли освободить (`reset`) после пробуждения.
+    if task.coroutine.borrow().is_some() {
+        transfer(&task);
+    }
+    true
+}
+
 /// Приостановить текущую задачу: управление — тому, кто её продолжил.
 fn suspend() {
     let me = current();
@@ -466,6 +502,7 @@ pub fn start(future: &Future, starter: Option<Rc<Task>>) {
         cancel_pending: Cell::new(false),
         floor: Cell::new(0),
         native: Cell::new(0),
+        queued: Cell::new(false),
     });
     *future.task.borrow_mut() = Some(task.clone());
     let body = future.body.borrow_mut().take().expect("cold future has a body");
@@ -487,7 +524,8 @@ pub fn start(future: &Future, starter: Option<Rc<Task>>) {
     transfer(&task);
 }
 
-/// Исход Future; ожидающие продолжаются сразу, в порядке ожидания.
+/// Исход Future; ожидающие задачи встают в очередь готовых в порядке
+/// ожидания, слушатели вызываются сразу.
 pub fn complete(future: &Future, outcome: Outcome) {
     // Исход — позднее ребро: через него Future может замкнуть цикл.
     let traced = match &outcome {
@@ -514,7 +552,7 @@ pub fn complete(future: &Future, outcome: Outcome) {
         let next = future.waiters.borrow_mut().pop_front();
         match next {
             None => break,
-            Some(Waiter::Task(task)) => transfer(&task),
+            Some(Waiter::Task(task)) => make_ready(&task),
             Some(Waiter::Listener(listener)) => listener(),
         }
     }
@@ -626,7 +664,9 @@ pub fn cancel(future: &Future) {
         .waiters
         .borrow_mut()
         .retain(|waiter| !matches!(waiter, Waiter::Task(other) if Rc::ptr_eq(other, &task)));
-    transfer(&task);
+    // Отменённая задача продолжится и бросит Cancelled в свою очередь, не
+    // внутри `cancel` (#340).
+    make_ready(&task);
 }
 
 /// Ошибка программы цикла событий (`Rt.trap`).
@@ -659,18 +699,28 @@ pub fn pump() {
     }
 }
 
-/// Обрабатывать внешние события, пока `until` не завершён.
+/// Продолжать готовые задачи и обрабатывать внешние события, пока `until`
+/// не завершён. Готовая задача — тоже ход вперёд, без внешних событий.
 fn drive(until: &Future) -> Result<(), Rc<Failure>> {
     while until.state.get() == State::Running {
+        if run_ready() {
+            continue;
+        }
         if with(|s| s.external.get()) == 0 {
             return Err(trap("async main cannot complete: no task can make progress"));
         }
-        let (id, delivery) = with(|s| s.receiver.recv())
-            .map_err(|_| trap("async runtime was interrupted"))?;
-        let done = with(|s| s.pending.borrow_mut().remove(&id));
-        if let Some(done) = done {
-            done(delivery);
-        }
+        deliver()?;
+    }
+    Ok(())
+}
+
+/// Дождаться одной внешней доставки и выполнить её продолжение.
+fn deliver() -> Result<(), Rc<Failure>> {
+    let (id, delivery) = with(|s| s.receiver.recv())
+        .map_err(|_| trap("async runtime was interrupted"))?;
+    let done = with(|s| s.pending.borrow_mut().remove(&id));
+    if let Some(done) = done {
+        done(delivery);
     }
     Ok(())
 }
@@ -684,8 +734,14 @@ fn shutdown() -> Result<Option<Rc<Failure>>, Rc<Failure>> {
     }
     let registered: Vec<_> = with(|s| s.registered.borrow().values().cloned().collect());
     for future in &registered {
-        while future.state.get() == State::Running && with(|s| s.external.get()) > 0 {
-            drive(future)?;
+        while future.state.get() == State::Running {
+            if run_ready() {
+                continue;
+            }
+            if with(|s| s.external.get()) == 0 {
+                break;
+            }
+            deliver()?;
         }
     }
     let registered: Vec<_> = with(|s| s.registered.borrow().values().cloned().collect());
@@ -870,8 +926,15 @@ mod tests {
         Value::Int(crate::IntValue::from_i64(value))
     }
 
+    /// The launch loop's turn: every task that is ready runs.
+    fn dispatch() {
+        while run_ready() {}
+    }
+
+    /// Completion makes the waiters ready in order; they run on the launch
+    /// loop's turn, not inside `complete` (#340).
     #[test]
-    fn completion_resumes_waiters_in_order_and_caches_the_outcome() {
+    fn completion_queues_waiters_in_order_and_caches_the_outcome() {
         reset();
         let log = Rc::new(RefCell::new(Vec::new()));
         let gate = promise();
@@ -892,9 +955,12 @@ mod tests {
         spawn(&second);
         log.borrow_mut().push("main".into());
         complete(&gate, Ok(int(7)));
+        log.borrow_mut().push("main after complete".into());
+        assert_eq!(*log.borrow(), ["a waits", "b waits", "main", "main after complete"]);
+        dispatch();
         assert_eq!(
             *log.borrow(),
-            ["a waits", "b waits", "main", "a resumed", "b resumed"]
+            ["a waits", "b waits", "main", "main after complete", "a resumed", "b resumed"]
         );
         assert!(matches!(first.outcome(), Ok(Value::Int(v)) if v == crate::IntValue::from_i64(7)));
         reset();
@@ -910,6 +976,8 @@ mod tests {
         let outer = cold(Box::new(move || await_future(&awaited)), Vec::new());
         spawn(&outer);
         cancel(&outer);
+        assert_eq!(outer.state(), State::Running, "cancel does not run the task");
+        dispatch();
         assert!(outer.cancelled());
         assert!(inner.cancelled());
         reset();
@@ -944,9 +1012,12 @@ mod tests {
         );
         spawn(&outer);
         cancel(&outer);
+        assert!(log.borrow().is_empty(), "cleanup does not run inside cancel");
+        dispatch();
         assert_eq!(*log.borrow(), ["inner cancelled"]);
         assert_eq!(outer.state(), State::Running);
         complete(&cleanup, Ok(int(0)));
+        dispatch();
         assert_eq!(*log.borrow(), ["inner cancelled", "inner settled", "outer resumed"]);
         assert!(inner.cancelled());
         assert!(outer.cancelled());
@@ -966,6 +1037,7 @@ mod tests {
         let outer = cold(Box::new(move || await_future(&awaited)), Vec::new());
         spawn(&outer);
         cancel(&outer);
+        dispatch();
         assert!(outer.cancelled());
         assert!(child.cancelled());
         reset();
@@ -980,9 +1052,11 @@ mod tests {
         spawn(&outer);
         spawn(&watcher);
         cancel(&outer);
+        dispatch();
         assert!(outer.cancelled());
         assert_eq!(child.state(), State::Running);
         complete(&gate, Ok(int(7)));
+        dispatch();
         assert!(matches!(watcher.outcome(), Ok(Value::Int(v)) if v.to_i64() == Some(7)));
         reset();
     }
@@ -1151,6 +1225,101 @@ mod tests {
         cancel(&cold);
         register(&cold);
         with(|s| assert!(s.registered.borrow().is_empty()));
+        reset();
+    }
+
+    /// Tasks that wake each other through promises finish without any
+    /// external operation: a ready task is progress (#340).
+    #[test]
+    fn ready_tasks_finish_async_main_without_external_operations() {
+        reset();
+        let (ping, pong) = (promise(), promise());
+        let (child_ping, child_pong) = (ping.clone(), pong.clone());
+        let child = cold(
+            Box::new(move || {
+                let value = await_future(&child_ping)?;
+                complete(&child_pong, Ok(value));
+                Ok(int(0))
+            }),
+            Vec::new(),
+        );
+        let root = cold(
+            Box::new(move || {
+                spawn(&child);
+                complete(&ping, Ok(int(5)));
+                await_future(&pong)
+            }),
+            Vec::new(),
+        );
+        assert!(matches!(run_main(&root), Ok(Value::Int(v)) if v.to_i64() == Some(5)));
+        reset();
+    }
+
+    /// A task woken twice before it runs (completion, then cancellation)
+    /// runs once; a reset drops the queue.
+    #[test]
+    fn a_task_woken_twice_runs_once_and_reset_drops_the_queue() {
+        reset();
+        let runs = Rc::new(Cell::new(0));
+        let gate = promise();
+        let (task_gate, task_runs) = (gate.clone(), runs.clone());
+        let task = cold(
+            Box::new(move || {
+                let outcome = await_future(&task_gate);
+                task_runs.set(task_runs.get() + 1);
+                outcome
+            }),
+            Vec::new(),
+        );
+        spawn(&task);
+        complete(&gate, Ok(int(1)));
+        cancel(&task);
+        with(|s| assert_eq!(s.ready.borrow().len(), 1));
+        dispatch();
+        assert_eq!(runs.get(), 1);
+        assert!(task.cancelled());
+        reset();
+
+        let gate = promise();
+        let task_gate = gate.clone();
+        let task = cold(Box::new(move || await_future(&task_gate)), Vec::new());
+        spawn(&task);
+        complete(&gate, Ok(int(1)));
+        reset();
+        with(|s| assert!(s.ready.borrow().is_empty()));
+        dispatch();
+        assert_eq!(task.state(), State::Running);
+        reset();
+    }
+
+    /// When async main returns, a task it woke has not run; shutdown cancels
+    /// it and its cleanup runs, as on Sparrow.
+    #[test]
+    fn a_task_woken_by_a_finished_root_is_cancelled_by_shutdown() {
+        reset();
+        let log = Rc::new(RefCell::new(Vec::new()));
+        let gate = promise();
+        let (child_gate, child_log) = (gate.clone(), log.clone());
+        let child = cold(
+            Box::new(move || {
+                let outcome = await_future(&child_gate);
+                child_log.borrow_mut().push(if outcome.is_err() { "child cancelled" } else { "child woke" });
+                outcome
+            }),
+            Vec::new(),
+        );
+        let root_log = log.clone();
+        let root = cold(
+            Box::new(move || {
+                spawn(&child);
+                complete(&gate, Ok(int(1)));
+                root_log.borrow_mut().push("root returns");
+                Ok(int(0))
+            }),
+            Vec::new(),
+        );
+        assert!(run_main(&root).is_ok());
+        assert_eq!(*log.borrow(), ["root returns", "child cancelled"]);
         reset();
     }
 

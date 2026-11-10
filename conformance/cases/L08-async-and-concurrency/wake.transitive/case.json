@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.wake.transitive",
+  "title": "a completion that settles other futures through internal listeners runs no task inside the original call",
+  "purpose": "Run the program and observe the order of its output.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.COOPERATIVE-WAKE",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "main: set returned\npart 1\npart 2\nassembly: 2 parts\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#18"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #340; Sparrow (Tomato) is the reference behaviour",
+    "expected_basis": "#340: AllFutures settles from its inputs' completions; all dependent tasks run after main suspends, in wake order."
+  },
+  "status": "mandatory"
+}

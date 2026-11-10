@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.wake.event-set",
+  "title": "Event.set() makes its waiter ready; the waiter runs after the setting task suspends",
+  "purpose": "Run the program and observe the order of its output.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.COOPERATIVE-WAKE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "main: before set\nmain: after set\nwaiter: woke\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#18"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #340; Sparrow (Tomato) is the reference behaviour",
+    "expected_basis": "#340: waking a task does not run it inside the waking call; main writes both markers before the waiter resumes."
+  },
+  "status": "mandatory"
+}

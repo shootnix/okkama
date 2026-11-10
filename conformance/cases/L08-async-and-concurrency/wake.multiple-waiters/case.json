@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.wake.multiple-waiters",
+  "title": "every waiter of one event becomes ready in waiting order; none runs inside set()",
+  "purpose": "Run the program and observe the order of its output.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.COOPERATIVE-WAKE",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "main: set returned\nwoke 1\nwoke 2\nwoke 3\nsum 6\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#18"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #340; Sparrow (Tomato) is the reference behaviour",
+    "expected_basis": "#340: waiters of one future are made ready in registration order and run after the setter suspends."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,39 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/event" take Event;
+
+object Lease {
+    has release is Event;
+    Lease(:release);
+    async destroy {
+        await release.wait();
+        Stdout().writeln("lease: returned");
+    }
+}
+
+object Holder {
+    has started is Event;
+    has release is Event;
+    Holder(:started, :release);
+    async run() is int {
+        let lease = Lease(release: release);
+        started.set();
+        await Event().wait();
+        1;
+    }
+}
+
+async main() is int {
+    let started = Event();
+    let release = Event();
+    let holder = spawn Holder(started: started, release: release).run();
+    await started.wait();
+    holder.cancel();
+    Stdout().writeln("main: cancel returned");
+    release.set();
+    Stdout().writeln("main: release set");
+    let outcome = try { await holder; } catch e is Cancelled { -1; };
+    Stdout().writeln("main: holder " + outcome.string());
+    0;
+}

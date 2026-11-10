@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.wake.spawn-and-cold-start",
+  "title": "spawn and awaiting a cold future still start the body at once",
+  "purpose": "Run the program and observe the order of its output.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.COOPERATIVE-WAKE",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "main: before spawn\nspawned: started\nmain: after spawn\nmain: cold created\ncold: started\nmain: cold awaited 1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#18"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #340; Sparrow (Tomato) is the reference behaviour",
+    "expected_basis": "#340 keeps eager start: spawn runs the task until its first suspension, await of a cold future runs its body before await continues."
+  },
+  "status": "mandatory"
+}

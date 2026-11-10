@@ -6213,8 +6213,8 @@ await, and await is valid only inside an async action. Local variables and
 ordinary lexical scopes remain available across suspension.
 
 Async does not imply a thread or make CPU-bound work nonblocking. One
-`IO::Async::Loop` is used by an async program; synchronous main follows the
-unchanged synchronous path. Use `spawn` for the restricted process-parallel
+cooperative scheduler belongs to a run: `async main` drives it, a synchronous
+main does not. Use `spawn` for the restricted process-parallel
 contract. Future cancellation and the std `async/*` modules provide structured
 cleanup and composition. Spawning an async action instead starts cooperative
 work in the current runtime; it does not move that work to a process.
@@ -6226,6 +6226,19 @@ cleanup included; then its own `await` throws `Cancelled`. A future that
 another task still awaits is left running: the cancelled awaiter only stops
 waiting for it. One awaited child therefore needs no group; `FutureGroup` and
 `FutureScope` are for real fan-out.
+
+Scheduling is cooperative (#340). One task runs at a time, until it suspends
+at an `await` of a future that has not settled, or until it ends. Waking a
+task — a future that completes, `Event.set()`, `cancel()`, a value handed over
+a channel, a returned permit — makes it ready. Ready tasks run in the order
+they were woken, after the current task suspends or ends, never inside the
+call that woke them, so the code of a task between two suspension points is
+not interleaved with another task's code. `spawn` and the first `await` of a
+cold future still run the body at once, until its first suspension; awaiting
+a settled future does not suspend. `cancel()` does not run the cancelled
+task's cleanup; awaiting that task observes it settled, cleanup done. This is
+not a thread-safety or transaction guarantee: every suspension point lets
+other tasks run.
 
 ### 31.5.1 Process-parallel `spawn`
 

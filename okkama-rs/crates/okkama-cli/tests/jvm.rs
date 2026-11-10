@@ -1203,6 +1203,48 @@ impl WorkDir {
     }
 }
 
+/// Waking a task makes it ready; it runs after the waker suspends, not
+/// inside `set()` or `cancel()` (#340), as on the other engines.
+#[test]
+fn woken_tasks_run_after_the_waker_suspends() {
+    let dir = WorkDir::new();
+    let build = dir.build_files(
+        &[(
+            "main.ok",
+            "module app v1.0.0;\n\
+             import \"io/stdout\" take Stdout;\n\
+             import \"async/event\" take Event;\n\
+             object Waiter {\n\
+                 has gate is Event;\n\
+                 Waiter(:gate);\n\
+                 async run() is int { defer Stdout().writeln(\"waiter: cleanup\"); await gate.wait(); Stdout().writeln(\"waiter: woke\"); 1; }\n\
+             }\n\
+             async main() is int {\n\
+                 let gate = Event();\n\
+                 let woken = spawn Waiter(gate: gate).run();\n\
+                 gate.set();\n\
+                 Stdout().writeln(\"main: after set\");\n\
+                 await woken;\n\
+                 let cancelled = spawn Waiter(gate: Event()).run();\n\
+                 cancelled.cancel();\n\
+                 Stdout().writeln(\"main: after cancel\");\n\
+                 let outcome = try { await cancelled; } catch e is Cancelled { -1; };\n\
+                 Stdout().writeln(\"main: \" + outcome.string());\n\
+                 0;\n\
+             }\n",
+        )],
+        "main.ok",
+        "Wake",
+    );
+    assert!(build.status.success(), "{}", String::from_utf8_lossy(&build.stderr));
+    let output = dir.java("Wake", &[]);
+    assert_eq!(output.status.code(), Some(0), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "main: after set\nwaiter: woke\nwaiter: cleanup\nmain: after cancel\nwaiter: cleanup\nmain: -1\n"
+    );
+}
+
 #[test]
 fn imported_modules_and_std_stdout_run_on_the_jvm() {
     let dir = WorkDir::new();

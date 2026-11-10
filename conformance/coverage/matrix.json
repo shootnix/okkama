@@ -368,6 +368,64 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L08.wake.already-settled",
+      "L08.wake.multiple-waiters",
+      "L08.wake.no-external"
+     ],
+     "mandatory_cases": [
+      "L08.wake.already-settled",
+      "L08.wake.multiple-waiters",
+      "L08.wake.no-external"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L08.wake.async-destroy-on-cancel",
+      "L08.wake.cancel-defers-cleanup",
+      "L08.wake.channel-and-semaphore",
+      "L08.wake.spawn-and-cold-start",
+      "L08.wake.transitive"
+     ],
+     "mandatory_cases": [
+      "L08.wake.async-destroy-on-cancel",
+      "L08.wake.cancel-defers-cleanup",
+      "L08.wake.channel-and-semaphore",
+      "L08.wake.spawn-and-cold-start",
+      "L08.wake.transitive"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: the contract defines no rejected or failing form"
+    },
+    "normal": {
+     "cases": [
+      "L08.wake.cancel-defers-cleanup",
+      "L08.wake.event-set"
+     ],
+     "mandatory_cases": [
+      "L08.wake.cancel-defers-cleanup",
+      "L08.wake.event-set"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "ASYNC.COOPERATIVE-WAKE",
+   "discrepancies": [],
+   "family": "Async and concurrency",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#18"
+   ],
+   "status": "mandatory",
+   "title": "Waking a task (a completion, Event.set, cancel, a channel or permit handoff) makes it ready; it runs when the current task suspends or ends, never inside the waking call"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
       "L08.failure.rethrown-at-every-await"
      ],
      "mandatory_cases": [
@@ -32336,5 +32394,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "06be2e5674942ad587a69c79fef1505ddc1ddfac6a889638c46c590db6f40404"
+ "suite_tree_sha256": "366a53975b1154f12fba749398a8ed3082a001d5e3a83b010f572bf936a57f55"
 }

@@ -172,6 +172,21 @@
       "family": "Async and concurrency"
     },
     {
+      "id": "ASYNC.COOPERATIVE-WAKE",
+      "title": "Waking a task (a completion, Event.set, cancel, a channel or permit handoff) makes it ready; it runs when the current task suspends or ends, never inside the waking call",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#18"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "required"
+      },
+      "family": "Async and concurrency"
+    },
+    {
       "id": "ASYNC.UNOBSERVED-FAILURE",
       "title": "An unobserved spawned failure makes the run fail with a nonzero status (owner decision)",
       "spec_refs": [

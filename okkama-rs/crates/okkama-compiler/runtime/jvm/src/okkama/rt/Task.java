@@ -17,6 +17,8 @@ final class Task {
     Future awaiting;
     /** Отмена доставляется в ближайшей точке приостановки. */
     boolean cancelPending;
+    /** Задача в очереди готовых: второе пробуждение её не дублирует. */
+    boolean queued;
 
     Task(Future future) {
         this.future = future;

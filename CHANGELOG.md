@@ -32,6 +32,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   "Counter" must return int, got string`, at the action; a missing one reads
   `The fake of role "Counter" does not implement action "reset"`, at the
   `fake` block. Objects the programmer wrote keep their messages.
+- Async: on the IR engine and the JVM, waking a task ran it inside the
+  waking call (#340). `Event.set()`, `cancel()`, a channel handoff or a
+  returned permit resumed the woken task at once, so another task's code ran
+  in the middle of the caller's, between two of its suspension points; on
+  Sparrow it ran only when the caller suspended. Both schedulers now keep a
+  queue of ready tasks, as Sparrow does: a wake makes a task ready, and the
+  launch loop runs ready tasks in wake order when the current task suspends
+  or ends. `cancel()` no longer runs the cancelled task's cleanup inside the
+  call. `spawn` and the first `await` of a cold future still start the body
+  at once. Contract `ASYNC.COOPERATIVE-WAKE` with nine conformance cases
+  (`L08.wake.*`); spec §18 and the Book state the rule.
 - Parser: a test block after `private:` was taken for an action ("Expect
   \"(\" before action parameters"). It is a test of the object like any
   other and does not become private; the formatter keeps it in its place

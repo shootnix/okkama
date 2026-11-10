@@ -1,0 +1,29 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/channel" take Channel, Sending, Receiving;
+
+object Echo {
+    has inbox is Receiving<int>;
+    has outbox is Sending<int>;
+    Echo(:inbox, :outbox);
+    async run() is int {
+        for 1..=3 -> round {
+            let value = await inbox.item();
+            await outbox.send(value * 10);
+        }
+        0;
+    }
+}
+
+async main() is int {
+    let requests is Channel<int> = Channel(capacity: 0);
+    let replies is Channel<int> = Channel(capacity: 0);
+    let echo = spawn Echo(inbox: requests.receiving(), outbox: replies.sending()).run();
+    for 1..=3 -> round {
+        await requests.sending().send(round);
+        Stdout().writeln("reply " + (await replies.receiving().item()).string());
+    }
+    await echo;
+    0;
+}

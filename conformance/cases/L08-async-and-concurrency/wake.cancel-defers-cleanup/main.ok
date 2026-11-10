@@ -1,0 +1,28 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/event" take Event;
+
+object Worker {
+    has started is Event;
+    has never is Event;
+    Worker(:started, :never);
+    async run() is int {
+        defer Stdout().writeln("worker: cleanup");
+        started.set();
+        await never.wait();
+        1;
+    }
+}
+
+async main() is int {
+    let started = Event();
+    let worker = spawn Worker(started: started, never: Event()).run();
+    await started.wait();
+    Stdout().writeln("main: before cancel");
+    worker.cancel();
+    Stdout().writeln("main: after cancel; done: " + worker.done().string());
+    let outcome = try { await worker; } catch e is Cancelled { -1; };
+    Stdout().writeln("main: settled " + outcome.string() + "; cancelled: " + worker.cancelled().string());
+    0;
+}

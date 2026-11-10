@@ -1,0 +1,41 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/channel" take Channel, Sending, Receiving;
+import "async/semaphore" take Semaphore, Permit;
+
+object Receiver {
+    has inbox is Receiving<string>;
+    Receiver(:inbox);
+    async run() is int {
+        let message = await inbox.item();
+        Stdout().writeln("receiver: " + message);
+        1;
+    }
+}
+
+object Borrower {
+    has pool is Semaphore;
+    Borrower(:pool);
+    async run() is int {
+        let permit = await pool.permit();
+        Stdout().writeln("borrower: got a permit");
+        permit.close();
+        1;
+    }
+}
+
+async main() is int {
+    let channel is Channel<string> = Channel(capacity: 0);
+    let receiver = spawn Receiver(inbox: channel.receiving()).run();
+    await channel.sending().send("hello");
+    Stdout().writeln("main: sent");
+    let pool = Semaphore(1);
+    let held = await pool.permit();
+    let borrower = spawn Borrower(pool: pool).run();
+    held.close();
+    Stdout().writeln("main: permit returned");
+    await receiver;
+    await borrower;
+    0;
+}

@@ -1,0 +1,24 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Job {
+    has name is string;
+    Job(:name);
+    async run() is int {
+        Stdout().writeln(name + ": started");
+        1;
+    }
+}
+
+async main() is int {
+    Stdout().writeln("main: before spawn");
+    let spawned = spawn Job(name: "spawned").run();
+    Stdout().writeln("main: after spawn");
+    let cold = Job(name: "cold").run();
+    Stdout().writeln("main: cold created");
+    let value = await cold;
+    Stdout().writeln("main: cold awaited " + value.string());
+    await spawned;
+    0;
+}

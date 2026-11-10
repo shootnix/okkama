@@ -1,0 +1,38 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/event" take Event;
+import "async/collect" take AllFutures;
+import "collections/sequence" take Sequencing;
+
+object Part {
+    has gate is Event;
+    has id is int;
+    Part(:gate, :id);
+    async run() is int {
+        await gate.wait();
+        Stdout().writeln("part " + id.string());
+        id;
+    }
+}
+
+object Assembly {
+    has parts is @Future<int>;
+    Assembly(:parts);
+    async run() is int {
+        let all is AllFutures<int> = AllFutures(origins: parts);
+        let done is Sequencing<int> = await all.results();
+        Stdout().writeln("assembly: " + done.size().string() + " parts");
+        done.size();
+    }
+}
+
+async main() is int {
+    let gate = Event();
+    let parts is @Future<int> = [spawn Part(gate: gate, id: 1).run(), spawn Part(gate: gate, id: 2).run()];
+    let assembly = spawn Assembly(parts: parts).run();
+    gate.set();
+    Stdout().writeln("main: set returned");
+    await assembly;
+    0;
+}

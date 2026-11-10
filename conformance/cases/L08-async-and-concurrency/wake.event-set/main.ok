@@ -1,0 +1,28 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/event" take Event;
+
+object Waiter {
+    has ready is Event;
+    has started is Event;
+    Waiter(:ready, :started);
+    async run() is int {
+        started.set();
+        await ready.wait();
+        Stdout().writeln("waiter: woke");
+        1;
+    }
+}
+
+async main() is int {
+    let ready = Event();
+    let started = Event();
+    let waiter = spawn Waiter(ready: ready, started: started).run();
+    await started.wait();
+    Stdout().writeln("main: before set");
+    ready.set();
+    Stdout().writeln("main: after set");
+    await waiter;
+    0;
+}

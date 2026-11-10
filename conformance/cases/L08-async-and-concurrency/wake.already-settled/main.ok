@@ -1,0 +1,31 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/event" take Event;
+
+object Value {
+    Value();
+    async seven() is int { 7; }
+}
+
+object Waiter {
+    has gate is Event;
+    Waiter(:gate);
+    async run() is int {
+        await gate.wait();
+        Stdout().writeln("waiter: woke");
+        1;
+    }
+}
+
+async main() is int {
+    let settled = Value().seven();
+    let first = await settled;
+    let gate = Event();
+    let waiter = spawn Waiter(gate: gate).run();
+    gate.set();
+    let again = await settled;
+    Stdout().writeln("main: settled twice " + (first + again).string());
+    await waiter;
+    0;
+}
