@@ -174,6 +174,9 @@ conformance ir-passes-off --timeout-scale 4 --adapter-env OCS_RUST_ENGINE=ir --a
 # The IR cycle collector at every candidate: an edge it miscounts frees a
 # live value at once instead of thousands of candidates later (#43).
 conformance ir-gc-stress --timeout-scale 4 --adapter-env OCS_RUST_ENGINE=ir --adapter-env OKKAMA_GC=stress
+# Sparrow collects at every safepoint and poisons freed cells: a lost or
+# wrong root fails at once (#356; it found #355).
+conformance sparrow-gc-stress --timeout-scale 6 --adapter-env OCS_RUST_ENGINE=sparrow --adapter-env SPARROW_CORE_GC_STRESS=1
 
 # The std inventory is generated from std/: a stale one hides new modules
 # from the coverage report (#282).
@@ -200,7 +203,7 @@ fi
 
 step "t/ suite"
 started=$SECONDS
-if python3 "$ROOT/tools/t/run.py" --configs ir,sparrow,jvm,ir-passes-off,ir-gc-stress --okkama "$OKKAMA" \
+if python3 "$ROOT/tools/t/run.py" --configs ir,sparrow,jvm,ir-passes-off,ir-gc-stress,sparrow-gc-stress --okkama "$OKKAMA" \
         | tee "$LOGS/t-suite.log"; [[ ${PIPESTATUS[0]} -eq 0 ]]; then
     record "t suite" pass $((SECONDS - started))
 else

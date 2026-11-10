@@ -10,6 +10,8 @@ Every file under t/ (or the ones given) runs on every configuration:
     jvm             okkama run --engine jvm
     ir-passes-off   the IR engine with OKKAMA_IR_PASSES=none
     ir-gc-stress    the IR engine with OKKAMA_GC=stress
+    sparrow-gc-stress  Sparrow with SPARROW_CORE_GC_STRESS=1 (a collection
+                    at every safepoint, freed cells poisoned)
 
 Before the run, tools/t/gen.py writes the generated families to t/gen
 (`--no-generate` keeps what is there). A file prints `1..N`, then `ok K - name` or `not ok K - name` for K = 1..N in
@@ -46,6 +48,7 @@ CONFIGS = {
     "jvm": ("jvm", {}),
     "ir-passes-off": ("ir", {"OKKAMA_IR_PASSES": "none"}),
     "ir-gc-stress": ("ir", {"OKKAMA_GC": "stress"}),
+    "sparrow-gc-stress": ("sparrow", {"SPARROW_CORE_GC_STRESS": "1"}),
 }
 
 PLAN = re.compile(r"^1\.\.(\d+)$")

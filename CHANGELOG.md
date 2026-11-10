@@ -77,6 +77,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   **Migration:** move a package's modules into `src/`, and its importers'
   paths from `pkg/<name>/x` to `pkg/<name>/src/x`.
 
+### Tests
+
+- The gate runs Sparrow under GC stress too (#356): conformance and the t/
+  suite with `SPARROW_CORE_GC_STRESS=1`, a collection at every safepoint with
+  freed cells poisoned, so a lost or wrong root fails at once. Run by hand, it
+  found #355.
+
 ### Fixed
 
 - Tomato no longer crashes in a collection while a role fake keeps an integer
