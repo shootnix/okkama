@@ -462,7 +462,9 @@ mod tests {
     #[test]
     #[ignore]
     fn text_costs() {
-        let shapes: [(&str, fn(usize) -> String); 3] = [
+        // A label and the key of entry `i`.
+        type Shape = (&'static str, fn(usize) -> String);
+        let shapes: [Shape; 3] = [
             ("short", |i| format!("k{i}")),
             ("prefix", |i| format!("prefix--{i}")),
             ("long", |i| format!("{}{i}", "a long key that shares its first fifty-six bytes .......")),
