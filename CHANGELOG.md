@@ -21,6 +21,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   **Migration:** the forms `*`, `=1.2.3`, `1.*` and `1.2.*` are refused with a
   hint; write the lowest version that works, `1.0.0` for `1.*`, and give every
   dependency a version.
+- A Blade package is an ordinary git repository with its modules in `src/`
+  (#348), imported as `pkg/<name>/src/<path>`. Its name is the key it is
+  declared under and its version is its tag, so a library needs `blade.toml`
+  only for dependencies of its own; a `[module]` there must agree with the key
+  and the tag. Blade checks only `src/**/*.ok`, so examples and tests beside it
+  may be anything, and installs a library without `blade.toml` with a
+  generated one (`[module] name` and `version`), the same bytes every time.
+  Every refusal names the package and its tag. `blade install SOURCE` names a
+  package without `[module] name` by the last part of its URL or directory.
+  **Migration:** move a package's modules into `src/`, and its importers'
+  paths from `pkg/<name>/x` to `pkg/<name>/src/x`.
 
 ## [0.5.1] — 2026-11-10
 

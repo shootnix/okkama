@@ -7,6 +7,12 @@
 //! (`resolve`, #347); requirements no version meets, two majors or two
 //! sources of one package are errors naming the chains that asked.
 //!
+//! A package is a repository with its modules in `src/` (#348). Its name is
+//! the key it is declared under and its version is the tag; `blade.toml` is
+//! needed only for dependencies, and a `[module]` in it must agree with both.
+//! Only `src/**/*.ok` is checked; a package without `blade.toml` is installed
+//! with a generated one, so the compiler finds where it belongs.
+//!
 //! Installation is all or nothing: the new `pkg/` is assembled next to the
 //! old one and swapped in, then `blade.lock` records what was installed.
 
@@ -119,7 +125,8 @@ fn install_busy(root: &Path, unlock: &Unlock) -> Result<Report, String> {
 }
 
 /// `blade install <source> [version]`: add the package at `source` to
-/// `[dependencies]` (by the name in its `blade.toml`), then install.
+/// `[dependencies]`, then install. Its name is the `[module] name` of its
+/// `blade.toml`, or else the last part of the URL or directory.
 pub fn add(
     root: &Path,
     source: &str,
@@ -166,12 +173,11 @@ pub fn add(
             ),
             None => format!("{} has no versions (no vX.Y.Z tags)", source.id()),
         })?;
-    let fetched = work.fetch(&source, &picked, None)?;
-    let name = fetched
-        .manifest
-        .name
-        .clone()
-        .ok_or_else(|| format!("{}: {MANIFEST} has no [module] name", source.id()))?;
+    let name = match work.declared_name(&source, &picked)? {
+        Some(name) => name,
+        None => name_of(&source)?,
+    };
+    work.fetch(&name, &source, &picked, None)?;
     let dependency = Dependency {
         version: Some(version.map_or_else(|| picked.to_string(), str::to_string)),
         git: matches!(source, Source::Git(_)).then(|| spelled.clone()),
@@ -205,6 +211,24 @@ fn check_git_url(url: &str) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// The name a package without `[module] name` is added under: the last part
+/// of its URL or directory, without `.git`.
+fn name_of(source: &Source) -> Result<String, String> {
+    let spelled = match source {
+        Source::Git(url) => url.trim_end_matches('/').to_string(),
+        Source::Path(dir) => dir.display().to_string(),
+    };
+    let last = spelled.rsplit(['/', ':', '\\']).next().unwrap_or_default();
+    let name = last.strip_suffix(".git").unwrap_or(last).to_string();
+    manifest::check_package_name(&name).map_err(|error| {
+        format!(
+            "{}: cannot name the package \"{name}\" ({error}); give it [module] name in its {MANIFEST}",
+            source.id()
+        )
+    })?;
+    Ok(name)
 }
 
 fn looks_like_git(source: &str) -> bool {
@@ -445,23 +469,7 @@ fn fetch_checked(
     let expected = lock.packages.get(&want.name).filter(|locked| {
         locked.source == want.source.id() && locked.version == version && !unlock.allows(&want.name)
     });
-    let package = work.fetch(&want.source, &version, expected)?;
-    check_name(&want.name, &package)?;
-    Ok(package)
-}
-
-fn check_name(name: &str, package: &Package) -> Result<(), String> {
-    match &package.manifest.name {
-        Some(declared) if declared == name => Ok(()),
-        Some(declared) => Err(format!(
-            "dependency \"{name}\" is the package \"{declared}\" ({}); the name in [dependencies] must match",
-            package.source.id()
-        )),
-        None => Err(format!(
-            "{}: {MANIFEST} has no [module] name",
-            package.source.id()
-        )),
-    }
+    work.fetch(&want.name, &want.source, &version, expected)
 }
 
 // ----- загрузка -----
@@ -471,7 +479,7 @@ struct Work {
     dir: PathBuf,
     clones: HashMap<String, PathBuf>,
     tags: HashMap<String, BTreeMap<Version, String>>,
-    fetched: HashMap<(String, Version), Package>,
+    fetched: HashMap<(String, String, Version), Package>,
     count: usize,
 }
 
@@ -525,23 +533,53 @@ impl Work {
         }
     }
 
-    /// Copy version `version` of `source` into the scratch space and check it.
-    /// `expected` — what `blade.lock` says this version is.
+    /// The `[module] name` of a version, if it has `blade.toml` with one.
+    fn declared_name(
+        &mut self,
+        source: &Source,
+        version: &Version,
+    ) -> Result<Option<String>, String> {
+        let manifest = match source {
+            Source::Path(dir) => Manifest::read_package(dir)?,
+            Source::Git(url) => {
+                let commit = self.versions(source)?[version].clone().unwrap_or_default();
+                let clone = self.clone_of(url)?;
+                let blob = format!("{commit}:{MANIFEST}");
+                match git(&["-C", path_str(&clone)?, "show", &blob]) {
+                    Ok(text) => Manifest::parse(&text).map_err(|error| {
+                        format!("{} v{version}: {MANIFEST}: {error}", source.id())
+                    })?,
+                    Err(_) => Manifest::default(),
+                }
+            }
+        };
+        Ok(manifest.name)
+    }
+
+    /// Copy version `version` of package `name` from `source` into the
+    /// scratch space and check it. `expected` — what `blade.lock` says this
+    /// version is.
     fn fetch(
         &mut self,
+        name: &str,
         source: &Source,
         version: &Version,
         expected: Option<&Locked>,
     ) -> Result<Package, String> {
-        let key = (source.id(), *version);
+        let key = (name.to_string(), source.id(), *version);
         if let Some(package) = self.fetched.get(&key) {
             return Ok(package.clone());
         }
+        // Every refusal names the package and its tag.
+        let label = match source {
+            Source::Git(_) => format!("{name} v{version} ({})", source.id()),
+            Source::Path(_) => format!("{name} {version} ({})", source.id()),
+        };
         self.count += 1;
         let dir = self.dir.join(format!("package-{}", self.count));
         let commit = match source {
             Source::Path(origin) => {
-                copy_package(origin, &dir)?;
+                copy_package(origin, &dir).map_err(|error| format!("{label}: {error}"))?;
                 None
             }
             Source::Git(url) => {
@@ -564,25 +602,32 @@ impl Work {
                     "--force",
                     &commit,
                 ])?;
-                copy_package(&clone, &dir)?;
+                copy_package(&clone, &dir).map_err(|error| format!("{label}: {error}"))?;
                 Some(commit)
             }
         };
-        let manifest = Manifest::read(&dir).map_err(|error| format!("{}: {error}", source.id()))?;
-        let declared = manifest.version.as_deref().and_then(Version::parse);
-        if declared != Some(*version) {
+        let manifest = Manifest::read_package(&dir).map_err(|error| format!("{label}: {error}"))?;
+        if let Some(declared) = &manifest.name
+            && declared != name
+        {
             return Err(format!(
-                "{} v{version}: {MANIFEST} declares version {}",
-                source.id(),
-                manifest.version.as_deref().unwrap_or("none")
+                "{label}: {MANIFEST} declares [module] name \"{declared}\"; the name in [dependencies] must match"
             ));
         }
-        let name = manifest
-            .name
-            .clone()
-            .ok_or_else(|| format!("{}: {MANIFEST} has no [module] name", source.id()))?;
-        check_package(&dir, &name)
-            .map_err(|error| format!("{name} {version} ({}): {error}", source.id()))?;
+        if let Some(declared) = &manifest.version
+            && Version::parse(declared) != Some(*version)
+        {
+            return Err(format!(
+                "{label}: {MANIFEST} declares [module] version {declared}, but the tag is v{version}"
+            ));
+        }
+        check_package(&dir, name).map_err(|error| format!("{label}: {error}"))?;
+        // Without it the compiler would take the files for the project's.
+        let generated = dir.join(MANIFEST);
+        if !generated.exists() {
+            std::fs::write(&generated, generated_manifest(name, version))
+                .map_err(io(&generated))?;
+        }
         let checksum = checksum(&dir)?;
         if let (Some(locked), Source::Git(_)) = (expected, source)
             && !locked.checksum.is_empty()
@@ -685,6 +730,9 @@ fn remote_tags(url: &str) -> Result<BTreeMap<Version, String>, String> {
 
 // ----- проверка и копирование -----
 
+/// The directory of a package's modules.
+const SRC: &str = "src";
+
 /// Copy a package tree without `.git`, its own `pkg/` and blade scratch
 /// directories. Links are refused: a package is plain files.
 fn copy_package(from: &Path, to: &Path) -> Result<(), String> {
@@ -749,8 +797,20 @@ fn files(dir: &Path) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
-/// The rules a package must follow to be installed.
+/// The `blade.toml` installed with a package that has none: the same bytes
+/// for the same name and version, since they are part of the checksum.
+fn generated_manifest(name: &str, version: &Version) -> String {
+    format!("[module]\nname = \"{name}\"\nversion = \"{version}\"\n")
+}
+
+/// The rules a package must follow to be installed. Only its modules in
+/// `src/` are read; the rest (a licence, examples, tests) is copied as is.
 fn check_package(dir: &Path, name: &str) -> Result<(), String> {
+    if !dir.join(SRC).is_dir() {
+        return Err(format!(
+            "no {SRC}/ directory; a package keeps its modules in {SRC}/"
+        ));
+    }
     let all = files(dir)?;
     // macOS и Windows не различают регистр: такие два файла станут одним.
     let mut folded: HashMap<String, &String> = HashMap::new();
@@ -759,7 +819,10 @@ fn check_package(dir: &Path, name: &str) -> Result<(), String> {
             return Err(format!("{other} and {file} differ only in letter case"));
         }
     }
-    for file in all.iter().filter(|file| file.ends_with(".ok")) {
+    let modules = all
+        .iter()
+        .filter(|file| file.starts_with(&format!("{SRC}/")) && file.ends_with(".ok"));
+    for file in modules {
         let text =
             std::fs::read_to_string(dir.join(file)).map_err(|error| format!("{file}: {error}"))?;
         let source =
@@ -775,7 +838,7 @@ fn check_package(dir: &Path, name: &str) -> Result<(), String> {
         let module = module.join("/");
         if let Some(version) = &program.module.version {
             return Err(format!(
-                "{file} declares module version {}; a package keeps its version in {MANIFEST}",
+                "{file} declares module version {}; a package's version is its tag",
                 version.text()
             ));
         }

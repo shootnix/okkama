@@ -65,19 +65,31 @@ fn manifest_text(name: &str, version: &str, dependencies: &str) -> String {
     )
 }
 
-/// Commit the repository at `dir` with `version` in its blade.toml and tag it.
+/// Commit the repository at `dir` with `version` in its blade.toml, a module
+/// `src/<name>.ok` and `files`, and tag it.
 fn release(dir: &Path, name: &str, version: &str, dependencies: &str, files: &[(&str, &str)]) {
+    let manifest = manifest_text(name, version, dependencies);
+    let module = format!("module {name};\n");
+    let source = format!("src/{name}.ok");
+    let mut all = vec![
+        ("blade.toml", manifest.as_str()),
+        (source.as_str(), module.as_str()),
+    ];
+    all.extend_from_slice(files);
+    tag(dir, version, &all);
+}
+
+/// Commit `files` into the repository at `dir`, created if needed, and tag
+/// the commit `v<version>`.
+fn tag(dir: &Path, version: &str, files: &[(&str, &str)]) {
     if !dir.join(".git").exists() {
         std::fs::create_dir_all(dir).unwrap();
         git(dir, &["init", "-q"]);
     }
-    std::fs::write(
-        dir.join("blade.toml"),
-        manifest_text(name, version, dependencies),
-    )
-    .unwrap();
     for (file, text) in files {
-        std::fs::write(dir.join(file), text).unwrap();
+        let path = dir.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
     }
     git(dir, &["add", "-A"]);
     git(dir, &["commit", "-qm", version]);
@@ -86,7 +98,7 @@ fn release(dir: &Path, name: &str, version: &str, dependencies: &str, files: &[(
 
 fn codec(text: &str) -> (&'static str, String) {
     (
-        "codec.ok",
+        "src/codec.ok",
         format!(
             "module json/codec;\nobject Codec {{ Codec(); name() is string {{ \"{text}\"; }} }}\n"
         ),
@@ -108,10 +120,16 @@ fn world(name: &str) -> (Tree, PathBuf, PathBuf) {
     );
     for version in ["12.3.0", "12.3.1", "13.0.0"] {
         let router = format!(
-            "module web/router;\nimport \"pkg/json/codec\" take Codec;\n\
+            "module web/router;\nimport \"pkg/json/src/codec\" take Codec;\n\
              object Router {{ Router(); route() is string {{ \"web {version} \" + Codec().name(); }} }}\n"
         );
-        release(&web, "web", version, &needs_json, &[("router.ok", &router)]);
+        release(
+            &web,
+            "web",
+            version,
+            &needs_json,
+            &[("src/router.ok", &router)],
+        );
     }
     tree.write("app/blade.toml", &manifest_text("app", "1.0.0", ""));
     let app = tree.path("app");
@@ -141,7 +159,7 @@ fn git_dependencies_take_the_lowest_version_that_meets_their_minimums_and_stay_l
     assert_eq!(name, "web");
     assert_eq!(report.lines, ["+ json 1.0.0", "+ web 12.3.0"]);
     assert_eq!(locked(&app), pairs(&[("json", "1.0.0"), ("web", "12.3.0")]));
-    let router = std::fs::read_to_string(app.join("pkg/web/router.ok")).unwrap();
+    let router = std::fs::read_to_string(app.join("pkg/web/src/router.ok")).unwrap();
     assert!(router.contains("web 12.3.0"), "{router}");
     assert!(!app.join("pkg/web/.git").exists());
     assert_eq!(
@@ -342,7 +360,7 @@ fn a_moved_tag_is_refused_until_update() {
     // Move the tag json 1.0.0 to a new commit of the same release.
     let json = tree.path("repos/json");
     git(&json, &["checkout", "-q", "v1.0.0"]);
-    std::fs::write(json.join("codec.ok"), codec("changed").1).unwrap();
+    std::fs::write(json.join("src/codec.ok"), codec("changed").1).unwrap();
     git(&json, &["commit", "-qam", "changed"]);
     git(&json, &["tag", "-f", "v1.0.0"]);
     git(&json, &["checkout", "-q", "main"]);
@@ -371,7 +389,7 @@ fn local_directories_install_by_their_version_and_remove_cleanly() {
     let (tree, app, _) = world("path");
     let util = tree.write("local/util/blade.toml", &manifest_text("util", "2.1.0", ""));
     tree.write(
-        "local/util/util.ok",
+        "local/util/src/util.ok",
         "module util;\nobject Shout { Shout(); }\n",
     );
     let dir = util.parent().unwrap().to_str().unwrap().to_string();
@@ -385,15 +403,15 @@ fn local_directories_install_by_their_version_and_remove_cleanly() {
         (name.as_str(), report.lines),
         ("util", vec!["+ util 2.1.0".to_string()])
     );
-    assert!(app.join("pkg/util/util.ok").is_file());
+    assert!(app.join("pkg/util/src/util.ok").is_file());
 
     // Правка локального пакета видна после следующего install.
     tree.write(
-        "local/util/extra.ok",
+        "local/util/src/extra.ok",
         "module util/extra;\nobject Extra { Extra(); }\n",
     );
     install::install(&app, &Unlock::Nothing).unwrap();
-    assert!(app.join("pkg/util/extra.ok").is_file());
+    assert!(app.join("pkg/util/src/extra.ok").is_file());
 
     assert!(manifest::remove_dependency(&app, "util").unwrap());
     let report = install::install(&app, &Unlock::Nothing).unwrap();
@@ -414,6 +432,10 @@ fn bad_packages_and_conflicts_leave_the_project_as_it_was() {
         let file = tree.write(
             &format!("local/{name}/blade.toml"),
             &manifest_text(name, "1.0.0", dependencies),
+        );
+        tree.write(
+            &format!("local/{name}/src/{name}.ok"),
+            &format!("module {name};\n"),
         );
         for (path, text) in files {
             tree.write(&format!("local/{name}/{path}"), text);
@@ -436,21 +458,25 @@ fn bad_packages_and_conflicts_leave_the_project_as_it_was() {
             package(
                 "nat",
                 "",
-                &[("nat.ok", "module nat;\nnative now() is int;\n")],
+                &[("src/nat.ok", "module nat;\nnative now() is int;\n")],
             ),
-            "nat.ok declares a native",
+            "src/nat.ok declares a native",
         ),
         (
             package(
                 "ver",
                 "",
-                &[("ver.ok", "module ver v1.0.0;\nobject X { X(); }\n")],
+                &[("src/ver.ok", "module ver v1.0.0;\nobject X { X(); }\n")],
             ),
-            "ver.ok declares module version v1.0.0",
+            "src/ver.ok declares module version v1.0.0",
         ),
         (
-            package("pre", "", &[("x.ok", "module util;\nobject X { X(); }\n")]),
-            "x.ok declares module \"util\"; modules of package \"pre\" are named \"pre\" or \"pre/…\"",
+            package(
+                "pre",
+                "",
+                &[("src/x.ok", "module util;\nobject X { X(); }\n")],
+            ),
+            "src/x.ok declares module \"util\"; modules of package \"pre\" are named \"pre\" or \"pre/…\"",
         ),
     ];
     for (dir, expected) in cases {
@@ -464,7 +490,7 @@ fn bad_packages_and_conflicts_leave_the_project_as_it_was() {
             std::fs::read_to_string(app.join("blade.lock")).unwrap(),
             lock
         );
-        assert!(app.join("pkg/web/router.ok").is_file());
+        assert!(app.join("pkg/web/src/router.ok").is_file());
         assert!(!app.join("pkg.blade-busy").exists());
     }
 
@@ -491,9 +517,146 @@ fn bad_packages_and_conflicts_leave_the_project_as_it_was() {
     .unwrap();
     let error = install::install(&app, &Unlock::Nothing).unwrap_err();
     assert!(
-        error.contains("dependency \"alias\" is the package \"renamed\""),
+        error.contains("alias 1.0.0 (path+")
+            && error.contains(
+                "declares [module] name \"renamed\"; the name in [dependencies] must match"
+            ),
         "{error}"
     );
+}
+
+/// The package format (#348): a git repository with its modules in `src/`,
+/// named by the key it is declared under, versioned by its tag, with a
+/// `blade.toml` only for dependencies; a generated one is installed when it
+/// has none. Only `src/` is checked.
+#[test]
+fn a_package_is_a_repository_with_its_modules_in_src() {
+    let tree = Tree::new("format");
+    let repo = |name: &str| tree.path(&format!("repos/{name}"));
+    let dep = |name: &str, min: &str| {
+        format!(
+            "{name} = {{ git = \"{}\", version = \"{min}\" }}\n",
+            repo(name).display()
+        )
+    };
+    let project = |name: &str, dependencies: &str| {
+        tree.write(
+            &format!("{name}/blade.toml"),
+            &manifest_text(name, "1.0.0", dependencies),
+        );
+        tree.path(name)
+    };
+
+    // Only src/json.ok; the examples and tests beside it would fail the checks.
+    tag(
+        &repo("json"),
+        "1.0.0",
+        &[
+            ("src/json.ok", "module json;\nobject Codec { Codec(); }\n"),
+            ("LICENSE", "MIT\n"),
+            ("examples/broken.ok", "this is not okkama {"),
+            ("tests/native.ok", "module other;\nnative now() is int;\n"),
+        ],
+    );
+    let app = project("app", "");
+    let (name, report) = install::add(&app, repo("json").to_str().unwrap(), None, true).unwrap();
+    assert_eq!(
+        (name.as_str(), report.lines),
+        ("json", vec!["+ json 1.0.0".to_string()])
+    );
+    let generated = "[module]\nname = \"json\"\nversion = \"1.0.0\"\n";
+    assert_eq!(
+        std::fs::read_to_string(app.join("pkg/json/blade.toml")).unwrap(),
+        generated
+    );
+    for file in ["src/json.ok", "LICENSE", "examples/broken.ok"] {
+        assert!(app.join("pkg/json").join(file).is_file(), "{file}");
+    }
+    // The same bytes and the same checksum in another project.
+    let again = project("again", &dep("json", "1.0.0"));
+    install::install(&again, &Unlock::Nothing).unwrap();
+    assert_eq!(
+        std::fs::read(again.join("pkg/json/blade.toml")).unwrap(),
+        generated.as_bytes()
+    );
+    let checksum = |app: &Path| Lock::read(app).unwrap().packages["json"].checksum.clone();
+    assert_eq!(checksum(&app), checksum(&again));
+
+    // A library whose blade.toml has only [dependencies] keeps it.
+    let web_manifest = format!("[dependencies]\n{}", dep("json", "1.0.0"));
+    let router = "module web/router;\nimport \"pkg/json/src/json\" take Codec;\nobject Router { Router(); }\n";
+    tag(
+        &repo("web"),
+        "2.0.0",
+        &[("blade.toml", &web_manifest), ("src/router.ok", router)],
+    );
+    let site = project("site", &dep("web", "2.0.0"));
+    install::install(&site, &Unlock::Nothing).unwrap();
+    assert_eq!(locked(&site), pairs(&[("json", "1.0.0"), ("web", "2.0.0")]));
+    let installed = Manifest::read(&site.join("pkg/web")).unwrap();
+    assert!(installed.name.is_none() && installed.dependencies.contains_key("json"));
+
+    // `blade install SOURCE` takes [module] name over the repository's name.
+    tag(
+        &repo("okkama-yaml"),
+        "0.1.0",
+        &[
+            ("blade.toml", "[module]\nname = \"yaml\"\n"),
+            ("src/yaml.ok", "module yaml;\n"),
+        ],
+    );
+    let (name, _) = install::add(&app, repo("okkama-yaml").to_str().unwrap(), None, true).unwrap();
+    assert_eq!(name, "yaml");
+    assert!(app.join("pkg/yaml/src/yaml.ok").is_file());
+
+    // Each refusal names the package and its tag and changes nothing.
+    let refused = |name: &str, expected: &str| {
+        let bad = project(&format!("uses_{name}"), &dep(name, "1.0.0"));
+        let error = install::install(&bad, &Unlock::Nothing).unwrap_err();
+        assert!(error.contains(&format!("{name} v1.0.0 (git+")), "{error}");
+        assert!(error.contains(expected), "{error}\nexpected: {expected}");
+        assert!(!bad.join("pkg").exists() && !bad.join("blade.lock").exists());
+    };
+    tag(
+        &repo("named"),
+        "1.0.0",
+        &[
+            ("blade.toml", "[module]\nname = \"other\"\n"),
+            ("src/named.ok", "module named;\n"),
+        ],
+    );
+    refused(
+        "named",
+        "declares [module] name \"other\"; the name in [dependencies] must match",
+    );
+    tag(
+        &repo("versioned"),
+        "1.0.0",
+        &[
+            ("blade.toml", "[module]\nversion = \"1.1.0\"\n"),
+            ("src/versioned.ok", "module versioned;\n"),
+        ],
+    );
+    refused(
+        "versioned",
+        "declares [module] version 1.1.0, but the tag is v1.0.0",
+    );
+    tag(&repo("flat"), "1.0.0", &[("flat.ok", "module flat;\n")]);
+    refused("flat", "no src/ directory");
+    tag(
+        &repo("natives"),
+        "1.0.0",
+        &[("src/natives.ok", "module natives;\nnative now() is int;\n")],
+    );
+    refused("natives", "src/natives.ok declares a native");
+    #[cfg(unix)]
+    {
+        let linked = repo("linked");
+        std::fs::create_dir_all(linked.join("docs")).unwrap();
+        std::os::unix::fs::symlink("/etc/hosts", linked.join("docs/hosts")).unwrap();
+        tag(&linked, "1.0.0", &[("src/linked.ok", "module linked;\n")]);
+        refused("linked", "is a symbolic link");
+    }
 }
 
 /// S01 (#15): a package name is a module path, never a file system path.
@@ -574,7 +737,7 @@ fn an_interrupted_install_recovers_to_one_consistent_state() {
         let (tree, app, _) = world(&format!("interrupt-{step}"));
         let util = tree.write("local/util/blade.toml", &manifest_text("util", "2.1.0", ""));
         tree.write(
-            "local/util/util.ok",
+            "local/util/src/util.ok",
             "module util;\nobject Shout { Shout(); }\n",
         );
         let dir = util.parent().unwrap().to_str().unwrap().to_string();
@@ -616,7 +779,7 @@ fn a_busy_project_is_not_changed() {
     let (tree, app, _) = world("busy");
     let util = tree.write("local/util/blade.toml", &manifest_text("util", "2.1.0", ""));
     tree.write(
-        "local/util/util.ok",
+        "local/util/src/util.ok",
         "module util;\nobject Shout { Shout(); }\n",
     );
     let dir = util.parent().unwrap().to_str().unwrap().to_string();

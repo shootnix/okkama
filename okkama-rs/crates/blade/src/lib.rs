@@ -32,6 +32,9 @@ USAGE:
 
 VERSION is a minimum, 1.2.3: that version or a later one of the same major.
 Blade installs the lowest version that meets every minimum in the project.
+A package is a git repository with its modules in src/, imported as
+pkg/NAME/src/…; its version is its vX.Y.Z tag, and it needs blade.toml only
+for dependencies of its own.
 
 blade.toml, build and run (all keys optional, defaults shown):
     [build]

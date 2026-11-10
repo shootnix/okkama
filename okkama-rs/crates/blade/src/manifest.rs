@@ -141,6 +141,17 @@ impl Manifest {
         Manifest::parse(&text).map_err(|error| format!("{}: {error}", file.display()))
     }
 
+    /// The manifest of a library being installed: a library without
+    /// dependencies needs none, and then it reads as empty (#348). A project
+    /// root always has one, so it is read with `read`.
+    pub fn read_package(root: &Path) -> Result<Manifest, String> {
+        if root.join(MANIFEST).exists() {
+            Manifest::read(root)
+        } else {
+            Ok(Manifest::default())
+        }
+    }
+
     /// The dependency an import path `pkg/<name>/…` refers to: the longest
     /// declared name that is a whole-segment prefix of the rest of the path.
     pub fn dependency_of<'a>(&'a self, path: &str) -> Option<&'a str> {

@@ -3423,10 +3423,20 @@ module shadows a bundled stdlib module with the same path for the program's
 own imports; the standard library resolves its own imports only inside itself.
 
 In a blade project, dependencies are installed in `pkg/<name>/` of the project
-root and imported by that path: `import "pkg/web/router" take Router;`. Only
-dependencies declared in `[dependencies]` of the importing package's
+root and imported by that path: `import "pkg/web/src/router" take Router;`.
+Only dependencies declared in `[dependencies]` of the importing package's
 `blade.toml` can be imported this way. Module files of a project declare no
 version (`module app;`): the version is set in `blade.toml` (spec §5.2.2).
+
+A package is an ordinary git repository with its modules in `src/`. Its name
+is the key it is declared under, and its version is its `vX.Y.Z` tag. It needs
+a `blade.toml` only to declare dependencies of its own; a `[module]` there is
+optional, and when present its `name` and `version` must agree with the key
+and the tag. Blade checks only `src/**/*.ok`: syntax, module names `<name>` or
+`<name>/…`, no module versions, no natives. Anything else (a licence, examples,
+tests) is copied as it is and never executed, and links are refused. A package
+without `blade.toml` is installed with a generated one (`[module] name` and
+`version`), so the compiler knows its files belong to `pkg/<name>`.
 
 ### 26.2.1 Building and running a Blade project
 
