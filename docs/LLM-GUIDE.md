@@ -119,7 +119,11 @@ regions, awaits, heap bytes, compile time and code size per function),
 `SPARROW_CORE_DUMP`/`SPARROW_CORE_UNOPTIMIZED`/`SPARROW_CORE_PLAIN=symbol,…|*`
 (§9), `SPARROW_CORE_GC_STRESS=1` (collect at every
 safepoint and poison reclaimed cells: values kept alive by mistake fail at
-once), `OKKAMA_TRACE=off` (no stack in failures), `OKKAMA_ICU_LIBDIR` (pinned ICU for collation;
+once), `OKKAMA_ARRAYS=flat|shared|trie`, `OKKAMA_MAPS=btree`,
+`OKKAMA_STRINGS=flat` (Tomato's persistent representations of 0.4.3 off or
+one kind only, for A/B on one binary: shared array buffers and tries, maps
+that turn persistent at their first version, text buffers for chains of
+`+`; the default has all of them), `OKKAMA_TRACE=off` (no stack in failures), `OKKAMA_ICU_LIBDIR` (pinned ICU for collation;
 `tools/build-icu-collation.sh`). `OKKAMA_JIT*` switches belong to the previous
 VM only.
 
@@ -169,9 +173,10 @@ zsh does not split `$var`; use `${=var}` or a function when passing commands.
 | Generated programs | `tools/gen/okgen.py run --seeds N` (`show SEED`) | terminating deterministic programs (BigInt, strings, arrays, objects, roles, closures, try/catch, recursion) on ir/sparrow/jvm; a disagreement is minimized (ddmin over `main`) into `conformance/reports/runs/okgen/<seed>`; `tools/gen/mutants.sh` checks it finds a seeded defect in each engine. Containers only |
 | Release gate | `make gate` (= `tools/gate/docker.sh`, ~15 min) | Rust tests (profile `gate`: release optimizations without fat LTO; and debug), clippy with `-D warnings`, conformance ir/jvm/sparrow/ir-passes-off/ir-gc-stress (sparrow-origin is not gated), std tests ir/sparrow vs `tools/gate/known-failures.txt`, the t/ suite on all five configurations; logs in `conformance/reports/runs/gate-*`, statuses from exit codes in `gate.json`; a failed build stops it. On GitHub `gate.yml` runs it on the tagged commit and `packages.yml` publishes only after it passes. The Docker VM has ~8 GB: the container gets 7 GB and 2 cargo jobs (fat LTO for the release binaries only) |
 
-Last known state (0.4.1): conformance 927/927 on ir, jvm, sparrow, ir with
+Last known state (0.4.3): conformance 977/977 on ir, jvm, sparrow, ir with
 passes off and ir under GC stress; std 232 modules pass on ir and sparrow
-(collation is a known failure).
+(collation is a known failure); the t/ suite 49 981 checks on each of the
+five configurations.
 
 ## 6. Benchmarks
 
@@ -208,12 +213,13 @@ Benchmarks live outside the repository in `../okkama-docs/benchmarks`
   lines; compare medians of several alternating rounds with checksums.
 - PGO workloads are copies of the ladder in `okkama-rs/tools/pgo/workloads`.
 
-Reference numbers (0.4.2, Apple M2 Max / Docker arm64): Tomato is 5.4×
-Python, 8.1× Perl, 4.0× Ruby and 4.4× the JVM on the ladder (geometric mean of
-cold runs over 01–10; report `okkama-docs/benchmarks/reports/2026-11-09-v0.4.2`;
+Reference numbers (0.4.3, Apple M2 Max / Docker arm64): Tomato is 5.4×
+Python, 8.2× Perl, 4.0× Ruby and 4.3× the JVM on the ladder (geometric mean of
+cold runs over 01–10; report `okkama-docs/benchmarks/reports/2026-11-10-v0.4.3`;
 compare releases with a back-to-back A/B, not against an older report).
 Warmed up (`--steady`), the JVM beats Tomato only on 09-closures; 11-ownership
-is 2.7× slower than Python/Perl/Ruby (region tracking). PostgreSQL vs psycopg2: scans 1.3–1.7× slower, inserts faster; a
+is 1.8× slower than Python/Perl/Ruby (region tracking; 2.7× before 0.4.3's
+persistent collections). PostgreSQL vs psycopg2: scans 1.3–1.7× slower, inserts faster; a
 point query is one round trip since #11 (68 µs vs psycopg2's 73 µs, Docker
 arm64). Driver checks against a live server:
 `okkama-docs/examples/std-v4/db-postgres*.ok` (`-stream-check` covers paging,

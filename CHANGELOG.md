@@ -6,11 +6,35 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
-0.4.3 is an experiment: persistent collections (#246–#255), measured before
-anything is kept. Not released until the measurements show a net gain.
+## [0.4.3] — 2026-11-10
+
+0.4.3 is a Tomato performance release: immutable collections stop copying
+themselves. Each of these chains costs O(1) or O(log n) per step instead of
+a copy of the whole value, and every older version stays as it was:
+- appends, prepends, `drop` and `take` on an array, and `replaced`;
+- puts and removals on a large map;
+- `+` on a string.
+
+Reads, builds, short strings and maps are unchanged or faster. The engine
+ladder is 1.3% faster on Apple M2 Max and unchanged on an x86-64 CI runner,
+where reads and builds also stay within 1%. The representations were
+measured one by one before they were kept (#246–#255); `OKKAMA_ARRAYS`,
+`OKKAMA_MAPS` and `OKKAMA_STRINGS` turn them off. The IR engine and the JVM keep flat copies
+until 0.5.2 (#335, #336). Also new: `@T.replaced` and `@T.removed_at`.
+Map keys compare faster, and maps no longer pile up in memory (#331).
 
 ### Added
 
+- `tools/perf/persistence_ab.py` and the workflow `Perf x86-64`
+  (`.github/workflows/perf-x86.yml`). They measure the persistent
+  representations on and off on one binary, on a machine the persistence
+  stand does not run on: 41 of the stand's programs (110 points) and the
+  ladder workloads, in ABBA order. Run it by hand or by pushing a `perf/*`
+  branch. Two runs before this release: the averages of reads and builds
+  are within ±1%, while single points on the shared runner swing by up to
+  ±25%. The check found one regression, fixed before the release: each
+  version made from the same long string took a buffer twice its size
+  (+80…375% on x86-64).
 - `@T.replaced(index, value)` (#250, owner's spelling): a new array equal to
   the receiver except at `index`, which holds `value`; the receiver keeps
   its elements. `value` meets the element type by the boundary rules of an
@@ -42,7 +66,7 @@ anything is kept. Not released until the measurements show a net gain.
 ### Changed
 
 - Tomato: a chain of appends no longer copies the array at every step
-  (#246, prototype). `items + [x]` on an array of 32 elements or more that
+  (#246). `items + [x]` on an array of 32 elements or more that
   was itself made by an append writes into a shared buffer with room to
   grow, when `items` ends at the buffer's frontier; the new version is a
   three-word view (the buffer, where it starts, its own length), and the old
@@ -64,7 +88,7 @@ anything is kept. Not released until the measurements show a net gain.
   versions, at sizes around 32, 64, 128, 1 024 and 2 048).
 
 - Tomato: a chain of `replaced` calls on a large array no longer copies the
-  array at every step (#250, part 2, prototype). From the second
+  array at every step (#250, part 2). From the second
   replacement in an array of 64 elements or more, the array is a 32-way trie
   with a tail — a four-word object whose nodes are ordinary heap arrays — and
   a replacement copies one path from the root to a leaf. A trie that is
@@ -85,7 +109,7 @@ anything is kept. Not released until the measurements show a net gain.
   versions (3 481 checks), also under GC stress.
 
 - Tomato: a chain of prepends (`[x] + items`) no longer copies the array at
-  every step either (#247, prototype). A shared buffer keeps room at both
+  every step either (#247). A shared buffer keeps room at both
   ends; its free slots hold a word no element can be (0 for `int` and
   reference elements, the unbound raw word for the others), which the
   collector does not take for a pointer. `[x] + items`, where `items` has at
@@ -102,7 +126,7 @@ anything is kept. Not released until the measurements show a net gain.
   ends.
 
 - Tomato: slices share their origin when they keep at least half of it
-  (#249, prototype). `slice`, and `take` and `drop`, which lower to it,
+  (#249). `slice`, and `take` and `drop`, which lower to it,
   return a view of the origin's storage — the flat array itself or the
   buffer of a view — when the slice has 32 elements or more and keeps at
   least half of that storage; smaller and shorter slices, and slices of
@@ -129,7 +153,7 @@ anything is kept. Not released until the measurements show a net gain.
   representations below gain. Persistence stand, today's maps: random
   lookups −15…−21% and lookups by string key −28…−41% (n = 10³…10⁵).
 
-- Tomato: versions of large maps share their nodes (#252–#254, prototype).
+- Tomato: versions of large maps share their nodes (#252–#254).
   A map of more than 64 entries turns into a persistent B+ tree the first
   time a new version is made from it: `m + [k: v]`, `m - [k: _]`, a merge.
   From then on, putting, replacing and removing a key cost O(log n) instead
@@ -170,7 +194,7 @@ anything is kept. Not released until the measurements show a net gain.
   stress.
 
 - Tomato: a chain of `+` on strings no longer copies the string at every
-  step (#255, prototype).
+  step (#255).
   - **Buffer.** A string of 256 bytes or more made by `+` starts a chain.
     The next `+` puts both parts into a text buffer twice the size. From
     then on, a version that ends at the buffer's high end appends in place,
@@ -2788,7 +2812,8 @@ First release of the Rust implementation: the compiler (lexer, parser, analysis,
 IR, Sparrow (VM with JIT) and JVM engines, the standard library, LSP, `fmt`, `lint`, the
 `blade` project manager, and packages for macOS and Linux.
 
-[Unreleased]: https://github.com/shootnix/okkama/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/shootnix/okkama/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/shootnix/okkama/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/shootnix/okkama/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/shootnix/okkama/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/shootnix/okkama/compare/v0.3.2...v0.4.0
