@@ -16,6 +16,10 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   benchmarks, median of 10 against release/0.5.1: map literal −24%, map
   lookup −20%, `keys()` −21%, map `+` −18%, string slice −22%, string length
   −17%, SHA-256 −16%, JSON round trip −14%; nothing slower beyond noise.
+  A small map kept as one sorted vector was measured against this and not
+  adopted: in the release build it gains 6–28% on maps of up to 8 entries
+  but costs 15–21% where a map grows past them (report:
+  `okkama-docs/benchmarks/maps-325/REPORT.md`).
 
 ### Fixed
 
