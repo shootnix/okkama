@@ -537,9 +537,14 @@ impl Parser<'_> {
                 }
                 continue;
             }
+            // The removed `Type:(args)` projection: a bare type name before
+            // `:(`. Anything else followed by `: (` is a map key and its value
+            // (`["b": (2 + 3) * 2]`, `[x: (2)]`, #263), and so is a constant
+            // key, which is all capitals where a type name is not.
             if self.check(TokenKind::Colon)
                 && self.check_next(TokenKind::LeftParen)
                 && !self.starts_anonymous_action(self.pos + 1)
+                && matches!(&expr.kind, ExprKind::Name(name) if is_projected_type_name(&name.text))
             {
                 return Err(self.error_here(
                     "Constructor projections have been removed; use Type(args).method().",
@@ -1131,6 +1136,12 @@ const LEVELS: &[Level] = {
         },
     ]
 };
+
+/// A name the removed `Type:(args)` projection could have started with: a
+/// type name (`ParsedInt`), not a constant (`LIMIT`).
+fn is_projected_type_name(text: &str) -> bool {
+    is_type_word(text) && text.contains(|c: char| c.is_ascii_lowercase())
+}
 
 /// The level (index into [`LEVELS`]) and operation of a binary operator token.
 fn binary_operator(kind: TokenKind) -> Option<(usize, Operator)> {

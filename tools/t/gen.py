@@ -35,8 +35,9 @@ PER_FILE = 600
 # ----- literals and the oracle's text of values ---------------------------------
 
 def lit_int(n):
-    # A unary minus, not parentheses: a map value cannot start with `(` (#263).
-    return str(n)
+    # Negative numbers in parentheses, so a literal is one operand anywhere,
+    # also as a map value (#263).
+    return f"({n})" if n < 0 else str(n)
 
 
 def lit_float(x):
@@ -1565,16 +1566,6 @@ def nesting_family():
             expr = WRAPPERS[name](expr, type_name, alt, depth)
         return expr
 
-    starts_with_paren = {name for name in WRAPPERS if WRAPPERS[name]("x", "int", "0", 0).startswith("(")}
-
-    def held_back(chain):
-        """The open issue a chain runs into, or None."""
-        for outer, inner in zip(chain, chain[1:]):
-            # A map value cannot start with `(` (#263).
-            if outer == "map" and inner in starts_with_paren:
-                return 263
-        return None
-
     def forbidden(chain):
         # Compact choices never nest, not even through other constructs (Book §24.3).
         return sum(1 for name in chain if name.startswith("choice")) > 1
@@ -1582,9 +1573,6 @@ def nesting_family():
     for type_name, value, alt, compare in NEST_TYPES:
         for chain in itertools.product(names, repeat=2):
             if forbidden(chain):
-                continue
-            if held_back(chain):
-                batch.program().skip(held_back(chain))
                 continue
             expr = build(chain, value, type_name, alt)
             label = f"{type_name}: " + " > ".join(chain)
@@ -1594,9 +1582,6 @@ def nesting_family():
                 batch.ok(f"({expr}) == {value}", label)
     for chain in itertools.product(names, repeat=3):
         if forbidden(chain):
-            continue
-        if held_back(chain):
-            batch.program().skip(held_back(chain))
             continue
         expr = build(chain, "42", "int", "0")
         batch.is_(f"({expr})", "42", "int: " + " > ".join(chain))
@@ -2402,11 +2387,7 @@ def enums_family():
                 for j in (same + different if source in ("literal", "variable") else different or same):
                     program.is_(f"{subject} == {literals[j]}", lit_bool(values[j] == value), f"{desc} == {literals[j]}")
                 program.ok(f"[{subject}, {other}] == [{literal}, {other}]", f"{desc}: in an array")
-                if subject.startswith("("):
-                    # A map value cannot start with `(` (#263).
-                    program.skip(263)
-                else:
-                    program.ok(f'["k": {subject}] == ["k": {literal}]', f"{desc}: as a map value")
+                program.ok(f'["k": {subject}] == ["k": {literal}]', f"{desc}: as a map value")
                 if type_name == "Fault":
                     program.is_(f"(try {{ self.raise({subject}); }} catch Fault.minor {{ 1; }} catch Fault.major(c) {{ 2 + c; }})",
                                 lit_int(1 if value[0] == "minor" else 2 + value[1][0]), f"{desc}: thrown, caught by case")

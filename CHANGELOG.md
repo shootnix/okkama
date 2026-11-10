@@ -6,6 +6,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Fixed
+
+- Parser: a map value may start with a parenthesis (#263). `["b": (2 + 3) *
+  2]`, `[1: (2) + 1]`, `["x": (-1)]` and `[x: (2)]` were rejected with the
+  migration error of the removed `Type:(args)` projection. That error now
+  applies only to a bare type name before `:(` (`ParsedInt:(answer)`), and
+  a constant key such as `LIMIT` is all capitals, so it is not taken for one.
+  Parser and formatter tests, and the t/ suite writes negative numbers in
+  parentheses again: 543 checks that were skipped now run (50 524 on each
+  configuration). Parsing all of std takes the same time.
+
 ### Changed
 
 - Documentation names the virtual machine Sparrow; Tomato is the name of

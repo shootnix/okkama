@@ -586,3 +586,33 @@ fn test_throws_is_a_try_with_one_catch() {
     // Elsewhere `throws` is an ordinary member.
     assert!(!body_sexpr("checker.throws(Refused);").contains("TryExpr"));
 }
+
+#[test]
+fn map_values_may_start_with_a_parenthesis() {
+    // #263: `key: (` is a map entry, not the removed `Type:(args)` projection.
+    for (source, tree) in [
+        ("[\"x\": (1 + 2)]", "(map \"x\":(group (+ 1 2)))"),
+        ("[1: (2) + 1]", "(map 1:(+ (group 2) 1))"),
+        ("[\"x\": (-1)]", "(map \"x\":(group (- 1)))"),
+        ("[\"a\": 1, \"b\": (2 + 3) * 2]", "(map \"a\":1 \"b\":(* (group (+ 2 3)) 2))"),
+        ("[\"x\": (true ?? 1 !! 2)]", "(map \"x\":(group (CompactChoice expression=(if true {1} {2}))))"),
+        ("[x: (2)]", "(map x:(group 2))"),
+        ("[LIMIT:(4)]", "(map LIMIT:(group 4))"),
+        ("[\"o\": [\"i\": (7)]]", "(map \"o\":(map \"i\":(group 7)))"),
+        ("[\"n\": (count(3)) * 2]", "(map \"n\":(* (group (call count 3)) 2))"),
+    ] {
+        assert_eq!(expr_sexpr(source), tree, "{source}");
+    }
+    // A named argument was never affected.
+    assert_eq!(expr_sexpr("Box(a: (1) + 2)"), "(call Box a:(+ (group 1) 2))");
+    // The removed spelling still gets its migration error, also as a map value,
+    // and a broken entry a syntax error.
+    for source in ["[\"a\": ParsedInt:(x)]", "[Point:(1)]"] {
+        assert_rejects(
+            &format!("module app v1.0.0; main() is int {{ let m = {source}; 0; }}"),
+            "Constructor projections have been removed; use Type(args).method().",
+        );
+    }
+    assert_rejects("module app v1.0.0; main() is int { let m = [\"a\": (]; 0; }", "Expect expression.");
+    assert_rejects("module app v1.0.0; main() is int { let m = [\"a\": (1]; 0; }", "Expect \")\" after expression.");
+}

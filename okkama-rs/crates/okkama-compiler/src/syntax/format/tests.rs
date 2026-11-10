@@ -220,6 +220,25 @@ object A {
 }
 
 #[test]
+fn map_values_that_start_with_a_parenthesis_keep_it() {
+    // #263: the parentheses of a map value survive formatting, and so does
+    // the entry; `[LIMIT:(4)]` gains the space every entry has.
+    let text = "module app v1.0.0;\nmain() is int {\nlet d = [\"a\": 1, \"b\": (2 + 3) * 2];\nlet c = [\"x\": (-1)];\nlet g = [LIMIT:(4)];\n0;\n}\n";
+    assert_eq!(
+        fmt(text),
+        "module app v1.0.0;
+
+main() is int {
+    let d = [\"a\": 1, \"b\": (2 + 3) * 2];
+    let c = [\"x\": (-1)];
+    let g = [LIMIT: (4)];
+    0;
+}
+"
+    );
+}
+
+#[test]
 fn invalid_source_is_a_syntax_error() {
     let source =
         SourceFile::new("t.ok", "module app v1.0.0;\nmain() is int { let = 1; }\n").unwrap();
