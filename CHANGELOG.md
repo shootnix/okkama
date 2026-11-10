@@ -24,6 +24,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- JVM: a task hands control to another through a baton that spins for up
+  to 20 µs before parking its thread, instead of a `Semaphore` that parked
+  at once (#327). Control usually comes back within microseconds, and
+  parking and waking a thread cost a few on every hand-off; the order of
+  hand-offs is unchanged. At most two threads spin at a time: with more,
+  eight tasks woken by one `Event` shared the cores with spinning
+  neighbours and got slower. Micro benchmarks, release build, median of 10,
+  net per operation: `await` of an async action 6.9 → 0.77 µs, `spawn` and
+  `await` 6.5 → 0.87 µs, a channel round trip 13.3 → 1.15 µs, a wake through
+  an `Event` 22.4 → 7.4 µs, eight waiters woken 162 → 136 µs, a cancelled
+  task awaited 25.3 → 20.4 µs (with an `async destroy` 39.9 → 32.3 µs); a
+  synchronous method call is unchanged.
+
 - Sparrow (Tomato): `rat` values are the engines' shared exact fraction
   (`okkama_runtime_core::rat::Rat`, the IR engine's), whose parts are machine
   integers while they fit, instead of `num-rational`'s `BigRational`, which

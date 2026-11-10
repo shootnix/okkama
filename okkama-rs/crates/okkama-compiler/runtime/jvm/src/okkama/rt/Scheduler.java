@@ -6,7 +6,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadFactory;
 
 /**
@@ -53,7 +52,7 @@ public final class Scheduler {
      * владеющая управлением, поэтому синхронизация — семафоры передачи.
      */
     private static final class Carrier implements Runnable {
-        final Semaphore assigned = new Semaphore(0);
+        final Baton assigned = new Baton();
         Runnable work;
 
         public void run() {
