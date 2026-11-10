@@ -1,13 +1,9 @@
 //! Package versions and version requirements.
 //!
 //! A version is `MAJOR.MINOR.PATCH` (a git tag spells it `vMAJOR.MINOR.PATCH`).
-//! A requirement is one of:
-//!
-//! - `12.3.0` — compatible with 12.3.0: `>=12.3.0, <13.0.0`; below 1.0 the
-//!   minor is the breaking part: `0.3.1` means `>=0.3.1, <0.4.0`;
-//! - `12.*`, `12.3.*` — any version with that prefix;
-//! - `=12.3.1` — exactly that version;
-//! - `*` — any version.
+//! A requirement is a minimum, `1.2.3`: that version or a later one of the
+//! same major. Resolution picks the lowest version that meets every minimum
+//! of a package (#347).
 
 use std::fmt;
 
@@ -44,98 +40,54 @@ fn number(text: &str) -> Option<u64> {
         .flatten()
 }
 
-/// A version requirement, with its source spelling for messages.
+/// A version requirement — a minimum within its major — with its source
+/// spelling for messages.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Requirement {
     pub text: String,
-    low: Version,
-    /// Exclusive upper bound; `None` — no bound.
-    high: Option<Version>,
+    min: Version,
 }
 
 impl Requirement {
     pub fn parse(text: &str) -> Result<Requirement, String> {
         let spelled = text.trim();
-        let invalid = || {
-            format!(
-                "invalid version requirement \"{spelled}\" (use 1.2.3, 1.*, 1.2.*, =1.2.3 or *)"
-            )
-        };
-        let zero = Version {
-            major: 0,
-            minor: 0,
-            patch: 0,
-        };
-        let (low, high) = if spelled == "*" {
-            (zero, None)
-        } else if let Some(exact) = spelled.strip_prefix('=') {
-            let version = Version::parse(exact.trim()).ok_or_else(invalid)?;
-            let next = Version {
-                patch: version.patch + 1,
-                ..version
-            };
-            (version, Some(next))
-        } else if let Some(prefix) = spelled.strip_suffix(".*") {
-            let parts: Vec<u64> = prefix
-                .split('.')
-                .map(number)
-                .collect::<Option<_>>()
-                .ok_or_else(invalid)?;
-            match parts.as_slice() {
-                [major] => (
-                    Version {
-                        major: *major,
-                        ..zero
-                    },
-                    Some(Version {
-                        major: major + 1,
-                        ..zero
-                    }),
-                ),
-                [major, minor] => (
-                    Version {
-                        major: *major,
-                        minor: *minor,
-                        patch: 0,
-                    },
-                    Some(Version {
-                        major: *major,
-                        minor: minor + 1,
-                        patch: 0,
-                    }),
-                ),
-                _ => return Err(invalid()),
-            }
+        // The forms of earlier versions of Blade, with what to write instead.
+        let hint = if spelled == "*" {
+            " — \"*\" is gone: write the lowest version that works, such as \"1.0.0\""
+        } else if spelled.starts_with('=') {
+            " — exact versions are gone: write the version itself; blade.lock keeps it exact"
+        } else if spelled.ends_with(".*") {
+            " — wildcards are gone: \"1.*\" is \"1.0.0\", \"1.2.*\" is \"1.2.0\""
         } else {
-            let version = Version::parse(spelled).ok_or_else(invalid)?;
-            let high = if version.major > 0 {
-                Version {
-                    major: version.major + 1,
-                    ..zero
-                }
-            } else {
-                Version {
-                    minor: version.minor + 1,
-                    ..zero
-                }
-            };
-            (version, Some(high))
+            ""
         };
+        let min = Version::parse(spelled)
+            .filter(|_| hint.is_empty())
+            .ok_or_else(|| {
+                format!(
+                    "invalid version requirement \"{spelled}\": write the minimum version as MAJOR.MINOR.PATCH \
+                     (it means that version or a later one of the same major){hint}"
+                )
+            })?;
         Ok(Requirement {
             text: spelled.to_string(),
-            low,
-            high,
+            min,
         })
     }
 
+    /// The lowest version the requirement accepts.
+    pub fn min(&self) -> Version {
+        self.min
+    }
+
     pub fn matches(&self, version: &Version) -> bool {
-        *version >= self.low && self.high.is_none_or(|high| *version < high)
+        version.major == self.min.major && *version >= self.min
     }
 }
 
 impl fmt::Display for Requirement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.text)
+        write!(f, "≥ {}", self.text)
     }
 }
 
@@ -162,22 +114,33 @@ mod tests {
     }
 
     #[test]
-    fn plain_versions_are_compatible_ranges() {
-        let caret = req("12.3.0");
-        assert!(caret.matches(&v("12.3.0")) && caret.matches(&v("12.9.4")));
-        assert!(!caret.matches(&v("12.2.9")) && !caret.matches(&v("13.0.0")));
+    fn a_requirement_is_a_minimum_within_its_major() {
+        let min = req("12.3.0");
+        assert!(min.matches(&v("12.3.0")) && min.matches(&v("12.9.4")));
+        assert!(!min.matches(&v("12.2.9")) && !min.matches(&v("13.0.0")));
+        // Major 0 is one major like any other.
         let zero = req("0.3.1");
-        assert!(zero.matches(&v("0.3.7")));
-        assert!(!zero.matches(&v("0.4.0")) && !zero.matches(&v("0.3.0")));
+        assert!(zero.matches(&v("0.3.7")) && zero.matches(&v("0.4.0")));
+        assert!(!zero.matches(&v("0.3.0")) && !zero.matches(&v("1.0.0")));
+        assert_eq!(req("v1.2.3").min(), v("1.2.3"));
+        assert_eq!(min.to_string(), "≥ 12.3.0");
     }
 
     #[test]
-    fn wildcards_exact_and_any() {
-        assert!(req("12.*").matches(&v("12.0.0")) && !req("12.*").matches(&v("13.0.0")));
-        assert!(req("12.3.*").matches(&v("12.3.9")) && !req("12.3.*").matches(&v("12.4.0")));
-        assert!(req("=12.3.1").matches(&v("12.3.1")) && !req("=12.3.1").matches(&v("12.3.2")));
-        assert!(req("*").matches(&v("0.0.1")) && req("*").matches(&v("99.0.0")));
-        for bad in ["12", "12.x", "^1.2.3", "=1.2", "1.*.*"] {
+    fn earlier_forms_are_refused_with_what_to_write() {
+        for (bad, says) in [
+            ("*", "\"*\" is gone"),
+            ("=12.3.1", "exact versions"),
+            ("12.*", "wildcards"),
+            ("12.3.*", "wildcards"),
+        ] {
+            let error = Requirement::parse(bad).unwrap_err();
+            assert!(
+                error.contains(says) && error.contains("MAJOR.MINOR.PATCH"),
+                "{bad}: {error}"
+            );
+        }
+        for bad in ["12", "12.x", "^1.2.3", "=1.2", "1.*.*", ""] {
             assert!(Requirement::parse(bad).is_err(), "{bad}");
         }
     }

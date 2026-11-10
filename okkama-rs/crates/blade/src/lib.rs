@@ -23,14 +23,15 @@ USAGE:
                                      package directory or a git repository
                                      (--git treats a local directory as git)
     blade remove NAME                remove a dependency
-    blade update [NAME...]           install the newest allowed versions
+    blade update [NAME...]           resolve again without the locked versions
     blade build                      compile the project as [build] says
     blade run [-- ARGS...]           build if sources changed, then run it as
                                      [run] says; ARGS follow [run] args
     blade --help
     blade --version
 
-VERSION is 1.2.3 (compatible with 1.2.3), 1.*, 1.2.*, =1.2.3 or *.
+VERSION is a minimum, 1.2.3: that version or a later one of the same major.
+Blade installs the lowest version that meets every minimum in the project.
 
 blade.toml, build and run (all keys optional, defaults shown):
     [build]

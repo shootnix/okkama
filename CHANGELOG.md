@@ -6,6 +6,22 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Changed
+
+- Blade selects versions by minimum version selection (#347). A dependency's
+  `version` is a minimum, `"1.2.0"`: that version or a later one of the same
+  major. Blade installs, for each package, the lowest version that meets every
+  minimum in the project and its dependencies, so a new release changes
+  nothing until some `blade.toml` raises a minimum, and the same manifests
+  always give the same versions. Only the requirements of the versions
+  selected count: what a superseded version needed, even a package of another
+  major or one that cannot be fetched, is pruned and causes no error. Two
+  majors or two sources of one package are reported with the chain of each
+  requirement. `blade.lock` still holds each version until `blade update`.
+  **Migration:** the forms `*`, `=1.2.3`, `1.*` and `1.2.*` are refused with a
+  hint; write the lowest version that works, `1.0.0` for `1.*`, and give every
+  dependency a version.
+
 ## [0.5.1] — 2026-11-10
 
 0.5.1 makes Sparrow and the JVM faster where 0.5.0 left them slowest, and

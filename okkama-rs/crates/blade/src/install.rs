@@ -2,9 +2,10 @@
 //!
 //! A dependency comes from a git repository (versions are its `vX.Y.Z` tags)
 //! or from a local directory (its version is the one in its `blade.toml`).
-//! Resolution keeps one version of each package per project: requirements
-//! of the same major meet at the highest version that satisfies all of them;
-//! requirements no version satisfies are an error naming who wants what.
+//! Resolution keeps one version of each package per project: the lowest
+//! version that meets every minimum required of it, within one major
+//! (`resolve`, #347); requirements no version meets, two majors or two
+//! sources of one package are errors naming the chains that asked.
 //!
 //! Installation is all or nothing: the new `pkg/` is assembled next to the
 //! old one and swapped in, then `blade.lock` records what was installed.
@@ -72,7 +73,7 @@ impl Source {
 pub enum Unlock {
     /// Keep every locked version that still satisfies the manifests.
     Nothing,
-    /// `blade update`: pick the newest versions.
+    /// `blade update`: resolve again without the locked versions.
     All,
     /// `blade update web`: only these packages.
     Packages(BTreeSet<String>),
@@ -195,7 +196,9 @@ pub fn add(
 /// transport helper (`ext::…`), no control characters. Which transports git
 /// may use is also fixed in `git`.
 fn check_git_url(url: &str) -> Result<(), String> {
-    let helper = url.split_once("::").is_some_and(|(transport, _)| !transport.contains('/'));
+    let helper = url
+        .split_once("::")
+        .is_some_and(|(transport, _)| !transport.contains('/'));
     if url.is_empty() || url.starts_with('-') || url.chars().any(char::is_control) || helper {
         return Err(format!(
             "invalid git source {url:?}: use an https://, ssh://, git:// or file:// URL, user@host:path, or a local path"
@@ -251,13 +254,69 @@ impl Package {
     }
 }
 
-/// One requirement on a package, with who made it.
+/// A requirement as resolution meets it: the package, where it comes from,
+/// its minimum, and the chain of package versions that asked for it.
+#[derive(Clone)]
 struct Want {
+    name: String,
     source: Source,
     requirement: Requirement,
     by: String,
 }
 
+/// The requirements a manifest declares; `by` names its chain.
+fn wants_of(declaring: &Manifest, base: Option<&Path>, by: &str) -> Result<Vec<Want>, String> {
+    declaring
+        .dependencies
+        .iter()
+        .map(|(name, dependency)| {
+            let version = dependency.version.as_deref().ok_or_else(|| {
+                format!("dependency \"{name}\" of {by} has no version: add version = \"MAJOR.MINOR.PATCH\", the lowest that works")
+            })?;
+            let requirement =
+                Requirement::parse(version).map_err(|error| format!("dependency \"{name}\" of {by}: {error}"))?;
+            let source = Source::of(name, dependency, base).map_err(|error| format!("{by}: {error}"))?;
+            Ok(Want { name: name.clone(), source, requirement, by: by.to_string() })
+        })
+        .collect()
+}
+
+/// The lowest available version of `min`'s major that is at least `min`.
+fn lowest(available: &BTreeMap<Version, Option<String>>, min: Version) -> Option<Version> {
+    available
+        .keys()
+        .copied()
+        .find(|version| version.major == min.major && *version >= min)
+}
+
+/// A package, its source and the major a requirement is in.
+type Key = (String, String, u64);
+
+fn key_of(want: &Want) -> Key {
+    (
+        want.name.clone(),
+        want.source.id(),
+        want.requirement.min().major,
+    )
+}
+
+/// Minimum version selection (#347): one version per package, the lowest
+/// that meets every minimum, in two passes that end on any input.
+///
+/// Pass 1 walks the requirement graph: from the project, every requirement
+/// leads to the lowest version that meets that requirement, whose manifest
+/// gives more. It keeps, per package, source and major, the largest minimum
+/// seen. Every requirement is followed, not only the largest, so what is
+/// visited does not depend on the order of the manifests; versions are
+/// finite and none is expanded twice, so cycles end. A locked version of a
+/// package that is not being updated counts as one more minimum.
+///
+/// Pass 2 walks again from the project, through the selected versions only
+/// (the lowest that meets the largest minimum). The packages it reaches are
+/// installed. A package reached with two majors or two sources is a
+/// conflict, reported with both chains. A version that pass 1 visited but
+/// pass 2 does not select (a superseded one) never causes an error: a bad
+/// package or a missing minimum matters only on the way pass 2 takes.
 fn resolve(
     root: &Path,
     manifest: &Manifest,
@@ -269,92 +328,126 @@ fn resolve(
         .name
         .clone()
         .unwrap_or_else(|| "the project".to_string());
-    let mut chosen: BTreeMap<String, Package> = BTreeMap::new();
-    for _ in 0..64 {
-        // Требования от проекта и от уже выбранных версий, достижимых из него.
-        let mut wants: BTreeMap<String, Vec<Want>> = BTreeMap::new();
-        let mut queue = vec![(project.clone(), manifest.clone(), Some(root.to_path_buf()))];
-        let mut seen = BTreeSet::new();
-        while let Some((by, declaring, base)) = queue.pop() {
-            for (name, dependency) in &declaring.dependencies {
-                let requirement = Requirement::parse(dependency.version.as_deref().unwrap_or("*"))
-                    .map_err(|error| format!("dependency \"{name}\" of {by}: {error}"))?;
-                let source = Source::of(name, dependency, base.as_deref())
-                    .map_err(|error| format!("{by}: {error}"))?;
-                wants.entry(name.clone()).or_default().push(Want {
-                    source,
-                    requirement,
-                    by: by.clone(),
-                });
-                if let Some(package) = chosen.get(name)
-                    && seen.insert(name.clone()) {
-                        queue.push((
-                            format!("{name} {}", package.version),
-                            package.manifest.clone(),
-                            package.base().map(Path::to_path_buf),
-                        ));
-                    }
-            }
+    let roots = wants_of(manifest, Some(root), &project)?;
+
+    // Pass 1.
+    let mut mins: BTreeMap<Key, (Version, String)> = BTreeMap::new();
+    let mut nodes: BTreeMap<(String, String, Version), Result<Package, String>> = BTreeMap::new();
+    let mut queue = roots.clone();
+    while let Some(want) = queue.pop() {
+        let key = key_of(&want);
+        let mut minimums = vec![(want.requirement.min(), want.by.clone())];
+        if !mins.contains_key(&key) {
+            minimums.extend(floor(lock, unlock, &want).map(|locked| (locked, LOCK.to_string())));
         }
-        let mut changed = false;
-        chosen.retain(|name, _| {
-            let keep = wants.contains_key(name);
-            changed |= !keep;
-            keep
-        });
-        for (name, wanted) in &wants {
-            let source = &wanted[0].source;
-            if let Some(other) = wanted.iter().find(|want| want.source != *source) {
-                return Err(format!(
-                    "\"{name}\" comes from two sources: {} (by {}) and {} (by {})",
-                    source.id(),
-                    wanted[0].by,
-                    other.source.id(),
-                    other.by
-                ));
+        for (min, by) in minimums {
+            let largest = mins.entry(key.clone()).or_insert((min, by.clone()));
+            if largest.0 < min {
+                *largest = (min, by);
             }
-            let available = work.versions(source)?;
-            let fits =
-                |version: &Version| wanted.iter().all(|want| want.requirement.matches(version));
-            let locked = lock
-                .packages
-                .get(name)
-                .filter(|locked| locked.source == source.id() && !unlock.allows(name))
-                .map(|locked| locked.version)
-                .filter(|version| fits(version) && available.contains_key(version));
-            let Some(version) =
-                locked.or_else(|| available.keys().rev().copied().find(|v| fits(v)))
-            else {
-                let who: Vec<String> = wanted
-                    .iter()
-                    .map(|want| format!("{} (by {})", want.requirement, want.by))
-                    .collect();
-                return Err(format!(
-                    "no version of \"{name}\" satisfies {}; available: {}",
-                    who.join(", "),
-                    list(available.keys())
-                ));
+            // An unreachable source matters only if pass 2 goes there.
+            let Ok(available) = work.versions(&want.source) else {
+                break;
             };
-            if chosen
-                .get(name)
-                .is_some_and(|package| package.version == version && package.source == *source)
-            {
+            let Some(version) = lowest(&available, min) else {
+                continue;
+            };
+            let node = (want.name.clone(), want.source.id(), version);
+            if nodes.contains_key(&node) {
                 continue;
             }
-            // `blade update` переписывает запись lock, а не сверяется с ней.
-            let expected = lock.packages.get(name).filter(|locked| {
-                locked.source == source.id() && locked.version == version && !unlock.allows(name)
+            let fetched = fetch_checked(work, &want, version, lock, unlock).and_then(|package| {
+                let by = format!("{} → {} {version}", want.by, want.name);
+                queue.extend(wants_of(&package.manifest, package.base(), &by)?);
+                Ok(package)
             });
-            let package = work.fetch(source, &version, expected)?;
-            check_name(name, &package)?;
-            chosen.insert(name.clone(), package);
-            changed = true;
-        }
-        if !changed {
-            return Ok(chosen);
+            nodes.insert(node, fetched);
         }
     }
-    Err("dependency versions do not settle; check the requirements for cycles".to_string())
+
+    // Pass 2.
+    let mut chosen: BTreeMap<String, (Want, Package)> = BTreeMap::new();
+    let mut queue = roots;
+    while let Some(want) = queue.pop() {
+        let key = key_of(&want);
+        if let Some((first, _)) = chosen.get(&want.name) {
+            if first.source != want.source {
+                return Err(format!(
+                    "\"{}\" comes from two sources:\n  {} → {} ({})\n  {} → {} ({})",
+                    want.name,
+                    first.by,
+                    want.name,
+                    first.source.id(),
+                    want.by,
+                    want.name,
+                    want.source.id()
+                ));
+            }
+            if first.requirement.min().major != want.requirement.min().major {
+                return Err(format!(
+                    "no single major of \"{}\":\n  {} → {} {}\n  {} → {} {}",
+                    want.name,
+                    first.by,
+                    want.name,
+                    first.requirement,
+                    want.by,
+                    want.name,
+                    want.requirement
+                ));
+            }
+            continue;
+        }
+        let (min, by) = mins[&key].clone();
+        let available = work.versions(&want.source)?;
+        let version = lowest(&available, min).ok_or_else(|| {
+            format!(
+                "no version of \"{}\" is ≥ {min} within major {}: wanted by {by}; available: {}",
+                want.name,
+                min.major,
+                list(available.keys())
+            )
+        })?;
+        let package = nodes
+            .get(&(want.name.clone(), want.source.id(), version))
+            .cloned()
+            .unwrap_or_else(|| fetch_checked(work, &want, version, lock, unlock))?;
+        let by = format!("{} → {} {version}", want.by, want.name);
+        queue.extend(wants_of(&package.manifest, package.base(), &by)?);
+        chosen.insert(want.name.clone(), (want, package));
+    }
+    Ok(chosen
+        .into_iter()
+        .map(|(name, (_, package))| (name, package))
+        .collect())
+}
+
+/// The locked version of a package that is not being updated, when it is
+/// from the same source and major and meets the requirement: it stays.
+fn floor(lock: &Lock, unlock: &Unlock, want: &Want) -> Option<Version> {
+    let min = want.requirement.min();
+    lock.packages
+        .get(&want.name)
+        .filter(|locked| locked.source == want.source.id() && !unlock.allows(&want.name))
+        .map(|locked| locked.version)
+        .filter(|version| version.major == min.major && *version >= min)
+}
+
+/// Fetch a version and check that it is the package the requirement names;
+/// a version `blade.lock` records is checked against its commit and files.
+fn fetch_checked(
+    work: &mut Work,
+    want: &Want,
+    version: Version,
+    lock: &Lock,
+    unlock: &Unlock,
+) -> Result<Package, String> {
+    // `blade update` rewrites the lock entry instead of checking against it.
+    let expected = lock.packages.get(&want.name).filter(|locked| {
+        locked.source == want.source.id() && locked.version == version && !unlock.allows(&want.name)
+    });
+    let package = work.fetch(&want.source, &version, expected)?;
+    check_name(&want.name, &package)?;
+    Ok(package)
 }
 
 fn check_name(name: &str, package: &Package) -> Result<(), String> {
@@ -454,13 +547,14 @@ impl Work {
             Source::Git(url) => {
                 let commit = self.versions(source)?[version].clone().unwrap_or_default();
                 if let Some(locked) = expected.and_then(|locked| locked.commit.as_ref())
-                    && *locked != commit {
-                        return Err(format!(
-                            "tag v{version} of {url} now points at {commit}, but {} has {locked}; \
+                    && *locked != commit
+                {
+                    return Err(format!(
+                        "tag v{version} of {url} now points at {commit}, but {} has {locked}; \
                              the tag was moved — check the package, then run `blade update`",
-                            crate::lock::LOCK
-                        ));
-                    }
+                        crate::lock::LOCK
+                    ));
+                }
                 let clone = self.clone_of(url)?;
                 git(&[
                     "-C",
@@ -491,14 +585,16 @@ impl Work {
             .map_err(|error| format!("{name} {version} ({}): {error}", source.id()))?;
         let checksum = checksum(&dir)?;
         if let (Some(locked), Source::Git(_)) = (expected, source)
-            && !locked.checksum.is_empty() && locked.checksum != checksum {
-                return Err(format!(
-                    "{name} {version}: the files differ from {} ({} != {})",
-                    crate::lock::LOCK,
-                    checksum,
-                    locked.checksum
-                ));
-            }
+            && !locked.checksum.is_empty()
+            && locked.checksum != checksum
+        {
+            return Err(format!(
+                "{name} {version}: the files differ from {} ({} != {})",
+                crate::lock::LOCK,
+                checksum,
+                locked.checksum
+            ));
+        }
         let package = Package {
             version: *version,
             source: source.clone(),
@@ -516,7 +612,14 @@ impl Work {
             return Ok(clone.clone());
         }
         let clone = self.dir.join(format!("clone-{}", self.clones.len() + 1));
-        git(&["clone", "--quiet", "--no-checkout", "--", url, path_str(&clone)?])?;
+        git(&[
+            "clone",
+            "--quiet",
+            "--no-checkout",
+            "--",
+            url,
+            path_str(&clone)?,
+        ])?;
         self.clones.insert(url.to_string(), clone.clone());
         Ok(clone)
     }
@@ -571,9 +674,10 @@ fn remote_tags(url: &str) -> Result<BTreeMap<Version, String>, String> {
             continue;
         }
         if tag.starts_with('v')
-            && let Some(version) = Version::parse(tag) {
-                target.insert(version, commit.to_string());
-            }
+            && let Some(version) = Version::parse(tag)
+        {
+            target.insert(version, commit.to_string());
+        }
     }
     tags.extend(peeled);
     Ok(tags)
@@ -751,7 +855,10 @@ fn step(name: &'static str) -> Result<(), String> {
 fn write_synced(file: &Path, text: &str) -> Result<(), String> {
     use std::io::Write;
     let mut handle = std::fs::File::create(file).map_err(io(file))?;
-    handle.write_all(text.as_bytes()).and_then(|()| handle.sync_all()).map_err(io(file))
+    handle
+        .write_all(text.as_bytes())
+        .and_then(|()| handle.sync_all())
+        .map_err(io(file))
 }
 
 /// Assemble the new `pkg/` beside the old one and swap it in.
@@ -773,7 +880,9 @@ fn swap_in(root: &Path, chosen: &BTreeMap<String, Package>, lock: &Lock) -> Resu
         crate::manifest::check_package_name(name)?;
         let target = staged.join(name);
         if !target.starts_with(&staged) || target.exists() {
-            return Err(format!("package \"{name}\" would overwrite files of another package in {PKG}/"));
+            return Err(format!(
+                "package \"{name}\" would overwrite files of another package in {PKG}/"
+            ));
         }
         copy_tree(&chosen[name].dir, &target, false)?;
     }

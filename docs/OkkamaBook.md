@@ -3432,8 +3432,12 @@ version (`module app;`): the version is set in `blade.toml` (spec §5.2.2).
 
 `blade` manages a project: `blade new NAME` creates one (`blade.toml`,
 `src/main.ok`), `blade install` puts its dependencies into `pkg/` and records
-them in `blade.lock`, `blade build` compiles it and `blade run` runs it. Every
-setting of the last two lives in `blade.toml`; all keys are optional:
+them in `blade.lock`, `blade build` compiles it and `blade run` runs it. A
+dependency's `version` is a minimum: `"1.2.0"` means 1.2.0 or a later 1.x.
+Blade installs the lowest version that meets every minimum in the project and
+its dependencies, so a new release of a dependency changes nothing until some
+`blade.toml` raises its minimum. Every setting of `blade build` and `blade run`
+lives in `blade.toml`; all keys are optional:
 
 ```toml
 [build]

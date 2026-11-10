@@ -93,7 +93,7 @@ fn codec(text: &str) -> (&'static str, String) {
     )
 }
 
-/// `json` 1.0.0, 1.2.0 and `web` 12.3.0, 12.3.1, 13.0.0 (needs json 1.*); a project `app`.
+/// `json` 1.0.0, 1.2.0 and `web` 12.3.0, 12.3.1, 13.0.0 (needs json ≥ 1.0.0); a project `app`.
 fn world(name: &str) -> (Tree, PathBuf, PathBuf) {
     let tree = Tree::new(name);
     let json = tree.path("repos/json");
@@ -103,7 +103,7 @@ fn world(name: &str) -> (Tree, PathBuf, PathBuf) {
     }
     let web = tree.path("repos/web");
     let needs_json = format!(
-        "json = {{ git = \"{}\", version = \"1.*\" }}\n",
+        "json = {{ git = \"{}\", version = \"1.0.0\" }}\n",
         json.display()
     );
     for version in ["12.3.0", "12.3.1", "13.0.0"] {
@@ -135,14 +135,14 @@ fn pairs(items: &[(&str, &str)]) -> Vec<(String, String)> {
 }
 
 #[test]
-fn git_dependencies_take_the_newest_compatible_version_and_stay_locked() {
+fn git_dependencies_take_the_lowest_version_that_meets_their_minimums_and_stay_locked() {
     let (tree, app, web) = world("git");
     let (name, report) = install::add(&app, web.to_str().unwrap(), Some("12.3.0"), true).unwrap();
     assert_eq!(name, "web");
-    assert_eq!(report.lines, ["+ json 1.2.0", "+ web 12.3.1"]);
-    assert_eq!(locked(&app), pairs(&[("json", "1.2.0"), ("web", "12.3.1")]));
+    assert_eq!(report.lines, ["+ json 1.0.0", "+ web 12.3.0"]);
+    assert_eq!(locked(&app), pairs(&[("json", "1.0.0"), ("web", "12.3.0")]));
     let router = std::fs::read_to_string(app.join("pkg/web/router.ok")).unwrap();
-    assert!(router.contains("web 12.3.1"), "{router}");
+    assert!(router.contains("web 12.3.0"), "{router}");
     assert!(!app.join("pkg/web/.git").exists());
     assert_eq!(
         Manifest::read(&app).unwrap().dependencies["web"]
@@ -151,7 +151,8 @@ fn git_dependencies_take_the_newest_compatible_version_and_stay_locked() {
         Some("12.3.0")
     );
 
-    // Новая версия json не ставится сама: lock держит 1.2.0 до `update`.
+    // A new release changes nothing, installed or updated: the minimums
+    // still meet at the same versions.
     let (file, text) = codec("json 1.3.0");
     release(
         &tree.path("repos/json"),
@@ -166,38 +167,194 @@ fn git_dependencies_take_the_newest_compatible_version_and_stay_locked() {
             .lines
             .is_empty()
     );
-    assert_eq!(locked(&app), pairs(&[("json", "1.2.0"), ("web", "12.3.1")]));
-    let report = install::install(
+    let update_json = Unlock::Packages(BTreeSet::from(["json".to_string()]));
+    assert!(
+        install::install(&app, &update_json)
+            .unwrap()
+            .lines
+            .is_empty()
+    );
+    assert!(
+        install::install(&app, &Unlock::All)
+            .unwrap()
+            .lines
+            .is_empty()
+    );
+    assert_eq!(locked(&app), pairs(&[("json", "1.0.0"), ("web", "12.3.0")]));
+    // Raising a minimum moves the package to the lowest version that meets it.
+    let json = tree.path("repos/json");
+    manifest::add_dependency(
         &app,
-        &Unlock::Packages(BTreeSet::from(["json".to_string()])),
+        "json",
+        &manifest::Dependency {
+            git: Some(json.display().to_string()),
+            version: Some("1.2.0".to_string()),
+            path: None,
+        },
     )
     .unwrap();
-    assert_eq!(report.lines, ["~ json 1.2.0 -> 1.3.0"]);
-    let report = install::install(&app, &Unlock::All).unwrap();
+    let report = install::install(&app, &Unlock::Nothing).unwrap();
+    assert_eq!(report.lines, ["~ json 1.0.0 -> 1.2.0"]);
+}
+
+/// Minimum version selection (#347): the lowest version that meets every
+/// minimum; the requirements of the version selected, not only of the first
+/// one seen; cycles; requirements of a superseded version that conflict or
+/// that the selected version drops; a new tag; majors and sources that
+/// cannot meet.
+#[test]
+fn minimums_meet_at_the_lowest_version_that_satisfies_them_all() {
+    let tree = Tree::new("mvs");
+    let repo = |name: &str| tree.path(&format!("repos/{name}"));
+    let dep = |name: &str, min: &str| {
+        format!(
+            "{name} = {{ git = \"{}\", version = \"{min}\" }}\n",
+            repo(name).display()
+        )
+    };
+    release(&repo("x"), "x", "1.0.0", "", &[]);
+    for version in ["1.0.0", "2.3.0", "2.4.0"] {
+        release(&repo("util"), "util", version, "", &[]);
+    }
+    // json 1.2.0 needs util 1.x and x; 1.3.0 and 1.4.0 need util ≥ 2.3.0.
+    release(
+        &repo("json"),
+        "json",
+        "1.2.0",
+        &(dep("util", "1.0.0") + &dep("x", "1.0.0")),
+        &[],
+    );
+    for version in ["1.3.0", "1.4.0"] {
+        release(&repo("json"), "json", version, &dep("util", "2.3.0"), &[]);
+    }
+    release(&repo("json"), "json", "2.0.0", "", &[]);
+    release(&repo("http"), "http", "2.1.0", &dep("json", "1.2.0"), &[]);
+    // database and back need each other.
+    release(
+        &repo("database"),
+        "database",
+        "3.0.0",
+        &(dep("json", "1.4.0") + &dep("back", "1.0.0")),
+        &[],
+    );
+    release(
+        &repo("back"),
+        "back",
+        "1.0.0",
+        &dep("database", "3.0.0"),
+        &[],
+    );
+    release(&repo("next"), "next", "1.0.0", &dep("json", "2.0.0"), &[]);
+    let project = |name: &str, dependencies: &str| {
+        tree.write(
+            &format!("{name}/blade.toml"),
+            &manifest_text(name, "1.0.0", dependencies),
+        );
+        tree.path(name)
+    };
+
+    let alone = project("alone", &dep("http", "2.1.0"));
+    install::install(&alone, &Unlock::Nothing).unwrap();
+    assert_eq!(
+        locked(&alone),
+        pairs(&[
+            ("http", "2.1.0"),
+            ("json", "1.2.0"),
+            ("util", "1.0.0"),
+            ("x", "1.0.0")
+        ])
+    );
+
+    // json ≥ 1.2.0 and ≥ 1.4.0 meet at 1.4.0, whose own requirement brings
+    // util 2.3.0; util 1.x and x, wanted only by json 1.2.0, are gone, and
+    // the cycle of database and back ends.
+    let both = project("both", &(dep("http", "2.1.0") + &dep("database", "3.0.0")));
+    install::install(&both, &Unlock::Nothing).unwrap();
+    let expected = pairs(&[
+        ("back", "1.0.0"),
+        ("database", "3.0.0"),
+        ("http", "2.1.0"),
+        ("json", "1.4.0"),
+        ("util", "2.3.0"),
+    ]);
+    assert_eq!(locked(&both), expected);
+    assert!(!both.join("pkg/x").exists());
+
+    // A newer tag does not change a fresh resolution.
+    release(&repo("json"), "json", "1.5.0", &dep("util", "2.3.0"), &[]);
+    let again = project("again", &(dep("database", "3.0.0") + &dep("http", "2.1.0")));
+    install::install(&again, &Unlock::Nothing).unwrap();
+    assert_eq!(locked(&again), expected);
+
+    let majors = project("majors", &(dep("http", "2.1.0") + &dep("next", "1.0.0")));
+    let error = install::install(&majors, &Unlock::Nothing).unwrap_err();
+    assert!(error.contains("no single major of \"json\""), "{error}");
     assert!(
-        report.lines.is_empty(),
-        "web stays within 12.*: {:?}",
-        report.lines
+        error.contains("http 2.1.0 → json ≥ 1.2.0") && error.contains("next 1.0.0 → json ≥ 2.0.0"),
+        "{error}"
+    );
+    assert!(!majors.join("pkg").exists() && !majors.join("blade.lock").exists());
+
+    release(&repo("fork"), "json", "1.2.0", "", &[]);
+    let forked = format!(
+        "json = {{ git = \"{}\", version = \"1.2.0\" }}\n",
+        repo("fork").display()
+    );
+    release(&repo("forker"), "forker", "1.0.0", &forked, &[]);
+    let sources = project("sources", &(dep("http", "2.1.0") + &dep("forker", "1.0.0")));
+    let error = install::install(&sources, &Unlock::Nothing).unwrap_err();
+    assert!(error.contains("\"json\" comes from two sources"), "{error}");
+
+    // A superseded version may need what cannot be had: here, a repository
+    // that does not exist.
+    release(&repo("old"), "old", "1.0.0", &dep("ghost", "1.0.0"), &[]);
+    release(&repo("old"), "old", "1.1.0", "", &[]);
+    release(&repo("early"), "early", "1.0.0", &dep("old", "1.0.0"), &[]);
+    release(&repo("late"), "late", "1.0.0", &dep("old", "1.1.0"), &[]);
+    let superseded = project(
+        "superseded",
+        &(dep("early", "1.0.0") + &dep("late", "1.0.0")),
+    );
+    install::install(&superseded, &Unlock::Nothing).unwrap();
+    assert_eq!(
+        locked(&superseded),
+        pairs(&[("early", "1.0.0"), ("late", "1.0.0"), ("old", "1.1.0")])
+    );
+    let error = install::install(
+        &project("ghostly", &dep("early", "1.0.0")),
+        &Unlock::Nothing,
+    )
+    .unwrap_err();
+    assert!(error.contains("ghost"), "{error}");
+
+    let missing = project("missing", &dep("json", "1.9.0"));
+    let error = install::install(&missing, &Unlock::Nothing).unwrap_err();
+    assert!(
+        error.contains("no version of \"json\" is ≥ 1.9.0 within major 1"),
+        "{error}"
     );
 }
 
 #[test]
 fn a_moved_tag_is_refused_until_update() {
     let (tree, app, web) = world("moved");
-    install::add(&app, web.to_str().unwrap(), Some("13.*"), true).unwrap();
+    install::add(&app, web.to_str().unwrap(), Some("13.0.0"), true).unwrap();
+    // Move the tag json 1.0.0 to a new commit of the same release.
     let json = tree.path("repos/json");
+    git(&json, &["checkout", "-q", "v1.0.0"]);
     std::fs::write(json.join("codec.ok"), codec("changed").1).unwrap();
     git(&json, &["commit", "-qam", "changed"]);
-    git(&json, &["tag", "-f", "v1.2.0"]);
+    git(&json, &["tag", "-f", "v1.0.0"]);
+    git(&json, &["checkout", "-q", "main"]);
     let error = install::install(&app, &Unlock::Nothing).unwrap_err();
     assert!(
-        error.contains("tag v1.2.0 of") && error.contains("the tag was moved"),
+        error.contains("tag v1.0.0 of") && error.contains("the tag was moved"),
         "{error}"
     );
     let report = install::install(&app, &Unlock::All).unwrap();
     assert_eq!(report.lines.len(), 1, "{:?}", report.lines);
     assert!(
-        report.lines[0].starts_with("~ json 1.2.0 (commit "),
+        report.lines[0].starts_with("~ json 1.0.0 (commit "),
         "{:?}",
         report.lines
     );
@@ -218,9 +375,9 @@ fn local_directories_install_by_their_version_and_remove_cleanly() {
         "module util;\nobject Shout { Shout(); }\n",
     );
     let dir = util.parent().unwrap().to_str().unwrap().to_string();
-    let error = install::add(&app, &dir, Some("3.*"), false).unwrap_err();
+    let error = install::add(&app, &dir, Some("3.0.0"), false).unwrap_err();
     assert!(
-        error.contains("has no version matching 3.*; available: 2.1.0"),
+        error.contains("has no version matching ≥ 3.0.0; available: 2.1.0"),
         "{error}"
     );
     let (name, report) = install::add(&app, &dir, None, false).unwrap();
@@ -248,7 +405,7 @@ fn local_directories_install_by_their_version_and_remove_cleanly() {
 #[test]
 fn bad_packages_and_conflicts_leave_the_project_as_it_was() {
     let (tree, app, web) = world("bad");
-    install::add(&app, web.to_str().unwrap(), Some("13.*"), true).unwrap();
+    install::add(&app, web.to_str().unwrap(), Some("13.0.0"), true).unwrap();
     let manifest = std::fs::read_to_string(app.join("blade.toml")).unwrap();
     let lock = std::fs::read_to_string(app.join("blade.lock")).unwrap();
 
@@ -268,12 +425,12 @@ fn bad_packages_and_conflicts_leave_the_project_as_it_was() {
             package(
                 "other",
                 &format!(
-                    "json = {{ git = \"{}\", version = \"2.*\" }}\n",
+                    "json = {{ git = \"{}\", version = \"2.0.0\" }}\n",
                     json.display()
                 ),
                 &[],
             ),
-            "no version of \"json\" satisfies 1.* (by web 13.0.0), 2.* (by other 1.0.0); available: 1.0.0, 1.2.0",
+            "no single major of \"json\"",
         ),
         (
             package(
@@ -346,7 +503,10 @@ fn package_names_cannot_leave_the_project() {
     let victim = tree.write("victim/proof.txt", "original");
     // A package without `.ok` files skipped the namespace check: its name was
     // joined to the staging directory as a path.
-    let evil = tree.write("evil/blade.toml", &manifest_text("../../victim", "1.0.0", ""));
+    let evil = tree.write(
+        "evil/blade.toml",
+        &manifest_text("../../victim", "1.0.0", ""),
+    );
     tree.write("evil/proof.txt", "replaced");
     let dir = evil.parent().unwrap().to_str().unwrap().to_string();
     let error = install::add(&app, &dir, None, false).unwrap_err();
@@ -355,7 +515,9 @@ fn package_names_cannot_leave_the_project() {
     assert!(!app.join("pkg").exists() || !app.join("pkg/../../victim").exists());
     assert!(!tree.path("victim/blade.toml").exists());
 
-    for bad in ["/abs", "a//b", "", ".", "..", "a/../b", "a/./b", "a b", "1x", "a/", "/", "a\\b", "x:y"] {
+    for bad in [
+        "/abs", "a//b", "", ".", "..", "a/../b", "a/./b", "a b", "1x", "a/", "/", "a\\b", "x:y",
+    ] {
         let text = manifest_text(bad, "1.0.0", "");
         let error = Manifest::parse(&text).unwrap_err();
         assert!(error.contains("package name"), "{bad:?}: {error}");
@@ -368,10 +530,19 @@ fn package_names_cannot_leave_the_project() {
     }
     // Two dependencies cannot share a directory of pkg/ through letter case;
     // nested names (`acme`, `acme/web`) are allowed (the longest name wins).
-    Manifest::parse(&manifest_text("app", "1.0.0", "acme = \"1.0.0\"\n\"acme/web\" = \"1.0.0\"\n")).unwrap();
+    Manifest::parse(&manifest_text(
+        "app",
+        "1.0.0",
+        "acme = \"1.0.0\"\n\"acme/web\" = \"1.0.0\"\n",
+    ))
+    .unwrap();
     {
         let (a, b) = ("Web", "web");
-        let text = manifest_text("app", "1.0.0", &format!("{a:?} = \"1.0.0\"\n{b:?} = \"1.0.0\"\n"));
+        let text = manifest_text(
+            "app",
+            "1.0.0",
+            &format!("{a:?} = \"1.0.0\"\n{b:?} = \"1.0.0\"\n"),
+        );
         let error = Manifest::parse(&text).unwrap_err();
         assert!(error.contains("share a directory"), "{a} {b}: {error}");
     }
@@ -402,22 +573,36 @@ fn an_interrupted_install_recovers_to_one_consistent_state() {
     ] {
         let (tree, app, _) = world(&format!("interrupt-{step}"));
         let util = tree.write("local/util/blade.toml", &manifest_text("util", "2.1.0", ""));
-        tree.write("local/util/util.ok", "module util;\nobject Shout { Shout(); }\n");
+        tree.write(
+            "local/util/util.ok",
+            "module util;\nobject Shout { Shout(); }\n",
+        );
         let dir = util.parent().unwrap().to_str().unwrap().to_string();
-        install::add(&app, &dir, Some("2.*"), false).unwrap();
+        install::add(&app, &dir, Some("2.1.0"), false).unwrap();
         tree.write("local/util/blade.toml", &manifest_text("util", "2.2.0", ""));
 
         install::fail_after(Some(step));
         let error = install::install(&app, &Unlock::All).unwrap_err();
-        assert!(error.contains(&format!("interrupted after {step}")), "{error}");
-        assert!(install::settled(&app).is_err(), "{step}: the interruption is visible");
+        assert!(
+            error.contains(&format!("interrupted after {step}")),
+            "{error}"
+        );
+        assert!(
+            install::settled(&app).is_err(),
+            "{step}: the interruption is visible"
+        );
 
         install::recover(&app).unwrap();
         install::settled(&app).unwrap();
         let expected = if done { "2.2.0" } else { "2.1.0" };
         assert_eq!(locked(&app), pairs(&[("util", expected)]), "{step}");
         assert_eq!(installed(&app), pairs(&[("util", expected)]), "{step}");
-        for leftover in ["pkg.blade-new", "pkg.blade-old", "blade.lock.blade-new", "pkg.blade-commit"] {
+        for leftover in [
+            "pkg.blade-new",
+            "pkg.blade-old",
+            "blade.lock.blade-new",
+            "pkg.blade-commit",
+        ] {
             assert!(!app.join(leftover).exists(), "{step}: {leftover}");
         }
         // The next install starts from that state.
@@ -430,11 +615,17 @@ fn an_interrupted_install_recovers_to_one_consistent_state() {
 fn a_busy_project_is_not_changed() {
     let (tree, app, _) = world("busy");
     let util = tree.write("local/util/blade.toml", &manifest_text("util", "2.1.0", ""));
-    tree.write("local/util/util.ok", "module util;\nobject Shout { Shout(); }\n");
+    tree.write(
+        "local/util/util.ok",
+        "module util;\nobject Shout { Shout(); }\n",
+    );
     let dir = util.parent().unwrap().to_str().unwrap().to_string();
     std::fs::write(app.join("pkg.blade-busy"), "").unwrap();
     let error = install::add(&app, &dir, None, false).unwrap_err();
-    assert!(error.contains("another blade is working on this project"), "{error}");
+    assert!(
+        error.contains("another blade is working on this project"),
+        "{error}"
+    );
     assert!(Manifest::read(&app).unwrap().dependencies.is_empty());
     assert!(!app.join("pkg").exists() && !app.join("blade.lock").exists());
 }
@@ -452,13 +643,20 @@ fn git_sources_cannot_inject_options_or_transports() {
         format!("ext::sh -c touch% {}", marker.display()),
         "https://example.org/json\n--upload-pack=x".to_string(),
     ] {
-        let text = manifest_text("app", "1.0.0", &format!("evil = {{ git = {url:?}, version = \"1.0.0\" }}\n"));
+        let text = manifest_text(
+            "app",
+            "1.0.0",
+            &format!("evil = {{ git = {url:?}, version = \"1.0.0\" }}\n"),
+        );
         std::fs::write(app.join("blade.toml"), &text).unwrap();
         let error = install::install(&app, &Unlock::Nothing).unwrap_err();
         assert!(error.contains("invalid git source"), "{url:?}: {error}");
         let error = install::add(&app, &url, None, true).unwrap_err();
         assert!(error.contains("invalid git source"), "{url:?}: {error}");
         assert!(!marker.exists(), "{url:?} ran a command");
-        assert!(!app.join("pkg").exists() && !app.join("blade.lock").exists(), "{url:?}");
+        assert!(
+            !app.join("pkg").exists() && !app.join("blade.lock").exists(),
+            "{url:?}"
+        );
     }
 }
