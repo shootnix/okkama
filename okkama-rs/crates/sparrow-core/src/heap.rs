@@ -1008,13 +1008,16 @@ impl Heap {
     // ---- Rust payloads ----
 
     pub fn allocate_payload(&mut self, payload: Box<dyn Payload>) -> Word {
-        self.external += payload_bytes(&*payload);
+        // The Rust memory the payload owns; the payload itself and its boxes
+        // are charged by `allocate_payload_moved`, each once (#332).
+        self.external += payload.external_bytes();
         self.allocate_payload_moved(payload)
     }
     /// [`Heap::allocate_payload`] for Rust memory already charged: a builder's
-    /// entries moved into the finished value. Only the boxes are new.
+    /// entries moved into the finished value. What is new is charged: the
+    /// payload struct and its two boxes, not the contents it took over.
     pub fn allocate_payload_moved(&mut self, payload: Box<dyn Payload>) -> Word {
-        self.external += BOX_BYTES;
+        self.external += BOX_BYTES + std::mem::size_of_val(&*payload);
         self.counted("payload", 0, 2);
         let object = self.allocate(2);
         // SAFETY: two fresh words; the double box gives a thin pointer.
@@ -1492,6 +1495,26 @@ mod tests {
         assert_eq!(heap.stats().external_live_bytes, 0);
         let total = heap.stats().external_allocated_bytes;
         assert!(total >= 9 * COLLECTION_FLOOR + live / 2 + live, "{total}");
+    }
+
+    /// #332: a payload is charged once — its contents, its struct and its
+    /// boxes — as `payload_bytes` estimates it alive; one that takes over a
+    /// builder's contents is charged only for the struct and boxes.
+    #[test]
+    fn a_payload_is_charged_once() {
+        let mut heap = Heap::new(layouts());
+        let before = heap.stats().external_allocated_bytes;
+        let owning = Owning(12_345);
+        let expected = payload_bytes(&owning);
+        heap.allocate_payload(Box::new(owning));
+        assert_eq!(heap.stats().external_allocated_bytes - before, expected);
+        let before = heap.stats().external_allocated_bytes;
+        heap.allocate_payload_moved(Box::new(Owning(12_345)));
+        assert_eq!(
+            heap.stats().external_allocated_bytes - before,
+            BOX_BYTES + std::mem::size_of::<Owning>(),
+            "the moved contents are not charged again"
+        );
     }
 
     /// Shared arrays (#246): a version reads its own slots of the buffer, the

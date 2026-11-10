@@ -6,6 +6,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Fixed
+
+- Sparrow (Tomato): a payload's Rust memory was charged twice toward the
+  next collection, its boxes once in each of two functions, and a payload
+  that took over a map builder's entries was not charged for its own struct
+  (#332). Every part is now charged once: `allocate_payload` charges what the
+  payload owns, `allocate_payload_moved` the payload and its boxes. Measured
+  on the persistence stand (8 map scenarios × 3 sizes, 10 repetitions):
+  no change beyond noise. Letting the next collection wait for 1.5× or 2×
+  the live memory gave no consistent gain and raised peak memory by up to
+  85% (map-build-reduce, 100 000 entries), so the threshold stays at the
+  live memory. 5 000 versions of a map sharing long string keys, of which
+  every hundredth is kept, stay at 11 MB resident with 28 collections.
+
 ## [0.5.0] — 2026-11-10
 
 0.5.0 makes async scheduling cooperative on every engine and removes the
