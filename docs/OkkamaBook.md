@@ -6297,23 +6297,28 @@ primitive values plus recursively transferable
 arrays and maps. Objects, Futures, closures and native handles cannot cross the
 boundary. Workers have no shared mutable state.
 
-Cancelling a process worker requests termination. Its Future remains pending
-until the child has exited, has been reaped and its streams have closed; only
-then does await observe Cancelled. Repeated cancel requests are idempotent, and
-cancelling an already settled result or failure leaves it unchanged. Structured
-groups and root shutdown await that same completion. The current Perl runtime
-sends TERM, then KILL after 250 ms if needed. This waits for the worker itself,
-not arbitrary descendants; forced process termination cannot guarantee execution
-of the worker's Okkama defers.
+Cancelling a process worker kills it. Its Future remains pending until the
+child has exited, has been reaped and its streams have closed; only then does
+await observe Cancelled, so the code after that await never runs beside the
+worker. Repeated cancel requests are idempotent, and cancelling an already
+settled result or failure leaves it unchanged. A worker cancelled before its
+process started never starts. Structured groups and root shutdown await that
+same completion. The kill is immediate (SIGKILL), so the worker's Okkama
+defers and `destroy` blocks do not run. A worker leads its own process group on
+Tomato and the IR engine, and the whole group is killed, so processes the
+worker started go with it; the JVM, which has no process groups, kills the
+worker and the descendants it has at that moment (#359).
 
-The CLI uses a separate process for a single source file and passes an explicit
-working directory to it. Source filenames are made absolute in the parent before
-the worker changes directory, so relative CLI source paths work too.
-Embedded and multi-file programs currently retain the
-local executor. The protocol is versioned JSON, but that is an implementation
-detail: a future Rust VM can use its native child-process runtime while keeping
-the same source syntax and value contract. This is process isolation, not
-exposed POSIX `fork` semantics.
+The worker is the same program run again by the same engine: Tomato runs its
+`.spb` (one compiled in memory is written to a temporary file first), the IR
+engine its source files, multi-file programs included, and the JVM its
+classes. It gets an explicit working directory; source filenames are made
+absolute in the parent before the worker changes directory, so relative CLI
+source paths work too. An embedder that runs programs which `spawn` must pass
+Tomato the worker command, and a `spawn` without one fails with
+`process workers require an explicit worker command`. Arguments and results
+cross as binary `OKW1` frames, an implementation detail rather than part of the
+language. This is process isolation, not exposed POSIX `fork` semantics.
 
 ### 31.5.2 Bounded typed channels
 

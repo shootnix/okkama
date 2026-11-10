@@ -86,6 +86,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- The Book describes process workers as the engines run them (#358): its
+  §31.5.1 spoke of "the current Perl runtime" sending TERM and then KILL
+  after 250 ms, of a versioned JSON protocol, and of embedded and multi-file
+  programs kept on a local executor. It now says what cancellation does on
+  each engine (#359), what the worker process is on each, that an embedder
+  gives Tomato the worker command, and that the wire format is binary.
+  The specification's §18.1, which still listed cancellation as outside the
+  first contract, says the same.
+
 - A cancelled process worker stops before its Future settles on the IR
   engine and the JVM too (#359), as on Tomato and as the Book says: `await`
   of a cancelled `spawn` returns `Cancelled` only once the child has been
