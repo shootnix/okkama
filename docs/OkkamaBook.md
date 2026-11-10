@@ -24,13 +24,13 @@ sparrow out.spb
 ```
 
 `run` executes source with the Rust interpreter. `build` emits the selected
-bytecode; the `sparrow` binary runs `.spb` on Tomato, the current Sparrow
-runtime. `--backend` remains an alias
+bytecode; the `sparrow` binary runs `.spb` on the Sparrow runtime (its current
+version is called Tomato). `--backend` remains an alias
 for `--target`. `sparrow check out.spb` verifies without execution.
 See the [Rust implementation guide](../okkama-rs/README.md) for building the
 tools and current runtime coverage.
 
-Every engine can bound a run, for untrusted programs or services: Tomato
+Every engine can bound a run, for untrusted programs or services: Sparrow
 (`okkama exec`, `okkama run --engine sparrow`, `sparrow run`), the IR
 engine (`okkama run`) and the JVM (`okkama run --engine jvm`). Every budget is
 off by default and costs nothing then:
@@ -41,7 +41,7 @@ okkama exec --max-steps 100000000 --max-memory 256M --timeout 5 app.spb
 
 - `--max-steps N` counts function entries and loop iterations.
 - `--max-memory SIZE` (bytes, or `K`/`M`/`G`) bounds the memory the process
-  holds beyond the start of the run — the Tomato heap, big integers, strings and
+  holds beyond the start of the run — the Sparrow heap, big integers, strings and
   collections — and the machine stack, so deep recursion that outgrows it
   ends with the same memory report.
 - `--max-output SIZE` bounds what the program writes to stdout and stderr.

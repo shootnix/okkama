@@ -6,6 +6,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Changed
+
+- Documentation names the virtual machine Sparrow; Tomato is the name of
+  its current version, as Tahoe is a version of macOS. This covers the
+  README, the Okkama Book (EN/RU), the Sparrow Book (EN/RU) and the guide
+  for agents. Release notes before this entry keep their wording. Crates,
+  binaries, flags and the benchmark engine id `tomato` keep their names.
+
 ## [0.4.3] — 2026-11-10
 
 0.4.3 is a Tomato performance release: immutable collections stop copying

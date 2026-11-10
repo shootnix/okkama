@@ -498,12 +498,12 @@ identical results — output, errors and exit status. The
 
 ```sh
 okkama hello.ok                              # IR interpreter (default), in-process
-okkama run --engine sparrow hello.ok         # Tomato: whole-function Cranelift JIT
+okkama run --engine sparrow hello.ok         # Sparrow: whole-function Cranelift JIT
 okkama run --engine jvm hello.ok             # JVM class files, run with `java`
 okkama build hello.ok --target sparrow -o hello.spb && sparrow hello.spb
 ```
 
-| | IR interpreter | Tomato (Sparrow + JIT) | JVM |
+| | IR interpreter | Sparrow (JIT) | JVM |
 |---|---|---|---|
 | Start-up (`hello`) | 13 ms | **12 ms** | 50 ms |
 | `fib(32)`, 7 M calls | 1.35 s | **30 ms** | 188 ms |
@@ -514,7 +514,7 @@ okkama build hello.ok --target sparrow -o hello.spb && sparrow hello.spb
 | Needs | nothing | nothing | JDK |
 
 Median of ten cold runs on an Apple M2 Max (0.4.3, release build, start-up
-included; the IR column is from 0.4.2, whose IR engine 0.4.3 keeps). Tomato, the current Sparrow runtime, compiles every function to
+included; the IR column is from 0.4.2, whose IR engine 0.4.3 keeps). Sparrow (its current version is called Tomato) compiles every function to
 machine code (Cranelift) before it runs; calls are direct, async frames are
 stackless and the collector is precise. On the same programs written in each language it is on average 5.4×
 faster than Python 3.9, 8.2× faster than Perl 5.42 and 4.0× faster than Ruby
@@ -526,7 +526,7 @@ faster than Python 3.9, 8.2× faster than Perl 5.42 and 4.0× faster than Ruby
 |---|---|
 | 📖 [The Okkama Book](docs/OkkamaBook.md) | The textbook: philosophy, every language construct, from first principles |
 | 📖 [Книга Okkama (RU)](docs/OkkamaBook-RU.md) | The book in Russian |
-| 🐦 [The Sparrow Book](docs/SparrowBook/SparrowBook.md) | Sparrow assembly (`.spa`) and SPB: every instruction, the verifier, how Tomato runs it |
+| 🐦 [The Sparrow Book](docs/SparrowBook/SparrowBook.md) | Sparrow assembly (`.spa`) and SPB: every instruction, the verifier, how Sparrow runs it |
 | 🐦 [Книга Sparrow (RU)](docs/SparrowBook/SparrowBook-RU.md) | The Sparrow book in Russian |
 | 🛡️ [Trust model](docs/security-model.md) | Which input is safe to compile, verify and run today, per boundary, with the open issues |
 | 🤖 [Guide for LLM agents](docs/LLM-GUIDE.md) | Working on this repository: layout, build, tests, benchmarks, architecture |
