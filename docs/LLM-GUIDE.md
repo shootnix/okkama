@@ -128,6 +128,9 @@ stderr — instructions, registers, suspensions, CLIF blocks and instructions,
 safepoints, code and frame bytes, microseconds per compile stage — and
 Cranelift's passes summed at exit, #345), `SPARROW_CORE_VERIFY=1` (Cranelift's
 IR verifier in a release build; debug builds always run it),
+`SPARROW_CORE_FRONTEND_MAPS=symbol,…|*` (those functions keep the GC roots
+in Cranelift's frontend stack maps, as before #354; the default is the core's
+own root slots),
 `SPARROW_CORE_GC_STRESS=1` (collect at every
 safepoint and poison reclaimed cells: values kept alive by mistake fail at
 once), `OKKAMA_ARRAYS=flat|shared|trie`, `OKKAMA_MAPS=btree`,

@@ -49,9 +49,54 @@ pub fn live_weight(function: &Function) -> u64 {
 /// The number of registers live before each instruction, or `None` when the
 /// leader states would exceed [`MAX_LIVENESS_BYTES`].
 pub fn live_counts(function: &Function) -> Option<Vec<u32>> {
+    let mut counts = vec![0u32; function.code.len()];
+    analyze(function, &mut |pc, live| counts[pc] = live.count() as u32)?;
+    Some(counts)
+}
+
+/// The registers live before each instruction, a bit per register (bit `r
+/// % 64` of word `r / 64`), or `None` like [`live_counts`]. A machine-code
+/// compiler roots a call inside an instruction with them (#354).
+pub fn live_sets(function: &Function) -> Option<Vec<Vec<u64>>> {
+    let words = function.registers.len().div_ceil(64);
+    if function.code.len().saturating_mul(words).saturating_mul(8) > MAX_LIVENESS_BYTES {
+        return None;
+    }
+    let mut sets = vec![Vec::new(); function.code.len()];
+    analyze(function, &mut |pc, live| sets[pc] = live.0.clone())?;
+    Some(sets)
+}
+
+/// Every register instruction `pc` may write: its definitions, the
+/// destinations and values of its edges, its handler's failure and moves
+/// (#354).
+pub fn written(function: &Function, pc: usize) -> Vec<Register> {
+    let instruction = &function.code[pc];
+    let mut out = Vec::new();
+    instruction.visit(&mut |access| {
+        if let crate::Access::Def(register) = access {
+            out.push(register);
+        }
+    });
+    for (_, moves, value) in verify::edges(pc, instruction) {
+        out.extend(moves.iter().map(|(dst, _)| *dst));
+        out.extend(value);
+    }
+    if let Some(handler) = function.handler_at(pc as u32) {
+        out.extend(handler.target.moves.iter().map(|(dst, _)| *dst));
+        out.push(handler.failure);
+    }
+    out.sort_by_key(|register| register.0);
+    out.dedup_by_key(|register| register.0);
+    out
+}
+
+/// The analysis: `visit` sees the set before each instruction once the
+/// leader states are settled.
+fn analyze(function: &Function, visit: &mut dyn FnMut(usize, &Set)) -> Option<()> {
     let count = function.code.len();
     if count == 0 {
-        return Some(Vec::new());
+        return Some(());
     }
     let words = function.registers.len().div_ceil(64);
     // Leaders: the entry, every edge target that is not the next
@@ -122,7 +167,7 @@ pub fn live_counts(function: &Function) -> Option<Vec<u32>> {
                     }
                 }
             }
-            transfer(instruction, &mut live);
+            transfer(pc, instruction, &mut live);
             if let Some(handled) = handler_live(live_in, pc) {
                 live.union(&handled);
             }
@@ -143,18 +188,21 @@ pub fn live_counts(function: &Function) -> Option<Vec<u32>> {
             break;
         }
     }
-    let mut counts = vec![0u32; count];
     for index in 0..starts.len() {
-        walk(&live_in, index, &mut |pc, live| counts[pc] = live.count() as u32);
+        walk(&live_in, index, visit);
     }
-    Some(counts)
+    Some(())
 }
 
 /// Live before `instruction` from live after it: definitions die, uses live.
-fn transfer(instruction: &Instruction, live: &mut Set) {
+/// A value an edge writes (the found item of `map.lookup`) dies on that edge
+/// only, in `edge`: on the other edge the register keeps what it held, so
+/// it is live before the instruction there (#354).
+fn transfer(pc: usize, instruction: &Instruction, live: &mut Set) {
+    let on_edges: Vec<Register> = verify::edges(pc, instruction).into_iter().filter_map(|(_, _, value)| value).collect();
     let mut uses = Vec::new();
     instruction.visit(&mut |access| match access {
-        crate::Access::Def(register) => live.remove(register),
+        crate::Access::Def(register) if !on_edges.iter().any(|edge| edge.0 == register.0) => live.remove(register),
         crate::Access::Use(register) => uses.push(register),
         _ => {}
     });

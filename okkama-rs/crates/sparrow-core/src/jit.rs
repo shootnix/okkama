@@ -147,6 +147,9 @@ pub struct Jit {
     /// instruction that has one runs through the shared slow path instead
     /// (`SPARROW_CORE_PLAIN`).
     plain: Chosen,
+    /// Functions whose stack maps Cranelift's frontend keeps, as before
+    /// #354 (`SPARROW_CORE_FRONTEND_MAPS`).
+    frontend_maps: Chosen,
     /// Allocations of each inline allocation site compiled under `--stats`:
     /// its label and the count and bytes machine code adds there (#55).
     alloc_sites: Vec<(String, Box<[u64; 2]>)>,
@@ -264,6 +267,7 @@ impl Jit {
             unoptimized,
             unoptimized_isa,
             plain: Chosen::from_env("SPARROW_CORE_PLAIN"),
+            frontend_maps: Chosen::from_env("SPARROW_CORE_FRONTEND_MAPS"),
             alloc_sites: Vec::new(),
             profile: std::env::var("SPARROW_CORE_PROFILE_COMPILE")
                 .is_ok_and(|value| !value.is_empty() && value != "0")
@@ -459,6 +463,8 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     };
     mark!();
     let plain = jit.plain.has(symbol);
+    // Explicit roots unless the analysis is too large (#354).
+    let root_live = (!jit.frontend_maps.has(symbol)).then(|| okkama_sparrow::live_sets(source)).flatten();
     let config = jit.module.target_config();
     let mut context = jit.module.make_context();
     context.func.signature = jit.signature(params);
@@ -489,6 +495,8 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
             cost: 0,
             cost_limit,
             plain,
+            root_live,
+            roots: None,
         };
         emit.body()?;
         mark!();
@@ -637,7 +645,37 @@ struct Emitter<'a, 'b> {
     pc: usize,
     /// Stack slot of `spill`, created on first use.
     spill_area: Option<cranelift_codegen::ir::StackSlot>,
+    /// Registers live before each instruction, for explicit roots (#354);
+    /// `None`: Cranelift's frontend keeps the stack maps.
+    root_live: Option<Vec<Vec<u64>>>,
+    roots: Option<Roots>,
 }
+
+/// GC roots kept by the core instead of Cranelift's frontend (#354). The
+/// heap does not move, so a pointer never has to be reloaded after a
+/// collection; what a collection needs is to find it. Every traced register
+/// has a word in one frame slot, written at each definition of the
+/// register, and a call reports the words of the registers live before its
+/// instruction or written by it. The frontend's scheme stores a value at
+/// its definition too, but reloads it at every use after any call, which
+/// made more than half of the code of large async bodies.
+///
+/// No reported word may hold a stale pointer: a live register was written
+/// on every path in this activation; a register the instruction may write
+/// but that is not live before it is cleared when the instruction starts;
+/// an async body clears every word at entry, as a resumption enters an
+/// instruction in the middle.
+struct Roots {
+    slot: cranelift_codegen::ir::StackSlot,
+    /// The word of each traced register.
+    word: Vec<Option<u32>>,
+    /// The word of an async body's frame.
+    frame: Option<u32>,
+    /// The words a call reports now.
+    reported: Vec<u32>,
+}
+
+
 
 const MEMORY: MemFlagsData = MemFlagsData::trusted();
 
@@ -657,7 +695,59 @@ impl Emitter<'_, '_> {
         }
         let reference = self.jit.module.declare_func_in_func(id, self.builder.func);
         let call = self.builder.ins().call(reference, args);
+        self.report_roots(call);
         self.builder.inst_results(call).first().copied()
+    }
+
+    /// The roots a collection in `call` finds: the words of [`Roots`].
+    fn report_roots(&mut self, call: cranelift_codegen::ir::Inst) {
+        if let Some(roots) = &self.roots {
+            for &word in &roots.reported {
+                self.builder.func.dfg.append_user_stack_map_entry(
+                    call,
+                    cranelift_codegen::ir::UserStackMapEntry { ty: types::I64, slot: roots.slot, offset: word * 8 },
+                );
+            }
+        }
+    }
+
+    /// Instruction `pc` starts: what its calls report, and its written
+    /// registers that are not live cleared, so that none holds a stale
+    /// pointer.
+    fn enter_roots(&mut self, pc: usize) {
+        let (Some(roots), Some(live)) = (&self.roots, &self.root_live) else {
+            return;
+        };
+        let source = &self.loaded.program.functions[self.function];
+        let live_before = &live[pc];
+        let is_live = |register: usize| live_before.get(register / 64).is_some_and(|word| word >> (register % 64) & 1 != 0);
+        let mut reported: Vec<u32> = roots.frame.into_iter().collect();
+        let mut cleared = Vec::new();
+        for (register, word) in roots.word.iter().enumerate() {
+            if let Some(word) = word
+                && is_live(register)
+            {
+                reported.push(*word);
+            }
+        }
+        for register in okkama_sparrow::written(source, pc) {
+            if let Some(word) = roots.word[register.0 as usize]
+                && !is_live(register.0 as usize)
+            {
+                reported.push(word);
+                cleared.push(word);
+            }
+        }
+        let slot = roots.slot;
+        if !cleared.is_empty() {
+            let zero = self.iconst(0);
+            for word in cleared {
+                self.builder.ins().stack_store(types::I64, zero, slot, (word * 8) as i32);
+            }
+        }
+        if let Some(roots) = &mut self.roots {
+            roots.reported = reported;
+        }
     }
 
     fn iconst(&mut self, value: i64) -> Value {
@@ -670,6 +760,12 @@ impl Emitter<'_, '_> {
 
     fn set(&mut self, register: &okkama_sparrow::Register, value: Value) {
         self.builder.def_var(self.vars[register.0 as usize], value);
+        if let Some(roots) = &self.roots
+            && let Some(word) = roots.word[register.0 as usize]
+        {
+            let slot = roots.slot;
+            self.builder.ins().stack_store(types::I64, value, slot, (word * 8) as i32);
+        }
     }
 
     /// A register as a word (floats as bits).
@@ -889,6 +985,7 @@ impl Emitter<'_, '_> {
         let mut values = vec![ctx];
         values.extend_from_slice(args);
         let call = self.builder.ins().call_indirect(signature, code, &values);
+        self.report_roots(call);
         let result = self.builder.inst_results(call)[0];
         self.check(pc);
         result
@@ -931,12 +1028,39 @@ impl Emitter<'_, '_> {
         self.builder.append_block_params_for_function_params(entry);
         self.builder.switch_to_block(entry);
         self.ctx = Some(self.builder.block_params(entry)[0]);
+        let explicit = self.root_live.is_some();
+        let mut words = Vec::with_capacity(self.kinds.len());
+        let mut next = 0u32;
         for kind in self.kinds {
             let var = self.builder.declare_var(if *kind == Kind::Float { types::F64 } else { types::I64 });
-            if kind.traced() {
-                self.builder.declare_var_needs_stack_map(var);
+            if kind.traced() && explicit {
+                words.push(Some(next));
+                next += 1;
+            } else {
+                if kind.traced() {
+                    self.builder.declare_var_needs_stack_map(var);
+                }
+                words.push(None);
             }
             self.vars.push(var);
+        }
+        if explicit {
+            let frame = source.is_async.then_some(next);
+            let count = next + u32::from(frame.is_some());
+            let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                count.max(1) * 8,
+                3,
+            ));
+            if source.is_async {
+                // A resumption enters an instruction in the middle: no word
+                // may keep what an earlier activation left.
+                let zero = self.iconst(0);
+                for word in 0..count {
+                    self.builder.ins().stack_store(types::I64, zero, slot, (word * 8) as i32);
+                }
+            }
+            self.roots = Some(Roots { slot, word: words, frame, reported: frame.into_iter().collect() });
         }
         // Registers start unbound; the verifier proves defined use.
         for (register, kind) in self.kinds.iter().enumerate() {
@@ -973,14 +1097,24 @@ impl Emitter<'_, '_> {
         }
         if source.is_async {
             let frame = self.builder.declare_var(types::I64);
-            self.builder.declare_var_needs_stack_map(frame);
             let value = self.builder.block_params(entry)[1];
+            match &self.roots {
+                Some(Roots { slot, frame: Some(word), .. }) => {
+                    let (slot, word) = (*slot, *word);
+                    self.builder.ins().stack_store(types::I64, value, slot, (word * 8) as i32);
+                }
+                _ => self.builder.declare_var_needs_stack_map(frame),
+            }
             self.builder.def_var(frame, value);
             self.frame = Some(frame);
         } else {
             for (i, register) in source.params.iter().enumerate() {
                 let value = self.builder.block_params(entry)[i + 1];
                 self.set_word(register, value);
+            }
+            // The prologue's calls find the parameters.
+            if let Some(roots) = &mut self.roots {
+                roots.reported = source.params.iter().filter_map(|register| roots.word[register.0 as usize]).collect();
             }
         }
         self.blocks = leaders(source)
@@ -1032,6 +1166,7 @@ impl Emitter<'_, '_> {
                 None => {}
             }
             self.pc = pc;
+            self.enter_roots(pc);
             let before = self.builder.func.dfg.num_blocks();
             open = !self.instruction(pc)?;
             if let Some(live) = &self.live {

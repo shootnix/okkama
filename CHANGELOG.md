@@ -97,6 +97,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Performance
 
+- Tomato keeps its GC roots itself instead of in Cranelift's frontend (#354).
+  The heap does not move, so a pointer never has to be reloaded after a
+  collection: every traced register has a word in one frame slot, written at
+  each definition, and a call reports the words of the registers live at its
+  instruction. Cranelift's scheme reloaded a value at every use after any
+  call, more than half of the code of large async functions. The small HTTP
+  server and client of #328 runs in 404 ms instead of 572, and compiles in
+  675 ms instead of 838; its largest function shrinks from 65 749 CLIF
+  instructions to 21 842 and from 252 KB of machine code to 134 KB, its frame
+  from 21 KB to 5.6 KB. The liveness of Sparrow code now lets the value an
+  edge writes (`map.lookup`) die on that edge only. `SPARROW_CORE_FRONTEND_MAPS`
+  brings the old scheme back for chosen functions.
+
 - The IR engine keeps arrays as Tomato has since 0.4.3 (#335, arrays): a
   chain of appends or prepends (`xs = xs + [x]`, `[x] + xs`, both ends in
   turn) writes into a shared buffer in place instead of copying the array at
