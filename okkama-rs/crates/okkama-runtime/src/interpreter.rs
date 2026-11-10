@@ -1163,7 +1163,7 @@ pub(crate) fn execute_function(
                 span,
             )? {
                 Some(value) => {
-                    payload = Some(value.clone());
+                    payload = Some(value);
                     found
                 }
                 None => missing,

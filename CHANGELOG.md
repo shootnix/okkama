@@ -136,6 +136,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   itself after a pass of reads; sequential reads of a replaced array cost 9%
   more, random ones what they did. Arrays that hold objects are copied as
   before. `OKKAMA_ARRAYS=flat` turns tries off too.
+- The IR engine makes a map persistent, as Tomato has since 0.4.3 (#335,
+  maps): a write that makes a version of a map of more than 64 entries turns
+  that map into a persistent B+ tree in place, and it and its versions share
+  nodes from then on, so `m + [k: v]` and `m - [k: v]` copy one path instead
+  of the map. Chains of puts and removals, branches off one map, merges of a
+  small map into a large one from either side, and versions kept all run in
+  0.7–4 µs per step at 1 000 to 100 000 entries, where each step was a copy
+  of the whole map (1.8 ms at 16 000, 11 ms at 100 000); merges of two equal
+  maps run 18–29% faster. Lookups, `keys`, `values`, equality and maps built
+  by a builder or a literal cost what they did. Only maps of plain keys and
+  values become persistent; maps that hold objects are copied as before, and
+  a map of plain values is no longer a node of the cycle collector. Versions
+  nested in versions, of maps and of tries, drop without recursion.
+  `OKKAMA_MAPS=btree` keeps every version a copy.
 
 - Tomato compiles a quarter faster (#345): release builds no longer run
   Cranelift's IR verifier, which checks the JIT's own output and took a

@@ -106,7 +106,7 @@ pub(super) fn dump(native: Native, context: &Context, value: &Value) -> Result<S
         }
         Value::Map(map) => {
             let parts = map
-                .0
+                .entries()
                 .iter()
                 .map(|(key, item)| {
                     Ok(format!(

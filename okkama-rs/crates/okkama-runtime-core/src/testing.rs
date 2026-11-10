@@ -107,7 +107,7 @@ fn java_text(names: &Names<'_>, value: &Value) -> String {
         ),
         Value::Map(map) => format!(
             "{{{}}}",
-            map.0
+            map.entries()
                 .iter()
                 .map(|(key, item)| format!(
                     "{}={}",

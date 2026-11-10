@@ -592,8 +592,248 @@ pub fn slice_shared(array: &Rc<Array>, range: std::ops::Range<usize>) -> Option<
 }
 
 /// Неизменяемый словарь в естественном порядке ключей (OIR-1 §12.3, R06).
+///
+/// Записи — B-дерево стандартной библиотеки, которое каждая версия
+/// копирует, пока запись не делает версию словаря больше чем из
+/// [`MAP_SMALL`] записей: тогда он на месте становится персистентным
+/// B+ деревом ([`okkama_persistent::PMap`]), и версии от него делят узлы —
+/// запись копирует один путь (#335, как Tomato в #252–#254). Только у
+/// словаря простых ключей и значений (см. [`Plain`]): узлы общие у версий,
+/// а сборщик циклов считает каждое ребро одной сильной ссылкой.
 #[derive(Debug, Default)]
-pub struct Map(pub BTreeMap<MapKey, Value>);
+pub struct Map(RefCell<Entries>, Plain);
+
+#[derive(Debug)]
+enum Entries {
+    Tree(BTreeMap<MapKey, Value>),
+    Shared(okkama_persistent::PMap<MapKey, Value>),
+}
+
+impl Default for Entries {
+    fn default() -> Self {
+        Entries::Tree(BTreeMap::new())
+    }
+}
+
+/// Словарь не больше этого копируется при записи, как прежде (`SMALL`
+/// Tomato, столько же, сколько [`TRIE_MIN`]).
+pub const MAP_SMALL: usize = 64;
+
+/// Персистентные словари, если не `OKKAMA_MAPS=btree`, при котором каждая
+/// версия — копия (для замеров на одном бинарнике; тот же ключ, что у Tomato).
+pub fn persistent_maps() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("OKKAMA_MAPS").map_or(true, |v| v != "btree"))
+}
+
+impl okkama_persistent::pmap::NodeKey for MapKey {
+    /// Число, байт, символ сравниваются на месте; строка, дробь, объект —
+    /// вызовом, поэтому каждый ключ узла — один раз.
+    #[inline]
+    fn seek(keys: &[MapKey], key: &MapKey) -> (usize, bool) {
+        match key {
+            MapKey::Str(_) | MapKey::Rat(_) | MapKey::Object { .. } => {
+                okkama_persistent::pmap::seek_three_way(keys, key)
+            }
+            _ => okkama_persistent::pmap::seek_scan(keys, key),
+        }
+    }
+}
+
+/// Записи словаря, взятые на чтение.
+#[derive(Debug)]
+pub struct MapEntries<'a>(std::cell::Ref<'a, Entries>);
+
+impl MapEntries<'_> {
+    pub fn iter(&self) -> MapIter<'_> {
+        match &*self.0 {
+            Entries::Tree(map) => MapIter::Tree(map.iter()),
+            Entries::Shared(map) => MapIter::Shared(map.iter()),
+        }
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &MapKey> {
+        self.iter().map(|(key, _)| key)
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &Value> {
+        self.iter().map(|(_, value)| value)
+    }
+
+    /// `f` от каждой записи по порядку: представление выбирается один раз,
+    /// а не на каждой записи, как у [`MapIter`] (сбор ключей на треть дешевле).
+    pub fn collect<T>(&self, mut f: impl FnMut(&MapKey, &Value) -> T) -> Vec<T> {
+        match &*self.0 {
+            Entries::Tree(map) => map.iter().map(|(key, value)| f(key, value)).collect(),
+            Entries::Shared(map) => map.iter().map(|(key, value)| f(key, value)).collect(),
+        }
+    }
+}
+
+/// Записи по порядку ключей.
+#[derive(Debug)]
+pub enum MapIter<'a> {
+    Tree(std::collections::btree_map::Iter<'a, MapKey, Value>),
+    Shared(okkama_persistent::pmap::Iter<'a, MapKey, Value>),
+}
+
+impl<'a> Iterator for MapIter<'a> {
+    type Item = (&'a MapKey, &'a Value);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            MapIter::Tree(iter) => iter.next(),
+            MapIter::Shared(iter) => iter.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            MapIter::Tree(iter) => iter.size_hint(),
+            MapIter::Shared(iter) => iter.size_hint(),
+        }
+    }
+}
+
+impl ExactSizeIterator for MapIter<'_> {}
+
+impl Map {
+    pub fn new(entries: BTreeMap<MapKey, Value>) -> Map {
+        Map(RefCell::new(Entries::Tree(entries)), Plain::known(None))
+    }
+
+    pub fn len(&self) -> usize {
+        match &*self.0.borrow() {
+            Entries::Tree(map) => map.len(),
+            Entries::Shared(map) => map.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn entries(&self) -> MapEntries<'_> {
+        MapEntries(self.0.borrow())
+    }
+
+    /// Записи для сборщика циклов: `None`, если их сейчас читают на запись.
+    pub(crate) fn try_entries(&self) -> Option<MapEntries<'_>> {
+        self.0.try_borrow().ok().map(MapEntries)
+    }
+
+    pub fn get(&self, key: &MapKey) -> Option<Value> {
+        match &*self.0.borrow() {
+            Entries::Tree(map) => map.get(key).cloned(),
+            Entries::Shared(map) => map.get(key).cloned(),
+        }
+    }
+
+    /// Ключи и значения простые: такой словарь не узел сборщика циклов.
+    /// Ключ-объект держит объект (#212), поэтому он не простой.
+    pub fn plain(&self) -> bool {
+        if let Some(plain) = self.1.0.get() {
+            return plain;
+        }
+        let plain = self
+            .entries()
+            .iter()
+            .all(|(key, value)| !matches!(key, MapKey::Object { .. }) && !crate::gc::traced(value));
+        self.1.0.set(Some(plain));
+        plain
+    }
+
+    /// Хоть один ключ или значение — узел сборщика циклов.
+    pub fn holds_nodes(&self) -> bool {
+        !self.plain()
+    }
+
+    /// Ответ [`Plain`] словаря из этих частей, если он уже известен у всех.
+    fn known_plain(parts: &[&Map]) -> Option<bool> {
+        let mut plain = Some(true);
+        for part in parts {
+            match part.1.0.get() {
+                Some(false) => return Some(false),
+                None => plain = None,
+                Some(true) => {}
+            }
+        }
+        plain
+    }
+
+    /// Большой словарь простых значений, от которого делают версию,
+    /// становится персистентным на месте; его версии делят узлы.
+    fn shared(&self) -> Option<okkama_persistent::PMap<MapKey, Value>> {
+        if !persistent_maps() || self.len() <= MAP_SMALL || !self.plain() {
+            return None;
+        }
+        let mut entries = self.0.borrow_mut();
+        if let Entries::Tree(map) = &mut *entries {
+            *entries = Entries::Shared(okkama_persistent::PMap::from_sorted(std::mem::take(map)));
+        }
+        match &*entries {
+            Entries::Shared(map) => Some(map.clone()),
+            Entries::Tree(_) => unreachable!("made persistent above"),
+        }
+    }
+
+    fn persistent(map: okkama_persistent::PMap<MapKey, Value>) -> Map {
+        Map(RefCell::new(Entries::Shared(map)), Plain::known(Some(true)))
+    }
+
+    /// `a + b + ...`: повтор ключа — значение правой части, ключ — левой.
+    /// Версия делается от самой большой части; если она персистентна (или
+    /// становится ею), остальные части вставляются в копию её пути.
+    pub fn merge(parts: &[&Map]) -> Map {
+        let base = (0..parts.len()).fold(0, |best, at| if parts[at].len() > parts[best].len() { at } else { best });
+        if parts.get(base).is_some_and(|part| part.len() > MAP_SMALL)
+            && parts.iter().enumerate().all(|(at, part)| at == base || part.plain())
+            && let Some(mut map) = parts[base].shared()
+        {
+            // Левее основы, справа налево: значение уже записанного ключа
+            // остаётся, а ключ становится левым (`BTreeMap::insert`).
+            for part in parts[..base].iter().rev() {
+                for (key, value) in part.entries().iter() {
+                    let value = map.remove(key).map_or_else(|| value.clone(), |(_, kept)| kept);
+                    map.insert(key.clone(), value);
+                }
+            }
+            for part in &parts[base + 1..] {
+                for (key, value) in part.entries().iter() {
+                    map.insert(key.clone(), value.clone());
+                }
+            }
+            return Map::persistent(map);
+        }
+        let mut entries = BTreeMap::new();
+        for part in parts {
+            for (key, value) in part.entries().iter() {
+                entries.insert(key.clone(), value.clone());
+            }
+        }
+        Map(RefCell::new(Entries::Tree(entries)), Plain::known(Map::known_plain(parts)))
+    }
+
+    /// `a - b - ...`: записи без ключей из `removed`.
+    pub fn difference(&self, removed: &[&Map]) -> Map {
+        if let Some(mut map) = self.shared() {
+            for part in removed {
+                for key in part.entries().keys() {
+                    map.remove(key);
+                }
+            }
+            return Map::persistent(map);
+        }
+        let mut entries: BTreeMap<MapKey, Value> = self.entries().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        for part in removed {
+            for key in part.entries().keys() {
+                entries.remove(key);
+            }
+        }
+        Map(RefCell::new(Entries::Tree(entries)), Plain::known(self.1.0.get()))
+    }
+}
 
 /// Значение-функция: номер функции исполнителя и снимок захватов; вызов —
 /// функция над захватами и затем аргументами.
@@ -718,14 +958,13 @@ fn release(value: Value, pending: &mut Vec<Value>) {
                         let mut origin = [Value::Array(origin)];
                         take_deep(&mut origin, pending);
                     }
-                    // Plain values only: nothing to release in depth.
-                    Repr::Trie { .. } => {}
+                    Repr::Trie { trie, flat, .. } => release_trie(trie, flat, pending),
                 }
             }
         }
         Value::Map(map) => {
             if let Some(mut map) = Rc::into_inner(map) {
-                pending.extend(std::mem::take(&mut map.0).into_values().filter(deep));
+                release_entries(std::mem::take(map.0.get_mut()), pending);
             }
         }
         Value::Builder(builder) => {
@@ -749,6 +988,31 @@ fn release(value: Value, pending: &mut Vec<Value>) {
             }
         }
         _ => {}
+    }
+}
+
+/// Простое значение тоже может быть версией с общими узлами (словарь
+/// словарей, массив массивов): узлы, которые держит только эта версия,
+/// отдают значения в очередь, а не освобождают их рекурсивно (#335).
+fn release_trie(trie: okkama_persistent::Trie<Value>, flat: std::cell::OnceCell<Vec<Value>>, pending: &mut Vec<Value>) {
+    if let Some(mut flat) = flat.into_inner() {
+        take_deep(&mut flat, pending);
+    }
+    trie.into_unshared(|value| {
+        if deep(&value) {
+            pending.push(value);
+        }
+    });
+}
+
+fn release_entries(entries: Entries, pending: &mut Vec<Value>) {
+    match entries {
+        Entries::Tree(entries) => pending.extend(entries.into_values().filter(deep)),
+        Entries::Shared(entries) => entries.into_unshared(|value| {
+            if deep(&value) {
+                pending.push(value);
+            }
+        }),
     }
 }
 
@@ -788,9 +1052,13 @@ impl Drop for Array {
         let mut pending = Vec::new();
         match &mut self.0 {
             Repr::Flat { items, .. } => take_deep(items, &mut pending),
-            // Буфер и источник освобождают своё сами, тоже без рекурсии;
-            // в trie только простые значения.
-            Repr::View { .. } | Repr::Slice { .. } | Repr::Trie { .. } => {}
+            // Буфер и источник освобождают своё сами, тоже без рекурсии.
+            Repr::View { .. } | Repr::Slice { .. } => {}
+            Repr::Trie { .. } => {
+                if let Repr::Trie { trie, flat, .. } = std::mem::take(&mut self.0) {
+                    release_trie(trie, flat, &mut pending);
+                }
+            }
         }
         if !pending.is_empty() {
             release_all(pending);
@@ -800,7 +1068,8 @@ impl Drop for Array {
 
 impl Drop for Map {
     fn drop(&mut self) {
-        let pending: Vec<Value> = std::mem::take(&mut self.0).into_values().filter(deep).collect();
+        let mut pending = Vec::new();
+        release_entries(std::mem::take(self.0.get_mut()), &mut pending);
         if !pending.is_empty() {
             release_all(pending);
         }
@@ -1038,11 +1307,19 @@ pub mod maps {
         Value::MapBuilder(Rc::new(RefCell::new(BTreeMap::new())))
     }
 
-    pub fn entries(map: &Value) -> Result<&BTreeMap<MapKey, Value>, ValueError> {
+    pub fn map(map: &Value) -> Result<&Rc<Map>, ValueError> {
         match map {
-            Value::Map(map) => Ok(&map.0),
+            Value::Map(map) => Ok(map),
             _ => Err(invalid("expected map value")),
         }
+    }
+
+    pub fn maps<'a>(maps: &[&'a Value]) -> Result<Vec<&'a Map>, ValueError> {
+        maps.iter().map(|value| map(value).map(|map| &**map)).collect()
+    }
+
+    pub fn entries(map: &Value) -> Result<MapEntries<'_>, ValueError> {
+        Ok(self::map(map)?.entries())
     }
 
     /// Литерал: повторный ключ заменяет значение, но не ключ (`TreeMap.put`).
@@ -1051,7 +1328,7 @@ pub mod maps {
         for (key, value) in entries {
             put(&mut map, &key, value)?;
         }
-        Ok(Value::Map(Rc::new(Map(map))))
+        Ok(Value::Map(Rc::new(Map::new(map))))
     }
 
     fn put(map: &mut BTreeMap<MapKey, Value>, key: &Value, value: Value) -> Result<(), ValueError> {
@@ -1077,23 +1354,21 @@ pub mod maps {
 
     pub fn builder_finish(builder: &Value) -> Result<Value, ValueError> {
         match builder {
-            Value::MapBuilder(map) => Ok(Value::Map(Rc::new(Map(std::mem::take(
-                &mut *map.borrow_mut(),
-            ))))),
+            Value::MapBuilder(map) => Ok(Value::Map(Rc::new(Map::new(std::mem::take(&mut *map.borrow_mut()))))),
             _ => Err(invalid("expected live map builder")),
         }
     }
 
-    pub fn get<'a>(map: &'a Value, key: &Value) -> Result<Option<&'a Value>, ValueError> {
-        Ok(entries(map)?.get(&MapKey::from_value(key)?))
+    pub fn get(map: &Value, key: &Value) -> Result<Option<Value>, ValueError> {
+        Ok(self::map(map)?.get(&MapKey::from_value(key)?))
     }
 
     pub fn keys(map: &Value) -> Result<Value, ValueError> {
-        Ok(ArrayHeap.allocate(entries(map)?.keys().map(MapKey::to_value).collect()))
+        Ok(ArrayHeap.allocate(entries(map)?.collect(|key, _| key.to_value())))
     }
 
     pub fn values(map: &Value) -> Result<Value, ValueError> {
-        Ok(ArrayHeap.allocate(entries(map)?.values().cloned().collect()))
+        Ok(ArrayHeap.allocate(entries(map)?.collect(|_, value| value.clone())))
     }
 }
 
@@ -1478,13 +1753,17 @@ fn collect(value: &Value, out: &mut Vec<Rc<Object>>, via: Option<(u64, u64)>) {
             }
             // An array of plain values holds no identity to walk (#335).
             Value::Array(array) if array.plain() => {}
+            Value::Map(map) if map.plain() => {}
             Value::Array(_) | Value::Map(_) | Value::Any(_) | Value::Fn(_) => {
                 if summaries && summary_holds(&value, via) {
                     continue;
                 }
                 match &value {
                     Value::Array(array) => pending.extend(array.items().iter().rev().cloned()),
-                    Value::Map(map) => pending.extend(map.0.values().rev().cloned()),
+                    Value::Map(map) => {
+                        let values: Vec<Value> = map.entries().values().cloned().collect();
+                        pending.extend(values.into_iter().rev());
+                    }
                     Value::Any(value) => pending.push((**value).clone()),
                     Value::Fn(closure) => pending.extend(closure.captures.iter().rev().cloned()),
                     _ => unreachable!("matched above"),
@@ -1740,13 +2019,14 @@ impl ObjectHeap {
                 }
                 // `AbstractMap.equals`: те же ключи (по порядку ключей) и равные значения.
                 (Value::Map(x), Value::Map(y)) => {
-                    if x.0.len() != y.0.len() {
+                    if x.len() != y.len() {
                         return Ok(false);
                     }
                     if !Rc::ptr_eq(x, y)
                         && seen.insert((2, Rc::as_ptr(x) as usize, Rc::as_ptr(y) as usize))
                     {
-                        for ((a, u), (b, v)) in x.0.iter().zip(&y.0) {
+                        let (x, y) = (x.entries(), y.entries());
+                        for ((a, u), (b, v)) in x.iter().zip(y.iter()) {
                             if a != b {
                                 return Ok(false);
                             }
@@ -1827,6 +2107,138 @@ mod tests {
         let Value::Array(once_array) = &once else { unreachable!() };
         let twice = once_array.replaced(1, int(6));
         assert!(!trie(&once) && !trie(&twice));
+    }
+
+    /// Versions of maps (#335): a large map of plain values turns persistent
+    /// at its first new version and stays the same map; chains, branches,
+    /// merges from either side and differences keep every version as it
+    /// was, against a `BTreeMap` model; maps holding objects are copied as
+    /// before.
+    #[test]
+    fn map_versions_share_nodes_and_keep_every_version() {
+        use crate::ops::{map_difference, map_merge};
+        let int = |i: i64| Value::Int(crate::IntValue::from_i64(i));
+        let map = |entries: &[(i64, i64)]| maps::from_entries(entries.iter().map(|&(k, v)| (int(k), int(v)))).unwrap();
+        let shared = |value: &Value| matches!(value, Value::Map(map) if matches!(&*map.0.borrow(), Entries::Shared(_)));
+        let pairs = |value: &Value| -> Vec<(i64, i64)> {
+            maps::entries(value)
+                .unwrap()
+                .iter()
+                .map(|(k, v)| {
+                    let MapKey::Int(k) = k else { unreachable!() };
+                    (k.to_i64().unwrap(), v.as_int().unwrap().to_i64().unwrap())
+                })
+                .collect()
+        };
+        let model = |value: &BTreeMap<i64, i64>| value.iter().map(|(&k, &v)| (k, v)).collect::<Vec<_>>();
+        // A chain from a literal of 100 entries.
+        let base = map(&(0..100).map(|i| (i * 2, i)).collect::<Vec<_>>());
+        assert!(!shared(&base));
+        let mut versions = vec![base.clone()];
+        let mut models = vec![(0..100).map(|i| (i * 2, i)).collect::<BTreeMap<_, _>>()];
+        for step in 0..200i64 {
+            let key = (step * 37) % 260;
+            let next = map_merge(&[versions.last().unwrap(), &map(&[(key, -step)])]).unwrap();
+            let mut expected = models.last().unwrap().clone();
+            expected.insert(key, -step);
+            versions.push(next);
+            models.push(expected);
+        }
+        assert!(shared(&base), "the base turns persistent in place");
+        assert!(versions.iter().all(shared));
+        // Branches of the same base, and removals.
+        for step in 0..50i64 {
+            let fresh = map_merge(&[&base, &map(&[(step * 2 + 1, step)])]).unwrap();
+            let mut expected = models[0].clone();
+            expected.insert(step * 2 + 1, step);
+            versions.push(fresh);
+            models.push(expected);
+            let removed = map_difference(&base, &[&map(&[(step * 2, 0), (999, 0)])]).unwrap();
+            let mut expected = models[0].clone();
+            expected.remove(&(step * 2));
+            versions.push(removed);
+            models.push(expected);
+        }
+        // The large part on the right: the left keys under it lose to it.
+        let left = map(&[(0, 100), (1, 101), (500, 102)]);
+        let merged = map_merge(&[&left, &base, &map(&[(1, 7)])]).unwrap();
+        let mut expected = models[0].clone();
+        expected.insert(1, 7);
+        expected.insert(500, 102);
+        versions.push(merged);
+        models.push(expected);
+        for (at, (version, expected)) in versions.iter().zip(&models).enumerate() {
+            assert_eq!(pairs(version), model(expected), "version {at}");
+            assert_eq!(maps::map(version).unwrap().len(), expected.len(), "version {at}");
+            for (&k, &v) in expected {
+                assert_eq!(maps::get(version, &int(k)).unwrap().and_then(|v| v.as_int().ok().and_then(|n| n.to_i64())), Some(v));
+            }
+            assert!(maps::get(version, &int(-1)).unwrap().is_none());
+        }
+        // The left key stays, as with `BTreeMap::insert`: -0.0 before 0.0.
+        let floats = maps::from_entries((0..100).map(|i| (Value::Float(i as f64), int(i)))).unwrap();
+        let merged = map_merge(&[&maps::from_entries([(Value::Float(-0.0), int(-1))]).unwrap(), &floats]).unwrap();
+        assert!(shared(&merged));
+        let keys = maps::keys(&merged).unwrap();
+        assert!(ArrayHeap.elements(&keys).unwrap()[0].as_float().unwrap().is_sign_negative());
+        assert_eq!(maps::get(&merged, &Value::Float(0.0)).unwrap().and_then(|v| v.as_int().ok().and_then(|n| n.to_i64())), Some(0));
+        // Holding an object: never persistent, and a node of the collector.
+        let object = ObjectHeap.allocate(0, vec![]);
+        let mixed = maps::from_entries((0..99).map(int).map(|k| (k, int(0))).chain([(int(99), object)])).unwrap();
+        let once = map_merge(&[&mixed, &map(&[(5, 5)])]).unwrap();
+        let twice = map_merge(&[&once, &map(&[(6, 6)])]).unwrap();
+        assert!(!shared(&mixed) && !shared(&once) && !shared(&twice));
+        assert!(crate::gc::traced(&twice) && !crate::gc::traced(&base) && !crate::gc::traced(&map(&[])));
+        // A plain value written into a persistent map that is not plain: a copy.
+        let into = map_merge(&[&base, &maps::from_entries([(int(1), ObjectHeap.allocate(0, vec![]))]).unwrap()]).unwrap();
+        assert!(!shared(&into) && crate::gc::traced(&into) && maps::map(&into).unwrap().len() == 101);
+    }
+
+    /// The raw cost of `keys()` of a large map, of either representation,
+    /// and straight from the tree: run with `cargo
+    /// test --release -p okkama-runtime-core keys_costs -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn keys_costs() {
+        let int = |i: i64| Value::Int(crate::IntValue::from_i64(i));
+        let map = maps::from_entries((0..100_000).map(|i| (int(i * 2), int(i)))).unwrap();
+        let Value::Map(rc) = &map else { unreachable!() };
+        for round in 0..3 {
+            let started = std::time::Instant::now();
+            for _ in 0..50 {
+                std::hint::black_box(maps::keys(&map).unwrap());
+            }
+            let through = started.elapsed().as_nanos() as f64 / 50.0 / 100_000.0;
+            let started = std::time::Instant::now();
+            for _ in 0..50 {
+                let entries = rc.0.borrow();
+                let Entries::Tree(tree) = &*entries else { unreachable!() };
+                std::hint::black_box(ArrayHeap.allocate(tree.keys().map(MapKey::to_value).collect()));
+            }
+            let straight = started.elapsed().as_nanos() as f64 / 50.0 / 100_000.0;
+            println!("round {round}: maps::keys {through:.2} ns/key, straight {straight:.2} ns/key");
+        }
+        let version = crate::ops::map_merge(&[&map, &maps::from_entries([(int(1), int(1))]).unwrap()]).unwrap();
+        assert!(matches!(&*rc.0.borrow(), Entries::Shared(_)));
+        for round in 0..3 {
+            let started = std::time::Instant::now();
+            for _ in 0..50 {
+                std::hint::black_box(maps::keys(&version).unwrap());
+            }
+            let shared = started.elapsed().as_nanos() as f64 / 50.0 / 100_000.0;
+            println!("round {round}: maps::keys of a persistent map {shared:.2} ns/key");
+        }
+        let probes: Vec<Value> = (0..200_000i64).map(|i| int((i * 7919) % 200_000)).collect();
+        for round in 0..3 {
+            for (name, value) in [("tree", &map), ("persistent", &version)] {
+                let started = std::time::Instant::now();
+                for probe in &probes {
+                    std::hint::black_box(maps::get(value, probe).unwrap());
+                }
+                let ns = started.elapsed().as_nanos() as f64 / probes.len() as f64;
+                println!("round {round}: maps::get of a {name} map {ns:.2} ns");
+            }
+        }
     }
 
     /// The raw cost of a step of a replacement chain: run with `cargo test
@@ -2087,6 +2499,38 @@ mod drop_tests {
         Value::Int(crate::IntValue::from_i64(7))
     }
 
+    /// Versions that share nodes (#335) hold plain values, and a plain value
+    /// may be a version too: a chain of them nested one in the next still
+    /// drops without recursion.
+    #[test]
+    fn nested_shared_versions_drop_iteratively() {
+        fn nested(build: fn(usize) -> Value) {
+            std::thread::Builder::new()
+                .stack_size(1 << 20)
+                .spawn(move || drop(build(scaled(30_000))))
+                .unwrap()
+                .join()
+                .expect("dropped without overflowing the stack");
+        }
+        nested(|depth| {
+            let int = |i: i64| Value::Int(crate::IntValue::from_i64(i));
+            let base = ArrayHeap.allocate((0..100).map(int).collect());
+            let Value::Array(marked) = base else { unreachable!() };
+            let Value::Array(trie) = marked.replaced(1, int(1)) else { unreachable!() };
+            let Value::Array(trie) = trie.replaced(1, int(1)) else { unreachable!() };
+            assert!(matches!(trie.0, Repr::Trie { .. }));
+            (0..depth).fold(leaf(), |next, _| trie.replaced(0, next))
+        });
+        nested(|depth| {
+            let int = |i: i64| Value::Int(crate::IntValue::from_i64(i));
+            let base = maps::from_entries((0..100).map(|i| (int(i), int(i)))).unwrap();
+            (0..depth).fold(leaf(), |next, _| {
+                let one = maps::from_entries([(int(0), next)]).unwrap();
+                crate::ops::map_merge(&[&base, &one]).unwrap()
+            })
+        });
+    }
+
     #[test]
     fn chains_drop_iteratively() {
         drops_on_a_small_stack(|depth| (0..depth).fold(leaf(), |next, _| ObjectHeap.allocate(0, vec![next, leaf()])));
@@ -2117,7 +2561,7 @@ mod drop_tests {
             (0..depth).fold(leaf(), |next, _| {
                 let entries = (0..2).map(|key| (MapKey::Int(crate::IntValue::from_i64(key)), next.clone())).collect();
                 drop(next);
-                Value::Map(Rc::new(Map(entries)))
+                Value::Map(Rc::new(Map::new(entries)))
             })
         });
         drops_on_a_small_stack(|depth| {

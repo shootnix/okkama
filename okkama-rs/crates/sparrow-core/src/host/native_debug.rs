@@ -115,7 +115,7 @@ impl Heap {
                     let k = MapKey::from_value(&k).map_err(|e| Error(e.message))?;
                     entries.insert(k, self.value_to_origin(v, item, depth + 1)?);
                 }
-                Value::Map(Rc::new(Map(entries)))
+                Value::Map(Rc::new(Map::new(entries)))
             }
             Node::Object(word, descriptor) => {
                 let fields = &program.objects[descriptor as usize].fields;

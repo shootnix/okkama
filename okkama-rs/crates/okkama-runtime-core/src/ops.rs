@@ -474,24 +474,12 @@ pub fn array_difference(array: &Value, removed: &[&Value]) -> Result<Value> {
 
 /// `a + b + ...` над словарями; повтор ключа — значение правой части.
 pub fn map_merge(parts: &[&Value]) -> Result<Value> {
-    let mut entries = std::collections::BTreeMap::new();
-    for part in parts {
-        for (key, value) in maps::entries(part)? {
-            entries.insert(key.clone(), value.clone());
-        }
-    }
-    Ok(Value::Map(Rc::new(crate::heap::Map(entries))))
+    Ok(Value::Map(Rc::new(crate::heap::Map::merge(&maps::maps(parts)?))))
 }
 
 /// `a - b - ...` над словарями: записи `map`, ключей которых нет в `removed`.
 pub fn map_difference(map: &Value, removed: &[&Value]) -> Result<Value> {
-    let mut entries = maps::entries(map)?.clone();
-    for part in removed {
-        for key in maps::entries(part)?.keys() {
-            entries.remove(key);
-        }
-    }
-    Ok(Value::Map(Rc::new(crate::heap::Map(entries))))
+    Ok(Value::Map(Rc::new(maps::map(map)?.difference(&maps::maps(removed)?))))
 }
 
 pub fn map_new(entries: impl IntoIterator<Item = (Value, Value)>) -> Result<Value> {
@@ -499,10 +487,10 @@ pub fn map_new(entries: impl IntoIterator<Item = (Value, Value)>) -> Result<Valu
 }
 
 pub fn map_len(map: &Value) -> Result<Value> {
-    Ok(Value::Int(IntValue::from_u128(maps::entries(map)?.len() as u128)))
+    Ok(Value::Int(IntValue::from_u128(maps::map(map)?.len() as u128)))
 }
 
-pub fn map_lookup<'a>(map: &'a Value, key: &Value) -> Result<Option<&'a Value>> {
+pub fn map_lookup(map: &Value, key: &Value) -> Result<Option<Value>> {
     Ok(maps::get(map, key)?)
 }
 
@@ -510,7 +498,7 @@ pub fn map_lookup<'a>(map: &'a Value, key: &Value) -> Result<Option<&'a Value>> 
 /// `case_name` даёт имя case ключа-enum.
 pub fn map_get(map: &Value, key: &Value, case_name: &dyn Fn(usize, usize) -> String) -> Result<Value> {
     match map_lookup(map, key)? {
-        Some(value) => Ok(value.clone()),
+        Some(value) => Ok(value),
         None => Err(trap(format!("Map key not found: {}", key_text(key, case_name)))),
     }
 }

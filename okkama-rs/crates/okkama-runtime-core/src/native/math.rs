@@ -83,7 +83,7 @@ fn source(native: Native, context: &Context, value: &Value) -> Result<String, Er
         }
         Value::Map(map) => {
             let parts = map
-                .0
+                .entries()
                 .iter()
                 .map(|(key, item)| {
                     Ok(format!(

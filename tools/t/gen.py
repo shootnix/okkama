@@ -1242,6 +1242,18 @@ PERSISTENCE_DECLARATIONS = """object Grow {
         if i == n { return m; }
         self.takes_out(i + 1, n, m - [i * 37 % 1000003: 0]);
     }
+    named(i is int, n is int, m is %string:int) is %string:int {
+        if i == n { return m; }
+        self.named(i + 1, n, m + ["k" + (i * 37 % 1009).string(): i]);
+    }
+    logs(i is int, n is int, m is %int:Log) is %int:Log {
+        if i == n { return m; }
+        self.logs(i + 1, n, m + [i * 37 % 1009: Log(items: [i])]);
+    }
+    nested(i is int, n is int, m is %int:%int:int) is %int:%int:int {
+        if i == n { return m; }
+        self.nested(i + 1, n, m + [i * 37 % 1009: [i: i * 2]]);
+    }
     alternate(i is int, n is int, items is @int) is @int {
         if i == n { return items; }
         let grown = if i % 2 == 0 { items + [i * 7 % 101]; } else { [i * 7 % 101] + items; };
@@ -1501,6 +1513,33 @@ def persistence_family():
     program.is_(f"{big}.size()", lit_int(33000), "a map of 33 000 keys built in a reduce", [f"let {big} is %int:int = (0..33000).reduce([:]) -> acc, i {{ acc + [i * 37 % 1000003: i]; }};"])
     program.is_(f"({big} + [1: 1] - [37: 0]).size()", lit_int(33000), "a version of it with one key more and one less")
     program.is_(f"{big}[{32999 * 37 % 1000003}]", lit_int(32999), "its last key")
+    # Maps whose versions share nodes on the IR engine too (#335): string
+    # keys, values that are maps (plain, so shared) or objects (copied as
+    # before), each version against one built again from scratch.
+    for n in [64, 65, 66, 100, 300]:
+        program = batch.program()
+        key = lambda i: i * 37 % 1009
+        sm, sb, lm, nm, nb = (program.fresh(x) for x in ("sm", "sb", "lm", "nm", "nb"))
+        names = {f"k{key(i)}": i for i in range(n)}
+        desc = f"a chain of {n} puts"
+        setup = [f'let {sm} = Grow().named(0, {n}, ["x": -1] - ["x": 0]);',
+                 f'let {sb} is %string:int = (0..{n}).reduce([:]) -> acc, i {{ acc + ["k" + (i * 37 % 1009).string(): i]; }};',
+                 f"let {lm} = Grow().logs(0, {n}, [0: Log(items: [0])] - [0: Log(items: [])]);",
+                 f"let {nm} = Grow().nested(0, {n}, [0: [0: 0]] - [0: [0: 0]]);",
+                 f"let {nb} is %int:%int:int = (0..{n}).reduce([:]) -> acc, i {{ acc + [i * 37 % 1009: [i: i * 2]]; }};"]
+        program.ok(f"{sm} == {sb} && {sm}.size() == {n}", f"{desc} by string key equals one built in a reduce", setup)
+        program.is_(f"{sm}.values().reduce(0) -> s, v {{ s + v; }}", lit_int(sum(names.values())), f"{desc} by string key: values")
+        first = min(names)
+        program.is_(f"{sm}[{lit_str(first)}]", lit_int(names[first]), f"{desc} by string key: the first key")
+        program.ok(f'!{sm}.has("k") && ({sm} + ["k": 1]).size() == {n + 1} && ({sm} - [{lit_str(first)}: 0]).size() == {n - 1} && {sm}.size() == {n}',
+                   f"{desc} by string key: versions of it, and it is unchanged")
+        program.ok(f'({sm} - [{lit_str(first)}: 0] + [{lit_str(first)}: {names[first]}]) == {sb}', f"{desc} by string key: removed and put back")
+        program.is_(f"{lm}.values().reduce(0) -> s, log {{ s + log.items()[0]; }}", lit_int(sum(range(n))), f"{desc} of objects: values")
+        program.ok(f"({lm} + [1: Log(items: [7])])[1].items()[0] == 7 && ({lm}[1] else Log(items: [-1])).items()[0] == {[i for i in range(n) if key(i) == 1][0] if any(key(i) == 1 for i in range(n)) else -1}",
+                   f"{desc} of objects: a version, and the origin unchanged")
+        program.ok(f"{nm} == {nb} && {nm}.size() == {n}", f"{desc} of maps equals one built in a reduce")
+        program.ok(f"({nm} + [{key(n - 1)}: [0: 0]])[{key(n - 1)}] == [0: 0] && {nm}[{key(n - 1)}] == [{n - 1}: {2 * (n - 1)}]", f"{desc} of maps: a version replaces one value")
+        program.ok(f"([1: [1: 1]] + {nm}).size() == {n + (0 if any(key(i) == 1 for i in range(n)) else 1)} && ({nm} - {nb}).size() == 0", f"{desc} of maps: merged from the left, and removed")
     # Strings built one `+` at a time (#255): versions share a text buffer
     # once a chain passes 256 bytes; every result must equal the flat string
     # `repeat` makes, by every string operation.

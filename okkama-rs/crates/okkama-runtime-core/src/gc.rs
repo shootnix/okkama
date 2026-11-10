@@ -172,7 +172,8 @@ impl Node {
             Value::Object(object) => Self::Object(object.clone()),
             // Массив простых значений цикла не замкнёт (#335).
             Value::Array(array) if array.holds_nodes() => Self::Array(array.clone()),
-            Value::Map(map) if !map.0.is_empty() => Self::Map(map.clone()),
+            // Словарь простых ключей и значений — тоже (#335).
+            Value::Map(map) if map.holds_nodes() => Self::Map(map.clone()),
             Value::Fn(closure) => Self::Fn(closure.clone()),
             Value::Any(inner) => Self::Any(inner.clone()),
             Value::Future(future) => Self::Future(future.clone()),
@@ -243,8 +244,11 @@ impl Node {
                 written.iter().for_each(|value| out.value(value));
             }
             Self::Map(map) => {
+                let Some(entries) = map.try_entries() else {
+                    return false;
+                };
                 // Ключ-объект держит объект (#212).
-                for (key, value) in map.0.iter() {
+                for (key, value) in entries.iter() {
                     if let crate::heap::MapKey::Object { object, .. } = key {
                         out.object(object);
                     }
@@ -590,6 +594,40 @@ mod tests {
         assert!(weak.upgrade().is_some(), "the cycle survives plain reference counting");
         collect();
         assert!(weak.upgrade().is_none(), "the cycle through the buffer is freed");
+    }
+
+    /// Maps in cycles (#335): a large map that holds an object stays a
+    /// copied tree and a node, so a cycle through its versions is freed; a
+    /// persistent version beside the cycle is no node and is freed with it.
+    #[test]
+    fn cycles_through_large_map_versions_are_freed() {
+        use crate::heap::maps;
+        use crate::ops::map_merge;
+        let int = |i: i64| Value::Int(crate::IntValue::from_i64(i));
+        for stress in [false, true] {
+            set_stress(stress);
+            collect();
+            let base = live_objects();
+            let plain = maps::from_entries((0..100).map(|i| (int(i), int(i)))).unwrap();
+            let shared = map_merge(&[&plain, &maps::from_entries([(int(1000), int(1))]).unwrap()]).unwrap();
+            assert!(!traced(&shared) && !traced(&plain), "persistent versions of plain values are no nodes");
+            let Value::Map(shared_map) = &shared else { unreachable!() };
+            let weak_map = Rc::downgrade(shared_map);
+            let (holder, object) = object(1);
+            let holding = map_merge(&[&plain, &maps::from_entries([(int(-1), holder.clone())]).unwrap()]).unwrap();
+            let version = map_merge(&[&holding, &maps::from_entries([(int(-2), shared.clone())]).unwrap()]).unwrap();
+            assert!(traced(&holding) && traced(&version));
+            // holder -> version -> holder, with the persistent map hanging off it.
+            ObjectHeap.init(&holder, 0, version).unwrap();
+            let weak = Rc::downgrade(&object);
+            drop((shared, holding, holder, object, plain));
+            assert!(weak.upgrade().is_some(), "the cycle survives plain reference counting");
+            collect();
+            assert!(weak.upgrade().is_none(), "the cycle through the map version is freed");
+            assert!(weak_map.upgrade().is_none(), "and the persistent map beside it");
+            assert_eq!(live_objects(), base);
+        }
+        set_stress(false);
     }
 
     #[test]

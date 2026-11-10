@@ -229,7 +229,7 @@ pub(crate) fn map_len(map: &Value, span: Span) -> Result<Value, RuntimeError> {
     ops::map_len(map).map_err(fault(span))
 }
 
-pub(crate) fn map_lookup<'a>(map: &'a Value, key: &Value, span: Span) -> Result<Option<&'a Value>, RuntimeError> {
+pub(crate) fn map_lookup(map: &Value, key: &Value, span: Span) -> Result<Option<Value>, RuntimeError> {
     ops::map_lookup(map, key).map_err(fault(span))
 }
 

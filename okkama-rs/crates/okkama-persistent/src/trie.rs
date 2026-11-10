@@ -129,6 +129,25 @@ impl<T: Clone> Trie<T> {
         visit(&self.tail);
     }
 
+    /// Let this version go without recursion through its elements: the
+    /// elements of the nodes no other version holds go to `visit` one at a
+    /// time, and the nodes other versions hold are only let go. For
+    /// elements that hold versions in turn, which the caller frees from a
+    /// queue of its own.
+    pub fn into_unshared(self, mut visit: impl FnMut(T)) {
+        if let Ok(tail) = Rc::try_unwrap(self.tail) {
+            tail.into_iter().for_each(&mut visit);
+        }
+        let mut stack = vec![self.root];
+        while let Some(node) = stack.pop() {
+            match Rc::try_unwrap(node) {
+                Ok(Node::Branch(kids)) => stack.extend(kids),
+                Ok(Node::Leaf(items)) => items.into_iter().for_each(&mut visit),
+                Err(_) => {}
+            }
+        }
+    }
+
     pub fn to_vec(&self) -> Vec<T> {
         let mut out = Vec::with_capacity(self.len);
         self.for_each_chunk(|chunk| out.extend_from_slice(chunk));
@@ -289,5 +308,23 @@ mod tests {
         for (trie, model) in history.iter().step_by(613) {
             check(trie, model);
         }
+    }
+
+    #[test]
+    fn into_unshared_visits_only_what_no_other_version_holds() {
+        let old = Trie::from_vec((0..100).collect::<Vec<u32>>());
+        let new = old.set(0, 1000).unwrap().set(99, 2000).unwrap();
+        let mut seen = Vec::new();
+        new.into_unshared(|item| seen.push(item));
+        // The leaf of index 0 and the tail were copied; the rest is shared.
+        seen.sort_unstable();
+        let mut copied: Vec<u32> = (1..32).chain(96..99).chain([1000, 2000]).collect();
+        copied.sort_unstable();
+        assert_eq!(seen, copied);
+        assert_eq!(old.to_vec(), (0..100).collect::<Vec<_>>());
+        let mut all = Vec::new();
+        old.into_unshared(|item| all.push(item));
+        all.sort_unstable();
+        assert_eq!(all, (0..100).collect::<Vec<_>>());
     }
 }

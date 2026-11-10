@@ -156,7 +156,7 @@ impl Heap {
                     let key = MapKey::from_value(&k).map_err(|e| Error(e.message))?;
                     entries.insert(key, self.to_origin(v, item)?);
                 }
-                Value::Map(Rc::new(Map(entries)))
+                Value::Map(Rc::new(Map::new(entries)))
             }
             Type::Handle(_) if slot.kind() != HANDLE => return Err(Error("expected a native object".into())),
             Type::Handle(_) => match self.handles.get(slot.bits)? {
@@ -199,8 +199,8 @@ impl Heap {
                 self.allocate_array(slots)?
             }
             (Type::Map(key, item), Value::Map(map)) => {
-                let mut entries = Vec::with_capacity(map.0.len());
-                for (k, v) in &map.0 {
+                let mut entries = Vec::with_capacity(map.len());
+                for (k, v) in map.entries().iter() {
                     entries.push((self.from_origin(k.to_value(), key)?, self.from_origin(v.clone(), item)?));
                 }
                 self.map_new(entries.into_iter())?

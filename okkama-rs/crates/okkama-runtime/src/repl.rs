@@ -132,7 +132,7 @@ fn portable(value: &Value) -> bool {
         Value::Fn(_) | Value::Future(_) | Value::Builder(_) | Value::MapBuilder(_) | Value::Region(_) => false,
         Value::Any(inner) => portable(inner),
         Value::Array(array) => array.items().iter().all(portable),
-        Value::Map(map) => map.0.values().all(portable),
+        Value::Map(map) => map.entries().values().all(portable),
         Value::Object(object) => object.values().iter().all(portable),
         _ => true,
     }
@@ -181,7 +181,7 @@ fn remap(value: &Value, old: &Names, new: &Lookup) -> Option<Value> {
         }
         Value::Map(map) => {
             let mut entries = BTreeMap::new();
-            for (key, item) in &map.0 {
+            for (key, item) in map.entries().iter() {
                 let key = match key {
                     MapKey::Enum { declaration, case } => MapKey::Enum {
                         declaration: *new.enums.get(old.enums.get(*declaration)?)?,
@@ -191,7 +191,7 @@ fn remap(value: &Value, old: &Names, new: &Lookup) -> Option<Value> {
                 };
                 entries.insert(key, remap(item, old, new)?);
             }
-            Value::Map(Rc::new(Map(entries)))
+            Value::Map(Rc::new(Map::new(entries)))
         }
         Value::Any(inner) => Value::Any(Rc::new(remap(inner, old, new)?)),
         Value::Fn(_) | Value::Future(_) | Value::Builder(_) | Value::MapBuilder(_) | Value::Region(_) => return None,

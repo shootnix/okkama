@@ -412,6 +412,29 @@ impl<K: NodeKey + Clone, V: Clone> PMap<K, V> {
         Some(removed)
     }
 
+    /// Let this version go without recursion through its values: the values
+    /// of the nodes no other version holds go to `visit` one at a time, and
+    /// the nodes other versions hold are only let go. For values that hold
+    /// versions in turn, which the caller frees from a queue of its own.
+    pub fn into_unshared(self, mut visit: impl FnMut(V)) {
+        let mut stack: Vec<Rc<Counted<K, V>>> = self.root.into_iter().collect();
+        while let Some(counted) = stack.pop() {
+            let Ok(mut counted) = Rc::try_unwrap(counted) else { continue };
+            match std::mem::replace(&mut counted.node, Node::Leaf { keys: Slots::new(), vals: Slots::new() }) {
+                Node::Leaf { mut vals, .. } => {
+                    while !vals.is_empty() {
+                        visit(vals.remove(vals.len() - 1));
+                    }
+                }
+                Node::Branch { mut kids, .. } => {
+                    while !kids.is_empty() {
+                        stack.push(kids.remove(kids.len() - 1));
+                    }
+                }
+            }
+        }
+    }
+
     pub fn iter(&self) -> Iter<'_, K, V> {
         let mut iter = Iter { leaf: [].iter().zip([].iter()), stack: Vec::new(), left: self.len };
         if let Some(root) = &self.root {
@@ -896,5 +919,23 @@ mod tests {
         let mut again = 0;
         next.for_each_unvisited(2, |_, _| again += 1);
         assert_eq!(again, next.len());
+    }
+
+    #[test]
+    fn into_unshared_visits_only_what_no_other_version_holds() {
+        let (_, before) = memory();
+        let old = PMap::from_sorted((0..200u32).map(|k| (k, k)));
+        let mut new = old.clone();
+        new.insert(0, 1000);
+        let mut seen = Vec::new();
+        new.into_unshared(|value| seen.push(value));
+        // One leaf copied on the path to key 0, the rest shared.
+        assert!(seen.contains(&1000) && seen.len() < 20 && !seen.contains(&199), "{seen:?}");
+        assert_eq!(old.values().copied().collect::<Vec<_>>(), (0..200).collect::<Vec<_>>());
+        let mut all = Vec::new();
+        old.into_unshared(|value| all.push(value));
+        all.sort_unstable();
+        assert_eq!(all, (0..200).collect::<Vec<_>>());
+        assert_eq!(memory().1, before, "every node released and uncounted");
     }
 }

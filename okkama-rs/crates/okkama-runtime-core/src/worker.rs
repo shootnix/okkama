@@ -88,8 +88,8 @@ fn encode(out: &mut Vec<u8>, value: &Value, type_name: TypeName<'_>) -> Result<(
         Value::Map(_) => {
             let entries = maps::entries(value).map_err(|error| trap(error.message))?;
             out.push(MAP);
-            out.extend((entries.len() as u32).to_be_bytes());
-            for (key, item) in entries {
+            out.extend((entries.iter().len() as u32).to_be_bytes());
+            for (key, item) in entries.iter() {
                 encode(out, &key.to_value(), type_name)?;
                 encode(out, item, type_name)?;
             }

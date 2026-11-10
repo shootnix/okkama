@@ -1007,10 +1007,11 @@ pub fn same(host: &dyn Host, left: &Value, right: &Value) -> Result<bool> {
             Ok(true)
         }
         (Value::Map(a), Value::Map(b)) => {
-            if a.0.len() != b.0.len() || a.0.keys().zip(b.0.keys()).any(|(x, y)| x != y) {
+            let (a, b) = (a.entries(), b.entries());
+            if a.iter().len() != b.iter().len() || a.keys().zip(b.keys()).any(|(x, y)| x != y) {
                 return Ok(false);
             }
-            for (x, y) in a.0.values().zip(b.0.values()) {
+            for (x, y) in a.values().zip(b.values()) {
                 if !same(host, x, y)? {
                     return Ok(false);
                 }
