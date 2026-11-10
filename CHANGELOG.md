@@ -123,6 +123,16 @@ anything is kept. Not released until the measurements show a net gain.
 
 ### Fixed
 
+- Release gate: it no longer runs on binaries built from another tree
+  (#333). Its build volumes are shared by every gate run, and the tree was
+  copied in with its files' times, so a tree edited before another one was
+  gated looked older than that tree's artifacts: cargo reused them, and the
+  OCS adapter's cache of "built" per source hash then kept the stale binary
+  for good (conformance of `removed_at` failed on every engine while the
+  t/ suite on the release build passed). `tools/gate/stamp_sources.py` gives
+  each source the time a gate first saw its present content and drops the
+  adapter's cache when anything changed.
+
 - Tomato: maps no longer pile up in memory (#331). A map's entries live in
   Rust memory that the collector did not count, so a program that made many
   maps and few other objects never reached a collection: making 4 000
