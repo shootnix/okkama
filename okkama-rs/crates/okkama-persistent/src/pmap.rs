@@ -279,12 +279,8 @@ impl<K: NodeKey + Clone, V: Clone> PMap<K, V> {
 
     /// A map of `entries` already sorted by key with no key twice, built
     /// bottom-up with room in every node.
-    pub fn from_sorted(entries: Vec<(K, V)>) -> Self {
-        let len = entries.len();
-        if len == 0 {
-            return Self::new();
-        }
-        let mut level: Vec<(K, Rc<Counted<K, V>>)> = Vec::with_capacity(len.div_ceil(BULK));
+    pub fn from_sorted(entries: impl IntoIterator<Item = (K, V)>) -> Self {
+        let (mut len, mut level) = (0, Vec::new());
         let mut rest = entries.into_iter().peekable();
         while rest.peek().is_some() {
             let (mut keys, mut vals) = (Slots::new(), Slots::new());
@@ -292,7 +288,11 @@ impl<K: NodeKey + Clone, V: Clone> PMap<K, V> {
                 keys.push(key);
                 vals.push(value);
             }
+            len += keys.len();
             level.push((keys[0].clone(), Counted::new(Node::Leaf { keys, vals })));
+        }
+        if len == 0 {
+            return Self::new();
         }
         while level.len() > 1 {
             let mut parents = Vec::with_capacity(level.len().div_ceil(BULK));
@@ -323,7 +323,7 @@ impl<K: NodeKey + Clone, V: Clone> PMap<K, V> {
         }
         let root = self.root.as_ref()?;
         (leaves(&root.node) > self.len.div_ceil(BULK))
-            .then(|| Self::from_sorted(self.iter().map(|(k, v)| (k.clone(), v.clone())).collect()))
+            .then(|| Self::from_sorted(self.iter().map(|(k, v)| (k.clone(), v.clone()))))
     }
 
     /// The stored key equal to `key` and its value.
@@ -777,7 +777,7 @@ mod tests {
     #[test]
     fn from_sorted_and_upsert_keep_the_stored_key() {
         for n in [0u64, 1, 24, 25, 600, 601, 20_000] {
-            let map = PMap::from_sorted((0..n).map(|i| (i * 2, i)).collect());
+            let map = PMap::from_sorted((0..n).map(|i| (i * 2, i)));
             map.check().unwrap();
             assert_eq!(map.len() as u64, n);
             assert!(map.keys().copied().eq((0..n).map(|i| i * 2)));
@@ -814,7 +814,7 @@ mod tests {
     fn node_memory_is_counted_exactly() {
         let (_, before) = memory();
         {
-            let base = PMap::from_sorted((0..5_000u64).map(|i| (i, i)).collect());
+            let base = PMap::from_sorted((0..5_000u64).map(|i| (i, i)));
             let mut versions = Vec::new();
             for k in 0..200u64 {
                 let mut next = base.clone();
@@ -861,7 +861,7 @@ mod tests {
 
     #[test]
     fn a_pass_visits_a_shared_node_once() {
-        let base = PMap::from_sorted((0..10_000u64).map(|i| (i * 2, i)).collect());
+        let base = PMap::from_sorted((0..10_000u64).map(|i| (i * 2, i)));
         let mut next = base.clone();
         next.insert(5_001, 0);
         let mut seen = std::collections::BTreeSet::new();

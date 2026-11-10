@@ -46,7 +46,7 @@ fn main() {
     for n in SIZES {
         let keys: Vec<u64> = (0..n as u64).map(|i| i * 2).collect();
         let btree: BTreeMap<u64, u64> = keys.iter().map(|&k| (k, k)).collect();
-        let pmap = PMap::from_sorted(keys.iter().map(|&k| (k, k)).collect());
+        let pmap = PMap::from_sorted(keys.iter().map(|&k| (k, k)));
         let reads = 4_000_000;
         add("get-random", "btree", n, reads, measure(|| {
             let (mut x, mut acc) = (1u64, 0u64);
@@ -70,7 +70,7 @@ fn main() {
         add("iterate", "btree", n, passes * n, measure(|| (0..passes).fold(0u64, |a, _| btree.values().fold(a, |a, v| a.wrapping_add(*v)))));
         add("iterate", "pmap", n, passes * n, measure(|| (0..passes).fold(0u64, |a, _| pmap.values().fold(a, |a, v| a.wrapping_add(*v)))));
         add("build-sorted", "btree", n, n, measure(|| keys.iter().map(|&k| (k, k)).collect::<BTreeMap<_, _>>().len() as u64));
-        add("build-sorted", "pmap", n, n, measure(|| PMap::from_sorted(keys.iter().map(|&k| (k, k)).collect()).len() as u64));
+        add("build-sorted", "pmap", n, n, measure(|| PMap::from_sorted(keys.iter().map(|&k| (k, k))).len() as u64));
         add("build-insert", "btree", n, n, measure(|| {
             let mut m = BTreeMap::new();
             for &k in &keys { m.insert(k.wrapping_mul(0x9E37_79B9_7F4A_7C15), k); }

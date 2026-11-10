@@ -121,7 +121,7 @@ impl Entries {
             && map.len() > SMALL
             && persistent_maps()
         {
-            *self = Entries::Persistent(PMap::from_sorted(std::mem::take(map).into_iter().collect()));
+            *self = Entries::Persistent(PMap::from_sorted(std::mem::take(map)));
         }
     }
 
@@ -184,7 +184,7 @@ impl Entries {
         match (&mut *self, right) {
             (Entries::Persistent(left), Entries::Persistent(right)) => *left = merged(left, right),
             (Entries::BTree(left), Entries::Persistent(right)) => {
-                let left = PMap::from_sorted(std::mem::take(left).into_iter().collect());
+                let left = PMap::from_sorted(std::mem::take(left));
                 *self = Entries::Persistent(merged(&left, right));
             }
             (this, right) => {
@@ -357,7 +357,7 @@ mod tests {
                     (0..reads).filter(|_| strs.get(&names[spot(&mut x, n)]).is_some()).count()
                 }) / reads as f64;
                 let packed = if persistent {
-                    let packed = Entries::Persistent(PMap::from_sorted(strs.iter().map(|(k, v)| (k.clone(), *v)).collect()));
+                    let packed = Entries::Persistent(PMap::from_sorted(strs.iter().map(|(k, v)| (k.clone(), *v))));
                     median(|| {
                         let mut x = 1;
                         (0..reads).filter(|_| packed.get(&names[spot(&mut x, n)]).is_some()).count()
