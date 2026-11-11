@@ -240,7 +240,7 @@ hidden object TemplateSectionRun {
         confirm partial_depth < maximum_partial_depth
             else throw TemplatePartialDepthExceeded.exceeded;
         iterations.claim();
-        let nodes = TemplateTree(partials.value(name).source()).nodes();
+        let nodes = TemplateTree(partials.template(name).source()).nodes();
         TemplateSectionRun(
             output: output,
             iterations: iterations,

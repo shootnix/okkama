@@ -63,7 +63,7 @@ object TemplateLibrary {
         false;
     }
 
-    value(name is string) is TextTemplate {
+    template(name is string) is TextTemplate {
         for origin -> item {
             if item.name() == name {
                 return item.template();
@@ -127,7 +127,7 @@ test "empty and missing templates have explicit behavior" {
     test.is(TemplateLibrary(values: [], maximum_templates: 0).membership(""), false);
     test.is(
         try {
-            TemplateLibrary().value("x");
+            TemplateLibrary().template("x");
             "bad";
         }
         catch MissingTemplate.name(name) {

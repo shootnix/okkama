@@ -66,7 +66,7 @@ object HtmlTemplateLibrary {
         false;
     }
 
-    value(name is string) is HtmlTemplate {
+    template(name is string) is HtmlTemplate {
         for origin -> item {
             if item.name() == name {
                 return item.template();
@@ -130,7 +130,7 @@ test "empty and missing templates have explicit behavior" {
     test.is(HtmlTemplateLibrary(values: [], maximum_templates: 0).membership(""), false);
     test.is(
         try {
-            HtmlTemplateLibrary().value("x");
+            HtmlTemplateLibrary().template("x");
             "bad";
         }
         catch MissingHtmlTemplate.name(name) {
