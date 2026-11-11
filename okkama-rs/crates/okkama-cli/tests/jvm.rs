@@ -2377,7 +2377,7 @@ fn child_exit_codes_and_signals_are_exact() {
                  Run();\n\
                  async code(script is string) is string {\n\
                      let exit = (await CommandCapture(InheritedCommand(program: Path(\"/bin/sh\"), arguments: [\"-c\", script]), 64).completion()).exit();\n\
-                     match exit.kind() { case ExitKind.exited { exit.code().string(); } case ExitKind.interrupted { \"INT\"; } case ExitKind.terminated { \"TERM\"; } case ExitKind.killed { \"KILL\"; } case ExitKind.other { \"other\"; } }\n\
+                     match exit::Status::kind { case ExitKind.exited { exit.code().string(); } case ExitKind.interrupted { \"INT\"; } case ExitKind.terminated { \"TERM\"; } case ExitKind.killed { \"KILL\"; } case ExitKind.other { \"other\"; } }\n\
                  }\n\
              }\n\
              async main() is int {\n\
