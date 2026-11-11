@@ -458,7 +458,7 @@ hidden object SettingEmission {
 test "a JSON document becomes settings: nested members extend the key, arrays are values" {
     let settings = JsonSettings(
         document: ParsedJson("{\"db\":{\"host\":\"h\",\"port\":5432},\"tags\":[\"a\",\"b\"],\"on\":true}").root(),
-        source: SettingSource(SettingSourceKind.document, "test.json")
+        source: SettingSource(kind: SettingSourceKind.document, name: "test.json")
     );
     test.is(settings.entry(SettingKey(["db", "host"])).values().item(0), "h");
     test.is(settings.entry(SettingKey(["db", "port"])).values().item(0), "5432");

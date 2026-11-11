@@ -280,7 +280,7 @@ object SyslogLogs does LogWriting, LogDraining, Closing {
         queue_options is LogQueueOptions,
         scope is Supervising<int>
     ) {
-        queue = QueuedLogs(origin: UdpSyslogDelivery(origin, options), options: queue_options, scope: scope);
+        queue = QueuedLogs(origin: UdpSyslogDelivery(origin: origin, options: options), options: queue_options, scope: scope);
     }
 
     SyslogLogs(
@@ -293,8 +293,8 @@ object SyslogLogs does LogWriting, LogDraining, Closing {
         scope is Supervising<int>
     ) {
         queue = QueuedLogs(
-            origin: UdpSyslogDelivery(origin, SyslogOptions(facility, host, application, 2048)),
-            options: LogQueueOptions(capacity, overflow),
+            origin: UdpSyslogDelivery(origin: origin, options: SyslogOptions(facility, host, application, 2048)),
+            options: LogQueueOptions(capacity: capacity, overflow: overflow),
             scope: scope
         );
     }

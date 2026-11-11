@@ -73,7 +73,7 @@ object NamedLogging does Logging {
     }
 
     child(segment is string) is NamedLogging {
-        NamedLogging(name: ChildLogName(name, segment).name(), destination: destination, clock: clock, fields: fields, process: process);
+        NamedLogging(name: ChildLogName(origin: name, segment: segment).name(), destination: destination, clock: clock, fields: fields, process: process);
     }
 
     name() is LogName {

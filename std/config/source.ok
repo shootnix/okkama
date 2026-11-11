@@ -254,7 +254,7 @@ object SettingOverlay does SettingReading {
         let slot = SettingOverlaySlot(entry: entry, identity: key, position: count);
         let update = if root.size() == 0 {
             confirm count < 4096 else throw SettingLimitExceeded.exceeded;
-            SettingOverlayUpdate(root: SettingOverlayNode(slot, [], []), inserted: true);
+            SettingOverlayUpdate(root: SettingOverlayNode(slot: slot, left: [], right: []), inserted: true);
         }
         else {
             root[0].updated(slot, count < 4096);
@@ -410,31 +410,31 @@ hidden object SettingOverlayNode {
         let order = value.identity().order(slot.identity());
         if order == Order.equal {
             let retained = SettingOverlaySlot(entry: value.entry(), identity: value.identity(), position: slot.position());
-            return SettingOverlayUpdate(root: SettingOverlayNode(retained, left, right), inserted: false);
+            return SettingOverlayUpdate(root: SettingOverlayNode(slot: retained, left: left, right: right), inserted: false);
         }
         if order == Order.less {
             let update = if left.size() == 0 {
                 confirm can_add else throw SettingLimitExceeded.exceeded;
-                SettingOverlayUpdate(root: SettingOverlayNode(value, [], []), inserted: true);
+                SettingOverlayUpdate(root: SettingOverlayNode(slot: value, left: [], right: []), inserted: true);
             }
             else {
                 left[0].updated(value, can_add);
             };
             SettingOverlayUpdate(
-                root: SettingOverlayBalance(slot, [update.node()], right).node(),
+                root: SettingOverlayBalance(slot: slot, left: [update.node()], right: right).node(),
                 inserted: update.added()
             );
         }
         else {
             let update = if right.size() == 0 {
                 confirm can_add else throw SettingLimitExceeded.exceeded;
-                SettingOverlayUpdate(root: SettingOverlayNode(value, [], []), inserted: true);
+                SettingOverlayUpdate(root: SettingOverlayNode(slot: value, left: [], right: []), inserted: true);
             }
             else {
                 right[0].updated(value, can_add);
             };
             SettingOverlayUpdate(
-                root: SettingOverlayBalance(slot, left, [update.node()]).node(),
+                root: SettingOverlayBalance(slot: slot, left: left, right: [update.node()]).node(),
                 inserted: update.added()
             );
         }
@@ -510,14 +510,14 @@ hidden object SettingOverlayBalance {
                 return SettingOverlayNode(
                     slot: pivot.slot(),
                     left: pivot.left(),
-                    right: [SettingOverlayNode(slot, pivot.right(), right)]
+                    right: [SettingOverlayNode(slot: slot, left: pivot.right(), right: right)]
                 );
             }
             let middle = pivot.right()[0];
             SettingOverlayNode(
                 slot: middle.slot(),
-                left: [SettingOverlayNode(pivot.slot(), pivot.left(), middle.left())],
-                right: [SettingOverlayNode(slot, middle.right(), right)]
+                left: [SettingOverlayNode(slot: pivot.slot(), left: pivot.left(), right: middle.left())],
+                right: [SettingOverlayNode(slot: slot, left: middle.right(), right: right)]
             );
         }
         else {
@@ -526,15 +526,15 @@ hidden object SettingOverlayBalance {
                 if self.height(pivot.right()) >= self.height(pivot.left()) {
                     return SettingOverlayNode(
                         slot: pivot.slot(),
-                        left: [SettingOverlayNode(slot, left, pivot.left())],
+                        left: [SettingOverlayNode(slot: slot, left: left, right: pivot.left())],
                         right: pivot.right()
                     );
                 }
                 let middle = pivot.left()[0];
                 SettingOverlayNode(
                     slot: middle.slot(),
-                    left: [SettingOverlayNode(slot, left, middle.left())],
-                    right: [SettingOverlayNode(pivot.slot(), middle.right(), pivot.right())]
+                    left: [SettingOverlayNode(slot: slot, left: left, right: middle.left())],
+                    right: [SettingOverlayNode(slot: pivot.slot(), left: middle.right(), right: pivot.right())]
                 );
             }
             else {

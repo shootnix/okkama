@@ -103,13 +103,13 @@ test "redaction replaces the named members and keeps the rest in order" {
     let redacted = RedactedLogs(origin: collected, names: ["pass", "token"], replacement: Json("***"));
     let time = Instant(Duration(value: 0.rat(), unit: DurationUnit.second));
     let fields = LogFields([JsonField("user", "ann"), JsonField("id", 7), JsonField("pass", "x")]);
-    redacted.write(LogRecord(occurred: time, level: LogLevel.info, message: "hi", context: LogContext(LogName(["app"]), fields, 1)));
+    redacted.write(LogRecord(occurred: time, level: LogLevel.info, message: "hi", context: LogContext(name: LogName(["app"]), fields: fields, process: 1)));
     redacted.write(
         LogRecord(
             occurred: time,
             level: LogLevel.info,
             message: "hi",
-            context: LogContext(LogName(["app"]), EmptyLogFields().fields(), 1)
+            context: LogContext(name: LogName(["app"]), fields: EmptyLogFields().fields(), process: 1)
         )
     );
     let texts is @string = collected.records().map() -> record {

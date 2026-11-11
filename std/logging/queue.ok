@@ -263,7 +263,7 @@ object QueuedLogs does LogWriting, LogDraining, Closing {
         overflow is LogOverflow,
         scope is Supervising<int>
     ) {
-        state = LogQueueState(origin: SynchronousLogDelivery(origin), options: LogQueueOptions(capacity, overflow));
+        state = LogQueueState(origin: SynchronousLogDelivery(origin), options: LogQueueOptions(capacity: capacity, overflow: overflow));
         self.scope = scope;
     }
 

@@ -228,7 +228,7 @@ object Row does RowValues {
                 native_db.db_int_value(cell);
             }
             else {
-                DbColumnReader(name, cell).int();
+                DbColumnReader(name: name, state: cell).int();
             }
         }
     }
@@ -270,7 +270,7 @@ object Row does RowValues {
                 native_db.db_text_value(cell);
             }
             else {
-                DbColumnReader(name, cell).text();
+                DbColumnReader(name: name, state: cell).text();
             }
         }
     }
@@ -316,7 +316,7 @@ object Row does RowValues {
             DbColumnReader(name: name, page: page, at: base + at);
         }
         else {
-            DbColumnReader(name, values[at]);
+            DbColumnReader(name: name, state: values[at]);
         }
     }
 
@@ -334,7 +334,7 @@ object Row does RowValues {
                 Presence.none;
             }
             else {
-                Presence.some(DbColumnReader(name, values[at]));
+                Presence.some(DbColumnReader(name: name, state: values[at]));
             }
         };
         DbPresenceReader(found);

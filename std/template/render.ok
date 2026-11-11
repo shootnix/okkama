@@ -50,7 +50,7 @@ test "streamed template command repeats and borrows destination" {
 test "empty streamed template has no implicit newline" {
     let out = ByteBuffer();
     TemplateOutput(
-        origin: TextTemplate("", 0, 0, 0),
+        origin: TextTemplate(origin: "", maximum_input: 0, maximum_nodes: 0, maximum_output: 0),
         data: TemplateBindings([]),
         destination: Utf8Output(origin: out.writing())
     ).write();

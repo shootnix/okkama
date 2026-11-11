@@ -891,7 +891,7 @@ object NumberPrinting {
 
     hidden standard(value is NumberMagnitude, pattern is NumberPattern) is NumberRendered {
         let rounded = NumberQuantized(origin: value, precision: format.precision());
-        NumberRendered(text: NumberMantissa(rounded, data, format, pattern, true).string(), number: rounded);
+        NumberRendered(text: NumberMantissa(origin: rounded, data: data, format: format, pattern: pattern, grouped: true).string(), number: rounded);
     }
 
     hidden exponential(engineering is bool) is NumberRendered {
@@ -1087,7 +1087,7 @@ object LocalizedDecimal {
 
     string() is string {
         NumberPrinting(
-            origin: DecimalNumberMagnitude(origin, 0, false).magnitude(),
+            origin: DecimalNumberMagnitude(origin: origin, shift: 0, negative_zero: false).magnitude(),
             locale: locale,
             format: format,
             percent: false,
@@ -1144,7 +1144,7 @@ object LocalizedFloat {
     string() is string {
         let source = ShortestFloat(origin);
         NumberPrinting(
-            origin: DecimalNumberMagnitude(source.decimal(), 0, source.negative() && origin == 0.0).magnitude(),
+            origin: DecimalNumberMagnitude(origin: source.decimal(), shift: 0, negative_zero: source.negative() && origin == 0.0).magnitude(),
             locale: locale,
             format: format,
             percent: false,
@@ -1175,14 +1175,14 @@ object LocalizedPercent {
         let per_mille = scale == PercentScale.per_mille;
         NumberPrinting(
             origin: DecimalNumberMagnitude(
-                origin,
-                if per_mille {
+                origin: origin,
+                shift: if per_mille {
                     3;
                 }
                 else {
                     2;
                 },
-                false
+                negative_zero: false
             ).magnitude(),
             locale: locale,
             format: format,
@@ -1520,7 +1520,7 @@ object LocalizedIntegerFromString {
             notation: NumberNotation.standard,
             grouping: grouping,
             sign: NumberSign.automatic,
-            precision: NumberPrecision(1, 0, 0, Rounding.toward_zero)
+            precision: NumberPrecision(minimum_integer: 1, minimum_fraction: 0, maximum_fraction: 0, rounding: Rounding.toward_zero)
         );
         let value = NumberReading(origin: origin, locale: locale, format: format).decimal();
         (value.coefficient() * BigInt("10").power(value.exponent(), 8192));
@@ -1533,10 +1533,10 @@ test "exact decimal number rounds before its text is localized" {
             origin: Decimal("1234.567"),
             locale: Locale("en"),
             format: NumberFormat(
-                NumberNotation.standard,
-                NumberGrouping.automatic,
-                NumberSign.automatic,
-                NumberPrecision(1, 2, 2, Rounding.half_even)
+                notation: NumberNotation.standard,
+                grouping: NumberGrouping.automatic,
+                sign: NumberSign.automatic,
+                precision: NumberPrecision(1, 2, 2, Rounding.half_even)
             )
         ).string(),
         "1,234.57"

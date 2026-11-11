@@ -27,16 +27,16 @@ async main() is int {
     await add.execution([Param("quotes"), Param("it's \"fine\"; DROP TABLE notes; --"), Param(0)]);
     add.close();
 
-    let notes = await Query(db, Statement("SELECT id, title, body, pinned FROM notes ORDER BY id")).all(100);
+    let notes = await Query(origin: db, statement: Statement("SELECT id, title, body, pinned FROM notes ORDER BY id")).all(100);
     for notes -> note {
         let body = note.maybe("body").text() else "(empty)";
         let mark = if note.flag("pinned") { "*"; } else { " "; };
         out.writeln(mark + " " + note.int("id").string() + ". " + note.text("title") + ": " + body);
     }
 
-    let found = await Query(db, Statement(text: "SELECT body FROM notes WHERE title = ?", values: [Param("quotes")])).one();
+    let found = await Query(origin: db, statement: Statement(text: "SELECT body FROM notes WHERE title = ?", values: [Param("quotes")])).one();
     out.writeln("quotes: " + found.text("body"));
-    let missing = await Query(db, Statement(text: "SELECT id FROM notes WHERE title = ?", values: [Param("todo")])).maybe();
+    let missing = await Query(origin: db, statement: Statement(text: "SELECT id FROM notes WHERE title = ?", values: [Param("todo")])).maybe();
     out.writeln("todo exists: " + (missing != Maybe<Row>.none).string());
 
     // A failed step undoes the whole transaction.
@@ -50,7 +50,7 @@ async main() is int {
         await change.rollback();
         out.writeln("rolled back: " + (kind == DbFailureKind.constraint).string() + " constraint, code " + code);
     }
-    let pinned = await Query(db, Statement("SELECT count(*) AS n FROM notes WHERE pinned = 1")).one();
+    let pinned = await Query(origin: db, statement: Statement("SELECT count(*) AS n FROM notes WHERE pinned = 1")).one();
     out.writeln("pinned notes: " + pinned.int("n").string());
     0;
 }

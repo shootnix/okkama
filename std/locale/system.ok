@@ -244,6 +244,6 @@ enum PreferredLocaleUnavailable is Error = (because(reason is string));
 
 test "POSIX language preferences normalize without changing environment" {
     let env = Environment(["LANG": "en_US.UTF-8"]);
-    test.is(PreferredLocales(origin: env, preferences: FixedLanguagePreferences([], false)).first().string(), "en-US");
+    test.is(PreferredLocales(origin: env, preferences: FixedLanguagePreferences(origin: [], platform_owned: false)).first().string(), "en-US");
     test.is(env.variable("LANG"), "en_US.UTF-8");
 }
