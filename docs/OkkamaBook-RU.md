@@ -4072,6 +4072,31 @@ SqliteMemory().connection()` открывает базу. `Statement(text:, valu
 
 `http/client` отправляет запросы через `HttpClient()`. По умолчанию он берёт системные DNS и доверенные корни, ходит только на публичные адреса и говорит по HTTP/1.1. Всё остальное задаётся именованными аргументами: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)`, `cookies: MemoryCookieJar()`. Для каждого REST-метода есть шорткат: `get(url)`, `head`, `options`, `delete`, а также `post(url:, body:)`, `put`, `patch` с `Content`, например `JsonBody(json)`. Любой другой запрос пишется как `client.response(Request(url:, method:, headers:, body:))`. Ответ показывает голову через cap `Head` (`page::Head::status`, `::class`, `::headers`) и читает тело через `await page.text()`, `bytes()`, `json()` или `reading()`. `Status` и `Method` — enum'ы: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` и `MethodName` переводят их в числа и токены протокола и обратно. Каждая задача показана программой в `examples/http/client/`.
 
+`http/server` обслуживает HTTP/1.1 или HTTP/2 (prior knowledge) на
+слушателе. Объект `Handling` отвечает на `handling(request, context)` через
+`ResponseHandling(Response(status:, headers:, body:))` или через
+`WebSocketHandlingResult(origin: WebSocketUpgrade(…), application:)`, чтобы
+перейти на WebSocket. `HttpServer(origin: listener, handling:, policy:
+ServerPolicy(), clock:)` обслуживает через `serve()`, а `ServerDrain(server:,
+limit:, clock:)` перестаёт принимать соединения, даёт закончить начатые
+запросы и закрывает сервер. WebSocket-серверу нужен ещё `destination:`, его
+собственный URL, чтобы сверять с ним `Origin`.
+
+`web` строит маршруты поверх: `WebRoutes(routings: [Scope(prefix: "/api",
+routings: [Get(path: "/notes/:id", endpoint: notes.one), Post(…)])],
+fallback:)`. Endpoint получает `WebRequest` с `path("id")`,
+`query("limit", "10")`, `await json(limit)` и `await text(limit)` и отвечает
+`Text(status:, text:)` или `JsonReply(status:, value:)`.
+`WebApplication(routes).listen(address, port)` его обслуживает.
+
+`Caching(origin: client, cache: MemoryHttpCache(clock:, maximum:), clock:)`
+отвечает свежими ответами из памяти, а `Proxied(proxy: ProxyPolicy(…), …)`
+шлёт запросы через прямой прокси. Оба — `Exchanging`, как `HttpClient`.
+`WebSocketConnecting(url:, …).connection()` открывает WebSocket-клиента, а
+`mime` разбирает и пишет media types, multipart-тела и encoded words. В
+`examples/web/` и `examples/http/websocket/` есть JSON-сервис и
+WebSocket-эхо.
+
 `strings/parse` читает текст как тип, который у него просят: `Number("42").int()`,
 `Number("ff").int(16)`, `Number("6/8").rat()`, `Number("3.0").float()`,
 `Number("255").byte()` и `Truth("true").bool()`. Пробелы не обрезаются, ведущий
@@ -4138,71 +4163,6 @@ URL-safe), Base32, Base85, hex, quoted-printable, ASCII и Latin-1 устрое�
 `Normalized(origin:, form:)` и `UnicodeCharacter(c).name()` следуют
 Unicode 16.0.0.
 
-Следующие исторический перечень и примеры относятся к **прежней `stdlib/`**.
-Они исполняются с этой библиотекой, но не определяют API и готовность `std/`.
-Корень библиотеки следует выбирать явно; смешивать их модули нельзя.
-
-
-Stdlib намеренно узка, пока язык стабилизируется:
-
-- `http/headers` — неизменяемые case-insensitive `Headers`, композиция
-  `ExtendedHeaders`/`FilteredHeaders`, значения `Header`, отвергающие
-  CRLF-инъекцию;
-- `http/handler` — роль `Handler` плюс диспетчеризация `HandlerChain` по
-  принципу chain-of-responsibility, где отказ выражается через throw
-  `HandlerFailure`, а не через возврат значения;
-- `http/router` — `Router`/`GetRoute`/и т.д. диспетчеризуют по методу и
-  `PathPattern`, сегменты `:name` извлекаются как `@PathParameter` (не
-  нативная map — Okkama не может построить map с количеством элементов,
-  известным только во время выполнения, из чистого кода);
-- `http/server` — последовательный `Server`, принимающий по одному
-  соединению за раз через обычный TCP, разбирающий запросы и пишущий
-  ответы тем же побайтовым способом, что и `http/client`, только наоборот;
-  `ServerPolicy.tls()` хранится, но пока не подключён — у `crypto/tls`
-  сегодня вообще нет server-side обёртки, только клиентская сторона;
-- `runtime/*` — модули нативного субстрата, состоящие только из объявлений
-  (глава 27): `runtime/time`, `runtime/fs`, `runtime/process`,
-  `runtime/net`, `runtime/poll`, `runtime/environment`, `runtime/system`,
-  `runtime/debug`, `runtime/regex`, `runtime/stdio`, `runtime/memory`, `runtime/format`,
-  `runtime/crypto`, `runtime/tls`, `runtime/utf8`.
-
-`http/headers` — неизменяемая, case-insensitive коллекция заголовков,
-никогда не теряющая оригинальное написание, плюс небольшая пара
-add/remove для композиции:
-
-```okkama
-import "http/headers" take HeaderName, Header, Headers, ExtendedHeaders, FilteredHeaders;
-
-main() is int {
-    let base is Headers = Headers([
-        Header(HeaderName("Content-Type"), "text/html"),
-        Header(HeaderName("X-Request-Id"), "abc123"),
-    ]);
-
-    let with_auth is Headers = headers ExtendedHeaders(
-        base,
-        Header(HeaderName("Authorization"), "Bearer token"),
-    );
-    let redacted is Headers = headers FilteredHeaders(with_auth, HeaderName("authorization"));
-
-    redacted.has(HeaderName("Authorization")); // false — отфильтровано
-    redacted.first(HeaderName("content-type")); // "text/html" — не тронуто
-    return 0;
-}
-```
-
-Поиск (`has`/`first`/`all`) сравнивает `HeaderName` case-insensitively, но
-`entries()` всегда сообщает оригинальное написание каждого заголовка:
-`Headers` никогда не сравнивает два `HeaderName` через `==` напрямую
-(equality объектов по умолчанию в Okkama — глубокая по всем полям, так что
-два имени, различающиеся только регистром, не будут `==`) — вместо этого
-обе стороны приводятся к нижнему регистру. Конструктор `Header` обрезает
-пробелы вокруг значения и отвергает оставшиеся `\r`/`\n` как
-`InvalidHeaderValue`, закрывая классическую HTTP header/response-splitting
-инъекцию. `ExtendedHeaders` добавляет один заголовок в конец;
-`FilteredHeaders` удаляет все заголовки с данным именем — оба возвращают
-новый `Headers` и никогда не меняют исходный.
-
 ### URL и cookie policy в активной stdlib v4
 
 Текущая std использует `url/value`, а не исторический `net/url` из
@@ -4234,8 +4194,8 @@ import "io/stdout" take Stdout;
 main() is int {
     let jar=MemoryCookieJar(SystemClock());defer jar.close();
     let origin=ParsedUrl("https://example.com/a/b").parts();
-    let context=CookieContext(origin,true,Method("GET"));
-    jar.store(origin,Headers([Header(HeaderName("Set-Cookie"),"session=opaque; Secure; HttpOnly; SameSite=Lax; Path=/")]),context);
+    let context=CookieContext(site: origin,top_level: true,method: Method.get);
+    jar.store(origin,Headers([Header(name: HeaderName("Set-Cookie"),value: "session=opaque; Secure; HttpOnly; SameSite=Lax; Path=/")]),context);
     let cookies=jar.cookies(origin,context);confirm cookies.size()==1;
     Stdout().writeln(cookies.item(0).diagnostic());
     0;
