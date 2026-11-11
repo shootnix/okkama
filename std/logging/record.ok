@@ -65,14 +65,6 @@ object LogRecord {
         occurred;
     }
 
-    level() is LogLevel {
-        level;
-    }
-
-    message() is string {
-        message;
-    }
-
     context() is LogContext {
         context;
     }
@@ -85,6 +77,16 @@ object LogRecord {
         confirm self.has_cause() else throw MissingLogCause.missing;
         causes[0];
     }
+
+    cap Entry {
+        level is LogLevel {
+            level;
+        }
+
+        message is string {
+            message;
+        }
+    }
 }
 
 enum MissingLogCause is Error = (missing);
@@ -94,8 +96,8 @@ enum InvalidLogProcess is Error = (invalid);
 test "a record keeps its moment, level, message, context and optional cause" {
     let context = LogContext(name: LogName(["app"]), fields: LogFields([JsonField("id", 7)]), process: 42);
     let record = LogRecord(occurred: Instant(Duration(value: 0.rat(), unit: DurationUnit.second)), level: LogLevel.warning, message: "slow", context: context);
-    test.ok(record.level() == LogLevel.warning);
-    test.is(record.message(), "slow");
+    test.ok(record::Entry::level == LogLevel.warning);
+    test.is(record::Entry::message, "slow");
     test.is(record.context().process(), 42);
     test.is(record.context().name().string(), "app");
     test.ok(!record.has_cause());

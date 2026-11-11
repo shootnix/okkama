@@ -46,14 +46,6 @@ object PoolOptions {
         acquisition = acquisition_timeout;
     }
 
-    minimum() is int {
-        minimum;
-    }
-
-    maximum() is int {
-        maximum;
-    }
-
     idle_timeout() is Duration {
         idle;
     }
@@ -64,6 +56,16 @@ object PoolOptions {
 
     acquisition_timeout() is Duration {
         acquisition;
+    }
+
+    cap Size {
+        minimum is int {
+            minimum;
+        }
+
+        maximum is int {
+            maximum;
+        }
     }
 }
 
@@ -77,20 +79,22 @@ object PoolSnapshot {
         self.capacity = capacity;
     }
 
-    acquisitions() is int {
-        acquisitions;
-    }
+    cap Counts {
+        acquisitions is int {
+            acquisitions;
+        }
 
-    idle_connections() is int {
-        idle;
-    }
+        idle_connections is int {
+            idle;
+        }
 
-    waiting_requests() is int {
-        waiting;
-    }
+        waiting_requests is int {
+            waiting;
+        }
 
-    capacity() is int {
-        capacity;
+        capacity is int {
+            capacity;
+        }
     }
 }
 
@@ -261,7 +265,7 @@ object DbPoolState {
         self.options = options;
         self.clock = clock;
         self.health = health;
-        capacity = Semaphore(options.maximum());
+        capacity = Semaphore(options::Size::maximum);
         stopped = Event();
         acquisition_lock = Lock();
         let no_failure is @Error = [];
@@ -283,7 +287,7 @@ object DbPoolState {
     }
 
     snapshot() is PoolSnapshot {
-        PoolSnapshot(acquisitions: leases.value().size(), idle: idle.value().size(), waiting: waiting.value(), capacity: options.maximum());
+        PoolSnapshot(acquisitions: leases.value().size(), idle: idle.value().size(), waiting: waiting.value(), capacity: options::Size::maximum);
     }
 
     async stopping() is PooledConnection {
@@ -403,7 +407,7 @@ object DbPoolState {
 
     async warm() is bool {
         loop {
-            if records.value().size() >= options.minimum() {
+            if records.value().size() >= options::Size::minimum {
                 last;
             }
             let id = serial.value() + 1;

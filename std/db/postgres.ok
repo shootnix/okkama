@@ -93,10 +93,6 @@ object PostgresCredentials {
         self.password = [password];
     }
 
-    user() is string {
-        user;
-    }
-
     has_password() is bool {
         password.size() == 1;
     }
@@ -110,6 +106,12 @@ object PostgresCredentials {
                 "server requested a password but none was supplied"
             );
         password[0];
+    }
+
+    cap Credentials {
+        user is string {
+            user;
+        }
     }
 }
 
@@ -146,24 +148,26 @@ object PostgresOptions {
         self.batch = batch;
     }
 
-    database() is string {
-        database;
-    }
+    cap Settings {
+        database is string {
+            database;
+        }
 
-    application() is string {
-        application;
-    }
+        application is string {
+            application;
+        }
 
-    md5() is bool {
-        md5;
-    }
+        md5 is bool {
+            md5;
+        }
 
-    cleartext() is bool {
-        cleartext;
-    }
+        cleartext is bool {
+            cleartext;
+        }
 
-    batch() is int {
-        batch;
+        batch is int {
+            batch;
+        }
     }
 }
 
@@ -360,7 +364,7 @@ object PostgresDatabase {
         defer anchor.close();
         let input = PgInput(channel.input());
         let output = PgOutput(channel.output());
-        await output.send(PgStartupMessage(user: credentials.user(), options: options).bytes());
+        await output.send(PgStartupMessage(user: credentials::Credentials::user, options: options).bytes());
         await PgAuthentication(input: input, output: output, credentials: credentials, options: options, entropy: entropy).completed();
         let version = Atomic("");
         let status = Atomic("");
@@ -399,7 +403,7 @@ object PostgresDatabase {
                 transport: channel,
                 input: input,
                 output: output,
-                batch: options.batch(),
+                batch: options::Settings::batch,
                 version: version.value(),
                 status: status.value(),
                 process: process.value(),
@@ -451,9 +455,9 @@ hidden object PgStartupMessage {
             "user",
             user,
             "database",
-            options.database(),
+            options::Settings::database,
             "application_name",
-            options.application(),
+            options::Settings::application,
             "client_encoding",
             "UTF8",
             "DateStyle",
@@ -502,16 +506,16 @@ hidden object PgAuthentication {
             confirm !scram.value()
                 else throw PgWireFailure.because("authentication continued after SCRAM completed");
             if code == 3 {
-                confirm options.cleartext()
+                confirm options::Settings::cleartext
                     else throw PgDisabledMethod("cleartext password").failure();
                 await output.send(
                     PgFrame(kind: "p", body: @byte(credentials.password().export_bytes()..., 0.byte())).bytes()
                 );
             }
             if code == 5 {
-                confirm options.md5() else throw PgDisabledMethod("MD5 password").failure();
+                confirm options::Settings::md5 else throw PgDisabledMethod("MD5 password").failure();
                 let salt = fields.take(4);
-                let response = Md5Password(user: credentials.user(), password: credentials.password(), salt: salt).string();
+                let response = Md5Password(user: credentials::Credentials::user, password: credentials.password(), salt: salt).string();
                 await output.send(PgFrame(kind: "p", body: PgCString(response).bytes()).bytes());
             }
             if code == 10 {
@@ -1421,7 +1425,7 @@ hidden object PgBegin {
     }
 
     sql() is string {
-        let level = match options.isolation() {
+        let level = match options::Mode::isolation {
             case Isolation.read_uncommitted {
                 " ISOLATION LEVEL READ UNCOMMITTED";
             }
@@ -1438,12 +1442,12 @@ hidden object PgBegin {
                 "";
             }
         };
-        "BEGIN" + level + if options.read_only() {
+        "BEGIN" + level + if options::Mode::read_only {
             " READ ONLY";
         }
         else {
             " READ WRITE";
-        } + if options.deferrable() {
+        } + if options::Mode::deferrable {
             " DEFERRABLE";
         }
         else {

@@ -66,24 +66,26 @@ object SqliteOptions {
         self.journal = journal;
     }
 
-    read_only() is bool {
-        read_only;
-    }
-
-    creation() is bool {
-        create;
-    }
-
-    foreign_keys() is bool {
-        foreign_keys;
-    }
-
     busy_timeout() is Duration {
         busy;
     }
 
-    journal() is SqliteJournal {
-        journal;
+    cap Settings {
+        read_only is bool {
+            read_only;
+        }
+
+        creation is bool {
+            create;
+        }
+
+        foreign_keys is bool {
+            foreign_keys;
+        }
+
+        journal is SqliteJournal {
+            journal;
+        }
     }
 }
 
@@ -168,8 +170,8 @@ object SqliteOpening {
     }
 
     async connection() is SqliteConnection {
-        confirm !(memory && options.read_only()) else throw InvalidSqliteOptions.invalid;
-        let journal = match options.journal() {
+        confirm !(memory && options::Settings::read_only) else throw InvalidSqliteOptions.invalid;
+        let journal = match options::Settings::journal {
             case SqliteJournal.default_mode {
                 if memory {
                     "memory";
@@ -194,9 +196,9 @@ object SqliteOpening {
         let state = try {
             sqlite.sqlite_create(
                 path,
-                options.read_only(),
-                options.creation(),
-                options.foreign_keys(),
+                options::Settings::read_only,
+                options::Settings::creation,
+                options::Settings::foreign_keys,
                 (options.busy_timeout()::Span::seconds * 1000.rat()).int(),
                 journal,
                 memory
@@ -221,7 +223,7 @@ object SqliteOpening {
         };
         let frame = SqliteFrame(state: reply, operation: DbOperation.connecting);
         defer frame.close();
-        let connection = SqliteConnection(SqliteSession(state: state, read_only: options.read_only()));
+        let connection = SqliteConnection(SqliteSession(state: state, read_only: options::Settings::read_only));
         published.set();
         connection;
     }
@@ -721,10 +723,10 @@ object SqliteSession does Closing {
 
     async begin(options is TransactionOptions, mode is SqliteTransactionMode) is SqliteTransaction {
         confirm !self.closed() else throw DbClosed.closed;
-        confirm (options.isolation() == Isolation.default_level
-            || options.isolation() == Isolation.serializable)
-            && !options.deferrable()
-            && (!options.read_only() || read_only)
+        confirm (options::Mode::isolation == Isolation.default_level
+            || options::Mode::isolation == Isolation.serializable)
+            && !options::Mode::deferrable
+            && (!options::Mode::read_only || read_only)
             else throw DbFailure.detailed(
                 DbFailureKind.unsupported,
                 DbOperation.executing,
@@ -1080,13 +1082,13 @@ hidden object SqliteBindings {
     SqliteBindings(values is Sequencing<DbValue>) {
         let limits = DbLimits();
         let count = values.size();
-        confirm count >= 0 && count <= limits.values()
+        confirm count >= 0 && count <= limits::Limits::values
             else throw DbBoundaryLimit.kind("value count");
         let used = Atomic(0);
         let cells is @native_db.DbCellState = (0..count).map() -> index {
             let value = ObservedDbValue(values.item(index));
             let width = value.width();
-            confirm width <= limits.bytes() - used.value()
+            confirm width <= limits::Limits::bytes - used.value()
                 else throw DbBoundaryLimit.kind("value bytes");
             used.replace(used.value() + width);
             value.state();
@@ -1300,7 +1302,7 @@ object SqliteFrame {
             empty;
         }
         else {
-            confirm sqlite.sqlite_reply_row_bytes(state) <= DbLimits().bytes()
+            confirm sqlite.sqlite_reply_row_bytes(state) <= DbLimits()::Limits::bytes
                 else throw DbBoundaryLimit.kind("value bytes");
             let page = DbPage(
                 width: schema.size(),
@@ -1669,7 +1671,7 @@ hidden object SqliteFinishCleanup {
 
 test "SQLite defaults are explicit and foreign keys remain enabled" {
     let options = SqliteOptions();
-    test.ok(!options.read_only() && options.creation() && options.foreign_keys());
+    test.ok(!options::Settings::read_only && options::Settings::creation && options::Settings::foreign_keys);
     test.ok(options.busy_timeout()::Span::seconds == 0.rat());
 }
 

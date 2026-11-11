@@ -90,10 +90,10 @@ hidden object ChangedLogRecord {
     record() is LogRecord {
         let context = LogContext(name: origin.context().name(), fields: fields, process: origin.context().process());
         if causes.size() == 0 {
-            LogRecord(occurred: origin.time(), level: origin.level(), message: origin.message(), context: context);
+            LogRecord(occurred: origin.time(), level: origin::Entry::level, message: origin::Entry::message, context: context);
         }
         else {
-            LogRecord(occurred: origin.time(), level: origin.level(), message: origin.message(), context: context, cause: causes[0]);
+            LogRecord(occurred: origin.time(), level: origin::Entry::level, message: origin::Entry::message, context: context, cause: causes[0]);
         }
     }
 }

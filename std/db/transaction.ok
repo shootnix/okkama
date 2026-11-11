@@ -21,16 +21,18 @@ object TransactionOptions {
         self.deferrable = deferrable;
     }
 
-    isolation() is Isolation {
-        isolation;
-    }
+    cap Mode {
+        isolation is Isolation {
+            isolation;
+        }
 
-    read_only() is bool {
-        read_only;
-    }
+        read_only is bool {
+            read_only;
+        }
 
-    deferrable() is bool {
-        deferrable;
+        deferrable is bool {
+            deferrable;
+        }
     }
 }
 

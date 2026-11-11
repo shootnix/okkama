@@ -25,22 +25,6 @@ object CollationOptions {
         self.normalization = normalization;
     }
 
-    strength() is CollationStrength {
-        strength;
-    }
-
-    case_first() is CollationCaseFirst {
-        case_first;
-    }
-
-    numeric() is bool {
-        numeric;
-    }
-
-    normalization() is bool {
-        normalization;
-    }
-
     strength_code() is int {
         match strength {
             case CollationStrength.primary {
@@ -72,6 +56,24 @@ object CollationOptions {
             else {
                 -1;
             }
+        }
+    }
+
+    cap Settings {
+        strength is CollationStrength {
+            strength;
+        }
+
+        case_first is CollationCaseFirst {
+            case_first;
+        }
+
+        numeric is bool {
+            numeric;
+        }
+
+        normalization is bool {
+            normalization;
         }
     }
 }
@@ -133,8 +135,8 @@ object CollatedString does Comparing<CollatedString> {
                 collation,
                 options.strength_code(),
                 options.case_first_code(),
-                options.numeric(),
-                options.normalization()
+                options::Settings::numeric,
+                options::Settings::normalization
             );
         }
         catch error is NativeFailure {
@@ -168,10 +170,10 @@ object CollatedString does Comparing<CollatedString> {
     order(other is CollatedString) is Order {
         let policy = other.options();
         confirm locale.string() == other.locale().string()
-            && options.strength() == policy.strength()
-            && options.case_first() == policy.case_first()
-            && options.numeric() == policy.numeric()
-            && options.normalization() == policy.normalization()
+            && options::Settings::strength == policy::Settings::strength
+            && options::Settings::case_first == policy::Settings::case_first
+            && options::Settings::numeric == policy::Settings::numeric
+            && options::Settings::normalization == policy::Settings::normalization
             && self.data_version().string() == other.data_version().string()
             else throw IncompatibleCollation.incompatible;
         let right = other.key();

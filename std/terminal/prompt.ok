@@ -37,7 +37,7 @@ object PromptedSecret {
 
     async string() is string {
         confirm limit > 0 && limit <= 1048576 else throw TerminalInputLimit.exceeded;
-        confirm origin.controlling() && origin.capabilities().input_interactive()
+        confirm origin.controlling() && origin.capabilities()::Support::input_interactive
             else throw TerminalUnavailable.because("secret input requires a controlling terminal");
         let complete = Event();
         let cleanup = SecretPromptCleanup(origin: origin, complete: complete);

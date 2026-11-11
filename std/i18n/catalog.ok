@@ -29,24 +29,12 @@ object MessageKey does Comparing<MessageKey> {
         present = has_context;
     }
 
-    context() is string {
-        context;
-    }
-
-    identity() is string {
-        identity;
-    }
-
-    has_context() is bool {
-        present;
-    }
-
     order(other is MessageKey) is Order {
-        let order = context.order(other.context());
+        let order = context.order(other::Key::context);
         if order != Order.equal {
             return order;
         }
-        if present != other.has_context() {
+        if present != other::Key::has_context {
             return if present {
                 Order.greater;
             }
@@ -54,7 +42,21 @@ object MessageKey does Comparing<MessageKey> {
                 Order.less;
             };
         }
-        identity.order(other.identity());
+        identity.order(other::Key::identity);
+    }
+
+    cap Key {
+        context is string {
+            context;
+        }
+
+        identity is string {
+            identity;
+        }
+
+        has_context is bool {
+            present;
+        }
     }
 }
 
@@ -79,12 +81,14 @@ object PluralForm {
         self.text = text;
     }
 
-    category() is PluralCategory {
-        category;
-    }
+    cap Form {
+        category is PluralCategory {
+            category;
+        }
 
-    text() is string {
-        text;
+        text is string {
+            text;
+        }
     }
 }
 
@@ -167,16 +171,16 @@ hidden object PluralFormSnapshot {
             else throw InvalidMessageCatalog.because("expected 1..6 plural forms");
         let values is @PluralForm = (0..size).map() -> index {
             let form = source.item(index);
-            PluralForm(category: form.category(), text: form.text());
+            PluralForm(category: form::Form::category, text: form::Form::text);
         };
         for (0..size) -> index {
             for (0..index) -> prior {
-                confirm values[index].category() != values[prior].category()
+                confirm values[index]::Form::category != values[prior]::Form::category
                     else throw InvalidMessageCatalog.because("duplicate plural category");
             }
         }
         confirm values.reduce(false) -> found, form {
-            found || form.category() == PluralCategory.other;
+            found || form::Form::category == PluralCategory.other;
         }
             else throw InvalidMessageCatalog.because("plural message requires other");
         self.values = values;
@@ -203,7 +207,7 @@ object MessageCatalog does Translating {
         let snapshot is @MessageEntry = (0..size).map() -> index {
             let entry = entries.item(index);
             let key = entry.key();
-            let copied = MessageKey(context: key.context(), identity: key.identity(), has_context: key.has_context());
+            let copied = MessageKey(context: key::Key::context, identity: key::Key::identity, has_context: key::Key::has_context);
             if entry.plural() {
                 PluralMessage(key: copied, forms: entry.forms(), kind: entry.kind());
             }
@@ -227,7 +231,7 @@ object MessageCatalog does Translating {
             total + (if entry.plural() {
                 let forms = entry.forms();
                 (0..forms.size()).reduce(0) -> sum, index {
-                    sum + forms.item(index).text().length();
+                    sum + forms.item(index)::Form::text.length();
                 };
             }
             else {
@@ -258,14 +262,14 @@ object MessageCatalog does Translating {
         let category = PluralCategoryOf(origin: count, locale: locale, kind: entry.kind()).category();
         for (0..forms.size()) -> index {
             let form = forms.item(index);
-            if form.category() == category {
-                return form.text();
+            if form::Form::category == category {
+                return form::Form::text;
             }
         }
         for (0..forms.size()) -> index {
             let form = forms.item(index);
-            if form.category() == PluralCategory.other {
-                return form.text();
+            if form::Form::category == PluralCategory.other {
+                return form::Form::text;
             }
         }
         throw InvalidMessageCatalog.because("missing other after snapshot");
@@ -273,7 +277,7 @@ object MessageCatalog does Translating {
 
     hidden entry(key is MessageKey) is MessageEntry {
         let index = self.index(key, 0, entries.size());
-        confirm index >= 0 else throw MissingMessage.key(key.context(), key.identity());
+        confirm index >= 0 else throw MissingMessage.key(key::Key::context, key::Key::identity);
         entries.item(index);
     }
 

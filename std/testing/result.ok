@@ -18,16 +18,18 @@ object TestPosition {
         self.column = column;
     }
 
-    source() is string {
-        source;
-    }
+    cap Position {
+        source is string {
+            source;
+        }
 
-    line() is int {
-        line;
-    }
+        line is int {
+            line;
+        }
 
-    column() is int {
-        column;
+        column is int {
+            column;
+        }
     }
 }
 
@@ -76,17 +78,13 @@ object TestFailure {
             0;
         }
         else {
-            reasons[0].depth() + 1;
+            reasons[0]::Failure::depth + 1;
         };
         confirm depth < 32 else throw InvalidTestResult.because("failure cause depth");
         self.message = message;
         position = places;
         self.causes = reasons;
         self.depth = depth;
-    }
-
-    message() is string {
-        message;
     }
 
     located() is bool {
@@ -102,8 +100,14 @@ object TestFailure {
         causes;
     }
 
-    depth() is int {
-        depth;
+    cap Failure {
+        message is string {
+            message;
+        }
+
+        depth is int {
+            depth;
+        }
     }
 }
 
@@ -116,7 +120,7 @@ object TestFailureText {
 
     string() is string {
         let causes = origin.causes();
-        origin.message() + (if causes.size() == 1 {
+        origin::Failure::message + (if causes.size() == 1 {
             "\ncaused by: " + TestFailureText(causes.item(0)).string();
         }
         else {
@@ -137,16 +141,18 @@ object TestOutput {
         self.truncated = truncated;
     }
 
-    output() is @byte {
-        output;
-    }
+    cap Captured {
+        output is @byte {
+            output;
+        }
 
-    errors() is @byte {
-        errors;
-    }
+        errors is @byte {
+            errors;
+        }
 
-    truncated() is bool {
-        truncated;
+        truncated is bool {
+            truncated;
+        }
     }
 }
 
@@ -209,18 +215,6 @@ object TestResult {
         self.skip_reason = skip_reason;
     }
 
-    skip_reason() is string {
-        skip_reason;
-    }
-
-    name() is string {
-        name;
-    }
-
-    status() is TestStatus {
-        status;
-    }
-
     duration() is Duration {
         duration;
     }
@@ -231,6 +225,20 @@ object TestResult {
 
     output() is TestOutput {
         output;
+    }
+
+    cap Outcome {
+        name is string {
+            name;
+        }
+
+        status is TestStatus {
+            status;
+        }
+
+        skip_reason is string {
+            skip_reason;
+        }
     }
 }
 
@@ -245,20 +253,22 @@ object TestCounts {
         self.skips = skips;
     }
 
-    passes() is int {
-        passes;
-    }
-
-    failures() is int {
-        failures;
-    }
-
-    skips() is int {
-        skips;
-    }
-
     total() is int {
         passes + failures + skips;
+    }
+
+    cap Counts {
+        passes is int {
+            passes;
+        }
+
+        failures is int {
+            failures;
+        }
+
+        skips is int {
+            skips;
+        }
     }
 }
 
@@ -283,19 +293,19 @@ object TestReport {
             results.item(index);
         };
         let bytes = snapshot.reduce(0) -> total, result {
-            total + result.output().output().size() + result.output().errors().size();
+            total + result.output()::Captured::output.size() + result.output()::Captured::errors.size();
         };
         let scalars = snapshot.reduce(0) -> total, result {
             let failures = result.failures();
             let messages = (0..failures.size()).reduce(0) -> sum, index {
                 sum + TestFailureText(failures.item(index)).string().length();
             };
-            total + result.name().length() + result.skip_reason().length() + messages;
+            total + result::Outcome::name.length() + result::Outcome::skip_reason.length() + messages;
         };
         confirm bytes <= 16777216 && scalars <= 1048576
             else throw InvalidTestResult.because("aggregate report budget");
         let passed = snapshot.reduce(0) -> total, result {
-            total + (if result.status() == TestStatus.passed {
+            total + (if result::Outcome::status == TestStatus.passed {
                 1;
             }
             else {
@@ -303,7 +313,7 @@ object TestReport {
             });
         };
         let skipped = snapshot.reduce(0) -> total, result {
-            total + (if result.status() == TestStatus.skipped {
+            total + (if result::Outcome::status == TestStatus.skipped {
                 1;
             }
             else {
@@ -338,7 +348,7 @@ object TestReport {
     }
 
     exit_status() is int {
-        if counts.failures() == 0 {
+        if counts::Counts::failures == 0 {
             0;
         }
         else {

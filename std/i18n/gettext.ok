@@ -722,12 +722,14 @@ object PoComment {
         origin = text;
     }
 
-    kind() is PoCommentKind {
-        kind;
-    }
+    cap Comment {
+        kind is PoCommentKind {
+            kind;
+        }
 
-    text() is string {
-        origin;
+        text is string {
+            origin;
+        }
     }
 }
 
@@ -739,7 +741,7 @@ object PoComments {
         confirm size >= 0 && size <= 4096 else throw InvalidCatalog.located(0, "comment count");
         let records is @PoComment = (0..size).map() -> index {
             let item = origin.item(index);
-            PoComment(kind: item.kind(), text: item.text());
+            PoComment(kind: item::Comment::kind, text: item::Comment::text);
         };
         self.records = records;
     }
@@ -801,8 +803,8 @@ object PoComments {
     hidden selected(kind is PoCommentKind) is @string {
         let empty is List<string> = EmptyList();
         let chosen = records.reduce(empty) -> items, record {
-            if record.kind() == kind {
-                items.prefix(record.text());
+            if record::Comment::kind == kind {
+                items.prefix(record::Comment::text);
             }
             else {
                 items;
@@ -826,12 +828,12 @@ object PoEntry {
         comments is PoComments
     ) {
         let value = PoEntry(context: context, identity: identity, plural: plural, translations: translations, comments: comments, has_context: context != "");
-        self.context = value.context();
-        self.identity = value.identity();
-        self.plural = value.plural();
-        self.translations = value.translations();
+        self.context = value::Entry::context;
+        self.identity = value::Entry::identity;
+        self.plural = value::Entry::plural;
+        self.translations = value::Entry::translations;
         self.comments = value.comments();
-        present = value.has_context();
+        present = value::Entry::has_context;
         sorted_key = value.sorting_key();
     }
 
@@ -879,32 +881,34 @@ object PoEntry {
         }) + context + separator + identity;
     }
 
-    context() is string {
-        context;
-    }
-
-    identity() is string {
-        identity;
-    }
-
-    plural() is string {
-        plural;
-    }
-
-    has_context() is bool {
-        present;
-    }
-
-    translations() is @string {
-        translations;
-    }
-
     comments() is PoComments {
         comments;
     }
 
     sorting_key() is string {
         sorted_key;
+    }
+
+    cap Entry {
+        context is string {
+            context;
+        }
+
+        identity is string {
+            identity;
+        }
+
+        plural is string {
+            plural;
+        }
+
+        has_context is bool {
+            present;
+        }
+
+        translations is @string {
+            translations;
+        }
     }
 }
 
@@ -1008,13 +1012,13 @@ object PoDocument {
         };
         let amount = entries.reduce(0) -> total, entry {
             let comments = entry.comments().records();
-            let translations = entry.translations().reduce(0) -> sum, text {
+            let translations = entry::Entry::translations.reduce(0) -> sum, text {
                 sum + text.length();
             };
             let notes = (0..comments.size()).reduce(0) -> sum, index {
-                sum + comments.item(index).text().length();
+                sum + comments.item(index)::Comment::text.length();
             };
-            total + entry.context().length() + entry.identity().length() + entry.plural().length() + translations + notes;
+            total + entry::Entry::context.length() + entry::Entry::identity.length() + entry::Entry::plural.length() + translations + notes;
         };
         confirm amount <= 1048576
             else throw InvalidCatalog.located(
@@ -1035,8 +1039,8 @@ object PoDocument {
             }
         }
         let headers = entries.reduce("") -> text, entry {
-            if entry.identity() == "" {
-                entry.translations()[0];
+            if entry::Entry::identity == "" {
+                entry::Entry::translations[0];
             }
             else {
                 text;
@@ -1052,7 +1056,7 @@ object PoDocument {
         let document = PoDocument(origin);
         let records = trailing.records();
         let extra = (0..records.size()).reduce(0) -> sum, index {
-            sum + records.item(index).text().length();
+            sum + records.item(index)::Comment::text.length();
         };
         confirm document.scalars() + extra <= 1048576
             else throw InvalidCatalog.located(
@@ -1309,7 +1313,7 @@ hidden object PoPrinting {
             let records = entry.comments().records();
             let comments is @string = (0..records.size()).map() -> at {
                 let item = records.item(at);
-                let prefix = match item.kind() {
+                let prefix = match item::Comment::kind {
                     case PoCommentKind.translator {
                         "# ";
                     }
@@ -1326,24 +1330,24 @@ hidden object PoPrinting {
                         "#| ";
                     }
                 };
-                prefix + item.text() + "\n";
+                prefix + item::Comment::text + "\n";
             };
-            let context = if entry.has_context() {
-                "msgctxt " + PoEscaped(entry.context()).string() + "\n";
+            let context = if entry::Entry::has_context {
+                "msgctxt " + PoEscaped(entry::Entry::context).string() + "\n";
             }
             else {
                 "";
             };
-            let identity = "msgid " + PoEscaped(entry.identity()).string() + "\n";
-            let plural = if entry.plural() != "" {
-                "msgid_plural " + PoEscaped(entry.plural()).string() + "\n";
+            let identity = "msgid " + PoEscaped(entry::Entry::identity).string() + "\n";
+            let plural = if entry::Entry::plural != "" {
+                "msgid_plural " + PoEscaped(entry::Entry::plural).string() + "\n";
             }
             else {
                 "";
             };
-            let values = entry.translations();
+            let values = entry::Entry::translations;
             let translated is @string = (0..values.size()).map() -> at {
-                "msgstr" + (if entry.plural() == "" {
+                "msgstr" + (if entry::Entry::plural == "" {
                     "";
                 }
                 else {
@@ -1355,7 +1359,7 @@ hidden object PoPrinting {
         let trailing = origin.trailing_comments().records();
         let comments is @string = (0..trailing.size()).map() -> at {
             let item = trailing.item(at);
-            let prefix = match item.kind() {
+            let prefix = match item::Comment::kind {
                 case PoCommentKind.translator {
                     "# ";
                 }
@@ -1372,7 +1376,7 @@ hidden object PoPrinting {
                     "#| ";
                 }
             };
-            prefix + item.text() + "\n";
+            prefix + item::Comment::text + "\n";
         };
         let result = texts.join("\n") + (if comments.size() > 0 && texts.size() > 0 {
             "\n";
@@ -1999,7 +2003,7 @@ object GettextCatalog {
         let empty is List<PoEntry> = EmptyList();
         let selected = (0..source.size()).reduce(empty) -> items, index {
             let entry = source.item(index);
-            if entry.identity() != "" {
+            if entry::Entry::identity != "" {
                 items.prefix(entry);
             }
             else {
@@ -2008,7 +2012,7 @@ object GettextCatalog {
         };
         let values = GettextListArray(selected).values();
         let plural = values.reduce(false) -> found, entry {
-            found || entry.plural() != "";
+            found || entry::Entry::plural != "";
         };
         let metadata = document.metadata();
         confirm !plural || metadata.membership("plural-forms")
@@ -2020,7 +2024,7 @@ object GettextCatalog {
             "nplurals=1; plural=0;";
         });
         for values -> entry {
-            confirm entry.plural() == "" || entry.translations().size() == rule.size()
+            confirm entry::Entry::plural == "" || entry::Entry::translations.size() == rule.size()
                 else throw InvalidCatalog.located(
                     0,
                     "MO plural translation count differs from nplurals"
@@ -2048,28 +2052,28 @@ object GettextCatalog {
 
     text(key is MessageKey) is string {
         let entry = self.entry(key);
-        confirm entry.plural() == "" else throw WrongMessageEntry.detailed(false, true);
-        entry.translations()[0];
+        confirm entry::Entry::plural == "" else throw WrongMessageEntry.detailed(false, true);
+        entry::Entry::translations[0];
     }
 
     plural(key is MessageKey, count is Decimal) is string {
         let entry = self.entry(key);
-        confirm entry.plural() != "" else throw WrongMessageEntry.detailed(true, false);
-        entry.translations()[rule.index(count)];
+        confirm entry::Entry::plural != "" else throw WrongMessageEntry.detailed(true, false);
+        entry::Entry::translations[rule.index(count)];
     }
 
     hidden key(key is MessageKey) is string {
-        (if key.has_context() {
+        (if key::Key::has_context {
             "1";
         }
         else {
             "0";
-        }) + key.context() + GettextControl(4).string() + key.identity();
+        }) + key::Key::context + GettextControl(4).string() + key::Key::identity;
     }
 
     hidden entry(key is MessageKey) is PoEntry {
         let index = self.index(self.key(key), 0, entries.size());
-        confirm index >= 0 else throw MissingMessage.key(key.context(), key.identity());
+        confirm index >= 0 else throw MissingMessage.key(key::Key::context, key::Key::identity);
         entries.item(index);
     }
 
@@ -2117,5 +2121,5 @@ test "GNU plural formula short circuits unused division" {
 
 test "PO projection preserves explicit empty context" {
     let document = ParsedPo("msgctxt \"\"\nmsgid \"Open\"\nmsgstr \"opened\"\n").document();
-    test.ok(ParsedPo(PoString(document).string()).document().entries().item(0).has_context());
+    test.ok(ParsedPo(PoString(document).string()).document().entries().item(0)::Entry::has_context);
 }

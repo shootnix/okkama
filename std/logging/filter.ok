@@ -103,7 +103,7 @@ object AllowedLogs does LogWriting {
     }
 
     write(record is LogRecord) is void {
-        if allowing.allowed(record.context().name(), record.level()) {
+        if allowing.allowed(record.context().name(), record::Entry::level) {
             origin.write(record);
         }
     }

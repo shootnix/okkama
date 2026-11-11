@@ -25,16 +25,18 @@ object Column {
         self.declaration = declaration;
     }
 
-    index() is int {
-        index;
-    }
+    cap Parts {
+        index is int {
+            index;
+        }
 
-    name() is string {
-        name;
-    }
+        name is string {
+            name;
+        }
 
-    declaration() is string {
-        declaration;
+        declaration is string {
+            declaration;
+        }
     }
 }
 
@@ -44,11 +46,11 @@ object DbColumns {
 
     DbColumns(values is Sequencing<Column>, limits is DbLimits) {
         let count = values.size();
-        confirm count >= 0 && count <= limits.values()
+        confirm count >= 0 && count <= limits::Limits::values
             else throw DbBoundaryLimit.kind("column count");
         let columns is @Column = (0..count).map() -> index {
             let column = values.item(index);
-            confirm column.index() == index else throw InvalidRow.invalid;
+            confirm column::Parts::index == index else throw InvalidRow.invalid;
             column;
         };
         origin = columns;
@@ -67,7 +69,7 @@ object DbRowSchema {
     DbRowSchema(columns is Sequencing<Column>, limits is DbLimits) {
         self.columns = DbColumns(values: columns, limits: limits).values();
         let names is @string = self.columns.map() -> column {
-            column.name();
+            column::Parts::name;
         };
         state = native_db.db_schema(names);
     }
@@ -90,13 +92,13 @@ hidden object DbRowCells {
 
     DbRowCells(origin is Sequencing<DbValue>, limits is DbLimits) {
         let count = origin.size();
-        confirm count >= 0 && count <= limits.values()
+        confirm count >= 0 && count <= limits::Limits::values
             else throw DbBoundaryLimit.kind("value count");
         let used = Atomic(0);
         let values is @native_db.DbCellState = (0..count).map() -> index {
             let value = ObservedDbValue(origin.item(index));
             let width = value.width();
-            confirm width <= limits.bytes() - used.value()
+            confirm width <= limits::Limits::bytes - used.value()
                 else throw DbBoundaryLimit.kind("value bytes");
             used.replace(used.value() + width);
             value.state();
@@ -119,7 +121,7 @@ object DbRowData {
 
     DbRowData(schema is DbRowSchema, cells is @native_db.DbCellState) {
         confirm schema.size() == cells.size() else throw InvalidRow.invalid;
-        confirm native_db.db_cells_bytes(cells) <= DbLimits().bytes()
+        confirm native_db.db_cells_bytes(cells) <= DbLimits()::Limits::bytes
             else throw DbBoundaryLimit.kind("value bytes");
         self.schema = schema;
         self.cells = cells;

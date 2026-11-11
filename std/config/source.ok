@@ -16,12 +16,14 @@ object SettingSource {
         label = name;
     }
 
-    kind() is SettingSourceKind {
-        category;
-    }
+    cap Source {
+        kind is SettingSourceKind {
+            category;
+        }
 
-    name() is string {
-        label;
+        name is string {
+            label;
+        }
     }
 }
 
@@ -568,5 +570,5 @@ test "layers replace complete values and preserve the winning source" {
         ]
     );
     test.is(result.entry(key).values().first(), "");
-    test.is(result.entry(key).source().name(), "argv");
+    test.is(result.entry(key).source()::Source::name, "argv");
 }

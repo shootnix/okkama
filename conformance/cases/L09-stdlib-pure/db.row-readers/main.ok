@@ -141,8 +141,8 @@ main() is int {
     let wide=Atomic("я");for 0..11 -> index { wide.replace(wide.value()+wide.value()); }
     c=c.ok("schema still rejects reordered indices",try { DbColumns(values: [Column(1,"bad","")],limits: DbLimits());false; } catch e is InvalidRow { true; });
     c=c.ok("schema still enforces column count limit",try { DbColumns(values: [Column(0,"n","")],limits: DbLimits(0,8388608,1048576));false; } catch DbBoundaryLimit.kind(kind) { kind=="column count"; });
-    c=c.ok("schema survives local columns scope",escaped.int("saved")==7 && escaped.columns().item(0).name()=="saved" && escaped.columns().item(0).declaration()=="INTEGER");
-    c=c.ok("column accepts UTF8 byte boundary",Column(index: 0,name: wide.value(),declaration: "").name()==wide.value());
+    c=c.ok("schema survives local columns scope",escaped.int("saved")==7 && escaped.columns().item(0)::Parts::name=="saved" && escaped.columns().item(0)::Parts::declaration=="INTEGER");
+    c=c.ok("column accepts UTF8 byte boundary",Column(index: 0,name: wide.value(),declaration: "")::Parts::name==wide.value());
     c=c.ok("column rejects excess UTF8 name bytes",try { Column(index: 0,name: wide.value()+"x",declaration: "");false; } catch e is InvalidRow { true; });
     c=c.ok("column rejects excess declaration bytes",try { Column(index: 0,name: "n",declaration: wide.value()+"x");false; } catch e is InvalidRow { true; });
     c.done();

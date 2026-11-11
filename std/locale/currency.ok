@@ -66,16 +66,18 @@ object CurrencyFormat {
         numbers;
     }
 
-    display() is CurrencyDisplay {
-        display;
-    }
+    cap Settings {
+        display is CurrencyDisplay {
+            display;
+        }
 
-    accounting() is bool {
-        accounting;
-    }
+        accounting is bool {
+            accounting;
+        }
 
-    currency_digits() is bool {
-        currency_digits;
+        currency_digits is bool {
+            currency_digits;
+        }
     }
 }
 
@@ -459,20 +461,20 @@ object LocalizedCurrency {
     string() is string {
         let policy = format.numbers();
         let source = policy.precision();
-        let precision = if format.currency_digits() {
+        let precision = if format::Settings::currency_digits {
             let digits = currency.digits();
-            NumberPrecision(minimum_integer: source.minimum_integer(), minimum_fraction: digits, maximum_fraction: digits, rounding: source.rounding());
+            NumberPrecision(minimum_integer: source::Digits::minimum_integer, minimum_fraction: digits, maximum_fraction: digits, rounding: source::Digits::rounding);
         }
         else {
             source;
         };
-        let numbers = NumberFormat(notation: policy.notation(), grouping: policy.grouping(), sign: policy.sign(), precision: precision);
+        let numbers = NumberFormat(notation: policy::Style::notation, grouping: policy::Style::grouping, sign: policy::Style::sign, precision: precision);
         let base = NumberLocaleData(locale);
         let data = CurrencyLocaleData(locale: locale, currency: currency, numbers: base);
         let magnitude = DecimalNumberMagnitude(origin: amount, shift: 0, negative_zero: false).magnitude();
-        if format.display() == CurrencyDisplay.name {
+        if format::Settings::display == CurrencyDisplay.name {
             let rendered = NumberPrinting(origin: magnitude, locale: locale, format: numbers, percent: false, per_mille: false, data: base).rendering();
-            let category = CurrencyPluralCategory(number: rendered, locale: locale, minimum_fraction: precision.minimum_fraction()).index();
+            let category = CurrencyPluralCategory(number: rendered, locale: locale, minimum_fraction: precision::Digits::minimum_fraction).index();
             let unit = data.unit(category);
             let parts = unit.split("{0}");
             confirm parts.size() == 2
@@ -492,8 +494,8 @@ object LocalizedCurrency {
                 else throw InvalidLocalizedNumber.because("currency output exceeds 8192 scalars");
             return text;
         }
-        let label = data.symbol(format.display());
-        let representation = CurrencyNumberData(numbers: base, currency: data, label: label, accounting: format.accounting());
+        let label = data.symbol(format::Settings::display);
+        let representation = CurrencyNumberData(numbers: base, currency: data, label: label, accounting: format::Settings::accounting);
         NumberPrinting(origin: magnitude, locale: locale, format: numbers, percent: false, per_mille: false, data: representation).string();
     }
 }

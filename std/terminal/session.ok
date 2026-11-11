@@ -207,7 +207,7 @@ object TerminalSession does Closing, TerminalModeApplying, TerminalScreenApplyin
     }
 
     hidden interactive_screen() is void {
-        confirm observation.capabilities().output_interactive() && observation.screen_capable()
+        confirm observation.capabilities()::Support::output_interactive && observation.screen_capable()
             else throw TerminalUnavailable.because(
                 "screen control requires interactive VT-capable output"
             );
@@ -277,18 +277,18 @@ object TerminalObservation {
             throw TerminalProblem(e).error();
         };
         let geometry = DetectedTerminalCapabilities(
-            input: initial.input_interactive(),
-            output: initial.output_interactive(),
-            native_depth: initial.colors(),
+            input: initial::Support::input_interactive,
+            output: initial::Support::output_interactive,
+            native_depth: initial::Support::colors,
             columns: fields["columns"],
             rows: fields["rows"],
             environment: environment,
             policy: policy
         ).capabilities().size();
         TerminalCapabilities(
-            input_interactive: initial.input_interactive(),
-            output_interactive: initial.output_interactive(),
-            colors: initial.colors(),
+            input_interactive: initial::Support::input_interactive,
+            output_interactive: initial::Support::output_interactive,
+            colors: initial::Support::colors,
             size: geometry
         );
     }
@@ -447,7 +447,7 @@ object TerminalOutput does Writing, WritingText {
         self.state = state;
         self.observation = observation;
         unicode_console = system_platform() == "windows"
-            && observation.capabilities().output_interactive();
+            && observation.capabilities()::Support::output_interactive;
     }
 
     capabilities() is TerminalCapabilities {
@@ -466,7 +466,7 @@ object TerminalOutput does Writing, WritingText {
     }
 
     write(value is StyledText) is void {
-        self.write_bytes(Utf8Encoded(value.rendered(observation.capabilities().colors())).bytes());
+        self.write_bytes(Utf8Encoded(value.rendered(observation.capabilities()::Support::colors)).bytes());
     }
 
     writeln(values is ...string) is void {

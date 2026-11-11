@@ -16,12 +16,14 @@ object EnvironmentBinding {
         identity = key;
     }
 
-    name() is string {
-        label;
-    }
-
     key() is SettingKey {
         identity;
+    }
+
+    cap Binding {
+        name is string {
+            label;
+        }
     }
 }
 
@@ -43,9 +45,9 @@ object EnvironmentSettings does SettingReading {
         };
         SettingKeyIndex(keys).valid();
         let entries is @SettingEntry = mapping.filter() -> binding {
-            environment.membership(binding.name());
+            environment.membership(binding::Binding::name);
         }.map() -> binding {
-            SettingEntry(key: binding.key(), values: [environment.variable(binding.name())], source: source);
+            SettingEntry(key: binding.key(), values: [environment.variable(binding::Binding::name)], source: source);
         };
         origin = Settings(entries);
     }

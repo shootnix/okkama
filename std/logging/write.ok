@@ -162,7 +162,7 @@ test "collected, broadcast, fallback and best-effort writers" {
     let second = CollectedLogs();
     BroadcastLogs([first, second]).write(record);
     test.is(first.size(), 1);
-    test.is(second.records().first().message(), "hi");
+    test.is(second.records().first()::Entry::message, "hi");
     let full = CollectedLogs(capacity: 0);
     test.throws(LogCollectionLimit) {
         full.write(record);

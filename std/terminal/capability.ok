@@ -17,12 +17,14 @@ object TerminalSize {
         height = rows;
     }
 
-    columns() is int {
-        width;
-    }
+    cap Size {
+        columns is int {
+            width;
+        }
 
-    rows() is int {
-        height;
+        rows is int {
+            height;
+        }
     }
 }
 
@@ -43,20 +45,22 @@ object TerminalCapabilities {
         geometry = size;
     }
 
-    input_interactive() is bool {
-        input;
-    }
-
-    output_interactive() is bool {
-        output;
-    }
-
-    colors() is TerminalColorDepth {
-        depth;
-    }
-
     size() is TerminalSize {
         geometry;
+    }
+
+    cap Support {
+        input_interactive is bool {
+            input;
+        }
+
+        output_interactive is bool {
+            output;
+        }
+
+        colors is TerminalColorDepth {
+            depth;
+        }
     }
 }
 

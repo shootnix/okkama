@@ -114,25 +114,25 @@ object HumanTestReport {
                 self.line("  " + ReportText(TestFailureText(failures.item(at)).string()).string());
             };
             self.line(
-                TestStatusName(result.status()).string() + " " + ReportText(result.name()).string() + (if result.skip_reason() != "" {
-                    " (" + ReportText(result.skip_reason()).string() + ")";
+                TestStatusName(result::Outcome::status).string() + " " + ReportText(result::Outcome::name).string() + (if result::Outcome::skip_reason != "" {
+                    " (" + ReportText(result::Outcome::skip_reason).string() + ")";
                 }
                 else {
                     "";
                 })
             ) + problems.join("") +
-                self.bytes("stdout", result.output().output()) + self.bytes(
+                self.bytes("stdout", result.output()::Captured::output) + self.bytes(
                     "stderr",
-                    result.output().errors()
+                    result.output()::Captured::errors
                 ) +
-                (if result.output().truncated() {
+                (if result.output()::Captured::truncated {
                     "  captured output truncated\n";
                 }
                 else {
                     "";
                 });
         };
-        "seed=" + origin.seed().string() + "\n" + records.join("") + counts.passes().string() + " passed, " + counts.failures().string() + " failed, " + counts.skips().string() + " skipped\n";
+        "seed=" + origin.seed().string() + "\n" + records.join("") + counts::Counts::passes.string() + " passed, " + counts::Counts::failures.string() + " failed, " + counts::Counts::skips.string() + " skipped\n";
     }
 
     hidden line(text is string) is string {
@@ -177,7 +177,7 @@ object TapTestReport {
         let results = origin.results();
         let lines is @string = (0..results.size()).map() -> index {
             let result = results.item(index);
-            let status = result.status();
+            let status = result::Outcome::status;
             let failures = result.failures();
             let diagnostics is @string = (0..failures.size()).map() -> at {
                 "# " + ReportText(TestFailureText(failures.item(at)).string()).string() + "\n";
@@ -187,12 +187,12 @@ object TapTestReport {
             }
             else {
                 "not ok ";
-            }) + (index + 1).string() + " - " + ReportText(result.name()).string().split("#").join(
+            }) + (index + 1).string() + " - " + ReportText(result::Outcome::name).string().split("#").join(
                 "\\#"
             ) +
                 (if status == TestStatus.skipped {
-                    " # SKIP" + (if result.skip_reason() != "" {
-                        " " + ReportText(result.skip_reason()).string();
+                    " # SKIP" + (if result::Outcome::skip_reason != "" {
+                        " " + ReportText(result::Outcome::skip_reason).string();
                     }
                     else {
                         "";
@@ -202,10 +202,10 @@ object TapTestReport {
                     "";
                 }) + "\n" + diagnostics.join("") +
                 "# status=" + TestStatusName(status).string() + " duration_ns=" + result.duration().nanoseconds().string() + "\n" +
-                "# stdout(hex)=" + HexEncoded(result.output().output()).string() + "\n# stderr(hex)=" + HexEncoded(
-                    result.output().errors()
+                "# stdout(hex)=" + HexEncoded(result.output()::Captured::output).string() + "\n# stderr(hex)=" + HexEncoded(
+                    result.output()::Captured::errors
                 ).string() + "\n" +
-                (if result.output().truncated() {
+                (if result.output()::Captured::truncated {
                     "# captured output truncated\n";
                 }
                 else {
@@ -242,9 +242,9 @@ object JsonTestReport {
                 "counts",
                 Json(
                     [
-                        JsonField("passes", Json(counts.passes())),
-                        JsonField("failures", Json(counts.failures())),
-                        JsonField("skips", Json(counts.skips())),
+                        JsonField("passes", Json(counts::Counts::passes)),
+                        JsonField("failures", Json(counts::Counts::failures)),
+                        JsonField("skips", Json(counts::Counts::skips)),
                         JsonField("total", Json(counts.total()))
                     ]
                 )
@@ -259,14 +259,14 @@ object JsonTestReport {
             self.failure(failures.item(index));
         };
         Json([
-            JsonField("name", Json(result.name())),
-            JsonField("status", Json(TestStatusName(result.status()).string())),
+            JsonField("name", Json(result::Outcome::name)),
+            JsonField("status", Json(TestStatusName(result::Outcome::status).string())),
             JsonField("duration_ns", Json(result.duration().nanoseconds().string())),
             JsonField("failures", Json(items: problems)),
-            JsonField("stdout_base64", Json(Base64Encoded(result.output().output()).string())),
-            JsonField("stderr_base64", Json(Base64Encoded(result.output().errors()).string())),
-            JsonField("truncated", Json(result.output().truncated())),
-            JsonField("skip_reason", Json(result.skip_reason()))
+            JsonField("stdout_base64", Json(Base64Encoded(result.output()::Captured::output).string())),
+            JsonField("stderr_base64", Json(Base64Encoded(result.output()::Captured::errors).string())),
+            JsonField("truncated", Json(result.output()::Captured::truncated)),
+            JsonField("skip_reason", Json(result::Outcome::skip_reason))
         ]);
     }
 
@@ -275,9 +275,9 @@ object JsonTestReport {
             let place = failure.position();
             Json(
                 [
-                    JsonField("module", Json(place.source())),
-                    JsonField("line", Json(place.line())),
-                    JsonField("column", Json(place.column()))
+                    JsonField("module", Json(place::Position::source)),
+                    JsonField("line", Json(place::Position::line)),
+                    JsonField("column", Json(place::Position::column))
                 ]
             );
         }
@@ -286,7 +286,7 @@ object JsonTestReport {
         };
         let reasons = failure.causes();
         let members is @JsonField = [
-            JsonField("message", Json(failure.message())),
+            JsonField("message", Json(failure::Failure::message)),
             JsonField("position", position)
         ];
         if reasons.size() == 0 {
@@ -316,7 +316,7 @@ object JUnitTestReport {
         let results = origin.results();
         let counts = origin.counts();
         let failed = (0..results.size()).reduce(0) -> count, index {
-            count + (if results.item(index).status() == TestStatus.failed {
+            count + (if results.item(index)::Outcome::status == TestStatus.failed {
                 1;
             }
             else {
@@ -342,8 +342,8 @@ object JUnitTestReport {
                 XmlAttribute(XmlName("name"), JUnitReportText(suite).string()),
                 XmlAttribute(XmlName("tests"), counts.total().string()),
                 XmlAttribute(XmlName("failures"), failed.string()),
-                XmlAttribute(XmlName("errors"), (counts.failures() - failed).string()),
-                XmlAttribute(XmlName("skipped"), counts.skips().string()),
+                XmlAttribute(XmlName("errors"), (counts::Counts::failures - failed).string()),
+                XmlAttribute(XmlName("skipped"), counts::Counts::skips.string()),
                 XmlAttribute(XmlName("time"), JUnitSeconds(origin.duration()).string())
             ],
             children: children
@@ -359,13 +359,13 @@ object JUnitTestReport {
     }
 
     hidden result(result is TestResult) is XmlElement {
-        let status = result.status();
+        let status = result::Outcome::status;
         let failures = result.failures();
         let messages is @string = (0..failures.size()).map() -> index {
             let failure = failures.item(index);
             (if failure.located() {
                 let place = failure.position();
-                JUnitReportText(place.source()).string() + ":" + place.line().string() + ":" + place.column().string() + ": ";
+                JUnitReportText(place::Position::source).string() + ":" + place::Position::line.string() + ":" + place::Position::column.string() + ": ";
             }
             else {
                 "";
@@ -382,7 +382,7 @@ object JUnitTestReport {
                         attributes: [
                             XmlAttribute(
                                 XmlName("message"),
-                                JUnitReportText(result.skip_reason()).string()
+                                JUnitReportText(result::Outcome::skip_reason).string()
                             )
                         ],
                         children: []
@@ -415,15 +415,15 @@ object JUnitTestReport {
         let capture is @XmlNode = [
             XmlElement(
                 name: XmlName("properties"),
-                children: [self.property("captured-output-truncated", if output.truncated() {
+                children: [self.property("captured-output-truncated", if output::Captured::truncated {
                     "true";
                 }
                 else {
                     "false";
                 })]
             ),
-            XmlElement(name: XmlName("system-out"), children: [XmlText(Base64Encoded(output.output()).string())]),
-            XmlElement(name: XmlName("system-err"), children: [XmlText(Base64Encoded(output.errors()).string())])
+            XmlElement(name: XmlName("system-out"), children: [XmlText(Base64Encoded(output::Captured::output).string())]),
+            XmlElement(name: XmlName("system-err"), children: [XmlText(Base64Encoded(output::Captured::errors).string())])
         ];
         let children is @XmlNode = (0..terminal.size() + capture.size()).map() -> index {
             if index < terminal.size() {
@@ -436,7 +436,7 @@ object JUnitTestReport {
         XmlElement(
             name: XmlName("testcase"),
             attributes: [
-                XmlAttribute(XmlName("name"), JUnitReportText(result.name()).string()),
+                XmlAttribute(XmlName("name"), JUnitReportText(result::Outcome::name).string()),
                 XmlAttribute(XmlName("classname"), JUnitReportText(suite).string()),
                 XmlAttribute(XmlName("time"), JUnitSeconds(result.duration()).string())
             ],

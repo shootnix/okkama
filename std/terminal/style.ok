@@ -115,18 +115,6 @@ object RgbColor does TerminalColor {
         self.blue = blue;
     }
 
-    red() is byte {
-        red;
-    }
-
-    green() is byte {
-        green;
-    }
-
-    blue() is byte {
-        blue;
-    }
-
     code(depth is TerminalColorDepth, background is bool) is string {
         let color = ColorRgb(red: red.int(), green: green.int(), blue: blue.int());
         if depth == TerminalColorDepth.true_color {
@@ -150,6 +138,20 @@ object RgbColor does TerminalColor {
                     30;
                 }).string();
             }
+        }
+    }
+
+    cap Channels {
+        red is byte {
+            red;
+        }
+
+        green is byte {
+            green;
+        }
+
+        blue is byte {
+            blue;
         }
     }
 }

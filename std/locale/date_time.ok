@@ -31,12 +31,14 @@ object DateTimeStyle {
         self.time = time;
     }
 
-    date() is DateStyle {
-        date;
-    }
+    cap Styles {
+        date is DateStyle {
+            date;
+        }
 
-    time() is TimeStyle {
-        time;
+        time is TimeStyle {
+            time;
+        }
     }
 }
 
@@ -814,9 +816,9 @@ object LocalizedLocalDateTime {
         let zones is @LocalizedZoneObservation = [];
         let printing = GregorianPrinting(dates: [origin.date()], times: [origin.time()], zones: zones, data: data);
         rendered = GregorianCombined(
-            date: printing.string(data.date(style.date())),
-            time: printing.string(data.time(style.time(), false)),
-            pattern: data.combination(style.date())
+            date: printing.string(data.date(style::Styles::date)),
+            time: printing.string(data.time(style::Styles::time, false)),
+            pattern: data.combination(style::Styles::date)
         ).string();
     }
 
@@ -846,9 +848,9 @@ object LocalizedInstant {
         let local = observed.local();
         let printing = GregorianPrinting(dates: [local.date()], times: [local.time()], zones: [observed], data: data);
         GregorianCombined(
-            date: printing.string(data.date(style.date())),
-            time: printing.string(data.time(style.time(), true)),
-            pattern: data.combination(style.date())
+            date: printing.string(data.date(style::Styles::date)),
+            time: printing.string(data.time(style::Styles::time, true)),
+            pattern: data.combination(style::Styles::date)
         ).string();
     }
 }

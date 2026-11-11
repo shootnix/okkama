@@ -25,7 +25,7 @@ object TextLogLine {
         let time = origin.time();
         let context = origin.context();
         let name = BoundedLogJson(Json(context.name().string())).string();
-        let message = BoundedLogJson(Json(origin.message())).string();
+        let message = BoundedLogJson(Json(origin::Entry::message)).string();
         let fields = BoundedLogJson(context.fields().values()).string();
         let cause = if origin.has_cause() {
             " cause=" + BoundedLogJson(Json(origin.cause().text())).string();
@@ -34,7 +34,7 @@ object TextLogLine {
             "";
         };
         PhysicalLogLine(
-            Rfc3339(origin: time, offset: zone.offset(time)).string() + " level=" + LogLevelName(origin.level()).string() + " name=" + name + " process=" + context.process().string() + " message=" + message + " fields=" + fields + cause
+            Rfc3339(origin: time, offset: zone.offset(time)).string() + " level=" + LogLevelName(origin::Entry::level).string() + " name=" + name + " process=" + context.process().string() + " message=" + message + " fields=" + fields + cause
         ).string();
     }
 }
@@ -53,10 +53,10 @@ object JsonLogLine {
                 "time",
                 Rfc3339(origin: origin.time(), offset: Duration(0.rat(), DurationUnit.second)).string()
             ),
-            JsonField("level", LogLevelName(origin.level()).string()),
+            JsonField("level", LogLevelName(origin::Entry::level).string()),
             JsonField("name", context.name().string()),
             JsonField("process", context.process()),
-            JsonField("message", origin.message()),
+            JsonField("message", origin::Entry::message),
             JsonField("fields", context.fields().values())
         ];
         let complete is @JsonField = if origin.has_cause() {

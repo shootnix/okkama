@@ -51,20 +51,22 @@ object NumberPrecision {
         self.rounding = rounding;
     }
 
-    minimum_integer() is int {
-        minimum_integer;
-    }
+    cap Digits {
+        minimum_integer is int {
+            minimum_integer;
+        }
 
-    minimum_fraction() is int {
-        minimum_fraction;
-    }
+        minimum_fraction is int {
+            minimum_fraction;
+        }
 
-    maximum_fraction() is int {
-        maximum_fraction;
-    }
+        maximum_fraction is int {
+            maximum_fraction;
+        }
 
-    rounding() is Rounding {
-        rounding;
+        rounding is Rounding {
+            rounding;
+        }
     }
 }
 
@@ -86,20 +88,22 @@ object NumberFormat {
         self.precision = precision;
     }
 
-    notation() is NumberNotation {
-        notation;
-    }
-
-    grouping() is NumberGrouping {
-        grouping;
-    }
-
-    sign() is NumberSign {
-        sign;
-    }
-
     precision() is NumberPrecision {
         precision;
+    }
+
+    cap Style {
+        notation is NumberNotation {
+            notation;
+        }
+
+        grouping is NumberGrouping {
+            grouping;
+        }
+
+        sign is NumberSign {
+            sign;
+        }
     }
 }
 
@@ -458,7 +462,7 @@ object NumberQuantized {
 
     NumberQuantized(origin is NumberMagnitude, precision is NumberPrecision) {
         let absolute = origin.coefficient();
-        let shift = origin.exponent() + precision.maximum_fraction().rat();
+        let shift = origin.exponent() + precision::Digits::maximum_fraction.rat();
         let coefficient = if absolute.sign() == 0 {
             BigInt("0");
         }
@@ -471,7 +475,7 @@ object NumberQuantized {
             }
             else {
                 if shift < (-1025).rat() {
-                    let direction = precision.rounding();
+                    let direction = precision::Digits::rounding;
                     let up = direction == Rounding.away_from_zero
                         || (direction == Rounding.floor && origin.negative())
                         || (direction == Rounding.ceiling && !origin.negative());
@@ -491,7 +495,7 @@ object NumberQuantized {
                         remainder: remainder,
                         divisor: divisor,
                         negative: origin.negative(),
-                        direction: precision.rounding()
+                        direction: precision::Digits::rounding
                     ).increment();
                     if increment {
                         (quotient + BigInt("1"));
@@ -502,10 +506,10 @@ object NumberQuantized {
                 }
             }
         };
-        confirm coefficient.string().length() - precision.maximum_fraction() <= 1024
+        confirm coefficient.string().length() - precision::Digits::maximum_fraction <= 1024
             else throw InvalidLocalizedNumber.because("integer exceeds 1024 digits");
         self.coefficient = coefficient;
-        scale = precision.maximum_fraction();
+        scale = precision::Digits::maximum_fraction;
         negative = origin.negative();
     }
 
@@ -669,14 +673,14 @@ hidden object NumberMantissa {
 
     string() is string {
         let raw = origin.whole();
-        let minimum = format.precision().minimum_integer();
+        let minimum = format.precision()::Digits::minimum_integer;
         let whole = (if raw.length() < minimum {
             NumberZeroes(minimum - raw.length()).string();
         }
         else {
             "";
         }) + raw;
-        let grouping = format.grouping();
+        let grouping = format::Style::grouping;
         let primary = pattern.primary();
         let secondary = pattern.secondary();
         let threshold = if grouping == NumberGrouping.minimum_two {
@@ -704,7 +708,7 @@ hidden object NumberMantissa {
                 "";
             }) + data.localized(whole.slice(index, index + 1));
         };
-        let fraction = origin.fraction(format.precision().minimum_fraction());
+        let fraction = origin.fraction(format.precision()::Digits::minimum_fraction);
         parts.join("") + (if fraction == "" {
             "";
         }
@@ -827,7 +831,7 @@ object NumberPrinting {
     }
 
     rendering() is NumberRendered {
-        let notation = format.notation();
+        let notation = format::Style::notation;
         let scientific = notation == NumberNotation.scientific
             || notation == NumberNotation.engineering;
         let fallback = data.pattern(if percent {
@@ -857,7 +861,7 @@ object NumberPrinting {
         };
         let pattern = rendered.frame(fallback);
         let value = rendered.number();
-        let sign = format.sign();
+        let sign = format::Style::sign;
         let nonzero = !value.zero();
         let minus = value.negative()
             && sign != NumberSign.never
@@ -993,7 +997,7 @@ object NumberPrinting {
         let base = NumberPattern(base_text.split("|"));
         let power = bucket - base.zeros() + 1;
         let number = NumberQuantized(origin: origin.scaled(power.rat()), precision: format.precision());
-        let spelling = number.ascii(format.precision().minimum_fraction());
+        let spelling = number.ascii(format.precision()::Digits::minimum_fraction);
         confirm spelling.length() <= 1024
             else throw InvalidLocalizedNumber.because("compact plural operand exceeds 1024 scalars");
         let exact = number.magnitude();
@@ -1388,7 +1392,7 @@ hidden object NumberReading {
     decimal() is Decimal {
         confirm origin.length() > 0 && origin.length() <= 4096
             else throw InvalidLocalizedNumber.because("input must be 1..4096 scalars");
-        let notation = format.notation();
+        let notation = format::Style::notation;
         confirm notation != NumberNotation.compact_short && notation != NumberNotation.compact_long
             else throw InvalidLocalizedNumber.because("compact notation has no unambiguous inverse");
         let data = NumberLocaleData(locale);
@@ -1403,7 +1407,7 @@ hidden object NumberReading {
             else {
                 0;
             }),
-            sign: format.sign()
+            sign: format::Style::sign
         ).text();
         let source = signed.text();
         let exponent_parts = if scientific {
@@ -1426,7 +1430,7 @@ hidden object NumberReading {
             NumberGrouping.never;
         }
         else {
-            format.grouping();
+            format::Style::grouping;
         }).string();
         let fraction = if decimal_parts.size() == 2 {
             NumberDigitReading(origin: decimal_parts[1], data: data).string();
@@ -1435,9 +1439,9 @@ hidden object NumberReading {
             "";
         };
         let precision = format.precision();
-        confirm whole.length() >= precision.minimum_integer()
-            && fraction.length() >= precision.minimum_fraction()
-            && fraction.length() <= precision.maximum_fraction()
+        confirm whole.length() >= precision::Digits::minimum_integer
+            && fraction.length() >= precision::Digits::minimum_fraction
+            && fraction.length() <= precision::Digits::maximum_fraction
             else throw InvalidLocalizedNumber.because("input precision does not match format");
         let exponent = if scientific {
             let frame = NumberAffixReading(

@@ -173,20 +173,22 @@ object SyslogOptions {
         maximum = maximum_payload;
     }
 
-    facility() is SyslogFacility {
-        facility;
-    }
+    cap Settings {
+        facility is SyslogFacility {
+            facility;
+        }
 
-    host() is string {
-        host;
-    }
+        host is string {
+            host;
+        }
 
-    application() is string {
-        application;
-    }
+        application is string {
+            application;
+        }
 
-    maximum_payload() is int {
-        maximum;
+        maximum_payload is int {
+            maximum;
+        }
     }
 }
 
@@ -196,8 +198,8 @@ object SyslogMessage does ByteSource {
     has origin is @byte;
 
     SyslogMessage(record is LogRecord, options is SyslogOptions) {
-        let priority = SyslogFacilityCode(options.facility()).code() * 8 + SyslogSeverity(
-            record.level()
+        let priority = SyslogFacilityCode(options::Settings::facility).code() * 8 + SyslogSeverity(
+            record::Entry::level
         ).code();
         let time = Rfc3339(origin: record.time(), offset: Duration(value: 0.rat(), unit: DurationUnit.second)).string();
         let parts = time.split(".");
@@ -221,12 +223,12 @@ object SyslogMessage does ByteSource {
             record.context().process().string();
         };
         let header = Utf8Encoded(
-            "<" + priority.string() + ">1 " + timestamp + " " + options.host() + " " + options.application() + " " + process + " - - "
+            "<" + priority.string() + ">1 " + timestamp + " " + options::Settings::host + " " + options::Settings::application + " " + process + " - - "
         ).bytes();
         let message = Utf8Encoded(JsonLogLine(record).string()).bytes();
         let bom is @byte = [239.byte(), 187.byte(), 191.byte()];
         let size = header.size() + bom.size() + message.size();
-        confirm size <= options.maximum_payload() else throw DatagramTooLarge.size(size);
+        confirm size <= options::Settings::maximum_payload else throw DatagramTooLarge.size(size);
         origin = (0..size).map() -> index {
             if index < header.size() {
                 header[index];
@@ -348,9 +350,9 @@ test "syslog severities follow RFC 5424" {
 
 test "syslog options check header names and the payload size" {
     let options = SyslogOptions(facility: SyslogFacility.local0, host: "", application: "api", maximum_payload: 1024);
-    test.is(options.host(), "-");
-    test.is(options.application(), "api");
-    test.is(options.maximum_payload(), 1024);
+    test.is(options::Settings::host, "-");
+    test.is(options::Settings::application, "api");
+    test.is(options::Settings::maximum_payload, 1024);
     test.throws(InvalidSyslogOptions) {
         SyslogOptions(facility: SyslogFacility.user, host: "my host", application: "api", maximum_payload: 1024);
     };

@@ -26,12 +26,14 @@ object FileLogOptions {
         mode;
     }
 
-    flush_each() is bool {
-        flushing;
-    }
+    cap Writes {
+        flush_each is bool {
+            flushing;
+        }
 
-    sync_each() is bool {
-        syncing;
+        sync_each is bool {
+            syncing;
+        }
     }
 }
 
@@ -86,10 +88,10 @@ object LogFileState does Writing, Closing {
         try {
             let written = fs.write(handle, bytes);
             confirm written == bytes.size() else throw IncompleteWrite.after(written);
-            if options.flush_each() {
+            if options::Writes::flush_each {
                 fs.flush(handle);
             }
-            if options.sync_each() {
+            if options::Writes::sync_each {
                 fs.sync(handle);
             }
         }
@@ -217,7 +219,7 @@ test "a log file appends, reopens and refuses writes once closed" {
     let options = FileLogOptions(permissions: PermissionMode(416), flush_each: true, sync_each: true);
     test.is(options.permissions().owner()::Access::writable, true);
     test.is(options.permissions().group()::Access::writable, false);
-    test.is(options.flush_each(), true);
+    test.is(options::Writes::flush_each, true);
     let logs = LogFile(path: path, options: options);
     logs.write(ByteSnapshot(Utf8Encoded("one\n").bytes()));
     logs.flush();

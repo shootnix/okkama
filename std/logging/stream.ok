@@ -107,7 +107,7 @@ object TextTerminalLogs does LogWriting {
     }
 
     write(record is LogRecord) is void {
-        origin.writeln(StyledText(origin: TextLogLine(record, zone).string(), style: styles.style(record.level())));
+        origin.writeln(StyledText(origin: TextLogLine(record, zone).string(), style: styles.style(record::Entry::level)));
     }
 }
 
@@ -121,7 +121,7 @@ object JsonTerminalLogs does LogWriting {
     }
 
     write(record is LogRecord) is void {
-        origin.writeln(StyledText(origin: JsonLogLine(record).string(), style: styles.style(record.level())));
+        origin.writeln(StyledText(origin: JsonLogLine(record).string(), style: styles.style(record::Entry::level)));
     }
 }
 
