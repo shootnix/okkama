@@ -804,9 +804,61 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     the JVM.
   - The Book drops the legacy log, sql, db, template and test passages (480
     lines) and describes the wave-4 areas in §26.5.
+- **std review, wave 5: web, the part without a decision (#352).** The areas
+  are mime, http and web. The card is
+  `okkama-docs/std-review/cards/wave-5-web.md`.
+  - **Hidden machinery.** 369 objects are hidden: HTTP/1 and HTTP/2 wire
+    pieces, HPACK internals, cache selections, cookie-store rows, routing
+    tables and MIME scanners. Objects that do a public role or open a
+    feature stay public even without callers. Examples are `BytesBody`,
+    `AsteriskTarget`, `EnvironmentProxy`, `ParsedUrlEncodedForm`,
+    `DigestAuthorization`, `SystemMediaTypes`, `ParsedEncodedWord`, the
+    XML-RPC values, `XmlRpcClient` and `XmlRpcHandling`.
+  - **Answers with nouns** (115), for example `ParsedHttpDate(…).instant()`,
+    `ParsedRequestTarget(…).target()`, `ParsedSetCookie(…).cookie()`,
+    `EntityTag.opaque()`, `Quality.weight()`, `RequestJson.root()`,
+    `SavedCookieJar(…).file()` and `LoadedCookieJar(…).jar()`. Name/value
+    pairs (`Header`, `Cookie`, `MimeParameter`, `HpackField`) and the XML-RPC
+    result's `value()` keep `value()`.
+  - **Caps for ready scalar fields** in 36 records: limits, credentials and
+    challenges, cookie attributes and origins, `Http1RequestHead::Head`
+    (`method`, `version`), HTTP/2 settings, media types and ranges, route
+    segments, server events, the static policy, `WebSocketClose::Close`,
+    XML-RPC faults, content disposition, multipart bodies and problems.
+  - **Named arguments** in 1028 constructor calls.
+  - **Tests.** The server had no test at all, and neither did HTTP/2,
+    WebSocket, caching or proxies. Now these run over loopback, in a
+    container, on IR and Sparrow:
+    - the server over HTTP/1.1 (GET, POST with a body, 404, drain);
+    - the server over HTTP/2 by prior knowledge, with two requests
+      multiplexed on one connection;
+    - a web application with a scope, a path parameter, a body and the
+      fallback;
+    - a WebSocket echo of text and binary messages, with a clean close;
+    - a cache that serves a fresh response without reaching the origin;
+    - a forward proxy that receives the absolute target, `Host` and
+      `Proxy-Authorization`;
+    - retries of a stale connection;
+    - HPACK tables, HTTP/2 frames, WebSocket message assembly, trailers,
+      server policy, protocol agreement, WebSocket origins and proxy
+      requests.
+
+    Modules without an inline test went from 40 to 23. The rest are HTTP/2
+    and WebSocket internals that these end-to-end tests exercise.
+  - **Examples:** `examples/web/notes.ok` (a JSON service) and
+    `examples/http/websocket/echo.ok`. They agree on IR, Sparrow and the JVM.
+  - The Book's legacy stdlib section is gone, and §26.5 describes the
+    server, web routes, WebSocket, caching, proxies and mime.
 
 ### Fixed
 
+- **http/server: draining and closing hung (#496).** `ServerDrain(…).drain()`
+  never returned, even with no request served and with a limit, and
+  `Within` around `server.drained()` did not time out. `stop_accepting()` and
+  `close()` set the server's shared event without replacing it. The waiters
+  then spun without yielding, the closing connection never ran, and neither
+  did the timer. A hidden `signal()` now wakes the waiters and installs a
+  fresh event. No test had ever shut the server down.
 - **template: a JSON number is written as JSON writes it (#494).**
   `SectionTemplate("Order {{id}}")` with `{"id": 17}` gave `Order 1.7e1`,
   and `12.5` gave `1.25e1`. `JsonTemplateStrings` printed numbers through
