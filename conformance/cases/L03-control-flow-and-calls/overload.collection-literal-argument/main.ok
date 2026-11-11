@@ -1,0 +1,52 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Part {
+    size() is int;
+}
+
+object A does Part {
+    A();
+    size() is int { 1; }
+}
+
+object B does Part {
+    B();
+    size() is int { 2; }
+}
+
+// The array form and the part-by-part form beside each other.
+object Doc {
+    has count is int;
+    Doc(items is @Part) { count = items.size(); }
+    Doc(items is ...Part) { let all is @Part = items...; count = all.size() + 100; }
+    count() is int { count; }
+}
+
+// Two signatures of one arity: only one takes a collection.
+object Pair {
+    has count is int;
+    Pair(items is @Part) { count = items.size(); }
+    Pair(name is string) { count = -1; }
+    Pair(names is %string:int) { count = names.size() + 10; }
+    count() is int { count; }
+}
+
+object Counter {
+    Counter();
+    count(items is @Part) is int { items.size(); }
+    count(name is string) is int { -1; }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Doc(items: [A(), B()]).count().string());
+    out.writeln(Doc([A(), B()]).count().string());
+    out.writeln(Doc(A(), B()).count().string());
+    out.writeln(Pair([A(), B(), A()]).count().string());
+    out.writeln(Pair(["a": 1]).count().string());
+    out.writeln(Pair("x").count().string());
+    out.writeln(Counter().count([B(), A()]).string());
+    0;
+}

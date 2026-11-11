@@ -1,11 +1,24 @@
 module strings/format v1.0.0;
 
 // Exact, typed interpolation: only {} denotes a slot; other braces are literal.
+//
+//     Formatted("{} version {}", id, id.version()).string();
+//     out.writeln(Formatted("{} of {} done", done, total));
+//
+// Each value after the pattern is turned into text by its own string(), as
+// any `...string` tail does: numbers, bool, char, and objects that answer
+// string(). Formatted(pattern:, values:) takes texts already made.
 object Formatted {
     has pattern is string;
     has values is @string;
 
     Formatted(:pattern, :values);
+
+    Formatted(pattern is string, values is ...string) {
+        self.pattern = pattern;
+        let listed is @string = values...;
+        self.values = listed;
+    }
 
     string() is string {
         let parts is @string = pattern.split("{}");
@@ -34,4 +47,19 @@ test "slots are filled in order and other braces stay" {
             "invalid"
         );
     }
+}
+
+object FormatProbe {
+    FormatProbe();
+
+    string() is string {
+        "probe";
+    }
+}
+
+test "values after the pattern turn into text" {
+    test.is(Formatted("{} + {} = {}", 1, 2, 3).string(), "1 + 2 = 3");
+    test.is(Formatted("{} is {}, {} and {}", FormatProbe(), true, 1.5, 'x').string(), "probe is true, 1.5 and x");
+    test.is(Formatted("plain").string(), "plain");
+    test.is(Formatted("{}/{}", 3 / 4, "s").string(), "3/4/s");
 }

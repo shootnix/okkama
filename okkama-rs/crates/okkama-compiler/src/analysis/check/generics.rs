@@ -129,10 +129,8 @@ impl Checker<'_, '_> {
                     .zip(resolved.iter().cloned())
                     .collect();
                 let shapes = self.ctor_shapes(object, &env);
-                !self
-                    .ctor_candidates(object, &shapes, call, &env)
-                    .1
-                    .is_empty()
+                !self.ctor_candidates(object, &shapes, call, &env, false).1.is_empty()
+                    || !self.ctor_candidates(object, &shapes, call, &env, true).1.is_empty()
             });
         }
         match found.len() {

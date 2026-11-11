@@ -2366,6 +2366,20 @@ delegate(pattern is string, values is ...any) is string {
 }
 ```
 
+Хвост `...string` принимает и значения, которые не строки, и превращает каждое
+в текст его собственным `string()`: `int`, `float`, `rat`, `byte`, `bool` и
+`char`, а также объекты и значения ролей, у типа которых есть `string() is
+string`. Преобразование статическое и применяется в последнюю очередь:
+сигнатура, которая подходит вызову как он написан, выигрывает, поэтому
+`kind(1, "a")` по-прежнему выбирает `kind(values is ...any)`, а не
+`kind(values is ...string)`. Значение без `string()` отклоняется. Распаковка
+`values...` не преобразуется: её элементы уже должны быть строками.
+
+```okkama
+out.writeln("count: ", 5, ", ready: ", true);       // count: 5, ready: true
+out.writeln(Formatted("{} version {}", id, id.version()));
+```
+
 Источником `name...` может быть настоящий вариадический параметр или массив:
 
 ```okkama
@@ -3872,14 +3886,16 @@ Path("notes.txt"))` открывает на чтение; `for file.text() -> li
 `examples/fs/directory/` показывает каждую задачу программой.
 
 `os` запускает программы и читает систему без shell. `Command(program:,
-arguments:, environment:, directory:)` держит явный контекст, а
-`InheritedCommand(program:, arguments:)` берёт контекст процесса. Каждый
+environment:, directory:, arguments: = [])` держит явный контекст, а
+`InheritedCommand(program:, arguments: = [])` берёт контекст процесса. Каждый
 аргумент доходит до программы одной точной строкой. `await
-CommandCapture(origin:, limit:).completion()` собирает вывод: через
-`done::Captured::output` и `::errors`, а `done.exit()` отвечает на
-`success()`, `code()` и `exit::Status::kind`. `PipelineCapture(commands:, …)`
-соединяет команды. `Process(command:)` разговаривает с запущенной
-программой через `ProcessInput`, `ProcessOutput` и `signal()`.
+CommandCapture(origin:, limit:).completion()` собирает вывод: текст
+`done::Captured::output` и `::errors` (UTF-8), точные байты
+`done::Bytes::output` и `::errors`, а `done.exit()` отвечает на `success()`,
+`code()` и `exit::Status::kind`. Стандартный вход задаёт `text:` или `input:`.
+`PipelineCapture(commands:, …)` соединяет команды. `Process(command:)`
+разговаривает с запущенной программой: `process.input().write("…")`,
+`process.output().text(limit:)`, `errors()` и `signal()`.
 `Environment()` — снимок, `Environment(values:)` — изолированный снимок.
 Оба отвечают на `variable(name)`, `home()`, `addition()` и `difference()`;
 `SearchPath(environment:)` обходит PATH. `Platform()`, `Host()`, `User()`,
@@ -4093,10 +4109,10 @@ SqliteMemory().connection()` открывает базу. `await db.execution(sq
 `url:`, его собственный URL, чтобы сверять с ним `Origin`. И по HTTP/1.1, и по
 HTTP/2 обработчик читает `request::Head::target.path()` и `query()`.
 
-`web` строит маршруты поверх: `WebRoutes(routings: [Scope(prefix: "/api",
-routings: [Get(path: "/notes/:id", endpoint: notes.one), Post(…)])],
-fallback:)`. Endpoint получает `WebRequest` с `path("id")`,
-`query("limit", "10")`, `await json(limit)` и `await text(limit)` и отвечает
+`web` строит маршруты поверх: `WebRoutes(Scope("/api", Get(path: "/notes/:id",
+endpoint: notes.one), Post(…)), Fallback(notes.missing))`. Без `Fallback` на
+запрос, которому не нашлось маршрута, отвечает 404 с problem-телом. Endpoint
+получает `WebRequest` с `path("id")`, `query("limit") else "10"`, `await json(limit)` и `await text(limit)` и отвечает
 `Text(status:, text:)` или `JsonReply(status:, value:)`.
 `WebApplication(routes).listen(address, port)` его обслуживает.
 

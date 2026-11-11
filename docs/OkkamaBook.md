@@ -2261,6 +2261,19 @@ delegate(pattern is string, values is ...any) is string {
 }
 ```
 
+A `...string` tail also takes values that are not strings and turns each
+into text with its own `string()`: `int`, `float`, `rat`, `byte`, `bool` and
+`char`, and objects and role values whose type answers `string() is string`.
+The conversion is static, and it is the last resort: a signature that fits the
+call as written wins, so `kind(1, "a")` still picks `kind(values is ...any)`
+over `kind(values is ...string)`. A value without `string()` is rejected. A
+spread `values...` is not converted; its elements must already be strings.
+
+```okkama
+out.writeln("count: ", 5, ", ready: ", true);       // count: 5, ready: true
+out.writeln(Formatted("{} version {}", id, id.version()));
+```
+
 `name...` accepts an array or a real variadic binding and expands one level:
 
 ```okkama
@@ -3699,14 +3712,16 @@ answers `await watch.event()` with a `FileEvent`, whose kind is in
 program.
 
 `os` runs programs and reads the system without a shell. `Command(program:,
-arguments:, environment:, directory:)` keeps an explicit context, while
-`InheritedCommand(program:, arguments:)` takes the process's own. Each
+environment:, directory:, arguments: = [])` keeps an explicit context, while
+`InheritedCommand(program:, arguments: = [])` takes the process's own. Each
 argument reaches the program as one exact string. `await
-CommandCapture(origin:, limit:).completion()` collects the output, through
-`done::Captured::output` and `::errors`, and the `done.exit()`, which
-answers `success()`, `code()` and `exit::Status::kind`.
-`PipelineCapture(commands:, …)` chains commands. `Process(command:)` talks to
-a running program through `ProcessInput`, `ProcessOutput` and `signal()`.
+CommandCapture(origin:, limit:).completion()` collects the output: the text
+of `done::Captured::output` and `::errors` (UTF-8), the exact bytes of
+`done::Bytes::output` and `::errors`, and `done.exit()`, which answers
+`success()`, `code()` and `exit::Status::kind`. `text:` or `input:` gives it
+standard input. `PipelineCapture(commands:, …)` chains commands.
+`Process(command:)` talks to a running program: `process.input().write("…")`,
+`process.output().text(limit:)`, `errors()` and `signal()`.
 `Environment()` is a snapshot, and `Environment(values:)` an isolated one.
 Both answer `variable(name)`, `home()`, `addition()` and `difference()`;
 `SearchPath(environment:)` walks PATH. `Platform()`, `Host()`, `User()`,
@@ -3913,10 +3928,10 @@ finish and closes. A WebSocket server also takes `url:`, its own URL, to check
 the `Origin` against. Over HTTP/1.1 and HTTP/2 alike, a handler reads
 `request::Head::target.path()` and `query()`.
 
-`web` puts routes on top: `WebRoutes(routings: [Scope(prefix: "/api",
-routings: [Get(path: "/notes/:id", endpoint: notes.one), Post(…)])],
-fallback:)`. An endpoint gets a `WebRequest` with `path("id")`,
-`query("limit", "10")`, `await json(limit)` and `await text(limit)`, and answers
+`web` puts routes on top: `WebRoutes(Scope("/api", Get(path: "/notes/:id",
+endpoint: notes.one), Post(…)), Fallback(notes.missing))`. Without a
+`Fallback`, a request no route matches gets a 404 problem. An endpoint gets a
+`WebRequest` with `path("id")`, `query("limit") else "10"`, `await json(limit)` and `await text(limit)`, and answers
 `Text(status:, text:)` or `JsonReply(status:, value:)`.
 `WebApplication(routes).listen(address, port)` serves it.
 

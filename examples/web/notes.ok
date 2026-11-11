@@ -1,7 +1,7 @@
 module examples/web/notes v1.0.0;
 
 import "web/app" take WebApplication;
-import "web/routing" take WebRoutes, Get, Post, Scope;
+import "web/routing" take WebRoutes, Get, Post, Scope, Fallback;
 import "web/request" take WebRequest;
 import "web/reply" take Text, JsonReply;
 import "http/handler" take HandlingResult;
@@ -59,12 +59,12 @@ async main() is int {
     let out = Stdout();
     let notes = Notes();
     let routes = WebRoutes(
-        routings: [Scope(prefix: "/api", routings: [
+        Scope("/api",
             Get(path: "/notes", endpoint: notes.list),
             Post(path: "/notes", endpoint: notes.add),
             Get(path: "/notes/:id", endpoint: notes.one),
-        ])],
-        fallback: notes.missing,
+        ),
+        Fallback(notes.missing),
     );
     let server = (await WebApplication(routes).server("127.0.0.1", 0)).started();
     let base = "http://127.0.0.1:" + server::Local::port.string();

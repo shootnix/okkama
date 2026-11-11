@@ -71,6 +71,23 @@ object FixedResolution does Resolving {
         names = records.names();
     }
 
+    // Names and their addresses as text:
+    // FixedResolution(["api.example.test": ["192.0.2.10", "2001:db8::10"]]).
+    FixedResolution(table is %string:@string) {
+        let hostnames = table.keys();
+        let texts = table.values();
+        let listed is @HostAddresses = (0..hostnames.size()).map() -> index {
+            let addresses is @IpAddress = texts[index].map() -> text {
+                IpAddress(text);
+            };
+            HostAddresses(host: HostName(hostnames[index]), addresses: addresses);
+        };
+        let empty is @AddressName = [];
+        let records = DnsConfiguration(hosts: listed, names: empty);
+        self.hosts = records.hosts();
+        names = records.names();
+    }
+
     FixedResolution(hosts is Sequencing<HostAddresses>, names is Sequencing<AddressName>) {
         let records = DnsConfiguration(hosts: hosts, names: names);
         self.hosts = records.hosts();

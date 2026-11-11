@@ -7,8 +7,7 @@ import "fs/directory" take Directory;
 import "fs/path" take Path;
 import "random/source" take PcgRandom;
 import "time/clock" take Timing, Instant, MonotonicInstant;
-import "time/duration" take Duration, DurationUnit;
-import "encoding/utf" take Utf8Decoded;
+import "time/duration" take Duration;
 import "io/stdout" take Stdout;
 
 // An e-mail from its fields: MailMessage(from:, to:, subject:, text:) adds
@@ -42,20 +41,20 @@ main() is int {
         clock: FixedClock(),
         random: PcgRandom(7),
     );
-    out.write(Utf8Decoded(message.bytes()).string().split("\r\n").join("\n"));
+    out.write(message.string());
     out.writeln("---");
 
     let back = ParsedMail(message.bytes()).message();
-    out.writeln("subject: " + back.headers().first("Subject"));
-    out.writeln("from: " + back.headers().first("From"));
+    out.writeln("subject: ", back.headers().first("Subject"));
+    out.writeln("from: ", back.headers().first("From"));
 
     let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "maildir-");
     let box = Maildir(scratch.path().child("inbox")).created();
     box.add(message);
     box.add(back);
-    out.writeln("maildir holds " + box.messages().size().string() + " messages");
+    out.writeln("maildir holds ", box.messages().size(), " messages");
     for box.messages() -> stored {
-        out.writeln("  " + stored.message().headers().first("Subject"));
+        out.writeln("  ", stored.message().headers().first("Subject"));
     }
     scratch.close();
     0;

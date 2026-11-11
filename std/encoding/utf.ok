@@ -1,5 +1,6 @@
 module encoding/utf v1.0.0;
 
+import "io/stream" take ByteSource;
 import "runtime/utf" take utf8_encode, utf8_decode, utf8_valid_prefix, utf16_encode, utf16_decode,
     utf16_valid_prefix, utf32_encode, utf32_decode, utf32_valid_prefix;
 
@@ -29,7 +30,9 @@ import "runtime/utf" take utf8_encode, utf8_decode, utf8_valid_prefix, utf16_enc
 
 enum ByteOrder = (big, little);
 
-object Utf8Encoded {
+// Text as UTF-8 bytes; a ByteSource, so text can go wherever bytes are
+// written: input.write(Utf8Encoded("hi\n")).
+object Utf8Encoded does ByteSource {
     has origin is string;
 
     Utf8Encoded(origin is string) {

@@ -5,7 +5,7 @@ import "http/server_policy" take ServerPolicy;
 import "net/tcp" take TcpListening;
 import "net/ip" take IpAddress;
 import "time/clock" take Timing, SystemClock;
-import "web/routing" take WebRoutes, Get, Post, Scope;
+import "web/routing" take WebRoutes, Get, Post, Scope, Fallback;
 import "web/request" take WebRequest;
 import "http/method" take MethodName;
 import "web/reply" take Text;
@@ -75,11 +75,14 @@ hidden object Greetings {
 async test "a web application routes requests over loopback and drains" {
     let greetings = Greetings();
     let routes = WebRoutes(
-        routings: [Scope(prefix: "/api", routings: [Get(path: "/hello/:name", endpoint: greetings.hello), Post(path: "/echo", endpoint: greetings.echo)])],
-        fallback: greetings.missing,
+        Scope("/api",
+            Get(path: "/hello/:name", endpoint: greetings.hello),
+            Post(path: "/echo", endpoint: greetings.echo),
+        ),
+        Fallback(greetings.missing),
     );
     let server = (await WebApplication(routes).server("127.0.0.1", 0)).started();
-        let base = "http://127.0.0.1:" + server::Local::port.string();
+    let base = "http://127.0.0.1:" + server::Local::port.string();
     let client = HttpClient(endpoints: LoopbackEndpoints());
     test.is(await (await client.get(base + "/api/hello/Ada?mark=%21")).text(), "Hello, Ada!!");
     let created = await client.post(url: base + "/api/echo", body: TextBody(text: "quiet"));

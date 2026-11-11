@@ -109,6 +109,12 @@ object MailMessage does ByteSource {
     bytes() is @byte {
         content.bytes();
     }
+
+    // The message to read: headers and body as text, each line ending in
+    // "\n". bytes() is the wire form, with CRLF.
+    string() is string {
+        Utf8Decoded(content.bytes()).string().split("\r\n").join("\n");
+    }
 }
 
 object ParsedMail {
@@ -734,6 +740,9 @@ test "a message from its fields sets its date, identifier and content type" {
     test.is(fields.first(MessageHeaderName("Content-Type")), "text/plain; charset=utf-8");
     let back = ParsedMail(message.bytes()).message();
     test.is(back.headers().first(MessageHeaderName("Subject")), "Lunch?");
+    test.ok(message.string().contains("\nSubject: Lunch?\n"));
+    test.ok(message.string().ends_with("\n\nShall we?\n"));
+    test.ok(!message.string().contains("\r"));
     let other = MailMessage(from: "a@b.test", to: ["c@d.test"], subject: "Привет", text: "", clock: clock, random: PcgRandom(1));
     test.is(other.headers().first(MessageHeaderName("Subject")).slice(0, 8), "=?UTF-8?");
     test.throws(InvalidArgument) {

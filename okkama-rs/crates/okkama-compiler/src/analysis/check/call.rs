@@ -224,6 +224,52 @@ impl Checker<'_, '_> {
 
     /// Подходит ли вызов сигнатуре; `Some(ranks)` — специфичность по позициям.
     pub(super) fn fits(&self, call: &CallArgs, shape: &Shape) -> Option<Vec<u8>> {
+        self.fits_with(call, shape, false)
+    }
+
+    /// Whether a value of `ty` turns into text through its own `string()`
+    /// when it reaches a `...string` tail (§18.4): scalars, and objects and
+    /// roles whose `string()` answers a string.
+    pub(super) fn textual(&self, ty: &Ty) -> bool {
+        let answers = |params: &[(String, Ty)], result: &Option<Ty>, is_async: bool| {
+            params.is_empty() && !is_async && *result == Some(Ty::Str)
+        };
+        match ty.taken() {
+            Ty::Str | Ty::Error | Ty::Never | Ty::Any => false,
+            Ty::Object(object, _) => self.reg.objects[object.0]
+                .methods
+                .iter()
+                .any(|method| method.name == "string" && !method.hidden && answers(&method.params, &method.result, method.is_async)),
+            Ty::Role(role, _) => self.reg.roles[role.0]
+                .methods
+                .iter()
+                .any(|method| method.name == "string" && answers(&method.params, &method.result, method.is_async)),
+            Ty::Param(param) => match self.reg.params[param.0].bound.clone() {
+                Some(bound @ Ty::Role(..)) => self.textual(&bound),
+                _ => false,
+            },
+            other => self.builtin_text(&other),
+        }
+    }
+
+    /// `value.string()` for a value a `...string` tail converts (§18.4).
+    pub(super) fn text_of(&mut self, value: Expr, span: Span) -> Expr {
+        let name = ast::Name { text: "string".to_string(), span };
+        match Self::ty_of(&value).taken() {
+            Ty::Object(object, type_args) => self.object_method(value, object, type_args, &name, &[], false, span),
+            Ty::Role(role, role_args) => self.role_method(value, role, role_args, &name, &[], span),
+            Ty::Param(param) => match self.reg.params[param.0].bound.clone() {
+                Some(Ty::Role(role, role_args)) => self.role_method(value, role, role_args, &name, &[], span),
+                _ => value,
+            },
+            _ => self.builtin_call(value, &name, &[], span),
+        }
+    }
+
+    /// `fits`, and with `convert` a `...string` tail also takes values that
+    /// turn into text (§18.4). Callers try without it first, so a signature
+    /// that fits as written always wins over one that needs a conversion.
+    pub(super) fn fits_with(&self, call: &CallArgs, shape: &Shape, convert: bool) -> Option<Vec<u8>> {
         let accepts = |actual: &Ty, param: &Ty| self.reg.assignable(&actual.taken(), param);
         let named = call.named();
         if !shape.variadic {
@@ -281,10 +327,13 @@ impl Checker<'_, '_> {
         }
         for arg in &call.values[fixed.len()..] {
             let actual = Self::ty_of(&arg.value);
-            if !accepts(&actual, element) {
+            if accepts(&actual, element) {
+                ranks.push(self.rank(&actual, element));
+            } else if convert && **element == Ty::Str && self.textual(&actual) {
+                ranks.push(0);
+            } else {
                 return None;
             }
-            ranks.push(self.rank(&actual, element));
         }
         if let Some((array, _)) = &call.spread {
             match Self::ty_of(array).taken() {
@@ -319,11 +368,18 @@ impl Checker<'_, '_> {
 
     /// Подходящие сигнатуры вызова с рангами, как их выбирает `select_overload`.
     fn fitting_overloads(&self, call: &CallArgs, shapes: &[Shape]) -> Vec<(usize, Vec<u8>)> {
-        let fitting: Vec<(usize, Vec<u8>)> = shapes
-            .iter()
-            .enumerate()
-            .filter_map(|(index, shape)| self.fits(call, shape).map(|ranks| (index, ranks)))
-            .collect();
+        let fitting_with = |convert: bool| -> Vec<(usize, Vec<u8>)> {
+            shapes
+                .iter()
+                .enumerate()
+                .filter_map(|(index, shape)| self.fits_with(call, shape, convert).map(|ranks| (index, ranks)))
+                .collect()
+        };
+        // A conversion to text is the last resort (§18.4).
+        let mut fitting = fitting_with(false);
+        if fitting.is_empty() {
+            fitting = fitting_with(true);
+        }
         Self::fixed_first(fitting, |index| shapes[index].variadic)
     }
 
@@ -503,7 +559,16 @@ impl Checker<'_, '_> {
             };
             let mut items = Vec::new();
             for arg in rest {
-                items.push(self.coerce(arg.value, &element, arg.span, &format!("{what} argument")));
+                let actual = Self::ty_of(&arg.value);
+                let value = if element == Ty::Str
+                    && !self.reg.assignable(&actual.taken(), &Ty::Str)
+                    && self.textual(&actual)
+                {
+                    self.text_of(arg.value, arg.span)
+                } else {
+                    arg.value
+                };
+                items.push(self.coerce(value, &element, arg.span, &format!("{what} argument")));
             }
             let spread = call.spread.map(|(array, _)| Box::new(array));
             args.push(Self::typed(
@@ -984,6 +1049,7 @@ impl Checker<'_, '_> {
         shapes: &[(Shape, bool)],
         call: &CallArgs,
         env: &[(ParamId, Ty)],
+        convert: bool,
     ) -> (Vec<usize>, Vec<(usize, Vec<u8>)>) {
         let info = &self.reg.objects[object.0];
         let named = call.named();
@@ -1026,7 +1092,7 @@ impl Checker<'_, '_> {
                 if named || call.values.len() + 1 < shape.params.len() {
                     continue;
                 }
-                self.fits(call, shape)
+                self.fits_with(call, shape, convert)
             } else {
                 // Parameters with default values may be left out (#149).
                 let fits = call.spread.is_none()
@@ -1127,7 +1193,7 @@ impl Checker<'_, '_> {
                 .map(|(shape, _)| shape)
                 .enumerate()
                 .collect();
-            Self::unique_shape(&shapes, args)
+            self.unique_shape(&shapes, args)
         });
         let call = self.call_arguments(args, hint.as_ref());
         // Ожидаемый тип — подсказка аргументам; специализацию задают и он, и
@@ -1224,7 +1290,11 @@ impl Checker<'_, '_> {
             return Self::poisoned(span);
         }
         let names = call.names();
-        let (by_shape, typed) = self.ctor_candidates(object, &shapes, &call, &env);
+        let (by_shape, mut typed) = self.ctor_candidates(object, &shapes, &call, &env, false);
+        // A conversion to text is the last resort (§18.4).
+        if typed.is_empty() {
+            typed = self.ctor_candidates(object, &shapes, &call, &env, true).1;
+        }
         // Типам не подошёл никто, а по форме — ровно один: его ошибку типа
         // точнее сообщит `arrange`.
         let chosen = if typed.is_empty() && by_shape.len() == 1 {
@@ -1376,7 +1446,7 @@ impl Checker<'_, '_> {
 
     /// Единственная форма по арности (или именам аргументов): её типы —
     /// ожидаемые типы аргументов.
-    fn unique_shape(shapes: &[(usize, Shape)], args: &[ast::Argument]) -> Option<Shape> {
+    fn unique_shape(&self, shapes: &[(usize, Shape)], args: &[ast::Argument]) -> Option<Shape> {
         let named = args.iter().any(|arg| arg.name.is_some());
         let matching: Vec<&Shape> = shapes
             .iter()
@@ -1385,7 +1455,9 @@ impl Checker<'_, '_> {
                 // A parameter with a default value may be left out (#149).
                 let required = (0..shape.params.len()).filter(|index| !shape.has_default(*index)).count();
                 if named {
-                    (required..=shape.params.len()).contains(&args.len())
+                    // A variadic signature takes positional calls only (§17.4).
+                    !shape.variadic
+                        && (required..=shape.params.len()).contains(&args.len())
                         && args.iter().all(|arg| {
                             arg.name.as_ref().is_some_and(|name| {
                                 shape.params.iter().any(|(param, _)| *param == name.text)
@@ -1396,9 +1468,51 @@ impl Checker<'_, '_> {
                 }
             })
             .collect();
-        match matching.as_slice() {
+        if let [shape] = matching.as_slice() {
+            return Some((*shape).clone());
+        }
+        // Several signatures fit the call's form. An array or map literal still
+        // tells them apart, because only a parameter that takes a collection
+        // can type it: `Pair([A(), B()])` beside `Pair(name is string)`, or
+        // `Doc([A(), B()])` beside `Doc(items is ...Part)` (#501).
+        let literals: Vec<(usize, &ast::Argument)> = args
+            .iter()
+            .enumerate()
+            .filter(|(_, arg)| {
+                matches!(
+                    strip_grouping(&arg.value).kind,
+                    ast::ExprKind::Array { .. } | ast::ExprKind::Map { .. }
+                )
+            })
+            .collect();
+        if literals.is_empty() {
+            return None;
+        }
+        let narrowed: Vec<&Shape> = matching
+            .into_iter()
+            .filter(|shape| {
+                literals.iter().all(|(index, arg)| {
+                    param_hint(shape, *index, arg.name.as_ref().map(|name| name.text.as_str()))
+                        .is_some_and(|ty| self.takes_literal(&ty, &arg.value))
+                })
+            })
+            .collect();
+        match narrowed.as_slice() {
             [shape] => Some((*shape).clone()),
             _ => None,
+        }
+    }
+
+    /// Whether a parameter of type `ty` can take this array or map literal.
+    fn takes_literal(&self, ty: &Ty, literal: &ast::Expr) -> bool {
+        match (&strip_grouping(literal).kind, ty) {
+            (ast::ExprKind::Array { .. }, Ty::Array(_)) => true,
+            (ast::ExprKind::Array { .. }, Ty::Role(role, args)) => {
+                args.len() == 1
+                    && (Some(*role) == self.reg.standard.sequencing || Some(*role) == self.reg.standard.iterating)
+            }
+            (ast::ExprKind::Map { .. }, Ty::Map(..)) => true,
+            _ => false,
         }
     }
 
@@ -1479,7 +1593,7 @@ impl Checker<'_, '_> {
             }
             return Self::poisoned(span);
         }
-        let hint = Self::unique_shape(&shapes, args);
+        let hint = self.unique_shape(&shapes, args);
         let call = self.call_arguments(args, hint.as_ref());
         let plain: Vec<Shape> = shapes.iter().map(|(_, shape)| shape.clone()).collect();
         let chosen = match self.select_overload(&call, &plain) {
@@ -1560,7 +1674,7 @@ impl Checker<'_, '_> {
             }
             return Self::poisoned(span);
         }
-        let hint = Self::unique_shape(&shapes, args);
+        let hint = self.unique_shape(&shapes, args);
         let call = self.call_arguments(args, hint.as_ref());
         let plain: Vec<Shape> = shapes.iter().map(|(_, shape)| shape.clone()).collect();
         let chosen = match self.select_overload(&call, &plain) {

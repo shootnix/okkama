@@ -1,10 +1,8 @@
 module examples/os/process/talk v1.0.0;
 
-import "encoding/utf" take Utf8Decoded, Utf8Encoded;
 import "fs/path" take Path;
-import "io/decorators" take ByteSnapshot;
 import "os/command" take InheritedCommand;
-import "os/process" take ExitKind, Process, ProcessInput, ProcessOutput, Signal;
+import "os/process" take ExitKind, Process, Signal;
 import "io/stdout" take Stdout;
 
 // Talk to a running program: write to its input, close it to send EOF, read
@@ -15,11 +13,10 @@ async main() is int {
     let out = Stdout();
 
     let upper = Process(command: InheritedCommand(program: Path("tr"), arguments: ["a-z", "A-Z"]));
-    let input = ProcessInput(origin: upper);
-    input.write(ByteSnapshot(Utf8Encoded(origin: "quiet words\n").bytes()));
+    let input = upper.input();
+    input.write("quiet words\n");
     input.close();
-    let output = ProcessOutput(origin: upper);
-    let heard = Utf8Decoded(origin: output.bytes(64)).string();
+    let heard = upper.output().text(limit: 64);
     out.write("heard: " + heard);
     out.writeln("exit: " + (await upper.exit()).success().string());
     upper.close();

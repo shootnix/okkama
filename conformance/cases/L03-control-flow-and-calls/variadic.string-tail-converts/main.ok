@@ -1,0 +1,27 @@
+module app v1.0.0;
+import "io/stdout" take Stdout;
+role Named {
+    string() is string;
+}
+object Point does Named {
+    has x is int;
+    Point(x is int) { self.x = x; }
+    string() is string { "P" + x.string(); }
+}
+object Show {
+    Show();
+    kind(values is ...int) is string { "int"; }
+    kind(values is ...string) is string { "string"; }
+    kind(values is ...any) is string { "any"; }
+    joined(values is ...string) is string { let all is @string = values...; all.join("|"); }
+}
+main() is int {
+    let out = Stdout();
+    out.writeln("count: ", 5, ", ok: ", true, ", rat: ", 3 / 4, ", f: ", 1.5, ", c: ", 'z');
+    let named is Named = Point(2);
+    out.writeln("point: ", Point(7), " role: ", named);
+    let s = Show();
+    out.writeln(s.kind(1, "a"), " ", s.kind(1, 2), " ", s.kind("a"));
+    out.writeln(s.joined(1, Point(3), "x"));
+    0;
+}

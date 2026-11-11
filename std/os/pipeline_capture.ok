@@ -1,6 +1,8 @@
 module os/pipeline_capture v1.0.0;
 
-import "encoding/utf" take Utf8Decoded;
+import "encoding/utf" take Utf8Decoded, Utf8Encoded;
+import "io/stream" take ByteSource;
+import "io/decorators" take ByteSnapshot;
 import "fs/path" take Path;
 import "os/command" take Command, Commanding;
 import "os/directory" take WorkingDirectory;
@@ -27,20 +29,29 @@ enum PipelineStream = (output, errors);
 
 object PipelineCapture {
     has commands is @Commanding;
-    has input is @byte;
+    has input is ByteSource;
     has limit is int;
     has state is PipelineState;
 
     PipelineCapture(commands is @Commanding, limit is int) {
         self.commands = commands;
-        input = [];
+        let empty is @byte = [];
+        input = ByteSnapshot(empty);
         self.limit = limit;
         state = pipeline_state_create();
     }
 
     PipelineCapture(commands is @Commanding, input is @byte, limit is int) {
         self.commands = commands;
-        self.input = input;
+        self.input = ByteSnapshot(input);
+        self.limit = limit;
+        state = pipeline_state_create();
+    }
+
+    // Standard input as UTF-8 text: PipelineCapture(…, text: "b\na\n", limit: 1024).
+    PipelineCapture(commands is @Commanding, text is string, limit is int) {
+        self.commands = commands;
+        input = Utf8Encoded(text);
         self.limit = limit;
         state = pipeline_state_create();
     }
@@ -61,7 +72,7 @@ object PipelineCapture {
             }
             let captured is CapturedPipeline = await pipeline_state_capture(
                 state,
-                input,
+                input.bytes(),
                 limit,
             );
             let overflow is int = captured_pipeline_overflow_stream(captured);
@@ -130,8 +141,23 @@ object CompletedPipeline {
         completed_exits;
     }
 
-    // What the last command wrote to stdout, and what each wrote to stderr.
+    // What the last command wrote to stdout, and what each wrote to stderr,
+    // as UTF-8 text. Output that is not UTF-8 throws InvalidUtf8 here;
+    // ::Bytes keeps it exact.
     cap Captured {
+        output is string {
+            Utf8Decoded(captured_output).string();
+        }
+
+        errors is @string {
+            captured_errors.map() -> bytes {
+                Utf8Decoded(bytes).string();
+            };
+        }
+    }
+
+    // The exact bytes of stdout and of each command's stderr.
+    cap Bytes {
         output is @byte {
             captured_output;
         }
@@ -161,10 +187,10 @@ async test "a pipeline passes output along; each command's errors are kept apart
         Command(program: Path("tr"), arguments: ["a-z", "A-Z"], environment: env, directory: here),
     ];
     let done = await PipelineCapture(commands: pipeline, limit: 1024).completion();
-    test.is(Utf8Decoded(origin: done::Captured::output).string(), "A\nB\n");
+    test.is(done::Captured::output, "A\nB\n");
     test.is(done::Captured::errors.size(), 3);
-    test.is(Utf8Decoded(origin: done::Captured::errors[0]).string(), "one");
-    test.is(done::Captured::errors[2], []);
+    test.is(done::Captured::errors[0], "one");
+    test.is(done::Captured::errors[2], "");
     let codes is @int = done.exits().map() -> exit {
         exit.code();
     };
@@ -179,7 +205,7 @@ async test "input feeds the first command; every exit is reported" {
         Command(program: Path("sh"), arguments: ["-c", "cat; exit 4"], environment: env, directory: here),
     ];
     let done = await PipelineCapture(commands: pipeline, input: [byte(120)], limit: 16).completion();
-    test.is(done::Captured::output, [byte(120)]);
+    test.is(done::Bytes::output, [byte(120)]);
     test.ok(done.exits()[0].success());
     test.is(done.exits()[1].code(), 4);
 }

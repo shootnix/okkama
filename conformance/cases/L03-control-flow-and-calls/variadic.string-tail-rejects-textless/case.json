@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.variadic.string-tail-rejects-textless",
+  "title": "a value without string() cannot reach a ...string tail",
+  "purpose": "Only values whose type answers string() with a string are converted; any other value is rejected before the program runs.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.VARIADIC",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ],
+      "justification": "Blank has no string() action, so no writeln signature accepts it; the checker rejects the call, and the first line never prints."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.8",
+    "docs/okkama-spec-11072026.md#11.8.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for the text conversion of ...string tails",
+    "expected_basis": "Book 18.4: the conversion needs string() is string on the value's type."
+  },
+  "status": "mandatory"
+}
