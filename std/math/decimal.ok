@@ -48,3 +48,24 @@ object Decimal does Comparing<Decimal> {
 }
 
 enum InvalidDecimal is Error = (origin(origin is string));
+
+test "equivalent spellings share one canonical form" {
+    test.is(Decimal("001.2000").string(), "1.2");
+    test.is(Decimal("1000").string(), "1e3");
+    test.is(Decimal("1.2").order(Decimal("1.20")), Order.equal);
+    test.is(Decimal("-0.5").order(Decimal("0.25")), Order.less);
+    test.is(Decimal("1e3").order(Decimal("999")), Order.greater);
+    test.is(Decimal("12.5").exponent(), -1);
+    test.is(Decimal("12.5").coefficient().string(), "125");
+    for ["", " 1", "1 ", "1..2", "+-1", "abc"] -> invalid {
+        test.is(
+            try {
+                Decimal(invalid).string();
+            }
+            catch InvalidDecimal.origin(origin) {
+                "[" + origin + "]";
+            },
+            "[" + invalid + "]"
+        );
+    }
+}

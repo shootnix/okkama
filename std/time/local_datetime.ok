@@ -105,3 +105,35 @@ object LocalDateTime does Comparing<LocalDateTime> {
         }
     }
 }
+
+test "local date-times add whole civil days" {
+    let start = LocalDateTime(
+        date: Date(year: 2026, month: 8, day: 11),
+        time: TimeOfDay(hour: 23, minute: 30, second: 0, nanosecond: 0),
+    );
+    let finish = start.plus(Duration(value: 2.rat(), unit: DurationUnit.hour));
+    test.is(finish.date().day(), 12);
+    test.is(finish.time().hour(), 1);
+    test.is(finish.time().minute(), 30);
+    test.is(finish.minus(start).seconds(), 7200.rat());
+    test.is(start.order(finish), Order.less);
+    let year_end = LocalDateTime(
+        date: Date(year: 2026, month: 12, day: 31),
+        time: TimeOfDay(hour: 12, minute: 0, second: 0, nanosecond: 0),
+    );
+    test.is(year_end.plus(Duration(value: 1.rat(), unit: DurationUnit.day)).date().year(), 2027);
+    test.is(start.plus(Duration(value: -1.rat(), unit: DurationUnit.day)).date().day(), 10);
+    let final = LocalDateTime(
+        date: Date(year: 9999, month: 12, day: 31),
+        time: TimeOfDay(hour: 23, minute: 0, second: 0, nanosecond: 0),
+    );
+    test.is(
+        try {
+            final.plus(Duration(value: 2.rat(), unit: DurationUnit.hour)).date().year();
+        }
+        catch error is InvalidDate {
+            -1;
+        },
+        -1
+    );
+}

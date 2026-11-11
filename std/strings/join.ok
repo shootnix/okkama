@@ -78,3 +78,41 @@ enum JoinLimit = (items, length);
 enum InvalidJoinLimits is Error = (invalid);
 
 enum JoinLimitExceeded is Error = (kind(kind is JoinLimit));
+
+test "joined keeps order and its separator" {
+    test.is(Joined(", ", ["a", "b", "c"]).string(), "a, b, c");
+    test.is(Joined("-", ["only"]).string(), "only");
+    let nothing is @string = [];
+    test.is(Joined("-", nothing).string(), "");
+    test.is(Joined("", ["a", "", "b"]).string(), "ab");
+}
+
+test "limits bound the items and the length" {
+    test.is(Joined(",", ["ab", "cd"], 2, 5).string(), "ab,cd");
+    let refused = (values is @string, items is int, length is int) is string {
+        try {
+            Joined(",", values, items, length).string();
+        }
+        catch JoinLimitExceeded.kind(kind) {
+            if kind == JoinLimit.items {
+                "items";
+            }
+            else {
+                "length";
+            }
+        }
+    };
+    test.is(refused(["a", "b", "c"], 2, 100), "items");
+    test.is(refused(["ab", "cd"], 5, 4), "length");
+    test.is(
+        try {
+            Joined(",", ["a"], -1, 10).string();
+        }
+        catch error is InvalidJoinLimits {
+            "invalid";
+        },
+        "invalid"
+    );
+    let parts = JoinedParts(" ", 3, 20).following("x").following("y");
+    test.is(parts.string(), "x y");
+}

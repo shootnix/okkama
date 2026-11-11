@@ -105,3 +105,39 @@ object Shortened {
         shorten(source, line_width, ending);
     }
 }
+
+test "indent and dedent leave blank lines alone" {
+    test.is(Indented(origin: "first\nsecond", prefix: "  ").string(), "  first\n  second");
+    test.is(Indented(origin: "a\n\nb\n", prefix: "> ").string(), "> a\n\n> b\n");
+    test.is(Dedented(origin: "    first\n      second").string(), "first\n  second");
+    test.is(Dedented(origin: "  a\n   \n  b").string(), "a\n\nb");
+    test.is(Dedented(origin: "a\n  b").string(), "a\n  b");
+}
+
+test "wrap packs whole words and shorten keeps a placeholder" {
+    test.is(Wrapped(origin: "one two three", width: 7).string(), "one two\nthree");
+    test.is(Wrapped(origin: "  spaced   out  ", width: 20).string(), "spaced out");
+    test.is(Wrapped(origin: "unbreakable word", width: 4).string(), "unbreakable\nword");
+    test.is(Shortened(origin: "one two three", width: 10, placeholder: "...").string(), "one two...");
+    test.is(Shortened(origin: "one two", width: 10, placeholder: "...").string(), "one two");
+    for [0, -1] -> width {
+        test.is(
+            try {
+                Wrapped(origin: "x", width: width).string();
+            }
+            catch error is Error {
+                "refused";
+            },
+            "refused"
+        );
+    }
+    test.is(
+        try {
+            Shortened(origin: "one two three", width: 2, placeholder: "...").string();
+        }
+        catch error is Error {
+            "refused";
+        },
+        "refused"
+    );
+}

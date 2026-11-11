@@ -17,3 +17,21 @@ object Formatted {
 }
 
 enum InvalidFormat is Error = (invalid);
+
+test "slots are filled in order and other braces stay" {
+    test.is(Formatted(pattern: "{} + {} = {}", values: ["1", "2", "3"]).string(), "1 + 2 = 3");
+    test.is(Formatted(pattern: "{x} {}", values: ["a"]).string(), "{x} a");
+    test.is(Formatted(pattern: "plain", values: []).string(), "plain");
+    test.is(Formatted(pattern: "{}", values: ["{}"]).string(), "{}");
+    for [["{} {}", "one"], ["none", "extra"]] -> wrong {
+        test.is(
+            try {
+                Formatted(pattern: wrong[0], values: [wrong[1]]).string();
+            }
+            catch error is InvalidFormat {
+                "invalid";
+            },
+            "invalid"
+        );
+    }
+}

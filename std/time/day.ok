@@ -80,3 +80,21 @@ object TimeOfDay does Comparing<TimeOfDay> {
 }
 
 enum InvalidTimeOfDay is Error = (because(message is string));
+
+test "times of day are checked and ordered" {
+    let noon = TimeOfDay(hour: 12, minute: 0, second: 0, nanosecond: 0);
+    test.is(noon.hour(), 12);
+    test.is(noon.order(TimeOfDay(hour: 12, minute: 0, second: 0, nanosecond: 1)), Order.less);
+    test.is(TimeOfDay(hour: 23, minute: 59, second: 59, nanosecond: 999999999).nanosecond(), 999999999);
+    for [[24, 0, 0, 0], [0, 60, 0, 0], [0, 0, 60, 0], [0, 0, 0, 1000000000], [-1, 0, 0, 0]] -> parts {
+        test.is(
+            try {
+                TimeOfDay(hour: parts[0], minute: parts[1], second: parts[2], nanosecond: parts[3]).hour();
+            }
+            catch error is InvalidTimeOfDay {
+                -1;
+            },
+            -1
+        );
+    }
+}

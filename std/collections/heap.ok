@@ -209,3 +209,40 @@ object HeapChildren<T> {
         }
     }
 }
+
+test "a heap gives its least value and stays persistent" {
+    let heap = Heap(values: [7, 2, 5, 2]);
+    test.is(heap.size(), 4);
+    test.is(heap.top(), 2);
+    test.is(heap.remainder().top(), 2);
+    test.is(heap.remainder().remainder().top(), 5);
+    let original = heap.addition(9);
+    let extended = original.addition(1);
+    test.is(original.top(), 2);
+    test.is(extended.top(), 1);
+    test.is(extended.size(), 6);
+    let nothing is @int = [];
+    test.is(Heap(values: nothing).size(), 0);
+    test.is(
+        try {
+            Heap(values: nothing).top();
+        }
+        catch error is EmptySequence {
+            -1;
+        },
+        -1
+    );
+}
+
+test "draining a heap yields ascending order" {
+    let after = (heap is Heap<int>, removed is int) is Heap<int> {
+        (0..removed).reduce(heap) -> current, index {
+            current.remainder();
+        };
+    };
+    let source = Heap(values: [5, 3, 9, 1, 3, 8]);
+    test.is((0..6).map() -> index {
+        after(source, index).top().string();
+    }.join(" "), "1 3 3 5 8 9");
+    test.is(after(source, 6).size(), 0);
+}

@@ -127,3 +127,34 @@ object SystemClock does Timing {
 enum IncompatibleClock is Error = (incompatible);
 
 enum InvalidWait is Error = (because(message is string));
+
+test "instants are durations from the epoch" {
+    let second = Duration(value: 1.rat(), unit: DurationUnit.second);
+    let epoch = Instant(origin: Duration(value: 0.rat(), unit: DurationUnit.second));
+    let later = epoch + second;
+    test.is(later.unix_duration().seconds(), 1.rat());
+    test.is((later - epoch).seconds(), 1.rat());
+    test.is((later - second).order(epoch), Order.equal);
+    test.ok(epoch < later);
+}
+
+test "monotonic readings never mix domains" {
+    let tick = Duration(value: 5.rat(), unit: DurationUnit.millisecond);
+    let start = MonotonicInstant(origin: Duration(value: 10.rat(), unit: DurationUnit.second));
+    test.is(start.domain(), "explicit");
+    test.is((start + tick - start).seconds(), 1.rat() / 200.rat());
+    let other = MonotonicInstant(origin: Duration(value: 10.rat(), unit: DurationUnit.second), domain: "elsewhere");
+    test.is(
+        try {
+            (start - other).seconds().string();
+        }
+        catch error is IncompatibleClock {
+            "incompatible";
+        },
+        "incompatible"
+    );
+    let clock = SystemClock();
+    let before = clock.monotonic_instant();
+    test.ok(clock.monotonic_instant() >= before);
+    test.ok(clock.instant().unix_duration().seconds() > 1700000000.rat());
+}

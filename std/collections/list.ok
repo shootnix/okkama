@@ -147,3 +147,37 @@ object LinkedListCursor<T> does Cursor<T> {
 }
 
 enum EmptyListAccess is Error = (operation(operation is string));
+
+test "a list is built by prefixing and shares its tail" {
+    let empty is List<string> = EmptyList();
+    let one = empty.prefix("one");
+    let two = one.prefix("two");
+    test.is(empty.size(), 0);
+    test.is(one.size(), 1);
+    test.is(two.size(), 2);
+    test.is(two.first(), "two");
+    test.is(two.tail().first(), "one");
+    test.is(one.first(), "one");
+    test.is(two.map() -> name {
+        name;
+    }.join(","), "two,one");
+    test.is(LinkedList(value: "x", following: empty).first(), "x");
+    test.is(
+        try {
+            empty.first();
+        }
+        catch EmptyListAccess.operation(operation) {
+            operation;
+        },
+        "first"
+    );
+    test.is(
+        try {
+            empty.tail().size().string();
+        }
+        catch EmptyListAccess.operation(operation) {
+            operation;
+        },
+        "tail"
+    );
+}

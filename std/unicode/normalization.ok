@@ -52,3 +52,16 @@ object Normalized {
         }
     }
 }
+
+test "the four forms" {
+    let composed = "\u{00E9}";
+    let decomposed = "e\u{0301}";
+    test.is(Normalized(origin: decomposed, form: NormalizationForm.nfc).string(), composed);
+    test.is(Normalized(origin: composed, form: NormalizationForm.nfd).string(), decomposed);
+    test.is(Normalized(origin: "ﬃ", form: NormalizationForm.nfkc).string(), "ffi");
+    test.is(Normalized(origin: "ﬃ", form: NormalizationForm.nfc).string(), "ﬃ");
+    test.is(Normalized(origin: "\u{1E9B}\u{0323}", form: NormalizationForm.nfkd).string(), "s\u{0323}\u{0307}");
+    let once = Normalized(origin: decomposed, form: NormalizationForm.nfc).string();
+    test.is(Normalized(origin: once, form: NormalizationForm.nfc).string(), once);
+    test.is(Normalized(origin: " a ", form: NormalizationForm.nfkc).string(), " a ");
+}

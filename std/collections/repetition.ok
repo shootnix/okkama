@@ -210,3 +210,50 @@ object EmptyCycleCursor<T> does Cursor<T> {
         throw IterationEnded.ended;
     }
 }
+
+test "repeating is endless, repeated is finite, cycled goes round" {
+    let step = (cursor is Cursor<string>, count is int) is Cursor<string> {
+        (0..count).reduce(cursor) -> current, index {
+            current.successor();
+        };
+    };
+    test.is(step(Repeating(value: "tick").cursor(), 1000).item(), "tick");
+    let padding = Repeated(value: " ", count: 4);
+    test.is(padding.size(), 4);
+    test.is(padding.item(2), " ");
+    test.is(padding.map() -> value {
+        "[" + value + "]";
+    }.join(""), "[ ][ ][ ][ ]");
+    test.is(
+        try {
+            Repeated(value: 1, count: 0).first();
+        }
+        catch error is EmptySequence {
+            -1;
+        },
+        -1
+    );
+    test.is(
+        try {
+            Repeated(value: 1, count: -1).size();
+        }
+        catch error is InvalidArgument {
+            -1;
+        },
+        -1
+    );
+    test.is(
+        try {
+            Repeated(value: 1, count: 2).item(2);
+        }
+        catch error is OutOfRange {
+            -1;
+        },
+        -1
+    );
+    let turns = Cycled(origin: ["a", "b"]).cursor();
+    test.is(step(turns, 4).item(), "a");
+    test.is(step(turns, 5).item(), "b");
+    let nothing is @string = [];
+    test.ok(!Cycled(origin: nothing).cursor().available());
+}

@@ -143,3 +143,26 @@ object UnicodeCharacter {
 }
 
 enum NonNumericCharacter is Error = (invalid);
+
+test "properties come from the Unicode database" {
+    let letter = UnicodeCharacter('Ж');
+    test.is(letter.name(), "CYRILLIC CAPITAL LETTER ZHE");
+    test.is(letter.category(), UnicodeCategory.uppercase_letter);
+    test.is(letter.combining_class(), 0);
+    test.is(UnicodeCharacter('a').category(), UnicodeCategory.lowercase_letter);
+    test.is(UnicodeCharacter('7').category(), UnicodeCategory.decimal_number);
+    test.is(UnicodeCharacter(' ').category(), UnicodeCategory.space_separator);
+    test.is(UnicodeCharacter('\u{0301}').combining_class(), 230);
+    test.is(UnicodeCharacter('½').numeric_value(), 0.5);
+    test.is(UnicodeCharacter('7').numeric_value(), 7.0);
+    test.is(UnicodeCharacter('\u{0007}').name(), "");
+    test.is(
+        try {
+            UnicodeCharacter('x').numeric_value();
+        }
+        catch error is NonNumericCharacter {
+            -1.0;
+        },
+        -1.0
+    );
+}

@@ -105,3 +105,27 @@ object EnumerationCursor<T> does Cursor<Indexed<T>> {
 }
 
 enum EnumerationOverflow is Error = (index(index is int));
+
+test "enumerated numbers items from zero or a chosen start" {
+    test.is(Enumerated(origin: ["a", "b", "c"]).map() -> indexed {
+        indexed.index().string() + indexed.item();
+    }.join(","), "0a,1b,2c");
+    test.is(Enumerated(origin: ["x", "y"], start: 1).map() -> line {
+        line.index().string() + ":" + line.item();
+    }.join(" "), "1:x 2:y");
+    let first = Enumerated(origin: ["a", "b"]).cursor();
+    let second = first.successor();
+    test.is(first.item().index(), 0);
+    test.is(second.item().index(), 1);
+    test.ok(!second.successor().available());
+    test.is(
+        try {
+            second.successor().item().index();
+        }
+        catch error is IterationEnded {
+            -1;
+        },
+        -1
+    );
+    test.is(Indexed(index: 7, item: "z").item(), "z");
+}

@@ -138,3 +138,69 @@ enum InvalidBigExponent is Error = (exponent(exponent is int));
 enum InvalidBigPowerLimit is Error = (maximum_bits(maximum_bits is int));
 
 enum BigPowerLimitExceeded is Error = (maximum_bits(maximum_bits is int));
+
+test "arbitrary precision arithmetic" {
+    let big = BigInt("18446744073709551616");
+    test.is(big.sign(), 1);
+    test.is(big.bits(), 65);
+    test.is((big + BigInt("1")).string(), "18446744073709551617");
+    test.is((big * big).string(), "340282366920938463463374607431768211456");
+    test.is((big - big).sign(), 0);
+    test.is((-big).string(), "-18446744073709551616");
+    test.is(BigInt("0042").string(), "42");
+    test.is(BigInt("-0").string(), "0");
+    test.ok(BigInt("2") < big && big >= big);
+}
+
+test "division truncates toward zero and the remainder follows the dividend" {
+    test.is((BigInt("-7") / BigInt("2")).string(), "-3");
+    test.is((BigInt("-7") % BigInt("2")).string(), "-1");
+    test.is((BigInt("7") % BigInt("-2")).string(), "1");
+    test.is(
+        try {
+            (BigInt("1") / BigInt("0")).string();
+        }
+        catch error is BigDivisionByZero {
+            "by zero";
+        },
+        "by zero"
+    );
+    test.is(BigInt("12").gcd(BigInt("-18")).string(), "6");
+    test.is(BigInt("0").gcd(BigInt("0")).string(), "0");
+    test.is(BigInt("4").lcm(BigInt("6")).string(), "12");
+    test.is(BigInt("0").lcm(BigInt("6")).string(), "0");
+}
+
+test "power is bounded by a bit budget" {
+    test.is(BigInt("2").power(100).string(), "1267650600228229401496703205376");
+    test.is(BigInt("0").power(0).string(), "1");
+    test.is(
+        try {
+            BigInt("2").power(100, 100).string();
+        }
+        catch BigPowerLimitExceeded.maximum_bits(bits) {
+            "over " + bits.string();
+        },
+        "over 100"
+    );
+    test.is(
+        try {
+            BigInt("2").power(-1).string();
+        }
+        catch InvalidBigExponent.exponent(exponent) {
+            "exponent " + exponent.string();
+        },
+        "exponent -1"
+    );
+    for ["", "+1", " 1", "1.0", "0x10", "-"] -> invalid {
+        test.is(
+            try {
+                BigInt(invalid).string();
+            }
+            catch error is InvalidBigInt {
+                "invalid";
+            },
+            "invalid"
+        );
+    }
+}

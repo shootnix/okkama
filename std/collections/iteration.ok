@@ -31,3 +31,15 @@ object CursorItems<T> does Iterating<T> {
         origin;
     }
 }
+
+test "cursor items walk a cursor as a source" {
+    let items = CursorItems(cursor: ["a", "b"].cursor());
+    test.is(items.map() -> item {
+        item;
+    }.join(""), "ab");
+    test.is(items.map() -> item {
+        item;
+    }.join(""), "ab");
+    let nothing is @string = [];
+    test.ok(!CursorItems(cursor: nothing.cursor()).cursor().available());
+}
