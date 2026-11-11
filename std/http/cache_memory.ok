@@ -183,7 +183,7 @@ object CachedHttpEntry {
         let current = freshness.age(now)::Span::seconds.int();
         let fields = ReplacedHeader(
             origin: result::Head::headers,
-            entry: Header(HeaderName("Age"), current.string())
+            entry: Header(name: HeaderName("Age"), value: current.string())
         ).headers();
         let dated = if fields.membership(HeaderName("Date")) {
             fields;

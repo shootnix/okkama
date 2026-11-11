@@ -300,7 +300,7 @@ object StaticFiles does Handling {
         };
         let headers = ReplacedHeader(
             origin: response::Head::headers,
-            entry: Header(HeaderName("Date"), HttpDate(now).string())
+            entry: Header(name: HeaderName("Date"), value: HttpDate(now).string())
         ).headers();
         ResponseHandling(
             Response(
@@ -417,14 +417,14 @@ object StaticFiles does Handling {
         );
         if policy::Settings::precompressed {
             headers.replace(
-                ReplacedHeader(origin: headers.value(), entry: Header(HeaderName("Vary"), "Accept-Encoding")).headers()
+                ReplacedHeader(origin: headers.value(), entry: Header(name: HeaderName("Vary"), value: "Accept-Encoding")).headers()
             );
         }
         if owned.coding() != "" {
             headers.replace(
                 ReplacedHeader(
                     origin: headers.value(),
-                    entry: Header(HeaderName("Content-Encoding"), owned.coding())
+                    entry: Header(name: HeaderName("Content-Encoding"), value: owned.coding())
                 ).headers()
             );
         }
@@ -516,7 +516,7 @@ object StaticFiles does Handling {
         headers.replace(
             ReplacedHeader(
                 origin: headers.value(),
-                entry: Header(HeaderName("Content-Length"), body.length().string())
+                entry: Header(name: HeaderName("Content-Length"), value: body.length().string())
             ).headers()
         );
         owned.claim();

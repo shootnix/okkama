@@ -52,14 +52,14 @@ object CacheValidation {
         let conditional = if parsed.size() == 1 {
             ReplacedHeader(
                 origin: original::Head::headers,
-                entry: Header(HeaderName("If-None-Match"), parsed[0].string())
+                entry: Header(name: HeaderName("If-None-Match"), value: parsed[0].string())
             ).headers();
         }
         else {
             if dates_checked.size() == 1 {
                 ReplacedHeader(
                     origin: original::Head::headers,
-                    entry: Header(HeaderName("If-Modified-Since"), dates_checked[0])
+                    entry: Header(name: HeaderName("If-Modified-Since"), value: dates_checked[0])
                 ).headers();
             }
             else {
@@ -174,13 +174,13 @@ hidden object Cache304Fields {
             fields;
         }
         else {
-            ReplacedHeader(origin: fields, entry: Header(HeaderName("Date"), HttpDate(timing.received()).string())).headers();
+            ReplacedHeader(origin: fields, entry: Header(name: HeaderName("Date"), value: HttpDate(timing.received()).string())).headers();
         };
         result = if updated.membership(HeaderName("Age")) {
             dated;
         }
         else {
-            ReplacedHeader(origin: dated, entry: Header(HeaderName("Age"), "0")).headers();
+            ReplacedHeader(origin: dated, entry: Header(name: HeaderName("Age"), value: "0")).headers();
         };
     }
 
