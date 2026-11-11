@@ -231,9 +231,9 @@ Benchmarks live outside the repository in `../okkama-docs/benchmarks`
   lines; compare medians of several alternating rounds with checksums.
 - PGO workloads are copies of the ladder in `okkama-rs/tools/pgo/workloads`.
 
-Reference numbers (0.5.1, Apple M2 Max / Docker arm64): Sparrow is 5.6×
-Python, 8.4× Perl, 4.1× Ruby and 4.3× the JVM on the ladder (geometric mean of
-cold runs over 01–10; report `okkama-docs/benchmarks/reports/2026-11-10-v0.5.1`;
+Reference numbers (0.5.3, Apple M2 Max / Docker arm64): Sparrow is 5.8×
+Python, 8.8× Perl, 4.3× Ruby and 4.5× the JVM on the ladder (geometric mean of
+cold runs over 01–10; report `okkama-docs/benchmarks/reports/2026-11-11-v0.5.3`;
 compare releases with a back-to-back A/B, not against an older report).
 Warmed up (`--steady`), the JVM beats Sparrow only on 09-closures; 11-ownership
 is 1.8× slower than Python/Perl/Ruby (region tracking; 2.7× before 0.4.3's

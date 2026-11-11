@@ -8,7 +8,7 @@ is enforced by the runtime — not by code review.**
 [![CI](https://github.com/shootnix/okkama/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/shootnix/okkama/actions/workflows/ci.yml)
 [![Packages](https://github.com/shootnix/okkama/actions/workflows/packages.yml/badge.svg?branch=develop)](https://github.com/shootnix/okkama/actions/workflows/packages.yml)
 [![Release](https://img.shields.io/github/v/release/shootnix/okkama?include_prereleases&label=release)](https://github.com/shootnix/okkama/releases)
-[![Conformance](https://img.shields.io/badge/conformance-990%2F990%20×%203%20engines-brightgreen)](conformance/)
+[![Conformance](https://img.shields.io/badge/conformance-992%2F992%20×%203%20engines-brightgreen)](conformance/)
 [![License](https://img.shields.io/github/license/shootnix/okkama)](LICENSE)
 
 [Install](#install) ·
@@ -505,19 +505,19 @@ okkama build hello.ok --target sparrow -o hello.spb && sparrow hello.spb
 
 | | IR interpreter | Sparrow (JIT) | JVM |
 |---|---|---|---|
-| Start-up (`hello`) | **12 ms** | **12 ms** | 52 ms |
-| `fib(32)`, 7 M calls | 1.32 s | **30 ms** | 189 ms |
-| Mandelbrot (float) | 0.53 s | **29 ms** | 148 ms |
-| 1 M successor steps | 0.99 s | **25 ms** | 135 ms |
-| 6-module application | 1.61 s | **116 ms** | 422 ms |
-| Peak memory, application | 9 MB | 13 MB | 246 MB |
+| Start-up (`hello`) | 12 ms | **10 ms** | 50 ms |
+| `fib(32)`, 7 M calls | 1.36 s | **29 ms** | 182 ms |
+| Mandelbrot (float) | 0.55 s | **28 ms** | 141 ms |
+| 1 M successor steps | 1.03 s | **24 ms** | 131 ms |
+| 6-module application | 1.64 s | **104 ms** | 395 ms |
+| Peak memory, application | 9 MB | 13 MB | 259 MB |
 | Needs | nothing | nothing | JDK |
 
-Median of ten cold runs on an Apple M2 Max (0.5.1, release build, start-up
+Median of ten cold runs on an Apple M2 Max (0.5.3, release build, start-up
 included). Sparrow (its current version is called Tomato) compiles every function to
 machine code (Cranelift) before it runs; calls are direct, async frames are
-stackless and the collector is precise. On the same programs written in each language it is on average 5.6×
-faster than Python 3.9, 8.4× faster than Perl 5.42 and 4.1× faster than Ruby
+stackless and the collector is precise. On the same programs written in each language it is on average 5.8×
+faster than Python 3.9, 8.8× faster than Perl 5.42 and 4.3× faster than Ruby
 2.6 (geometric mean over ten programs).
 
 ## Documentation
@@ -530,7 +530,7 @@ faster than Python 3.9, 8.4× faster than Perl 5.42 and 4.1× faster than Ruby
 | 🐦 [Книга Sparrow (RU)](docs/SparrowBook/SparrowBook-RU.md) | The Sparrow book in Russian |
 | 🛡️ [Trust model](docs/security-model.md) | Which input is safe to compile, verify and run today, per boundary, with the open issues |
 | 🤖 [Guide for LLM agents](docs/LLM-GUIDE.md) | Working on this repository: layout, build, tests, benchmarks, architecture |
-| 🧪 [Conformance suite](conformance/README.md) | Executable specification: 990 cases with expected observations |
+| 🧪 [Conformance suite](conformance/README.md) | Executable specification: 992 cases with expected observations |
 
 Where documents disagree, the source of truth is the conformance suite
 (`conformance/`) and the specification — in that order.
@@ -539,7 +539,7 @@ Where documents disagree, the source of truth is the conformance suite
 
 Okkama is **experimental**: the language and the standard library still
 evolve, and nothing is stable yet. The implementation runs the whole language
-and standard library: the conformance suite passes 990/990 cases on each
+and standard library: the conformance suite passes 992/992 cases on each
 engine, and every deterministic program in `std/` (in test mode)
 behaves identically on all three. See
 [Appendix B of the Book](docs/OkkamaBook.md#appendix-b-implementation-status)

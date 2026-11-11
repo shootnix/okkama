@@ -6,6 +6,32 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+## [0.5.3] — 2026-11-11
+
+0.5.3 brings the persistent collections Tomato has had since 0.4.3 to the IR
+engine and the JVM, makes Tomato compile faster, and rebuilds Blade around
+packages that are plain git repositories. On the IR engine chains of `+`,
+slices, chains of `replaced` and versions of large maps share their storage
+instead of copying it (#335): an append at 100 000 elements costs 200–400 ns
+instead of a copy, a map version 1–5 µs instead of 11 ms. On the JVM chains
+of `+` and slices share buffers and large maps are persistent B+ trees
+(#336): appends 125–190 times faster at 100 000 elements, `drop` loops 239
+times, map versions 6 µs instead of 0.86 ms. Tomato no longer runs
+Cranelift's verifier in release builds (#345), keeps its own GC roots for
+async bodies (#354, #362) and looks maps up by string without building a key
+(#343): the #328 HTTP load runs in 413 ms instead of 757, and the ladder 5%
+faster than 0.5.1 by geometric mean, with every program faster. Blade
+selects the lowest version that satisfies everyone (#347), installs packages
+without `blade.toml` (#348), syncs by locked commit and offline when `pkg/`
+matches (#349), never overwrites work done in `pkg/` (#350, #353), and
+gains `add`, `update` and `remove` (#351). Diagnostics tell two same-named
+types apart (#338). Fixed: a Tomato crash with role fakes under collection
+(#355), cancelled process workers on the IR engine and the JVM, which
+settled before their child exited (#359), native groups that failed open
+(#361), and the Book's account of process workers (#358). The gate runs
+Sparrow under GC stress (#356). Conformance has 992 mandatory cases, the t/
+suite 50 630 checks per configuration (68 new).
+
 ### Added
 
 - `blade sync` installs exactly what `blade.lock` records (#349). A package
@@ -3291,7 +3317,8 @@ First release of the Rust implementation: the compiler (lexer, parser, analysis,
 IR, Sparrow (VM with JIT) and JVM engines, the standard library, LSP, `fmt`, `lint`, the
 `blade` project manager, and packages for macOS and Linux.
 
-[Unreleased]: https://github.com/shootnix/okkama/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/shootnix/okkama/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/shootnix/okkama/compare/v0.5.1...v0.5.3
 [0.5.1]: https://github.com/shootnix/okkama/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/shootnix/okkama/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/shootnix/okkama/compare/v0.4.2...v0.4.3
