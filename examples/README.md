@@ -57,6 +57,12 @@ and compares the output.
 |---|---|
 | `toml/read.ok` | parse a document, walk every value with a visitor, read dates and times, report an error's line |
 
+## csv
+
+| Program | Task |
+|---|---|
+| `csv/rows.ok` | read rows with quotes inside, write them back, use another dialect, stream rows, report a bad quote |
+
 ## strings/parse
 
 | Program | Task |

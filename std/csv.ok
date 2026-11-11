@@ -37,24 +37,23 @@ import "collections/list" take List, EmptyList;
 // in its allowance. Standalone CsvField/CsvRecord are unbounded default-format
 // representations; bounded documents should use CsvString.
 //
-// CsvPrefix/Snapshot/PrintPrefix are immutable implementation collaborators.
-// Successor results must be consumed. Prefix parsing retains source spans and
-// decodes each completed field once. They remain importable because module
-// privacy does not exist; ordinary applications use CsvRows/CsvString.
+// CsvPrefix/Snapshot/PrintPrefix are hidden, immutable implementation
+// collaborators. Prefix parsing retains source spans and decodes each
+// completed field once; applications use CsvRows/CsvString.
 // Each record includes its terminator; an empty document has no records.
 // No header guessing, implicit byte encoding or spreadsheet-specific rewriting.
 object CsvString {
     has dialect is CsvDialect;
-    has origin is @@string;
-    has maximum_output is int;
+    has rows is Iterating<@string>;
+    has maximum_output, maximum_field, maximum_rows, maximum_columns is int;
 
     CsvString(rows is Iterating<@string>) {
-        dialect = CsvDialect(",", "\"", "\r\n");
+        dialect = CsvDialect(delimiter: ",", quote: "\"", line_ending: "\r\n");
+        self.rows = rows;
         maximum_output = 1048576;
-        let snapshot = rows.reduce(CsvSnapshot(65536, 10000, 1024)) -> prefix, row {
-            prefix.following(row);
-        };
-        origin = snapshot.rows();
+        maximum_field = 65536;
+        maximum_rows = 10000;
+        maximum_columns = 1024;
     }
 
     CsvString(
@@ -64,30 +63,26 @@ object CsvString {
         maximum_rows is int,
         maximum_columns is int
     ) {
-        dialect = CsvDialect(",", "\"", "\r\n");
         confirm maximum_output >= 0
             && maximum_field >= 0
             && maximum_rows >= 0
             && maximum_columns >= 0
             else throw InvalidCsvLimits.invalid;
+        dialect = CsvDialect(delimiter: ",", quote: "\"", line_ending: "\r\n");
+        self.rows = rows;
         self.maximum_output = maximum_output;
-        let snapshot = rows.reduce(CsvSnapshot(
-            maximum_field,
-            maximum_rows,
-            maximum_columns
-        )) -> prefix, row {
-            prefix.following(row);
-        };
-        origin = snapshot.rows();
+        self.maximum_field = maximum_field;
+        self.maximum_rows = maximum_rows;
+        self.maximum_columns = maximum_columns;
     }
 
     CsvString(rows is Iterating<@string>, dialect is CsvDialect) {
         self.dialect = dialect;
+        self.rows = rows;
         maximum_output = 1048576;
-        let snapshot = rows.reduce(CsvSnapshot(65536, 10000, 1024)) -> prefix, row {
-            prefix.following(row);
-        };
-        origin = snapshot.rows();
+        maximum_field = 65536;
+        maximum_rows = 10000;
+        maximum_columns = 1024;
     }
 
     CsvString(
@@ -98,25 +93,46 @@ object CsvString {
         maximum_columns is int,
         dialect is CsvDialect
     ) {
-        self.dialect = dialect;
         confirm maximum_output >= 0
             && maximum_field >= 0
             && maximum_rows >= 0
             && maximum_columns >= 0
             else throw InvalidCsvLimits.invalid;
+        self.dialect = dialect;
+        self.rows = rows;
         self.maximum_output = maximum_output;
-        let snapshot = rows.reduce(CsvSnapshot(
-            maximum_field,
-            maximum_rows,
-            maximum_columns
-        )) -> prefix, row {
-            prefix.following(row);
-        };
-        origin = snapshot.rows();
+        self.maximum_field = maximum_field;
+        self.maximum_rows = maximum_rows;
+        self.maximum_columns = maximum_columns;
     }
 
+    // The rows are taken and checked against the limits when the text is
+    // first asked for, and the text is kept.
     string() is string {
-        let printed = origin.reduce(CsvPrintPrefix(maximum_output, dialect)) -> prefix, row {
+        memo let text = CsvPrinted(
+            rows: rows,
+            dialect: dialect,
+            maximum_output: maximum_output,
+            maximum_field: maximum_field,
+            maximum_rows: maximum_rows,
+            maximum_columns: maximum_columns,
+        ).string();
+        text;
+    }
+}
+
+hidden object CsvPrinted {
+    has rows is Iterating<@string>;
+    has dialect is CsvDialect;
+    has maximum_output, maximum_field, maximum_rows, maximum_columns is int;
+
+    CsvPrinted(:rows, :dialect, :maximum_output, :maximum_field, :maximum_rows, :maximum_columns);
+
+    string() is string {
+        let snapshot = rows.reduce(CsvSnapshot(maximum_field: maximum_field, maximum_rows: maximum_rows, maximum_columns: maximum_columns)) -> prefix, row {
+            prefix.following(row);
+        };
+        let printed = snapshot.rows().reduce(CsvPrintPrefix(maximum_output: maximum_output, dialect: dialect)) -> prefix, row {
             prefix.following(row);
         };
         printed.string();
@@ -181,7 +197,7 @@ object CsvRows does Iterating<@string> {
     has maximum_input, maximum_field, maximum_rows, maximum_columns is int;
 
     CsvRows(origin is string) {
-        dialect = CsvDialect(",", "\"", "\r\n");
+        dialect = CsvDialect(delimiter: ",", quote: "\"", line_ending: "\r\n");
         self.origin = origin;
         maximum_input = 1048576;
         maximum_field = 65536;
@@ -196,7 +212,7 @@ object CsvRows does Iterating<@string> {
         maximum_rows is int,
         maximum_columns is int
     ) {
-        dialect = CsvDialect(",", "\"", "\r\n");
+        dialect = CsvDialect(delimiter: ",", quote: "\"", line_ending: "\r\n");
         self.origin = origin;
         self.maximum_input = maximum_input;
         self.maximum_field = maximum_field;
@@ -242,11 +258,11 @@ object CsvRows does Iterating<@string> {
     cursor() is Cursor<@string> {
         confirm origin.length() <= maximum_input else throw CsvLimitExceeded.kind(CsvLimit.input);
         let parsed = (0..origin.length()).reduce(CsvPrefix(
-            origin,
-            maximum_field,
-            maximum_rows,
-            maximum_columns,
-            dialect
+            origin: origin,
+            maximum_field: maximum_field,
+            maximum_rows: maximum_rows,
+            maximum_columns: maximum_columns,
+            dialect: dialect
         )) -> prefix, index {
             prefix.following(origin.slice(index, index + 1), index);
         };
@@ -258,9 +274,9 @@ enum InvalidCsv is Error = (at(offset is int));
 
 // Importable implementation collaborators: the language has no module privacy.
 // Each prefix is an immutable parse position; completed rows/fields share tails.
-enum CsvMode = (start, plain, quoted, closed, cr);
+hidden enum CsvMode = (start, plain, quoted, closed, cr);
 
-object CsvPrefix {
+hidden object CsvPrefix {
     has dialect is CsvDialect;
     has origin is string;
     has maximum_field, maximum_rows, maximum_columns is int;
@@ -273,7 +289,7 @@ object CsvPrefix {
     has active is bool = false;
 
     CsvPrefix(origin is string, maximum_field is int, maximum_rows is int, maximum_columns is int) {
-        dialect = CsvDialect(",", "\"", "\r\n");
+        dialect = CsvDialect(delimiter: ",", quote: "\"", line_ending: "\r\n");
         self.origin = origin;
         self.maximum_field = maximum_field;
         self.maximum_rows = maximum_rows;
@@ -420,7 +436,7 @@ enum InvalidCsvLimits is Error = (invalid);
 enum CsvLimitExceeded is Error = (kind(kind is CsvLimit));
 
 // Snapshot and output-prefix collaborators keep limits at allocation boundaries.
-object CsvSnapshot {
+hidden object CsvSnapshot {
     has maximum_field, maximum_rows, maximum_columns is int;
     has completed is List<@string>;
 
@@ -455,14 +471,14 @@ object CsvSnapshot {
     }
 }
 
-object CsvPrintPrefix {
+hidden object CsvPrintPrefix {
     has dialect is CsvDialect;
     has maximum_output is int;
     has used is int = 0;
     has completed is List<string>;
 
     CsvPrintPrefix(maximum_output is int) {
-        dialect = CsvDialect(",", "\"", "\r\n");
+        dialect = CsvDialect(delimiter: ",", quote: "\"", line_ending: "\r\n");
         confirm maximum_output >= 0 else throw InvalidCsvLimits.invalid;
         self.maximum_output = maximum_output;
         let empty is List<string> = EmptyList();
@@ -494,7 +510,7 @@ object CsvPrintPrefix {
     }
 }
 
-object CsvPrintRecord {
+hidden object CsvPrintRecord {
     has fields is @string;
     has allowance is int;
 
@@ -698,66 +714,66 @@ test "malformed CSV reports original scalar offset" {
 }
 
 test "read budgets are scalar decoded and document bounded" {
-    test.ok(!CsvRows("", 0, 0, 0, 0).cursor().available());
-    test.is(CsvRows("\"\"\"\"", 4, 1, 1, 1).cursor().item(), ["\""]);
+    test.ok(!CsvRows(origin: "", maximum_input: 0, maximum_field: 0, maximum_rows: 0, maximum_columns: 0).cursor().available());
+    test.is(CsvRows(origin: "\"\"\"\"", maximum_input: 4, maximum_field: 1, maximum_rows: 1, maximum_columns: 1).cursor().item(), ["\""]);
     try {
-        CsvRows("a", 0, 1, 1, 1).cursor();
+        CsvRows(origin: "a", maximum_input: 0, maximum_field: 1, maximum_rows: 1, maximum_columns: 1).cursor();
         test.fail("input budget ignored");
     }
     catch CsvLimitExceeded.kind(kind) {
         test.is(kind, CsvLimit.input);
     }
     try {
-        CsvRows("ab", 2, 1, 1, 1).cursor();
+        CsvRows(origin: "ab", maximum_input: 2, maximum_field: 1, maximum_rows: 1, maximum_columns: 1).cursor();
         test.fail("field budget ignored");
     }
     catch CsvLimitExceeded.kind(kind) {
         test.is(kind, CsvLimit.field);
     }
     try {
-        CsvRows("\"ab\"", 4, 1, 1, 1).cursor();
+        CsvRows(origin: "\"ab\"", maximum_input: 4, maximum_field: 1, maximum_rows: 1, maximum_columns: 1).cursor();
         test.fail("quoted budget ignored");
     }
     catch CsvLimitExceeded.kind(kind) {
         test.is(kind, CsvLimit.field);
     }
     try {
-        CsvRows("\"\"\"\"", 4, 0, 1, 1).cursor();
+        CsvRows(origin: "\"\"\"\"", maximum_input: 4, maximum_field: 0, maximum_rows: 1, maximum_columns: 1).cursor();
         test.fail("doubled budget ignored");
     }
     catch CsvLimitExceeded.kind(kind) {
         test.is(kind, CsvLimit.field);
     }
     try {
-        CsvRows("a,b", 3, 1, 1, 1).cursor();
+        CsvRows(origin: "a,b", maximum_input: 3, maximum_field: 1, maximum_rows: 1, maximum_columns: 1).cursor();
         test.fail("columns ignored");
     }
     catch CsvLimitExceeded.kind(kind) {
         test.is(kind, CsvLimit.columns);
     }
     try {
-        CsvRows("a", 1, 1, 1, 0).cursor();
+        CsvRows(origin: "a", maximum_input: 1, maximum_field: 1, maximum_rows: 1, maximum_columns: 0).cursor();
         test.fail("final column ignored");
     }
     catch CsvLimitExceeded.kind(kind) {
         test.is(kind, CsvLimit.columns);
     }
     try {
-        CsvRows("a\r\nb", 4, 1, 1, 1).cursor();
+        CsvRows(origin: "a\r\nb", maximum_input: 4, maximum_field: 1, maximum_rows: 1, maximum_columns: 1).cursor();
         test.fail("final row ignored");
     }
     catch CsvLimitExceeded.kind(kind) {
         test.is(kind, CsvLimit.rows);
     }
     try {
-        CsvRows("a\r\n", 3, 1, 0, 1).cursor();
+        CsvRows(origin: "a\r\n", maximum_input: 3, maximum_field: 1, maximum_rows: 0, maximum_columns: 1).cursor();
         test.fail("terminated row ignored");
     }
     catch CsvLimitExceeded.kind(kind) {
         test.is(kind, CsvLimit.rows);
     }
     try {
-        CsvRows("", -1, 0, 0, 0);
+        CsvRows(origin: "", maximum_input: -1, maximum_field: 0, maximum_rows: 0, maximum_columns: 0);
         test.fail("negative limit accepted");
     }
     catch error is InvalidCsvLimits {
@@ -767,9 +783,9 @@ test "read budgets are scalar decoded and document bounded" {
 
 test "snapshot and output bounds repeat without partial results" {
     let empty is @@string = [];
-    test.is(CsvString(empty, 0, 0, 0, 0).string(), "");
-    test.is(CsvString([["é😀"]], 4, 2, 1, 1).string(), "é😀\r\n");
-    let csv = CsvString([["x"]], 2, 1, 1, 1);
+    test.is(CsvString(rows: empty, maximum_output: 0, maximum_field: 0, maximum_rows: 0, maximum_columns: 0).string(), "");
+    test.is(CsvString(rows: [["é😀"]], maximum_output: 4, maximum_field: 2, maximum_rows: 1, maximum_columns: 1).string(), "é😀\r\n");
+    let csv = CsvString(rows: [["x"]], maximum_output: 2, maximum_field: 1, maximum_rows: 1, maximum_columns: 1);
     for (0..2) -> attempt {
         try {
             csv.string();
@@ -780,28 +796,28 @@ test "snapshot and output bounds repeat without partial results" {
         }
     }
     try {
-        CsvString([["ab"]], 10, 1, 1, 1);
+        CsvString(rows: [["ab"]], maximum_output: 10, maximum_field: 1, maximum_rows: 1, maximum_columns: 1).string();
         test.fail("snapshot field ignored");
     }
     catch CsvLimitExceeded.kind(kind) {
         test.is(kind, CsvLimit.field);
     }
     try {
-        CsvString([["a"], ["b"]], 10, 1, 1, 1);
+        CsvString(rows: [["a"], ["b"]], maximum_output: 10, maximum_field: 1, maximum_rows: 1, maximum_columns: 1).string();
         test.fail("snapshot rows ignored");
     }
     catch CsvLimitExceeded.kind(kind) {
         test.is(kind, CsvLimit.rows);
     }
     try {
-        CsvString([["a", "b"]], 10, 1, 1, 1);
+        CsvString(rows: [["a", "b"]], maximum_output: 10, maximum_field: 1, maximum_rows: 1, maximum_columns: 1).string();
         test.fail("snapshot columns ignored");
     }
     catch CsvLimitExceeded.kind(kind) {
         test.is(kind, CsvLimit.columns);
     }
     try {
-        CsvString(empty, -1, 0, 0, 0);
+        CsvString(rows: empty, maximum_output: -1, maximum_field: 0, maximum_rows: 0, maximum_columns: 0);
         test.fail("negative output accepted");
     }
     catch error is InvalidCsvLimits {
@@ -810,15 +826,15 @@ test "snapshot and output bounds repeat without partial results" {
 }
 
 test "custom grammar has independent wire fixtures" {
-    let dialect = CsvDialect("\t", "'", "\n");
+    let dialect = CsvDialect(delimiter: "\t", quote: "'", line_ending: "\n");
     let rows is @@string = [["a,b", "x\ty", "say 'hi'", ""]];
-    test.is(CsvString(rows, dialect).string(), "a,b\t'x\ty'\t'say ''hi'''\t\n");
-    let parsed is @@string = CsvRows("a,b\t'x\ty'\t'say ''hi'''\t\n", dialect).map() -> row {
+    test.is(CsvString(rows: rows, dialect: dialect).string(), "a,b\t'x\ty'\t'say ''hi'''\t\n");
+    let parsed is @@string = CsvRows(origin: "a,b\t'x\ty'\t'say ''hi'''\t\n", dialect: dialect).map() -> row {
         row;
     };
     test.is(parsed, rows);
-    test.is(CsvString([["§"]], 5, 1, 1, 1, CsvDialect("😀", "§", "\n")).string(), "§§§§\n");
-    test.is(CsvRows("§§§§\n", 5, 1, 1, 1, CsvDialect("😀", "§", "\n")).cursor().item(), ["§"]);
+    test.is(CsvString(rows: [["§"]], maximum_output: 5, maximum_field: 1, maximum_rows: 1, maximum_columns: 1, dialect: CsvDialect("😀", "§", "\n")).string(), "§§§§\n");
+    test.is(CsvRows(origin: "§§§§\n", maximum_input: 5, maximum_field: 1, maximum_rows: 1, maximum_columns: 1, dialect: CsvDialect("😀", "§", "\n")).cursor().item(), ["§"]);
     test.is(dialect.encoded("x'y"), "'x''y'");
     test.is(dialect.decoded("x''y"), "x'y");
     test.is(dialect.size("x'y"), 6);
@@ -828,9 +844,9 @@ test "custom grammar has independent wire fixtures" {
     test.is(dialect.symbol("\n"), CsvSymbol.end);
     test.is(dialect.symbol("\r"), CsvSymbol.invalid);
     test.is(dialect.symbol("x"), CsvSymbol.ordinary);
-    test.is(CsvDialect(",", "\"", "\r\n").symbol("\r"), CsvSymbol.pending);
+    test.is(CsvDialect(delimiter: ",", quote: "\"", line_ending: "\r\n").symbol("\r"), CsvSymbol.pending);
     try {
-        CsvRows("é\r\n", dialect).cursor();
+        CsvRows(origin: "é\r\n", dialect: dialect).cursor();
         test.fail("LF grammar accepted CR");
     }
     catch InvalidCsv.at(offset) {
@@ -854,14 +870,14 @@ test "dialect validation and bounded records" {
         [";", "'", "xx"]
     ] -> args {
         try {
-            CsvDialect(args[0], args[1], args[2]);
+            CsvDialect(delimiter: args[0], quote: args[1], line_ending: args[2]);
             test.fail("invalid grammar accepted");
         }
         catch error is InvalidCsvDialect {
             test.ok(error.text().length() > 0);
         }
     }
-    let dialect = CsvDialect(";", "'", "\n");
+    let dialect = CsvDialect(delimiter: ";", quote: "'", line_ending: "\n");
     try {
         dialect.record([""], -1);
         test.fail("negative allowance accepted");

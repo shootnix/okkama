@@ -3914,6 +3914,15 @@ event`), а `event.dispatch(handler)` отдаёт каждое в его `handl
 комментарии и объявления отвечают `text()`. `EscapedHtml` и `UnescapedHtml`
 занимаются ссылками на символы.
 
+`csv` читает и пишет текст RFC 4180. `for CsvRows(text) -> row` обходит
+строки (`@string`), проверяя весь документ при каждом обходе.
+`CsvString(rows).string()` записывает строки обратно, а `CsvRecord(fields:)`
+— одну. `CsvDialect(";", "'", "\n")` меняет разделитель, кавычку и конец
+строки. `CsvStream(reading).row()` читает по строке из источника байтов
+до `EndOfCsv`. Каждый предел (ввод, поле, строки, столбцы, вывод) —
+именованный аргумент, а `InvalidCsv.at(offset)` называет первый плохой
+символ. `examples/csv/` показывает каждую задачу.
+
 `http/client` отправляет запросы через `HttpClient()`. По умолчанию он берёт системные DNS и доверенные корни, ходит только на публичные адреса и говорит по HTTP/1.1. Всё остальное задаётся именованными аргументами: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)`, `cookies: MemoryCookieJar()`. Для каждого REST-метода есть шорткат: `get(url)`, `head`, `options`, `delete`, а также `post(url:, body:)`, `put`, `patch` с `Content`, например `JsonBody(json)`. Любой другой запрос пишется как `client.response(Request(url:, method:, headers:, body:))`. Ответ показывает голову через cap `Head` (`page::Head::status`, `::class`, `::headers`) и читает тело через `await page.text()`, `bytes()`, `json()` или `reading()`. `Status` и `Method` — enum'ы: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` и `MethodName` переводят их в числа и токены протокола и обратно. Каждая задача показана программой в `examples/http/client/`.
 
 `strings/parse` читает текст как тип, который у него просят: `Number("42").int()`,
@@ -3993,8 +4002,6 @@ Stdlib намеренно узка, пока язык стабилизирует
   ERB/Mojolicious-style тегами и типизированными ошибками source/value;
 - `template/html` — HTML-рендеринг над теми же тегами, где экранирование
   решает тип `SafeHtml` привязанного значения, а не сам тег;
-- `encoding/csv` — RFC 4180-подобные streaming-строки над `Input`/`Output`
-  под явным dialect, с located `InvalidCsv`;
 - `encoding/toml` — практический однострочно-документный subset TOML
   v1.0.0 с dotted-path lookup и детерминированным `[table]`-rendering;
 - `crypto/random` — stateless OS-CSPRNG capability с детерминированным fake и
@@ -4287,43 +4294,6 @@ HtmlTemplate("<section><%== body %></section>")
 `MissingTemplateValue`/`DuplicateTemplateValue` переиспользуются без
 изменений, поскольку отсутствующее или повторное имя — не HTML-специфичное
 понятие.
-
-`encoding/csv` читает и пишет RFC 4180-подобные строки над `Input`/`Output`
-под явным, внедряемым dialect:
-
-```okkama
-import "encoding/csv" take CsvDialect, CsvReader, CsvWriter, CsvRow;
-import "io/buffer" take Buffer, BufferAllocation;
-
-main() is int {
-    let dialect is CsvDialect = CsvDialect(); // ",", "\"", "\r\n", header: true
-
-    let sink is Buffer = buffer BufferAllocation();
-    let writer is CsvWriter = CsvWriter(sink, dialect);
-    writer.write(["id", "bio"]);
-    writer.write(["1", "написал первый алгоритм, включая запятую"]);
-    writer.flush();
-
-    let rows is @@string = CsvReader(sink, dialect).rows();
-    let row is CsvRow = CsvRow(rows[0], rows[1], 2);
-    row.value("bio");
-    return 0;
-}
-```
-
-`CsvDialect()` даёт RFC 4180 defaults; полный конструктор принимает явный
-delimiter, quote-символ, line separator и header flag — все четыре как
-`string`, а не `char`: у `char` в этой реализации нет конверсии в `string` и
-обратно (подтверждено напрямую — конкатенация, сравнение и любой вызов
-действия на bare `char` проваливаются), и нигде в stdlib он не используется,
-поэтому вместо него — single-character `string`, как и везде, где уже
-представлен один символ. Удвоенная кавычка (`""`) внутри quoted-поля — это
-литеральная кавычка; content между закрывающей кавычкой и следующим
-delimiter бросает `InvalidCsv`. `CsvReader.rows()` возвращает каждую строку
-недифференцированно — `CsvDialect.header()` это metadata, которую вызывающий
-код использует сам, а не то, на что `CsvReader` ветвится внутри — поэтому
-`CsvRow` это отдельный шаг, который сопоставляет уже прочитанный header с
-уже прочитанной data-строкой для доступа по индексу/имени.
 
 `encoding/toml` покрывает практический, однострочно-документный subset
 TOML v1.0.0 — форму, которую реально используют config-файлы, а не полную

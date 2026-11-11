@@ -2,7 +2,8 @@ module csv/stream v1.0.0;
 
 import "io/stream" take Reading, Closing;
 import "io/decorators" take InvalidReading;
-import "encoding/utf" take InvalidUtf8;
+import "encoding/utf" take InvalidUtf8, Utf8Encoded;
+import "io/buffer" take ByteBuffer;
 import "csv" take InvalidCsv, InvalidCsvLimits, CsvLimitExceeded, CsvLimit;
 import "csv/input" take CsvByteLimitExceeded;
 import "runtime/csv_state" take CsvState, csv_state_create, csv_state_feed, csv_state_advance,
@@ -109,3 +110,63 @@ object CsvStream does Closing {
 enum EndOfCsv is Error = (reached);
 
 enum ClosedCsvStream is Error = (closed);
+
+test "rows come one at a time, then the end, stable until close" {
+    let stream = CsvStream(ByteBuffer(Utf8Encoded("a,b\r\n\"x,y\",\"say \"\"hi\"\"\"\r\n").bytes()).reading());
+    test.is(stream.row(), ["a", "b"]);
+    test.is(stream.row(), ["x,y", "say \"hi\""]);
+    test.throws(EndOfCsv) {
+        stream.row();
+    };
+    test.throws(EndOfCsv) {
+        stream.row();
+    };
+    test.ok(!stream.closed());
+    stream.close();
+    stream.close();
+    test.ok(stream.closed());
+    test.throws(ClosedCsvStream) {
+        stream.row();
+    };
+}
+
+test "a quoted field may span reads and lines; a bad quote is an error" {
+    let long = "\"" + (0..3000).reduce("") -> text, index { text + "ab"; } + "\nend\",z\r\n";
+    let stream = CsvStream(ByteBuffer(Utf8Encoded(long).bytes()).reading());
+    let row = stream.row();
+    test.is(row.size(), 2);
+    test.is(row[0].length(), 6004);
+    test.is(row[1], "z");
+    let broken = CsvStream(ByteBuffer(Utf8Encoded("a\"b\r\n").bytes()).reading());
+    test.throws(InvalidCsv) {
+        broken.row();
+    };
+}
+
+test "limits are checked; bad limits are refused" {
+    test.throws(InvalidCsvLimits) {
+        CsvStream(
+            origin: ByteBuffer().reading(),
+            maximum_bytes: -1,
+            maximum_input: 1,
+            maximum_field: 1,
+            maximum_rows: 1,
+            maximum_columns: 1,
+        );
+    };
+    let narrow = CsvStream(
+        origin: ByteBuffer(Utf8Encoded("a,b,c\r\n").bytes()).reading(),
+        maximum_bytes: 100,
+        maximum_input: 100,
+        maximum_field: 10,
+        maximum_rows: 10,
+        maximum_columns: 2,
+    );
+    test.throws(CsvLimitExceeded) {
+        narrow.row();
+    };
+    let empty = CsvStream(ByteBuffer().reading());
+    test.throws(EndOfCsv) {
+        empty.row();
+    };
+}

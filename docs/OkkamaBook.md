@@ -3741,6 +3741,15 @@ HTML as a stream of events (`for HtmlEvents(origin: page) -> event`), and
 declarations answer `text()`. `EscapedHtml` and `UnescapedHtml` cover the
 character references.
 
+`csv` reads and writes RFC 4180 text. `for CsvRows(text) -> row` walks the
+rows (`@string`), checking the whole document on each walk.
+`CsvString(rows).string()` writes rows back, and `CsvRecord(fields:)`
+writes one. `CsvDialect(";", "'", "\n")` changes the separator, the quote
+and the line ending. `CsvStream(reading).row()` reads one row at a time from
+a byte source, until `EndOfCsv`. Every limit (input, field, rows, columns,
+output) is a named argument, and `InvalidCsv.at(offset)` names the first
+bad character. `examples/csv/` shows each task.
+
 `http/client` sends requests with `HttpClient()`. By default it uses the system's DNS and trusted roots, reaches public endpoints only and speaks HTTP/1.1. Every other part is a named argument: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)` and `cookies: MemoryCookieJar()`. Every REST method has a shortcut: `get(url)`, `head`, `options`, `delete`, and `post(url:, body:)`, `put`, `patch` with a `Content` such as `JsonBody(json)`. Anything else is `client.response(Request(url:, method:, headers:, body:))`. A reply shows its head through the cap `Head` (`page::Head::status`, `::class`, `::headers`) and reads its body with `await page.text()`, `bytes()`, `json()` or `reading()`. `Status` and `Method` are enums: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` and `MethodName` turn them into wire numbers and tokens and back. `examples/http/client/` shows each task as a program.
 
 `strings/parse` reads text as the type asked for: `Number("42").int()`,
@@ -3820,8 +3829,6 @@ The stdlib is intentionally narrow while the language stabilizes:
   ERB/Mojolicious-style lexical tags and typed source/value failures;
 - `template/html` — HTML rendering over the same lexical tags, where a
   binding's `SafeHtml` type — not its tag — decides whether it is escaped;
-- `encoding/csv` — RFC 4180-shaped streaming rows over `Input`/`Output`
-  under an explicit dialect, with a located `InvalidCsv`;
 - `encoding/toml` — a practical single-line-document TOML v1.0.0 subset
   with dotted-path lookup and deterministic `[table]`-sectioned rendering;
 - `crypto/random` — stateless OS-CSPRNG byte capability with a deterministic
@@ -4103,43 +4110,6 @@ HtmlTemplate("<section><%== body %></section>")
 lexer `template/plain` uses; `InvalidTemplate` becomes `InvalidHtmlTemplate`,
 while `MissingTemplateValue`/`DuplicateTemplateValue` are reused unchanged,
 since a missing or duplicate binding name is not an HTML-specific concept.
-
-`encoding/csv` reads and writes RFC 4180-shaped rows over `Input`/`Output`
-under an explicit, injectable dialect:
-
-```okkama
-import "encoding/csv" take CsvDialect, CsvReader, CsvWriter, CsvRow;
-import "io/buffer" take Buffer, BufferAllocation;
-
-main() is int {
-    let dialect is CsvDialect = CsvDialect(); // ",", "\"", "\r\n", header: true
-
-    let sink is Buffer = buffer BufferAllocation();
-    let writer is CsvWriter = CsvWriter(sink, dialect);
-    writer.write(["id", "bio"]);
-    writer.write(["1", "wrote the first algorithm, comma included"]);
-    writer.flush();
-
-    let rows is @@string = CsvReader(sink, dialect).rows();
-    let row is CsvRow = CsvRow(rows[0], rows[1], 2);
-    row.value("bio");
-    return 0;
-}
-```
-
-`CsvDialect()` supplies RFC 4180 defaults; the full constructor takes an
-explicit delimiter, quote character, line separator and header flag — all
-four as `string`, not `char`: `char` has no defined conversion to or from
-`string` in this implementation (confirmed directly — concatenation,
-comparison and every action call against a bare `char` all fail), and is
-used nowhere else in the stdlib, so a single-character `string` is used
-instead, matching every other place that already represents one character
-this way. A doubled quote (`""`) inside a quoted field is a literal quote;
-content between a closing quote and the next delimiter throws `InvalidCsv`.
-`CsvReader.rows()` returns every row undifferentiated — `CsvDialect.header()`
-is metadata a caller acts on, not something `CsvReader` branches on — so
-`CsvRow` is a separate step that pairs an already-read header with an
-already-read data row for named/indexed access.
 
 `encoding/toml` covers a practical, single-line-document subset of TOML
 v1.0.0 — the shape real configuration files actually use, not the complete

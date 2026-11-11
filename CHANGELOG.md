@@ -555,6 +555,14 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     - New inline tests for `xml/name`, `xml/write`, `xml/node` and
       `html/events`.
     - Named arguments in 20 calls.
+  - `csv`:
+    - `CsvString` binds its rows and limits. It takes and checks the
+      snapshot in `string()` and keeps the text with `memo let`, so a limit
+      is now refused by `string()`, not when the object is made.
+    - `CsvPrefix`, `CsvSnapshot`, `CsvPrintPrefix`, `CsvPrintRecord` and
+      `CsvMode` are hidden.
+    - `csv/stream` has inline tests.
+    - Named arguments in 47 calls. There is an example, `examples/csv/`.
 
 ### Fixed
 

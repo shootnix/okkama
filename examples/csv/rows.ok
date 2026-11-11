@@ -1,0 +1,51 @@
+module examples/csv/rows v1.0.0;
+
+import "csv" take CsvDialect, CsvRecord, CsvRows, CsvString, InvalidCsv;
+import "csv/stream" take CsvStream, EndOfCsv;
+import "encoding/utf" take Utf8Encoded;
+import "io/buffer" take ByteBuffer;
+import "io/stdout" take Stdout;
+
+// Read CSV text row by row, write rows back as CSV, use another dialect,
+// and read a source one row at a time without holding all of it. Quotes
+// and separators inside fields survive the round trip; nothing guesses a
+// header.
+
+main() is int {
+    let out = Stdout();
+    let text = "name,city\r\n\"Ada, Countess\",London\r\n\"say \"\"hi\"\"\",Paris\r\n";
+
+    for CsvRows(text) -> row {
+        out.writeln(row.size().string() + " fields: " + row.join(" | "));
+    }
+
+    let rows is @@string = CsvRows(text).map() -> row { row; };
+    out.writeln("same text again: " + (CsvString(rows).string() == text).string());
+
+    let semicolons = CsvDialect(";", "'", "\n");
+    out.write(CsvString(rows: [["a;b", "c"], ["d", "it's"]], dialect: semicolons).string());
+    out.write(CsvRecord(fields: ["one", "two words", "3,5"]).string());
+
+    let stream = CsvStream(ByteBuffer(Utf8Encoded("id,total\r\n1,10\r\n2,32\r\n").bytes()).reading());
+    let header = stream.row();
+    let first = stream.row();
+    let second = stream.row();
+    let ended = try {
+        stream.row();
+        "more";
+    }
+    catch end is EndOfCsv {
+        "end";
+    };
+    out.writeln("streamed " + header.join(",") + ": " + first[1] + ", " + second[1] + ", then " + ended);
+
+    let broken = try {
+        CsvRows("a,\"b\r\n").map() -> row { row; };
+        "parsed";
+    }
+    catch InvalidCsv.at(offset) {
+        "invalid at " + offset.string();
+    };
+    out.writeln(broken);
+    0;
+}

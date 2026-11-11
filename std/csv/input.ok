@@ -47,7 +47,7 @@ object CsvInput {
 
     CsvInput(origin is Reading) {
         self.origin = origin;
-        dialect = CsvDialect(",", "\"", "\r\n");
+        dialect = CsvDialect(delimiter: ",", quote: "\"", line_ending: "\r\n");
         maximum_bytes = 4194304;
         maximum_input = 1048576;
         maximum_field = 65536;
@@ -109,12 +109,12 @@ object CsvInput {
         }
         let text = Utf8Decoded(buffer.content().bytes()).string();
         let rows is @@string = CsvRows(
-            text,
-            maximum_input,
-            maximum_field,
-            maximum_rows,
-            maximum_columns,
-            dialect
+            origin: text,
+            maximum_input: maximum_input,
+            maximum_field: maximum_field,
+            maximum_rows: maximum_rows,
+            maximum_columns: maximum_columns,
+            dialect: dialect
         ).map() -> row {
             row;
         };
@@ -138,16 +138,16 @@ test "empty and blank documents differ" {
     test.is(CsvInput(ByteBuffer().reading()).read(), []);
     test.is(CsvInput(ByteBuffer([byte(13), byte(10)]).reading()).read(), [[""]]);
     test.is(
-        CsvInput(ByteBuffer().reading(), 0, 0, 0, 0, 0, CsvDialect(",", "\"", "\r\n")).read(),
+        CsvInput(origin: ByteBuffer().reading(), maximum_bytes: 0, maximum_input: 0, maximum_field: 0, maximum_rows: 0, maximum_columns: 0, dialect: CsvDialect(",", "\"", "\r\n")).read(),
         []
     );
 }
 
 test "custom grammar and exact byte bound" {
     let buffer = ByteBuffer(Utf8Encoded("§§§§\n").bytes());
-    test.is(CsvInput(buffer.reading(), 9, 5, 1, 1, 1, CsvDialect("😀", "§", "\n")).read(), [["§"]]);
+    test.is(CsvInput(origin: buffer.reading(), maximum_bytes: 9, maximum_input: 5, maximum_field: 1, maximum_rows: 1, maximum_columns: 1, dialect: CsvDialect("😀", "§", "\n")).read(), [["§"]]);
     test.is(
-        CsvInput(ByteBuffer(Utf8Encoded("a;'b;c'\n").bytes()).reading(), CsvDialect(";", "'", "\n")).read(),
+        CsvInput(origin: ByteBuffer(Utf8Encoded("a;'b;c'\n").bytes()).reading(), dialect: CsvDialect(";", "'", "\n")).read(),
         [["a", "b;c"]]
     );
 }
@@ -155,7 +155,7 @@ test "custom grammar and exact byte bound" {
 test "byte budgets and invalid configuration" {
     let buffer = ByteBuffer(Utf8Encoded("abcdef").bytes());
     try {
-        CsvInput(buffer.reading(), 2, 10, 10, 1, 1, CsvDialect(",", "\"", "\r\n")).read();
+        CsvInput(origin: buffer.reading(), maximum_bytes: 2, maximum_input: 10, maximum_field: 10, maximum_rows: 1, maximum_columns: 1, dialect: CsvDialect(",", "\"", "\r\n")).read();
         test.fail("byte budget ignored");
     }
     catch error is CsvByteLimitExceeded {
@@ -163,7 +163,7 @@ test "byte budgets and invalid configuration" {
     }
     test.is(Utf8Decoded(buffer.content().bytes()).string(), "def");
     try {
-        CsvInput(buffer.reading(), -1, 10, 10, 1, 1, CsvDialect(",", "\"", "\r\n"));
+        CsvInput(origin: buffer.reading(), maximum_bytes: -1, maximum_input: 10, maximum_field: 10, maximum_rows: 1, maximum_columns: 1, dialect: CsvDialect(",", "\"", "\r\n"));
         test.fail("negative limit accepted");
     }
     catch error is InvalidCsvLimits {
@@ -199,13 +199,13 @@ test "strict UTF-8 and scalar syntax coordinates" {
 test "scalar and structural limits retain typed errors" {
     try {
         CsvInput(
-            ByteBuffer(Utf8Encoded("é").bytes()).reading(),
-            2,
-            0,
-            1,
-            1,
-            1,
-            CsvDialect(",", "\"", "\r\n")
+            origin: ByteBuffer(Utf8Encoded("é").bytes()).reading(),
+            maximum_bytes: 2,
+            maximum_input: 0,
+            maximum_field: 1,
+            maximum_rows: 1,
+            maximum_columns: 1,
+            dialect: CsvDialect(",", "\"", "\r\n")
         ).read();
         test.fail("scalar limit ignored");
     }
@@ -214,13 +214,13 @@ test "scalar and structural limits retain typed errors" {
     }
     try {
         CsvInput(
-            ByteBuffer(Utf8Encoded("ab").bytes()).reading(),
-            2,
-            2,
-            1,
-            1,
-            1,
-            CsvDialect(",", "\"", "\r\n")
+            origin: ByteBuffer(Utf8Encoded("ab").bytes()).reading(),
+            maximum_bytes: 2,
+            maximum_input: 2,
+            maximum_field: 1,
+            maximum_rows: 1,
+            maximum_columns: 1,
+            dialect: CsvDialect(",", "\"", "\r\n")
         ).read();
         test.fail("field limit ignored");
     }
@@ -229,13 +229,13 @@ test "scalar and structural limits retain typed errors" {
     }
     try {
         CsvInput(
-            ByteBuffer(Utf8Encoded("a,b").bytes()).reading(),
-            3,
-            3,
-            1,
-            1,
-            1,
-            CsvDialect(",", "\"", "\r\n")
+            origin: ByteBuffer(Utf8Encoded("a,b").bytes()).reading(),
+            maximum_bytes: 3,
+            maximum_input: 3,
+            maximum_field: 1,
+            maximum_rows: 1,
+            maximum_columns: 1,
+            dialect: CsvDialect(",", "\"", "\r\n")
         ).read();
         test.fail("column limit ignored");
     }
@@ -244,13 +244,13 @@ test "scalar and structural limits retain typed errors" {
     }
     try {
         CsvInput(
-            ByteBuffer(Utf8Encoded("a").bytes()).reading(),
-            1,
-            1,
-            1,
-            0,
-            1,
-            CsvDialect(",", "\"", "\r\n")
+            origin: ByteBuffer(Utf8Encoded("a").bytes()).reading(),
+            maximum_bytes: 1,
+            maximum_input: 1,
+            maximum_field: 1,
+            maximum_rows: 0,
+            maximum_columns: 1,
+            dialect: CsvDialect(",", "\"", "\r\n")
         ).read();
         test.fail("row limit ignored");
     }
