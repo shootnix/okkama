@@ -467,6 +467,11 @@ public final class Rt {
 
     public static List<Object> slice(List<?> array, BigInteger start, BigInteger end) {
         sliceBounds(start, end, array.size());
+        // A slice that keeps most of a shared array shares it (#336).
+        List<Object> shared = Vec.slice(array, start.intValue(), end.intValue());
+        if (shared != null) {
+            return shared;
+        }
         return new ArrayList<Object>(array.subList(start.intValue(), end.intValue()));
     }
 

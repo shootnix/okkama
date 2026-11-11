@@ -165,7 +165,12 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   cost what they did once the JIT has compiled the new path (in the first
   few hundred concatenations of a program they cost up to half more).
   Builders and literals stay `ArrayList`; only steps of a chain become
-  `okkama.rt.Vec`. `OKKAMA_ARRAYS=flat` keeps every result a copy.
+  `okkama.rt.Vec`. A slice (`slice`, `take`, `drop`) of 32 elements or more
+  that keeps at least half of such an array shares it, and one of any other
+  list is copied once into a `Vec` that its own slices then share: a loop of
+  `drop(1)` costs 69 ns a step at 100 000 instead of 16.6 µs, and a slice of
+  half an array 20 µs instead of 36. `OKKAMA_ARRAYS=flat` keeps every result
+  a copy.
 - The JVM makes large maps persistent, as Tomato has since 0.4.3 (#336,
   maps): a write that versions a map of more than 64 entries makes a
   persistent B+ tree (`okkama.rt.PMap`) whose versions share every node off

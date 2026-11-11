@@ -90,6 +90,27 @@ final class Vec extends AbstractList<Object> implements RandomAccess {
         return frontier != null || chain != 0;
     }
 
+    /**
+     * {@code array.slice(from, to)} ({@code take}, {@code drop}): a view that
+     * shares a {@code Vec}'s slots when it keeps at least half of them, so a
+     * slice never holds much more memory than it shows; else a copy, made once
+     * and itself a {@code Vec}, so that the next slices of it share. Null for a
+     * short slice, copied as before.
+     */
+    static List<Object> slice(List<?> array, int from, int to) {
+        int len = to - from;
+        if (!SHARED || len < CHAIN_MIN) {
+            return null;
+        }
+        if (array instanceof Vec vec) {
+            if (2 * len >= vec.slots.length) {
+                return new Vec(vec.slots, vec.start + from, len, null, (byte) 0);
+            }
+            return new Vec(Arrays.copyOfRange(vec.slots, vec.start + from, vec.start + to), 0, len, null, (byte) 0);
+        }
+        return new Vec(array.subList(from, to).toArray(), 0, len, null, (byte) 0);
+    }
+
     /** {@code a + b + ...}: a buffer version or a marked copy, or null for a plain copy. */
     static List<Object> concat(Object[] parts, int size) {
         if (!SHARED || parts.length < 2 || size < CHAIN_MIN) {
