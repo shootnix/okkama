@@ -140,7 +140,7 @@ object ImapCommandLimits {
     }
 }
 
-object ImapCommandReading {
+hidden object ImapCommandReading {
     has pending is Future<ImapCommandRead>;
 
     ImapCommandReading(origin is AsyncReading, tag is ImapTag) {
@@ -302,7 +302,7 @@ object ImapCommandInput {
     }
 }
 
-object ImapCommandTail {
+hidden object ImapCommandTail {
     has value is @byte;
 
     ImapCommandTail(origin is @byte) {
@@ -318,7 +318,7 @@ object ImapCommandTail {
     }
 }
 
-object ImapCommandPrefix {
+hidden object ImapCommandPrefix {
     has head, tail is @byte;
 
     ImapCommandPrefix(origin is @byte, maximum is int) {
@@ -347,7 +347,7 @@ object ImapCommandPrefix {
     }
 }
 
-object ImapCommandPrefixJoin {
+hidden object ImapCommandPrefixJoin {
     has first, second is @byte;
 
     ImapCommandPrefixJoin(first is @byte, second is @byte) {

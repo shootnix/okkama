@@ -157,7 +157,7 @@ object ImapCommandExchange {
     }
 }
 
-object ImapExchangeState {
+hidden object ImapExchangeState {
     has prefix is @byte;
     has serial is BigInt;
 
@@ -208,7 +208,7 @@ object ImapLiteralWriting does ImapContinuationWriting {
 
 enum ImapChannelClosed is Error = (closed);
 
-object ImapIdleWireInput {
+hidden object ImapIdleWireInput {
     has input is AsyncReading;
     has output is AsyncWriting;
     has tag is ImapTag;
@@ -277,7 +277,7 @@ object ImapIdleContinuation does ImapContinuationWriting {
     }
 }
 
-object ImapDoneWriting {
+hidden object ImapDoneWriting {
     has output is AsyncWriting;
     has stop, sent is Event;
 

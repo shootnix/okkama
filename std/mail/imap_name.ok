@@ -38,7 +38,7 @@ object ImapNameLimits {
     }
 }
 
-object ImapUtf7Encoded {
+hidden object ImapUtf7Encoded {
     has value is string;
 
     ImapUtf7Encoded(origin is string) {
@@ -106,7 +106,7 @@ enum InvalidImapMailboxName is Error = (at(offset is int));
 
 enum ImapNameLimitExceeded is Error = (kind(kind is string));
 
-object ImapUtf7Encoder {
+hidden object ImapUtf7Encoder {
     has origin is string;
     has limits is ImapNameLimits;
 
@@ -145,7 +145,7 @@ object ImapUtf7Encoder {
     }
 }
 
-object ImapUtf7Run {
+hidden object ImapUtf7Run {
     has origin is string;
 
     ImapUtf7Run(origin is string) {
@@ -172,7 +172,7 @@ object ImapUtf7Run {
     }
 }
 
-object ImapUtf7Parser {
+hidden object ImapUtf7Parser {
     has origin is string;
     has limits is ImapNameLimits;
 
@@ -230,7 +230,7 @@ object ImapUtf7Parser {
     }
 }
 
-object ImapUtf7Shift {
+hidden object ImapUtf7Shift {
     has origin is string;
     has offset is int;
 
@@ -287,7 +287,7 @@ object ImapUtf7Shift {
     }
 }
 
-object ImapNameValue {
+hidden object ImapNameValue {
     has wire, argument is string;
 
     ImapNameValue(origin is string, limits is ImapNameLimits) {
@@ -324,7 +324,7 @@ object ImapNameValue {
     }
 }
 
-object ImapNameOutput {
+hidden object ImapNameOutput {
     has buffer is ByteBuffer;
     has maximum is int;
 

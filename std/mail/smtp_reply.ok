@@ -77,7 +77,7 @@ object SmtpReply does ByteSource {
     }
 }
 
-object ParsedSmtpReply {
+hidden object ParsedSmtpReply {
     has origin is @byte;
     has limits is SmtpReplyLimits;
 
@@ -170,7 +170,7 @@ enum InvalidSmtpReply is Error = (located(offset is int, reason is string));
 
 enum SmtpLimitExceeded is Error = (kind(kind is string));
 
-object SmtpReplyValue {
+hidden object SmtpReplyValue {
     has status is int;
     has entries is @string;
     has summary is string;
@@ -233,7 +233,7 @@ object SmtpReplyValue {
     }
 }
 
-object SmtpReplyCode {
+hidden object SmtpReplyCode {
     has origin is int;
 
     SmtpReplyCode(origin is int) {
@@ -246,7 +246,7 @@ object SmtpReplyCode {
     }
 }
 
-object SmtpReplyText {
+hidden object SmtpReplyText {
     has origin is string;
 
     SmtpReplyText(origin is string) {
@@ -266,7 +266,7 @@ object SmtpReplyText {
     }
 }
 
-object SmtpReplyLine {
+hidden object SmtpReplyLine {
     has status is int;
     has message is string;
     has terminal is bool;
@@ -311,7 +311,7 @@ object SmtpReplyLine {
     }
 }
 
-object SmtpReplyProgress {
+hidden object SmtpReplyProgress {
     has limits is SmtpReplyLimits;
     has pending is string;
     has lines is MimeItems<string>;

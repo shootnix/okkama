@@ -98,7 +98,7 @@ object ImapCopiedUids {
     }
 }
 
-object ImapUidPlus {
+hidden object ImapUidPlus {
     has origin is ImapCapabilities;
 
     ImapUidPlus(origin is ImapCapabilities) {
@@ -137,7 +137,7 @@ object MovedMail {
     }
 }
 
-object ImapCopying {
+hidden object ImapCopying {
     has origin is SelectedMailbox;
     has uids is MailboxUids;
     has destination is ImapMailboxName;
@@ -187,7 +187,7 @@ object ExpungedMail {
     }
 }
 
-object ImapExpunging {
+hidden object ImapExpunging {
     has origin is SelectedMailbox;
     has uids is MailboxUids;
 
@@ -243,7 +243,7 @@ object AppendedMail {
     }
 }
 
-object ImapAppending {
+hidden object ImapAppending {
     has origin is ImapSession;
     has mailbox is ImapMailboxName;
     has command is ImapCommand;
@@ -348,7 +348,7 @@ object ImapSubscription {
     }
 }
 
-object ImapMailboxChanging {
+hidden object ImapMailboxChanging {
     has origin is ImapSession;
     has name is ImapMailboxName;
     has command is ImapCommand;

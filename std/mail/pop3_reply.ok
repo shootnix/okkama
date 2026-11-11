@@ -204,7 +204,7 @@ enum InvalidPopReply is Error = (located(offset is int, reason is string));
 
 enum PopReplyLimitExceeded is Error = (kind(kind is string));
 
-object PopStatusLine {
+hidden object PopStatusLine {
     has success is bool;
     has summary is string;
 
@@ -239,7 +239,7 @@ object PopStatusLine {
     }
 }
 
-object PopReplyProgress {
+hidden object PopReplyProgress {
     has limits is PopReplyLimits;
     has mode is PopReplyMode;
     has pending, content, summary is string;

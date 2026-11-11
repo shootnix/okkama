@@ -197,7 +197,7 @@ enum MboxConflict is Error = (conflict);
 
 enum CommittedMboxFailure is Error = (detailed(code is string, reason is string));
 
-object MboxLease does Closing {
+hidden object MboxLease does Closing {
     has owner is File;
     has guard is FileLock;
 
@@ -243,7 +243,7 @@ object MboxLease does Closing {
     }
 }
 
-object MboxFileBytes {
+hidden object MboxFileBytes {
     has path is Path;
     has maximum is int;
 
@@ -277,7 +277,7 @@ object MboxFileBytes {
     }
 }
 
-object MboxSnapshot {
+hidden object MboxSnapshot {
     has wire is @byte;
     has records is @MboxRecord;
     has identifiers is @string;
@@ -324,7 +324,7 @@ object MboxSnapshot {
     }
 }
 
-object MboxReplacement {
+hidden object MboxReplacement {
     has path is Path;
     has wire is @byte;
     has lease is MboxLease;

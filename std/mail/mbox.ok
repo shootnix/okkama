@@ -169,7 +169,7 @@ enum InvalidMbox is Error = (located(offset is int, reason is string));
 
 enum MboxLimitExceeded is Error = (kind(kind is string));
 
-object MboxRecordsSnapshot {
+hidden object MboxRecordsSnapshot {
     has origin is Sequencing<MboxRecord>;
     has maximum is int;
 
@@ -190,7 +190,7 @@ object MboxRecordsSnapshot {
     }
 }
 
-object MboxOutput {
+hidden object MboxOutput {
     has buffer is ByteBuffer;
     has maximum is int;
     has kind is string;
@@ -212,7 +212,7 @@ object MboxOutput {
     }
 }
 
-object MboxBytes {
+hidden object MboxBytes {
     has origin is @byte;
     has start, stop is int;
 
@@ -230,7 +230,7 @@ object MboxBytes {
     }
 }
 
-object MboxFromLine {
+hidden object MboxFromLine {
     has origin is @byte;
 
     MboxFromLine(origin is @byte) {
@@ -260,7 +260,7 @@ object MboxFromLine {
     }
 }
 
-object MboxMimeLine {
+hidden object MboxMimeLine {
     has origin is @byte;
     has start is int;
 
@@ -284,7 +284,7 @@ object MboxMimeLine {
     }
 }
 
-object MboxLine {
+hidden object MboxLine {
     has origin is @byte;
     has start is int;
 
@@ -306,7 +306,7 @@ object MboxLine {
     }
 }
 
-object MboxSeparatorBytes {
+hidden object MboxSeparatorBytes {
     has origin is @byte;
     has start, stop is int;
 
@@ -332,7 +332,7 @@ object MboxSeparatorBytes {
     }
 }
 
-object MboxRecordStart {
+hidden object MboxRecordStart {
     has start is int;
     has separator is MboxSeparator;
 
@@ -355,7 +355,7 @@ object MboxRecordStart {
     }
 }
 
-object MboxParsing {
+hidden object MboxParsing {
     has origin is @byte;
     has limits is MboxLimits;
 
@@ -408,7 +408,7 @@ object MboxParsing {
     }
 }
 
-object MboxDecodedRecord {
+hidden object MboxDecodedRecord {
     has origin is @byte;
     has start, stop is int;
     has separator is MboxSeparator;

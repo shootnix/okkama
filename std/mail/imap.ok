@@ -122,7 +122,7 @@ enum InvalidImapCapabilities is Error = (because(reason is string));
 
 enum ImapCapabilityLimitExceeded is Error = (kind(kind is string));
 
-object ImapCapabilityToken {
+hidden object ImapCapabilityToken {
     has origin is string;
     has limits is ImapCapabilityLimits;
 
@@ -172,7 +172,7 @@ object ImapCapabilityToken {
     }
 }
 
-object ImapCapabilityUpper {
+hidden object ImapCapabilityUpper {
     has origin is string;
 
     ImapCapabilityUpper(origin is string) {
@@ -193,7 +193,7 @@ object ImapCapabilityUpper {
     }
 }
 
-object ImapCapabilitySnapshot {
+hidden object ImapCapabilitySnapshot {
     has entries is @ImapCapability;
     has names is Set<string>;
     has features is Set<ImapFeature>;
@@ -268,7 +268,7 @@ object ImapCapabilitySnapshot {
     }
 }
 
-object ImapCapabilityLine {
+hidden object ImapCapabilityLine {
     has origin is @byte;
     has limits is ImapCapabilityLimits;
 
@@ -299,7 +299,7 @@ object ImapCapabilityLine {
     }
 }
 
-object ImapKnownFeature {
+hidden object ImapKnownFeature {
     has name is string;
 
     ImapKnownFeature(name is string) {

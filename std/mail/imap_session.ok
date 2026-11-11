@@ -448,7 +448,7 @@ object ImapSelectedState {
     }
 }
 
-object ImapSessionState {
+hidden object ImapSessionState {
     has serial is BigInt;
     has selection is @ImapSelectedState;
 
@@ -542,7 +542,7 @@ object SearchedMail {
     }
 }
 
-object ImapSearching {
+hidden object ImapSearching {
     has origin is SelectedMailbox;
     has command is ImapCommand;
 
@@ -627,7 +627,7 @@ object ChangedMailFlags {
     }
 }
 
-object ImapFetching {
+hidden object ImapFetching {
     has origin is SelectedMailbox;
     has uids is MailboxUids;
     has command is ImapCommand;
@@ -859,7 +859,7 @@ object ImapIdleTask {
     }
 }
 
-object ImapIdleSlot {
+hidden object ImapIdleSlot {
     has values is @ImapIdleTask;
 
     ImapIdleSlot() {
@@ -880,7 +880,7 @@ object ImapIdleSlot {
     }
 }
 
-object ImapIdleEnding {
+hidden object ImapIdleEnding {
     has events is Sending<MailboxEvent>;
     has finished is Event;
 

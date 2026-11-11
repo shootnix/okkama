@@ -90,7 +90,7 @@ enum InvalidSmtpData is Error = (located(offset is int, reason is string));
 
 enum MissingSmtpExtension is Error = (name(name is string));
 
-object SmtpDataValue {
+hidden object SmtpDataValue {
     has wire is @byte;
     has size is int;
     has mode is SmtpBodyMode;
@@ -207,7 +207,7 @@ object SmtpDataValue {
     }
 }
 
-object SmtpDataMime {
+hidden object SmtpDataMime {
     // Parsed nodes retain the inspected child tree. No concrete MimeBody
     // downcast or recursive re-serialization is needed to observe nested CTE.
     has limits is MimeLimits;
@@ -259,7 +259,7 @@ object SmtpDataMime {
     }
 }
 
-object SmtpDataLine {
+hidden object SmtpDataLine {
     has origin is @byte;
     has start, maximum is int;
 
@@ -287,7 +287,7 @@ object SmtpDataLine {
     }
 }
 
-object SmtpDataOutput {
+hidden object SmtpDataOutput {
     has buffer is ByteBuffer;
     has maximum is int;
 

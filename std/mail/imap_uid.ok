@@ -195,7 +195,7 @@ enum ImapUidLimitExceeded is Error = (kind(kind is string));
 
 enum StaleImapUids is Error = (stale);
 
-object ImapUidNumber {
+hidden object ImapUidNumber {
     has origin is BigInt;
 
     ImapUidNumber(origin is BigInt) {
@@ -208,7 +208,7 @@ object ImapUidNumber {
     }
 }
 
-object ImapUidSnapshot {
+hidden object ImapUidSnapshot {
     has entries is @ImapUid;
     has wire is string;
 
@@ -253,7 +253,7 @@ object ImapUidSnapshot {
     }
 }
 
-object ImapUidSeen {
+hidden object ImapUidSeen {
     has value is Set<string>;
 
     ImapUidSeen() {

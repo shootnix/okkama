@@ -293,7 +293,7 @@ object PopCommand {
 
 // Exclusively owned wire state, used only under its session's lock. Atomic
 // stores immutable unread bytes; no Okkama field becomes mutable.
-object PopWire does Closing {
+hidden object PopWire does Closing {
     has input is AsyncReading;
     has output is AsyncWriting;
     has owner is Closing;

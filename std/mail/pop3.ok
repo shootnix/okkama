@@ -169,7 +169,7 @@ object PopCapabilities {
 
 // Strict unsigned decimal parsing with separate digit and machine-number bounds.
 // Message sizes are BigInt; no float conversion can lose their low bits.
-object PopDecimal {
+hidden object PopDecimal {
     has origin is string;
 
     PopDecimal(origin is string, limits is PopListingLimits) {
@@ -197,7 +197,7 @@ object PopDecimal {
     }
 }
 
-object PopDataLines {
+hidden object PopDataLines {
     has entries is @string;
 
     PopDataLines(reply is PopReply, limits is PopListingLimits) {
@@ -321,7 +321,7 @@ test "POP3 number and opaque identifier have different identities" {
 }
 
 // Persistent seen-number set used by bounded listing validation.
-object PopNumbers {
+hidden object PopNumbers {
     has origin is Set<int>;
 
     PopNumbers() {

@@ -134,7 +134,7 @@ enum WrongMailFlagKind is Error = (detailed(expected is MailFlagKind, actual is 
 
 enum InvalidMailFlag is Error = (located(offset is int, reason is string));
 
-object MailFlagName {
+hidden object MailFlagName {
     has origin is string;
 
     MailFlagName(origin is string) {
@@ -223,7 +223,7 @@ object MailFlags does Set<MailFlag>, Sequencing<MailFlag>, Iterating<MailFlag> {
     }
 }
 
-object MailFlagSnapshot {
+hidden object MailFlagSnapshot {
     has origin is MailFlag;
 
     MailFlagSnapshot(origin is MailFlag) {
@@ -240,7 +240,7 @@ object MailFlagSnapshot {
     }
 }
 
-object MailFlagEntries {
+hidden object MailFlagEntries {
     has origin is Sequencing<MailFlag>;
     has maximum is int;
 
@@ -271,7 +271,7 @@ object MailFlagEntries {
     }
 }
 
-object MailSetEntries {
+hidden object MailSetEntries {
     has origin is Set<MailFlag>;
 
     MailSetEntries(origin is Set<MailFlag>) {
@@ -296,7 +296,7 @@ object MailSetEntries {
     }
 }
 
-object MailFlagCursor {
+hidden object MailFlagCursor {
     has origin is Cursor<MailFlag>;
 
     MailFlagCursor(origin is Cursor<MailFlag>) {
@@ -353,7 +353,7 @@ object StoredMail {
     }
 }
 
-object StoredMailContent {
+hidden object StoredMailContent {
     has origin is MailMessage;
     has limits is MimeLimits;
 
@@ -367,7 +367,7 @@ object StoredMailContent {
     }
 }
 
-object MailStorageIdentifier {
+hidden object MailStorageIdentifier {
     has origin is string;
 
     MailStorageIdentifier(origin is string) {
@@ -421,7 +421,7 @@ object MaildirLimits {
     }
 }
 
-object MaildirName {
+hidden object MaildirName {
     has origin, identifier is string;
     has current is bool;
     has marks is MailFlags;
@@ -573,7 +573,7 @@ object Maildir {
     }
 }
 
-object MaildirDelivery {
+hidden object MaildirDelivery {
     has origin is Maildir;
     has message is MailMessage;
     has random is Randomizing;
@@ -624,7 +624,7 @@ object MaildirDelivery {
 
 // Persistent lock inode: every library reader/writer uses the same coordinate.
 // The path namespace is trusted; advisory locks do not constrain other clients.
-object MaildirAccess {
+hidden object MaildirAccess {
     has owner is File;
     has guard is FileLock;
 
@@ -668,7 +668,7 @@ object MaildirAccess {
     }
 }
 
-object MaildirCommitRelease {
+hidden object MaildirCommitRelease {
     has access is MaildirAccess;
     has identifier is string;
 
@@ -735,7 +735,7 @@ object ChangedMaildirFlags {
     }
 }
 
-object MaildirFlagName {
+hidden object MaildirFlagName {
     has identifier is string;
     has marks is MailFlags;
 
@@ -771,7 +771,7 @@ object MaildirFlagName {
     }
 }
 
-object MaildirPublication {
+hidden object MaildirPublication {
     has path is Path;
     has temporary is TemporaryFile;
     has entries is @MaildirEntry;
@@ -824,7 +824,7 @@ enum CommittedMaildirFailure is Error = (detailed(
     reason is string
 ));
 
-object MaildirEntry {
+hidden object MaildirEntry {
     has path is Path;
     has name is MaildirName;
 
@@ -842,7 +842,7 @@ object MaildirEntry {
     }
 }
 
-object MaildirEntries {
+hidden object MaildirEntries {
     has origin is Path;
     has maximum is int;
 
@@ -895,7 +895,7 @@ object MaildirEntries {
     }
 }
 
-object MaildirFileBytes {
+hidden object MaildirFileBytes {
     has path is Path;
     has maximum, aggregate is int;
 
