@@ -80,13 +80,13 @@ hidden object TomlNode {
         let members is @TomlMember = (0..toml_node_size(origin)).map() -> index {
             TomlMember(
                 name: toml_member_name(origin, index),
-                value: TomlNode(toml_node_item(origin, index)).value()
+                value: TomlNode(toml_node_item(origin, index)).toml()
             );
         };
         TomlTable(members);
     }
 
-    value() is TomlValue {
+    toml() is TomlValue {
         match toml_node_kind(origin) {
             case 1 {
                 let result is TomlValue = TomlInteger(toml_node_integer(origin));
@@ -106,7 +106,7 @@ hidden object TomlNode {
             }
             case 5 {
                 let values is @TomlValue = (0..toml_node_size(origin)).map() -> index {
-                    TomlNode(toml_node_item(origin, index)).value();
+                    TomlNode(toml_node_item(origin, index)).toml();
                 };
                 let result is TomlValue = TomlArray(values);
                 result;

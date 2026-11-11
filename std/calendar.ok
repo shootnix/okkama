@@ -278,8 +278,8 @@ hidden object CalendarMonthLayout {
 
     first_ordinal() is int {
         let first = Date(year: origin::Calendar::year, month: origin::Calendar::month, day: 1);
-        let lead is int = ((WeekdayIndex(origin: first.weekday()).value()) -
-            (WeekdayIndex(origin: first_weekday).value()) +
+        let lead is int = ((WeekdayIndex(origin: first.weekday()).index()) -
+            (WeekdayIndex(origin: first_weekday).index()) +
             7) % 7;
         let result is int = (GregorianDay(first).number()) - lead;
         confirm result >= 1 && result + self.size() * 7 - 1 <= 3652059
@@ -291,8 +291,8 @@ hidden object CalendarMonthLayout {
 
     size() is int {
         let first = Date(year: origin::Calendar::year, month: origin::Calendar::month, day: 1);
-        let lead is int = ((WeekdayIndex(origin: first.weekday()).value()) -
-            (WeekdayIndex(origin: first_weekday).value()) +
+        let lead is int = ((WeekdayIndex(origin: first.weekday()).index()) -
+            (WeekdayIndex(origin: first_weekday).index()) +
             7) % 7;
         ((lead + MonthDates(origin: origin).size() + 6) / 7).int();
     }
@@ -379,7 +379,7 @@ hidden object WeekdayIndex {
 
     WeekdayIndex(:origin);
 
-    value() is int {
+    index() is int {
         match origin {
             case Weekday.monday {
                 0;

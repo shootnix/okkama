@@ -116,7 +116,7 @@ hidden object PlistParsedNode {
         self.nodes = nodes;
     }
 
-    value() is PlistValue {
+    plist() is PlistValue {
         origin;
     }
 
@@ -522,7 +522,7 @@ hidden object PlistXmlDocument {
             else throw source.failure(close.start(), "expected plist closing tag");
         let end = source.significant(close.end());
         confirm end.kind() == "eof" else throw source.failure(end.start(), "trailing XML content");
-        value.value();
+        value.plist();
     }
 
     element(at is int, depth is int, remaining is int) is PlistParsedNode {
@@ -561,7 +561,7 @@ hidden object PlistXmlDocument {
                             depth + 1,
                             remaining - cursor.used() - 2
                         );
-                        members = members.following(PlistMember(name: key.text(), value: child.value()));
+                        members = members.following(PlistMember(name: key.text(), value: child.plist()));
                         cursor = cursor.following(child.end(), child.nodes() + 1);
                     }
                     else {
@@ -570,7 +570,7 @@ hidden object PlistXmlDocument {
                             depth + 1,
                             remaining - cursor.used() - 1
                         );
-                        values = values.following(child.value());
+                        values = values.following(child.plist());
                         cursor = cursor.following(child.end(), child.nodes());
                     }
                 }
@@ -896,7 +896,7 @@ hidden object PlistBinaryDocument {
 
     root() is PlistValue {
         let path is List<int> = EmptyList();
-        self.read(root, 1, maximum_nodes, path).value();
+        self.read(root, 1, maximum_nodes, path).plist();
     }
 
     hidden limit(start is int) is int {
@@ -1026,7 +1026,7 @@ hidden object PlistBinaryDocument {
                         remaining - progress.used() - 2,
                         active
                     );
-                    members = members.following(PlistMember(name: key, value: value.value()));
+                    members = members.following(PlistMember(name: key, value: value.plist()));
                     progress = progress.following(0, value.nodes() + 1);
                 }
                 else {
@@ -1036,7 +1036,7 @@ hidden object PlistBinaryDocument {
                         remaining - progress.used() - 1,
                         active
                     );
-                    values = values.following(value.value());
+                    values = values.following(value.plist());
                     progress = progress.following(0, value.nodes());
                 }
             }

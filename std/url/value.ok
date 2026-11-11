@@ -342,7 +342,7 @@ hidden object UrlPort {
         supplied;
     }
 
-    value() is int {
+    number() is int {
         confirm values.size() == 1 else throw MissingUrlPort.missing;
         values[0];
     }
@@ -369,7 +369,7 @@ hidden object UrlAuthority {
     }
 
     UrlAuthority(host is UrlHost) {
-        hosts = [UrlHostSnapshot(host).value()];
+        hosts = [UrlHostSnapshot(host).host()];
         userinfo = UrlUserInfo();
         port = UrlPort();
     }
@@ -377,13 +377,13 @@ hidden object UrlAuthority {
     UrlAuthority(host is UrlHost, port is int) {
         confirm port >= 0 && port <= 65535
             else throw InvalidUrl.located(0, "port outside 0..65535");
-        hosts = [UrlHostSnapshot(host).value()];
+        hosts = [UrlHostSnapshot(host).host()];
         userinfo = UrlUserInfo();
         self.port = UrlPort(port.string());
     }
 
     UrlAuthority(host is UrlHost, userinfo is UrlUserInfo, port is UrlPort) {
-        hosts = [UrlHostSnapshot(host).value()];
+        hosts = [UrlHostSnapshot(host).host()];
         self.userinfo = userinfo;
         self.port = port;
     }
@@ -404,7 +404,7 @@ hidden object UrlAuthority {
 
     port() is int {
         confirm self.present() else throw MissingUrlAuthority.missing;
-        port.value();
+        port.number();
     }
 
     port_marker() is UrlPort {
@@ -440,7 +440,7 @@ hidden object UrlHostSnapshot {
         self.origin = origin;
     }
 
-    value() is UrlHost {
+    host() is UrlHost {
         let kind = origin.kind();
         let wire = origin.string();
         let host is UrlHost = if kind == UrlHostKind.name {
@@ -479,7 +479,7 @@ hidden object ParsedUrlAuthority {
         self.origin = origin;
     }
 
-    value() is UrlAuthority {
+    authority() is UrlAuthority {
         confirm origin.length() <= 8192
             else throw InvalidUrl.located(8192, "authority source limit exceeded");
         let parts = origin.split("@");
@@ -773,7 +773,7 @@ hidden object UrlReading {
             let after = path_authority.slice(2, path_authority.length());
             let segments = after.split("/");
             let authority = try {
-                ParsedUrlAuthority(segments[0]).value();
+                ParsedUrlAuthority(segments[0]).authority();
             }
             catch InvalidUrl.located(offset, reason) {
                 throw InvalidUrl.located(prefix + 2 + offset, reason);
@@ -837,7 +837,7 @@ hidden object UrlDotSegments {
         self.origin = origin;
     }
 
-    value() is string {
+    path() is string {
         confirm origin.length() <= 8192
             else throw InvalidUrl.located(8192, "dot path source limit exceeded");
         let path = try {
@@ -869,7 +869,7 @@ hidden object UrlResolution {
             return UrlPieces(
                     scheme: relative.scheme(),
                     authority: relative.authority(),
-                    path: UrlDotSegments(relative.path()).value(),
+                    path: UrlDotSegments(relative.path()).path(),
                     query: relative.query(),
                     fragment: relative.fragment()
                 );
@@ -878,7 +878,7 @@ hidden object UrlResolution {
             return UrlPieces(
                     scheme: original.scheme(),
                     authority: relative.authority(),
-                    path: UrlDotSegments(relative.path()).value(),
+                    path: UrlDotSegments(relative.path()).path(),
                     query: relative.query(),
                     fragment: relative.fragment()
                 );
@@ -921,7 +921,7 @@ hidden object UrlResolution {
         UrlPieces(
                 scheme: original.scheme(),
                 authority: original.authority(),
-                path: UrlDotSegments(merged).value(),
+                path: UrlDotSegments(merged).path(),
                 query: relative.query(),
                 fragment: relative.fragment()
             );
@@ -1091,7 +1091,7 @@ object UrlParts {
             userinfo: userinfo_text,
             host: host_text,
             port: port_number,
-            path: UrlDotSegments(path_text).value(),
+            path: UrlDotSegments(path_text).path(),
             query: query_text,
             fragment: fragment_text,
         );
@@ -1114,7 +1114,7 @@ object UrlParts {
     hidden host_value() is UrlHost {
         match host_text {
             case Maybe.some(host) {
-                ParsedUrlAuthority(host).value().host();
+                ParsedUrlAuthority(host).authority().host();
             }
             else {
                 throw MissingUrlAuthority.missing;
@@ -1171,7 +1171,7 @@ hidden object UrlPiecesFrom {
     pieces() is UrlPieces {
         let authority = match host {
             case Maybe.some(text) {
-                let parsed = ParsedUrlAuthority(text).value();
+                let parsed = ParsedUrlAuthority(text).authority();
                 confirm !parsed.userinfo().present() && !parsed.port_marker().present()
                     else throw InvalidUrl.located(0, "a host carries neither userinfo nor port");
                 let info = match userinfo {
@@ -1305,9 +1305,9 @@ test "query presence and reserved escapes survive canonicalization" {
 }
 
 test "authority presence includes empty userinfo and unassigned port" {
-    test.is(ParsedUrlAuthority("@example:").value().string(), "@example:");
+    test.is(ParsedUrlAuthority("@example:").authority().string(), "@example:");
     test.ok(!UrlAuthority().present());
-    test.ok(ParsedUrlAuthority("").value().present());
+    test.ok(ParsedUrlAuthority("").authority().present());
 }
 
 test "explicit URL reference resolution preserves empty query and trailing slash" {

@@ -152,7 +152,7 @@ hidden object PlistWireSession {
         self.claim(depth);
         let recipient = PlistWireValue(session: self, depth: depth);
         value.print(recipient);
-        recipient.result();
+        recipient.record();
     }
 
     source_size(size is int, keys is bool) is void {
@@ -314,7 +314,7 @@ hidden object PlistWireValue does PlistWriting {
         identity = ByteBuffer();
     }
 
-    result() is int {
+    record() is int {
         confirm event.content().size() == 1 && identity.content().size() == 8
             else throw InvalidPlistPrintProtocol.invalid;
         Binary(bytes: identity.content().bytes(), order: ByteOrder.big).int(Signedness.unsigned);

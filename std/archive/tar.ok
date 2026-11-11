@@ -235,10 +235,10 @@ hidden object TarMemberHeader {
         let metadata = entry.metadata();
         let mode = try {
             let permission = metadata.mode();
-            permission.special() * 512 + TarPermissionBits(permission.owner()).value() * 64 +
-                TarPermissionBits(permission.group()).value() * 8 + TarPermissionBits(
+            permission.special() * 512 + TarPermissionBits(permission.owner()).mode() * 64 +
+                TarPermissionBits(permission.group()).mode() * 8 + TarPermissionBits(
                     permission.others()
-                ).value();
+                ).mode();
         }
         catch absent is MissingArchiveMode {
             if flag == "5" {
@@ -658,7 +658,7 @@ hidden object TarPermissionBits {
         self.origin = origin;
     }
 
-    value() is int {
+    mode() is int {
         let read = if origin::Access::readable {
             4;
         }
@@ -1339,7 +1339,7 @@ hidden object TarInputMember {
             user_identity: user_id,
             group_identity: group_id
         );
-        let mode = TarCheckedInt(origin: header.number(100, 8), maximum: 4095).value();
+        let mode = TarCheckedInt(origin: header.number(100, 8), maximum: 4095).int();
         let time = local.lookup("mtime", global.lookup("mtime", ""));
         let time_text = if time != "" {
             time;
@@ -1360,8 +1360,8 @@ hidden object TarInputMember {
             comment: local.lookup("comment", global.lookup("comment", ""))
         );
         if kind == "3" || kind == "4" {
-            major = TarCheckedInt(origin: header.number(329, 8), maximum: 9223372036854775807).value();
-            minor = TarCheckedInt(origin: header.number(337, 8), maximum: 9223372036854775807).value();
+            major = TarCheckedInt(origin: header.number(329, 8), maximum: 9223372036854775807).int();
+            minor = TarCheckedInt(origin: header.number(337, 8), maximum: 9223372036854775807).int();
         }
         else {
             major = 0;
@@ -1427,7 +1427,7 @@ hidden object TarCheckedInt {
         self.maximum = maximum;
     }
 
-    value() is int {
+    int() is int {
         confirm origin.sign() >= 0 && origin.order(BigInt(maximum.string())) != Order.greater
             else throw InvalidTar.because("numeric field out of range");
         Number(origin.string()).int();
@@ -1453,7 +1453,7 @@ hidden object TarPaxTime {
         let parts = magnitude.split(".");
         confirm parts.size() <= 2 && TarDecimalDigits(parts[0]).valid()
             else throw InvalidTar.because("invalid timestamp");
-        let whole = TarCheckedInt(origin: BigInt(parts[0]), maximum: 253402300800).value();
+        let whole = TarCheckedInt(origin: BigInt(parts[0]), maximum: 253402300800).int();
         let fraction = if parts.size() == 2 {
             parts[1];
         }
