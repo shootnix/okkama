@@ -148,6 +148,12 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     a temporary directory.
   - New `examples/fs/file/` shows each task as a program with its expected
     output, and `examples/check.py` runs them.
+- The benchmark ladder compares Okkama with Go, Java, Kotlin and Python
+  instead of Perl and Ruby (#363). The twelve programs have ports in each
+  language with the same output. README and LLM-GUIDE quote the 0.5.3
+  numbers. Cold runs: Sparrow is 2.2× slower than Go, 1.5× faster than Java,
+  1.85× faster than Kotlin and 6.3× faster than Python. Warmed up, Go and
+  HotSpot are 2.4–2.6× faster than Sparrow.
 
 ### Fixed
 
