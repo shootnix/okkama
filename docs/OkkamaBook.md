@@ -3856,9 +3856,11 @@ shows `record::Entry::level` and `::message`. Writers compose:
 `config` layers settings. `Settings`, `IniSettings`, `JsonSettings`,
 `TomlSettings`, `EnvironmentSettings` and `call.settings()` from `cli` are
 layers. `LayeredSettings([defaults, file, environment, line])` lets a later
-layer win key by key. `ScalarSetting(origin:, key:).text()` reads a value,
-`ScalarSettingOr(…, fallback:)` gives a fallback, and `source()::Source::name`
-tells where the value came from.
+layer win key by key. Values are read by their dotted name:
+`settings.int("server.port") else 8080`, `text`, `float` and `bool` answer a
+`Maybe`, `texts("cors.origins")` a list, and `source(name)` where the value came
+from. A value that is there but malformed throws `MalformedSetting` naming the
+key.
 
 `template` fills text. `TextTemplate("Hello, {{user.name}}")` takes bindings.
 `SectionTemplate(source:, partials:)` walks JSON with `{{#list}}`, `{{^list}}`
@@ -5388,7 +5390,7 @@ let key=SettingKey(["greeting","name"]);
 let defaults=Settings([SettingEntry(key: key,values: ["world"],
     source: SettingSource(kind: SettingSourceKind.defaults,name: "application"))]);
 let settings=LayeredSettings([defaults,invocation.settings()]);
-let name=ScalarSetting(origin: settings,key: key).text();
+let name=settings.text("greeting.name") else "world";
 ```
 
 An async terminal acquisition returns one owned session. Its child input/output,

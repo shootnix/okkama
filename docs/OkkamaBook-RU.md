@@ -4035,9 +4035,11 @@ destination: logs)` пишет через
 `config` складывает настройки слоями. `Settings`, `IniSettings`,
 `JsonSettings`, `TomlSettings`, `EnvironmentSettings` и `call.settings()` из
 `cli` — это слои. `LayeredSettings([defaults, file, environment, line])`
-даёт позднему слою победить по каждому ключу. `ScalarSetting(origin:,
-key:).text()` читает значение, `ScalarSettingOr(…, fallback:)` даёт значение
-по умолчанию, а `source()::Source::name` говорит, откуда оно пришло.
+даёт позднему слою победить по каждому ключу. Значения читаются по имени
+через точку: `settings.int("server.port") else 8080`; `text`, `float` и `bool`
+отвечают `Maybe`, `texts("cors.origins")` — списком, а `source(name)` говорит,
+откуда значение пришло. Значение, которое есть, но испорчено, бросает
+`MalformedSetting` с именем ключа.
 
 `template` заполняет текст. `TextTemplate("Hello, {{user.name}}")` берёт
 привязки. `SectionTemplate(source:, partials:)` обходит JSON с `{{#list}}`,
@@ -5773,7 +5775,7 @@ let key=SettingKey(["greeting","name"]);
 let defaults=Settings([SettingEntry(key: key,values: ["world"],
     source: SettingSource(kind: SettingSourceKind.defaults,name: "application"))]);
 let settings=LayeredSettings([defaults,invocation.settings()]);
-let name=ScalarSetting(origin: settings,key: key).text();
+let name=settings.text("greeting.name") else "world";
 ```
 
 Settings сохраняет индекс реальных сегментных ключей для binary lookup;

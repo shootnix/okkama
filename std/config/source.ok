@@ -3,7 +3,8 @@ module config/source v1.0.0;
 import "collections/sequence" take Sequencing;
 import "compare" take Comparing, Order;
 import "collections/ordering" take LowerBound;
-import "config/key" take SettingKey;
+import "config/key" take SettingKey, InvalidSettingKey;
+import "strings/parse" take Number, Truth, InvalidInteger, InvalidFloat, InvalidBoolean;
 
 enum SettingSourceKind = (defaults, document, environment, command_line);
 
@@ -101,6 +102,33 @@ object Settings does SettingReading {
 
     hidden index(key is SettingKey) is int {
         lookup.position(key);
+    }
+
+    // Read by a dotted name, as cli's Invocation reads its options:
+    // settings.int("server.port") else 8080. Absent is Maybe.none; a value
+    // that is there but malformed throws MalformedSetting naming the key.
+    text(name is string) is Maybe<string> {
+        SettingByName(origin: self, name: name).text();
+    }
+
+    int(name is string) is Maybe<int> {
+        SettingByName(origin: self, name: name).int();
+    }
+
+    float(name is string) is Maybe<float> {
+        SettingByName(origin: self, name: name).float();
+    }
+
+    bool(name is string) is Maybe<bool> {
+        SettingByName(origin: self, name: name).bool();
+    }
+
+    texts(name is string) is @string {
+        SettingByName(origin: self, name: name).texts();
+    }
+
+    source(name is string) is Maybe<SettingSource> {
+        SettingByName(origin: self, name: name).source();
     }
 }
 
@@ -207,6 +235,33 @@ object LayeredSettings does SettingReading {
 
     keys() is Sequencing<SettingKey> {
         origin.keys();
+    }
+
+    // Read by a dotted name, as cli's Invocation reads its options:
+    // settings.int("server.port") else 8080. Absent is Maybe.none; a value
+    // that is there but malformed throws MalformedSetting naming the key.
+    text(name is string) is Maybe<string> {
+        SettingByName(origin: self, name: name).text();
+    }
+
+    int(name is string) is Maybe<int> {
+        SettingByName(origin: self, name: name).int();
+    }
+
+    float(name is string) is Maybe<float> {
+        SettingByName(origin: self, name: name).float();
+    }
+
+    bool(name is string) is Maybe<bool> {
+        SettingByName(origin: self, name: name).bool();
+    }
+
+    texts(name is string) is @string {
+        SettingByName(origin: self, name: name).texts();
+    }
+
+    source(name is string) is Maybe<SettingSource> {
+        SettingByName(origin: self, name: name).source();
     }
 }
 
@@ -571,4 +626,125 @@ test "layers replace complete values and preserve the winning source" {
     );
     test.is(result.entry(key).values().first(), "");
     test.is(result.entry(key).source()::Source::name, "argv");
+}
+
+hidden object SettingByName {
+    has origin is SettingReading;
+    has key is SettingKey;
+
+    SettingByName(origin is SettingReading, name is string) {
+        self.origin = origin;
+        key = SettingKey(name.split("."));
+    }
+
+    text() is Maybe<string> {
+        if !origin.membership(key) {
+            return Maybe<string>.none;
+        }
+        let values = origin.entry(key).values();
+        confirm values.size() == 1
+            else throw MalformedSetting.detailed(key.string(), "one value", values.size().string() + " values");
+        Maybe<string>.some(values.first());
+    }
+
+    int() is Maybe<int> {
+        match self.text() {
+            case Maybe.none {
+                Maybe<int>.none;
+            }
+            case Maybe.some(text) {
+                try {
+                    Maybe<int>.some(Number(text).int());
+                }
+                catch e is InvalidInteger {
+                    throw MalformedSetting.detailed(key.string(), "an integer", text);
+                }
+            }
+        }
+    }
+
+    float() is Maybe<float> {
+        match self.text() {
+            case Maybe.none {
+                Maybe<float>.none;
+            }
+            case Maybe.some(text) {
+                try {
+                    Maybe<float>.some(Number(text).float());
+                }
+                catch e is InvalidFloat {
+                    throw MalformedSetting.detailed(key.string(), "a number", text);
+                }
+            }
+        }
+    }
+
+    bool() is Maybe<bool> {
+        match self.text() {
+            case Maybe.none {
+                Maybe<bool>.none;
+            }
+            case Maybe.some(text) {
+                try {
+                    Maybe<bool>.some(Truth(text).bool());
+                }
+                catch e is InvalidBoolean {
+                    throw MalformedSetting.detailed(key.string(), "true or false", text);
+                }
+            }
+        }
+    }
+
+    texts() is @string {
+        if !origin.membership(key) {
+            let none_given is @string = [];
+            return none_given;
+        }
+        let values is @string = origin.entry(key).values().map() -> value {
+            value;
+        };
+        values;
+    }
+
+    source() is Maybe<SettingSource> {
+        if origin.membership(key) {
+            Maybe<SettingSource>.some(origin.entry(key).source());
+        }
+        else {
+            Maybe<SettingSource>.none;
+        }
+    }
+}
+
+enum MalformedSetting is Error = (detailed(key is string, expected is string, value is string));
+
+test "settings read a value by its dotted name" {
+    let file = SettingSource(kind: SettingSourceKind.document, name: "app.ini");
+    let line = SettingSource(kind: SettingSourceKind.command_line, name: "argv");
+    let settings = LayeredSettings([
+        Settings([
+            SettingEntry(key: SettingKey(["server", "port"]), values: ["8080"], source: file),
+            SettingEntry(key: SettingKey(["server", "debug"]), values: ["true"], source: file),
+            SettingEntry(key: SettingKey(["server", "ratio"]), values: ["0.5"], source: file),
+            SettingEntry(key: SettingKey(["cors", "origins"]), values: ["a", "b"], source: file),
+        ]),
+        Settings([SettingEntry(key: SettingKey(["server", "port"]), values: ["9090"], source: line)]),
+    ]);
+    test.is(settings.int("server.port") else 0, 9090);
+    test.is((settings.source("server.port") else file)::Source::name, "argv");
+    test.is(settings.bool("server.debug") else false, true);
+    test.is(settings.float("server.ratio") else 0.0, 0.5);
+    test.is(settings.text("server.host") == Maybe<string>.none, true);
+    test.is(settings.int("server.workers") else 4, 4);
+    test.is(settings.texts("cors.origins"), ["a", "b"]);
+    test.is(settings.texts("cors.headers").size(), 0);
+    test.throws(MalformedSetting) {
+        settings.text("cors.origins");
+    };
+    test.throws(MalformedSetting) {
+        settings.int("server.debug");
+    };
+    test.throws(InvalidSettingKey) {
+        settings.text("server..port");
+    };
 }

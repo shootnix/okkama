@@ -1,11 +1,10 @@
 module examples/config/layers v1.0.0;
 
-import "config/key" take SettingKey, SettingKeyFromString;
+import "config/key" take SettingKey;
 import "config/source" take Settings, SettingEntry, SettingSource, SettingSourceKind, LayeredSettings;
 import "config/document" take IniSettings;
 import "config/ini" take ParsedIni, InvalidIni;
 import "config/environment" take EnvironmentSettings, EnvironmentBinding;
-import "config/value" take ScalarSetting, ScalarSettingOr, Setting;
 import "cli/command" take CliCommand, Option;
 import "os/environment" take Environment;
 import "io/stdout" take Stdout;
@@ -39,15 +38,14 @@ main() is int {
     let line = command.invocation(["--workers", "8"]).settings();
 
     let settings = LayeredSettings([defaults, file, environment, line]);
-    for [host, port, workers] -> key {
-        let value = ScalarSetting(origin: settings, key: key);
-        out.writeln(key.string() + " = " + value.text() + "  (" + value.source()::Source::name + ")");
+    let unknown = SettingSource(kind: SettingSourceKind.defaults, name: "?");
+    for ["server.host", "server.port", "server.workers"] -> name {
+        out.writeln(name + " = " + (settings.text(name) else "?") + "  (" + (settings.source(name) else unknown)::Source::name + ")");
     }
-    let allowed is @string = Setting(origin: settings, key: origins).values().map() -> origin {
-        origin;
-    };
-    out.writeln("cors.origins = " + allowed.join(", "));
-    out.writeln("server.timeout = " + ScalarSettingOr(origin: settings, key: SettingKeyFromString(origin: "server.timeout", separator: ".").key(), fallback: "30s").text());
+    out.writeln("cors.origins = " + settings.texts("cors.origins").join(", "));
+    out.writeln("server.timeout = " + (settings.text("server.timeout") else "30s"));
+    let workers_count = settings.int("server.workers") else 1;
+    out.writeln("workers as a number: " + (workers_count * 2).string() + " threads at two per worker");
 
     // A broken file names its line and column.
     try {
