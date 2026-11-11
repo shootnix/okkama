@@ -15,7 +15,7 @@ import "runtime/fs" take FileState, TemporaryDirectoryState, path_encode, path_d
 // explicitly supplied directory. prefix is one filename component, not a path.
 // Temporary files are binary read/write streams with owner-only permissions:
 //
-//     let temporary = TemporaryFile(directory: Directory(path: scratch.path()), prefix: "upload-");
+//     let temporary = TemporaryFile(directory: scratch, prefix: "upload-");
 //     defer temporary.close();
 //     temporary.write(payload);
 //     temporary.flush();
@@ -142,7 +142,7 @@ object TemporaryFilePreservation {
     }
 }
 
-object TemporaryDirectory does Closing {
+object TemporaryDirectory does DirectoryLocating, Closing {
     has state is TemporaryDirectoryState;
 
     TemporaryDirectory(parent is DirectoryLocating, prefix is string) {
@@ -191,7 +191,7 @@ object TemporaryDirectory does Closing {
 
 test "a temporary file is written, named under its directory and gone after close" {
     let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "fs-temp-test-");
-    let temporary = TemporaryFile(directory: Directory(path: scratch.path()), prefix: "upload-");
+    let temporary = TemporaryFile(directory: scratch, prefix: "upload-");
     let path = temporary.path();
     test.is(path.parent(), scratch.path());
     test.ok(path.string().slice(scratch.path().string().length() + 1, path.string().length()).starts_with("upload-"));
@@ -203,7 +203,7 @@ test "a temporary file is written, named under its directory and gone after clos
     temporary.close();
     test.ok(temporary.closed());
     test.ok(!FileEntry(path: path).existence());
-    let other = TemporaryFile(directory: Directory(path: scratch.path()), prefix: "upload-");
+    let other = TemporaryFile(directory: scratch, prefix: "upload-");
     test.ok(other.path() != path);
     other.close();
     scratch.close();
@@ -212,7 +212,7 @@ test "a temporary file is written, named under its directory and gone after clos
 test "a preserved file stays under its destination and never replaces one" {
     let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "fs-temp-test-");
     let output = scratch.path().child("report.bin");
-    let temporary = TemporaryFile(directory: Directory(path: scratch.path()), prefix: "report-");
+    let temporary = TemporaryFile(directory: scratch, prefix: "report-");
     temporary.write(ByteSnapshot([byte(7), byte(8)]));
     temporary.flush();
     let preservation = TemporaryFilePreservation(origin: temporary, destination: output);
@@ -221,7 +221,7 @@ test "a preserved file stays under its destination and never replaces one" {
     test.is(preservation.destination().path(), output);
     test.ok(preservation.destination().existence());
     test.is(FileEntry(path: output).stat()::Shape::size, 2);
-    let second = TemporaryFile(directory: Directory(path: scratch.path()), prefix: "report-");
+    let second = TemporaryFile(directory: scratch, prefix: "report-");
     test.ok(try {
         second.preserve(output);
         false;
@@ -261,4 +261,12 @@ test "a temporary directory removes its whole tree on close, links as leaves" {
         failed == root.string();
     });
     outside.close();
+}
+
+test "a scratch directory is a place to make scratch files in" {
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "temp-nest-");
+    let inner = TemporaryDirectory(parent: scratch, prefix: "inner-");
+    test.is(inner.path().parent() == scratch.path(), true);
+    inner.close();
+    scratch.close();
 }

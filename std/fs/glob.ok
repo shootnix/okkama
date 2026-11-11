@@ -117,7 +117,7 @@ test "patterns match inside one segment; ** crosses segments; results are sorted
 test "a bad pattern and a missing root are refused" {
     let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "fs-glob-test-");
     test.throws(InvalidGlobPattern) {
-        MatchingPaths(root: Directory(path: scratch.path()), pattern: "src/[a-").cursor();
+        MatchingPaths(root: scratch, pattern: "src/[a-").cursor();
     };
     test.ok(try {
         MatchingPaths(root: Directory(path: scratch.path().child("absent")), pattern: "*").cursor();
