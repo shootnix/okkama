@@ -202,7 +202,10 @@ Benchmarks live outside the repository in `../okkama-docs/benchmarks`
 (`OKKAMA_REPO` points the runner at a checkout; default `../okkama-new`).
 
 - Micro-benchmarks (#244): `python3 micro/run.py --okkama BIN [--engines tomato,ir,jvm] [--runs 5] [--only NAME,…] [--label L] [--compare micro/results/OLD.json]` in `okkama-docs/benchmarks` — one construct (`micro/lang`) or std action (`micro/std`) per program, timed in-process, net ns/op over the empty loop; `micro/coverage.py` lists std modules without one (`STD-COVERAGE.md`)
-- Engine ladder: `python3 run.py --runs 10 [--only 03-float] [--engines tomato,ir,jvm,python,perl,ruby]`
+- Engine ladder: `python3 run.py --runs 10 [--only 03-float] [--engines tomato,ir,jvm,go,java,kotlin,python]`
+  — the reference languages are Go, Java, Kotlin and Python (#363). Go, Java
+  and Kotlin are built before measuring, and their build time is kept apart.
+  Perl and Ruby ports stay for history and run only when named in `--engines`.
   — `tomato` is Sparrow, version Tomato (binary `sparrow`; results before 0.4.2 key it
   `sparrow-core`, still accepted); `sparrow` and `sparrow-interp` in reports before
   0.5.0 are the previous VM, removed in 0.5.0 (#14); results in `results/`; `export.py` writes a report into
@@ -222,7 +225,8 @@ Benchmarks live outside the repository in `../okkama-docs/benchmarks`
   `destroy` into the measured program and change how its closures and tail
   calls compile (#285, #292), and `cli/arguments`/`time/clock` add
   milliseconds of start-up. A cold run never reads the clock. The Python, Perl and Ruby ports are driven by
-  `steady/repeat.{py,pl,rb}`, which read `BENCH_REPEAT`. Results carry `steady` per pair: the first
+  `steady/repeat.{py,pl,rb}`, which read `BENCH_REPEAT`; the Go, Java and Kotlin
+  ports read `BENCH_REPEAT` themselves. Results carry `steady` per pair: the first
   repetition and the median of the second half. `export.py` writes
   `steady.csv`, and the HTML report shows them next to the cold time.
 - DB: `db/main.ok` + `db/main.py` (SQLite), `db/postgres.ok` +
@@ -231,13 +235,19 @@ Benchmarks live outside the repository in `../okkama-docs/benchmarks`
   lines; compare medians of several alternating rounds with checksums.
 - PGO workloads are copies of the ladder in `okkama-rs/tools/pgo/workloads`.
 
-Reference numbers (0.5.3, Apple M2 Max / Docker arm64): Sparrow is 5.8×
-Python, 8.8× Perl, 4.3× Ruby and 4.5× the JVM on the ladder (geometric mean of
-cold runs over 01–10; report `okkama-docs/benchmarks/reports/2026-11-11-v0.5.3`;
-compare releases with a back-to-back A/B, not against an older report).
-Warmed up (`--steady`), the JVM beats Sparrow only on 09-closures; 11-ownership
-is 1.8× slower than Python/Perl/Ruby (region tracking; 2.7× before 0.4.3's
-persistent collections). PostgreSQL vs psycopg2: scans 1.3–1.7× slower, inserts faster; a
+Reference numbers (0.5.3, Apple M2 Max / Docker arm64; geometric mean over
+01–10, report `okkama-docs/benchmarks/reports/2026-11-11-v0.5.3`; compare
+releases with a back-to-back A/B, not against an older report):
+- Cold runs: Go is 2.2× faster than Sparrow. Sparrow is 1.5× faster than
+  Java, 1.85× faster than Kotlin, 6.3× faster than Python and 4.8× faster than
+  Okkama's JVM backend.
+- Warmed up (`--steady`): Go and HotSpot (Java, Kotlin) are 2.4–2.6× faster
+  than Sparrow, and Sparrow is 9.2× faster than Python.
+- Memory: Sparrow 7–24 MB, Go 4–13 MB, Java 44–210 MB.
+- The largest gap is 11-ownership (region tracking): Sparrow takes 139 ms
+  against Go's 11, Java's 49 and Python's 66.
+
+PostgreSQL vs psycopg2: scans 1.3–1.7× slower, inserts faster; a
 point query is one round trip since #11 (68 µs vs psycopg2's 73 µs, Docker
 arm64). Driver checks against a live server:
 `okkama-docs/examples/std-v4/db-postgres*.ok` (`-stream-check` covers paging,

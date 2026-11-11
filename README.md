@@ -515,9 +515,21 @@ okkama build hello.ok --target sparrow -o hello.spb && sparrow hello.spb
 Median of ten cold runs on an Apple M2 Max (0.5.3, release build, start-up
 included). Sparrow (its current version is called Tomato) compiles every function to
 machine code (Cranelift) before it runs; calls are direct, async frames are
-stackless and the collector is precise. On the same programs written in each language it is on average 5.8×
-faster than Python 3.9, 8.8× faster than Perl 5.42 and 4.3× faster than Ruby
-2.6 (geometric mean over ten programs).
+stackless and the collector is precise.
+
+The same ten programs were also written in Go, Java, Kotlin and Python. Each
+port prints exactly what the Okkama program prints. Geometric mean, Sparrow
+against each (0.5.3):
+
+| | cold run, start-up included | warmed up |
+|---|---|---|
+| Go 1.26 | 2.2× slower | 2.5× slower |
+| Java 26 (HotSpot) | 1.5× faster | 2.6× slower |
+| Kotlin 2.4 (HotSpot) | 1.85× faster | 2.4× slower |
+| Python 3.9 | 6.3× faster | 9.2× faster |
+
+Sparrow runs them in 7–24 MB, Go in 4–13 MB, Java in 44–210 MB and Kotlin in
+47–433 MB.
 
 ## Documentation
 
