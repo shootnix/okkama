@@ -6,6 +6,8 @@ import "config/key" take SettingKey;
 import "config/source" take SettingReading, SettingEntry, SettingSource, Settings, DuplicateSetting,
     SettingLimitExceeded, SettingKeyIndex;
 import "os/environment" take Environment;
+import "config/source" take SettingSourceKind;
+import "config/value" take ScalarSetting;
 
 object EnvironmentBinding {
     has label is string;
@@ -63,4 +65,27 @@ object EnvironmentSettings does SettingReading {
     keys() is Sequencing<SettingKey> {
         origin.keys();
     }
+}
+
+test "environment variables become settings through explicit bindings" {
+    let environment = Environment(values: ["APP_PORT": "8080", "HOME": "/home/ada"]);
+    let port = SettingKey(["server", "port"]);
+    let host = SettingKey(["server", "host"]);
+    let settings = EnvironmentSettings(
+        environment: environment,
+        names: [EnvironmentBinding(name: "APP_PORT", key: port), EnvironmentBinding(name: "APP_HOST", key: host)],
+        source: SettingSource(kind: SettingSourceKind.environment, name: "env"),
+    );
+    test.is(settings.membership(port), true);
+    test.is(settings.membership(host), false);
+    test.is(ScalarSetting(origin: settings, key: port).text(), "8080");
+    test.is(settings.keys().size(), 1);
+    test.is(EnvironmentBinding(name: "APP_PORT", key: port)::Binding::name, "APP_PORT");
+    test.throws(DuplicateSetting) {
+        EnvironmentSettings(
+            environment: environment,
+            names: [EnvironmentBinding(name: "A", key: port), EnvironmentBinding(name: "B", key: port)],
+            source: SettingSource(kind: SettingSourceKind.environment, name: "env"),
+        );
+    };
 }

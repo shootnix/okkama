@@ -425,3 +425,36 @@ object StyledText {
 }
 
 enum InvalidTerminalStyle is Error = (invalid);
+
+test "colors answer SGR codes for each depth" {
+    test.is(DefaultColor().code(TerminalColorDepth.basic, false), "39");
+    test.is(DefaultColor().code(TerminalColorDepth.basic, true), "49");
+    test.is(NamedColor(BasicColor.red).code(TerminalColorDepth.basic, false), "31");
+    test.is(NamedColor(BasicColor.white).code(TerminalColorDepth.true_color, true), "47");
+    test.is(NamedColor(BasicColor.cyan).color() == BasicColor.cyan, true);
+    test.is(IndexedColor(196).code(TerminalColorDepth.indexed, false), "38;5;196");
+    test.is(IndexedColor(196).code(TerminalColorDepth.basic, true), "41");
+    test.is(IndexedColor(196).index(), 196);
+    let red = RgbColor(red: 255.byte(), green: 0.byte(), blue: 0.byte());
+    test.is(red.code(TerminalColorDepth.true_color, false), "38;2;255;0;0");
+    test.is(red.code(TerminalColorDepth.indexed, true), "48;5;196");
+    test.is(red.code(TerminalColorDepth.basic, false), "31");
+    test.is(red::Channels::red.int(), 255);
+    test.throws(InvalidTerminalStyle) {
+        IndexedColor(256);
+    };
+}
+
+test "a style joins attributes and colors; styled text resets after itself" {
+    let style = TextStyle(foreground: NamedColor(BasicColor.red), background: DefaultColor(), attributes: [TextAttribute.bold, TextAttribute.underline]);
+    test.is(style.code(TerminalColorDepth.basic), "1;4;31;49");
+    test.is(style.attributes().size(), 2);
+    let text = StyledText(origin: "hi", style: style);
+    test.is(text.rendered(TerminalColorDepth.disabled), "hi");
+    let esc = Utf8Decoded([27.byte()]).string();
+    test.is(text.rendered(TerminalColorDepth.basic), esc + "[1;4;31;49mhi" + esc + "[0m");
+    test.is(text.text(), "hi");
+    test.throws(InvalidTerminalStyle) {
+        TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: [TextAttribute.bold, TextAttribute.bold]);
+    };
+}

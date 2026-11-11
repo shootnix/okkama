@@ -135,3 +135,87 @@ object TerminalResizes does Closing {
         self.close();
     }
 }
+
+hidden object RecordedScreen does TerminalScreenApplying {
+    has calls is Atomic<@string>;
+
+    RecordedScreen() {
+        let empty is @string = [];
+        calls = Atomic(empty);
+    }
+
+    clear(region is ClearRegion) is void {
+        self.record("clear " + if region == ClearRegion.line { "line"; } else { "other"; });
+    }
+
+    move(row is int, column is int) is void {
+        self.record("move " + row.string() + "," + column.string());
+    }
+
+    display_cursor(visible is bool) is void {
+        self.record("cursor " + visible.string());
+    }
+
+    use_alternate_screen(enabled is bool) is void {
+        self.record("alternate " + enabled.string());
+    }
+
+    calls() is @string {
+        calls.value();
+    }
+
+    hidden record(call is string) is void {
+        calls.replace(calls.value() + [call]);
+    }
+}
+
+hidden object ScriptedResizes does TerminalResizeOpening, TerminalResizeReading {
+    has sizes is Atomic<@TerminalSize>;
+    has finished is Atomic<bool>;
+
+    ScriptedResizes() {
+        sizes = Atomic([TerminalSize(columns: 80, rows: 24), TerminalSize(columns: 100, rows: 30)]);
+        finished = Atomic(false);
+    }
+
+    async resizes() is TerminalResizeReading {
+        self;
+    }
+
+    async size() is TerminalSize {
+        let current = sizes.value().first();
+        sizes.replace(sizes.value().slice(1, sizes.value().size()));
+        current;
+    }
+
+    closed() is bool {
+        finished.value();
+    }
+
+    close() is void {
+        finished.replace(true);
+    }
+}
+
+test "a screen passes its commands to the terminal" {
+    let applied = RecordedScreen();
+    let screen = TerminalScreen(applied);
+    screen.clear(ClearRegion.line);
+    screen.move(row: 2, column: 5);
+    screen.display_cursor(false);
+    screen.use_alternate_screen(true);
+    test.is(applied.calls(), ["clear line", "move 2,5", "cursor false", "alternate true"]);
+}
+
+async test "resizes report the first geometry, then each change, until closed" {
+    let source = ScriptedResizes();
+    let resizes = TerminalResizes(source);
+    test.is((await resizes.size())::Size::columns, 80);
+    test.is((await resizes.size())::Size::rows, 30);
+    resizes.close();
+    test.is(resizes.closed(), true);
+    test.is(source.closed(), true);
+    test.throws(TerminalClosed) {
+        await resizes.size();
+    };
+}

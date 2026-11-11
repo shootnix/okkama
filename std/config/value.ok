@@ -3,6 +3,7 @@ module config/value v1.0.0;
 import "collections/sequence" take Sequencing;
 import "config/key" take SettingKey;
 import "config/source" take SettingReading, SettingEntry, SettingSource, SettingSourceKind;
+import "config/source" take Settings;
 
 object Setting {
     has origin is SettingReading;
@@ -74,3 +75,23 @@ object ScalarSettingOr {
 }
 
 enum NonScalarSetting is Error = (detailed(key is string, count is int));
+
+test "settings read one value, a list or a fallback, with their source" {
+    let file = SettingSource(kind: SettingSourceKind.document, name: "app.toml");
+    let host = SettingKey(["db", "host"]);
+    let hosts = SettingKey(["db", "replicas"]);
+    let port = SettingKey(["db", "port"]);
+    let settings = Settings([
+        SettingEntry(key: host, values: ["localhost"], source: file),
+        SettingEntry(key: hosts, values: ["a", "b"], source: file),
+    ]);
+    test.is(ScalarSetting(origin: settings, key: host).text(), "localhost");
+    test.is(ScalarSetting(origin: settings, key: host).source()::Source::name, "app.toml");
+    test.is(Setting(origin: settings, key: hosts).values().size(), 2);
+    test.is(ScalarSettingOr(origin: settings, key: port, fallback: "5432").text(), "5432");
+    test.is(ScalarSettingOr(origin: settings, key: port, fallback: "5432").source()::Source::kind == SettingSourceKind.defaults, true);
+    test.is(ScalarSettingOr(origin: settings, key: host, fallback: "x").text(), "localhost");
+    test.throws(NonScalarSetting) {
+        ScalarSetting(origin: settings, key: hosts).text();
+    };
+}

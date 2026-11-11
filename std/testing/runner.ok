@@ -34,7 +34,7 @@ object RecordedTestReport {
     }
 }
 
-object RecordedTestResult {
+hidden object RecordedTestResult {
     has result is TestResult;
 
     RecordedTestResult(entry is Json) {
@@ -108,7 +108,7 @@ object RecordedTestResult {
             status: status,
             duration: Duration(value: Number(entry.text("duration_ns")).rat(), unit: DurationUnit.nanosecond),
             failures: failures,
-            output: TestOutput(output, errors, entry.boolean("truncated")),
+            output: TestOutput(output: output, errors: errors, truncated: entry.boolean("truncated")),
             skip_reason: if entry.has("skip_reason") {
                 entry.text("skip_reason");
             }
@@ -123,7 +123,7 @@ object RecordedTestResult {
     }
 }
 
-object RecordedTestCause {
+hidden object RecordedTestCause {
     has failure is TestFailure;
 
     RecordedTestCause(origin is Json, depth is int) {
@@ -145,4 +145,34 @@ object RecordedTestCause {
     failure() is TestFailure {
         failure;
     }
+}
+
+test "a runner report reads results, failures, positions, causes and output" {
+    let wire = "{\"start_ns\":\"1700000000000000000\",\"duration_ns\":\"2500000\",\"seed\":42,\"results\":["
+        + "{\"name\":\"adds\",\"status\":\"passed\",\"duration_ns\":\"1000\",\"failures\":[],\"stdout_base64\":\"aGk=\",\"stderr_base64\":\"\",\"truncated\":false},"
+        + "{\"name\":\"divides\",\"status\":\"failed\",\"duration_ns\":\"2000\",\"failures\":[\"expected 2, got 3\"],"
+        + "\"failure_details\":[{\"position\":{\"source_name\":\"math.ok\",\"line\":12,\"column\":5},\"cause\":{\"type\":\"DivisionByZero\",\"message\":\"zero\"}}],"
+        + "\"stdout_base64\":\"\",\"stderr_base64\":\"\",\"truncated\":true},"
+        + "{\"name\":\"later\",\"status\":\"skipped\",\"duration_ns\":\"0\",\"failures\":[],\"skip_reason\":\"slow\",\"stdout_base64\":\"\",\"stderr_base64\":\"\",\"truncated\":false}"
+        + "]}";
+    let report = RecordedTestReport(wire).report();
+    test.is(report.seed(), 42);
+    test.is(report.counts()::Counts::passes, 1);
+    test.is(report.counts()::Counts::failures, 1);
+    test.is(report.counts()::Counts::skips, 1);
+    let passed = report.results().first();
+    test.is(passed::Outcome::name, "adds");
+    test.is(passed.output()::Captured::output, [104.byte(), 105.byte()]);
+    let failed = report.results().item(1);
+    test.is(failed::Outcome::status == TestStatus.failed, true);
+    test.is(failed.output()::Captured::truncated, true);
+    let failure = failed.failures().first();
+    test.is(failure::Failure::message, "expected 2, got 3");
+    test.is(failure.located(), true);
+    test.is(failure.position()::Position::line, 12);
+    test.is(failure.causes().first()::Failure::message, "DivisionByZero: zero");
+    test.is(report.results().last()::Outcome::skip_reason, "slow");
+    test.throws(InvalidTestResult) {
+        RecordedTestReport("{\"start_ns\":\"0\",\"duration_ns\":\"0\",\"seed\":1,\"results\":[{\"name\":\"x\",\"status\":\"lost\",\"duration_ns\":\"0\",\"failures\":[],\"stdout_base64\":\"\",\"stderr_base64\":\"\",\"truncated\":false}]}");
+    };
 }
