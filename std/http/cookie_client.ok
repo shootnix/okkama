@@ -26,9 +26,9 @@ object FirstPartyCookies does CookieContextualizing {
     FirstPartyCookies();
 
     context(request is Request) is CookieContext {
-        confirm request.target().kind() == RequestTargetKind.absolute
+        confirm request::Head::target.kind() == RequestTargetKind.absolute
             else throw InvalidArgument.because("absolute cookie request required");
-        CookieContext(request.target().url(), true, request.method());
+        CookieContext(request::Head::target.url(), true, request::Head::method);
     }
 }
 
@@ -60,19 +60,19 @@ object CookieExchanging does Exchanging {
     }
 
     async response(request is Request) is ClientResponse {
-        confirm request.target().kind() == RequestTargetKind.absolute
+        confirm request::Head::target.kind() == RequestTargetKind.absolute
             else throw InvalidArgument.because("absolute cookie request required");
-        let supplied = request.headers().values(HeaderName("Cookie"));
+        let supplied = request::Head::headers.values(HeaderName("Cookie"));
         confirm supplied.size() <= 1
             && (supplied.size() == 0 || conflict != CallerCookiePolicy.reject)
             else throw CallerCookieConflict.conflict;
         let context = contexts.context(request);
         let fields = if supplied.size() == 1 && conflict == CallerCookiePolicy.preserve {
-            request.headers();
+            request::Head::headers;
         }
         else {
-            let selected = CookieRequestPairs(jar.cookies(request.target().url(), context)).string();
-            let clean = HeadersWithout(request.headers(), [HeaderName("Cookie")]).result();
+            let selected = CookieRequestPairs(jar.cookies(request::Head::target.url(), context)).string();
+            let clean = HeadersWithout(request::Head::headers, [HeaderName("Cookie")]).result();
             if selected == "" {
                 clean;
             }
@@ -81,39 +81,47 @@ object CookieExchanging does Exchanging {
             }
         };
         let outgoing = Request(
-            request.method(),
-            request.target(),
-            fields,
-            request.body(),
-            request.version()
+            method: request::Head::method,
+            target: request::Head::target,
+            headers: fields,
+            body: request.body(),
+            version: request::Head::version
         );
         let result = await origin.response(outgoing);
         let retained = Event();
-        let cleanup = RedirectResponseCleanup(result.response(), retained);
+        let cleanup = RedirectResponseCleanup(result::Exchange::response, retained);
         defer cleanup.close();
         // Storage is correct even if a caller places this outside Redirecting,
         // but selection per hop requires Redirecting(CookieExchanging(...)).
-        for result.history() -> hop {
+        for result::Exchange::history -> hop {
             jar.store(
-                hop.request().target().url(),
-                hop.response().headers(),
-                contexts.context(hop.request())
+                hop::Exchange::request::Head::target.url(),
+                hop::Exchange::response::Head::headers,
+                contexts.context(hop::Exchange::request)
             );
         }
-        let same_hop = result.history().size() == 0
-            && result.request().target().url().string() == request.target().url().string();
+        let same_hop = result::Exchange::history.size() == 0
+            && result::Exchange::request::Head::target.url().string() == request::Head::target.url().string();
         let effective_context = if same_hop {
             context;
         }
         else {
-            contexts.context(result.request());
+            contexts.context(result::Exchange::request);
         };
-        jar.store(result.request().target().url(), result.response().headers(), effective_context);
+        jar.store(
+            result::Exchange::request::Head::target.url(),
+            result::Head::headers,
+            effective_context
+        );
         // Generated jar headers are internal to this hop. Returning the caller's
         // coordinates prevents the next redirect from treating them as explicit
         // caller Cookie fields. Preserve an origin's actual multi-hop result.
         let reported = if same_hop {
-            ClientResponse(request, result.response(), result.details());
+            ClientResponse(
+                request: request,
+                response: result::Exchange::response,
+                details: result::Exchange::details
+            );
         }
         else {
             result;
@@ -151,9 +159,8 @@ enum CookieExchangeLimit is Error = (because(reason is string));
 
 test "first-party cookies use the current request site and method" {
     let request = Request(
-        Method.post,
-        AbsoluteTarget(ParsedUrl("https://example.com/path").value()),
-        Headers([])
+        method: Method.post,
+        target: AbsoluteTarget(ParsedUrl("https://example.com/path").value())
     );
     let context = FirstPartyCookies().context(request);
     test.ok(

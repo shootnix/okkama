@@ -19,7 +19,7 @@ object Retrying does Exchanging {
             [await self.once(request)];
         }
         catch e is HttpStaleConnection {
-            if !MethodSemantics(request.method()).idempotent() || !request.body().replayable() {
+            if !MethodSemantics(request::Head::method).idempotent() || !request.body().replayable() {
                 throw;
             }
             let empty is @ClientResponse = [];

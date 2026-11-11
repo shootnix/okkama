@@ -5,11 +5,14 @@ import "http/status" take Status, StatusCode;
 import "http/header" take Headers;
 import "http/body" take BodyOpening, EmptyBody;
 import "http/version" take HttpVersion;
-import "http/target" take RequestTarget, RequestTargetSnapshot, RequestTargetMethod;
+import "http/target" take RequestTarget, RequestTargetSnapshot, RequestTargetMethod, AbsoluteTarget;
+import "url/value" take ParsedUrl;
 
 // Immutable message metadata retains the body opening's declared capability.
 // It never opens, measures, closes or queries replayability during construction.
 // Connection/framing consumers own body consumption and transport validation.
+// A request shows its head through the cap `Head`; `body()` is the opening to
+// read. Unless told, it is a GET with no fields, an empty body and HTTP/1.1.
 object Request {
     has method is Method;
     has target is RequestTarget;
@@ -17,101 +20,94 @@ object Request {
     has body is BodyOpening;
     has version is HttpVersion;
 
-    Request(method is Method, target is RequestTarget, headers is Headers) {
-        let checked = RequestCoordinates(method, target).target();
-        self.method = method;
-        self.target = checked;
-        self.headers = headers;
-        body = EmptyBody();
-        version = HttpVersion.http_1_1;
-    }
-
-    Request(method is Method, target is RequestTarget, headers is Headers, body is BodyOpening) {
-        let checked = RequestCoordinates(method, target).target();
-        self.method = method;
-        self.target = checked;
-        self.headers = headers;
-        self.body = body;
-        version = HttpVersion.http_1_1;
-    }
-
     Request(
-        method is Method,
         target is RequestTarget,
-        headers is Headers,
-        body is BodyOpening,
-        version is HttpVersion
+        method is Method = Method.get,
+        headers is Headers = Headers([]),
+        body is BodyOpening = EmptyBody(),
+        version is HttpVersion = HttpVersion.http_1_1
     ) {
-        let checked = RequestCoordinates(method, target).target();
+        self.target = RequestCoordinates(method, target).target();
         self.method = method;
-        self.target = checked;
         self.headers = headers;
         self.body = body;
         self.version = version;
     }
 
-    method() is Method {
-        method;
+    // A client request to an absolute http or https URL.
+    Request(
+        url is string,
+        method is Method = Method.get,
+        headers is Headers = Headers([]),
+        body is BodyOpening = EmptyBody(),
+        version is HttpVersion = HttpVersion.http_1_1
+    ) {
+        self.target = RequestCoordinates(method, AbsoluteTarget(ParsedUrl(url).value())).target();
+        self.method = method;
+        self.headers = headers;
+        self.body = body;
+        self.version = version;
     }
 
-    target() is RequestTarget {
-        target;
-    }
+    cap Head {
+        method is Method {
+            method;
+        }
 
-    headers() is Headers {
-        headers;
+        target is RequestTarget {
+            target;
+        }
+
+        headers is Headers {
+            headers;
+        }
+
+        version is HttpVersion {
+            version;
+        }
     }
 
     body() is BodyOpening {
         body;
     }
-
-    version() is HttpVersion {
-        version;
-    }
 }
 
+// A response shows its head through the cap `Head`; `body()` is the opening
+// to read. Unless told, it has no fields, an empty body and HTTP/1.1.
 object Response {
     has status is Status;
     has headers is Headers;
     has body is BodyOpening;
     has version is HttpVersion;
 
-    Response(status is Status, headers is Headers) {
-        self.status = status;
-        self.headers = headers;
-        body = EmptyBody();
-        version = HttpVersion.http_1_1;
-    }
-
-    Response(status is Status, headers is Headers, body is BodyOpening) {
-        self.status = status;
-        self.headers = headers;
-        self.body = body;
-        version = HttpVersion.http_1_1;
-    }
-
-    Response(status is Status, headers is Headers, body is BodyOpening, version is HttpVersion) {
+    Response(
+        status is Status,
+        headers is Headers = Headers([]),
+        body is BodyOpening = EmptyBody(),
+        version is HttpVersion = HttpVersion.http_1_1
+    ) {
         self.status = status;
         self.headers = headers;
         self.body = body;
         self.version = version;
     }
 
-    status() is Status {
-        status;
-    }
+    cap Head {
+        status is Status {
+            status;
+        }
 
-    headers() is Headers {
-        headers;
+        headers is Headers {
+            headers;
+        }
+
+        version is HttpVersion {
+            version;
+        }
     }
 
     body() is BodyOpening {
         body;
-    }
-
-    version() is HttpVersion {
-        version;
     }
 }
 
@@ -135,7 +131,19 @@ object RequestCoordinates {
 enum InvalidHttpMessage is Error = (because(reason is string));
 
 test "message metadata does not open its empty body" {
-    let response = Response(StatusCode(299).status(), Headers([]));
-    test.ok(response.status() == Status.other(299) && response.version() == HttpVersion.http_1_1);
+    let response = Response(status: StatusCode(299).status());
+    test.ok(
+        response::Head::status == Status.other(299)
+            && response::Head::version == HttpVersion.http_1_1
+    );
     test.ok(response.body().replayable() && response.body().length().string() == "0");
+}
+
+test "a request to a URL is a GET with no fields unless told" {
+    let request = Request(url: "https://example.com/a?b=1");
+    test.is(request::Head::method, Method.get);
+    test.is(request::Head::target.string(), "https://example.com/a?b=1");
+    test.is(request::Head::headers.entries().size(), 0);
+    let put = Request(url: "https://example.com/a", method: Method.put);
+    test.is(put::Head::method, Method.put);
 }

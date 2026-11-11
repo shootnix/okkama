@@ -14403,7 +14403,7 @@
     "std/http/exchange.ok"
    ],
    "status": "mandatory",
-   "title": "std http/exchange public contract (ClientResponse, ExchangeDetails, ExchangeHop, PlainHttpHasNoTls)"
+   "title": "std http/exchange public contract (ClientResponse, ExchangeDetails, ExchangeHop, PlainHttpHasNoTls, UnsupportedBodyCharset)"
   },
   {
    "aspects": {
@@ -16048,7 +16048,7 @@
     "std/http/method.ok"
    ],
    "status": "mandatory",
-   "title": "std http/method public contract (InvalidMethod, Method, MethodSemantics)"
+   "title": "std http/method public contract (InvalidMethod, Method, MethodName, MethodSemantics)"
   },
   {
    "aspects": {
@@ -16643,7 +16643,7 @@
     "std/http/status.ok"
    ],
    "status": "mandatory",
-   "title": "std http/status public contract (InvalidStatus, Status, StatusClass)"
+   "title": "std http/status public contract (InvalidStatus, Status, StatusClass, StatusCode)"
   },
   {
    "aspects": {
@@ -16714,6 +16714,41 @@
    ],
    "status": "mandatory",
    "title": "std http/tls_session public contract (Http1TlsProtocol, Http1TlsSession)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.HTTP.TOKEN",
+   "discrepancies": [],
+   "family": "Standard library: http",
+   "spec_refs": [
+    "std/http/token.ok"
+   ],
+   "status": "mandatory",
+   "title": "std http/token public contract (HttpToken, InvalidToken)"
   },
   {
    "aspects": {
@@ -31559,6 +31594,9 @@
    "STD.HTTP.TLS_SESSION [normal]",
    "STD.HTTP.TLS_SESSION [boundary]",
    "STD.HTTP.TLS_SESSION [invalid]",
+   "STD.HTTP.TOKEN [normal]",
+   "STD.HTTP.TOKEN [boundary]",
+   "STD.HTTP.TOKEN [invalid]",
    "STD.HTTP.TRANSPORT_OBSERVATION [normal]",
    "STD.HTTP.TRANSPORT_OBSERVATION [boundary]",
    "STD.HTTP.TRANSPORT_OBSERVATION [invalid]",
@@ -32423,6 +32461,7 @@
    "STD.HTTP.STATUS",
    "STD.HTTP.TARGET",
    "STD.HTTP.TLS_SESSION",
+   "STD.HTTP.TOKEN",
    "STD.HTTP.TRANSPORT_OBSERVATION",
    "STD.HTTP.VERSION",
    "STD.HTTP.WEBSOCKET",
@@ -32648,5 +32687,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "17b66f0dbf181baade6b1512d492e4b7eb2f747d8e36df51277f52def371354b"
+ "suite_tree_sha256": "c618f7360f486cde45f1585ea302c50cee69c022526e44ca6865df98f35cafcf"
 }

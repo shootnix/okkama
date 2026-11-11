@@ -231,10 +231,10 @@ object Redirect does HandlingResult {
 
 test "text reply declares its representation and keeps added fields" {
     let response = Text(200, "Привет").header("X-Trace", "t1").response();
-    test.is(response.status(), Status.ok);
-    test.is(response.headers().entries().size(), 3);
+    test.is(response::Head::status, Status.ok);
+    test.is(response::Head::headers.entries().size(), 3);
     test.is(response.body().length().string(), "12");
-    test.is(NoContent().response().headers().entries().size(), 0);
+    test.is(NoContent().response()::Head::headers.entries().size(), 0);
     test.throws(InvalidReply) {
         Redirect(200, "/x");
     };

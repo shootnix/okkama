@@ -40,8 +40,8 @@ object Caching does Exchanging {
     }
 
     async response(request is Request) is ClientResponse {
-        let eligible = request.method() == Method.get
-            && request.target().kind() == RequestTargetKind.absolute
+        let eligible = request::Head::method == Method.get
+            && request::Head::target.kind() == RequestTargetKind.absolute
             && CacheRequestSelection(request).allowed();
         if eligible {
             let now = clock.monotonic_instant();
@@ -105,7 +105,7 @@ object Caching does Exchanging {
             }
         }
         let only_cached = try {
-            CacheControl(request.headers()).present("only-if-cached");
+            CacheControl(request::Head::headers).present("only-if-cached");
         }
         catch e is Error {
             false;
@@ -128,10 +128,10 @@ object Caching does Exchanging {
         let started = clock.monotonic_instant();
         let result = await origin.response(outgoing);
         let timing = CacheResponseTiming(clock.instant(), started, clock.monotonic_instant());
-        let status = result.response().status();
+        let status = result::Head::status;
         let class = StatusCode(status).class();
         if status == Status.not_modified && validation.size() == 1 && validation[0].conditional() {
-            let body = result.response().body().reading();
+            let body = result.reading();
             defer body.close();
             let empty = await body.bytes(1);
             confirm empty.size() == 0 else throw InvalidCacheRevalidation.invalid;
@@ -139,7 +139,7 @@ object Caching does Exchanging {
             body.close();
             confirm cache.revision() == revision else throw InvalidCacheRevalidation.invalid;
             let refreshed = validation[0].refreshed(result, timing);
-            if CacheResponseSelection(refreshed.result().response().headers()).allowed()
+            if CacheResponseSelection(refreshed.result()::Head::headers).allowed()
                 && refreshed.storable() {
                     cache.conditional_store(refreshed, revision);
                     CacheVerifiedPublication(cache, request, refreshed, revision, leases).publish();
@@ -150,18 +150,18 @@ object Caching does Exchanging {
             return refreshed.response(request, clock.monotonic_instant());
         }
 
-        if request.target().kind() == RequestTargetKind.absolute
-            && request.method() != Method.get
-            && request.method() != Method.head
-            && request.method() != Method.options
-            && request.method() != Method.trace
+        if request::Head::target.kind() == RequestTargetKind.absolute
+            && request::Head::method != Method.get
+            && request::Head::method != Method.head
+            && request::Head::method != Method.options
+            && request::Head::method != Method.trace
             && (class == StatusClass.successful || class == StatusClass.redirection) {
                 cache.invalidate(request);
             }
-        let direct = result.history().size() == 0
-            && result.request().target().kind() == RequestTargetKind.absolute
-            && result.request().target().string() == request.target().string()
-            && result.request().method() == request.method();
+        let direct = result::Exchange::history.size() == 0
+            && result::Exchange::request::Head::target.kind() == RequestTargetKind.absolute
+            && result::Exchange::request::Head::target.string() == request::Head::target.string()
+            && result::Exchange::request::Head::method == request::Head::method;
         let publication = if selected.size() == 1
             && direct
             && class != StatusClass.informational
@@ -174,7 +174,11 @@ object Caching does Exchanging {
                 revision;
             };
         let reported = if direct && validation.size() == 1 && validation[0].conditional() {
-            ClientResponse(request, result.response(), result.details());
+            ClientResponse(
+                request: request,
+                response: result::Exchange::response,
+                details: result::Exchange::details
+            );
         }
         else {
             result;
@@ -182,11 +186,11 @@ object Caching does Exchanging {
         let allowed = eligible
             && status == Status.ok
             && direct
-            && CacheResponseSelection(result.response().headers()).allowed();
+            && CacheResponseSelection(result::Head::headers).allowed();
         if !allowed {
             return reported;
         }
-        let original = result.response();
+        let original = result::Exchange::response;
         let reader = original.body().reading();
         let retained = Event();
         let anchor = CacheReaderAnchor(reader, retained);
@@ -201,12 +205,16 @@ object Caching does Exchanging {
             leases
         );
         let response = Response(
-            original.status(),
-            original.headers(),
-            OneShotBody(capturing),
-            original.version()
+            status: original::Head::status,
+            headers: original::Head::headers,
+            body: OneShotBody(capturing),
+            version: original::Head::version
         );
-        let returned = ClientResponse(request, response, result.details());
+        let returned = ClientResponse(
+            request: request,
+            response: response,
+            details: result::Exchange::details
+        );
         retained.set();
         transferred.set();
         returned;
@@ -230,7 +238,7 @@ object CacheRequestSelection {
             "If-Unmodified-Since"
         ];
         for excluded -> name {
-            if request.headers().membership(HeaderName(name)) {
+            if request::Head::headers.membership(HeaderName(name)) {
                 return false;
             }
         }
@@ -244,7 +252,7 @@ object CacheRequestSelection {
             return false;
         }
         let valid = try {
-            !CacheControl(request.headers()).present("no-store");
+            !CacheControl(request::Head::headers).present("no-store");
         }
         catch e is Error {
             false;
@@ -494,7 +502,7 @@ object CacheVerifiedPublication {
         };
         if stored.size() == 1
             && stored[0].bytes() == entry.bytes()
-            && stored[0].result().response().headers() == entry.result().response().headers()
+            && stored[0].result()::Head::headers == entry.result()::Head::headers
             && stored[0].timing().finished().reading().seconds() == entry.timing().finished().reading().seconds() {
                 leases[0].publish(entry, revision);
             }

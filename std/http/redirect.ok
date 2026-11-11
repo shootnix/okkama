@@ -48,17 +48,17 @@ object Redirecting does Exchanging {
     }
 
     async response(request is Request) is ClientResponse {
-        confirm request.target().kind() == RequestTargetKind.absolute
+        confirm request::Head::target.kind() == RequestTargetKind.absolute
             else throw UnsafeRedirect.because("absolute target required");
         let state = RedirectState(request);
         loop {
             let result = await origin.response(state.request());
             let retained = Event();
-            let cleanup = RedirectResponseCleanup(result.response(), retained);
+            let cleanup = RedirectResponseCleanup(result::Exchange::response, retained);
             defer cleanup.close();
             let accumulated = RedirectHistory(state.history(), result).items();
-            let status = result.response().status();
-            let candidates = result.response().headers().values(HeaderName("Location"));
+            let status = result::Head::status;
+            let candidates = result::Head::headers.values(HeaderName("Location"));
             let redirects = status == Status.moved_permanently
                 || status == Status.found
                 || status == Status.see_other
@@ -66,21 +66,21 @@ object Redirecting does Exchanging {
                 || status == Status.permanent_redirect;
             if !redirects || candidates.size() == 0 {
                 let final = ClientResponse(
-                    result.request(),
-                    result.response(),
-                    accumulated,
-                    result.details()
+                    request: result::Exchange::request,
+                    response: result::Exchange::response,
+                    history: accumulated,
+                    details: result::Exchange::details
                 );
                 retained.set();
                 return final;
             }
             confirm candidates.size() == 1 else throw UnsafeRedirect.because("duplicate Location");
             confirm state.followed() < policy.maximum() else throw TooManyRedirects.exceeded;
-            let effective = result.request();
-            confirm effective.target().kind() == RequestTargetKind.absolute
+            let effective = result::Exchange::request;
+            confirm effective::Head::target.kind() == RequestTargetKind.absolute
                 else throw UnsafeRedirect.because("effective absolute target required");
             let destination = RedirectDestination(
-                effective.target().url(),
+                effective::Head::target.url(),
                 candidates.item(0),
                 policy
             ).url();
@@ -93,7 +93,10 @@ object Redirecting does Exchanging {
                     accumulated[index];
                 }
                 else {
-                    ExchangeHop(result.request(), result.response());
+                    ExchangeHop(
+                        request: result::Exchange::request,
+                        response: result::Exchange::response
+                    );
                 }
             };
             cleanup.close();
@@ -153,7 +156,7 @@ object RedirectHistory {
     has items is @ExchangeHop;
 
     RedirectHistory(previous is @ExchangeHop, result is ClientResponse) {
-        let additional = result.history();
+        let additional = result::Exchange::history;
         let count = additional.size();
         confirm count >= 0 && previous.size() + count <= 20 else throw TooManyRedirects.exceeded;
         let snapshot is @ExchangeHop = (0..previous.size() + count).map() -> index {
@@ -205,7 +208,7 @@ object RedirectRequest {
     has request is Request;
 
     RedirectRequest(origin is Request, destination is Url, status is Status) {
-        let method = origin.method();
+        let method = origin::Head::method;
         let rewritten = (status == Status.see_other && method != Method.head)
             || ((status == Status.moved_permanently || status == Status.found)
             && method == Method.post);
@@ -222,7 +225,7 @@ object RedirectRequest {
             confirm origin.body().replayable() else throw NonReplayableRedirect.not_replayable;
             origin.body();
         };
-        let without_host = HeadersWithout(origin.headers(), [HeaderName("Host")]).result();
+        let without_host = HeadersWithout(origin::Head::headers, [HeaderName("Host")]).result();
         let payload_fields = if rewritten {
             HeadersWithout(
                 without_host,
@@ -238,7 +241,9 @@ object RedirectRequest {
         else {
             without_host;
         };
-        let fields = if HttpClientKey(origin.target().url()).string() != HttpClientKey(destination).string() {
+        let fields = if HttpClientKey(origin::Head::target.url()).string() != HttpClientKey(
+            destination
+        ).string() {
             HeadersWithout(
                 payload_fields,
                 [
@@ -251,7 +256,13 @@ object RedirectRequest {
         else {
             payload_fields;
         };
-        request = Request(changed, AbsoluteTarget(destination), fields, body, origin.version());
+        request = Request(
+            method: changed,
+            target: AbsoluteTarget(destination),
+            headers: fields,
+            body: body,
+            version: origin::Head::version
+        );
     }
 
     request() is Request {
@@ -263,7 +274,7 @@ object RedirectKey {
     has key is string;
 
     RedirectKey(request is Request) {
-        let url = request.target().url();
+        let url = request::Head::target.url();
         let parts = url.parts();
         let path = if parts.path() == "" {
             "/";
@@ -271,7 +282,7 @@ object RedirectKey {
         else {
             UrlDotSegments(parts.path()).value();
         };
-        key = MethodName(request.method()).string() + " " + HttpClientKey(url).string() + path + if parts.query().present() {
+        key = MethodName(request::Head::method).string() + " " + HttpClientKey(url).string() + path + if parts.query().present() {
             "?" + parts.query().string();
         }
         else {

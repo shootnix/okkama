@@ -58,10 +58,10 @@ object Http1MessageOutput {
 
     request(origin is AsyncWriting, request is Request, limits is Http1Limits) is Future<AsyncWriting> {
         let head = Http1RequestHead(
-            request.method(),
-            request.target(),
-            request.headers(),
-            request.version()
+            request::Head::method,
+            request::Head::target,
+            request::Head::headers,
+            request::Head::version
         );
         let plan = Http1RequestFraming(head, limits).plan();
         let writing = Http1RequestHeadWriting(origin, head, limits);
@@ -69,7 +69,11 @@ object Http1MessageOutput {
     }
 
     response(origin is AsyncWriting, response is Response, method is Method, limits is Http1Limits) is Future<AsyncWriting> {
-        let head = Http1ResponseHead(response.status(), response.headers(), response.version());
+        let head = Http1ResponseHead(
+            response::Head::status,
+            response::Head::headers,
+            response::Head::version
+        );
         let plan = Http1ResponseFraming(head, method, limits).plan();
         let writing = Http1ResponseHeadWriting(origin, head, method, limits);
         self.writing(writing.result(), response.body(), plan, head.headers(), limits, false);

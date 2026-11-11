@@ -140,7 +140,11 @@ object WebSocketServerOpening {
             else throw WebSocketFailure.because("Origin denied");
         let selected = WebSocketServerProtocol(handshake.protocols(), upgrade.protocols()).value();
         let response = handshake.response(selected);
-        let wire = Http1ResponseHead(response.status(), response.headers(), response.version());
+        let wire = Http1ResponseHead(
+            response::Head::status,
+            response::Head::headers,
+            response::Head::version
+        );
         let pending = Http1ResponseHeadWriting(output, wire, request.method()).result();
         await pending;
         let session = WebSocketSession(

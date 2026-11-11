@@ -197,6 +197,33 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     | `method.string()` | `MethodName(method).string()` |
     | `Method(text).string()` as a token check | `HttpToken(text).string()` |
     | `ProxyConnectRejected.status(int)` | `ProxyConnectRejected.status(Status)` |
+- **`http`: messages show themselves through caps (#352).** The owner: an
+  object reveals itself through a public cap, in the way it chooses, not
+  through accessors.
+  - `Request` and `Response` take named arguments with defaults:
+    `Request(url: "https://example.com/")` is a GET with no fields and an
+    empty body, and `Request(target: …)` takes any request target.
+    `Response(status: Status.not_found)` has no fields and an empty body.
+  - Their heads are the cap `Head`: `request::Head::method`, `::target`,
+    `::headers`, `::version`, and `response::Head::status`, `::headers`,
+    `::version`. `body()` stays an action: it is the opening to read.
+  - `ClientResponse`, what a client gets back, is a mechanism:
+    - its cap `Head` has `status`, `class`, `headers` and `version`;
+    - its cap `Exchange` has `request`, `response`, `history` and `details`;
+    - `await page.text()` decodes the whole body by its charset (UTF-8,
+      US-ASCII or ISO-8859-1, else `UnsupportedBodyCharset`);
+    - `bytes()` and `json()` read the whole body, and `reading()` reads it
+      piece by piece.
+  - `ExchangeHop` has the cap `Exchange` (`request`, `response`).
+
+    | before | now |
+    |---|---|
+    | `Request(Method("GET"), AbsoluteTarget(ParsedUrl(text).value()), Headers([]))` | `Request(url: text)` |
+    | `request.method()`, `.target()`, `.headers()`, `.version()` | `request::Head::method`, … |
+    | `response.status()`, `.headers()`, `.version()` | `response::Head::status`, … |
+    | `result.response().status().code() == 200` | `result::Head::status == Status.ok` |
+    | `result.response().body().reading()` | `result.reading()` |
+    | `result.request()`, `.response()`, `.history()`, `.details()` | `result::Exchange::request`, … |
 ### Fixed
 
 - Traversals own what they walk, and keep no record of what they walked

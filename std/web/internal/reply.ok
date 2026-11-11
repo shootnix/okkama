@@ -63,9 +63,9 @@ object ReplyResponse {
             Header(HeaderName("Content-Length"), content.size().string())
         ];
         Response(
-            StatusCode(code).status(),
-            Headers(ReplyFields(fixed, extra).entries()),
-            ByteBody(content)
+            status: StatusCode(code).status(),
+            headers: Headers(ReplyFields(fixed, extra).entries()),
+            body: ByteBody(content)
         );
     }
 }
@@ -90,9 +90,8 @@ object EmptyReplyResponse {
             [Header(HeaderName("Content-Length"), "0")];
         };
         Response(
-            StatusCode(code).status(),
-            Headers(ReplyFields(fixed, extra).entries()),
-            EmptyBody()
+            status: StatusCode(code).status(),
+            headers: Headers(ReplyFields(fixed, extra).entries())
         );
     }
 }

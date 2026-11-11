@@ -586,9 +586,9 @@ object FetchedRobots {
 
     async fetch() is RobotsPolicy {
         let request = Request(
-            Method.get,
-            AbsoluteTarget(destination),
-            Headers(
+            method: Method.get,
+            target: AbsoluteTarget(destination),
+            headers: Headers(
                 [
                     Header(HeaderName("User-Agent"), agent),
                     Header(HeaderName("Accept"), "text/plain")
@@ -597,10 +597,10 @@ object FetchedRobots {
         );
         let waiting = origin.response(request);
         let exchange = await waiting;
-        let response = exchange.response();
+        let response = exchange::Exchange::response;
         let input = response.body().reading();
         defer input.close();
-        let class = StatusCode(response.status()).class();
+        let class = StatusCode(response::Head::status).class();
         if class == StatusClass.client_error {
             return RobotsPolicy("");
         }
@@ -608,7 +608,7 @@ object FetchedRobots {
             return RobotsPolicy("User-agent: *\nDisallow: /\n");
         }
         confirm class == StatusClass.successful
-            else throw RobotsFetchFailed.status(StatusCode(response.status()).number());
+            else throw RobotsFetchFailed.status(StatusCode(response::Head::status).number());
         let text = Atomic("");
         loop {
             let remaining = 524288 - text.value().length();

@@ -211,8 +211,8 @@ object WebSocketClientHandshake {
         };
         WebSocketHandshakeFields(complete);
         request = Request(
-            Method.get,
-            OriginTarget(
+            method: Method.get,
+            target: OriginTarget(
                 if parts.path() == "" {
                     "/";
                 }
@@ -221,7 +221,7 @@ object WebSocketClientHandshake {
                 },
                 parts.query()
             ),
-            complete
+            headers: complete
         );
         accept = WebSocketAccept(key);
         offered = checked;
@@ -232,19 +232,19 @@ object WebSocketClientHandshake {
     }
 
     selected(response is Response) is string {
-        confirm response.status() == Status.switching_protocols
-            && response.version() == HttpVersion.http_1_1
+        confirm response::Head::status == Status.switching_protocols
+            && response::Head::version == HttpVersion.http_1_1
             else throw WebSocketFailure.because("HTTP1.1 switching response required");
-        let fields = WebSocketHandshakeFields(response.headers());
+        let fields = WebSocketHandshakeFields(response::Head::headers);
         fields.upgrade();
         confirm fields.single("Sec-WebSocket-Accept") == accept.string()
             else throw WebSocketFailure.because("WebSocket accept mismatch");
-        confirm !response.headers().membership(HeaderName("Sec-WebSocket-Extensions"))
+        confirm !response::Head::headers.membership(HeaderName("Sec-WebSocket-Extensions"))
             else throw WebSocketFailure.because("unnegotiated extensions");
-        confirm !response.headers().membership(HeaderName("Content-Length"))
-            && !response.headers().membership(HeaderName("Transfer-Encoding"))
+        confirm !response::Head::headers.membership(HeaderName("Content-Length"))
+            && !response::Head::headers.membership(HeaderName("Transfer-Encoding"))
             else throw WebSocketFailure.because("switching response framing");
-        let values = response.headers().values(HeaderName("Sec-WebSocket-Protocol"));
+        let values = response::Head::headers.values(HeaderName("Sec-WebSocket-Protocol"));
         confirm values.size() <= 1
             else throw WebSocketFailure.because("multiple selected subprotocols");
         if values.size() == 0 {
@@ -294,12 +294,15 @@ object WebSocketServerHandshake {
                 Header(HeaderName("Sec-WebSocket-Accept"), accept.string())
             ]
         );
-        Response(Status.switching_protocols, if protocol == "" {
-            fields;
-        }
-        else {
-            fields.addition(Header(HeaderName("Sec-WebSocket-Protocol"), protocol));
-        });
+        Response(
+            status: Status.switching_protocols,
+            headers: if protocol == "" {
+                fields;
+            }
+            else {
+                fields.addition(Header(HeaderName("Sec-WebSocket-Protocol"), protocol));
+            }
+        );
     }
 }
 

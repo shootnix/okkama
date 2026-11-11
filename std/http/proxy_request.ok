@@ -12,19 +12,24 @@ object HttpForwardRequest {
     has request is Request;
 
     HttpForwardRequest(origin is Request, proxy_fields is @Header) {
-        confirm origin.target().kind() == RequestTargetKind.absolute
-            && origin.target().url().parts().scheme() == "http"
+        confirm origin::Head::target.kind() == RequestTargetKind.absolute
+            && origin::Head::target.url().parts().scheme() == "http"
             else throw InvalidProxyRequest.because("absolute HTTP target required");
         let source = Request(
-            origin.method(),
-            origin.target(),
-            origin.headers(),
-            origin.body(),
-            HttpVersion.http_1_1
+            method: origin::Head::method,
+            target: origin::Head::target,
+            headers: origin::Head::headers,
+            body: origin.body()
         );
         let checked = HttpDirectRequest(source);
-        let fields = ProxyRequestFields(checked.request().headers(), proxy_fields).headers();
-        request = Request(source.method(), source.target(), fields, source.body(), source.version());
+        let fields = ProxyRequestFields(checked.request()::Head::headers, proxy_fields).headers();
+        request = Request(
+            method: source::Head::method,
+            target: source::Head::target,
+            headers: fields,
+            body: source.body(),
+            version: source::Head::version
+        );
     }
 
     request() is Request {
@@ -50,7 +55,11 @@ object HttpConnectRequest {
             Headers([Header(HeaderName("Host"), authority.string())]),
             proxy_fields
         ).headers();
-        request = Request(Method.connect, AuthorityTarget(authority), fields);
+        request = Request(
+            method: Method.connect,
+            target: AuthorityTarget(authority),
+            headers: fields
+        );
     }
 
     request() is Request {

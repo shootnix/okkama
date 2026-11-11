@@ -2345,7 +2345,7 @@
     },
     {
       "id": "STD.HTTP.EXCHANGE",
-      "title": "std http/exchange public contract (ClientResponse, ExchangeDetails, ExchangeHop, PlainHttpHasNoTls)",
+      "title": "std http/exchange public contract (ClientResponse, ExchangeDetails, ExchangeHop, PlainHttpHasNoTls, UnsupportedBodyCharset)",
       "family": "Standard library: http",
       "spec_refs": [
         "std/http/exchange.ok"
@@ -2675,7 +2675,7 @@
     },
     {
       "id": "STD.HTTP.METHOD",
-      "title": "std http/method public contract (InvalidMethod, Method, MethodSemantics)",
+      "title": "std http/method public contract (InvalidMethod, Method, MethodName, MethodSemantics)",
       "family": "Standard library: http",
       "spec_refs": [
         "std/http/method.ok"
@@ -2930,7 +2930,7 @@
     },
     {
       "id": "STD.HTTP.STATUS",
-      "title": "std http/status public contract (InvalidStatus, Status, StatusClass)",
+      "title": "std http/status public contract (InvalidStatus, Status, StatusClass, StatusCode)",
       "family": "Standard library: http",
       "spec_refs": [
         "std/http/status.ok"
@@ -2964,6 +2964,21 @@
       "family": "Standard library: http",
       "spec_refs": [
         "std/http/tls_session.ok"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+      }
+    },
+    {
+      "id": "STD.HTTP.TOKEN",
+      "title": "std http/token public contract (HttpToken, InvalidToken)",
+      "family": "Standard library: http",
+      "spec_refs": [
+        "std/http/token.ok"
       ],
       "status": "mandatory",
       "aspects": {

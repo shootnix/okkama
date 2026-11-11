@@ -1,5 +1,7 @@
 module http/exchange v1.0.0;
 
+import "net/ip" take IpAddress;
+import "http/method" take Method;
 import "http/message" take Request, Response;
 import "http/version" take HttpVersion;
 import "net/stream" take ConnectionEndpoints;
@@ -7,6 +9,15 @@ import "net/endpoint" take IpEndpoint;
 import "net/tls" take TlsDetails;
 import "collections/sequence" take Sequencing;
 import "error" take InvalidArgument;
+import "http/status" take Status, StatusCode, StatusClass;
+import "http/header" take Headers, HeaderName, HttpAsciiLowercase, Header;
+import "http/body" take BodyReading, ByteBody;
+import "http/media_type" take HttpMediaType;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Decoded, Utf8Encoded;
+import "encoding/single_byte" take AsciiDecoded, Latin1Decoded;
+import "json" take Json, ParsedJson;
 
 object ExchangeDetails {
     has endpoints is ConnectionEndpoints<IpEndpoint>;
@@ -49,6 +60,7 @@ object ExchangeDetails {
 
 enum PlainHttpHasNoTls is Error = (none);
 
+// One redirect or retry step before the final response.
 object ExchangeHop {
     has request is Request;
     has response is Response;
@@ -58,15 +70,21 @@ object ExchangeHop {
         self.response = response;
     }
 
-    request() is Request {
-        request;
-    }
+    cap Exchange {
+        request is Request {
+            request;
+        }
 
-    response() is Response {
-        response;
+        response is Response {
+            response;
+        }
     }
 }
 
+// What a client got back for a request: the final response, the hops before
+// it and how it travelled. Its head is the cap `Head` and the exchange around
+// it the cap `Exchange`. The body is read once: whole with `bytes()`, `text()`
+// or `json()`, or piece by piece through `reading()`.
 object ClientResponse {
     has request is Request;
     has response is Response;
@@ -97,19 +115,185 @@ object ClientResponse {
         self.details = details;
     }
 
-    request() is Request {
-        request;
+    cap Head {
+        status is Status {
+            response::Head::status;
+        }
+
+        class is StatusClass {
+            StatusCode(response::Head::status).class();
+        }
+
+        headers is Headers {
+            response::Head::headers;
+        }
+
+        version is HttpVersion {
+            response::Head::version;
+        }
     }
 
-    response() is Response {
-        response;
+    cap Exchange {
+        request is Request {
+            request;
+        }
+
+        response is Response {
+            response;
+        }
+
+        history is Sequencing<ExchangeHop> {
+            history;
+        }
+
+        details is ExchangeDetails {
+            details;
+        }
     }
 
-    history() is Sequencing<ExchangeHop> {
-        history;
+    // The body piece by piece; whoever takes it closes it.
+    reading() is BodyReading {
+        response.body().reading();
     }
 
-    details() is ExchangeDetails {
-        details;
+    // The whole body; the client's body limit bounds it.
+    async bytes() is @byte {
+        let input = response.body().reading();
+        defer input.close();
+        let joined = ByteBuffer();
+        defer joined.closing().close();
+        let output = joined.writing();
+        loop {
+            let chunk = await input.bytes(65536);
+            if chunk.size() == 0 {
+                last;
+            }
+            output.write(ByteSnapshot(chunk));
+        }
+        joined.content().bytes();
     }
+
+    // The whole body as text, decoded by the charset of its Content-Type:
+    // UTF-8 when there is none; US-ASCII and ISO-8859-1 are also read.
+    async text() is string {
+        let charset = BodyCharset(response::Head::headers).name();
+        let bytes = await self.bytes();
+        if charset == "us-ascii" {
+            AsciiDecoded(bytes).string();
+        }
+        else if charset == "iso-8859-1" {
+            Latin1Decoded(bytes).string();
+        }
+        else {
+            Utf8Decoded(bytes).string();
+        }
+    }
+
+    // The whole body parsed as JSON.
+    async json() is Json {
+        ParsedJson(await self.text()).root();
+    }
+}
+
+// The charset named by a Content-Type field, lowercase; "utf-8" without one.
+hidden object BodyCharset {
+    has headers is Headers;
+
+    BodyCharset(headers is Headers) {
+        self.headers = headers;
+    }
+
+    name() is string {
+        let field = HeaderName("Content-Type");
+        if !headers.membership(field) {
+            return "utf-8";
+        }
+        let parameters = HttpMediaType(headers.first(field)).parameters();
+        if !parameters.membership("charset") {
+            return "utf-8";
+        }
+        let name = HttpAsciiLowercase(parameters.first("charset")).string();
+        confirm name == "utf-8" || name == "us-ascii" || name == "iso-8859-1"
+            else throw UnsupportedBodyCharset.named(name);
+        name;
+    }
+}
+
+enum UnsupportedBodyCharset is Error = (named(name is string));
+
+async test "a client response reads its head through caps and its body whole" {
+    let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(
+        IpEndpoint(IpAddress("127.0.0.1"), 40000),
+        IpEndpoint(IpAddress("127.0.0.1"), 80)
+    );
+    let details = ExchangeDetails(ends, HttpVersion.http_1_1);
+    let request = Request(url: "http://example.test/");
+    let page = ClientResponse(
+        request: request,
+        response: Response(
+            status: Status.ok,
+            headers: Headers([Header(HeaderName("Content-Type"), "text/plain; charset=utf-8")]),
+            body: ByteBody(Utf8Encoded("héllo").bytes())
+        ),
+        details: details
+    );
+    test.is(page::Head::status, Status.ok);
+    test.is(page::Head::class, StatusClass.successful);
+    test.is(page::Head::headers.first(HeaderName("Content-Type")), "text/plain; charset=utf-8");
+    test.is(page::Exchange::request::Head::method, Method.get);
+    test.is(page::Exchange::history.size(), 0);
+    test.is(await page.text(), "héllo");
+}
+
+async test "text follows the charset, json parses, an unknown charset is refused" {
+    let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(
+        IpEndpoint(IpAddress("127.0.0.1"), 40000),
+        IpEndpoint(IpAddress("127.0.0.1"), 80)
+    );
+    let details = ExchangeDetails(ends, HttpVersion.http_1_1);
+    let request = Request(url: "http://example.test/");
+    let latin = ClientResponse(
+        request: request,
+        response: Response(
+            status: Status.ok,
+            headers: Headers([Header(HeaderName("Content-Type"), "text/plain; charset=ISO-8859-1")]),
+            body: ByteBody([104.byte(), 233.byte()])
+        ),
+        details: details
+    );
+    test.is(await latin.text(), "hé");
+    let data = ClientResponse(
+        request: request,
+        response: Response(
+            status: Status.created,
+            headers: Headers([Header(HeaderName("Content-Type"), "application/json")]),
+            body: ByteBody(Utf8Encoded("{\"id\": 7}").bytes())
+        ),
+        details: details
+    );
+    test.is((await data.json()).int("id"), 7);
+    let odd = ClientResponse(
+        request: request,
+        response: Response(
+            status: Status.ok,
+            headers: Headers([Header(HeaderName("Content-Type"), "text/plain; charset=koi8-r")]),
+            body: ByteBody([65.byte()])
+        ),
+        details: details
+    );
+    test.is(
+        try {
+            await odd.text();
+        }
+        catch UnsupportedBodyCharset.named(name) {
+            name;
+        },
+        "koi8-r"
+    );
+    let raw = ClientResponse(
+        request: request,
+        response: Response(status: Status.no_content, body: ByteBody([1.byte(), 2.byte()])),
+        details: details
+    );
+    test.is(await raw.bytes(), [1.byte(), 2.byte()]);
 }

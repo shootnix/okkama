@@ -203,7 +203,10 @@ object WebRejection does RouteRejecting {
     }
 
     disallowed(request is Request, allowed is @string) is HandlingResult {
-        Problem(405, "method " + MethodName(request.method()).string() + " is not allowed here").header(
+        Problem(
+            405,
+            "method " + MethodName(request::Head::method).string() + " is not allowed here"
+        ).header(
             "Allow",
             allowed.join(", ")
         );

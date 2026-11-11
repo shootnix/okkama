@@ -758,10 +758,8 @@ object Http2ServerStream {
             let result is HandlingResult = if unsupported {
                 ResponseHandling(
                     Response(
-                        Status.expectation_failed,
-                        Headers([]),
-                        EmptyBody(),
-                        HttpVersion.http_2
+                        status: Status.expectation_failed,
+                        version: HttpVersion.http_2
                     )
                 );
             }
@@ -787,20 +785,16 @@ object Http2ServerStream {
                 catch e is TimedOut {
                     ResponseHandling(
                         Response(
-                            Status.service_unavailable,
-                            Headers([]),
-                            EmptyBody(),
-                            HttpVersion.http_2
+                            status: Status.service_unavailable,
+                            version: HttpVersion.http_2
                         )
                     );
                 }
                 catch e is Error {
                     ResponseHandling(
                         Response(
-                            Status.internal_server_error,
-                            Headers([]),
-                            EmptyBody(),
-                            HttpVersion.http_2
+                            status: Status.internal_server_error,
+                            version: HttpVersion.http_2
                         )
                     );
                 }
@@ -825,10 +819,8 @@ object Http2ServerStream {
                 await self.respond(
                     request,
                     Response(
-                        Status.internal_server_error,
-                        Headers([]),
-                        EmptyBody(),
-                        HttpVersion.http_2
+                        status: Status.internal_server_error,
+                        version: HttpVersion.http_2
                     )
                 );
             }
@@ -865,16 +857,16 @@ object Http2ServerStream {
                 self.stream(),
                 "request body abandoned before response"
             );
-        let status = response.status();
+        let status = response::Head::status;
         let class = StatusCode(status).class();
         confirm class != StatusClass.informational
-            && !(request.method() == Method.connect && class == StatusClass.successful)
+            && !(request::Head::method == Method.connect && class == StatusClass.successful)
             else throw InvalidHttpMessage.because(
                 "unsupported server final status or CONNECT tunnel"
             );
         let fields = Http2ResponseFields(response, self.stream()).fields();
-        let declared = Http2BodyLength(response.headers(), self.stream()).known();
-        let suppressed = request.method() == Method.head
+        let declared = Http2BodyLength(response::Head::headers, self.stream()).known();
+        let suppressed = request::Head::method == Method.head
             || status == Status.no_content
             || status == Status.not_modified;
         confirm status != Status.no_content || declared.size() == 0

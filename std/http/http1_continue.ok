@@ -27,13 +27,13 @@ object Http1RequestStart {
         plan is Http1BodyPlan,
         limits is Http1Limits
     ) {
-        let values = request.headers().values(HeaderName("Expect"));
+        let values = request::Head::headers.values(HeaderName("Expect"));
         let present = values.size() > 0;
         if present {
             confirm values.size() == 1
                 && HttpAsciiLowercase(values.item(0)).string() == "100-continue"
                 else throw InvalidHttpMessage.because("unsupported or ambiguous expectation");
-            confirm request.version() == HttpVersion.http_1_1
+            confirm request::Head::version == HttpVersion.http_1_1
                 else throw InvalidHttpMessage.because("continue coordination requires HTTP1.1");
             confirm plan.kind() == Http1BodyKind.chunked
                 || (plan.kind() == Http1BodyKind.fixed && plan.length().sign() > 0)

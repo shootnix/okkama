@@ -215,8 +215,17 @@ object HttpClient does Exchanging, Closing {
                 );
             };
             let original = exchange.response();
-            let response = Response(original.status(), original.headers(), body, original.version());
-            let result = ClientResponse(request, response, acquired.details());
+            let response = Response(
+                status: original::Head::status,
+                headers: original::Head::headers,
+                body: body,
+                version: original::Head::version
+            );
+            let result = ClientResponse(
+                request: request,
+                response: response,
+                details: acquired.details()
+            );
             published.set();
             return result;
         }
@@ -296,8 +305,17 @@ object HttpClient does Exchanging, Closing {
                 );
             };
             let original = exchange.response();
-            let response = Response(original.status(), original.headers(), body, original.version());
-            let result = ClientResponse(request, response, acquired.details());
+            let response = Response(
+                status: original::Head::status,
+                headers: original::Head::headers,
+                body: body,
+                version: original::Head::version
+            );
+            let result = ClientResponse(
+                request: request,
+                response: response,
+                details: acquired.details()
+            );
             published.set();
             return result;
         }
@@ -366,8 +384,17 @@ object HttpClient does Exchanging, Closing {
             HttpClientBody(source, operation, lease, policy.timeouts().body_idle_timeout(), clock);
         };
         let original = exchange.response();
-        let response = Response(original.status(), original.headers(), body, original.version());
-        let result = ClientResponse(request, response, acquired.details());
+        let response = Response(
+            status: original::Head::status,
+            headers: original::Head::headers,
+            body: body,
+            version: original::Head::version
+        );
+        let result = ClientResponse(
+            request: request,
+            response: response,
+            details: acquired.details()
+        );
         published.set();
         result;
     }
@@ -1072,9 +1099,8 @@ async test "unstarted client response cancellation acquires no route or connecti
         SystemClock()
     );
     let request = Request(
-        Method.get,
-        AbsoluteTarget(ParsedUrl("http://example.test/").value()),
-        Headers([])
+        method: Method.get,
+        target: AbsoluteTarget(ParsedUrl("http://example.test/").value())
     );
     let waiting = client.response(request);
     waiting.cancel();
@@ -1108,18 +1134,19 @@ object Http2DirectRequest {
     has request is Request;
 
     Http2DirectRequest(origin is Request) {
-        let target = origin.target();
+        let target = origin::Head::target;
         confirm target.kind() == RequestTargetKind.absolute
             else throw InvalidClientRequest.because("absolute HTTP URL required");
         let destination = target.url();
-        confirm origin.version() == HttpVersion.http_1_1 || origin.version() == HttpVersion.http_2
+        confirm origin::Head::version == HttpVersion.http_1_1
+            || origin::Head::version == HttpVersion.http_2
             else throw InvalidClientRequest.because("unsupported H2 request source version");
         let prepared = Request(
-            origin.method(),
-            target,
-            origin.headers(),
-            origin.body(),
-            HttpVersion.http_2
+            method: origin::Head::method,
+            target: target,
+            headers: origin::Head::headers,
+            body: origin.body(),
+            version: HttpVersion.http_2
         );
         Http2RequestFields(prepared, 1);
         request = prepared;
@@ -1812,17 +1839,17 @@ object HttpMixedDirectRequest {
     has request is Request;
 
     HttpMixedDirectRequest(origin is Request) {
-        let target = origin.target();
+        let target = origin::Head::target;
         confirm target.kind() == RequestTargetKind.absolute
             else throw InvalidClientRequest.because("absolute HTTP URL required");
-        confirm origin.version() == HttpVersion.http_1_1 || origin.version() == HttpVersion.http_2
+        confirm origin::Head::version == HttpVersion.http_1_1
+            || origin::Head::version == HttpVersion.http_2
             else throw InvalidClientRequest.because("unsupported HTTP request source version");
         let source = Request(
-            origin.method(),
-            target,
-            origin.headers(),
-            origin.body(),
-            HttpVersion.http_1_1
+            method: origin::Head::method,
+            target: target,
+            headers: origin::Head::headers,
+            body: origin.body()
         );
         HttpDirectRequest(source);
         request = origin;

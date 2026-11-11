@@ -44,7 +44,7 @@ object WebRequest {
     }
 
     method() is string {
-        MethodName(origin.method()).string();
+        MethodName(origin::Head::method).string();
     }
 
     // Route parameter declared by the matched pattern. A missing name means the
@@ -76,13 +76,13 @@ object WebRequest {
     // (application/x-www-form-urlencoded: "+" is a space). The raw RFC 3986
     // query stays available through request().target().query().
     parameters() is QueryParameters {
-        let kind = origin.target().kind();
+        let kind = origin::Head::target.kind();
         let raw = if kind == RequestTargetKind.origin {
-            origin.target().query();
+            origin::Head::target.query();
         }
         else {
             if kind == RequestTargetKind.absolute {
-                origin.target().url().parts().query();
+                origin::Head::target.url().parts().query();
             }
             else {
                 UrlQuery();
@@ -101,7 +101,7 @@ object WebRequest {
 
     header(name is string) is string {
         try {
-            origin.headers().first(HeaderName(name));
+            origin::Head::headers.first(HeaderName(name));
         }
         catch failure is MissingHeader {
             throw Exception.status(400, "missing header: " + name);
@@ -110,8 +110,8 @@ object WebRequest {
 
     header(name is string, fallback is string) is string {
         let field = HeaderName(name);
-        if origin.headers().membership(field) {
-            origin.headers().first(field);
+        if origin::Head::headers.membership(field) {
+            origin::Head::headers.first(field);
         }
         else {
             fallback;
@@ -172,10 +172,10 @@ object WebRequest {
 
     hidden media(expected is string) is void {
         let field = HeaderName("Content-Type");
-        confirm origin.headers().membership(field)
+        confirm origin::Head::headers.membership(field)
             else throw Exception.status(415, "Content-Type is required");
         let media = try {
-            HttpMediaType(origin.headers().first(field));
+            HttpMediaType(origin::Head::headers.first(field));
         }
         catch failure is InvalidHttpMediaType {
             throw Exception.status(415, "invalid Content-Type");

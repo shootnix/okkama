@@ -337,14 +337,14 @@ object EmptyRouteRejection does RouteRejecting {
     EmptyRouteRejection();
 
     malformed(request is Request, reason is string) is HandlingResult {
-        ResponseHandling(Response(Status.bad_request, Headers([])));
+        ResponseHandling(Response(status: Status.bad_request));
     }
 
     disallowed(request is Request, allowed is @string) is HandlingResult {
         ResponseHandling(
             Response(
-                Status.method_not_allowed,
-                Headers([Header(HeaderName("Allow"), allowed.join(", "))])
+                status: Status.method_not_allowed,
+                headers: Headers([Header(HeaderName("Allow"), allowed.join(", "))])
             )
         );
     }
@@ -634,7 +634,7 @@ object Routes does Handling {
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
         context.cancelling().check();
-        let target = request.target();
+        let target = request::Head::target;
         if target.kind() != RequestTargetKind.origin && target.kind() != RequestTargetKind.absolute {
             return await self.invoke(fallback, request, context);
         }
@@ -654,7 +654,7 @@ object Routes does Handling {
             return rejection.malformed(request, "invalid route path");
         }
         let path = sections[0];
-        let method = request.method();
+        let method = request::Head::method;
         let matches is @Route = routes.filter() -> route {
             route.pattern().matches(path);
         };
@@ -770,16 +770,16 @@ test "default rejection keeps empty 400 and Allow-carrying 405 responses" {
     let methods is @string = ["GET", "HEAD"];
     test.is(
         EmptyRouteRejection().disallowed(
-            Request(Method.put, ParsedRequestTarget("/a", Method.put).value(), Headers([])),
+            Request(method: Method.put, target: ParsedRequestTarget("/a", Method.put).value()),
             methods
-        ).response().headers().first(HeaderName("Allow")),
+        ).response()::Head::headers.first(HeaderName("Allow")),
         "GET, HEAD"
     );
     test.is(
         EmptyRouteRejection().malformed(
-            Request(Method.get, ParsedRequestTarget("/a", Method.get).value(), Headers([])),
+            Request(method: Method.get, target: ParsedRequestTarget("/a", Method.get).value()),
             "x"
-        ).response().status(),
+        ).response()::Head::status,
         Status.bad_request
     );
 }

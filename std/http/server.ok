@@ -458,8 +458,8 @@ object HttpServerPeer {
     async failure_response(connection is TcpConnection, status is int) is bool {
         if !sent.value() && !(phase.value() == 0 && seen.value() == 0) {
             let response = Response(
-                StatusCode(status).status(),
-                Headers([Header(HeaderName("Connection"), "close")])
+                status: StatusCode(status).status(),
+                headers: Headers([Header(HeaderName("Connection"), "close")])
             );
             let pending = Http1ResponseWriting(
                 connection.output(),
@@ -557,8 +557,8 @@ object HttpServerPeer {
                 || HttpAsciiLowercase(expectations.item(0)).string() != "100-continue"
                 || head.version() != HttpVersion.http_1_1) {
                     let response = Response(
-                        Status.expectation_failed,
-                        Headers([Header(HeaderName("Connection"), "close")])
+                        status: Status.expectation_failed,
+                        headers: Headers([Header(HeaderName("Connection"), "close")])
                     );
                     let pending = Http1ResponseWriting(
                         connection.output(),
@@ -618,8 +618,8 @@ object HttpServerPeer {
             catch e is Error {
                 ResponseHandling(
                     Response(
-                        Status.internal_server_error,
-                        Headers([Header(HeaderName("Connection"), "close")])
+                        status: Status.internal_server_error,
+                        headers: Headers([Header(HeaderName("Connection"), "close")])
                     )
                 );
             };
@@ -650,10 +650,13 @@ object HttpServerPeer {
             let original = result.response();
             let response = if expected && !continuing.started() {
                 Response(
-                    original.status(),
-                    ReplacedHeader(original.headers(), Header(HeaderName("Connection"), "close")).result(),
-                    original.body(),
-                    original.version()
+                    status: original::Head::status,
+                    headers: ReplacedHeader(
+                        original::Head::headers,
+                        Header(HeaderName("Connection"), "close")
+                    ).result(),
+                    body: original.body(),
+                    version: original::Head::version
                 );
             }
             else {
@@ -668,7 +671,11 @@ object HttpServerPeer {
             sent.replace(true);
             await sending;
             let outgoing = Http1ResponseFraming(
-                Http1ResponseHead(response.status(), response.headers(), response.version()),
+                Http1ResponseHead(
+                    response::Head::status,
+                    response::Head::headers,
+                    response::Head::version
+                ),
                 head.method(),
                 policy.limits().http1()
             ).plan();

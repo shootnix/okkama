@@ -48,25 +48,29 @@ object CachedHttpEntry {
         bytes is @byte,
         trailers is Headers
     ) {
-        confirm request.target().kind() == RequestTargetKind.absolute
-            && result.request().target().kind() == RequestTargetKind.absolute
-            && request.target().string() == result.request().target().string()
-            && result.history().size() == 0
+        confirm request::Head::target.kind() == RequestTargetKind.absolute
+            && result::Exchange::request::Head::target.kind() == RequestTargetKind.absolute
+            && request::Head::target.string() == result::Exchange::request::Head::target.string()
+            && result::Exchange::history.size() == 0
             else throw InvalidCachedResponse.invalid;
-        let snapshot = Request(request.method(), request.target(), request.headers());
+        let snapshot = Request(
+            method: request::Head::method,
+            target: request::Head::target,
+            headers: request::Head::headers
+        );
         self.request = snapshot;
-        let original = result.response();
-        cacheable = CacheAdmissionControl(original.headers()).allowed();
-        let sanitized = CacheStoredHeaders(original.headers()).result();
+        let original = result::Exchange::response;
+        cacheable = CacheAdmissionControl(original::Head::headers).allowed();
+        let sanitized = CacheStoredHeaders(original::Head::headers).result();
         self.result = ClientResponse(
-            snapshot,
-            Response(
-                original.status(),
+            request: snapshot,
+            response: Response(
+                original::Head::status,
                 sanitized,
                 CachedByteBody(bytes, trailers),
-                original.version()
+                original::Head::version
             ),
-            result.details()
+            details: result::Exchange::details
         );
         self.timing = timing;
         self.bytes = bytes;
@@ -110,7 +114,7 @@ object CachedHttpEntry {
     }
 
     dated() is Instant {
-        let fields = result.response().headers();
+        let fields = result::Head::headers;
         try {
             ParsedHttpDate(fields.first(HeaderName("Date")), timing.received()).value();
         }
@@ -128,25 +132,25 @@ object CachedHttpEntry {
     }
 
     key() is string {
-        request.target().string();
+        request::Head::target.string();
     }
 
     matches(other is Request) is bool {
-        if other.target().kind() != RequestTargetKind.absolute
-            || other.target().string() != self.key()
-            || MethodName(other.method()).string() != MethodName(request.method()).string() {
+        if other::Head::target.kind() != RequestTargetKind.absolute
+            || other::Head::target.string() != self.key()
+            || MethodName(other::Head::method).string() != MethodName(request::Head::method).string() {
                 return false;
             }
         // Explicitly approved auth still partitions identities; Cookie partitions
         // are conservative even without origin Vary metadata.
         let partitions is @HeaderName = [HeaderName("Authorization"), HeaderName("Cookie")];
         for partitions -> name {
-            if !CacheFieldMatching(request.headers(), other.headers(), name).matches() {
+            if !CacheFieldMatching(request::Head::headers, other::Head::headers, name).matches() {
                 return false;
             }
         }
         for vary -> name {
-            if !CacheFieldMatching(request.headers(), other.headers(), name).matches() {
+            if !CacheFieldMatching(request::Head::headers, other::Head::headers, name).matches() {
                 return false;
             }
         }
@@ -155,7 +159,9 @@ object CachedHttpEntry {
 
     same(other is CachedHttpEntry) is bool {
         if self.key() != other.key()
-            || MethodName(request.method()).string() != MethodName(other.request().method()).string()
+            || MethodName(request::Head::method).string() != MethodName(
+                other.request()::Head::method
+            ).string()
             || vary.size() != other.vary().size() {
                 return false;
             }
@@ -168,15 +174,15 @@ object CachedHttpEntry {
     }
 
     cost() is int {
-        128 + self.key().length() + bytes.size() + CacheHeaderSize(request.headers()).value() + CacheHeaderSize(
-            result.response().headers()
+        128 + self.key().length() + bytes.size() + CacheHeaderSize(request::Head::headers).value() + CacheHeaderSize(
+            result::Head::headers
         ).value() + CacheHeaderSize(trailers).value();
     }
 
     response(request is Request, now is MonotonicInstant) is ClientResponse {
         let current = freshness.age(now).seconds().int();
         let fields = ReplacedHeader(
-            result.response().headers(),
+            result::Head::headers,
             Header(HeaderName("Age"), current.string())
         ).result();
         let dated = if fields.membership(HeaderName("Date")) {
@@ -185,17 +191,17 @@ object CachedHttpEntry {
         else {
             fields.addition(Header(HeaderName("Date"), HttpDate(timing.received()).string()));
         };
-        let original = result.response();
-        let body is BodyOpening = if request.method() == Method.head {
+        let original = result::Exchange::response;
+        let body is BodyOpening = if request::Head::method == Method.head {
             EmptyBody();
         }
         else {
             CachedByteBody(bytes, trailers);
         };
         ClientResponse(
-            request,
-            Response(original.status(), dated, body, original.version()),
-            result.details()
+            request: request,
+            response: Response(original::Head::status, dated, body, original::Head::version),
+            details: result::Exchange::details
         );
     }
 }
@@ -229,7 +235,7 @@ object MemoryHttpCache does ResponseCaching, Closing {
 
     entry(request is Request) is CachedHttpEntry {
         confirm !cell.closed() else throw CacheClosed.closed;
-        if request.headers().membership(HeaderName("Authorization")) && !authenticated {
+        if request::Head::headers.membership(HeaderName("Authorization")) && !authenticated {
             throw MissingCachedResponse.missing;
         }
         let entries = cell.value();
@@ -253,13 +259,13 @@ object MemoryHttpCache does ResponseCaching, Closing {
         confirm !cell.closed() else throw CacheClosed.closed;
         let request = entry.request();
         let result = entry.result();
-        if request.method() != Method.get
-            || (request.headers().membership(HeaderName("Authorization")) && !authenticated) {
+        if request::Head::method != Method.get
+            || (request::Head::headers.membership(HeaderName("Authorization")) && !authenticated) {
                 return;
             }
         let accepted = try {
-            let outgoing = CacheControl(request.headers());
-            let incoming = CacheControl(result.response().headers());
+            let outgoing = CacheControl(request::Head::headers);
+            let incoming = CacheControl(result::Head::headers);
             !outgoing.present("no-store") && !incoming.present("no-store");
         }
         catch e is Error {
@@ -267,8 +273,8 @@ object MemoryHttpCache does ResponseCaching, Closing {
         };
         if !accepted
             || !entry.storable()
-            || result.response().status() != Status.ok
-            || result.response().headers().membership(HeaderName("Content-Range")) {
+            || result::Head::status != Status.ok
+            || result::Head::headers.membership(HeaderName("Content-Range")) {
                 return;
             }
         let amount = entry.cost();
@@ -293,11 +299,11 @@ object MemoryHttpCache does ResponseCaching, Closing {
 
     invalidate(request is Request) is void {
         confirm !cell.closed() else throw CacheClosed.closed;
-        if request.target().kind() != RequestTargetKind.absolute {
+        if request::Head::target.kind() != RequestTargetKind.absolute {
             return;
         }
         revision.replace(revision.value() + 1);
-        let target = request.target().string();
+        let target = request::Head::target.string();
         let kept is @CachedHttpEntry = cell.value().filter() -> item {
             item.key() != target;
         };

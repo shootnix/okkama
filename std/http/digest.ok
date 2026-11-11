@@ -283,14 +283,13 @@ object DigestAuthorization does HttpAuthorizing {
         self.challenge = challenge;
         uri = HttpDirectRequest(
             Request(
-                request.method(),
-                request.target(),
-                request.headers(),
-                request.body(),
-                HttpVersion.http_1_1
+                method: request::Head::method,
+                target: request::Head::target,
+                headers: request::Head::headers,
+                body: request.body()
             )
-        ).request().target().string();
-        method = MethodName(request.method()).string();
+        ).request()::Head::target.string();
+        method = MethodName(request::Head::method).string();
         self.cnonce = cnonce;
         self.count = HexEncoded(
             [
@@ -553,17 +552,17 @@ object DigestExchanging does Exchanging {
         if !scope.matches(request) {
             return await self.once(request);
         }
-        confirm !request.headers().membership(HeaderName("Authorization"))
+        confirm !request::Head::headers.membership(HeaderName("Authorization"))
             else throw AuthenticationConflict.conflict;
         let first = await self.once(request);
         let retained = Event();
-        let cleanup = DigestResponseCleanup(first.response(), retained);
+        let cleanup = DigestResponseCleanup(first::Exchange::response, retained);
         defer cleanup.close();
         if !self.eligible(first, request) || !request.body().replayable() {
             retained.set();
             return first;
         }
-        let challenges = DigestSelection(first.response().headers()).values();
+        let challenges = DigestSelection(first::Head::headers).values();
         if challenges.size() == 0 {
             retained.set();
             return first;
@@ -572,10 +571,10 @@ object DigestExchanging does Exchanging {
         cleanup.close();
         let result = await self.authorized(request, selected);
         let final = Event();
-        let final_cleanup = DigestResponseCleanup(result.response(), final);
+        let final_cleanup = DigestResponseCleanup(result::Exchange::response, final);
         defer final_cleanup.close();
         if self.eligible(result, request) {
-            let refreshing = DigestSelection(result.response().headers()).values();
+            let refreshing = DigestSelection(result::Head::headers).values();
             if refreshing.size() == 1
                 && refreshing[0].stale()
                 && refreshing[0].nonce() != selected.nonce() {
@@ -589,10 +588,10 @@ object DigestExchanging does Exchanging {
     }
 
     hidden eligible(result is ClientResponse, request is Request) is bool {
-        result.response().status() == Status.unauthorized
-            && result.history().size() == 0
-            && result.request().target().url().string() == request.target().url().string()
-            && scope.matches(result.request());
+        result::Head::status == Status.unauthorized
+            && result::Exchange::history.size() == 0
+            && result::Exchange::request::Head::target.url().string() == request::Head::target.url().string()
+            && scope.matches(result::Exchange::request);
     }
 
     hidden async authorized(request is Request, challenge is DigestChallenge) is ClientResponse {
@@ -602,28 +601,32 @@ object DigestExchanging does Exchanging {
         let header = authorization.header();
         let proof = authorization.proof();
         let outgoing = Request(
-            request.method(),
-            request.target(),
-            request.headers().addition(header),
-            request.body(),
-            request.version()
+            method: request::Head::method,
+            target: request::Head::target,
+            headers: request::Head::headers.addition(header),
+            body: request.body(),
+            version: request::Head::version
         );
         let result = await self.once(outgoing);
         let retained = Event();
-        let cleanup = DigestResponseCleanup(result.response(), retained);
+        let cleanup = DigestResponseCleanup(result::Exchange::response, retained);
         defer cleanup.close();
-        confirm result.history().size() == 0
-            && result.request().target().url().string() == request.target().url().string()
+        confirm result::Exchange::history.size() == 0
+            && result::Exchange::request::Head::target.url().string() == request::Head::target.url().string()
             else throw InvalidAuthentication.because("Digest requires a direct exchange");
-        proof.verify(result.response().headers());
-        let source = result.response();
+        proof.verify(result::Head::headers);
+        let source = result::Exchange::response;
         let response = Response(
-            source.status(),
-            source.headers(),
-            DigestBody(source.body(), proof),
-            source.version()
+            status: source::Head::status,
+            headers: source::Head::headers,
+            body: DigestBody(source.body(), proof),
+            version: source::Head::version
         );
-        let verified = ClientResponse(result.request(), response, result.details());
+        let verified = ClientResponse(
+            request: result::Exchange::request,
+            response: response,
+            details: result::Exchange::details
+        );
         retained.set();
         verified;
     }
@@ -634,9 +637,13 @@ object DigestExchanging does Exchanging {
     }
 
     hidden result(request is Request, result is ClientResponse) is ClientResponse {
-        if result.history().size() == 0
-            && result.request().target().url().string() == request.target().url().string() {
-                return ClientResponse(request, result.response(), result.details());
+        if result::Exchange::history.size() == 0
+            && result::Exchange::request::Head::target.url().string() == request::Head::target.url().string() {
+                return ClientResponse(
+                    request: request,
+                    response: result::Exchange::response,
+                    details: result::Exchange::details
+                );
             }
         result;
     }

@@ -15,7 +15,7 @@ object SameOriginWebSockets does WebSocketAllowing {
     SameOriginWebSockets();
 
     allowed(request is Request, destination is Url) is bool {
-        let values = request.headers().values(HeaderName("Origin"));
+        let values = request::Head::headers.values(HeaderName("Origin"));
         if values.size() != 1 {
             return false;
         }

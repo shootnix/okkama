@@ -711,7 +711,7 @@ object Http2SessionExchange {
     }
 
     async run() is Http2Exchange {
-        let declared = Http2BodyLength(request.headers(), 1).known();
+        let declared = Http2BodyLength(request::Head::headers, 1).known();
         let known is @BigInt = try {
             [request.body().length()];
         }
@@ -959,14 +959,14 @@ object Http2StreamEntry does Closing {
             life.replace(life.value().remote_headers(false));
             return;
         }
-        confirm !(request.method() == Method.connect && class == StatusClass.successful)
+        confirm !(request::Head::method == Method.connect && class == StatusClass.successful)
             else throw Http2Fault.detailed(
                 Http2FaultScope.stream,
                 1,
                 stream,
                 "CONNECT requires tunnel owner"
             );
-        let empty = request.method() == Method.head
+        let empty = request::Head::method == Method.head
             || status == Status.no_content
             || status == Status.not_modified;
         body.configure(known, empty);

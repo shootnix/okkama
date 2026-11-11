@@ -114,10 +114,10 @@ object Http1Session does Closing {
     async exchange(request is Request) is Http1Exchange {
         confirm !self.closed() else throw Http1SessionClosed.closed;
         let outgoing = Http1RequestHead(
-            request.method(),
-            request.target(),
-            request.headers(),
-            request.version()
+            request::Head::method,
+            request::Head::target,
+            request::Head::headers,
+            request::Head::version
         );
         let outgoing_plan = Http1RequestFraming(outgoing, limits).plan();
         let sending = Http1RequestStart(output, request, outgoing, outgoing_plan, limits);
@@ -141,7 +141,7 @@ object Http1Session does Closing {
             lease.heads().start(pending);
             let parsed = await pending;
             let head = parsed.head();
-            let plan = Http1ResponseFraming(head, request.method(), limits).plan();
+            let plan = Http1ResponseFraming(head, request::Head::method, limits).plan();
             let status = head.status();
             confirm plan.kind() != Http1BodyKind.tunnel && plan.kind() != Http1BodyKind.upgrade
                 else throw InvalidHttpMessage.because(

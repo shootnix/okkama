@@ -22,16 +22,16 @@ object Http2RequestFields {
 
     Http2RequestFields(request is Request, stream is int) {
         Http2StreamCoordinate(stream);
-        let target = request.target();
+        let target = request::Head::target;
         let prefix is @HpackField = if target.kind() == RequestTargetKind.authority {
-            confirm request.method() == Method.connect
+            confirm request::Head::method == Method.connect
                 else throw Http2Fault.detailed(
                     Http2FaultScope.stream,
                     1,
                     stream,
                     "authority target requires CONNECT"
                 );
-            Http2HostAgreement(request.headers(), "", target.authority().string(), stream);
+            Http2HostAgreement(request::Head::headers, "", target.authority().string(), stream);
             [
                 HpackField(":method", "CONNECT"),
                 HpackField(":authority", target.authority().string())
@@ -49,15 +49,15 @@ object Http2RequestFields {
         };
         fields = Http2JoinedFields(
             prefix,
-            Http2OrdinaryFields(request.headers(), true, stream).fields()
+            Http2OrdinaryFields(request::Head::headers, true, stream).fields()
         ).fields();
     }
 
     Http2RequestFields(request is Request, stream is int, route is Url) {
         Http2StreamCoordinate(stream);
         AbsoluteTarget(route);
-        if request.target().kind() == RequestTargetKind.absolute {
-            confirm request.target().url().string() == route.string()
+        if request::Head::target.kind() == RequestTargetKind.absolute {
+            confirm request::Head::target.url().string() == route.string()
                 else throw Http2Fault.detailed(
                     Http2FaultScope.stream,
                     1,
@@ -65,7 +65,7 @@ object Http2RequestFields {
                     "route URL disagrees with request"
                 );
         }
-        confirm request.target().kind() != RequestTargetKind.authority
+        confirm request::Head::target.kind() != RequestTargetKind.authority
             else throw Http2Fault.detailed(
                 Http2FaultScope.stream,
                 1,
@@ -74,7 +74,7 @@ object Http2RequestFields {
             );
         fields = Http2JoinedFields(
             Http2RequestControl(request, route, stream).fields(),
-            Http2OrdinaryFields(request.headers(), true, stream).fields()
+            Http2OrdinaryFields(request::Head::headers, true, stream).fields()
         ).fields();
     }
 
@@ -90,8 +90,8 @@ object Http2RequestControl {
         AbsoluteTarget(url);
         let parts = url.parts();
         let authority = parts.authority().string();
-        Http2HostAgreement(request.headers(), parts.scheme(), authority, stream);
-        let target = request.target();
+        Http2HostAgreement(request::Head::headers, parts.scheme(), authority, stream);
+        let target = request::Head::target;
         let path = match target.kind() {
             case RequestTargetKind.asterisk {
                 "*";
@@ -122,7 +122,7 @@ object Http2RequestControl {
             }
         };
         fields = [
-            HpackField(":method", MethodName(request.method()).string()),
+            HpackField(":method", MethodName(request::Head::method).string()),
             HpackField(":scheme", parts.scheme()),
             HpackField(":authority", authority),
             HpackField(":path", path)
@@ -205,7 +205,7 @@ object Http2ResponseFields {
 
     Http2ResponseFields(response is Response, stream is int) {
         Http2StreamCoordinate(stream);
-        confirm response.status() != Status.switching_protocols
+        confirm response::Head::status != Status.switching_protocols
             else throw Http2Fault.detailed(
                 Http2FaultScope.stream,
                 1,
@@ -213,8 +213,8 @@ object Http2ResponseFields {
                 "101 is invalid in HTTP2"
             );
         fields = Http2JoinedFields(
-            [HpackField(":status", StatusCode(response.status()).number().string())],
-            Http2OrdinaryFields(response.headers(), false, stream).fields()
+            [HpackField(":status", StatusCode(response::Head::status).number().string())],
+            Http2OrdinaryFields(response::Head::headers, false, stream).fields()
         ).fields();
     }
 
@@ -322,7 +322,7 @@ object ParsedHttp2Response {
     }
 
     response(body is BodyOpening) is Response {
-        Response(status, headers, body, HttpVersion.http_2);
+        Response(status: status, headers: headers, body: body, version: HttpVersion.http_2);
     }
 }
 
@@ -463,7 +463,13 @@ object ParsedHttp2Request {
     }
 
     request(body is BodyOpening) is Request {
-        Request(method, target, headers, body, HttpVersion.http_2);
+        Request(
+            method: method,
+            target: target,
+            headers: headers,
+            body: body,
+            version: HttpVersion.http_2
+        );
     }
 }
 

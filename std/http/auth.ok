@@ -166,9 +166,9 @@ object AuthenticationScope {
     }
 
     matches(request is Request) is bool {
-        confirm request.target().kind() == RequestTargetKind.absolute
+        confirm request::Head::target.kind() == RequestTargetKind.absolute
             else throw InvalidAuthentication.because("absolute auth target required");
-        let url = request.target().url();
+        let url = request::Head::target.url();
         if HttpClientKey(url).string() != key {
             return false;
         }
@@ -211,19 +211,23 @@ object ScopedAuthorization does Exchanging {
         if !scope.matches(request) {
             return await origin.response(request);
         }
-        confirm !request.headers().membership(HeaderName("Authorization"))
+        confirm !request::Head::headers.membership(HeaderName("Authorization"))
             else throw AuthenticationConflict.conflict;
         let outgoing = Request(
-            request.method(),
-            request.target(),
-            request.headers().addition(authorization.header()),
-            request.body(),
-            request.version()
+            method: request::Head::method,
+            target: request::Head::target,
+            headers: request::Head::headers.addition(authorization.header()),
+            body: request.body(),
+            version: request::Head::version
         );
         let result = await origin.response(outgoing);
-        if result.history().size() == 0
-            && result.request().target().url().string() == request.target().url().string() {
-                return ClientResponse(request, result.response(), result.details());
+        if result::Exchange::history.size() == 0
+            && result::Exchange::request::Head::target.url().string() == request::Head::target.url().string() {
+                return ClientResponse(
+                    request: request,
+                    response: result::Exchange::response,
+                    details: result::Exchange::details
+                );
             }
         result;
     }
@@ -238,18 +242,16 @@ test "authentication scope uses canonical origin and path boundaries" {
     test.ok(
         scope.matches(
             Request(
-                Method.get,
-                AbsoluteTarget(ParsedUrl("https://example.test:443/private/a").value()),
-                Headers([])
+                method: Method.get,
+                target: AbsoluteTarget(ParsedUrl("https://example.test:443/private/a").value())
             )
         )
     );
     test.ok(
         !scope.matches(
             Request(
-                Method.get,
-                AbsoluteTarget(ParsedUrl("https://example.test/private/../public").value()),
-                Headers([])
+                method: Method.get,
+                target: AbsoluteTarget(ParsedUrl("https://example.test/private/../public").value())
             )
         )
     );

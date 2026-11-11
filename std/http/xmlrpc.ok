@@ -1475,9 +1475,9 @@ object XmlRpcClient does XmlRpcCalling {
     async result(call is XmlRpcCall) is XmlRpcResult {
         let bytes = XmlRpcCallWire(call, limits).bytes();
         let request = Request(
-            Method.post,
-            AbsoluteTarget(endpoint),
-            Headers(
+            method: Method.post,
+            target: AbsoluteTarget(endpoint),
+            headers: Headers(
                 [
                     Header(HeaderName("Content-Type"), "text/xml; charset=utf-8"),
                     Header(HeaderName("Accept"), "text/xml"),
@@ -1485,16 +1485,16 @@ object XmlRpcClient does XmlRpcCalling {
                     Header(HeaderName("Content-Length"), bytes.size().string())
                 ]
             ),
-            ByteBody(bytes)
+            body: ByteBody(bytes)
         );
         let waiting = origin.response(request);
         let exchange = await waiting;
-        let response = exchange.response();
+        let response = exchange::Exchange::response;
         let input = response.body().reading();
         defer input.close();
-        confirm StatusCode(response.status()).class() == StatusClass.successful
-            else throw XmlRpcHttpFailed.status(StatusCode(response.status()).number());
-        XmlRpcMedia(response.headers());
+        confirm StatusCode(response::Head::status).class() == StatusClass.successful
+            else throw XmlRpcHttpFailed.status(StatusCode(response::Head::status).number());
+        XmlRpcMedia(response::Head::headers);
         let body = XmlRpcBodyBytes(input, limits);
         let pending = body.bytes();
         ParsedXmlRpcResult(await pending, limits).result();
@@ -1573,35 +1573,38 @@ object XmlRpcHandling does Handling {
     }
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
-        let kind = request.target().kind();
+        let kind = request::Head::target.kind();
         let requested = if kind == RequestTargetKind.origin {
-            request.target().string().split("?")[0];
+            request::Head::target.string().split("?")[0];
         }
         else {
             if kind == RequestTargetKind.absolute {
-                request.target().url().parts().path();
+                request::Head::target.url().parts().path();
             }
             else {
                 "";
             }
         };
         if requested != path {
-            return ResponseHandling(Response(Status.not_found, Headers([])));
+            return ResponseHandling(Response(status: Status.not_found));
         }
-        if request.method() != Method.post {
+        if request::Head::method != Method.post {
             return ResponseHandling(
-                Response(Status.method_not_allowed, Headers([Header(HeaderName("Allow"), "POST")]))
+                Response(
+                    status: Status.method_not_allowed,
+                    headers: Headers([Header(HeaderName("Allow"), "POST")])
+                )
             );
         }
         let media = try {
-            XmlRpcMedia(request.headers());
+            XmlRpcMedia(request::Head::headers);
             true;
         }
         catch e is Error {
             false;
         };
         if !media {
-            return ResponseHandling(Response(Status.unsupported_media_type, Headers([])));
+            return ResponseHandling(Response(status: Status.unsupported_media_type));
         }
         let source = request.body().reading();
         defer source.close();
@@ -1613,24 +1616,24 @@ object XmlRpcHandling does Handling {
             [];
         }
         catch e is XmlRpcLimitExceeded {
-            return ResponseHandling(Response(Status.content_too_large, Headers([])));
+            return ResponseHandling(Response(status: Status.content_too_large));
         };
         if calls.size() == 0 {
-            return ResponseHandling(Response(Status.bad_request, Headers([])));
+            return ResponseHandling(Response(status: Status.bad_request));
         }
         let waiting = calling.result(calls[0]);
         let result = await waiting;
         let bytes = XmlRpcResultWire(result, limits).bytes();
         ResponseHandling(
             Response(
-                Status.ok,
-                Headers(
+                status: Status.ok,
+                headers: Headers(
                     [
                         Header(HeaderName("Content-Type"), "text/xml; charset=utf-8"),
                         Header(HeaderName("Content-Length"), bytes.size().string())
                     ]
                 ),
-                ByteBody(bytes)
+                body: ByteBody(bytes)
             )
         );
     }

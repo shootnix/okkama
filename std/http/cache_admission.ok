@@ -25,11 +25,11 @@ object CacheAdmissionKey {
         writer.write(
             ByteSnapshot(
                 Latin1Encoded(
-                    MethodName(request.method()).string() + "\n" + request.target().string() + "\n"
+                    MethodName(request::Head::method).string() + "\n" + request::Head::target.string() + "\n"
                 ).bytes()
             )
         );
-        for request.headers().entries() -> field {
+        for request::Head::headers.entries() -> field {
             writer.write(
                 ByteSnapshot(
                     Latin1Encoded(field.name().lowercase() + ":" + field.value() + "\n").bytes()

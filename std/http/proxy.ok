@@ -35,7 +35,7 @@ object Proxied does Exchanging, Closing {
     }
 
     async response(request is Request) is ClientResponse {
-        confirm !request.headers().membership(HeaderName("Proxy-Authorization"))
+        confirm !request::Head::headers.membership(HeaderName("Proxy-Authorization"))
             else throw ProxyAuthorizationConflict.conflict;
         await client.response(request);
     }
