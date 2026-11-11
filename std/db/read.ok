@@ -5,6 +5,7 @@ import "db/value" take DbValue, ObservedDbValue, DbValueKind, InvalidDbValue, Db
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
 import "runtime/db" as native_db;
+import "db/value" take DbInteger, DbDecimal, DbFloating, DbText;
 
 // Narrow input protocol keeps readers independent of the Row implementation.
 role RowValues {
@@ -524,3 +525,49 @@ enum RowValueFailure is Error = (located(
     actual_kind is DbValueKind,
     cause is string
 ));
+
+hidden object ReadTestRow does RowValues {
+    ReadTestRow();
+
+    value(name is string) is DbValue {
+        if name == "n" {
+            DbInteger(BigInt("42"));
+        }
+        else if name == "price" {
+            DbDecimal(Decimal("9.50"));
+        }
+        else if name == "ratio" {
+            DbFloating(0.25);
+        }
+        else if name == "flag" {
+            DbInteger(BigInt("1"));
+        }
+        else {
+            DbText(name);
+        }
+    }
+}
+
+test "a column reader converts one cell strictly and names the column on failure" {
+    let reader = RowReader(ReadTestRow());
+    test.is(reader.int("n"), 42);
+    test.is(reader.integer("n").string(), "42");
+    test.is(reader.decimal("price").string(), "9.5");
+    test.is(reader.floating("ratio"), 0.25);
+    test.is(reader.flag("flag"), true);
+    test.is(reader.text("hello"), "hello");
+    let column = try {
+        reader.int("hello");
+        "";
+    }
+    catch RowValueFailure.located(name, expected, kind, _) {
+        if kind == DbValueKind.text {
+            name + ":" + expected;
+        }
+        else {
+            "?";
+        }
+    };
+    test.is(column, "hello:int");
+    test.is(DbColumnReader(name: "n", origin: DbInteger(BigInt("5"))).cell().kind() == DbValueKind.integer, true);
+}

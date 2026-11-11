@@ -25,3 +25,18 @@ object SqliteScript {
 }
 
 enum InvalidSqliteScript is Error = (invalid);
+
+hidden object NoScripts does SqliteScripting {
+    NoScripts();
+
+    async script(source is string) is Sequencing<Execution> {
+        throw InvalidSqliteScript.invalid;
+    }
+}
+
+test "a script is at most one MiB of UTF-8" {
+    SqliteScript(origin: NoScripts(), source: "SELECT 1;");
+    test.throws(InvalidSqliteScript) {
+        SqliteScript(origin: NoScripts(), source: "-".repeat(1048577));
+    };
+}

@@ -9,6 +9,8 @@ import "encoding/utf" take Utf8Encoded;
 import "db/read" take RowValues, RowReader, DbColumnReader, DbMaybeReader, DbPresenceReader, DbPage;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
+import "db/param" take Param;
+import "db/read" take RowValueFailure;
 
 object Column {
     has index is int;
@@ -355,3 +357,77 @@ enum AmbiguousColumn is Error = (name(name is string));
 enum InvalidRow is Error = (invalid);
 
 enum InvalidRowIndex is Error = (index(index is int));
+
+test "a row reads its cells by name: strict, Maybe and Presence" {
+    let columns = [
+        Column(index: 0, name: "id", declaration: "INTEGER"),
+        Column(index: 1, name: "name", declaration: "TEXT"),
+        Column(index: 2, name: "nick", declaration: "TEXT"),
+        Column(index: 3, name: "data", declaration: "BLOB"),
+        Column(index: 4, name: "on", declaration: "BOOLEAN"),
+    ];
+    let row = Row(columns: columns, values: [Param(7), Param("Ada"), Param(Maybe<string>.none), Param([1.byte()]), Param(true)]);
+    test.is(row.size(), 5);
+    test.is(row.int("id"), 7);
+    test.is(row.integer("id").string(), "7");
+    test.is(row.text("name"), "Ada");
+    test.is(row.bytes("data"), [1.byte()]);
+    test.is(row.boolean("on"), true);
+    test.throws(RowValueFailure) {
+        row.flag("on");
+    };
+    test.throws(RowValueFailure) {
+        row.flag("id");
+    };
+    test.is(Row(columns: [Column(index: 0, name: "f", declaration: "")], values: [Param(1)]).flag("f"), true);
+    test.is(row.item(1).kind() == DbValueKind.text, true);
+    test.is(row.columns().first()::Parts::name, "id");
+    test.is(row.columns().last()::Parts::declaration, "BOOLEAN");
+    test.is(row.maybe("nick").text() == Maybe<string>.none, true);
+    test.is(row.maybe("name").text() else "", "Ada");
+    let absent = match row.presence("alias").text() {
+        case Presence.missing {
+            true;
+        }
+        else {
+            false;
+        }
+    };
+    test.is(absent, true);
+    let empty = match row.presence("nick").text() {
+        case Presence.none {
+            true;
+        }
+        else {
+            false;
+        }
+    };
+    test.is(empty, true);
+    test.throws(MissingColumn) {
+        row.int("alias");
+    };
+    test.throws(RowValueFailure) {
+        row.int("name");
+    };
+    test.throws(InvalidRowIndex) {
+        row.item(9);
+    };
+}
+
+test "a row refuses ambiguous names and mismatched widths" {
+    let twice = Row(
+        columns: [Column(index: 0, name: "id", declaration: ""), Column(index: 1, name: "id", declaration: "")],
+        values: [Param(1), Param(2)],
+    );
+    test.is(twice.item(1).kind() == DbValueKind.integer, true);
+    test.throws(AmbiguousColumn) {
+        twice.int("id");
+    };
+    test.throws(InvalidRow) {
+        Row(columns: [Column(index: 0, name: "id", declaration: "")], values: [Param(1), Param(2)]);
+    };
+    let schema = DbRowSchema(columns: [Column(index: 0, name: "a", declaration: ""), Column(index: 1, name: "b", declaration: "")], limits: DbLimits());
+    test.is(schema.size(), 2);
+    test.is(schema.position("b"), 1);
+    test.is(schema.position("c"), -1);
+}

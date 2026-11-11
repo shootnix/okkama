@@ -31,6 +31,15 @@ import "async/event" take Event;
 import "async/lock" take Lock;
 import "async/scope" take FutureGroup;
 import "io/stream" take Closing;
+import "db/param" take Param;
+import "db/query" take Query, NoRows, TooManyRows, QueryLimitExceeded, InvalidQueryLimit;
+import "db/acquisition" take PortableDbAcquiring;
+import "db/sqlite/blob" take OpenedSqliteBlob;
+import "db/sqlite/script" take SqliteScript;
+import "db/sqlite/backup" take SqliteBackup;
+import "fs/temp" take TemporaryDirectory;
+import "fs/directory" take Directory;
+import "time/clock" take SystemClock;
 
 enum SqliteJournal = (default_mode, delete_mode, wal, memory);
 
@@ -1702,4 +1711,101 @@ test "SQLite rejects contradictory flags and sub-millisecond busy timeouts" {
     catch e is InvalidSqliteOptions {
         true;
     });
+}
+
+async test "queries read one row, maybe a row, a bounded list and a stream" {
+    let connection = await SqliteMemory().connection();
+    defer await connection.settled();
+    defer connection.close();
+    await connection.execution(Statement("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT)"));
+    let inserted = await connection.execution(Statement(text: "INSERT INTO t(name) VALUES (?), (?), (?)", values: [Param("a"), Param("b"), Param("c")]));
+    test.is(inserted.affected_rows().string(), "3");
+    let all = await Query(connection, Statement("SELECT name FROM t ORDER BY id")).all(10);
+    let names is @string = all.map() -> row { row.text("name"); };
+    test.is(names, ["a", "b", "c"]);
+    test.throws(QueryLimitExceeded) {
+        await Query(connection, Statement("SELECT name FROM t")).all(2);
+    };
+    test.throws(InvalidQueryLimit) {
+        await Query(connection, Statement("SELECT name FROM t")).all(-1);
+    };
+    let one = await Query(connection, Statement(text: "SELECT id FROM t WHERE name = ?", values: [Param("b")])).one();
+    test.is(one.int("id"), 2);
+    test.throws(TooManyRows) {
+        await Query(connection, Statement("SELECT id FROM t")).one();
+    };
+    test.throws(NoRows) {
+        await Query(connection, Statement("SELECT id FROM t WHERE id > 9")).one();
+    };
+    let missing = await Query(connection, Statement("SELECT id FROM t WHERE id > 9")).maybe();
+    test.is(missing == Maybe<Row>.none, true);
+    let rows = await Query(connection, Statement("SELECT id FROM t ORDER BY id DESC")).rows();
+    test.is(rows.columns().first()::Parts::name, "id");
+    let first = (await rows.next()) else panic "no first row";
+    test.is(first.int("id"), 3);
+    rows.close();
+    test.is(rows.closed(), true);
+}
+
+async test "prepared statements, transactions and acquisitions" {
+    let connection = await SqliteMemory().connection();
+    defer await connection.settled();
+    defer connection.close();
+    await connection.execution(Statement("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT)"));
+    let insert = await connection.prepared("INSERT INTO t(name) VALUES (?)");
+    await insert.execution([Param("a")]);
+    await insert.execution([Param("b")]);
+    insert.close();
+    test.is(insert.closed(), true);
+    let lookup = await connection.prepared("SELECT name FROM t WHERE id = ?");
+    test.is((await Query(prepared: lookup, values: [Param(2)]).one()).text("name"), "b");
+    lookup.close();
+
+    let undone = await connection.transaction(TransactionOptions());
+    await undone.execution(Statement(text: "INSERT INTO t(name) VALUES (?)", values: [Param("x")]));
+    await undone.rollback();
+    test.is(undone.active(), false);
+    test.throws(TransactionEnded) {
+        await undone.execution(Statement("DELETE FROM t"));
+    };
+    let kept = await connection.transaction(TransactionOptions());
+    await kept.execution(Statement(text: "INSERT INTO t(name) VALUES (?)", values: [Param("c")]));
+    await kept.commit();
+    test.is((await Query(connection, Statement("SELECT count(*) AS n FROM t")).one()).int("n"), 3);
+
+    let full = DbAcquisition(connection: connection, preparation: connection, transactions: connection);
+    let prepared = await full.preparing().prepared("SELECT 1 AS one");
+    test.is((await Query(prepared: prepared, values: []).one()).int("one"), 1);
+    prepared.close();
+}
+
+async test "scripts, blobs and an online backup" {
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "db-sqlite-test-");
+    let connection = await SqliteMemory().connection();
+    defer await connection.settled();
+    defer connection.close();
+    let executions = await SqliteScript(origin: connection, source: "CREATE TABLE b(id INTEGER PRIMARY KEY, data BLOB); INSERT INTO b(data) VALUES (zeroblob(4));").executions();
+    test.is(executions.size(), 2);
+    let blob = await OpenedSqliteBlob(origin: connection, database: "main", table: "b", column: "data", row: BigInt("1"), writable: true).blob();
+    test.is(blob.size(), 4);
+    await blob.write(BigInt("1"), [7.byte(), 8.byte()]);
+    test.is(await blob.bytes(BigInt("0"), 4), [0.byte(), 7.byte(), 8.byte(), 0.byte()]);
+    blob.close();
+    test.is(blob.closed(), true);
+    let target = scratch.path().child("copy.db");
+    let report = await SqliteBackup(origin: connection, target: target, pages: 8, clock: SystemClock(), timeout: Duration(value: 5.rat(), unit: DurationUnit.second)).report();
+    test.is(report.copies().string() == report.total().string(), true);
+    let copy = await SqliteDatabase(path: target, options: SqliteOptions()).connection();
+    test.is((await Query(copy, Statement("SELECT hex(data) AS h FROM b")).one()).text("h"), "00070800");
+    copy.close();
+    await copy.settled();
+    let acquired = await PortableDbAcquiring(SqliteConnector(SqliteDatabase(path: target, options: SqliteOptions()))).acquisition();
+    test.throws(DbFailure) {
+        acquired.preparing();
+    };
+    let found = await Query(acquired.connection(), Statement("SELECT count(*) AS n FROM b")).one();
+    test.is(found.int("n"), 1);
+    acquired.connection().close();
+    await acquired.connection().settled();
+    scratch.close();
 }
