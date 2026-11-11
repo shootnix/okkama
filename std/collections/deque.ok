@@ -28,96 +28,130 @@ import "size" take Sizing;
 // amortized O(1). Traversal preserves insertion order.
 
 object Deque<T> does Iterating<T>, Sizing {
+    has values is Iterating<T>;
     has beginning is List<T>;
     has ending is List<T>;
     has amount is int;
+    has built is bool;
 
     Deque(values is Iterating<T>) {
-        let parts = BalancedDeque(values: values).parts();
-        beginning = parts.front();
-        ending = parts.back();
-        amount = parts.size();
+        self.values = values;
+        let empty is List<T> = EmptyList();
+        beginning = empty;
+        ending = empty;
+        amount = 0;
+        built = false;
     }
 
+    // The two ends as they are; the actions that make a deque pass them
+    // already balanced.
     Deque(front is List<T>, back is List<T>, size is int) {
-        let parts = NormalizedDeque(
-            front: front,
-            back: back,
-            size: size,
-        ).parts();
-        beginning = parts.front();
-        ending = parts.back();
-        amount = parts.size();
+        let nothing is @T = [];
+        values = nothing;
+        beginning = front;
+        ending = back;
+        amount = size;
+        built = true;
     }
 
     cursor() is Cursor<T> {
-        DequeItems(front: beginning, back: ending).cursor();
+        let parts = self.parts();
+        DequeItems(front: parts.front(), back: parts.back()).cursor();
     }
 
     size() is int {
-        amount;
+        self.parts().size();
     }
 
     item(index is int) is T {
-        confirm index >= 0 && index < amount
+        let parts = self.parts();
+        confirm index >= 0 && index < parts.size()
             else throw OutOfRange.because("deque index is outside the sequence");
-        if index < beginning.size() {
-            Dropped(origin: beginning, count: index).cursor().item();
+        if index < parts.front().size() {
+            Dropped(origin: parts.front(), count: index).cursor().item();
         }
         else {
             Dropped(
-                origin: ending,
-                count: amount - index - 1,
+                origin: parts.back(),
+                count: parts.size() - index - 1,
             ).cursor().item();
         }
     }
 
     first() is T {
-        confirm amount > 0 else throw EmptyDequeAccess.operation("first");
-        if beginning.size() > 0 {
-            beginning.first();
+        let parts = self.parts();
+        confirm parts.size() > 0 else throw EmptyDequeAccess.operation("first");
+        if parts.front().size() > 0 {
+            parts.front().first();
         }
         else {
-            ending.first();
+            parts.back().first();
         }
     }
 
     last() is T {
-        confirm amount > 0 else throw EmptyDequeAccess.operation("last");
-        if ending.size() > 0 {
-            ending.first();
+        let parts = self.parts();
+        confirm parts.size() > 0 else throw EmptyDequeAccess.operation("last");
+        if parts.back().size() > 0 {
+            parts.back().first();
         }
         else {
-            beginning.first();
+            parts.front().first();
         }
     }
 
     prefix(value is T) is Deque<T> {
-        Deque(front: beginning.prefix(value), back: ending, size: amount + 1);
+        let parts = self.parts();
+        self.balanced(parts.front().prefix(value), parts.back(), parts.size() + 1);
     }
 
     suffix(value is T) is Deque<T> {
-        Deque(front: beginning, back: ending.prefix(value), size: amount + 1);
+        let parts = self.parts();
+        self.balanced(parts.front(), parts.back().prefix(value), parts.size() + 1);
     }
 
     tail() is Deque<T> {
-        confirm amount > 0 else throw EmptyDequeAccess.operation("tail");
-        if beginning.size() > 0 {
-            Deque(front: beginning.tail(), back: ending, size: amount - 1);
+        let parts = self.parts();
+        confirm parts.size() > 0 else throw EmptyDequeAccess.operation("tail");
+        if parts.front().size() > 0 {
+            self.balanced(parts.front().tail(), parts.back(), parts.size() - 1);
         }
         else {
-            Deque(front: beginning, back: ending.tail(), size: amount - 1);
+            self.balanced(parts.front(), parts.back().tail(), parts.size() - 1);
         }
     }
 
     body() is Deque<T> {
-        confirm amount > 0 else throw EmptyDequeAccess.operation("body");
-        if ending.size() > 0 {
-            Deque(front: beginning, back: ending.tail(), size: amount - 1);
+        let parts = self.parts();
+        confirm parts.size() > 0 else throw EmptyDequeAccess.operation("body");
+        if parts.back().size() > 0 {
+            self.balanced(parts.front(), parts.back().tail(), parts.size() - 1);
         }
         else {
-            Deque(front: beginning.tail(), back: ending, size: amount - 1);
+            self.balanced(parts.front().tail(), parts.back(), parts.size() - 1);
         }
+    }
+
+    // A deque of these ends, rebalanced when one of them ran out.
+    hidden balanced(front is List<T>, back is List<T>, size is int) is Deque<T> {
+        let parts = NormalizedDeque(front: front, back: back, size: size).parts();
+        Deque(front: parts.front(), back: parts.back(), size: parts.size());
+    }
+
+    // The ends: given, or split from the values on the first question.
+    hidden parts() is DequeParts<T> {
+        if built {
+            DequeParts(front: beginning, back: ending, size: amount);
+        }
+        else {
+            self.split();
+        }
+    }
+
+    // The values split into two balanced ends, once (#491).
+    hidden split() is DequeParts<T> {
+        memo let parts = BalancedDeque(values: values).parts();
+        parts;
     }
 }
 

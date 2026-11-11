@@ -33,42 +33,62 @@ import "size" take Sizing;
 // empty heap throw EmptySequence.
 
 object Heap<T: Comparing<T>> does Sizing {
+    has values is Iterating<T>;
     has origin is HeapRepresenting<T>;
+    has built is bool;
 
     Heap(values is Iterating<T>) {
-        let empty is HeapRepresenting<T> = EmptyHeapTree();
-        origin = values.reduce(HeapBuilding(root: empty)) -> building, value {
-            building.addition(value);
-        }.root();
+        self.values = values;
+        origin = EmptyHeapTree();
+        built = false;
     }
 
     Heap(root is HeapRepresenting<T>, size is int) {
-        confirm size == root.size()
-            else throw InvalidArgument.because("heap representation size is inconsistent");
+        let nothing is @T = [];
+        values = nothing;
         origin = root;
+        built = true;
     }
 
     size() is int {
-        origin.size();
+        self.tree().size();
     }
 
     top() is T {
-        origin.top();
+        self.tree().top();
     }
 
     remainder() is Heap<T> {
-        let following = origin.remainder();
+        let following = self.tree().remainder();
         Heap(root: following, size: following.size());
     }
 
     addition(value is T) is Heap<T> {
         let empty is HeapRepresenting<T> = EmptyHeapTree();
-        let following = origin.combination(HeapTreeNode(
+        let following = self.tree().combination(HeapTreeNode(
             value: value,
             left: empty,
             right: empty,
         ));
         Heap(root: following, size: following.size());
+    }
+
+    // The tree: given, or built from the values on the first question.
+    hidden tree() is HeapRepresenting<T> {
+        if built {
+            origin;
+        }
+        else {
+            self.planted();
+        }
+    }
+
+    // The tree of the values, built once (#491).
+    hidden planted() is HeapRepresenting<T> {
+        memo let tree = values.reduce(HeapBuilding(root: origin)) -> building, value {
+            building.addition(value);
+        }.root();
+        tree;
     }
 }
 

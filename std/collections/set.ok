@@ -102,27 +102,33 @@ object KeyedSet<T> does Set<T>, Iterating<T>, Sizing {
 }
 
 object OrderedSet<T> does Set<T>, Iterating<T>, Sizing {
-    has origin is List<T>;
+    has origin is Iterating<T>;
 
     OrderedSet(values is Iterating<T>) {
-        origin = DistinctList(values: values).list();
+        origin = values;
     }
 
     cursor() is Cursor<T> {
-        origin.cursor();
+        self.distinct().cursor();
     }
 
     size() is int {
-        origin.size();
+        self.distinct().size();
     }
 
     membership(value is T) is bool {
-        for origin -> item {
+        for self.distinct() -> item {
             if item == value {
                 return true;
             }
         }
         false;
+    }
+
+    // The values without repeats, in first-occurrence order (#491).
+    hidden distinct() is List<T> {
+        memo let kept = DistinctList(values: origin).list();
+        kept;
     }
 
     addition(value is T) is Set<T> {

@@ -9,8 +9,8 @@ import "size" take Sizing;
 
 // Stable ordered sequences and binary-search projections.
 //
-// Sorted materializes an Iterating source and orders it by the value's own
-// Comparing<T> implementation:
+// Sorted orders an Iterating source by the value's own Comparing<T>
+// implementation. It sorts on the first question and keeps the order:
 //
 //     let empty is List<int> = EmptyList();
 //     let numbers = Sorted(origin: empty.prefix(2).prefix(1).prefix(3));
@@ -46,74 +46,90 @@ import "size" take Sizing;
 // that precondition on every O(log n) query.
 
 object Sorted<T: Comparing<T>> does Sequencing<T>, Iterating<T>, Sizing {
-    has origin is @T;
+    has origin is Iterating<T>;
 
     Sorted(origin is Iterating<T>) {
-        let materialized is @T = origin.map() -> value {
-            value;
-        };
-        let ordered is BulkOrdering<T> = BulkOrdering(values: materialized);
-        self.origin = ordered.items();
+        self.origin = origin;
     }
 
     cursor() is Cursor<T> {
-        OrderedCursor(values: origin, position: 0);
+        OrderedCursor(values: self.ordered(), position: 0);
     }
 
     size() is int {
-        origin.size();
+        self.ordered().size();
     }
 
     item(index is int) is T {
-        confirm index >= 0 && index < self.size()
+        let ordered = self.ordered();
+        confirm index >= 0 && index < ordered.size()
             else throw OutOfRange.because("ordered index is outside the sequence");
-        origin[index];
+        ordered[index];
     }
 
     first() is T {
-        confirm self.size() > 0 else throw EmptySequence.empty;
-        origin[0];
+        let ordered = self.ordered();
+        confirm ordered.size() > 0 else throw EmptySequence.empty;
+        ordered[0];
     }
 
     last() is T {
-        confirm self.size() > 0 else throw EmptySequence.empty;
-        origin[self.size() - 1];
+        let ordered = self.ordered();
+        confirm ordered.size() > 0 else throw EmptySequence.empty;
+        ordered[ordered.size() - 1];
+    }
+
+    // The values in order: sorted on the first question, then kept (#491).
+    hidden ordered() is @T {
+        memo let sorted = BulkOrdering(values: origin.map() -> value {
+            value;
+        }).items();
+        sorted;
     }
 }
 
 object SortedBy<T, K: Comparing<K>> does Sequencing<T>, Iterating<T>, Sizing {
-    has origin is @Ranked<T, K>;
+    has origin is Iterating<T>;
+    has key is (T) is K;
 
     SortedBy(origin is Iterating<T>, key is (T) is K) {
-        let ranked is @Ranked<T, K> = origin.map() -> value {
-            Ranked(item: value, key: key(value));
-        };
-        let ordered is BulkOrdering<Ranked<T, K>> = BulkOrdering(values: ranked);
-        self.origin = ordered.items();
+        self.origin = origin;
+        self.key = key;
     }
 
     cursor() is Cursor<T> {
-        RankedCursor(values: origin, position: 0);
+        RankedCursor(values: self.ranked(), position: 0);
     }
 
     size() is int {
-        origin.size();
+        self.ranked().size();
     }
 
     item(index is int) is T {
-        confirm index >= 0 && index < self.size()
+        let ranked = self.ranked();
+        confirm index >= 0 && index < ranked.size()
             else throw OutOfRange.because("ordered index is outside the sequence");
-        origin[index].item();
+        ranked[index].item();
     }
 
     first() is T {
-        confirm self.size() > 0 else throw EmptySequence.empty;
-        origin[0].item();
+        let ranked = self.ranked();
+        confirm ranked.size() > 0 else throw EmptySequence.empty;
+        ranked[0].item();
     }
 
     last() is T {
-        confirm self.size() > 0 else throw EmptySequence.empty;
-        origin[self.size() - 1].item();
+        let ranked = self.ranked();
+        confirm ranked.size() > 0 else throw EmptySequence.empty;
+        ranked[ranked.size() - 1].item();
+    }
+
+    // The values ranked by their keys, each key taken once (#491).
+    hidden ranked() is @Ranked<T, K> {
+        memo let sorted = BulkOrdering(values: origin.map() -> value {
+            Ranked(item: value, key: key(value));
+        }).items();
+        sorted;
     }
 }
 

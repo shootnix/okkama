@@ -2,6 +2,7 @@ module numbers/bigrational v1.0.0;
 
 import "compare" take Comparing, Order;
 import "numbers/bigint" take BigInt;
+import "runtime/bigint" take bigint_sign, bigint_gcd, bigint_quotient, bigint_difference;
 
 // Canonical exact ratio: positive denominator, gcd=1, unique zero 0/1.
 //
@@ -11,17 +12,21 @@ import "numbers/bigint" take BigInt;
 object BigRational does Comparing<BigRational> {
     has upper, lower is BigInt;
 
+    // The ratio is reduced here, with the runtime's integer arithmetic on the
+    // digits, so equal ratios have equal fields and compare equal.
     BigRational(numerator is BigInt, denominator is BigInt) {
-        confirm denominator.sign() != 0 else throw ZeroBigRationalDenominator.zero;
-        let common = numerator.gcd(denominator);
-        let divisor = if denominator.sign() < 0 {
-            (BigInt("0") - common);
+        let top = numerator::Digits::text;
+        let bottom = denominator::Digits::text;
+        confirm bigint_sign(bottom) != 0 else throw ZeroBigRationalDenominator.zero;
+        let common = bigint_gcd(top, bottom);
+        let divisor = if bigint_sign(bottom) < 0 {
+            bigint_difference("0", common);
         }
         else {
             common;
         };
-        upper = (numerator / divisor);
-        lower = (denominator / divisor);
+        upper = BigInt(bigint_quotient(top, divisor));
+        lower = BigInt(bigint_quotient(bottom, divisor));
     }
 
     numerator() is BigInt {

@@ -421,6 +421,18 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     The compiler's runtime helpers for `Within` and `Before` read
     `Duration::Span::seconds`; a helper entry `Cap::field` now names a cap
     field.
+  - Objects that build a representation take their input in the constructor
+    and build it on the first question, kept with `memo let` (#491):
+    `Sorted`, `SortedBy`, `Heap`, `Deque`, `OrderedSet`, `Frequencies`,
+    `KeyedFrequencies`. Their API is unchanged. As views they now compare by
+    their input: `Sorted([2, 1]) == Sorted([1, 2])` is `false`, where it was
+    `true`. Nothing in std, the tests or conformance relied on it.
+    `BigRational` still reduces in its constructor, with the runtime's
+    integer natives over the digits, so `2/4 == 1/2` holds. `BigInt` shows
+    its digits through the cap `Digits`.
+    - Measured: 100 000 binary searches over a `Sorted` of 100 000 values
+      take 0.15 s on Tomato and 0.36 s on the JVM before and after, and 1.68 s
+      → 1.84 s on the IR engine (one more call per `item()`).
   - Constructors no longer call other objects (the owner's rule, see
     `docs/std-principles.md` §2). `Rfc3339(text)` keeps the text and reads
     it in `instant()` and `string()`. `Joined` walks its values in

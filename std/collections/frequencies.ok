@@ -64,25 +64,22 @@ object Frequency<T> {
 }
 
 object Frequencies<T> does Iterating<Frequency<T>>, Sizing {
-    has origin is List<Frequency<T>>;
-    has quantity is int;
+    has values is Iterating<T>;
 
     Frequencies(values is Iterating<T>) {
-        let tally = FrequencyTally(values: values);
-        origin = tally.frequencies();
-        quantity = tally.total();
+        self.values = values;
     }
 
     cursor() is Cursor<Frequency<T>> {
-        origin.cursor();
+        self.counted().cursor();
     }
 
     size() is int {
-        origin.size();
+        self.counted().size();
     }
 
     amount(value is T) is int {
-        let cursor = origin.cursor();
+        let cursor = self.counted().cursor();
         if !cursor.available() {
             0;
         }
@@ -95,7 +92,14 @@ object Frequencies<T> does Iterating<Frequency<T>>, Sizing {
     }
 
     total() is int {
+        memo let quantity = FrequencyTally(values: values).total();
         quantity;
+    }
+
+    // One Frequency per distinct value, counted on the first question (#491).
+    hidden counted() is List<Frequency<T>> {
+        memo let kept = FrequencyTally(values: values).frequencies();
+        kept;
     }
 }
 
@@ -105,22 +109,14 @@ object Frequencies<T> does Iterating<Frequency<T>>, Sizing {
 //     let counts = KeyedFrequencies(values: ["red", "blue", "red"]);
 //     counts.amount("red");          // 2; traversal: blue:1, red:2
 object KeyedFrequencies<T> does Iterating<Frequency<T>>, Sizing {
-    has counts is %T:int;
-    has quantity is int;
+    has values is Iterating<T>;
 
     KeyedFrequencies(values is Iterating<T>) {
-        let empty is %T:int = [:];
-        let items = values.map() -> value {
-            value;
-        };
-        counts = items.reduce(empty) -> found, value {
-            let seen = found[value] else 0;
-            found + [value: seen + 1];
-        };
-        quantity = items.size();
+        self.values = values;
     }
 
     cursor() is Cursor<Frequency<T>> {
+        let counts = self.counts();
         let frequencies = counts.keys().map() -> key {
             Frequency(item: key, amount: counts[key]);
         };
@@ -128,15 +124,27 @@ object KeyedFrequencies<T> does Iterating<Frequency<T>>, Sizing {
     }
 
     size() is int {
-        counts.size();
+        self.counts().size();
     }
 
     amount(value is T) is int {
-        counts[value] else 0;
+        self.counts()[value] else 0;
     }
 
     total() is int {
+        memo let quantity = values.map() -> value {
+            value;
+        }.size();
         quantity;
+    }
+
+    // Each distinct value with its count, in key order (#491).
+    hidden counts() is %T:int {
+        memo let kept is %T:int = values.reduce([:]) -> found, value {
+            let seen = found[value] else 0;
+            found + [value: seen + 1];
+        };
+        kept;
     }
 }
 

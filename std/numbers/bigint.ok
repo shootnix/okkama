@@ -64,6 +64,13 @@ object BigInt does Comparing<BigInt>, Adding<BigInt, BigInt>, Subtracting<BigInt
         origin;
     }
 
+    // The canonical decimal digits, already checked by the constructor.
+    cap Digits {
+        text is string {
+            origin;
+        }
+    }
+
     // a + b
     plus(other is BigInt) is BigInt {
         BigInt(bigint_sum(origin, other.string()));
