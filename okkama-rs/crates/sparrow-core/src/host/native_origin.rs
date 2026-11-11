@@ -164,7 +164,12 @@ impl Heap {
                 _ => return Err(Error("expected an origin native object".into())),
             },
             Type::Any => self.any_to_origin(slot)?,
-            Type::Rat | Type::Void => return Err(Error("native argument type is not bridged".into())),
+            // A Tomato rat is a payload around the origin's own Rat (#489).
+            Type::Rat => match self.core().payload::<crate::ops::Rational>(slot.bits) {
+                Some(rational) => Value::Rat(Rc::new(rational.0.clone())),
+                None => return Err(Error("expected a rat".into())),
+            },
+            Type::Void => return Err(Error("native argument type is not bridged".into())),
         })
     }
 
@@ -204,6 +209,9 @@ impl Heap {
                     entries.push((self.from_origin(k.to_value(), key)?, self.from_origin(v.clone(), item)?));
                 }
                 self.map_new(entries.into_iter())?
+            }
+            (Type::Rat, Value::Rat(rat)) => {
+                Slot { tag: OBJECT, bits: self.core_mut().allocate_payload(Box::new(crate::ops::Rational((*rat).clone()))) }
             }
             (Type::Handle(_), value) => Slot { tag: HANDLE, bits: self.handles.allocate(Handle::Origin(value))? },
             (ty, value) => return Err(Error(format!("native result {value:?} does not match {ty:?}"))),

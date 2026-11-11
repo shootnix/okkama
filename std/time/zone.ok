@@ -206,3 +206,75 @@ enum UnknownTimeZone is Error = (name(name is string));
 enum InvalidTimeZone is Error = (because(message is string));
 
 enum MissingLocalTime is Error = (zone(name is string));
+
+test "local times resolve to instants through a named zone" {
+    let at = (year is int, month is int, day is int, hour is int, minute is int) is LocalDateTime {
+        LocalDateTime(
+            date: Date(year: year, month: month, day: day),
+            time: TimeOfDay(hour: hour, minute: minute, second: 0, nanosecond: 0),
+        );
+    };
+    let unix = (instant is Instant) is rat { instant.unix_duration().seconds(); };
+    let york = Zone("America/New_York");
+    test.is(unix(Zoned(local: at(2026, 7, 1, 12, 0), zone: york, fold: Fold.earlier).instant()), 1782921600.rat());
+    let berlin = Zone("Europe/Berlin");
+    test.is(unix(Zoned(local: at(2026, 1, 15, 12, 0), zone: berlin, fold: Fold.later).instant()), 1768474800.rat());
+    // 02:30 happens twice when summer time ends, and never when it starts.
+    test.is(unix(Zoned(local: at(2026, 10, 25, 2, 30), zone: berlin, fold: Fold.earlier).instant()), 1792888200.rat());
+    test.is(unix(Zoned(local: at(2026, 10, 25, 2, 30), zone: berlin, fold: Fold.later).instant()), 1792891800.rat());
+    test.is(
+        try {
+            Zoned(local: at(2026, 3, 29, 2, 30), zone: berlin, fold: Fold.earlier).instant();
+            "found";
+        }
+        catch MissingLocalTime.zone(name) {
+            name;
+        },
+        "Europe/Berlin"
+    );
+}
+
+test "a zone shows an instant as local time with its offset" {
+    let summer = Instant(origin: Duration(value: 1792888200.rat(), unit: DurationUnit.second));
+    let winter = Instant(origin: Duration(value: 1792891800.rat(), unit: DurationUnit.second));
+    let berlin = Zone("Europe/Berlin");
+    test.is(berlin.name(), "Europe/Berlin");
+    let before = ZonedDateTime(instant: summer, zone: berlin);
+    test.is(before.local_datetime().time().hour(), 2);
+    test.is(before.offset().seconds(), 7200.rat());
+    test.is(ZoneObservation(origin: before).abbreviation(), "CEST");
+    test.ok(ZoneObservation(origin: before).daylight_saving());
+    let after = ZonedDateTime(instant: winter, zone: berlin);
+    test.is(after.local_datetime().time().hour(), 2);
+    test.is(after.offset().seconds(), 3600.rat());
+    test.is(berlin.abbreviation(winter), "CET");
+    test.ok(!berlin.daylight_saving(winter));
+    test.is(TimeZoneDatabaseVersion().string(), "2026c");
+}
+
+test "fixed zones have one offset and refuse bad ones" {
+    let plus_five = FixedZone(name: "UTC+5", offset: Duration(value: 5.rat(), unit: DurationUnit.hour));
+    let instant = Instant(origin: Duration(value: 0.rat(), unit: DurationUnit.second));
+    test.is(plus_five.offset(instant).seconds(), 18000.rat());
+    test.is(plus_five.abbreviation(instant), "UTC+5");
+    test.ok(!plus_five.daylight_saving(instant));
+    test.is(ZonedDateTime(instant: instant, zone: plus_five).local_datetime().time().hour(), 5);
+    test.is(
+        try {
+            FixedZone(name: "far", offset: Duration(value: 25.rat(), unit: DurationUnit.hour)).name();
+        }
+        catch error is InvalidTimeZone {
+            "refused";
+        },
+        "refused"
+    );
+    test.is(
+        try {
+            Zone("Mars/Base").name();
+        }
+        catch UnknownTimeZone.name(name) {
+            "unknown " + name;
+        },
+        "unknown Mars/Base"
+    );
+}

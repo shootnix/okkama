@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.time.zones",
+  "title": "Named time zones: folds, gaps, offsets and abbreviations",
+  "purpose": "Verify the public library contract of time/zone against the bundled tzdata, with values derived independently; every engine must bridge the zone natives (#489).",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.TIME.ZONE",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - database version\nok 2 - winter local time\nok 3 - fold earlier\nok 4 - fold later\nok 5 - gap\nok 6 - summer local view\nok 7 - summer offset\nok 8 - summer abbreviation\nok 9 - winter abbreviation\nok 10 - winter is not daylight saving\nchecks: 10, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/time/zone.ok",
+    "IANA tzdata 2026c"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for the std review (#352) after #489",
+    "expected_basis": "Python zoneinfo, Europe/Berlin: 2026-01-15 12:00 CET is 11:00Z; 2026-10-25 02:30 occurs twice, 00:30Z (CEST, +2 h) and 01:30Z (CET, no daylight saving); 2026-03-29 02:30 falls in the spring-forward gap."
+  },
+  "status": "mandatory"
+}
