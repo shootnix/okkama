@@ -3,10 +3,13 @@ module logging/named v1.0.0;
 import "logging/level" take LogLevel;
 import "logging/name" take LogName, ChildLogName;
 import "logging/field" take LogFields, EmptyLogFields, CombinedLogFields;
-import "logging/record" take LogContext, LogRecord;
-import "logging/write" take LogWriting;
-import "time/clock" take Timing;
+import "logging/record" take LogContext, LogRecord, InvalidLogProcess;
+import "logging/write" take LogWriting, CollectedLogs;
+import "time/clock" take Timing, Instant;
 import "runtime/process" take process_current_id;
+import "json" take JsonField;
+import "testing/time" take ManualClock;
+import "time/duration" take Duration, DurationUnit;
 
 role LogProcessReading {
     id() is int;
@@ -90,4 +93,28 @@ object NamedLogging does Logging {
         };
         destination.write(record);
     }
+}
+
+test "a named logger stamps time, name and process, and merges its fields" {
+    let start = Instant(Duration(value: 1700000000.rat(), unit: DurationUnit.second));
+    let collected = CollectedLogs();
+    let logging = NamedLogging(
+        name: LogName(["app"]),
+        destination: collected,
+        clock: ManualClock(start),
+        fields: LogFields([JsonField("svc", "api")]),
+    );
+    logging.log(LogLevel.info, "started");
+    logging.log(LogLevel.warning, "slow", LogFields([JsonField("ms", 900)]));
+    logging.log(LogLevel.error, "down", EmptyLogFields().fields(), InvalidLogProcess.invalid);
+    logging.child("db").log(LogLevel.debug, "query");
+    let records = collected.records();
+    test.is(records.size(), 4);
+    test.ok(records.item(0).time() == start);
+    test.is(records.item(0).context().name().string(), "app");
+    test.ok(records.item(0).context().process() > 0);
+    test.is(records.item(1).context().fields().values().string(), "{\"svc\":\"api\",\"ms\":900}");
+    test.ok(records.item(2).has_cause());
+    test.is(records.item(3).context().name().string(), "app.db");
+    test.is(logging.name().string(), "app");
 }

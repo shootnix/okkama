@@ -2,10 +2,13 @@ module logging/filter v1.0.0;
 
 import "logging/name" take LogName;
 import "logging/level" take LogLevel, LogLevelOrder;
-import "logging/record" take LogRecord;
-import "logging/write" take LogWriting;
+import "logging/record" take LogRecord, LogContext;
+import "logging/write" take LogWriting, CollectedLogs;
 import "collections/sequence" take Sequencing;
 import "compare" take Order;
+import "logging/field" take LogFields;
+import "time/clock" take Instant;
+import "time/duration" take Duration, DurationUnit;
 
 role LogAllowing {
     allowed(name is LogName, level is LogLevel) is bool;
@@ -123,3 +126,29 @@ hidden object EnabledLog {
 }
 
 enum InvalidLogThreshold is Error = (invalid);
+
+test "thresholds: the most specific override wins; allowed logs drop the rest" {
+    let thresholds = LevelThresholds(
+        fallback: LogLevel.warning,
+        overrides: [LevelOverride(name: LogName(["app", "db"]), level: LogLevel.debug)],
+    );
+    test.ok(!thresholds.allowed(LogName(["app"]), LogLevel.info));
+    test.ok(thresholds.allowed(LogName(["app"]), LogLevel.error));
+    test.ok(thresholds.allowed(LogName(["app", "db"]), LogLevel.debug));
+    test.ok(thresholds.allowed(LogName(["app", "db", "pool"]), LogLevel.debug));
+    test.ok(!thresholds.allowed(LogName(["app", "http"]), LogLevel.debug));
+    let collected = CollectedLogs();
+    let allowed = AllowedLogs(origin: collected, allowing: thresholds);
+    for [[LogLevel.info, LogLevel.error]] -> pair {
+        for pair -> level {
+            let name = LogName(["app"]);
+            allowed.write(LogRecord(
+        occurred: Instant(Duration(value: 0.rat(), unit: DurationUnit.second)),
+        level: level,
+        message: "m",
+        context: LogContext(name: name, fields: LogFields([]), process: 1),
+    ));
+        }
+    }
+    test.is(collected.size(), 1);
+}

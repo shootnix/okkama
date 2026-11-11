@@ -1,13 +1,16 @@
 module logging/line v1.0.0;
 
-import "logging/record" take LogRecord;
-import "logging/level" take LogLevelName;
+import "logging/record" take LogRecord, LogContext, InvalidLogProcess;
+import "logging/level" take LogLevelName, LogLevel;
 import "json" take Json, JsonField, ParsedJson;
-import "time/zone" take TimeZone;
+import "time/zone" take TimeZone, FixedZone;
 import "time/duration" take Duration, DurationUnit;
 import "time/rfc3339" take Rfc3339;
 import "encoding/utf" take Utf8Encoded;
 import "runtime/unicode_character";
+import "logging/field" take LogFields;
+import "logging/name" take LogName;
+import "time/clock" take Instant;
 
 object TextLogLine {
     has origin is LogRecord;
@@ -142,3 +145,15 @@ hidden object PhysicalLogLine {
 }
 
 enum LogLineLimit is Error = (exceeded);
+
+test "a record is one physical line of text or JSON, quotes escaped" {
+    let record = LogRecord(
+        occurred: Instant(Duration(value: 1700000000.rat(), unit: DurationUnit.second)),
+        level: LogLevel.warning,
+        message: "slow \"query\"",
+        context: LogContext(name: LogName(["app", "db"]), fields: LogFields([JsonField("ms", 900)]), process: 7),
+        cause: InvalidLogProcess.invalid,
+    );
+    test.is(TextLogLine(origin: record, zone: FixedZone(name: "UTC", offset: Duration(value: 0.rat(), unit: DurationUnit.second))).string(), "2023-11-14T22:13:20Z level=WARNING name=\"app.db\" process=7 message=\"slow \\\"query\\\"\" fields={\"ms\":900} cause=\"InvalidLogProcess.invalid\"");
+    test.is(JsonLogLine(record).string(), "{\"time\":\"2023-11-14T22:13:20Z\",\"level\":\"WARNING\",\"name\":\"app.db\",\"process\":7,\"message\":\"slow \\\"query\\\"\",\"fields\":{\"ms\":900},\"cause\":\"InvalidLogProcess.invalid\"}");
+}

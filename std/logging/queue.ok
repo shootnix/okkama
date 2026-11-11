@@ -1,11 +1,16 @@
 module logging/queue v1.0.0;
 
-import "logging/write" take LogWriting, LogDeliveryFailure;
-import "logging/record" take LogRecord;
+import "logging/write" take LogWriting, LogDeliveryFailure, CollectedLogs, LogCollectionLimit;
+import "logging/record" take LogRecord, LogContext;
+import "logging/name" take LogName;
+import "logging/level" take LogLevel;
+import "logging/field" take LogFields;
+import "time/clock" take Instant;
+import "time/duration" take Duration, DurationUnit;
 import "collections/deque" take Deque;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
-import "async/scope" take Supervising;
+import "async/scope" take Supervising, FutureScope;
 import "numbers/bigint" take BigInt;
 import "compare" take Order;
 import "io/stream" take Closing;
@@ -299,3 +304,180 @@ enum ClosedLogQueue is Error = (closed);
 enum LogQueueFull is Error = (full);
 
 enum LogQueueCancelled is Error = (cancelled);
+
+hidden object GatedLogDelivery does LogDelivering {
+    has sink is LogWriting;
+    has entered, gate is Event;
+
+    GatedLogDelivery(sink is LogWriting) {
+        self.sink = sink;
+        entered = Event();
+        gate = Event();
+    }
+
+    async deliver(record is LogRecord) is int {
+        entered.set();
+        await gate.wait();
+        sink.write(record);
+        0;
+    }
+
+    async started() is void {
+        await entered.wait();
+    }
+
+    open() is void {
+        gate.set();
+    }
+}
+
+hidden object QueuedRecord {
+    has message is string;
+
+    QueuedRecord(message is string) {
+        self.message = message;
+    }
+
+    record() is LogRecord {
+        LogRecord(
+            occurred: Instant(Duration(value: 0.rat(), unit: DurationUnit.second)),
+            level: LogLevel.info,
+            message: message,
+            context: LogContext(name: LogName(["queue"]), fields: LogFields([]), process: 1),
+        );
+    }
+}
+
+hidden object QueueRun {
+    has delivery is GatedLogDelivery;
+    has overflow is LogOverflow;
+    has rejected, refused is Atomic<bool>;
+    has dropped is Atomic<string>;
+
+    QueueRun(delivery is GatedLogDelivery, overflow is LogOverflow) {
+        self.delivery = delivery;
+        self.overflow = overflow;
+        rejected = Atomic(false);
+        refused = Atomic(false);
+        dropped = Atomic("");
+    }
+
+    async run(scope is Supervising<int>) is int {
+        let logs = QueuedLogs(
+            origin: delivery,
+            options: LogQueueOptions(capacity: 2, overflow: overflow),
+            scope: scope,
+        );
+        logs.write(QueuedRecord("1").record());
+        await delivery.started();
+        logs.write(QueuedRecord("2").record());
+        logs.write(QueuedRecord("3").record());
+        try {
+            logs.write(QueuedRecord("4").record());
+        }
+        catch LogQueueFull.full {
+            rejected.replace(true);
+        }
+        delivery.open();
+        await logs.drain();
+        dropped.replace(logs.dropped_records().string());
+        logs.close();
+        try {
+            logs.write(QueuedRecord("5").record());
+        }
+        catch ClosedLogQueue.closed {
+            refused.replace(logs.closed());
+        }
+        0;
+    }
+
+    rejected() is bool {
+        rejected.value();
+    }
+
+    refused() is bool {
+        refused.value();
+    }
+
+    dropped() is string {
+        dropped.value();
+    }
+}
+
+hidden object FailingQueueRun {
+    has reported is Atomic<bool>;
+
+    FailingQueueRun() {
+        reported = Atomic(false);
+    }
+
+    async run(scope is Supervising<int>) is int {
+        let logs = QueuedLogs(origin: CollectedLogs(capacity: 0), capacity: 4, overflow: LogOverflow.reject, scope: scope);
+        logs.write(QueuedRecord("lost").record());
+        try {
+            await logs.drain();
+        }
+        catch error is LogCollectionLimit {
+            reported.replace(logs.closed());
+        }
+        0;
+    }
+
+    reported() is bool {
+        reported.value();
+    }
+}
+
+test "queue options keep their bounds" {
+    test.is(LogQueueOptions(capacity: 1, overflow: LogOverflow.reject).capacity(), 1);
+    test.is(LogQueueOptions(capacity: 65536, overflow: LogOverflow.drop_oldest).overflow() == LogOverflow.drop_oldest, true);
+    test.throws(InvalidLogQueue) {
+        LogQueueOptions(capacity: 0, overflow: LogOverflow.reject);
+    };
+    test.throws(InvalidLogQueue) {
+        LogQueueOptions(capacity: 65537, overflow: LogOverflow.reject);
+    };
+}
+
+async test "a full queue rejects the record" {
+    let sink = CollectedLogs();
+    let run = QueueRun(delivery: GatedLogDelivery(sink), overflow: LogOverflow.reject);
+    let scope is FutureScope<int, int> = FutureScope(action: run.run);
+    test.is(await scope.outcome(), 0);
+    test.is(run.rejected(), true);
+    test.is(run.dropped(), "1");
+    test.is(run.refused(), true);
+    let messages is @string = sink.records().map() -> record { record.message(); };
+    test.is(messages, ["1", "2", "3"]);
+}
+
+async test "a full queue drops the newest record" {
+    let sink = CollectedLogs();
+    let run = QueueRun(delivery: GatedLogDelivery(sink), overflow: LogOverflow.drop_newest);
+    let scope is FutureScope<int, int> = FutureScope(action: run.run);
+    test.is(await scope.outcome(), 0);
+    test.is(run.rejected(), false);
+    test.is(run.dropped(), "1");
+    let messages is @string = sink.records().map() -> record { record.message(); };
+    test.is(messages, ["1", "2", "3"]);
+}
+
+async test "a full queue drops the oldest record" {
+    let sink = CollectedLogs();
+    let run = QueueRun(delivery: GatedLogDelivery(sink), overflow: LogOverflow.drop_oldest);
+    let scope is FutureScope<int, int> = FutureScope(action: run.run);
+    test.is(await scope.outcome(), 0);
+    test.is(run.rejected(), false);
+    test.is(run.dropped(), "1");
+    let messages is @string = sink.records().map() -> record { record.message(); };
+    test.is(messages, ["1", "3", "4"]);
+}
+
+async test "a failed delivery closes the queue and drain reports it" {
+    let run = FailingQueueRun();
+    let scope is FutureScope<int, int> = FutureScope(action: run.run);
+    test.throws(LogCollectionLimit) {
+        await scope.outcome();
+    };
+    test.is(run.reported(), true);
+}

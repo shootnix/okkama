@@ -1,7 +1,10 @@
 module logging/syslog v1.0.0;
 
 import "logging/level" take LogLevel;
-import "logging/record" take LogRecord;
+import "logging/record" take LogRecord, LogContext;
+import "logging/name" take LogName;
+import "logging/field" take LogFields;
+import "time/clock" take Instant;
 import "logging/line" take JsonLogLine;
 import "logging/write" take LogWriting;
 import "logging/queue" take QueuedLogs, LogQueueOptions, LogOverflow, LogDelivering, LogDraining;
@@ -196,7 +199,7 @@ object SyslogMessage does ByteSource {
         let priority = SyslogFacilityCode(options.facility()).code() * 8 + SyslogSeverity(
             record.level()
         ).code();
-        let time = Rfc3339(origin: record.time(), offset: Duration(0.rat(), DurationUnit.second)).string();
+        let time = Rfc3339(origin: record.time(), offset: Duration(value: 0.rat(), unit: DurationUnit.second)).string();
         let parts = time.split(".");
         let timestamp = if parts.size() == 1 {
             time;
@@ -313,3 +316,66 @@ object SyslogLogs does LogWriting, LogDraining, Closing {
 }
 
 enum InvalidSyslogOptions is Error = (invalid);
+
+hidden object SyslogTestRecord {
+    has seconds is rat;
+    has level is LogLevel;
+    has process is int;
+
+    SyslogTestRecord(seconds is rat, level is LogLevel, process is int) {
+        self.seconds = seconds;
+        self.level = level;
+        self.process = process;
+    }
+
+    record() is LogRecord {
+        LogRecord(
+            occurred: Instant(Duration(value: seconds, unit: DurationUnit.second)),
+            level: level,
+            message: "up",
+            context: LogContext(name: LogName(["web"]), fields: LogFields([]), process: process),
+        );
+    }
+}
+
+test "syslog severities follow RFC 5424" {
+    test.is(SyslogSeverity(LogLevel.debug).code(), 7);
+    test.is(SyslogSeverity(LogLevel.info).code(), 6);
+    test.is(SyslogSeverity(LogLevel.warning).code(), 4);
+    test.is(SyslogSeverity(LogLevel.error).code(), 3);
+    test.is(SyslogSeverity(LogLevel.critical).code(), 2);
+}
+
+test "syslog options check header names and the payload size" {
+    let options = SyslogOptions(facility: SyslogFacility.local0, host: "", application: "api", maximum_payload: 1024);
+    test.is(options.host(), "-");
+    test.is(options.application(), "api");
+    test.is(options.maximum_payload(), 1024);
+    test.throws(InvalidSyslogOptions) {
+        SyslogOptions(facility: SyslogFacility.user, host: "my host", application: "api", maximum_payload: 1024);
+    };
+    test.throws(InvalidSyslogOptions) {
+        SyslogOptions(facility: SyslogFacility.user, host: "h", application: "a".repeat(49), maximum_payload: 1024);
+    };
+    test.throws(InvalidSyslogOptions) {
+        SyslogOptions(facility: SyslogFacility.user, host: "h", application: "a", maximum_payload: 65508);
+    };
+}
+
+test "a syslog message is an RFC 5424 header, a BOM and the JSON line" {
+    let options = SyslogOptions(facility: SyslogFacility.local0, host: "web1", application: "api", maximum_payload: 1024);
+    let record = SyslogTestRecord(seconds: 1700000000.rat(), level: LogLevel.info, process: 7).record();
+    let bytes = SyslogMessage(record: record, options: options).bytes();
+    let header = "<134>1 2023-11-14T22:13:20Z web1 api 7 - - ";
+    test.is(Utf8Encoded(header).bytes(), bytes.slice(0, header.length()));
+    test.is(bytes.slice(header.length(), header.length() + 3), [239.byte(), 187.byte(), 191.byte()]);
+    test.is(Utf8Encoded(JsonLogLine(record).string()).bytes(), bytes.slice(header.length() + 3, bytes.size()));
+    let precise = SyslogTestRecord(seconds: 17000000001234567.rat() / 10000000.rat(), level: LogLevel.critical, process: 0).record();
+    let kernel = SyslogOptions(facility: SyslogFacility.kernel, host: "h", application: "a", maximum_payload: 1024);
+    let prefix = "<2>1 2023-11-14T22:13:20.123456Z h a - - - ";
+    test.is(Utf8Encoded(prefix).bytes(), SyslogMessage(record: precise, options: kernel).bytes().slice(0, prefix.length()));
+    let tight = SyslogOptions(facility: SyslogFacility.user, host: "h", application: "a", maximum_payload: 20);
+    test.throws(DatagramTooLarge) {
+        SyslogMessage(record: record, options: tight);
+    };
+}

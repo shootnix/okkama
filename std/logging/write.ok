@@ -1,9 +1,14 @@
 module logging/write v1.0.0;
 
-import "logging/record" take LogRecord;
+import "logging/record" take LogRecord, LogContext;
 import "collections/sequence" take Sequencing;
 import "async/atomic" take Atomic;
 import "numbers/bigint" take BigInt;
+import "logging/name" take LogName;
+import "logging/level" take LogLevel;
+import "logging/field" take LogFields;
+import "time/clock" take Instant;
+import "time/duration" take Duration, DurationUnit;
 
 role LogWriting {
     write(origin is LogRecord) is void;
@@ -145,3 +150,33 @@ enum LogDeliveryFailure is Error = (failed(destinations is int, first is string)
 enum InvalidLogDestinations is Error = (invalid);
 
 enum LogCollectionLimit is Error = (exceeded);
+
+test "collected, broadcast, fallback and best-effort writers" {
+    let record = LogRecord(
+        occurred: Instant(Duration(value: 0.rat(), unit: DurationUnit.second)),
+        level: LogLevel.info,
+        message: "hi",
+        context: LogContext(name: LogName(["app"]), fields: LogFields([]), process: 1),
+    );
+    let first = CollectedLogs();
+    let second = CollectedLogs();
+    BroadcastLogs([first, second]).write(record);
+    test.is(first.size(), 1);
+    test.is(second.records().first().message(), "hi");
+    let full = CollectedLogs(capacity: 0);
+    test.throws(LogCollectionLimit) {
+        full.write(record);
+    };
+    let backup = CollectedLogs();
+    FallbackLogs(primary: full, fallback: backup).write(record);
+    test.is(backup.size(), 1);
+    let quiet = BestEffortLogs(full);
+    quiet.write(record);
+    quiet.write(record);
+    test.is(quiet.failures().string(), "2");
+    DiscardingLogs().write(record);
+    test.throws(LogDeliveryFailure) {
+        BroadcastLogs([first, full]).write(record);
+    };
+    test.is(first.size(), 2);
+}

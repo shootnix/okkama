@@ -1,16 +1,22 @@
 module logging/stream v1.0.0;
 
 import "logging/write" take LogWriting;
-import "logging/record" take LogRecord;
+import "logging/record" take LogRecord, LogContext;
 import "logging/level" take LogLevel;
 import "logging/line" take TextLogLine, JsonLogLine;
-import "time/zone" take TimeZone;
+import "time/zone" take TimeZone, FixedZone;
 import "io/stream" take Writing;
 import "io/decorators" take ByteSnapshot;
-import "encoding/utf" take Utf8Encoded;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "terminal/session" take TerminalOutput;
 import "terminal/style" take TextStyle, StyledText, DefaultColor;
 import "collections/sequence" take Sequencing;
+import "io/buffer" take ByteBuffer;
+import "json" take JsonField;
+import "logging/field" take LogFields;
+import "logging/name" take LogName;
+import "time/clock" take Instant;
+import "time/duration" take Duration, DurationUnit;
 
 object LogStyle {
     has level is LogLevel;
@@ -117,4 +123,26 @@ object JsonTerminalLogs does LogWriting {
     write(record is LogRecord) is void {
         origin.writeln(StyledText(origin: JsonLogLine(record).string(), style: styles.style(record.level())));
     }
+}
+
+test "stream writers put one line per record on their output" {
+    let record = LogRecord(
+        occurred: Instant(Duration(value: 1700000000.rat(), unit: DurationUnit.second)),
+        level: LogLevel.info,
+        message: "up",
+        context: LogContext(name: LogName(["app"]), fields: LogFields([]), process: 1),
+    );
+    let text = ByteBuffer();
+    let zone = FixedZone(name: "UTC", offset: Duration(value: 0.rat(), unit: DurationUnit.second));
+    TextStreamLogs(origin: text.writing(), zone: zone).write(record);
+    test.is(Utf8Decoded(text.content().bytes()).string(), "2023-11-14T22:13:20Z level=INFO name=\"app\" process=1 message=\"up\" fields={}\n");
+    let json = ByteBuffer();
+    JsonStreamLogs(json.writing()).write(record);
+    test.ok(Utf8Decoded(json.content().bytes()).string().starts_with("{\"time\":\"2023-11-14T22:13:20Z\",\"level\":\"INFO\""));
+    let styles = LogStyles([LogStyle(level: LogLevel.error, style: TextStyle(DefaultColor(), DefaultColor(), []))]);
+    styles.style(LogLevel.error);
+    styles.style(LogLevel.info);
+    test.throws(InvalidLogStyles) {
+        LogStyles([LogStyle(level: LogLevel.error, style: TextStyle(DefaultColor(), DefaultColor(), [])), LogStyle(level: LogLevel.error, style: TextStyle(DefaultColor(), DefaultColor(), []))]);
+    };
 }
