@@ -1574,7 +1574,7 @@ fn traversal_steps_own_their_cursor_and_keep_no_record_of_past_ones() {
     let source_wrap = value(&line("= role.wrap"));
     assert!(main.contains(&format!("region.adopt %0, {source_wrap}")), "{main}");
     // The step's region takes the cursor before available().
-    let step_region = value(&main.lines().filter(|line| line.contains("= region.enter")).nth(1).expect("a step region").trim().to_string());
+    let step_region = value(main.lines().filter(|line| line.contains("= region.enter")).nth(1).expect("a step region").trim());
     let adopt = main.find(&format!("region.adopt {step_region},")).expect("the step adopts its cursor");
     assert!(adopt < main.find("available()").unwrap(), "{main}");
     // successor() is kept by the step's close and tracked nowhere.
