@@ -63,13 +63,7 @@ object MemoryCookieJar does CookieStoring, Closing {
     has limits is CookieLimits;
     has cell is Atomic<CookieJarState>;
 
-    MemoryCookieJar(clock is Timing) {
-        self.clock = clock;
-        limits = CookieLimits();
-        cell = Atomic(CookieJarState());
-    }
-
-    MemoryCookieJar(clock is Timing, limits is CookieLimits) {
+    MemoryCookieJar(clock is Timing = SystemClock(), limits is CookieLimits = CookieLimits()) {
         self.clock = clock;
         self.limits = limits;
         cell = Atomic(CookieJarState());

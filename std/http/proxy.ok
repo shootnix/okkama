@@ -2,18 +2,18 @@ module http/proxy v1.0.0;
 
 import "http/proxy_policy" take ProxyPolicy, ProxyAuthorizationConflict;
 import "http/proxy_connection" take HttpProxyRouting;
-import "http/client" take HttpClient, Exchanging;
+import "http/client" take HttpTransport;
 import "http/client_policy" take ClientPolicy;
 import "http/message" take Request;
 import "http/header" take HeaderName;
-import "http/exchange" take ClientResponse;
+import "http/exchange" take ClientResponse, Exchanging;
 import "net/dns" take Resolving;
 import "net/tls" take TlsClientPolicy;
 import "time/clock" take Timing;
 import "io/stream" take Closing;
 
 object Proxied does Exchanging, Closing {
-    has client is HttpClient;
+    has client is HttpTransport;
 
     Proxied(
         proxy is ProxyPolicy,
@@ -23,7 +23,7 @@ object Proxied does Exchanging, Closing {
         clock is Timing
     ) {
         let routing = HttpProxyRouting(proxy, resolver, tls, policy, clock);
-        client = HttpClient(resolver, tls, policy, clock, routing);
+        client = HttpTransport(resolver, tls, policy, clock, routing);
     }
 
     closed() is bool {

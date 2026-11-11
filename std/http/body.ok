@@ -1,6 +1,8 @@
 module http/body v1.0.0;
 
 import "http/header" take Headers;
+import "json" take Json;
+import "encoding/utf" take Utf8Encoded;
 import "numbers/bigint" take BigInt;
 import "io/stream" take AsyncReading, Closing, InvalidReadLimit;
 import "io/decorators" take InvalidReading;
@@ -42,6 +44,68 @@ object ByteBody does BodyOpening {
     reading() is BodyReading {
         let source = ByteBodyInput(origin);
         StreamBodyReading(source, source, Headers([]));
+    }
+}
+
+// A body together with its media type: what a client's post, put and patch
+// send, with the type as their Content-Type.
+role Content {
+    media_type() is string;
+    opening() is BodyOpening;
+}
+
+// A JSON document as a body, `application/json`.
+object JsonBody does Content {
+    has value is Json;
+
+    JsonBody(value is Json) {
+        self.value = value;
+    }
+
+    media_type() is string {
+        "application/json";
+    }
+
+    opening() is BodyOpening {
+        ByteBody(Utf8Encoded(value.string()).bytes());
+    }
+}
+
+// Text as a UTF-8 body; `text/plain` unless another type is given.
+object TextBody does Content {
+    has text is string;
+    has media is string;
+
+    TextBody(text is string, media_type is string = "text/plain; charset=utf-8") {
+        self.text = text;
+        media = media_type;
+    }
+
+    media_type() is string {
+        media;
+    }
+
+    opening() is BodyOpening {
+        ByteBody(Utf8Encoded(text).bytes());
+    }
+}
+
+// Bytes as a body; `application/octet-stream` unless another type is given.
+object BytesBody does Content {
+    has bytes is @byte;
+    has media is string;
+
+    BytesBody(bytes is @byte, media_type is string = "application/octet-stream") {
+        self.bytes = bytes;
+        media = media_type;
+    }
+
+    media_type() is string {
+        media;
+    }
+
+    opening() is BodyOpening {
+        ByteBody(bytes);
     }
 }
 

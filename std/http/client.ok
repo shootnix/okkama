@@ -1,6 +1,18 @@
 module http/client v1.0.0;
 
-import "http/client_policy" take ClientPolicy, Http1ClientProtocols;
+import "strings/parse" take ParsedInt;
+import "json" take Json, JsonField;
+import "http/status" take Status, StatusClass;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "io/decorators" take ByteSnapshot;
+import "net/ip" take IpAddress, IpNetwork;
+import "net/endpoint" take IpEndpoint;
+import "net/tcp" take TcpListening, TcpAcceptance, TcpConnection;
+import "http/cookie_client" take CookieExchanging, FirstPartyCookies;
+import "http/cookie_jar" take CookieStoring, MemoryCookieJar;
+import "http/redirect" take Redirects, Redirecting;
+import "collections/set" take Set, OrderedSet;
+import "http/client_policy" take ClientPolicy, Http1ClientProtocols, HttpLimits, ClientTimeouts;
 import "http/transport_observation" take HttpPeerGoneBeforeResponse;
 import "http/client_protocols" take HttpClientProtocols;
 import "http/selected_connection" take HttpSelectedConnecting;
@@ -13,16 +25,17 @@ import "http/internal/http2_fields" take Http2RequestFields;
 import "http/version" take HttpVersion, UnsupportedHttpVersion;
 import "http/client_request" take InvalidClientRequest;
 import "http/client_request" take HttpDirectRequest;
-import "http/message" take Request, Response;
-import "http/exchange" take ClientResponse;
+import "http/message" take Request, Response, InvalidHttpMessage;
+import "http/exchange" take ClientResponse, Exchanging, HttpClientKey;
 import "http/connection" take Http1Connecting, Http1Acquisition, HttpAcquisitionCleanup;
 import "http/http1_session" take Http1Exchange;
-import "http/endpoint" take HttpEndpointSelection, EndpointDenied;
+import "http/endpoint" take HttpEndpointSelection, EndpointDenied, EndpointAllowing,
+    PublicEndpoints, ListedNetworks;
 import "http/body" take BodyOpening, BodyReading, BodyClosed, BodyAlreadyOpened, UnknownBodyLength,
-    EmptyBody;
-import "http/header" take Headers;
-import "net/dns" take Resolving;
-import "net/tls" take TlsClientPolicy;
+    EmptyBody, Content, JsonBody;
+import "http/header" take Headers, Header, HeaderName;
+import "net/dns" take Resolving, SystemResolution;
+import "net/tls" take TlsClientPolicy, TlsVersion;
 import "time/clock" take Timing;
 import "time/duration" take Duration;
 import "async/timeout" take Within, TimedOut;
@@ -30,21 +43,198 @@ import "async/semaphore" take Semaphore, Permit;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
 import "async/scope" take FutureGroup;
-import "io/stream" take Closing, InvalidReadLimit;
+import "io/stream" take Closing, InvalidReadLimit, AsyncReading;
 import "numbers/bigint" take BigInt;
 import "url/value" take Url, MissingUrlPort;
 import "net/dns" take FixedResolution;
-import "crypto/x509/trust" take TrustedCertificates;
+import "crypto/x509/trust" take TrustedCertificates, TrustStore, SystemTrustStore;
 import "time/clock" take SystemClock;
 import "http/target" take AbsoluteTarget, RequestTargetKind;
 import "http/method" take Method;
 import "url/value" take ParsedUrl;
 
-role Exchanging {
-    async response(request is Request) is ClientResponse;
+// An HTTP client. `HttpClient()` resolves names with the system's DNS, trusts
+// the system's roots, reaches public endpoints only and speaks HTTP/1.1 with
+// the default limits and timeouts over at most 8 connections; it follows no
+// redirects and keeps no cookies. Each part is replaced by name:
+// `HttpClient(endpoints: AllEndpoints(), redirects: Redirects(limit: 5))`,
+// `HttpClient(cookies: MemoryCookieJar())`.
+object HttpClient does Exchanging, Closing {
+    has transport is HttpTransport;
+    has chain is Exchanging;
+
+    HttpClient(
+        resolver is Resolving = SystemResolution(),
+        trust is TrustStore = SystemTrustStore(),
+        endpoints is EndpointAllowing = PublicEndpoints(),
+        protocols is Set<HttpVersion> = OrderedSet([HttpVersion.http_1_1]),
+        limits is HttpLimits = HttpLimits(),
+        timeouts is ClientTimeouts = ClientTimeouts(),
+        connections is int = 8,
+        clock is Timing = SystemClock(),
+        redirects is Redirects = Redirects(limit: 0)
+    ) {
+        let built = HttpTransport(
+            resolver,
+            ClientTls(trust, protocols).policy(),
+            ClientPolicy(protocols, limits, timeouts, connections, endpoints),
+            clock
+        );
+        transport = built;
+        chain = ClientChain(built, redirects).exchanging();
+    }
+
+    HttpClient(
+        cookies is CookieStoring,
+        resolver is Resolving = SystemResolution(),
+        trust is TrustStore = SystemTrustStore(),
+        endpoints is EndpointAllowing = PublicEndpoints(),
+        protocols is Set<HttpVersion> = OrderedSet([HttpVersion.http_1_1]),
+        limits is HttpLimits = HttpLimits(),
+        timeouts is ClientTimeouts = ClientTimeouts(),
+        connections is int = 8,
+        clock is Timing = SystemClock(),
+        redirects is Redirects = Redirects(limit: 0)
+    ) {
+        let built = HttpTransport(
+            resolver,
+            ClientTls(trust, protocols).policy(),
+            ClientPolicy(protocols, limits, timeouts, connections, endpoints),
+            clock
+        );
+        transport = built;
+        chain = ClientChain(built, redirects, cookies).exchanging();
+    }
+
+    closed() is bool {
+        transport.closed();
+    }
+
+    close() is void {
+        transport.close();
+    }
+
+    async response(request is Request) is ClientResponse {
+        await chain.response(request);
+    }
+
+    async get(url is string) is ClientResponse {
+        await chain.response(Request(url: url));
+    }
+
+    async head(url is string) is ClientResponse {
+        await chain.response(Request(url: url, method: Method.head));
+    }
+
+    async options(url is string) is ClientResponse {
+        await chain.response(Request(url: url, method: Method.options));
+    }
+
+    async delete(url is string) is ClientResponse {
+        await chain.response(Request(url: url, method: Method.delete));
+    }
+
+    async post(url is string, body is Content, headers is Headers = Headers([])) is ClientResponse {
+        await chain.response(ContentRequest(url, Method.post, body, headers).request());
+    }
+
+    async put(url is string, body is Content, headers is Headers = Headers([])) is ClientResponse {
+        await chain.response(ContentRequest(url, Method.put, body, headers).request());
+    }
+
+    async patch(url is string, body is Content, headers is Headers = Headers([])) is ClientResponse {
+        await chain.response(ContentRequest(url, Method.patch, body, headers).request());
+    }
 }
 
-object HttpClient does Exchanging, Closing {
+// TLS for a client: TLS 1.2 and 1.3, advertising the HTTP versions it speaks.
+hidden object ClientTls {
+    has trust is TrustStore;
+    has protocols is Set<HttpVersion>;
+
+    ClientTls(trust is TrustStore, protocols is Set<HttpVersion>) {
+        self.trust = trust;
+        self.protocols = protocols;
+    }
+
+    policy() is TlsClientPolicy {
+        let h2 = protocols.membership(HttpVersion.http_2);
+        let h1 = protocols.membership(HttpVersion.http_1_1);
+        let advertised is @string = if h2 && h1 {
+            ["h2", "http/1.1"];
+        }
+        else if h2 {
+            ["h2"];
+        }
+        else {
+            ["http/1.1"];
+        };
+        let versions is Set<TlsVersion> = OrderedSet([TlsVersion.tls1_2, TlsVersion.tls1_3]);
+        TlsClientPolicy(trust, versions, advertised);
+    }
+}
+
+// What a client sends through: cookies first, then redirects, then the transport.
+hidden object ClientChain {
+    has chain is Exchanging;
+
+    ClientChain(transport is HttpTransport, redirects is Redirects) {
+        let direct is Exchanging = transport;
+        chain = if redirects::Rules::limit > 0 {
+            let followed is Exchanging = Redirecting(direct, redirects);
+            followed;
+        }
+        else {
+            direct;
+        };
+    }
+
+    ClientChain(transport is HttpTransport, redirects is Redirects, cookies is CookieStoring) {
+        let kept is Exchanging = CookieExchanging(transport, cookies, FirstPartyCookies());
+        chain = if redirects::Rules::limit > 0 {
+            let followed is Exchanging = Redirecting(kept, redirects);
+            followed;
+        }
+        else {
+            kept;
+        };
+    }
+
+    exchanging() is Exchanging {
+        chain;
+    }
+}
+
+// A request carrying content. Its media type becomes Content-Type and its
+// length Content-Length, unless the fields already have them.
+hidden object ContentRequest {
+    has request is Request;
+
+    ContentRequest(url is string, method is Method, body is Content, headers is Headers) {
+        let opening = body.opening();
+        let kind = HeaderName("Content-Type");
+        let typed = if headers.membership(kind) {
+            headers;
+        }
+        else {
+            headers.addition(Header(kind, body.media_type()));
+        };
+        let size = HeaderName("Content-Length");
+        let fields = if typed.membership(size) || typed.membership(HeaderName("Transfer-Encoding")) {
+            typed;
+        }
+        else {
+            typed.addition(Header(size, opening.length().string()));
+        };
+        request = Request(url: url, method: method, headers: fields, body: opening);
+    }
+
+    request() is Request {
+        request;
+    }
+}
+
+object HttpTransport does Exchanging, Closing {
     has resolver is Resolving;
     has tls is TlsClientPolicy;
     has policy is ClientPolicy;
@@ -54,7 +244,7 @@ object HttpClient does Exchanging, Closing {
     has mixed is @HttpSharedClientState;
     has routing is @HttpConversationRouting;
 
-    HttpClient(
+    HttpTransport(
         resolver is Resolving,
         tls is TlsClientPolicy,
         policy is ClientPolicy,
@@ -86,7 +276,7 @@ object HttpClient does Exchanging, Closing {
         state = HttpClientState(policy.connections());
     }
 
-    HttpClient(
+    HttpTransport(
         resolver is Resolving,
         tls is TlsClientPolicy,
         policy is ClientPolicy,
@@ -405,32 +595,6 @@ object HttpClient does Exchanging, Closing {
         }
         catch e is Error {}
         catch e is NativeFailure {}
-    }
-}
-
-// Policy and TLS identity are scoped to this state; no proxy is implicit.
-object HttpClientKey {
-    has key is string;
-
-    HttpClientKey(url is Url) {
-        let parts = url.parts();
-        let authority = parts.authority();
-        let port = try {
-            authority.port();
-        }
-        catch e is MissingUrlPort {
-            if parts.scheme() == "https" {
-                443;
-            }
-            else {
-                80;
-            }
-        };
-        key = parts.scheme() + "://" + authority.host().string() + ":" + port.string();
-    }
-
-    string() is string {
-        key;
     }
 }
 
@@ -1092,7 +1256,7 @@ enum ClientClosed is Error = (closed);
 enum HttpTimeout is Error = (phase(phase is string));
 
 async test "unstarted client response cancellation acquires no route or connection" {
-    let client = HttpClient(
+    let client = HttpTransport(
         FixedResolution([]),
         TlsClientPolicy(TrustedCertificates([])),
         ClientPolicy(),
@@ -1868,3 +2032,133 @@ object HttpMixedDirectRequest {
 enum HttpConversationUnavailable is Error = (unavailable);
 
 enum HttpStaleConnection is Error = (unexplained, after(cause is string));
+
+// What a loopback test server read: the request head and its body, by its
+// Content-Length.
+hidden object LoopbackRequest {
+    has input is AsyncReading;
+
+    LoopbackRequest(input is AsyncReading) {
+        self.input = input;
+    }
+
+    async text() is string {
+        let received = Atomic("");
+        loop {
+            let chunk = await input.bytes(4096);
+            confirm chunk.size() > 0
+                else throw InvalidHttpMessage.because("test request ended early");
+            received.replace(received.value() + Utf8Decoded(chunk).string());
+            let parts = received.value().split("\r\n\r\n");
+            if parts.size() >= 2 {
+                let lengths = parts[0].split("\r\n").filter() -> line {
+                    line.lower().starts_with("content-length:");
+                };
+                let expected = if lengths.size() == 1 {
+                    ParsedInt(lengths[0].split(":")[1].trim()).value();
+                }
+                else {
+                    0;
+                };
+                if received.value().length() >= parts[0].length() + 4 + expected {
+                    last;
+                }
+            }
+        }
+        received.value();
+    }
+}
+
+async test "a client gets text and posts JSON through its shortcuts" {
+    let listener is TcpAcceptance = await TcpListening(IpEndpoint(IpAddress("127.0.0.1"), 0)).acceptance();
+    defer listener.close();
+    let base = "http://127.0.0.1:" + listener.local_endpoint().port().string();
+    let client = HttpClient(
+        resolver: FixedResolution([]),
+        endpoints: ListedNetworks([IpNetwork(IpAddress("127.0.0.0"), 8)])
+    );
+    defer client.close();
+    let accepting is async () is TcpConnection = listener.connection;
+
+    let first = spawn accepting();
+    let get is async (string) is ClientResponse = client.get;
+    let getting = spawn get(base + "/hello");
+    let one = await first;
+    defer one.close();
+    let asked = await LoopbackRequest(one.input()).text();
+    test.ok(asked.starts_with("GET /hello HTTP/1.1\r\n"));
+    await one.output().write(ByteSnapshot(Utf8Encoded(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 6\r\nConnection: close\r\n\r\nhéllo"
+    ).bytes()));
+    let page = await getting;
+    test.is(page::Head::status, Status.ok);
+    test.is(await page.text(), "héllo");
+
+    let second = spawn accepting();
+    let order = Json([JsonField("id", 7)]);
+    let post is async (string, Content, Headers) is ClientResponse = client.post;
+    let posting = spawn post(base + "/orders", JsonBody(order), Headers([]));
+    let two = await second;
+    defer two.close();
+    let sent = await LoopbackRequest(two.input()).text();
+    test.ok(sent.starts_with("POST /orders HTTP/1.1\r\n"));
+    test.ok(sent.lower().contains("content-type: application/json\r\n"));
+    test.ok(sent.ends_with("\r\n\r\n{\"id\":7}"));
+    await two.output().write(ByteSnapshot(Utf8Encoded(
+        "HTTP/1.1 201 Created\r\nContent-Type: application/json\r\nContent-Length: 9\r\nConnection: close\r\n\r\n{\"id\":7}\n"
+    ).bytes()));
+    let created = await posting;
+    test.is(created::Head::status, Status.created);
+    test.is(created::Head::class, StatusClass.successful);
+    test.is((await created.json()).int("id"), 7);
+}
+
+async test "a default client reaches public endpoints only" {
+    let client = HttpClient(resolver: FixedResolution([]));
+    defer client.close();
+    test.ok(try {
+        await client.get("http://127.0.0.1:9/");
+        false;
+    }
+    catch e is EndpointDenied {
+        true;
+    });
+}
+
+async test "a client follows redirects and carries its cookies when told" {
+    let listener is TcpAcceptance = await TcpListening(IpEndpoint(IpAddress("127.0.0.1"), 0)).acceptance();
+    defer listener.close();
+    let base = "http://127.0.0.1:" + listener.local_endpoint().port().string();
+    let jar = MemoryCookieJar();
+    defer jar.close();
+    let client = HttpClient(
+        cookies: jar,
+        resolver: FixedResolution([]),
+        endpoints: ListedNetworks([IpNetwork(IpAddress("127.0.0.0"), 8)]),
+        redirects: Redirects(limit: 3)
+    );
+    defer client.close();
+    let accepting is async () is TcpConnection = listener.connection;
+    let first = spawn accepting();
+    let get is async (string) is ClientResponse = client.get;
+    let getting = spawn get(base + "/start");
+    let one = await first;
+    defer one.close();
+    test.ok((await LoopbackRequest(one.input()).text()).starts_with("GET /start HTTP/1.1\r\n"));
+    let second = spawn accepting();
+    await one.output().write(ByteSnapshot(Utf8Encoded(
+        "HTTP/1.1 302 Found\r\nLocation: /next\r\nSet-Cookie: seen=1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    ).bytes()));
+    let two = await second;
+    defer two.close();
+    let followed = await LoopbackRequest(two.input()).text();
+    test.ok(followed.starts_with("GET /next HTTP/1.1\r\n"));
+    test.ok(followed.lower().contains("cookie: seen=1\r\n"));
+    await two.output().write(ByteSnapshot(Utf8Encoded(
+        "HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\ndone"
+    ).bytes()));
+    let page = await getting;
+    test.is(page::Head::status, Status.ok);
+    test.is(page::Exchange::history.size(), 1);
+    test.is(await page.text(), "done");
+}

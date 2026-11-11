@@ -1,5 +1,6 @@
 module http/exchange v1.0.0;
 
+import "url/value" take Url, MissingUrlPort;
 import "net/ip" take IpAddress;
 import "http/method" take Method;
 import "http/message" take Request, Response;
@@ -59,6 +60,38 @@ object ExchangeDetails {
 }
 
 enum PlainHttpHasNoTls is Error = (none);
+
+// Sends a request and answers what came back: a client, or a decorator of one.
+role Exchanging {
+    async response(request is Request) is ClientResponse;
+}
+
+// The pool key of a URL: scheme, host and effective port. Policy and TLS
+// identity are scoped to it; no proxy is implicit.
+object HttpClientKey {
+    has key is string;
+
+    HttpClientKey(url is Url) {
+        let parts = url.parts();
+        let authority = parts.authority();
+        let port = try {
+            authority.port();
+        }
+        catch e is MissingUrlPort {
+            if parts.scheme() == "https" {
+                443;
+            }
+            else {
+                80;
+            }
+        };
+        key = parts.scheme() + "://" + authority.host().string() + ":" + port.string();
+    }
+
+    string() is string {
+        key;
+    }
+}
 
 // One redirect or retry step before the final response.
 object ExchangeHop {

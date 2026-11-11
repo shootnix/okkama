@@ -224,6 +224,39 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     | `result.response().status().code() == 200` | `result::Head::status == Status.ok` |
     | `result.response().body().reading()` | `result.reading()` |
     | `result.request()`, `.response()`, `.history()`, `.details()` | `result::Exchange::request`, … |
+- **`http`: `HttpClient()` works out of the box (#352).**
+  - Its parts are named arguments, each with a default:
+    - `resolver` (system DNS), `trust` (system roots);
+    - `endpoints` (public only), `protocols` (HTTP/1.1);
+    - `limits`, `timeouts`, `connections` (8), `clock`;
+    - `redirects` (none followed) and `cookies` (none kept).
+
+    The TLS policy follows from `trust` and `protocols`.
+
+    ```okkama
+    let client = HttpClient();
+    let page = await client.get("https://example.com/");
+    let created = await client.post(url: "https://api.example.com/orders", body: JsonBody(order));
+    let browser = HttpClient(cookies: MemoryCookieJar(), redirects: Redirects(limit: 5));
+    ```
+  - Shortcuts for every REST method: `get`, `head`, `options` and `delete`
+    take a URL; `post`, `put` and `patch` take a URL, a `Content` and
+    optional fields. The content's media type becomes Content-Type and its
+    length Content-Length, unless the fields already set them.
+  - New role `Content` in `http/body`, with `JsonBody(json)`,
+    `TextBody(text)` and `BytesBody(bytes)`.
+  - The connection-owning engine is now `HttpTransport`. Proxies use it, and
+    `HttpClient` builds on it. The role `Exchanging` and `HttpClientKey`
+    moved to `http/exchange`, so that the client can use the redirect and
+    cookie decorators without an import cycle.
+  - `RedirectPolicy(maximum, https_downgrade)` is
+    `Redirects(limit: 10, https_downgrade: false)`, read through its cap
+    `Rules`.
+  - `SystemTrustStore` does `TrustStore`: `trust: SystemTrustStore()`.
+    `SystemTrustStore().result()` is gone.
+  - `MemoryCookieJar()` defaults its clock and limits.
+  - The client's tests talk to a loopback server: shortcuts, the default
+    endpoint refusal, and a redirect that carries a cookie.
 ### Fixed
 
 - Traversals own what they walk, and keep no record of what they walked

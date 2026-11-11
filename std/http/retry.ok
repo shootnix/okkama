@@ -1,9 +1,9 @@
 module http/retry v1.0.0;
 
-import "http/client" take Exchanging, HttpStaleConnection;
+import "http/client" take HttpStaleConnection;
 import "http/message" take Request;
 import "http/method" take MethodSemantics;
-import "http/exchange" take ClientResponse;
+import "http/exchange" take ClientResponse, Exchanging;
 
 // Optional one-shot retry. Only the client transport can establish the stale
 // before-response condition; ordinary errors and response failures propagate.

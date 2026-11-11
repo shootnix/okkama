@@ -176,16 +176,17 @@ object CertificateFailureCode {
 
 // Only result() reads selected system CA locations. Every call acquires a new
 // immutable snapshot, allowing its owning client/policy to choose its lifetime.
-object SystemTrustStore {
+// The operating system's trusted roots, read each time they are asked for.
+object SystemTrustStore does TrustStore {
     SystemTrustStore();
 
-    result() is TrustStore {
+    certificates() is Sequencing<Certificate> {
         try {
             let sources = x509.system_certificates();
             let values is @Certificate = sources.map() -> source {
                 Certificate(source);
             };
-            TrustedCertificates(values);
+            TrustedCertificates(values).certificates();
         }
         catch e is NativeFailure {
             if e.domain() == "core.x509" {

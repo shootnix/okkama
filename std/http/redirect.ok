@@ -1,8 +1,7 @@
 module http/redirect v1.0.0;
 
 import "http/status" take StatusCode, Status;
-import "http/client" take Exchanging, HttpClientKey;
-import "http/exchange" take ClientResponse, ExchangeHop;
+import "http/exchange" take ClientResponse, ExchangeHop, Exchanging, HttpClientKey;
 import "http/message" take Request, Response;
 import "http/header" take HeaderName, HeadersWithout;
 import "http/target" take AbsoluteTarget, RequestTargetKind;
@@ -13,36 +12,35 @@ import "url/value" take Url, UrlParts, UrlFragment, UrlResolution, ParsedUrlRefe
 import "async/event" take Event;
 import "error" take InvalidArgument;
 
-object RedirectPolicy {
-    has maximum is int;
+// How redirects are followed: at most `limit` hops (0 to 20; 0 follows none),
+// and from https to http only with `https_downgrade`.
+object Redirects {
+    has limit is int;
     has https_downgrade is bool;
 
-    RedirectPolicy() {
-        maximum = 10;
-        https_downgrade = false;
-    }
-
-    RedirectPolicy(maximum is int, https_downgrade is bool) {
-        confirm maximum >= 0 && maximum <= 20
+    Redirects(limit is int = 10, https_downgrade is bool = false) {
+        confirm limit >= 0 && limit <= 20
             else throw InvalidArgument.because("redirect budget outside 0..20");
-        self.maximum = maximum;
+        self.limit = limit;
         self.https_downgrade = https_downgrade;
     }
 
-    maximum() is int {
-        maximum;
-    }
+    cap Rules {
+        limit is int {
+            limit;
+        }
 
-    https_downgrade() is bool {
-        https_downgrade;
+        https_downgrade is bool {
+            https_downgrade;
+        }
     }
 }
 
 object Redirecting does Exchanging {
     has origin is Exchanging;
-    has policy is RedirectPolicy;
+    has policy is Redirects;
 
-    Redirecting(origin is Exchanging, policy is RedirectPolicy) {
+    Redirecting(origin is Exchanging, policy is Redirects) {
         self.origin = origin;
         self.policy = policy;
     }
@@ -75,7 +73,7 @@ object Redirecting does Exchanging {
                 return final;
             }
             confirm candidates.size() == 1 else throw UnsafeRedirect.because("duplicate Location");
-            confirm state.followed() < policy.maximum() else throw TooManyRedirects.exceeded;
+            confirm state.followed() < policy::Rules::limit else throw TooManyRedirects.exceeded;
             let effective = result::Exchange::request;
             confirm effective::Head::target.kind() == RequestTargetKind.absolute
                 else throw UnsafeRedirect.because("effective absolute target required");
@@ -178,7 +176,7 @@ object RedirectHistory {
 object RedirectDestination {
     has url is Url;
 
-    RedirectDestination(base is Url, location is string, policy is RedirectPolicy) {
+    RedirectDestination(base is Url, location is string, policy is Redirects) {
         let resolved = try {
             UrlResolution(base, ParsedUrlReference(location).value()).value();
         }
@@ -190,7 +188,7 @@ object RedirectDestination {
             else throw UnsafeRedirect.because("non-HTTP Location");
         confirm parts.authority().present() && !parts.authority().userinfo().present()
             else throw UnsafeRedirect.because("invalid Location authority");
-        confirm policy.https_downgrade()
+        confirm policy::Rules::https_downgrade
             || base.parts().scheme() != "https"
             || parts.scheme() != "http"
             else throw UnsafeRedirect.because("HTTPS downgrade");
@@ -322,9 +320,9 @@ enum NonReplayableRedirect is Error = (not_replayable);
 enum UnsafeRedirect is Error = (because(reason is string));
 
 test "redirect policy bounds history and disables downgrade by default" {
-    test.ok(RedirectPolicy().maximum() == 10 && !RedirectPolicy().https_downgrade());
+    test.ok(Redirects()::Rules::limit == 10 && !Redirects()::Rules::https_downgrade);
     test.ok(try {
-        RedirectPolicy(21, false);
+        Redirects(limit: 21);
         false;
     }
     catch e is InvalidArgument {
