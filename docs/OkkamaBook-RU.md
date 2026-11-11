@@ -4149,15 +4149,20 @@ URL-safe), Base32, Base85, hex, quoted-printable, ASCII и Latin-1 устрое�
 обратно в тот же float. Контрольные суммы: `Crc32(bytes).checksum()`, `Adler32`
 и `Crc16Ccitt`.
 
-`time` разделяет длительности, моменты, даты и зоны. `Duration(value:, unit:)`
-точна (`d.times(f)`); `date.shifted(days)`, `DaysBetween(left:, right:).count()`
-и `GregorianDay(date).number()` считают дни. Чтения отвечают тем, что прочитали,
-а каждый форматтер читает свой текст обратно: `IsoText(t).date()`,
-`Rfc3339(t).instant()`, `FormattedDate(text:, pattern:).date()`.
-`Zone("Europe/Berlin")` использует встроенную tzdata, а
-`Zoned(local:, zone:, fold:).instant()` переводит локальное время в момент:
-пропуск бросает `MissingLocalTime`, а повторённый час требует `Fold`.
-Руководство — `docs/time-guide.md` в okkama-docs.
+`time` разделяет длительности, моменты, даты и зоны. `Duration(seconds: 90)` и
+`Duration(milliseconds: 250)` принимают целые количества, `Duration(value:,
+unit:)` — любое рациональное; арифметика точна (`d.times(f)`). Дата сама
+считает дни: `date.shifted(days)`, `release.days_until(deadline)`,
+`date.day_number()` и `Date(day_number: n)`. Значения пишут себя сами:
+`date.string()` и `local.string()` в ISO 8601, `instant.string()` в RFC 3339
+UTC. Чтения отвечают тем, что прочитали, а каждый форматтер читает свой текст
+обратно: `IsoText(t).date()`, `Rfc3339(t).instant()`,
+`FormattedDate(text:, pattern:).date()`. `Zone("Europe/Berlin")` использует
+встроенную tzdata. `berlin.instant(local)` переводит локальное время в момент:
+пропуск бросает `MissingLocalTime`, а из повторённого часа берётся более ранний
+момент, если `fold: Fold.later` не просит другой. `ZonedDateTime(instant:,
+zone:)` показывает момент в зоне: `local_datetime()`, `offset()`,
+`abbreviation()`. Руководство — `docs/time-guide.md` в okkama-docs.
 
 `async` собирает futures: `await Within(origin:, limit:, clock:).outcome()` и
 `Before(…)` ограничивают одну временем и бросают `TimedOut`;

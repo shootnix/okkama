@@ -3969,15 +3969,20 @@ and changes its own ends (`first()`, `last()`, `prefix(x)`, `suffix(x)`,
 `ShortestFloat(x).decimal()` is the shortest decimal that reads back as the
 same float. `Crc32(bytes).checksum()`, `Adler32` and `Crc16Ccitt` checksum.
 
-`time` keeps durations, instants, dates and zones apart. `Duration(value:,
-unit:)` is exact (`d.times(f)`); `date.shifted(days)`,
-`DaysBetween(left:, right:).count()` and `GregorianDay(date).number()` count
-days. Readers answer with what they read, and each formatter reads its own
+`time` keeps durations, instants, dates and zones apart. `Duration(seconds:
+90)` and `Duration(milliseconds: 250)` take whole amounts, and `Duration(value:,
+unit:)` any rational one; arithmetic is exact (`d.times(f)`). A date counts
+its own days: `date.shifted(days)`, `release.days_until(deadline)`,
+`date.day_number()` and `Date(day_number: n)`. Values write themselves:
+`date.string()` and `local.string()` in ISO 8601, `instant.string()` in RFC
+3339 UTC. Readers answer with what they read, and each formatter reads its own
 text back: `IsoText(t).date()`, `Rfc3339(t).instant()`,
 `FormattedDate(text:, pattern:).date()`. `Zone("Europe/Berlin")` uses the
-bundled tzdata, and `Zoned(local:, zone:, fold:).instant()` resolves a local
-time: a gap throws `MissingLocalTime`, and a repeated hour needs a `Fold`. The
-guide is `docs/time-guide.md` in okkama-docs.
+bundled tzdata. `berlin.instant(local)` resolves a local time: a gap throws
+`MissingLocalTime`, and a repeated hour takes the earlier instant unless
+`fold: Fold.later` asks for the other. `ZonedDateTime(instant:, zone:)` shows
+an instant there: `local_datetime()`, `offset()`, `abbreviation()`. The guide
+is `docs/time-guide.md` in okkama-docs.
 
 `async` composes futures: `await Within(origin:, limit:, clock:).outcome()`
 and `Before(…)` bound one by time and throw `TimedOut`;

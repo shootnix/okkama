@@ -11,10 +11,7 @@ import "time/day" take TimeOfDay;
 //         date: Date(year: 2026, month: 8, day: 11),
 //         time: TimeOfDay(hour: 23, minute: 30, second: 0, nanosecond: 0),
 //     );
-//     let finish = start.plus(Duration(
-//         value: 2.rat(),
-//         unit: DurationUnit.hour,
-//     )); // 2026-08-12 01:30
+//     let finish = start.plus(Duration(hours: 2)); // 2026-08-12T01:30:00
 //
 // Arithmetic treats every civil day as exactly 86,400 seconds. This object
 // does not model daylight-saving transitions, offsets, leap seconds or an
@@ -36,6 +33,11 @@ object LocalDateTime does Comparing<LocalDateTime> {
 
     time() is TimeOfDay {
         time_value;
+    }
+
+    // ISO 8601: "2026-08-11T12:30:45.125".
+    string() is string {
+        date_value.string() + "T" + time_value.string();
     }
 
     plus(duration is Duration) is LocalDateTime {
@@ -136,4 +138,12 @@ test "local date-times add whole civil days" {
         },
         -1
     );
+}
+
+test "a local date-time writes itself in ISO 8601" {
+    let local = LocalDateTime(
+        date: Date(year: 2026, month: 8, day: 11),
+        time: TimeOfDay(hour: 12, minute: 30, second: 45, nanosecond: 125000000),
+    );
+    test.is(local.string(), "2026-08-11T12:30:45.125");
 }

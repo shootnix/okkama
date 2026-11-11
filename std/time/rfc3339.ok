@@ -5,7 +5,7 @@ import "time/clock" take Instant;
 import "time/date" take Date;
 import "time/day" take TimeOfDay;
 import "time/local_datetime" take LocalDateTime;
-import "time/iso" take IsoLocalDateTime, IsoText, InvalidIsoLocalDateTime;
+import "time/iso" take IsoText, InvalidIsoLocalDateTime;
 import "strings/parse" take Number, InvalidInteger;
 
 // Strict nanosecond-resolution RFC 3339 timestamps.
@@ -97,7 +97,7 @@ object Rfc3339 {
                 ":" +
                 ("00" + minute).slice(minute.length(), minute.length() + 2);
         };
-        IsoLocalDateTime(origin: local).string() + suffix;
+        local.string() + suffix;
     }
 
     // The formatter of the timestamp read from the source.

@@ -6,9 +6,8 @@ import "archive/metadata" take ArchiveMetadata, ArchiveModificationFromEpoch;
 import "archive/path" take ArchivePath, UnsafeArchivePath;
 import "archive/tar" take ParsedTar, TarArchive;
 import "collections/list" take EmptyList, List;
-import "encoding/utf" take Utf8Decoded, Utf8Encoded;
+import "encoding/utf" take Utf8Encoded;
 import "io/stdout" take Stdout;
-import "time/iso" take IsoLocalDateTime;
 
 // Build a TAR archive in memory, read it back within limits, and see that
 // unsafe paths and oversized members are refused. Nothing touches the disk:
@@ -38,7 +37,7 @@ main() is int {
         }
         else {
             out.writeln("file " + entry.path().string() + " modified "
-                + IsoLocalDateTime(entry.metadata().modification()).string());
+                + entry.metadata().modification().string());
         }
     }
 
