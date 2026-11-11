@@ -36,7 +36,7 @@ object NamedTemplate {
 // Retains TextTemplate owners; no resource acquisition, compilation or destroy.
 // O(n) references, O(n²) duplicate checks, O(n) lookups within the count bound.
 // The count does not limit source bytes; TextTemplate owns compile/output limits.
-// Example: TemplateLibrary([NamedTemplate("greeting",TextTemplate("Hello"))]);
+// Example: TemplateLibrary(NamedTemplate("greeting",TextTemplate("Hello")));
 // Partial expansion is a separate contract: this module only names templates.
 // Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/template/library.ok
 object TemplateLibrary {
@@ -48,6 +48,12 @@ object TemplateLibrary {
 
     TemplateLibrary(values is Sequencing<NamedTemplate>) {
         origin = TemplateLibrarySnapshot(source: values, maximum: 1024).items();
+    }
+
+    // The same, one argument per part: TemplateLibrary(a, b).
+    TemplateLibrary(values is ...NamedTemplate) {
+        let listed is @NamedTemplate = values...;
+        origin = TemplateLibrarySnapshot(source: listed, maximum: 1024).items();
     }
 
     TemplateLibrary(values is Sequencing<NamedTemplate>, maximum_templates is int) {
@@ -138,7 +144,7 @@ test "empty and missing templates have explicit behavior" {
 }
 
 test "empty library permits zero and rejects negative bounds" {
-    test.is(TemplateLibrary([]).names().size(), 0);
+    test.is(TemplateLibrary().names().size(), 0);
     test.is(TemplateLibrary(values: [], maximum_templates: 0).names().size(), 0);
     test.ok(try {
         TemplateLibrary(values: [], maximum_templates: -1);

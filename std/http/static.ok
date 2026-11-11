@@ -264,10 +264,8 @@ object StaticFiles does Handling {
                 Response(
                     status: Status.method_not_allowed,
                     headers: Headers(
-                        [
-                            Header(name: HeaderName("Allow"), value: "GET, HEAD"),
-                            Header(name: HeaderName("Date"), value: HttpDate(now).string())
-                        ]
+                        Header(name: HeaderName("Allow"), value: "GET, HEAD"),
+                        Header(name: HeaderName("Date"), value: HttpDate(now).string())
                     )
                 )
             );
@@ -290,7 +288,7 @@ object StaticFiles does Handling {
         catch e is NoAcceptableValue {
             Response(
                 status: Status.not_acceptable,
-                headers: Headers([Header(name: HeaderName("Vary"), value: "Accept-Encoding")])
+                headers: Headers(Header(name: HeaderName("Vary"), value: "Accept-Encoding"))
             );
         }
         catch FileError.not_found(_), FileError.invalid_operation(_), FileError.permission_denied(_), FileError.invalid_text(
@@ -322,7 +320,7 @@ object StaticFiles does Handling {
         if metadata::Shape::kind == FileKind.directory && !path.slash() {
             return Response(
                 status: Status.permanent_redirect,
-                headers: Headers([Header(name: HeaderName("Location"), value: path.redirect())])
+                headers: Headers(Header(name: HeaderName("Location"), value: path.redirect()))
             );
         }
         let chosen = self.index(coordinates, metadata::Shape::kind == FileKind.directory);
@@ -406,13 +404,11 @@ object StaticFiles does Handling {
         });
         let headers = Atomic(
             Headers(
-                [
-                    Header(name: HeaderName("Content-Type"), value: type),
-                    Header(name: HeaderName("Content-Length"), value: size.string()),
-                    Header(name: HeaderName("ETag"), value: tag.string()),
-                    Header(name: HeaderName("Last-Modified"), value: date.string()),
-                    Header(name: HeaderName("Accept-Ranges"), value: "bytes")
-                ]
+                Header(name: HeaderName("Content-Type"), value: type),
+                Header(name: HeaderName("Content-Length"), value: size.string()),
+                Header(name: HeaderName("ETag"), value: tag.string()),
+                Header(name: HeaderName("Last-Modified"), value: date.string()),
+                Header(name: HeaderName("Accept-Ranges"), value: "bytes")
             )
         );
         if policy::Settings::precompressed {
@@ -435,7 +431,7 @@ object StaticFiles does Handling {
         if decision == 412 {
             return Response(
                 status: Status.precondition_failed,
-                headers: Headers([Header(name: HeaderName("ETag"), value: tag.string())])
+                headers: Headers(Header(name: HeaderName("ETag"), value: tag.string()))
             );
         }
         if request::Head::method == Method.head {
@@ -448,10 +444,8 @@ object StaticFiles does Handling {
             return Response(
                 status: Status.range_not_satisfiable,
                 headers: Headers(
-                    [
-                        Header(name: HeaderName("Content-Range"), value: "bytes */" + size.string()),
-                        Header(name: HeaderName("ETag"), value: tag.string())
-                    ]
+                    Header(name: HeaderName("Content-Range"), value: "bytes */" + size.string()),
+                    Header(name: HeaderName("ETag"), value: tag.string())
                 )
             );
         }
@@ -638,11 +632,9 @@ object StaticFiles does Handling {
         }
         let bytes = Utf8Encoded(text.value() + "</ul>").bytes();
         let headers = Headers(
-            [
-                Header(name: HeaderName("Content-Type"), value: "text/html; charset=utf-8"),
-                Header(name: HeaderName("Content-Length"), value: bytes.size().string()),
-                Header(name: HeaderName("Cache-Control"), value: "no-store")
-            ]
+            Header(name: HeaderName("Content-Type"), value: "text/html; charset=utf-8"),
+            Header(name: HeaderName("Content-Length"), value: bytes.size().string()),
+            Header(name: HeaderName("Cache-Control"), value: "no-store")
         );
         if request::Head::method == Method.head {
             Response(status: Status.ok, headers: headers);
@@ -1010,7 +1002,7 @@ hidden object StaticBodyReading does BodyReading {
 
     trailers() is Headers {
         confirm finished.ready() else throw TrailersUnavailable.unavailable;
-        Headers([]);
+        Headers();
     }
 
     async bytes(limit is int) is @byte {

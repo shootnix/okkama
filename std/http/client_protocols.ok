@@ -63,7 +63,7 @@ object HttpClientProtocols {
 }
 
 test "the client agrees protocols with TLS and maps ALPN to a version" {
-    let trust = TrustedCertificates([]);
+    let trust = TrustedCertificates();
     let versions is Set<TlsVersion> = OrderedSet([TlsVersion.tls1_3]);
     let plain = HttpClientProtocols(policy: ClientPolicy(), tls: TlsClientPolicy(trust));
     test.is(plain.clear() == HttpVersion.http_1_1, true);

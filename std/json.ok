@@ -25,11 +25,11 @@ import "runtime/json" take JsonParseState, JsonNodeState, json_parse_state, json
 //         Line(sku: line.text("sku"), qty: line.int("qty"));
 //     };
 //
-//     let reply = Json([
+//     let reply = Json(
 //         JsonField("id", 4711),
-//         JsonField("customer", Json([JsonField("name", "Ada")])),
+//         JsonField("customer", Json(JsonField("name", "Ada"))),
 //         JsonField("tags", Json(items: [Json("new"), Json("vip")])),
-//     ]);
+//     );
 //     reply.string();                                 // compact text
 //     reply.pretty(2);                                // indented text
 //
@@ -102,6 +102,24 @@ object Json {
 
     // An object; repeated names are JsonError.duplicate_member. Json(fields: []) is {}.
     Json(fields is @JsonField) {
+        let names is @string = fields.map() -> field {
+            field::Member::name;
+        };
+        let repeated = json_repeated_name(names);
+        confirm repeated == names.size() else throw JsonError.duplicate_member(names[repeated]);
+        let values is @JsonNodeState = fields.map() -> field {
+            let value = field::Member::value;
+            value::Node::state;
+        };
+        let made = json_object_node(names, values);
+        node = made;
+        root = made;
+    }
+
+    // An object written out member by member:
+    // Json(JsonField("id", 7), JsonField("state", "new")).
+    Json(members is ...JsonField) {
+        let fields is @JsonField = members...;
         let names is @string = fields.map() -> field {
             field::Member::name;
         };
@@ -825,14 +843,14 @@ enum JsonError is Error = (wrong_kind(pointer is string, expected is JsonKind, a
 ), invalid_indentation(amount is int));
 
 test "values built in code are written compact and pretty" {
-    let value = Json([
+    let value = Json(
         JsonField("name", "Ada \"\u{1}\" é 🙂 /"),
         JsonField("tags", Json(items: [Json("a"), Json(), Json(false)])),
         JsonField("empty", Json(fields: [])),
         JsonField("none", Json(items: [])),
         JsonField("n", Decimal("-0.50")),
         JsonField("i", 42),
-    ]);
+    );
     test.is(
         value.string(),
         "{\"name\":\"Ada \\\"\\u0001\\\" é 🙂 /\",\"tags\":[\"a\",null,false],\"empty\":{},\"none\":[],\"n\":-0.5,\"i\":42}"
@@ -842,10 +860,22 @@ test "values built in code are written compact and pretty" {
         "[123456789012345678901,1.5,2.5e-8]"
     );
     test.is(
-        Json(items: [Json([JsonField("a", 1)]), Json(items: [])]).pretty(2),
+        Json(items: [Json(JsonField("a", 1)), Json(items: [])]).pretty(2),
         "[\n  {\n    \"a\": 1\n  },\n  []\n]"
     );
     test.is(Json(fields: []).pretty(0), "{}");
+    test.is(Json(JsonField("a", 1), JsonField("b", true)).string(), "{\"a\":1,\"b\":true}");
+    test.is(Json(fields: [JsonField("a", 1), JsonField("b", true)]).string(), "{\"a\":1,\"b\":true}");
+    test.is(Json().string(), "null");
+    test.is(
+        try {
+            Json(JsonField("a", 1), JsonField("a", 2)).string();
+        }
+        catch JsonError.duplicate_member(name) {
+            name
+        },
+        "a"
+    );
     test.is(
         try {
             Json(1).pretty(-1);
@@ -1148,7 +1178,7 @@ test "parsed text is written back exactly" {
         ParsedJson(source).root().string(),
         "{\"a\":[1,2.5,0,100,\"é\\n\\\"\"],\"b\":{\"c\":true,\"d\":null}}"
     );
-    let built = Json([JsonField("doc", ParsedJson(source).root().get("b"))]);
+    let built = Json(JsonField("doc", ParsedJson(source).root().get("b")));
     test.is(built.string(), "{\"doc\":{\"c\":true,\"d\":null}}");
 }
 

@@ -78,13 +78,13 @@ enum NonScalarSetting is Error = (detailed(key is string, count is int));
 
 test "settings read one value, a list or a fallback, with their source" {
     let file = SettingSource(kind: SettingSourceKind.document, name: "app.toml");
-    let host = SettingKey(["db", "host"]);
-    let hosts = SettingKey(["db", "replicas"]);
-    let port = SettingKey(["db", "port"]);
-    let settings = Settings([
+    let host = SettingKey("db", "host");
+    let hosts = SettingKey("db", "replicas");
+    let port = SettingKey("db", "port");
+    let settings = Settings(
         SettingEntry(key: host, values: ["localhost"], source: file),
         SettingEntry(key: hosts, values: ["a", "b"], source: file),
-    ]);
+    );
     test.is(ScalarSetting(origin: settings, key: host).text(), "localhost");
     test.is(ScalarSetting(origin: settings, key: host).source()::Source::name, "app.toml");
     test.is(Setting(origin: settings, key: hosts).values().size(), 2);

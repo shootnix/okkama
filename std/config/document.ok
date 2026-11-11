@@ -400,7 +400,7 @@ object IniSettings does SettingReading {
             for section.entries() -> entry {
                 entries.append(
                     SettingEntry(
-                        key: SettingKey([section.name(), entry.name()]),
+                        key: SettingKey(section.name(), entry.name()),
                         values: [entry.value()],
                         source: source
                     )
@@ -460,10 +460,10 @@ test "a JSON document becomes settings: nested members extend the key, arrays ar
         document: ParsedJson("{\"db\":{\"host\":\"h\",\"port\":5432},\"tags\":[\"a\",\"b\"],\"on\":true}").root(),
         source: SettingSource(kind: SettingSourceKind.document, name: "test.json")
     );
-    test.is(settings.entry(SettingKey(["db", "host"])).values().item(0), "h");
-    test.is(settings.entry(SettingKey(["db", "port"])).values().item(0), "5432");
-    test.is(settings.entry(SettingKey(["tags"])).values().size(), 2);
-    test.is(settings.entry(SettingKey(["tags"])).values().item(1), "b");
-    test.is(settings.membership(SettingKey(["on"])), true);
-    test.is(settings.membership(SettingKey(["db"])), false);
+    test.is(settings.entry(SettingKey("db", "host")).values().item(0), "h");
+    test.is(settings.entry(SettingKey("db", "port")).values().item(0), "5432");
+    test.is(settings.entry(SettingKey("tags")).values().size(), 2);
+    test.is(settings.entry(SettingKey("tags")).values().item(1), "b");
+    test.is(settings.membership(SettingKey("on")), true);
+    test.is(settings.membership(SettingKey("db")), false);
 }

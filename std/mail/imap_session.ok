@@ -1017,7 +1017,7 @@ object ImapCopiedUids {
             assigned = ImapAssignedUids(MailboxUids(mailbox: destination, validity: validity, uids: to, account: account));
         }
         else {
-            sources = ImapUidSet([]);
+            sources = ImapUidSet();
             assigned = ImapAssignedUids();
         }
     }
@@ -1204,8 +1204,7 @@ hidden object ImapAppending {
         let validity = ImapUidValidity(
             BigInt(ImapUnsigned(origin: arguments.item(0).string(), nonzero: true).int().string())
         );
-        let assigned = ImapUidSet(
-            [ImapUid(BigInt(ImapUnsigned(origin: arguments.item(1).string(), nonzero: true).int().string()))]
+        let assigned = ImapUidSet(ImapUid(BigInt(ImapUnsigned(origin: arguments.item(1).string(), nonzero: true).int().string()))
         );
         ImapAssignedUids(MailboxUids(mailbox: mailbox, validity: validity, uids: assigned, account: origin.account()));
     }

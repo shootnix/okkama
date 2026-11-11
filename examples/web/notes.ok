@@ -5,19 +5,13 @@ import "web/routing" take WebRoutes, Get, Post, Scope;
 import "web/request" take WebRequest;
 import "web/reply" take Text, JsonReply;
 import "http/handler" take HandlingResult;
-import "http/server" take HttpServer;
 import "http/client" take HttpClient;
-import "http/endpoint" take ListedNetworks;
+import "http/endpoint" take LoopbackEndpoints;
 import "http/body" take JsonBody;
-import "http/status" take StatusCode;
-import "net/ip" take IpAddress, IpNetwork;
-import "net/dns" take FixedResolution;
 import "json" take Json, JsonField;
 import "strings/parse" take Number;
 import "async/atomic" take Atomic;
-import "async/scope" take FutureGroup;
-import "time/clock" take SystemClock;
-import "time/duration" take Duration, DurationUnit;
+import "time/duration" take Duration;
 import "io/stdout" take Stdout;
 
 // A small JSON service: routes under /api, a path parameter, a JSON body,
@@ -36,7 +30,7 @@ object Notes {
 
     async list(request is WebRequest) is HandlingResult {
         let limit = Number(request.query("limit") else "10").int();
-        let shown is @Json = items.value().slice(0, if limit < items.value().size() { limit; } else { items.value().size(); }).map() -> text {
+        let shown is @Json = items.value().take(limit).map() -> text {
             Json(text);
         };
         JsonReply(status: 200, value: Json(shown));
@@ -45,7 +39,7 @@ object Notes {
     async add(request is WebRequest) is HandlingResult {
         let body = await request.json(4096);
         items.replace(items.value() + [body.text("text")]);
-        JsonReply(status: 201, value: Json([JsonField("id", items.value().size())]));
+        JsonReply(status: 201, value: Json(JsonField("id", items.value().size())));
     }
 
     async one(request is WebRequest) is HandlingResult {
@@ -72,27 +66,21 @@ async main() is int {
         ])],
         fallback: notes.missing,
     );
-    let server = await WebApplication(routes).server("127.0.0.1", 0);
-    let serving is FutureGroup<HttpServer> = FutureGroup();
-    serving.start(server.serve());
-    let base = "http://127.0.0.1:" + server.local_endpoint()::Parts::port.string();
-    let client = HttpClient(
-        resolver: FixedResolution([]),
-        endpoints: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)])
-    );
+    let server = (await WebApplication(routes).server("127.0.0.1", 0)).started();
+    let base = "http://127.0.0.1:" + server::Local::port.string();
+    let client = HttpClient(endpoints: LoopbackEndpoints());
 
     for ["buy tea", "call Ada"] -> text {
-        let created = await client.post(url: base + "/api/notes", body: JsonBody(Json([JsonField("text", text)])));
-        out.writeln("POST /api/notes -> " + StatusCode(created::Head::status).number().string() + " " + await created.text());
+        let created = await client.post(url: base + "/api/notes", body: JsonBody(Json(JsonField("text", text))));
+        out.writeln("POST /api/notes -> " + created::Head::code.string() + " " + await created.text());
     }
     for ["/api/notes", "/api/notes?limit=1", "/api/notes/2", "/api/notes/9", "/elsewhere"] -> path {
         let page = await client.get(base + path);
-        out.writeln("GET " + path + " -> " + StatusCode(page::Head::status).number().string() + " " + await page.text());
+        out.writeln("GET " + path + " -> " + page::Head::code.string() + " " + await page.text());
     }
 
     client.close();
     await server.drain(limit: Duration(seconds: 5));
-    await serving.wait();
     out.writeln("drained");
     0;
 }

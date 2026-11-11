@@ -234,23 +234,21 @@ object JsonTestReport {
         let values is @Json = (0..results.size()).map() -> index {
             self.result(results.item(index));
         };
-        Json([
+        Json(
             JsonField("seed", Json(origin.seed())),
             JsonField("start_unix_ns", Json(origin.start().unix_duration().nanoseconds().string())),
             JsonField("duration_ns", Json(origin.duration().nanoseconds().string())),
             JsonField(
                 "counts",
                 Json(
-                    [
-                        JsonField("passes", Json(counts::Counts::passes)),
-                        JsonField("failures", Json(counts::Counts::failures)),
-                        JsonField("skips", Json(counts::Counts::skips)),
-                        JsonField("total", Json(counts.total()))
-                    ]
+                    JsonField("passes", Json(counts::Counts::passes)),
+                    JsonField("failures", Json(counts::Counts::failures)),
+                    JsonField("skips", Json(counts::Counts::skips)),
+                    JsonField("total", Json(counts.total()))
                 )
             ),
-            JsonField("results", Json(items: values)),
-        ]).string();
+            JsonField("results", Json(items: values))
+        ).string();
     }
 
     hidden result(result is TestResult) is Json {
@@ -258,7 +256,7 @@ object JsonTestReport {
         let problems is @Json = (0..failures.size()).map() -> index {
             self.failure(failures.item(index));
         };
-        Json([
+        Json(
             JsonField("name", Json(result::Outcome::name)),
             JsonField("status", Json(TestStatusName(result::Outcome::status).string())),
             JsonField("duration_ns", Json(result.duration().nanoseconds().string())),
@@ -267,18 +265,16 @@ object JsonTestReport {
             JsonField("stderr_base64", Json(Base64Encoded(result.output()::Captured::errors).string())),
             JsonField("truncated", Json(result.output()::Captured::truncated)),
             JsonField("skip_reason", Json(result::Outcome::skip_reason))
-        ]);
+        );
     }
 
     hidden failure(failure is TestFailure) is Json {
         let position is Json = if failure.located() {
             let place = failure.position();
             Json(
-                [
-                    JsonField("module", Json(place::Position::source)),
-                    JsonField("line", Json(place::Position::line)),
-                    JsonField("column", Json(place::Position::column))
-                ]
+                JsonField("module", Json(place::Position::source)),
+                JsonField("line", Json(place::Position::line)),
+                JsonField("column", Json(place::Position::column))
             );
         }
         else {
@@ -293,7 +289,7 @@ object JsonTestReport {
             Json(members);
         }
         else {
-            Json([members[0], members[1], JsonField("cause", self.failure(reasons.item(0)))]);
+            Json(members[0], members[1], JsonField("cause", self.failure(reasons.item(0))));
         }
     }
 }

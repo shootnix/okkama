@@ -45,7 +45,7 @@ object JsonTemplateStrings does TemplateStrings {
 
     string(path is string) is string {
         if path == "." {
-            self.scalar(TemplatePath(["."]), 1);
+            self.scalar(TemplatePath("."), 1);
         }
         else {
             self.string(TemplatePathFromString(path).path());
@@ -101,13 +101,13 @@ enum InvalidTemplateJsonLimits is Error = (invalid);
 enum TemplateJsonLimitExceeded is Error = (exceeded);
 
 test "dotted paths read scalars of a Json" {
-    let data = Json([
+    let data = Json(
         JsonField("name", "Ada"),
         JsonField("vip", true),
         JsonField("none", Json()),
         JsonField("total", Decimal("12.50")),
-        JsonField("address", Json([JsonField("city", "Oslo")]))
-    ]);
+        JsonField("address", Json(JsonField("city", "Oslo")))
+    );
     let strings = JsonTemplateStrings(data);
     test.is(
         strings.string("name") + "|" + strings.string("vip") + "|" + strings.string("none") + "|" +

@@ -46,33 +46,33 @@ main() is int {
     let utc = FixedZone(name: "UTC", offset: Duration(seconds: 0));
     let kept = CollectedLogs();
     // Debug is shown for "shop.db" only; everything else starts at info.
-    let levels = LevelThresholds(fallback: LogLevel.info, overrides: [LevelOverride(name: LogName(["shop", "db"]), level: LogLevel.debug)]);
+    let levels = LevelThresholds(fallback: LogLevel.info, overrides: [LevelOverride(name: LogName("shop", "db"), level: LogLevel.debug)]);
     let destination = AllowedLogs(
         origin: RedactedLogs(
-            origin: BroadcastLogs([TextStreamLogs(origin: Stdout(), zone: utc), kept]),
+            origin: BroadcastLogs(TextStreamLogs(origin: Stdout(), zone: utc), kept),
             names: ["card"],
             replacement: Json("[hidden]"),
         ),
         allowing: levels,
     );
     let shop = NamedLogging(
-        name: LogName(["shop"]),
+        name: LogName("shop"),
         destination: destination,
         clock: FixedClock(),
-        fields: LogFields([JsonField("region", "eu")]),
+        fields: LogFields(JsonField("region", "eu")),
         process: FixedProcess(),
     );
 
     shop.log(LogLevel.info, "started");
     shop.log(LogLevel.debug, "not shown: shop is at info");
     let db = shop.child("db");
-    db.log(LogLevel.debug, "connected", LogFields([JsonField("pool", 4)]));
-    shop.log(LogLevel.info, "paid", LogFields([JsonField("order", 17), JsonField("card", "4111 1111 1111 1111")]));
+    db.log(LogLevel.debug, "connected", LogFields(JsonField("pool", 4)));
+    shop.log(LogLevel.info, "paid", LogFields(JsonField("order", 17), JsonField("card", "4111 1111 1111 1111")));
     try {
         throw InvalidOrder.empty;
     }
     catch error is InvalidOrder {
-        shop.log(LogLevel.error, "order refused", LogFields([JsonField("order", 18)]), error);
+        shop.log(LogLevel.error, "order refused", LogFields(JsonField("order", 18)), error);
     }
 
     Stdout().writeln("kept " + kept.size().string() + " records; the last one as JSON:");

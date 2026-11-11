@@ -86,6 +86,23 @@ object Settings does SettingReading {
         lookup = checked;
     }
 
+    // The same, one argument per part: Settings(a, b).
+    Settings(entries is ...SettingEntry) {
+        let listed is @SettingEntry = entries...;
+        let size = listed.size();
+        confirm size >= 0 && size <= 4096 else throw SettingLimitExceeded.exceeded;
+        let snapshot is @SettingEntry = (0..size).map() -> index {
+            listed.item(index);
+        };
+        let keys is @SettingKey = snapshot.map() -> entry {
+            entry.key();
+        };
+        let checked = SettingKeyIndex(keys);
+        checked.valid();
+        origin = snapshot;
+        lookup = checked;
+    }
+
     membership(key is SettingKey) is bool {
         self.index(key) >= 0;
     }
@@ -215,6 +232,23 @@ object LayeredSettings does SettingReading {
         confirm size >= 0 && size <= 128 else throw SettingLimitExceeded.exceeded;
         let merged = (0..size).reduce(SettingOverlay()) -> old, index {
             let layer = layers.item(index);
+            let keys = layer.keys();
+            confirm keys.size() >= 0 && keys.size() <= 4096
+                else throw SettingLimitExceeded.exceeded;
+            keys.reduce(old) -> state, key {
+                state.replaced(layer.entry(key));
+            };
+        };
+        origin = Settings(merged.entries());
+    }
+
+    // The same, one argument per part: LayeredSettings(a, b).
+    LayeredSettings(layers is ...SettingReading) {
+        let listed is @SettingReading = layers...;
+        let size = listed.size();
+        confirm size >= 0 && size <= 128 else throw SettingLimitExceeded.exceeded;
+        let merged = (0..size).reduce(SettingOverlay()) -> old, index {
+            let layer = listed.item(index);
             let keys = layer.keys();
             confirm keys.size() >= 0 && keys.size() <= 4096
                 else throw SettingLimitExceeded.exceeded;
@@ -615,14 +649,12 @@ enum DuplicateSetting is Error = (key(key is string));
 enum SettingLimitExceeded is Error = (exceeded);
 
 test "layers replace complete values and preserve the winning source" {
-    let key = SettingKey(["name"]);
+    let key = SettingKey("name");
     let defaults = SettingSource(kind: SettingSourceKind.defaults, name: "defaults");
     let cli = SettingSource(kind: SettingSourceKind.command_line, name: "argv");
     let result = LayeredSettings(
-        [
-            Settings([SettingEntry(key: key, values: ["world"], source: defaults)]),
-            Settings([SettingEntry(key: key, values: [""], source: cli)])
-        ]
+        Settings(SettingEntry(key: key, values: ["world"], source: defaults)),
+        Settings(SettingEntry(key: key, values: [""], source: cli))
     );
     test.is(result.entry(key).values().first(), "");
     test.is(result.entry(key).source()::Source::name, "argv");
@@ -721,15 +753,15 @@ enum MalformedSetting is Error = (detailed(key is string, expected is string, va
 test "settings read a value by its dotted name" {
     let file = SettingSource(kind: SettingSourceKind.document, name: "app.ini");
     let line = SettingSource(kind: SettingSourceKind.command_line, name: "argv");
-    let settings = LayeredSettings([
-        Settings([
-            SettingEntry(key: SettingKey(["server", "port"]), values: ["8080"], source: file),
-            SettingEntry(key: SettingKey(["server", "debug"]), values: ["true"], source: file),
-            SettingEntry(key: SettingKey(["server", "ratio"]), values: ["0.5"], source: file),
-            SettingEntry(key: SettingKey(["cors", "origins"]), values: ["a", "b"], source: file),
-        ]),
-        Settings([SettingEntry(key: SettingKey(["server", "port"]), values: ["9090"], source: line)]),
-    ]);
+    let settings = LayeredSettings(
+        Settings(
+            SettingEntry(key: SettingKey("server", "port"), values: ["8080"], source: file),
+            SettingEntry(key: SettingKey("server", "debug"), values: ["true"], source: file),
+            SettingEntry(key: SettingKey("server", "ratio"), values: ["0.5"], source: file),
+            SettingEntry(key: SettingKey("cors", "origins"), values: ["a", "b"], source: file),
+        ),
+        Settings(SettingEntry(key: SettingKey("server", "port"), values: ["9090"], source: line)),
+    );
     test.is(settings.int("server.port") else 0, 9090);
     test.is((settings.source("server.port") else file)::Source::name, "argv");
     test.is(settings.bool("server.debug") else false, true);

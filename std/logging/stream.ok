@@ -53,6 +53,22 @@ object LogStyles {
         origin = snapshot;
     }
 
+    // The same, one argument per part: LogStyles(a, b).
+    LogStyles(styles is ...LogStyle) {
+        let listed is @LogStyle = styles...;
+        confirm listed.size() >= 0 && listed.size() <= 5 else throw InvalidLogStyles.invalid;
+        let snapshot is @LogStyle = (0..listed.size()).map() -> index {
+            listed.item(index);
+        };
+        for (0..snapshot.size()) -> index {
+            for (0..index) -> previous {
+                confirm snapshot[index].level() != snapshot[previous].level()
+                    else throw InvalidLogStyles.invalid;
+            }
+        }
+        origin = snapshot;
+    }
+
     style(level is LogLevel) is TextStyle {
         origin.reduce(TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: [])) -> old, entry {
             if entry.level() == level {
@@ -130,7 +146,7 @@ test "stream writers put one line per record on their output" {
         occurred: Instant(Duration(seconds: 1700000000)),
         level: LogLevel.info,
         message: "up",
-        context: LogContext(name: LogName(["app"]), fields: LogFields([]), process: 1),
+        context: LogContext(name: LogName("app"), fields: LogFields(), process: 1),
     );
     let text = ByteBuffer();
     let zone = FixedZone(name: "UTC", offset: Duration(seconds: 0));
@@ -139,10 +155,10 @@ test "stream writers put one line per record on their output" {
     let json = ByteBuffer();
     JsonStreamLogs(json.writing()).write(record);
     test.ok(Utf8Decoded(json.content().bytes()).string().starts_with("{\"time\":\"2023-11-14T22:13:20Z\",\"level\":\"INFO\""));
-    let styles = LogStyles([LogStyle(level: LogLevel.error, style: TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: []))]);
+    let styles = LogStyles(LogStyle(level: LogLevel.error, style: TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: [])));
     styles.style(LogLevel.error);
     styles.style(LogLevel.info);
     test.throws(InvalidLogStyles) {
-        LogStyles([LogStyle(level: LogLevel.error, style: TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: [])), LogStyle(level: LogLevel.error, style: TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: []))]);
+        LogStyles(LogStyle(level: LogLevel.error, style: TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: [])), LogStyle(level: LogLevel.error, style: TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: [])));
     };
 }

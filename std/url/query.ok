@@ -44,6 +44,12 @@ object QueryParameters {
         origin = ParameterSnapshot(origin: entries, maximum: 10000).entries();
     }
 
+    // The same, one argument per part: QueryParameters(a, b).
+    QueryParameters(entries is ...QueryParameter) {
+        let listed is @QueryParameter = entries...;
+        origin = ParameterSnapshot(origin: listed, maximum: 10000).entries();
+    }
+
     QueryParameters(entries is Sequencing<QueryParameter>, maximum_parameters is int) {
         origin = ParameterSnapshot(origin: entries, maximum: maximum_parameters).entries();
     }

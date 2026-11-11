@@ -53,12 +53,12 @@ object Problem does HandlingResult {
     }
 
     response() is Response {
-        let problem = Json([
+        let problem = Json(
             JsonField("type", "about:blank"),
             JsonField("title", self.title()),
             JsonField("status", code),
             JsonField("detail", message)
-        ]);
+        );
         ReplyResponse(
             status: code,
             media: "application/problem+json",

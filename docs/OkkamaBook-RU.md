@@ -4038,7 +4038,7 @@ destination: logs)` пишет через
 
 `config` складывает настройки слоями. `Settings`, `IniSettings`,
 `JsonSettings`, `TomlSettings`, `EnvironmentSettings` и `call.settings()` из
-`cli` — это слои. `LayeredSettings([defaults, file, environment, line])`
+`cli` — это слои. `LayeredSettings(defaults, file, environment, line)`
 даёт позднему слою победить по каждому ключу. Значения читаются по имени
 через точку: `settings.int("server.port") else 8080`; `text`, `float` и `bool`
 отвечают `Maybe`, `texts("cors.origins")` — списком, а `source(name)` говорит,
@@ -4217,7 +4217,7 @@ main() is int {
     let jar=MemoryCookieJar(SystemClock());defer jar.close();
     let origin=ParsedUrl("https://example.com/a/b").parts();
     let context=CookieContext(site: origin,top_level: true,method: Method.get);
-    jar.store(origin,Headers([Header(name: HeaderName("Set-Cookie"),value: "session=opaque; Secure; HttpOnly; SameSite=Lax; Path=/")]),context);
+    jar.store(origin,Headers(Header(name: HeaderName("Set-Cookie"),value: "session=opaque; Secure; HttpOnly; SameSite=Lax; Path=/")),context);
     let cookies=jar.cookies(origin,context);confirm cookies.size()==1;
     Stdout().writeln(cookies.item(0).diagnostic());
     0;
@@ -5789,10 +5789,10 @@ reset. close планирует освобождение ресурсов, settl
 явно. Эти объекты представляют настройки и не читают поля доменных объектов.
 
 ```okkama
-let key=SettingKey(["greeting","name"]);
-let defaults=Settings([SettingEntry(key: key,values: ["world"],
-    source: SettingSource(kind: SettingSourceKind.defaults,name: "application"))]);
-let settings=LayeredSettings([defaults,invocation.settings()]);
+let key=SettingKey("greeting","name");
+let defaults=Settings(SettingEntry(key: key,values: ["world"],
+    source: SettingSource(kind: SettingSourceKind.defaults,name: "application")));
+let settings=LayeredSettings(defaults,invocation.settings());
 let name=settings.text("greeting.name") else "world";
 ```
 

@@ -662,7 +662,7 @@ hidden object FormPartInput does BodyReading {
     trailers() is Headers {
         confirm part.ended()
             else throw InvalidMultipartForm.because("part trailers unavailable before EOF");
-        Headers([]);
+        Headers();
     }
 
     async bytes(limit is int) is @byte {

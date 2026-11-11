@@ -1,12 +1,16 @@
 module http/message v1.0.0;
 
 import "http/method" take Method, MethodName;
-import "http/status" take Status, StatusCode;
+import "http/status" take Status, StatusCode, StatusClass;
 import "http/header" take Headers, Header, HeaderName;
 import "http/body" take BodyOpening, EmptyBody, Content, TextBody;
 import "http/version" take HttpVersion;
 import "http/target" take RequestTarget, RequestTargetSnapshot, RequestTargetMethod, AbsoluteTarget;
 import "url/value" take ParsedUrl;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Decoded;
+import "async/atomic" take Atomic;
 
 // Immutable message metadata retains the body opening's declared capability.
 // It never opens, measures, closes or queries replayability during construction.
@@ -23,7 +27,7 @@ object Request {
     Request(
         target is RequestTarget,
         method is Method = Method.get,
-        headers is Headers = Headers([]),
+        headers is Headers = Headers(),
         body is BodyOpening = EmptyBody(),
         version is HttpVersion = HttpVersion.http_1_1
     ) {
@@ -38,7 +42,7 @@ object Request {
     Request(
         url is string,
         method is Method = Method.get,
-        headers is Headers = Headers([]),
+        headers is Headers = Headers(),
         body is BodyOpening = EmptyBody(),
         version is HttpVersion = HttpVersion.http_1_1
     ) {
@@ -70,6 +74,31 @@ object Request {
     body() is BodyOpening {
         body;
     }
+
+    // The whole body, at most limit bytes: await request.bytes(limit: 65536).
+    // A longer body throws BodyLimitExceeded.
+    async bytes(limit is int) is @byte {
+        confirm limit >= 0 else throw BodyLimitExceeded.limit(limit);
+        let input = body.reading();
+        defer input.close();
+        let joined = ByteBuffer();
+        defer joined.closing().close();
+        let output = joined.writing();
+        let taken = Atomic(0);
+        loop {
+            let chunk = await input.bytes(65536);
+            last if chunk.size() == 0;
+            taken.replace(taken.value() + chunk.size());
+            confirm taken.value() <= limit else throw BodyLimitExceeded.limit(limit);
+            output.write(ByteSnapshot(chunk));
+        }
+        joined.content().bytes();
+    }
+
+    // The whole body as UTF-8 text, at most limit bytes.
+    async text(limit is int) is string {
+        Utf8Decoded(await self.bytes(limit)).string();
+    }
 }
 
 // A response shows its head through the cap `Head`; `body()` is the opening
@@ -82,7 +111,7 @@ object Response {
 
     Response(
         status is Status,
-        headers is Headers = Headers([]),
+        headers is Headers = Headers(),
         body is BodyOpening = EmptyBody(),
         version is HttpVersion = HttpVersion.http_1_1
     ) {
@@ -97,7 +126,7 @@ object Response {
     Response(
         status is Status,
         content is Content,
-        headers is Headers = Headers([]),
+        headers is Headers = Headers(),
         version is HttpVersion = HttpVersion.http_1_1
     ) {
         self.status = status;
@@ -114,6 +143,15 @@ object Response {
     cap Head {
         status is Status {
             status;
+        }
+
+        // The status as a number: 200, 404, or the code of Status.other.
+        code is int {
+            StatusCode(status).number();
+        }
+
+        class is StatusClass {
+            StatusCode(status).class();
         }
 
         headers is Headers {
@@ -149,6 +187,8 @@ object RequestCoordinates {
 
 enum InvalidHttpMessage is Error = (because(reason is string));
 
+enum BodyLimitExceeded is Error = (limit(limit is int));
+
 test "message metadata does not open its empty body" {
     let response = Response(status: StatusCode(299).status());
     test.ok(
@@ -174,8 +214,17 @@ test "a response takes content and its media type" {
     let typed = Response(
         status: Status.created,
         content: TextBody(text: "{}"),
-        headers: Headers([Header(name: HeaderName("Content-Type"), value: "application/json")]),
+        headers: Headers(Header(name: HeaderName("Content-Type"), value: "application/json")),
     );
     test.is(typed::Head::headers.values(HeaderName("Content-Type")).size(), 1);
     test.is(typed::Head::headers.values(HeaderName("Content-Type")).item(0), "application/json");
+}
+
+async test "a request reads its whole body within a limit" {
+    let request = Request(url: "http://example.test/notes", method: Method.post, body: TextBody(text: "héllo").opening());
+    test.is(await request.text(limit: 64), "héllo");
+    let again = Request(url: "http://example.test/notes", method: Method.post, body: TextBody(text: "héllo").opening());
+    test.throws(BodyLimitExceeded) {
+        await again.bytes(limit: 3);
+    };
 }

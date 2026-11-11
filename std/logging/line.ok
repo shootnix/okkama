@@ -151,7 +151,7 @@ test "a record is one physical line of text or JSON, quotes escaped" {
         occurred: Instant(Duration(seconds: 1700000000)),
         level: LogLevel.warning,
         message: "slow \"query\"",
-        context: LogContext(name: LogName(["app", "db"]), fields: LogFields([JsonField("ms", 900)]), process: 7),
+        context: LogContext(name: LogName("app", "db"), fields: LogFields(JsonField("ms", 900)), process: 7),
         cause: InvalidLogProcess.invalid,
     );
     test.is(TextLogLine(origin: record, zone: FixedZone(name: "UTC", offset: Duration(seconds: 0))).string(), "2023-11-14T22:13:20Z level=WARNING name=\"app.db\" process=7 message=\"slow \\\"query\\\"\" fields={\"ms\":900} cause=\"InvalidLogProcess.invalid\"");

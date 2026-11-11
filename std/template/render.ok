@@ -51,7 +51,7 @@ test "empty streamed template has no implicit newline" {
     let out = ByteBuffer();
     TemplateOutput(
         origin: TextTemplate(origin: "", maximum_input: 0, maximum_nodes: 0, maximum_output: 0),
-        data: TemplateBindings([]),
+        data: TemplateBindings(),
         destination: Utf8Output(origin: out.writing())
     ).write();
     test.is(out.content().size(), 0);

@@ -19,7 +19,7 @@ enum OperandCount = (required, optional, repeated);
 // Specification objects describe syntax, never callbacks or process exits.
 // An option, a flag and an operand are named by their long name, without
 // dashes; that name also reads them back from an Invocation. A key is needed
-// only to layer the command line over configuration (SettingKey([name]) by
+// only to layer the command line over configuration (SettingKey(name) by
 // default).
 
 object Option {
@@ -35,7 +35,7 @@ object Option {
         repeated is bool = false,
         help is string = "",
     ) {
-        setting = SettingKey([name]);
+        setting = SettingKey(name);
         spellings = CliSpellings(name: name, short: short).names();
         confirm value != "" else throw InvalidCommandSyntax.because("empty placeholder");
         long = name;
@@ -102,7 +102,7 @@ object Flag {
     has long, letter, text is string;
 
     Flag(name is string, short is string = "", help is string = "") {
-        setting = SettingKey([name]);
+        setting = SettingKey(name);
         spellings = CliSpellings(name: name, short: short).names();
         long = name;
         letter = short;
@@ -148,7 +148,7 @@ object Operand {
 
     Operand(name is string, count is OperandCount = OperandCount.required, help is string = "") {
         confirm name != "" else throw InvalidCommandSyntax.because("empty placeholder");
-        setting = SettingKey([name]);
+        setting = SettingKey(name);
         label = name;
         amount = count;
         text = help;

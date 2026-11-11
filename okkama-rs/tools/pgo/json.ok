@@ -37,8 +37,8 @@ object Order {
 
 object LineJson {
     LineJson();
-    value(view is Json) is Line { Line(sku: view.text("sku"), qty: view.optional("qty").int(1)); }
-    json(line is Line) is Json { Json([JsonField("sku", line.sku()), JsonField("qty", line.quantity())]); }
+    value(view is Json) is Line { Line(sku: view.text("sku"), qty: view.maybe("qty").int() else 1); }
+    json(line is Line) is Json { Json(JsonField("sku", line.sku()), JsonField("qty", line.quantity())); }
 }
 
 object OrderJson {
@@ -48,24 +48,24 @@ object OrderJson {
         Order(
             id: view.int("id"),
             name: view.get("customer").text("name"),
-            note: view.optional("note").text(""),
+            note: view.maybe("note").text() else "",
             total: view.number("total"),
-            paid: view.optional("paid").boolean(false),
+            paid: view.maybe("paid").boolean() else false,
             lines: view.list("lines").map() -> line { LineJson().value(line); }
         );
     }
 
     json(order is Order) is Json {
         let lines is @Json = order.lines().map() -> line { LineJson().json(line); };
-        Json([
+        Json(
             JsonField("id", order.id()),
-            JsonField("customer", Json([JsonField("name", order.name())])),
+            JsonField("customer", Json(JsonField("name", order.name()))),
             JsonField("note", order.note()),
             JsonField("total", order.total()),
             JsonField("paid", order.paid()),
             JsonField("tags", Json(items: [Json("a"), Json("b \"q\"\n")])),
             JsonField("lines", Json(items: lines))
-        ]);
+        );
     }
 }
 

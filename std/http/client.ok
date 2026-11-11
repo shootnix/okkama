@@ -5,21 +5,18 @@ import "json" take Json, JsonField;
 import "http/status" take Status, StatusClass;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "io/decorators" take ByteSnapshot;
-import "net/ip" take IpAddress, IpNetwork;
-import "net/endpoint" take IpEndpoint;
 import "net/tcp" take TcpListening, TcpListener, TcpConnection;
 import "http/cookie_client" take CookieExchanging, FirstPartyCookies;
 import "http/cookie_jar" take CookieStoring, MemoryCookieJar;
 import "http/redirect" take Redirects, Redirecting;
 import "collections/set" take Set, OrderedSet;
-import "http/client_policy" take ClientPolicy, Http1ClientProtocols, HttpLimits, ClientTimeouts;
+import "http/client_policy" take ClientPolicy, HttpLimits, ClientTimeouts;
 import "http/transport_observation" take HttpPeerGoneBeforeResponse;
 import "http/client_protocols" take HttpClientProtocols;
 import "http/selected_connection" take HttpSelectedConnecting;
 import "http/conversation" take HttpConversationConnecting, HttpConversationAcquisition,
     HttpConversationExchange, Http2ConversationConnecting, HttpConversationRouting;
-import "http/http2_connection" take Http2Connecting, Http2Acquisition;
-import "http/http2_session" take Http2Exchange;
+import "http/http2_connection" take Http2Connecting;
 import "http/http2_settings" take Http2Settings;
 import "http/internal/http2_fields" take Http2RequestFields;
 import "http/version" take HttpVersion, UnsupportedHttpVersion;
@@ -29,8 +26,7 @@ import "http/message" take Request, Response, InvalidHttpMessage;
 import "http/exchange" take ClientResponse, Exchanging, HttpClientKey;
 import "http/connection" take Http1Connecting, Http1Acquisition, HttpAcquisitionCleanup;
 import "http/http1_session" take Http1Exchange;
-import "http/endpoint" take HttpEndpointSelection, EndpointDenied, EndpointAllowing,
-    PublicEndpoints, ListedNetworks;
+import "http/endpoint" take HttpEndpointSelection, EndpointDenied, EndpointAllowing, PublicEndpoints, LoopbackEndpoints;
 import "http/body" take BodyOpening, BodyReading, BodyClosed, BodyAlreadyOpened, UnknownBodyLength,
     EmptyBody, Content, JsonBody;
 import "http/header" take Headers, Header, HeaderName;
@@ -45,7 +41,7 @@ import "async/event" take Event;
 import "async/scope" take FutureGroup;
 import "io/stream" take Closing, InvalidReadLimit, AsyncReading;
 import "numbers/bigint" take BigInt;
-import "url/value" take UrlParts, MissingUrlPort;
+import "url/value" take UrlParts;
 import "net/dns" take FixedResolution;
 import "crypto/x509/trust" take TrustedCertificates, TrustStore, SystemTrustStore;
 import "time/clock" take SystemClock;
@@ -134,15 +130,15 @@ object HttpClient does Exchanging, Closing {
         await chain.response(Request(url: url, method: Method.delete));
     }
 
-    async post(url is string, body is Content, headers is Headers = Headers([])) is ClientResponse {
+    async post(url is string, body is Content, headers is Headers = Headers()) is ClientResponse {
         await chain.response(ContentRequest(url: url, method: Method.post, body: body, headers: headers).request());
     }
 
-    async put(url is string, body is Content, headers is Headers = Headers([])) is ClientResponse {
+    async put(url is string, body is Content, headers is Headers = Headers()) is ClientResponse {
         await chain.response(ContentRequest(url: url, method: Method.put, body: body, headers: headers).request());
     }
 
-    async patch(url is string, body is Content, headers is Headers = Headers([])) is ClientResponse {
+    async patch(url is string, body is Content, headers is Headers = Headers()) is ClientResponse {
         await chain.response(ContentRequest(url: url, method: Method.patch, body: body, headers: headers).request());
     }
 }
@@ -1257,8 +1253,8 @@ enum HttpTimeout is Error = (phase(phase is string));
 
 async test "unstarted client response cancellation acquires no route or connection" {
     let client = HttpTransport(
-        resolver: FixedResolution([]),
-        tls: TlsClientPolicy(TrustedCertificates([])),
+        resolver: FixedResolution(),
+        tls: TlsClientPolicy(TrustedCertificates()),
         policy: ClientPolicy(),
         clock: SystemClock()
     );
@@ -2072,11 +2068,8 @@ hidden object LoopbackRequest {
 async test "a client gets text and posts JSON through its shortcuts" {
     let listener is TcpListener = await TcpListening(port: 0).listener();
     defer listener.close();
-    let base = "http://127.0.0.1:" + listener.local_endpoint()::Parts::port.string();
-    let client = HttpClient(
-        resolver: FixedResolution([]),
-        endpoints: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)])
-    );
+    let base = "http://127.0.0.1:" + listener::Local::port.string();
+    let client = HttpClient(endpoints: LoopbackEndpoints());
     defer client.close();
     let accepting is async () is TcpConnection = listener.connection;
 
@@ -2095,9 +2088,9 @@ async test "a client gets text and posts JSON through its shortcuts" {
     test.is(await page.text(), "héllo");
 
     let second = spawn accepting();
-    let order = Json([JsonField("id", 7)]);
+    let order = Json(JsonField("id", 7));
     let post is async (string, Content, Headers) is ClientResponse = client.post;
-    let posting = spawn post(base + "/orders", JsonBody(order), Headers([]));
+    let posting = spawn post(base + "/orders", JsonBody(order), Headers());
     let two = await second;
     defer two.close();
     let sent = await LoopbackRequest(two.input()).text();
@@ -2114,7 +2107,7 @@ async test "a client gets text and posts JSON through its shortcuts" {
 }
 
 async test "a default client reaches public endpoints only" {
-    let client = HttpClient(resolver: FixedResolution([]));
+    let client = HttpClient(resolver: FixedResolution());
     defer client.close();
     test.ok(try {
         await client.get("http://127.0.0.1:9/");
@@ -2128,13 +2121,13 @@ async test "a default client reaches public endpoints only" {
 async test "a client follows redirects and carries its cookies when told" {
     let listener is TcpListener = await TcpListening(port: 0).listener();
     defer listener.close();
-    let base = "http://127.0.0.1:" + listener.local_endpoint()::Parts::port.string();
+    let base = "http://127.0.0.1:" + listener::Local::port.string();
     let jar = MemoryCookieJar();
     defer jar.close();
     let client = HttpClient(
         cookies: jar,
-        resolver: FixedResolution([]),
-        endpoints: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)]),
+        resolver: FixedResolution(),
+        endpoints: LoopbackEndpoints(),
         redirects: Redirects(limit: 3)
     );
     defer client.close();

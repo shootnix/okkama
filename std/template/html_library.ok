@@ -39,7 +39,7 @@ object NamedHtmlTemplate {
 // Composition will apply explicit aggregate limits to these typed source values.
 // Only HtmlTemplate is accepted; no plain TextTemplate or arbitrary source role.
 // Contract: docs/std/template-html-library-guide.md.
-// Example: HtmlTemplateLibrary([NamedHtmlTemplate("greeting",HtmlTemplate("Hello"))]);
+// Example: HtmlTemplateLibrary(NamedHtmlTemplate("greeting",HtmlTemplate("Hello")));
 // HTML partial expansion is separate: this module only names typed templates.
 // Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/template/html_library.ok
 object HtmlTemplateLibrary {
@@ -51,6 +51,12 @@ object HtmlTemplateLibrary {
 
     HtmlTemplateLibrary(values is Sequencing<NamedHtmlTemplate>) {
         origin = HtmlTemplateLibrarySnapshot(source: values, maximum: 1024).items();
+    }
+
+    // The same, one argument per part: HtmlTemplateLibrary(a, b).
+    HtmlTemplateLibrary(values is ...NamedHtmlTemplate) {
+        let listed is @NamedHtmlTemplate = values...;
+        origin = HtmlTemplateLibrarySnapshot(source: listed, maximum: 1024).items();
     }
 
     HtmlTemplateLibrary(values is Sequencing<NamedHtmlTemplate>, maximum_templates is int) {
@@ -141,7 +147,7 @@ test "empty and missing templates have explicit behavior" {
 }
 
 test "empty library permits zero and rejects negative bounds" {
-    test.is(HtmlTemplateLibrary([]).names().size(), 0);
+    test.is(HtmlTemplateLibrary().names().size(), 0);
     test.is(HtmlTemplateLibrary(values: [], maximum_templates: 0).names().size(), 0);
     test.ok(try {
         HtmlTemplateLibrary(values: [], maximum_templates: -1);

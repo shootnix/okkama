@@ -217,7 +217,7 @@ object Http2ResponseFields {
                 "101 is invalid in HTTP2"
             );
         fields = Http2JoinedFields(
-            prefix: [HpackField(":status", StatusCode(response::Head::status).number().string())],
+            prefix: [HpackField(":status", response::Head::code.string())],
             ordinary: Http2OrdinaryFields(response::Head::headers, false, stream).fields()
         ).fields();
     }

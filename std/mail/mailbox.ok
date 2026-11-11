@@ -165,6 +165,13 @@ object MailFlags does Set<MailFlag>, Sequencing<MailFlag>, Iterating<MailFlag> {
         maximum = 256;
     }
 
+    // The same, one argument per part: MailFlags(a, b).
+    MailFlags(entries is ...MailFlag) {
+        let listed is @MailFlag = entries...;
+        self.entries = MailFlagEntries(origin: listed, maximum: 256).values();
+        maximum = 256;
+    }
+
     MailFlags(entries is Sequencing<MailFlag>, maximum_entries is int) {
         self.entries = MailFlagEntries(origin: entries, maximum: maximum_entries).values();
         maximum = maximum_entries;
@@ -972,7 +979,7 @@ test "system flags expose only their own variant" {
 }
 
 test "flag sets retain first spelling and compare protocol identity" {
-    let flags = MailFlags([KeywordFlag("$Tag"), KeywordFlag("$tag")]);
+    let flags = MailFlags(KeywordFlag("$Tag"), KeywordFlag("$tag"));
     test.is(flags.size(), 1);
     test.is(flags.first().string(), "$Tag");
     test.ok(flags.membership(KeywordFlag("$TAG")));
@@ -988,17 +995,17 @@ test "stored messages retain content and protocol flags" {
     let stored = StoredMail(
         identifier: "id",
         message: ParsedMail(Utf8Encoded("\r\nbody").bytes()).message(),
-        flags: MailFlags([KeywordFlag("Tag")])
+        flags: MailFlags(KeywordFlag("Tag"))
     );
     test.is(Utf8Decoded(stored.message().body().bytes()).string(), "body");
     test.ok(stored.flags().membership(KeywordFlag("TAG")));
 }
 
 test "maildir flag names use canonical order" {
-    let flags = MailFlags([SystemFlag(SystemMailFlag.seen), SystemFlag(SystemMailFlag.draft)]);
+    let flags = MailFlags(SystemFlag(SystemMailFlag.seen), SystemFlag(SystemMailFlag.draft));
     test.is(MaildirFlagName(identifier: "id", marks: flags).name().string(), "id:2,DS");
     let rejected = try {
-        MaildirFlagName(identifier: "id", marks: MailFlags([KeywordFlag("custom")])).name();
+        MaildirFlagName(identifier: "id", marks: MailFlags(KeywordFlag("custom"))).name();
         false;
     }
     catch failure is InvalidMailbox {

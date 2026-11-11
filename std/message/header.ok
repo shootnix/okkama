@@ -83,6 +83,13 @@ object MessageHeaders {
         origin = MessageHeaderSnapshot(origin: entries, maximum: 1024).entries();
     }
 
+    // The same, one argument per part: MessageHeaders(a, b).
+    MessageHeaders(entries is ...MessageHeader) {
+        let listed is @MessageHeader = entries...;
+        maximum = 1024;
+        origin = MessageHeaderSnapshot(origin: listed, maximum: 1024).entries();
+    }
+
     MessageHeaders(entries is Sequencing<MessageHeader>, maximum_entries is int) {
         maximum = maximum_entries;
         origin = MessageHeaderSnapshot(origin: entries, maximum: maximum_entries).entries();
@@ -326,17 +333,17 @@ hidden object FoldedMessageHeader {
 }
 
 test "field lookup ignores case without losing spelling" {
-    let headers = MessageHeaders([MessageHeader(name: MessageHeaderName("Subject"), value: "hello")]);
+    let headers = MessageHeaders(MessageHeader(name: MessageHeaderName("Subject"), value: "hello"));
     test.is(headers.first(MessageHeaderName("SUBJECT")), "hello");
     test.is(headers.entries().item(0).name().string(), "Subject");
 }
 
 test "headers are read by name as text, case-insensitively" {
-    let fields = MessageHeaders([
+    let fields = MessageHeaders(
         MessageHeader(name: MessageHeaderName("Subject"), value: "Lunch?"),
         MessageHeader(name: MessageHeaderName("Received"), value: "a"),
         MessageHeader(name: MessageHeaderName("Received"), value: "b"),
-    ]);
+    );
     test.is(fields.first("subject"), "Lunch?");
     test.is(fields.values("Received").size(), 2);
     test.is(fields.membership("Cc"), false);

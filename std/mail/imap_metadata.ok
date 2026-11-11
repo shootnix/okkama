@@ -388,7 +388,7 @@ object ImapSearchResult {
             if sets.size() == 0 {
                 confirm count.index() <= 0 && minimum.index() == -1 && maximum.index() == -1
                     else throw InvalidImapData.because("ESEARCH result without ALL identifiers");
-                value = ImapUidSet([]);
+                value = ImapUidSet();
             }
             else {
                 confirm count.index() == -1 || count.index() == sets[0].entries().size()

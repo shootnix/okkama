@@ -56,6 +56,24 @@ object RelativeDistinguishedName {
         self.cost = cost;
     }
 
+    // The same, one argument per part: RelativeDistinguishedName(a, b).
+    RelativeDistinguishedName(attributes is ...NameAttribute) {
+        let listed is @NameAttribute = attributes...;
+        let count = listed.size();
+        confirm count > 0 && count <= 32
+            else throw InvalidDistinguishedName.because("RDN attribute count outside limits");
+        let values is @NameAttribute = (0..count).map() -> index {
+            listed.item(index);
+        };
+        let cost = values.reduce(0) -> sum, item {
+            sum + item.identifier().length() + item.value().length();
+        };
+        confirm cost <= 65536
+            else throw InvalidDistinguishedName.because("RDN scalar budget exceeded");
+        origin = values;
+        self.cost = cost;
+    }
+
     attributes() is Sequencing<NameAttribute> {
         origin;
     }
@@ -83,6 +101,23 @@ object DistinguishedName {
         origin = values;
     }
 
+    // The same, one argument per part: DistinguishedName(a, b).
+    DistinguishedName(relative_names is ...RelativeDistinguishedName) {
+        let listed is @RelativeDistinguishedName = relative_names...;
+        let count = listed.size();
+        confirm count >= 0 && count <= 128
+            else throw InvalidDistinguishedName.because("DN group count outside limits");
+        let values is @RelativeDistinguishedName = (0..count).map() -> index {
+            listed.item(index);
+        };
+        let cost = values.reduce(0) -> sum, item {
+            sum + item.scalars();
+        };
+        confirm cost <= 65536
+            else throw InvalidDistinguishedName.because("DN scalar budget exceeded");
+        origin = values;
+    }
+
     relative_names() is Sequencing<RelativeDistinguishedName> {
         origin;
     }
@@ -91,8 +126,7 @@ object DistinguishedName {
 enum InvalidDistinguishedName is Error = (because(reason is string));
 
 test "two attributes in one RDN retain their membership" {
-    let name = DistinguishedName(
-        [RelativeDistinguishedName([NameAttribute(identifier: "2.5.4.3", value: "a"), NameAttribute(identifier: "2.5.4.10", value: "b")])]
+    let name = DistinguishedName(RelativeDistinguishedName(NameAttribute(identifier: "2.5.4.3", value: "a"), NameAttribute(identifier: "2.5.4.10", value: "b"))
     );
     test.is(name.relative_names().size(), 1);
     test.is(name.relative_names().item(0).attributes().size(), 2);

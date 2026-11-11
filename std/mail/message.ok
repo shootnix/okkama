@@ -76,7 +76,7 @@ object MailMessage does ByteSource {
             EncodedWord(subject).string();
         };
         let utc = FixedZone(name: "UTC", offset: Duration(seconds: 0));
-        let headers = MessageHeaders([
+        let headers = MessageHeaders(
             MessageHeader(name: MessageHeaderName("From"), value: from),
             MessageHeader(name: MessageHeaderName("To"), value: addresses.join(", ")),
             MessageHeader(name: MessageHeaderName("Subject"), value: title),
@@ -84,7 +84,7 @@ object MailMessage does ByteSource {
             MessageHeader(name: MessageHeaderName("Message-ID"), value: MessageId("<" + HexEncoded(random.bytes(16)).string() + "@" + domain + ">").string()),
             MessageHeader(name: MessageHeaderName("MIME-Version"), value: "1.0"),
             MessageHeader(name: MessageHeaderName("Content-Type"), value: "text/plain; charset=utf-8"),
-        ]);
+        );
         let limits = MimeLimits();
         bounds = limits;
         content = MimePart(headers: headers, body: TextBody(origin: text, charset: "utf-8"), limits: limits);
@@ -691,7 +691,7 @@ hidden object MailIdentifier {
 }
 
 test "delivery preparation retains the source message" {
-    let fields = MessageHeaders([MessageHeader(name: MessageHeaderName("Bcc"), value: "private@example.test")]);
+    let fields = MessageHeaders(MessageHeader(name: MessageHeaderName("Bcc"), value: "private@example.test"));
     let message = MailMessage(headers: fields, body: BinaryBody([]));
     test.is(DeliveredMail(message).bytes().size(), 2);
     test.is(message.headers().entries().size(), 1);

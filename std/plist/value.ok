@@ -9,10 +9,10 @@ import "time/clock" take Instant;
 // exact Unicode string/bytes, Instant, and nonnegative BigInt UID. No coercion,
 // timezone conversion, reference resolution or serialization-specific narrowing.
 //
-//     let value = PlistDictionary([
+//     let value = PlistDictionary(
 //         PlistMember("enabled", PlistBoolean(true)),
 //         PlistMember("name", PlistString("Okkama")),
-//     ]);
+//     );
 //     value.membership("enabled"); // true
 //     value.print(recipient);      // one nominal members event
 //
@@ -225,6 +225,12 @@ object PlistArray does PlistValue {
         origin = PlistArraySnapshot(source: values, maximum: 1024).items();
     }
 
+    // The same, one argument per part: PlistArray(a, b).
+    PlistArray(values is ...PlistValue) {
+        let listed is @PlistValue = values...;
+        origin = PlistArraySnapshot(source: listed, maximum: 1024).items();
+    }
+
     PlistArray(values is Sequencing<PlistValue>, maximum_items is int) {
         origin = PlistArraySnapshot(source: values, maximum: maximum_items).items();
     }
@@ -247,6 +253,12 @@ object PlistDictionary does PlistValue {
 
     PlistDictionary(members is Sequencing<PlistMember>) {
         origin = PlistDictionarySnapshot(source: members, maximum: 1024).items();
+    }
+
+    // The same, one argument per part: PlistDictionary(a, b).
+    PlistDictionary(members is ...PlistMember) {
+        let listed is @PlistMember = members...;
+        origin = PlistDictionarySnapshot(source: listed, maximum: 1024).items();
     }
 
     PlistDictionary(members is Sequencing<PlistMember>, maximum_items is int) {
@@ -352,20 +364,19 @@ test "plist scalar payloads keep their own nominal kinds" {
 }
 
 test "plist containers preserve order and exact member names" {
-    let value = PlistDictionary(
-        [PlistMember(name: "z", value: PlistBoolean(true)), PlistMember(name: "", value: PlistString("last"))]
+    let value = PlistDictionary(PlistMember(name: "z", value: PlistBoolean(true)), PlistMember(name: "", value: PlistString("last"))
     );
     test.is(value.members().item(0).name(), "z");
     test.is(value.members().item(1).name(), "");
     test.ok(value.membership(""));
     test.ok(!value.membership("Z"));
-    test.ok(PlistArray([value]).values().item(0).kind() == PlistKind.dictionary_value);
+    test.ok(PlistArray(value).values().item(0).kind() == PlistKind.dictionary_value);
 }
 
 test "plist missing duplicate and cardinality failures are typed" {
     test.is(
         try {
-            PlistDictionary([]).value("lost");
+            PlistDictionary().value("lost");
             "bad";
         }
         catch MissingPlistMember.name(name) {
@@ -375,7 +386,7 @@ test "plist missing duplicate and cardinality failures are typed" {
     );
     test.is(
         try {
-            PlistDictionary([PlistMember(name: "x", value: PlistString("")), PlistMember(name: "x", value: PlistString(""))]);
+            PlistDictionary(PlistMember(name: "x", value: PlistString("")), PlistMember(name: "x", value: PlistString("")));
             "bad";
         }
         catch DuplicatePlistMember.name(name) {

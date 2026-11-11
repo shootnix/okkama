@@ -1,6 +1,6 @@
 module http/endpoint v1.0.0;
 
-import "url/value" take ParsedUrl, UrlParts, UrlHostKind, MissingUrlPort;
+import "url/value" take ParsedUrl, UrlParts, UrlHostKind;
 import "net/ip" take IpAddress, IpNetwork, IpProperty;
 import "net/endpoint" take IpEndpoint, HostEndpoint;
 import "net/dns" take Resolving;
@@ -39,6 +39,16 @@ object PublicEndpoints does EndpointAllowing {
     }
 }
 
+// Only this machine: 127.0.0.0/8 and ::1. For local servers, tests and
+// examples: HttpClient(endpoints: LoopbackEndpoints()).
+object LoopbackEndpoints does EndpointAllowing {
+    LoopbackEndpoints();
+
+    allowed(url is UrlParts, endpoint is IpEndpoint) is bool {
+        endpoint::Parts::zone == "" && endpoint.address().properties().membership(IpProperty.loopback);
+    }
+}
+
 object ListedNetworks does EndpointAllowing {
     has networks is @IpNetwork;
 
@@ -47,6 +57,17 @@ object ListedNetworks does EndpointAllowing {
         confirm count >= 0 && count <= 1024 else throw EndpointSelectionLimit.stage("networks");
         let snapshot is @IpNetwork = (0..count).map() -> index {
             origins.item(index);
+        };
+        networks = snapshot;
+    }
+
+    // The same, one argument per part: ListedNetworks(a, b).
+    ListedNetworks(origins is ...IpNetwork) {
+        let listed is @IpNetwork = origins...;
+        let count = listed.size();
+        confirm count >= 0 && count <= 1024 else throw EndpointSelectionLimit.stage("networks");
+        let snapshot is @IpNetwork = (0..count).map() -> index {
+            listed.item(index);
         };
         networks = snapshot;
     }
@@ -127,6 +148,16 @@ test "explicit empty network selection grants no endpoint" {
     let url = ParsedUrl("https://example.test/").parts();
     let endpoint = IpEndpoint(address: IpAddress("127.0.0.1"), port: 443);
     test.ok(AllEndpoints().allowed(url, endpoint));
-    test.ok(!ListedNetworks([]).allowed(url, endpoint));
+    test.ok(!ListedNetworks().allowed(url, endpoint));
     test.ok(!PublicEndpoints().allowed(url, endpoint));
+}
+
+test "loopback endpoints allow this machine only" {
+    let url = ParsedUrl("http://127.0.0.1:8080/").parts();
+    let local = LoopbackEndpoints();
+    test.is(local.allowed(url, IpEndpoint(address: IpAddress("127.0.0.1"), port: 8080)), true);
+    test.is(local.allowed(url, IpEndpoint(address: IpAddress("127.5.0.9"), port: 8080)), true);
+    test.is(local.allowed(url, IpEndpoint(address: IpAddress("::1"), port: 8080)), true);
+    test.is(local.allowed(url, IpEndpoint(address: IpAddress("10.0.0.1"), port: 8080)), false);
+    test.is(local.allowed(url, IpEndpoint(address: IpAddress("93.184.216.34"), port: 80)), false);
 }

@@ -740,7 +740,7 @@ hidden object Http2ServerStream {
             buffers.replace([body]);
             owner.attach(self.stream(), body);
             if block.end_stream() {
-                body.ending(Headers([]));
+                body.ending(Headers());
             }
             ready.set();
             let opening = Http2ServerBody(

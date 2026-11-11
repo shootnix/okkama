@@ -42,7 +42,7 @@ object NamedLogging does Logging {
         name is string,
         destination is LogWriting,
         clock is Timing = SystemClock(),
-        fields is LogFields = LogFields([])
+        fields is LogFields = LogFields()
     ) {
         self.name = LogName(name.split("."));
         self.destination = destination;
@@ -55,7 +55,7 @@ object NamedLogging does Logging {
         name is LogName,
         destination is LogWriting,
         clock is Timing = SystemClock(),
-        fields is LogFields = LogFields([])
+        fields is LogFields = LogFields()
     ) {
         self.name = name;
         self.destination = destination;
@@ -119,13 +119,13 @@ test "a named logger stamps time, name and process, and merges its fields" {
     let start = Instant(Duration(seconds: 1700000000));
     let collected = CollectedLogs();
     let logging = NamedLogging(
-        name: LogName(["app"]),
+        name: LogName("app"),
         destination: collected,
         clock: ManualClock(start),
-        fields: LogFields([JsonField("svc", "api")]),
+        fields: LogFields(JsonField("svc", "api")),
     );
     logging.log(LogLevel.info, "started");
-    logging.log(LogLevel.warning, "slow", LogFields([JsonField("ms", 900)]));
+    logging.log(LogLevel.warning, "slow", LogFields(JsonField("ms", 900)));
     logging.log(LogLevel.error, "down", EmptyLogFields().fields(), InvalidLogProcess.invalid);
     logging.child("db").log(LogLevel.debug, "query");
     let records = collected.records();

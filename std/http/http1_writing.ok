@@ -149,6 +149,6 @@ hidden object Http1HeadWire {
 }
 
 test "extension response status keeps mandatory reason separator" {
-    let wire = Http1HeadWire(start: "HTTP/1.1 299 ", fields: Headers([]), limits: Http1Limits()).bytes();
+    let wire = Http1HeadWire(start: "HTTP/1.1 299 ", fields: Headers(), limits: Http1Limits()).bytes();
     test.is(Latin1Decoded(wire).string(), "HTTP/1.1 299 \r\n\r\n");
 }

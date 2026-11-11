@@ -4,10 +4,10 @@ import "collections/sequence" take Sequencing;
 
 // Immutable TOML values; not a TOML document parser or printer.
 //
-//     let settings = TomlTable([
+//     let settings = TomlTable(
 //         TomlMember("name", TomlString("Ada")),
 //         TomlMember("enabled", TomlBoolean(true)),
-//     ]);
+//     );
 //     settings.value("name").accept(observer);
 //
 // accept() invokes exactly one typed TomlVisitor callback. It does not descend
@@ -233,6 +233,18 @@ object TomlArray does TomlValue {
         origin = snapshot;
     }
 
+    // The same, one argument per part: TomlArray(a, b).
+    TomlArray(values is ...TomlValue) {
+        let listed is @TomlValue = values...;
+        let size = listed.size();
+        confirm size >= 0 else throw InvalidTomlSize.invalid;
+        confirm size <= 10000 else throw TomlLimitExceeded.exceeded;
+        let snapshot is @TomlValue = (0..size).map() -> index {
+            listed.item(index);
+        };
+        origin = snapshot;
+    }
+
     TomlArray(values is Sequencing<TomlValue>, maximum_items is int) {
         confirm maximum_items >= 0 else throw InvalidTomlLimit.invalid;
         let size = values.size();
@@ -262,6 +274,24 @@ object TomlTable does TomlValue {
         confirm size <= 1024 else throw TomlLimitExceeded.exceeded;
         let snapshot is @TomlMember = (0..size).map() -> index {
             members.item(index);
+        };
+        origin = snapshot;
+        for (0..snapshot.size()) -> index {
+            for (0..index) -> previous {
+                confirm snapshot[previous].name() != snapshot[index].name()
+                    else throw DuplicateTomlMember.name(snapshot[index].name());
+            }
+        }
+    }
+
+    // The same, one argument per part: TomlTable(a, b).
+    TomlTable(members is ...TomlMember) {
+        let listed is @TomlMember = members...;
+        let size = listed.size();
+        confirm size >= 0 else throw InvalidTomlSize.invalid;
+        confirm size <= 1024 else throw TomlLimitExceeded.exceeded;
+        let snapshot is @TomlMember = (0..size).map() -> index {
+            listed.item(index);
         };
         origin = snapshot;
         for (0..snapshot.size()) -> index {
@@ -595,13 +625,12 @@ test "mixed array retains order and dispatches snapshot" {
     array.values().first().accept(TomlVisitor.fake());
     array.values().last().accept(TomlVisitor.fake());
     array.accept(TomlVisitor.fake());
-    test.is(TomlArray([]).values().size(), 0);
+    test.is(TomlArray().values().size(), 0);
     test.is(TomlArray(values: [], maximum_items: 0).values().size(), 0);
 }
 
 test "ordered literal table names and typed lookup" {
-    let table = TomlTable(
-        [TomlMember(name: "", value: TomlInteger(9007199254740993)), TomlMember(name: "a.b", value: TomlBoolean(true))]
+    let table = TomlTable(TomlMember(name: "", value: TomlInteger(9007199254740993)), TomlMember(name: "a.b", value: TomlBoolean(true))
     );
     test.ok(table.membership(""));
     test.ok(table.membership("a.b"));
@@ -623,19 +652,17 @@ test "ordered literal table names and typed lookup" {
 
 test "duplicate keys reject and distinct Unicode names survive" {
     try {
-        TomlTable([TomlMember(name: "x", value: TomlBoolean(true)), TomlMember(name: "x", value: TomlBoolean(false))]);
+        TomlTable(TomlMember(name: "x", value: TomlBoolean(true)), TomlMember(name: "x", value: TomlBoolean(false)));
         test.fail("duplicate accepted");
     }
     catch DuplicateTomlMember.name(name) {
         test.is(name, "x");
     }
     let table = TomlTable(
-        [
-            TomlMember(name: "A", value: TomlBoolean(true)),
-            TomlMember(name: "a", value: TomlBoolean(false)),
-            TomlMember(name: "é", value: TomlBoolean(true)),
-            TomlMember(name: "é", value: TomlBoolean(false))
-        ]
+        TomlMember(name: "A", value: TomlBoolean(true)),
+        TomlMember(name: "a", value: TomlBoolean(false)),
+        TomlMember(name: "é", value: TomlBoolean(true)),
+        TomlMember(name: "é", value: TomlBoolean(false))
     );
     test.is(table.members().size(), 4);
 }

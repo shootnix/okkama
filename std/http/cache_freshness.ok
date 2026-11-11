@@ -203,6 +203,6 @@ test "cache age includes monotonic response delay" {
     let received = Instant(Duration(seconds: 100));
     let began = MonotonicInstant(Duration(seconds: 0));
     let ended = began.plus(Duration(seconds: 2));
-    let value = CacheFreshness(headers: Headers([]), timing: CacheResponseTiming(received, began, ended));
+    let value = CacheFreshness(headers: Headers(), timing: CacheResponseTiming(received, began, ended));
     test.is(value.age(ended)::Span::seconds, 2.rat());
 }

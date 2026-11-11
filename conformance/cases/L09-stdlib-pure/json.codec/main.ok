@@ -30,7 +30,7 @@ object Order {
 object LineJson {
     LineJson();
     value(view is Json) is Line { Line(sku: view.text("sku"), qty: view.maybe("qty").int() else 1); }
-    json(line is Line) is Json { Json([JsonField("sku", line.sku()), JsonField("qty", line.quantity())]); }
+    json(line is Line) is Json { Json(JsonField("sku", line.sku()), JsonField("qty", line.quantity())); }
 }
 
 object OrderJson {
@@ -47,13 +47,13 @@ object OrderJson {
     json(order is Order) is Json {
         let tags is @Json = order.tags().map() -> tag { Json(tag); };
         let lines is @Json = order.lines().map() -> line { LineJson().json(line); };
-        Json([
+        Json(
             JsonField("id", order.id()),
             JsonField("note", order.note()),
             JsonField("total", order.total()),
             JsonField("tags", Json(items: tags)),
             JsonField("lines", Json(items: lines))
-        ]);
+        );
     }
 }
 

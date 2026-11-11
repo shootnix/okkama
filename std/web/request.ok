@@ -1,7 +1,7 @@
 module web/request v1.0.0;
 
-import "http/method" take MethodName, Method;
-import "http/message" take Request;
+import "http/method" take Method;
+import "http/message" take Request, BodyLimitExceeded;
 import "http/request_context" take HttpRequestContext;
 import "http/header" take HeaderName, MissingHeader;
 import "http/target" take RequestTargetKind;
@@ -9,12 +9,9 @@ import "http/media_type" take HttpMediaType, InvalidHttpMediaType;
 
 import "url/query" take QueryParameters, QueryLimitExceeded;
 import "url/form" take ParsedForm, InvalidFormEncoding;
-import "json" take Json, JsonKind, JsonKindName, JsonLocation, JsonField, JsonMaybeReader,
-    ParsedJson, JsonError;
+import "json" take Json, JsonKind, JsonKindName, JsonLocation, JsonMaybeReader, ParsedJson, JsonError;
 import "math/decimal" take Decimal;
 import "numbers/bigint" take BigInt;
-import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
 import "web/exception" take Exception;
 
@@ -116,18 +113,13 @@ object WebRequest {
 
     async bytes(limit is int) is @byte {
         confirm limit >= 0 else throw InvalidBodyLimit.limit(limit);
-        let reader = origin.body().reading();
-        defer reader.close();
-        let received = ByteBuffer();
-        loop {
-            let chunk = await reader.bytes(4096);
-            last if chunk.size() == 0;
-            if received.content().size() + chunk.size() > limit {
-                throw Exception.status(413, "request body exceeds " + limit.string() + " bytes");
-            }
-            received.writing().write(ByteSnapshot(chunk));
+        let content = try {
+            await origin.bytes(limit: limit);
         }
-        received.content().bytes();
+        catch e is BodyLimitExceeded {
+            throw Exception.status(413, "request body exceeds " + limit.string() + " bytes");
+        };
+        content;
     }
 
     async text(limit is int) is string {

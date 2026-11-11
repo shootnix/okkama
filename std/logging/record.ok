@@ -94,7 +94,7 @@ enum MissingLogCause is Error = (missing);
 enum InvalidLogProcess is Error = (invalid);
 
 test "a record keeps its moment, level, message, context and optional cause" {
-    let context = LogContext(name: LogName(["app"]), fields: LogFields([JsonField("id", 7)]), process: 42);
+    let context = LogContext(name: LogName("app"), fields: LogFields(JsonField("id", 7)), process: 42);
     let record = LogRecord(occurred: Instant(Duration(seconds: 0)), level: LogLevel.warning, message: "slow", context: context);
     test.ok(record::Entry::level == LogLevel.warning);
     test.is(record::Entry::message, "slow");
@@ -108,6 +108,6 @@ test "a record keeps its moment, level, message, context and optional cause" {
     test.ok(failed.has_cause());
     test.is(failed.cause().text(), "InvalidLogProcess.invalid");
     test.throws(InvalidLogProcess) {
-        LogContext(name: LogName(["app"]), fields: LogFields([]), process: -1);
+        LogContext(name: LogName("app"), fields: LogFields(), process: -1);
     };
 }

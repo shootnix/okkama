@@ -14,7 +14,7 @@ import "error" take InvalidArgument;
 // quoting. No filesystem/session effects or implicit envelope/date inference.
 //
 //     let record=MboxRecord(MboxSeparator("From sender date"),message);
-//     let bytes=MboxArchive([record]).bytes();
+//     let bytes=MboxArchive(record).bytes();
 //     let restored=ParsedMbox(bytes).records().first().message();
 //
 // Separator construction validates ASCII metadata; archive construction takes
@@ -114,6 +114,14 @@ object MboxArchive does ByteSource {
     MboxArchive(records is Sequencing<MboxRecord>) {
         let bounds = MboxLimits();
         self.records = MboxRecordsSnapshot(origin: records, maximum: bounds::Limits::messages).values();
+        limits = bounds;
+    }
+
+    // The same, one argument per part: MboxArchive(a, b).
+    MboxArchive(records is ...MboxRecord) {
+        let listed is @MboxRecord = records...;
+        let bounds = MboxLimits();
+        self.records = MboxRecordsSnapshot(origin: listed, maximum: bounds::Limits::messages).values();
         limits = bounds;
     }
 
@@ -468,6 +476,6 @@ test "mboxrd quoting preserves already quoted From lines" {
         separator: MboxSeparator("From sender date"),
         message: ParsedMail(Utf8Encoded(wire).bytes()).message()
     );
-    let parsed = ParsedMbox(MboxArchive([record]).bytes()).records().item(0);
+    let parsed = ParsedMbox(MboxArchive(record).bytes()).records().item(0);
     test.is(Utf8Decoded(parsed.message().bytes()).string(), wire);
 }

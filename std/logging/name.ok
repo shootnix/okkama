@@ -16,6 +16,17 @@ object LogName does Comparing<LogName> {
         };
     }
 
+    // The same, one argument per part: LogName(a, b).
+    LogName(segments is ...string) {
+        let listed is @string = segments...;
+        key = try {
+            SettingKey(listed);
+        }
+        catch e is InvalidSettingKey {
+            throw InvalidLogName.because(e.text());
+        };
+    }
+
     segments() is Sequencing<string> {
         key.segments();
     }
@@ -55,16 +66,16 @@ object ChildLogName {
 enum InvalidLogName is Error = (because(reason is string));
 
 test "a name is dotted segments; a child adds one" {
-    let name = LogName(["app", "db"]);
+    let name = LogName("app", "db");
     test.is(name.string(), "app.db");
     test.is(name.segments().size(), 2);
     test.is(ChildLogName(origin: name, segment: "pool").name().string(), "app.db.pool");
-    test.ok(LogName(["a"]).order(LogName(["b"])) == Order.less);
-    test.ok(LogName(["app"]) == LogName(["app"]));
+    test.ok(LogName("a").order(LogName("b")) == Order.less);
+    test.ok(LogName("app") == LogName("app"));
     test.throws(InvalidLogName) {
-        LogName([]);
+        LogName();
     };
     test.throws(InvalidLogName) {
-        LogName(["app", ""]);
+        LogName("app", "");
     };
 }

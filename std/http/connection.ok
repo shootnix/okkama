@@ -304,11 +304,11 @@ object HttpUnpublishedTls {
 test "HTTP1 opener rejects incompatible ALPN before acquisition" {
     let route = HttpEndpointSelection(
         url: ParsedUrl("https://example.test/").parts(),
-        resolver: FixedResolution([]),
+        resolver: FixedResolution(),
         access: AllEndpoints()
     );
     let versions is Set<TlsVersion> = OrderedSet([TlsVersion.tls1_3]);
-    let policy = TlsClientPolicy(trust: TrustedCertificates([]), versions: versions, protocols: ["h2"]);
+    let policy = TlsClientPolicy(trust: TrustedCertificates(), versions: versions, protocols: ["h2"]);
     test.ok(try {
         Http1Connecting(route: route, policy: policy);
         false;

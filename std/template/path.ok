@@ -5,7 +5,7 @@ import "collections/list" take List, EmptyList;
 import "compare" take Comparing, Order;
 
 // Immutable named template path: nonempty sequence of nonempty exact strings.
-// TemplatePath(["user","name"]).string() -> "user.name".
+// TemplatePath("user","name").string() -> "user.name".
 // Default budgets: 64 segments, 4096 Unicode scalars including separator dots;
 // optional maximum_segments/maximum_length override both, and must be >=0.
 // Source size() is observed once, bounds checked before item access, then indices
@@ -29,6 +29,12 @@ object TemplatePath does Comparing<TemplatePath> {
 
     TemplatePath(segments is Sequencing<string>) {
         origin = TemplatePathSnapshot(source: segments, maximum_segments: 64, maximum_length: 4096).items();
+    }
+
+    // The same, one argument per part: TemplatePath(a, b).
+    TemplatePath(segments is ...string) {
+        let listed is @string = segments...;
+        origin = TemplatePathSnapshot(source: listed, maximum_segments: 64, maximum_length: 4096).items();
     }
 
     TemplatePath(segments is Sequencing<string>, maximum_segments is int, maximum_length is int) {
@@ -170,7 +176,7 @@ test "template path coordinates and comparison are nominal" {
     let path = TemplatePathFromString("user.name").path();
     test.is(path.string(), "user.name");
     test.is(path.segments().size(), 2);
-    test.is(TemplatePath(["a.b"]).order(TemplatePath(["a", "b"])), Order.greater);
+    test.is(TemplatePath("a.b").order(TemplatePath("a", "b")), Order.greater);
 }
 
 test "template paths reject syntax and resource bounds" {
@@ -182,7 +188,7 @@ test "template paths reject syntax and resource bounds" {
         true;
     });
     test.ok(try {
-        TemplatePath([""]);
+        TemplatePath("");
         false;
     }
     catch error is InvalidTemplatePath {

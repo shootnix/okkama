@@ -6,17 +6,12 @@ import "http/handler" take Handling, HandlingResult, ResponseHandling;
 import "http/request_context" take HttpRequestContext;
 import "http/message" take Request, Response;
 import "http/method" take MethodName;
-import "http/body" take JsonBody, TextBody;
+import "http/body" take JsonBody;
 import "http/status" take Status;
-import "http/endpoint" take ListedNetworks;
+import "http/endpoint" take LoopbackEndpoints;
 import "json" take Json, JsonField, ParsedJson;
 import "net/tcp" take TcpListening;
-import "net/ip" take IpAddress, IpNetwork;
-import "net/dns" take FixedResolution;
-import "async/atomic" take Atomic;
-import "async/scope" take FutureGroup;
-import "encoding/utf" take Utf8Decoded;
-import "time/duration" take Duration, DurationUnit;
+import "time/duration" take Duration;
 import "io/stdout" take Stdout;
 
 // POST a JSON document and read the JSON the server answers. The server is
@@ -26,34 +21,21 @@ object Orders does Handling {
     Orders();
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
-        let reading = request.body().reading();
-        let received = Atomic("");
-        loop {
-            let chunk = await reading.bytes(4096);
-            last if chunk.size() == 0;
-            received.replace(received.value() + Utf8Decoded(chunk).string());
-        }
-        reading.close();
-        let order = ParsedJson(received.value()).root();
+        let order = ParsedJson(await request.text(limit: 4096)).root();
         Stdout().writeln("server got: " + MethodName(request::Head::method).string() + " " + request::Head::target.path()
             + " for " + order.int("count").string() + " " + order.text("item"));
-        ResponseHandling(Response(status: Status.created, content: JsonBody(Json([JsonField("id", 7), JsonField("state", "new")]))));
+        ResponseHandling(Response(status: Status.created, content: JsonBody(Json(JsonField("id", 7), JsonField("state", "new")))));
     }
 }
 
 async main() is int {
     let listener = await TcpListening(port: 0).listener();
     let base = "http://127.0.0.1:" + listener::Local::port.string();
-    let server = HttpServer(listener: listener, handling: Orders());
-    let serving is FutureGroup<HttpServer> = FutureGroup();
-    serving.start(server.serve());
-    // A real program writes HttpClient(); this one may reach 127.0.0.1.
-    let client = HttpClient(
-        resolver: FixedResolution([]),
-        endpoints: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)])
-    );
+    let server = HttpServer(listener: listener, handling: Orders()).started();
+        // A real program writes HttpClient(); this one may reach 127.0.0.1.
+    let client = HttpClient(endpoints: LoopbackEndpoints());
 
-    let order = Json([JsonField("item", "tea"), JsonField("count", 2)]);
+    let order = Json(JsonField("item", "tea"), JsonField("count", 2));
     let reply = await client.post(url: base + "/orders", body: JsonBody(order));
     confirm reply::Head::status == Status.created else panic "order not created";
     let created = await reply.json();
@@ -61,6 +43,5 @@ async main() is int {
 
     client.close();
     await server.drain(limit: Duration(seconds: 5));
-    await serving.wait();
     0;
 }

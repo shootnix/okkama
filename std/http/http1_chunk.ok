@@ -125,5 +125,5 @@ object ParsedHttp1Trailers {
 
 test "zero chunk and empty trailers have explicit boundaries" {
     test.is(ParsedHttp1ChunkLine("0; ignored=\"safe;value\"").size().string(), "0");
-    test.is(ParsedHttp1Trailers(origin: "\r\n", head: Headers([])).trailers().entries().size(), 0);
+    test.is(ParsedHttp1Trailers(origin: "\r\n", head: Headers()).trailers().entries().size(), 0);
 }

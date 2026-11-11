@@ -7,12 +7,9 @@ import "http/request_context" take HttpRequestContext;
 import "http/message" take Request, Response;
 import "http/method" take MethodName;
 import "http/status" take Status, StatusCode, StatusClass;
-import "http/endpoint" take ListedNetworks;
+import "http/endpoint" take LoopbackEndpoints;
 import "net/tcp" take TcpListening;
-import "net/ip" take IpAddress, IpNetwork;
-import "net/dns" take FixedResolution;
-import "async/scope" take FutureGroup;
-import "time/duration" take Duration, DurationUnit;
+import "time/duration" take Duration;
 import "io/stdout" take Stdout;
 
 // Read a status: compare it with a case, match on it, take its class, its
@@ -31,14 +28,9 @@ object NoPages does Handling {
 async main() is int {
     let listener = await TcpListening(port: 0).listener();
     let base = "http://127.0.0.1:" + listener::Local::port.string();
-    let server = HttpServer(listener: listener, handling: NoPages());
-    let serving is FutureGroup<HttpServer> = FutureGroup();
-    serving.start(server.serve());
-    // A real program writes HttpClient(); this one may reach 127.0.0.1.
-    let client = HttpClient(
-        resolver: FixedResolution([]),
-        endpoints: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)])
-    );
+    let server = HttpServer(listener: listener, handling: NoPages()).started();
+        // A real program writes HttpClient(); this one may reach 127.0.0.1.
+    let client = HttpClient(endpoints: LoopbackEndpoints());
 
     let reply = await client.get(base + "/missing");
     let status = reply::Head::status;
@@ -55,10 +47,9 @@ async main() is int {
     };
     Stdout().writeln(said);
     Stdout().writeln("client error: " + (reply::Head::class == StatusClass.client_error).string());
-    Stdout().writeln(StatusCode(status).number().string() + " " + StatusCode(status).phrase());
+    Stdout().writeln(reply::Head::code.string() + " " + StatusCode(status).phrase());
 
     client.close();
     await server.drain(limit: Duration(seconds: 5));
-    await serving.wait();
     0;
 }

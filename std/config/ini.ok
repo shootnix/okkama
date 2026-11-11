@@ -10,7 +10,7 @@ import "cell" take Cell;
 // The model never infers grammar from a name/value.
 //
 //     let settings = IniSection("settings", [IniEntry("name", "Ada")]);
-//     let document = IniDocument([settings]);
+//     let document = IniDocument(settings);
 //     document.section("settings").value("name"); // "Ada"
 //     document.print(observer); // explicit nominal protocol, no hidden I/O
 //
@@ -168,6 +168,23 @@ object IniDocument does IniContent {
         confirm size <= 128 else throw IniLimitExceeded.exceeded;
         let snapshot is @IniSection = (0..size).map() -> index {
             sections.item(index);
+        };
+        origin = snapshot;
+        let names is @string = snapshot.map() -> section {
+            section.name();
+        };
+        let repeated = IniRepeated(names).first();
+        confirm repeated < 0 else throw DuplicateIniSection.name(names[repeated]);
+    }
+
+    // The same, one argument per part: IniDocument(a, b).
+    IniDocument(sections is ...IniSection) {
+        let listed is @IniSection = sections...;
+        let size = listed.size();
+        confirm size >= 0 else throw InvalidIniSize.invalid;
+        confirm size <= 128 else throw IniLimitExceeded.exceeded;
+        let snapshot is @IniSection = (0..size).map() -> index {
+            listed.item(index);
         };
         origin = snapshot;
         let names is @string = snapshot.map() -> section {

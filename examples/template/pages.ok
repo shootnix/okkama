@@ -19,13 +19,13 @@ main() is int {
     let out = Stdout();
 
     let greeting = TextTemplate("Hello, {{user.name}}! You have {{user.unread}} new messages.");
-    let data = TemplateBindings([
-        TemplateBinding(path: TemplatePath(["user", "name"]), value: "Ada"),
-        TemplateBinding(path: TemplatePath(["user", "unread"]), value: "3"),
-    ]);
+    let data = TemplateBindings(
+        TemplateBinding(path: TemplatePath("user", "name"), value: "Ada"),
+        TemplateBinding(path: TemplatePath("user", "unread"), value: "3"),
+    );
     out.writeln(greeting.string(data));
 
-    let partials = TemplateLibrary([NamedTemplate(name: "item", value: TextTemplate("  - {{title}} ({{price}})\n"))]);
+    let partials = TemplateLibrary(NamedTemplate(name: "item", value: TextTemplate("  - {{title}} ({{price}})\n")));
     let order = SectionTemplate(source: "Order {{id}}:\n{{#items}}{{>item}}{{/items}}{{^items}}  (empty)\n{{/items}}", partials: partials);
     out.write(order.string(ParsedJson("{\"id\":17,\"items\":[{\"title\":\"Tea\",\"price\":\"4.50\"},{\"title\":\"Cake\",\"price\":\"3.00\"}]}").root()));
     out.write(order.string(ParsedJson("{\"id\":18,\"items\":[]}").root()));
