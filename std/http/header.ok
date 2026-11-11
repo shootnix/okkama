@@ -46,7 +46,7 @@ object Header {
 
     Header(name is HeaderName, value is string) {
         self.name = name;
-        self.value = HttpFieldValue(name, value).string();
+        self.value = HttpFieldValue(name: name, origin: value).string();
     }
 
     name() is HeaderName {
@@ -60,7 +60,7 @@ object Header {
 
 // Bounded regex windows preserve the Header contract beyond the regex input
 // limit. Validation checks every window before reporting a control error.
-object HttpFieldValue {
+hidden object HttpFieldValue {
     has name is HeaderName;
     has origin is string;
 
@@ -72,7 +72,7 @@ object HttpFieldValue {
     string() is string {
         let non_octet = Regex("[^\\x{0}-\\x{ff}]");
         let controls = Regex("[\\x{0}-\\x{8}\\x{a}-\\x{1f}\\x{7f}]");
-        let state = HttpFieldScan(0, false);
+        let state = HttpFieldScan(position: 0, control: false);
         loop {
             let position = state.position();
             last if position == origin.length();
@@ -98,7 +98,7 @@ object HttpFieldValue {
     hidden trimmed() is string {
         let spaces = Regex("[ \\t]*");
         let ending = Regex("[\\x{0}-\\x{ff}]*[^ \\t]");
-        let range = HttpFieldRange(0, origin.length());
+        let range = HttpFieldRange(start: 0, end: origin.length());
         loop {
             let start = range.start();
             let end = range.end();
@@ -138,7 +138,7 @@ object HttpFieldValue {
     }
 }
 
-object HttpFieldScan {
+hidden object HttpFieldScan {
     has position is int;
     has control is bool;
 
@@ -161,7 +161,7 @@ object HttpFieldScan {
     }
 }
 
-object HttpFieldRange {
+hidden object HttpFieldRange {
     has start, end is int;
 
     HttpFieldRange(start is int, end is int) {
@@ -198,12 +198,14 @@ object HeaderLimits {
         budget = bytes;
     }
 
-    entries() is int {
-        count;
-    }
+    cap Limits {
+        entries is int {
+            count;
+        }
 
-    bytes() is int {
-        budget;
+        bytes is int {
+            budget;
+        }
     }
 }
 
@@ -215,12 +217,12 @@ object Headers {
 
     Headers(entries is Sequencing<Header>) {
         let bounds = HeaderLimits();
-        origin = HeaderSnapshot(entries, bounds).entries();
+        origin = HeaderSnapshot(entries: entries, limits: bounds).entries();
         limits = bounds;
     }
 
     Headers(entries is Sequencing<Header>, limits is HeaderLimits) {
-        origin = HeaderSnapshot(entries, limits).entries();
+        origin = HeaderSnapshot(entries: entries, limits: limits).entries();
         self.limits = limits;
     }
 
@@ -258,7 +260,7 @@ object Headers {
     }
 
     addition(entry is Header) is Headers {
-        confirm origin.size() < limits.entries() else throw HeaderLimitExceeded.kind("entries");
+        confirm origin.size() < limits::Limits::entries else throw HeaderLimitExceeded.kind("entries");
         let values is @Header = (0..origin.size() + 1).map() -> index {
             if index < origin.size() {
                 origin[index];
@@ -267,7 +269,7 @@ object Headers {
                 entry;
             }
         };
-        Headers(values, limits);
+        Headers(entries: values, limits: limits);
     }
 }
 
@@ -278,7 +280,7 @@ object HeadersWithout {
     HeadersWithout(origin is Headers, names is Sequencing<HeaderName>) {
         let count = names.size();
         confirm count >= 0 else throw InvalidArgument.because("negative header name sequence size");
-        confirm count <= origin.limits().entries() else throw HeaderLimitExceeded.kind("entries");
+        confirm count <= origin.limits()::Limits::entries else throw HeaderLimitExceeded.kind("entries");
         let keys is @string = (0..count).map() -> index {
             names.item(index).lowercase();
         };
@@ -286,7 +288,7 @@ object HeadersWithout {
         self.origin = origin;
     }
 
-    result() is Headers {
+    headers() is Headers {
         let source = origin.entries();
         let entries is @Header = (0..source.size()).map() -> index {
             source.item(index);
@@ -297,7 +299,7 @@ object HeadersWithout {
             };
             !excluded;
         };
-        Headers(kept, origin.limits());
+        Headers(entries: kept, limits: origin.limits());
     }
 }
 
@@ -310,8 +312,8 @@ object ReplacedHeader {
         self.entry = entry;
     }
 
-    result() is Headers {
-        HeadersWithout(origin, [entry.name()]).result().addition(entry);
+    headers() is Headers {
+        HeadersWithout(origin: origin, names: [entry.name()]).headers().addition(entry);
     }
 }
 
@@ -326,7 +328,7 @@ object Http2Headers {
         self.request = request;
     }
 
-    result() is Headers {
+    headers() is Headers {
         let source = origin.entries();
         let entries is @Header = (0..source.size()).map() -> index {
             let entry = source.item(index);
@@ -347,9 +349,9 @@ object Http2Headers {
                         "HTTP/2 TE requires request trailers"
                     );
             }
-            Header(HeaderName(name), entry.value());
+            Header(name: HeaderName(name), value: entry.value());
         };
-        Headers(entries, origin.limits());
+        Headers(entries: entries, limits: origin.limits());
     }
 }
 
@@ -381,19 +383,19 @@ object HttpAsciiLowercase {
     }
 }
 
-object HeaderSnapshot {
+hidden object HeaderSnapshot {
     has origin is @Header;
 
     HeaderSnapshot(entries is Sequencing<Header>, limits is HeaderLimits) {
         let count = entries.size();
         confirm count >= 0 else throw InvalidArgument.because("negative header sequence size");
-        confirm count <= limits.entries() else throw HeaderLimitExceeded.kind("entries");
+        confirm count <= limits::Limits::entries else throw HeaderLimitExceeded.kind("entries");
         let values is @Header = (0..count).map() -> index {
             entries.item(index);
         };
         let used = values.reduce(0) -> total, entry {
             let bytes = entry.name().string().length() + entry.value().length() + 4;
-            confirm bytes <= limits.bytes() - total else throw HeaderLimitExceeded.kind("bytes");
+            confirm bytes <= limits::Limits::bytes - total else throw HeaderLimitExceeded.kind("bytes");
             total + bytes;
         };
         origin = values;
@@ -406,7 +408,7 @@ object HeaderSnapshot {
 
 test "HTTP fields retain duplicates and compare names without case" {
     let fields = Headers(
-        [Header(HeaderName("Set-Cookie"), " a=1 "), Header(HeaderName("set-cookie"), "b=2")]
+        [Header(name: HeaderName("Set-Cookie"), value: " a=1 "), Header(name: HeaderName("set-cookie"), value: "b=2")]
     );
     test.is(fields.values(HeaderName("SET-COOKIE")).size(), 2);
     test.is(fields.first(HeaderName("set-cookie")), "a=1");

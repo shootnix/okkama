@@ -5,7 +5,7 @@ import "io/decorators" take ByteSnapshot;
 import "io/stdout" take Stdout;
 import "net/endpoint" take IpEndpoint;
 import "net/ip" take IpAddress;
-import "net/tcp" take TcpConnecting, TcpListening, TcpOptions;
+import "net/tcp" take TcpConnecting, TcpListening;
 
 // A TCP echo over loopback: listen on a port the system picks, connect to
 // it, send a line and read it back. Nothing leaves the machine. Each side
@@ -13,15 +13,12 @@ import "net/tcp" take TcpConnecting, TcpListening, TcpOptions;
 
 async main() is int {
     let out = Stdout();
-    let listener = await TcpListening(local: IpEndpoint(address: IpAddress("127.0.0.1"), port: 0)).acceptance();
+    let listener = await TcpListening(port: 0).listener();
     defer listener.close();
-    let port = listener.local_endpoint()::Parts::port;
+    let port = listener::Local::port;
     out.writeln("listening on a system-chosen port: " + (port > 0).string());
 
-    let client = await TcpConnecting(
-        remote: IpEndpoint(address: IpAddress("127.0.0.1"), port: port),
-        options: TcpOptions(keep_alive: false, no_delay: true),
-    ).connection();
+    let client = await TcpConnecting(address: IpAddress("127.0.0.1"), port: port, no_delay: true).connection();
     defer client.close();
     let server = await listener.connection();
     defer server.close();

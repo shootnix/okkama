@@ -1,33 +1,41 @@
 module http/websocket_client v1.0.0;
 
 import "http/status" take StatusCode, Status, StatusClass;
-import "http/websocket" take WebSocketConnection, WebSocketLimits, WebSocketFailure;
+import "http/websocket" take WebSocketConnection, WebSocketLimits, WebSocketFailure, TextWebSocketMessage, BinaryWebSocketMessage, WebSocketMessageKind, WebSocketClosed;
 import "http/websocket_handshake" take WebSocketClientHandshake;
 import "http/websocket_session" take WebSocketSession;
 import "http/internal/websocket_upgrade" take WebSocketOpeningCleanup, WebSocketPrefixedInput;
-import "http/endpoint" take HttpEndpointSelection, EndpointAllowing, PublicEndpoints;
+import "http/endpoint" take HttpEndpointSelection, EndpointAllowing, PublicEndpoints, AllEndpoints;
 import "http/header" take Headers;
 import "http/http1_head" take Http1Limits, Http1ResponseHead;
 import "http/http1_reading" take Http1ResponseHeadReading, Http1HeadRead;
 import "http/http1_message_writing" take Http1RequestWriting;
 import "http/body" take EmptyBody;
-import "http/connection" take HttpAcquisitionCleanup, HttpTcpDisposal, HttpTlsDisposal,
-    HttpUnpublishedTcp, HttpUnpublishedTls;
+import "http/connection" take HttpAcquisitionCleanup, HttpTcpDisposal, HttpTlsDisposal, HttpUnpublishedTcp, HttpUnpublishedTls;
 import "http/internal/websocket_output" take WebSocketOutputSettlement;
-import "net/tcp" take TcpConnection, TcpOptions;
+import "net/tcp" take TcpConnection, TcpOptions, TcpListening;
 import "net/tcp_racing" take TcpRacing;
-import "net/dns" take Resolving;
+import "net/dns" take Resolving, FixedResolution;
 import "net/tls" take TlsClientPolicy, TlsClientHandshake, TlsConnection;
-import "crypto/x509/trust" take CertificateIdentity, DnsCertificateIdentity, IpCertificateIdentity;
-import "url/value" take UrlParts, UrlHostKind;
+import "crypto/x509/trust" take CertificateIdentity, DnsCertificateIdentity, IpCertificateIdentity, TrustedCertificates;
+import "url/value" take UrlParts, UrlHostKind, ParsedUrl;
 import "random/source" take SecureRandom;
-import "time/clock" take Timing;
+import "time/clock" take Timing, SystemClock;
 import "time/duration" take Duration, DurationUnit;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
 import "async/scope" take FutureGroup;
 import "async/timeout" take Within;
 import "io/stream" take AsyncReading, AsyncWriting, InvalidReadLimit;
+import "http/server" take HttpServer, ServerDrain;
+import "http/server_policy" take ServerPolicy;
+import "http/handler" take Handling, HandlingResult, WebSocketHandling, WebSocketHandlingResult;
+import "http/request_context" take HttpRequestContext;
+import "http/message" take Request;
+import "http/websocket_server" take WebSocketUpgrade;
+import "http/websocket_origin" take WebSocketAllowing;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
 
 object WebSocketPolicy {
     has limits is WebSocketLimits;
@@ -89,7 +97,7 @@ object WebSocketConnecting {
         let nonce is @byte = (0..16).map() -> index {
             0.byte();
         };
-        WebSocketClientHandshake(url, protocols, headers, nonce);
+        WebSocketClientHandshake(url: url, protocols: protocols, headers: headers, nonce: nonce);
         for tls.protocols() -> protocol {
             confirm protocol == "http/1.1"
                 else throw WebSocketFailure.because("HTTP1 Upgrade ALPN policy required");
@@ -109,8 +117,8 @@ object WebSocketConnecting {
             query: parts::Parts::query,
             fragment: Maybe<string>.none,
         );
-        let route = HttpEndpointSelection(transport, resolver, policy.access());
-        let operation = WebSocketOpening(url, protocols, headers, route, tls, policy, clock);
+        let route = HttpEndpointSelection(url: transport, resolver: resolver, access: policy.access());
+        let operation = WebSocketOpening(url: url, protocols: protocols, headers: headers, route: route, tls: tls, policy: policy, clock: clock);
         let bounded is Within<WebSocketSession> = Within(
             origin: operation.open(),
             limit: policy.opening_timeout(),
@@ -122,7 +130,7 @@ object WebSocketConnecting {
     async connection() is WebSocketConnection {
         let group is FutureGroup<WebSocketSession> = FutureGroup();
         let taken = Event();
-        let cleanup = WebSocketOpeningCleanup(group, waiting, taken);
+        let cleanup = WebSocketOpeningCleanup(group: group, waiting: waiting, taken: taken);
         defer await cleanup.close();
         group.start(waiting);
         let session = await waiting;
@@ -161,13 +169,13 @@ object WebSocketOpening {
 
     async open() is WebSocketSession {
         let random = SecureRandom();
-        let handshake = WebSocketClientHandshake(url, protocols, headers, random.bytes(16));
+        let handshake = WebSocketClientHandshake(url: url, protocols: protocols, headers: headers, nonce: random.bytes(16));
         let endpoints = await route.endpoints();
         let group is FutureGroup<TcpConnection> = FutureGroup();
         let empty is @Future<TcpConnection> = [];
         let pending = Atomic(empty);
         let taken = Event();
-        let cleanup = HttpAcquisitionCleanup(group, pending, taken, HttpTcpDisposal().release);
+        let cleanup = HttpAcquisitionCleanup(group: group, pending: pending, taken: taken, dispose: HttpTcpDisposal().release);
         defer await cleanup.close();
         let waiting = TcpRacing(
             origins: endpoints,
@@ -180,7 +188,7 @@ object WebSocketOpening {
         let tcp = await waiting;
         taken.set();
         let published = Event();
-        let anchor = HttpUnpublishedTcp(tcp, published);
+        let anchor = HttpUnpublishedTcp(origin: tcp, published: published);
         defer anchor.close();
         if url::Parts::scheme == "wss" {
             let host = url;
@@ -194,42 +202,42 @@ object WebSocketOpening {
             let empty is @Future<TlsConnection> = [];
             let pending = Atomic(empty);
             let taken = Event();
-            let cleanup = HttpAcquisitionCleanup(group, pending, taken, HttpTlsDisposal().release);
+            let cleanup = HttpAcquisitionCleanup(group: group, pending: pending, taken: taken, dispose: HttpTlsDisposal().release);
             defer await cleanup.close();
             let waiting = TlsClientHandshake(origin: tcp, server: identity, policy: tls, clock: clock).connection();
             pending.replace([waiting]);
             group.start(waiting);
             let secure = await waiting;
             taken.set();
-            let anchor = HttpUnpublishedTls(secure, published);
+            let anchor = HttpUnpublishedTls(origin: secure, published: published);
             defer anchor.close();
             let protocol = secure.details()::Session::protocol;
             confirm protocol == "" || protocol == "http/1.1"
                 else throw WebSocketFailure.because("negotiated ALPN is not HTTP1");
             let prefix = await self.upgrade(secure.input(), secure.output(), handshake);
             let session = WebSocketSession(
-                WebSocketPrefixedInput(secure.input(), prefix),
-                secure.output(),
-                secure,
-                true,
-                random,
-                policy.limits(),
-                policy.closing_timeout(),
-                clock
+                input: WebSocketPrefixedInput(secure.input(), prefix),
+                output: secure.output(),
+                owner: secure,
+                client: true,
+                random: random,
+                limits: policy.limits(),
+                close_timeout: policy.closing_timeout(),
+                clock: clock
             );
             published.set();
             return session;
         }
         let prefix = await self.upgrade(tcp.input(), tcp.output(), handshake);
         let session = WebSocketSession(
-            WebSocketPrefixedInput(tcp.input(), prefix),
-            tcp.output(),
-            tcp,
-            true,
-            random,
-            policy.limits(),
-            policy.closing_timeout(),
-            clock
+            input: WebSocketPrefixedInput(tcp.input(), prefix),
+            output: tcp.output(),
+            owner: tcp,
+            client: true,
+            random: random,
+            limits: policy.limits(),
+            close_timeout: policy.closing_timeout(),
+            clock: clock
         );
         published.set();
         session;
@@ -240,15 +248,15 @@ object WebSocketOpening {
         output is AsyncWriting,
         handshake is WebSocketClientHandshake
     ) is @byte {
-        let pending = Http1RequestWriting(output, handshake.request()).result();
+        let pending = Http1RequestWriting(origin: output, request: handshake.request()).output();
         await pending;
         let empty is @byte = [];
         let prefix = Atomic(empty);
         let count = Atomic(0);
         loop {
-            let pending = Http1ResponseHeadReading(input, prefix.value(), Http1Limits(), 4096).result();
+            let pending = Http1ResponseHeadReading(origin: input, prefix: prefix.value(), limits: Http1Limits(), chunk_bytes: 4096).head();
             let received = await pending;
-            let status = received.head().status();
+            let status = received.head()::Head::status;
             if StatusCode(status).class() == StatusClass.informational
                 && status != Status.switching_protocols {
                     confirm count.value() < 16
@@ -261,4 +269,78 @@ object WebSocketOpening {
             return received.remainder();
         }
     }
+}
+
+hidden object AnyWebSocketOrigin does WebSocketAllowing {
+    AnyWebSocketOrigin();
+
+    allowed(request is Request, destination is UrlParts) is bool {
+        true;
+    }
+}
+
+hidden object ShoutingEcho does Handling, WebSocketHandling {
+    ShoutingEcho();
+
+    async handling(request is Request, context is HttpRequestContext) is HandlingResult {
+        let upgrade = WebSocketUpgrade(
+            protocols: [],
+            limits: WebSocketLimits(),
+            access: AnyWebSocketOrigin(),
+            deadline: Duration(value: 5.rat(), unit: DurationUnit.second),
+        );
+        WebSocketHandlingResult(origin: upgrade, application: self);
+    }
+
+    async handle(connection is WebSocketConnection, request is Request, context is HttpRequestContext) is WebSocketHandling {
+        try {
+            loop {
+                let message = await connection.message();
+                if message.kind() == WebSocketMessageKind.text {
+                    await connection.send(TextWebSocketMessage(message.text().upper()));
+                }
+                else {
+                    await connection.send(BinaryWebSocketMessage(message.bytes() + message.bytes()));
+                }
+            }
+        }
+        catch e is WebSocketClosed {
+            self;
+        }
+        self;
+    }
+}
+
+async test "a WebSocket client talks to a server over loopback and closes cleanly" {
+    let listener = await TcpListening(port: 0).listener();
+    let clock = SystemClock();
+    // WebSocket upgrades need the server's own URL to check the Origin against.
+    let own = ParsedUrl("http://127.0.0.1:" + listener.local_endpoint()::Parts::port.string() + "/").parts();
+    let server = HttpServer(origin: listener, handling: ShoutingEcho(), policy: ServerPolicy(), clock: clock, destination: own);
+    let workers is FutureGroup<HttpServer> = FutureGroup();
+    workers.start(server.serve());
+    let url = ParsedUrl("ws://127.0.0.1:" + server.local_endpoint()::Parts::port.string() + "/echo").parts();
+    let policy = WebSocketPolicy(
+        limits: WebSocketLimits(),
+        opening: Duration(value: 5.rat(), unit: DurationUnit.second),
+        closing: Duration(value: 2.rat(), unit: DurationUnit.second),
+        access: AllEndpoints(),
+    );
+    let connection = await WebSocketConnecting(
+        url: url,
+        protocols: [],
+        headers: Headers([]),
+        resolver: FixedResolution([]),
+        tls: TlsClientPolicy(TrustedCertificates([])),
+        policy: policy,
+        clock: clock,
+    ).connection();
+    await connection.send(TextWebSocketMessage("hello"));
+    test.is((await connection.message()).text(), "HELLO");
+    await connection.send(BinaryWebSocketMessage([1.byte(), 2.byte()]));
+    test.is((await connection.message()).bytes(), [1.byte(), 2.byte(), 1.byte(), 2.byte()]);
+    await connection.close(1000, "done");
+    test.is(connection.closed(), true);
+    await ServerDrain(server: server, limit: Duration(value: 5.rat(), unit: DurationUnit.second), clock: clock).drain();
+    await workers.wait();
 }

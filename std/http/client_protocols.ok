@@ -3,6 +3,11 @@ module http/client_protocols v1.0.0;
 import "http/client_policy" take ClientPolicy;
 import "http/version" take HttpVersion, UnsupportedHttpVersion;
 import "net/tls" take TlsClientPolicy;
+import "http/client_policy" take HttpLimits, ClientTimeouts;
+import "http/endpoint" take PublicEndpoints;
+import "collections/set" take Set, OrderedSet;
+import "crypto/x509/trust" take TrustedCertificates;
+import "net/tls" take TlsVersion;
 
 // Agreement is checked without route/transport effects. Actual ALPN remains
 // definitive; the advertised list alone never selects the wire protocol.
@@ -55,4 +60,23 @@ object HttpClientProtocols {
             HttpVersion.http_2;
         }
     }
+}
+
+test "the client agrees protocols with TLS and maps ALPN to a version" {
+    let trust = TrustedCertificates([]);
+    let versions is Set<TlsVersion> = OrderedSet([TlsVersion.tls1_3]);
+    let plain = HttpClientProtocols(policy: ClientPolicy(), tls: TlsClientPolicy(trust));
+    test.is(plain.clear() == HttpVersion.http_1_1, true);
+    test.is(plain.selected("") == HttpVersion.http_1_1, true);
+    test.throws(UnsupportedHttpVersion) {
+        plain.selected("h2");
+    };
+    let both is Set<HttpVersion> = OrderedSet([HttpVersion.http_1_1, HttpVersion.http_2]);
+    let policy = ClientPolicy(protocols: both, limits: HttpLimits(), timeouts: ClientTimeouts(), connections: 8, access: PublicEndpoints());
+    let modern = HttpClientProtocols(policy: policy, tls: TlsClientPolicy(trust: trust, versions: versions, protocols: ["h2", "http/1.1"]));
+    test.is(modern.selected("h2") == HttpVersion.http_2, true);
+    test.is(modern.selected("http/1.1") == HttpVersion.http_1_1, true);
+    test.throws(UnsupportedHttpVersion) {
+        HttpClientProtocols(policy: ClientPolicy(), tls: TlsClientPolicy(trust: trust, versions: versions, protocols: ["h2"]));
+    };
 }

@@ -32,7 +32,7 @@ object HttpWireBytes {
 enum WireByteLimit is Error = (exceeded);
 
 test "bulk join returns independent octets after its private buffer closes" {
-    let wire = HttpWireBytes([[0.byte(), 255.byte()], [], [65.byte()]], 3).bytes();
+    let wire = HttpWireBytes(chunks: [[0.byte(), 255.byte()], [], [65.byte()]], maximum: 3).bytes();
     test.is(wire.size(), 3);
     test.is(wire[1].int(), 255);
 }

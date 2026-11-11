@@ -38,7 +38,7 @@ object ProxyPolicy {
     }
 }
 
-object HttpProxyEndpoint {
+hidden object HttpProxyEndpoint {
     HttpProxyEndpoint(origin is UrlParts) {
         let parts = origin;
         confirm parts::Parts::scheme == "http"
@@ -50,7 +50,7 @@ object HttpProxyEndpoint {
                 "plain HTTP endpoint without URI credentials/path/query/fragment required"
             );
         try {
-            HttpEndpointSelection(origin, FixedResolution([]), AllEndpoints());
+            HttpEndpointSelection(url: origin, resolver: FixedResolution([]), access: AllEndpoints());
         }
         catch e is Error {
             throw InvalidProxy.because("invalid endpoint");

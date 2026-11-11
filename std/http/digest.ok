@@ -44,10 +44,6 @@ object DigestCredentials {
         self.password = password;
     }
 
-    username() is string {
-        username;
-    }
-
     response_digest(
         challenge is DigestChallenge,
         uri is string,
@@ -57,7 +53,7 @@ object DigestCredentials {
     ) is string {
         let identity = self.identity(challenge);
         let raw_password = ExportedSecret(password).bytes();
-        let password = if challenge.utf8() {
+        let password = if challenge::Challenge::utf8 {
             let text = try {
                 Utf8Decoded(raw_password).string();
             }
@@ -86,31 +82,31 @@ object DigestCredentials {
                 }
             }
         };
-        let original = DigestHash(a1, challenge.algorithm()).string();
+        let original = DigestHash(origin: a1, algorithm: challenge::Challenge::algorithm).string();
         let secret = if challenge.session() {
             DigestHash(
-                DigestAscii(original + ":" + challenge.nonce() + ":" + cnonce).bytes(),
-                challenge.algorithm()
+                origin: DigestAscii(original + ":" + challenge::Challenge::nonce + ":" + cnonce).bytes(),
+                algorithm: challenge::Challenge::algorithm
             ).string();
         }
         else {
             original;
         };
-        let a2 = DigestHash(DigestAscii(method + ":" + uri).bytes(), challenge.algorithm()).string();
+        let a2 = DigestHash(origin: DigestAscii(method + ":" + uri).bytes(), algorithm: challenge::Challenge::algorithm).string();
         DigestHash(
-            DigestAscii(
-                secret + ":" + challenge.nonce() + ":" + count + ":" + cnonce + ":auth:" + a2
+            origin: DigestAscii(
+                secret + ":" + challenge::Challenge::nonce + ":" + count + ":" + cnonce + ":auth:" + a2
             ).bytes(),
-            challenge.algorithm()
+            algorithm: challenge::Challenge::algorithm
         ).string();
     }
 
     identity(challenge is DigestChallenge) is @byte {
-        let name = if challenge.utf8() {
-            DigestText(self.username()).bytes();
+        let name = if challenge::Challenge::utf8 {
+            DigestText(self::Credentials::username).bytes();
         }
         else {
-            DigestAscii(self.username()).bytes();
+            DigestAscii(self::Credentials::username).bytes();
         };
         let realm = challenge.realm_bytes();
         (0..name.size() + 1 + realm.size()).map() -> index {
@@ -127,6 +123,12 @@ object DigestCredentials {
             }
         };
     }
+
+    cap Credentials {
+        username is string {
+            username;
+        }
+    }
 }
 
 // Explicit SHA-256/SHA-512-256 profile and session variants, qop=auth.
@@ -137,7 +139,7 @@ object DigestChallenge {
     has opaque_present, userhash, stale, utf8 is bool;
 
     DigestChallenge(origin is AuthenticationChallenge) {
-        confirm origin.scheme() == "digest" && origin.token68() == ""
+        confirm origin::Challenge::scheme == "digest" && origin::Challenge::token68 == ""
             else throw UnsupportedDigestChallenge.unsupported;
         confirm origin.present("algorithm") else throw UnsupportedDigestChallenge.unsupported;
         let offered = origin.parameter("algorithm");
@@ -150,7 +152,7 @@ object DigestChallenge {
         confirm origin.present("qop") else throw UnsupportedDigestChallenge.unsupported;
         let options = origin.parameter("qop").split(",");
         let supported = options.reduce(false) -> found, option {
-            found || Header(HeaderName("Qop"), option).value() == "auth";
+            found || Header(name: HeaderName("Qop"), value: option).value() == "auth";
         };
         confirm supported else throw UnsupportedDigestChallenge.unsupported;
         confirm origin.present("realm") && origin.present("nonce")
@@ -192,45 +194,13 @@ object DigestChallenge {
         self.opaque = opaque;
         self.opaque_present = opaque_present;
         self.utf8 = utf8;
-        userhash = DigestFlag(origin, "userhash").value();
-        stale = DigestFlag(origin, "stale").value();
-    }
-
-    realm() is string {
-        realm;
-    }
-
-    nonce() is string {
-        nonce;
-    }
-
-    algorithm() is string {
-        algorithm;
-    }
-
-    opaque() is string {
-        opaque;
-    }
-
-    opaque_present() is bool {
-        opaque_present;
-    }
-
-    userhash() is bool {
-        userhash;
-    }
-
-    stale() is bool {
-        stale;
+        userhash = DigestFlag(origin: origin, name: "userhash").bool();
+        stale = DigestFlag(origin: origin, name: "stale").bool();
     }
 
     session() is bool {
         let kind = HttpAsciiLowercase(algorithm).string();
         kind == "sha-256-sess" || kind == "sha-512-256-sess";
-    }
-
-    utf8() is bool {
-        utf8;
     }
 
     realm_bytes() is @byte {
@@ -241,9 +211,43 @@ object DigestChallenge {
             DigestAscii(realm).bytes();
         }
     }
+
+    cap Challenge {
+        realm is string {
+            realm;
+        }
+
+        nonce is string {
+            nonce;
+        }
+
+        algorithm is string {
+            algorithm;
+        }
+
+        opaque is string {
+            opaque;
+        }
+
+        opaque_present is bool {
+            opaque_present;
+        }
+
+        userhash is bool {
+            userhash;
+        }
+
+        stale is bool {
+            stale;
+        }
+
+        utf8 is bool {
+            utf8;
+        }
+    }
 }
 
-object DigestFlag {
+hidden object DigestFlag {
     has origin is AuthenticationChallenge;
     has name is string;
 
@@ -252,7 +256,7 @@ object DigestFlag {
         self.name = name;
     }
 
-    value() is bool {
+    bool() is bool {
         if !origin.present(name) {
             return false;
         }
@@ -302,15 +306,15 @@ object DigestAuthorization does HttpAuthorizing {
 
     header() is Header {
         let response = self.response_digest(method);
-        let name = if challenge.utf8() {
-            DigestText(credentials.username()).string();
+        let name = if challenge::Challenge::utf8 {
+            DigestText(credentials::Credentials::username).string();
         }
         else {
-            DigestAscii(credentials.username()).bytes();
-            credentials.username();
+            DigestAscii(credentials::Credentials::username).bytes();
+            credentials::Credentials::username;
         };
-        let user = if challenge.userhash() {
-            "username=" + DigestQuoted(DigestHash(self.identity(), challenge.algorithm()).string()).string();
+        let user = if challenge::Challenge::userhash {
+            "username=" + DigestQuoted(DigestHash(origin: self.identity(), algorithm: challenge::Challenge::algorithm).string()).string();
         }
         else {
             let ascii = try {
@@ -327,28 +331,28 @@ object DigestAuthorization does HttpAuthorizing {
                 "username*=UTF-8''" + PercentEncoded(origin: name, component: UrlComponent.data).string();
             }
         };
-        let value = "Digest " + user + ", realm=" + DigestQuoted(challenge.realm()).string() + ", nonce=" + DigestQuoted(
-            challenge.nonce()
+        let value = "Digest " + user + ", realm=" + DigestQuoted(challenge::Challenge::realm).string() + ", nonce=" + DigestQuoted(
+            challenge::Challenge::nonce
         ).string() +
-            ", uri=" + DigestQuoted(uri).string() + ", algorithm=" + challenge.algorithm() + ", response=" + DigestQuoted(
+            ", uri=" + DigestQuoted(uri).string() + ", algorithm=" + challenge::Challenge::algorithm + ", response=" + DigestQuoted(
                 response
             ).string() + ", qop=auth, nc=" + count + ", cnonce=" + DigestQuoted(cnonce).string() +
-            if challenge.opaque_present() {
-                ", opaque=" + DigestQuoted(challenge.opaque()).string();
+            if challenge::Challenge::opaque_present {
+                ", opaque=" + DigestQuoted(challenge::Challenge::opaque).string();
             }
             else {
                 "";
-            } + if challenge.userhash() {
+            } + if challenge::Challenge::userhash {
                 ", userhash=true";
             }
             else {
                 "";
             };
-        Header(HeaderName("Authorization"), value);
+        Header(name: HeaderName("Authorization"), value: value);
     }
 
     proof() is DigestServerProof {
-        DigestServerProof(self.response_digest(""), cnonce, count);
+        DigestServerProof(expected: self.response_digest(""), cnonce: cnonce, count: count);
     }
 
     hidden response_digest(method is string) is string {
@@ -360,7 +364,7 @@ object DigestAuthorization does HttpAuthorizing {
     }
 }
 
-object DigestAscii {
+hidden object DigestAscii {
     has origin is string;
 
     DigestAscii(origin is string) {
@@ -382,7 +386,7 @@ object DigestAscii {
     }
 }
 
-object DigestHash {
+hidden object DigestHash {
     has origin is @byte;
     has algorithm is string;
 
@@ -420,7 +424,7 @@ object DigestHash {
     }
 }
 
-object DigestQuoted {
+hidden object DigestQuoted {
     has origin is string;
 
     DigestQuoted(origin is string) {
@@ -453,7 +457,7 @@ object DigestQuoted {
     }
 }
 
-object DigestNonce {
+hidden object DigestNonce {
     has nonce is string;
     has count is int;
 
@@ -471,7 +475,7 @@ object DigestNonce {
     }
 }
 
-object DigestNonces {
+hidden object DigestNonces {
     has entries is Atomic<@DigestNonce>;
     has maximum is int;
 
@@ -510,7 +514,7 @@ object DigestNonces {
                 1;
             }).map() -> index {
                 if index == previous.size() || previous[index].nonce() == nonce {
-                    DigestNonce(nonce, count);
+                    DigestNonce(nonce: nonce, count: count);
                 }
                 else {
                     previous[index];
@@ -555,7 +559,7 @@ object DigestExchanging does Exchanging {
             else throw AuthenticationConflict.conflict;
         let first = await self.once(request);
         let retained = Event();
-        let cleanup = DigestResponseCleanup(first::Exchange::response, retained);
+        let cleanup = DigestResponseCleanup(origin: first::Exchange::response, retained: retained);
         defer cleanup.close();
         if !self.eligible(first, request) || !request.body().replayable() {
             retained.set();
@@ -570,13 +574,13 @@ object DigestExchanging does Exchanging {
         cleanup.close();
         let result = await self.authorized(request, selected);
         let final = Event();
-        let final_cleanup = DigestResponseCleanup(result::Exchange::response, final);
+        let final_cleanup = DigestResponseCleanup(origin: result::Exchange::response, retained: final);
         defer final_cleanup.close();
         if self.eligible(result, request) {
             let refreshing = DigestSelection(result::Head::headers).values();
             if refreshing.size() == 1
-                && refreshing[0].stale()
-                && refreshing[0].nonce() != selected.nonce() {
+                && refreshing[0]::Challenge::stale
+                && refreshing[0]::Challenge::nonce != selected::Challenge::nonce {
                     final_cleanup.close();
                     let refreshed = await self.authorized(request, refreshing[0]);
                     return self.result(request, refreshed);
@@ -594,9 +598,9 @@ object DigestExchanging does Exchanging {
     }
 
     hidden async authorized(request is Request, challenge is DigestChallenge) is ClientResponse {
-        let count = counts.ticket(challenge.nonce());
+        let count = counts.ticket(challenge::Challenge::nonce);
         let nonce = HexEncoded(random.bytes(16)).string();
-        let authorization = DigestAuthorization(credentials, challenge, request, nonce, count);
+        let authorization = DigestAuthorization(credentials: credentials, challenge: challenge, request: request, cnonce: nonce, count: count);
         let header = authorization.header();
         let proof = authorization.proof();
         let outgoing = Request(
@@ -608,7 +612,7 @@ object DigestExchanging does Exchanging {
         );
         let result = await self.once(outgoing);
         let retained = Event();
-        let cleanup = DigestResponseCleanup(result::Exchange::response, retained);
+        let cleanup = DigestResponseCleanup(origin: result::Exchange::response, retained: retained);
         defer cleanup.close();
         confirm result::Exchange::history.size() == 0
             && result::Exchange::request::Head::target.url().string() == request::Head::target.url().string()
@@ -618,7 +622,7 @@ object DigestExchanging does Exchanging {
         let response = Response(
             status: source::Head::status,
             headers: source::Head::headers,
-            body: DigestBody(source.body(), proof),
+            body: DigestBody(origin: source.body(), proof: proof),
             version: source::Head::version
         );
         let verified = ClientResponse(
@@ -648,7 +652,7 @@ object DigestExchanging does Exchanging {
     }
 }
 
-object DigestSelection {
+hidden object DigestSelection {
     has headers is Headers;
 
     DigestSelection(headers is Headers) {
@@ -667,7 +671,7 @@ object DigestSelection {
         let selected is @DigestChallenge = [];
         for (0..fields.size()) -> index {
             for AuthenticationChallenges(fields.item(index)).values() -> challenge {
-                if challenge.scheme() == "digest" {
+                if challenge::Challenge::scheme == "digest" {
                     let supported is @DigestChallenge = try {
                         [DigestChallenge(challenge)];
                     }
@@ -737,7 +741,7 @@ object DigestServerProof {
         catch e is InvalidAuthenticationChallenge {
             throw InvalidAuthentication.because("digest server proof syntax");
         };
-        confirm parsed.size() == 1 && parsed[0].token68() == ""
+        confirm parsed.size() == 1 && parsed[0]::Challenge::token68 == ""
             else throw InvalidAuthentication.because("digest server proof syntax");
         let info = parsed[0];
         confirm info.present("qop")
@@ -768,7 +772,7 @@ object DigestServerProof {
     }
 }
 
-object DigestBody does BodyOpening {
+hidden object DigestBody does BodyOpening {
     has origin is BodyOpening;
     has proof is DigestServerProof;
 
@@ -786,11 +790,11 @@ object DigestBody does BodyOpening {
     }
 
     reading() is BodyReading {
-        DigestReading(origin.reading(), proof);
+        DigestReading(origin: origin.reading(), proof: proof);
     }
 }
 
-object DigestReading does BodyReading {
+hidden object DigestReading does BodyReading {
     has origin is BodyReading;
     has proof is DigestServerProof;
 
@@ -836,7 +840,7 @@ test "Digest nonce counts remain independent and monotone" {
     test.ok(counts.ticket("n") == 1 && counts.ticket("n") == 2 && counts.ticket("other") == 1);
 }
 
-object DigestText {
+hidden object DigestText {
     has origin is string;
 
     DigestText(origin is string) {

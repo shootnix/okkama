@@ -112,116 +112,11 @@ object Certificate {
         }
     }
 
-    extensions_items() is Sequencing<CertificateExtension> {
-        let records = x509.certificate_extensions(facts);
-        let values is @CertificateExtension = records.map() -> record {
-            CertificateExtension(identifier: record[0], critical: record[1] == "1", origin: HexDecoded(record[2]).bytes());
-        };
-        values;
+    // The certificate's extensions, read on demand.
+    extensions() is CertificateExtensions {
+        CertificateExtensions(facts);
     }
 
-    extensions_extension(identifier is string) is CertificateExtension {
-        let wanted = CertificateObjectIdentifier(identifier).identifier();
-        let records = x509.certificate_extensions(facts);
-        for records -> record {
-            if record[0] == wanted {
-                return CertificateExtension(
-                    identifier: record[0],
-                    critical: record[1] == "1",
-                    origin: HexDecoded(record[2]).bytes()
-                );
-            }
-        }
-        throw MissingCertificateExtension.identifier(wanted);
-    }
-
-    extensions_critical() is Sequencing<string> {
-        let records = x509.certificate_extensions(facts);
-        let critical = records.filter() -> record {
-            record[1] == "1";
-        };
-        let values is @string = critical.map() -> record {
-            record[0];
-        };
-        values;
-    }
-
-    extensions_constraints() is CertificateConstraints {
-        try {
-            let value = x509.certificate_constraints(facts);
-            let authority = value[0] == "1";
-            if value[1] == "" {
-                CertificateConstraints(authority);
-            }
-            else {
-                CertificateConstraints(authority: authority, maximum_depth: Number(value[1]).int());
-            }
-        }
-        catch e is NativeFailure {
-            if e.domain() == "core.x509" {
-                if e.code() == "resource_exhausted" {
-                    throw CertificateLimitExceeded.exceeded;
-                }
-                if e.code() == "invalid_data" {
-                    throw InvalidCertificate.because("invalid basicConstraints");
-                }
-            }
-            throw;
-        }
-    }
-
-    extensions_key_usages() is Set<CertificateKeyUsage> {
-        try {
-            let all is @CertificateKeyUsage = [
-                CertificateKeyUsage.digital_signature,
-                CertificateKeyUsage.content_commitment,
-                CertificateKeyUsage.key_encipherment,
-                CertificateKeyUsage.data_encipherment,
-                CertificateKeyUsage.key_agreement,
-                CertificateKeyUsage.key_cert_sign,
-                CertificateKeyUsage.crl_sign,
-                CertificateKeyUsage.encipher_only,
-                CertificateKeyUsage.decipher_only
-            ];
-            let bits = x509.certificate_key_usages(facts);
-            let values is @CertificateKeyUsage = bits.map() -> bit {
-                all[bit];
-            };
-            OrderedSet(values);
-        }
-        catch e is NativeFailure {
-            if e.domain() == "core.x509" {
-                if e.code() == "resource_exhausted" {
-                    throw CertificateLimitExceeded.exceeded;
-                }
-                if e.code() == "invalid_data" {
-                    throw InvalidCertificate.because("invalid keyUsage");
-                }
-            }
-            throw;
-        }
-    }
-
-    extensions_purposes() is Set<CertificatePurpose> {
-        try {
-            let identifiers = x509.certificate_purposes(facts);
-            let values is @CertificatePurpose = identifiers.map() -> identifier {
-                CertificatePurpose(identifier);
-            };
-            OrderedSet(values);
-        }
-        catch e is NativeFailure {
-            if e.domain() == "core.x509" {
-                if e.code() == "resource_exhausted" {
-                    throw CertificateLimitExceeded.exceeded;
-                }
-                if e.code() == "invalid_data" {
-                    throw InvalidCertificate.because("invalid extendedKeyUsage");
-                }
-            }
-            throw;
-        }
-    }
 }
 
 hidden object CertificateName {
@@ -371,35 +266,124 @@ object CertificateExtension {
     }
 }
 
+// Made by Certificate.extensions(); the facts are the certificate's parsed
+// native record.
 object CertificateExtensions {
-    has owner is Certificate;
+    has facts is string;
 
-    CertificateExtensions(origin is Certificate) {
-        owner = origin;
+    CertificateExtensions(facts is string) {
+        self.facts = facts;
     }
 
     items() is Sequencing<CertificateExtension> {
-        owner.extensions_items();
+        let records = x509.certificate_extensions(facts);
+        let values is @CertificateExtension = records.map() -> record {
+            CertificateExtension(identifier: record[0], critical: record[1] == "1", origin: HexDecoded(record[2]).bytes());
+        };
+        values;
     }
 
     extension(identifier is string) is CertificateExtension {
-        owner.extensions_extension(identifier);
+        let wanted = CertificateObjectIdentifier(identifier).identifier();
+        let records = x509.certificate_extensions(facts);
+        for records -> record {
+            if record[0] == wanted {
+                return CertificateExtension(
+                    identifier: record[0],
+                    critical: record[1] == "1",
+                    origin: HexDecoded(record[2]).bytes()
+                );
+            }
+        }
+        throw MissingCertificateExtension.identifier(wanted);
     }
 
     critical() is Sequencing<string> {
-        owner.extensions_critical();
+        let records = x509.certificate_extensions(facts);
+        let critical = records.filter() -> record {
+            record[1] == "1";
+        };
+        let values is @string = critical.map() -> record {
+            record[0];
+        };
+        values;
     }
 
     constraints() is CertificateConstraints {
-        owner.extensions_constraints();
+        try {
+            let value = x509.certificate_constraints(facts);
+            let authority = value[0] == "1";
+            if value[1] == "" {
+                CertificateConstraints(authority);
+            }
+            else {
+                CertificateConstraints(authority: authority, maximum_depth: Number(value[1]).int());
+            }
+        }
+        catch e is NativeFailure {
+            if e.domain() == "core.x509" {
+                if e.code() == "resource_exhausted" {
+                    throw CertificateLimitExceeded.exceeded;
+                }
+                if e.code() == "invalid_data" {
+                    throw InvalidCertificate.because("invalid basicConstraints");
+                }
+            }
+            throw;
+        }
     }
 
     key_usages() is Set<CertificateKeyUsage> {
-        owner.extensions_key_usages();
+        try {
+            let all is @CertificateKeyUsage = [
+                CertificateKeyUsage.digital_signature,
+                CertificateKeyUsage.content_commitment,
+                CertificateKeyUsage.key_encipherment,
+                CertificateKeyUsage.data_encipherment,
+                CertificateKeyUsage.key_agreement,
+                CertificateKeyUsage.key_cert_sign,
+                CertificateKeyUsage.crl_sign,
+                CertificateKeyUsage.encipher_only,
+                CertificateKeyUsage.decipher_only
+            ];
+            let bits = x509.certificate_key_usages(facts);
+            let values is @CertificateKeyUsage = bits.map() -> bit {
+                all[bit];
+            };
+            OrderedSet(values);
+        }
+        catch e is NativeFailure {
+            if e.domain() == "core.x509" {
+                if e.code() == "resource_exhausted" {
+                    throw CertificateLimitExceeded.exceeded;
+                }
+                if e.code() == "invalid_data" {
+                    throw InvalidCertificate.because("invalid keyUsage");
+                }
+            }
+            throw;
+        }
     }
 
     purposes() is Set<CertificatePurpose> {
-        owner.extensions_purposes();
+        try {
+            let identifiers = x509.certificate_purposes(facts);
+            let values is @CertificatePurpose = identifiers.map() -> identifier {
+                CertificatePurpose(identifier);
+            };
+            OrderedSet(values);
+        }
+        catch e is NativeFailure {
+            if e.domain() == "core.x509" {
+                if e.code() == "resource_exhausted" {
+                    throw CertificateLimitExceeded.exceeded;
+                }
+                if e.code() == "invalid_data" {
+                    throw InvalidCertificate.because("invalid extendedKeyUsage");
+                }
+            }
+            throw;
+        }
     }
 }
 

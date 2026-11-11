@@ -30,12 +30,12 @@ object MailMessage does ByteSource {
     MailMessage(headers is MessageHeaders, body is MimeBody) {
         let limits = MimeLimits();
         bounds = limits;
-        content = MimePart(headers, body, limits);
+        content = MimePart(headers: headers, body: body, limits: limits);
     }
 
     MailMessage(headers is MessageHeaders, body is MimeBody, limits is MimeLimits) {
         bounds = limits;
-        content = MimePart(headers, body, limits);
+        content = MimePart(headers: headers, body: body, limits: limits);
     }
 
     part() is MimePart {
@@ -75,7 +75,7 @@ object ParsedMail {
 
     message() is MailMessage {
         try {
-            let part = ParsedMime(origin, limits).part();
+            let part = ParsedMime(origin: origin, limits: limits).part();
             MailMessage(part);
         }
         catch InvalidMime.located(offset, reason) {

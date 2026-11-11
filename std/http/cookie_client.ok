@@ -27,7 +27,7 @@ object FirstPartyCookies does CookieContextualizing {
     context(request is Request) is CookieContext {
         confirm request::Head::target.kind() == RequestTargetKind.absolute
             else throw InvalidArgument.because("absolute cookie request required");
-        CookieContext(request::Head::target.url(), true, request::Head::method);
+        CookieContext(site: request::Head::target.url(), top_level: true, method: request::Head::method);
     }
 }
 
@@ -71,12 +71,12 @@ object CookieExchanging does Exchanging {
         }
         else {
             let selected = CookieRequestPairs(jar.cookies(request::Head::target.url(), context)).string();
-            let clean = HeadersWithout(request::Head::headers, [HeaderName("Cookie")]).result();
+            let clean = HeadersWithout(origin: request::Head::headers, names: [HeaderName("Cookie")]).headers();
             if selected == "" {
                 clean;
             }
             else {
-                clean.addition(Header(HeaderName("Cookie"), selected));
+                clean.addition(Header(name: HeaderName("Cookie"), value: selected));
             }
         };
         let outgoing = Request(
@@ -88,7 +88,7 @@ object CookieExchanging does Exchanging {
         );
         let result = await origin.response(outgoing);
         let retained = Event();
-        let cleanup = RedirectResponseCleanup(result::Exchange::response, retained);
+        let cleanup = RedirectResponseCleanup(response: result::Exchange::response, retained: retained);
         defer cleanup.close();
         // Storage is correct even if a caller places this outside Redirecting,
         // but selection per hop requires Redirecting(CookieExchanging(...)).
@@ -130,7 +130,7 @@ object CookieExchanging does Exchanging {
     }
 }
 
-object CookieRequestPairs {
+hidden object CookieRequestPairs {
     has text is string;
 
     CookieRequestPairs(cookies is Sequencing<Cookie>) {
@@ -163,8 +163,8 @@ test "first-party cookies use the current request site and method" {
     );
     let context = FirstPartyCookies().context(request);
     test.ok(
-        context.top_level()
-            && context.method() == Method.post
+        context::Context::top_level
+            && context::Context::method == Method.post
             && context.site().string() == "https://example.com/path"
     );
     test.ok(CookieRequestPairs([]).string() == "");

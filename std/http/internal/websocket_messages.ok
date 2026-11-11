@@ -9,6 +9,7 @@ import "io/decorators" take ByteSnapshot;
 import "async/atomic" take Atomic;
 import "encoding/utf" take Utf8Decoded, InvalidUtf8;
 import "strings/parse" take Number;
+import "encoding/utf" take Utf8Encoded;
 
 // One owner per incoming message sequence. Control frames leave this state
 // intact and are handled by the connection. No repeated payload concatenation.
@@ -21,7 +22,7 @@ object WebSocketMessageAssembly does Closing {
         bytes = ByteBuffer();
         opcode = Atomic(-1);
         maximum = Number(limits.message_bytes().string()).int();
-        frame_maximum = limits.frame_bytes();
+        frame_maximum = limits::Limits::frame_bytes;
     }
 
     closed() is bool {
@@ -94,7 +95,7 @@ object ParsedWebSocketClose {
         self.from_server = from_server;
     }
 
-    value() is WebSocketClosed {
+    closure() is WebSocketClosed {
         if origin.size() == 0 {
             return WebSocketClosed.detailed(1005, "");
         }
@@ -109,7 +110,40 @@ object ParsedWebSocketClose {
         catch e is InvalidUtf8 {
             throw WebSocketFailure.because("invalid close UTF-8");
         };
-        WebSocketClose(code, reason);
+        WebSocketClose(code: code, reason: reason);
         WebSocketClosed.detailed(code, reason);
     }
+}
+
+test "fragments assemble into one message; control frames pass by" {
+    let assembly = WebSocketMessageAssembly(WebSocketLimits());
+    test.is(assembly.accept(WebSocketFrame(opcode: 1, final: false, payload: Utf8Encoded("hel").bytes())).size(), 0);
+    test.is(assembly.accept(WebSocketFrame(opcode: 9, final: true, payload: [])).size(), 0);
+    let done = assembly.accept(WebSocketFrame(opcode: 0, final: true, payload: Utf8Encoded("lo").bytes()));
+    test.is(done.size(), 1);
+    test.is(done[0].text(), "hello");
+    let binary = assembly.accept(WebSocketFrame(opcode: 2, final: true, payload: [1.byte(), 2.byte()]));
+    test.is(binary[0].bytes(), [1.byte(), 2.byte()]);
+    test.throws(WebSocketFailure) {
+        assembly.accept(WebSocketFrame(opcode: 0, final: true, payload: []));
+    };
+    assembly.close();
+    test.is(assembly.closed(), true);
+}
+
+test "a close frame carries a status code and a UTF-8 reason" {
+    let reason = try {
+        throw ParsedWebSocketClose(origin: [3.byte(), 232.byte(), 98.byte(), 121.byte(), 101.byte()], from_server: true).closure();
+    }
+    catch WebSocketClosed.detailed(code, text) {
+        code.string() + " " + text;
+    };
+    test.is(reason, "1000 bye");
+    let empty = try {
+        throw ParsedWebSocketClose(origin: [], from_server: true).closure();
+    }
+    catch WebSocketClosed.detailed(code, text) {
+        code.string();
+    };
+    test.is(empty, "1005");
 }

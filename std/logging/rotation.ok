@@ -348,7 +348,7 @@ test "a rotating file archives by generation and keeps the newest backups" {
         logs.write(ByteSnapshot(Utf8Encoded(letter.repeat(8) + "\n").bytes()));
     }
     logs.close();
-    let listed is @string = DirectoryEntries(origin: Directory(path: scratch.path())).map() -> entry {
+    let listed is @string = DirectoryEntries(origin: scratch).map() -> entry {
         entry.path().string();
     };
     test.is(listed, [path.string(), path.string() + ".archive.2.2", path.string() + ".archive.3.3"]);

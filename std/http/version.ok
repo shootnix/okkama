@@ -33,7 +33,7 @@ object ParsedHttp1Version {
         self.origin = origin;
     }
 
-    value() is HttpVersion {
+    version() is HttpVersion {
         match origin {
             case "HTTP/1.0" {
                 HttpVersion.http_1_0;
@@ -51,7 +51,7 @@ object ParsedHttp1Version {
 enum UnsupportedHttpVersion is Error = (unsupported);
 
 test "HTTP2 identity cannot be serialized as an HTTP1 version" {
-    test.ok(ParsedHttp1Version("HTTP/1.1").value() == HttpVersion.http_1_1);
+    test.ok(ParsedHttp1Version("HTTP/1.1").version() == HttpVersion.http_1_1);
     test.ok(try {
         Http1VersionText(HttpVersion.http_2).string();
         false;

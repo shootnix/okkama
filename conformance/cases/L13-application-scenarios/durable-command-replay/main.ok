@@ -5,7 +5,6 @@ import "db/sqlite" take SqliteMemory, SqliteDatabase, SqliteOptions, SqliteConne
 import "db/transaction" take TransactionOptions;
 import "db/statement" take Statement;
 import "db/value" take DbInteger, DbText, ObservedDbValue;
-import "db/read" take RowReader;
 import "db/row" take RowsEnded;
 import "numbers/bigint" take BigInt;
 
@@ -19,7 +18,7 @@ object Commands {
         let rows = await tx.rows(Statement(text: "SELECT payload, result FROM commands WHERE key = ?", values: [DbText(key)]));
         let previous = try {
             let row = await rows.row();
-            [RowReader(origin: row).text("payload"), RowReader(origin: row).text("result")];
+            [row.text("payload"), row.text("result")];
         } catch e is RowsEnded {
             let none_found is @string = [];
             none_found;
@@ -59,6 +58,6 @@ async main() is int {
     let rows = await connection.rows(Statement("SELECT COUNT(*) AS n FROM ledger"));
     let row = await rows.row();
     rows.close();
-    c = c.same_int("ledger entries", RowReader(origin: row).int("n"), 2);
+    c = c.same_int("ledger entries", row.int("n"), 2);
     c.done();
 }

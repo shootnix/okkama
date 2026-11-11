@@ -20,7 +20,7 @@ object ParsedCookieDate {
         self.origin = origin;
     }
 
-    value() is Instant {
+    instant() is Instant {
         confirm origin.length() <= 4096
             else throw InvalidCookieDate.because("source limit exceeded");
         try {
@@ -38,11 +38,11 @@ object ParsedCookieDate {
                 fields = fields.following(token);
             }
         }
-        fields.value();
+        fields.instant();
     }
 }
 
-object CookieDateReading {
+hidden object CookieDateReading {
     has year, month, day, hour, minute, second is int;
     has time_pattern, day_pattern, year_pattern, month_pattern is Regex;
 
@@ -62,33 +62,33 @@ object CookieDateReading {
     following(token is string) is ^CookieDateReading {
         if hour < 0 && RegexMatches(origin: token, regex: time_pattern).found() {
             let found = FirstRegexMatch(origin: token, regex: time_pattern);
-            ^hour = CookieDateDecimal(found.capture(1).text()).value();
-            ^minute = CookieDateDecimal(found.capture(2).text()).value();
-            ^second = CookieDateDecimal(found.capture(3).text()).value();
+            ^hour = CookieDateDecimal(found.capture(1).text()).int();
+            ^minute = CookieDateDecimal(found.capture(2).text()).int();
+            ^second = CookieDateDecimal(found.capture(3).text()).int();
         }
         else {
             if day < 0 && RegexMatches(origin: token, regex: day_pattern).found() {
-                ^day = CookieDateDecimal(FirstRegexMatch(origin: token, regex: day_pattern).capture(1).text()).value();
+                ^day = CookieDateDecimal(FirstRegexMatch(origin: token, regex: day_pattern).capture(1).text()).int();
             }
             else {
                 let lower = HttpAsciiLowercase(token).string();
                 if month < 0 && RegexMatches(origin: lower, regex: month_pattern).found() {
                     ^month = CookieDateMonth(
                         FirstRegexMatch(origin: lower, regex: month_pattern).capture(1).text()
-                    ).value();
+                    ).month();
                 }
                 else {
                     if year < 0 && RegexMatches(origin: token, regex: year_pattern).found() {
                         ^year = CookieDateDecimal(
                             FirstRegexMatch(origin: token, regex: year_pattern).capture(1).text()
-                        ).value();
+                        ).int();
                     }
                 }
             }
         }
     }
 
-    value() is Instant {
+    instant() is Instant {
         confirm year >= 0 && month > 0 && day > 0 && hour >= 0
             else throw InvalidCookieDate.because("missing fields");
         let full = if year <= 69 {
@@ -121,14 +121,14 @@ object CookieDateReading {
     }
 }
 
-object CookieDateMonth {
+hidden object CookieDateMonth {
     has origin is string;
 
     CookieDateMonth(origin is string) {
         self.origin = origin;
     }
 
-    value() is int {
+    month() is int {
         let names = [
             "jan",
             "feb",
@@ -152,14 +152,14 @@ object CookieDateMonth {
     }
 }
 
-object CookieDateDecimal {
+hidden object CookieDateDecimal {
     has origin is string;
 
     CookieDateDecimal(origin is string) {
         self.origin = origin;
     }
 
-    value() is int {
+    int() is int {
         Utf8Encoded(origin).bytes().reduce(0) -> result, octet {
             let code = octet.int();
             confirm code >= 48 && code <= 57
@@ -172,9 +172,9 @@ object CookieDateDecimal {
 enum InvalidCookieDate is Error = (because(reason is string));
 
 test "cookie date does not validate weekday" {
-    test.ok(ParsedCookieDate("Sun 01 Jan 70 0:0:0").value().unix_duration()::Span::seconds == 0.rat());
+    test.ok(ParsedCookieDate("Sun 01 Jan 70 0:0:0").instant().unix_duration()::Span::seconds == 0.rat());
     test.ok(try {
-        ParsedCookieDate("29 Feb 2023 0:0:0").value();
+        ParsedCookieDate("29 Feb 2023 0:0:0").instant();
         false;
     }
     catch e is InvalidCookieDate {

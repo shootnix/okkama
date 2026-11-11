@@ -3,14 +3,28 @@ module http/proxy v1.0.0;
 import "http/proxy_policy" take ProxyPolicy, ProxyAuthorizationConflict;
 import "http/proxy_connection" take HttpProxyRouting;
 import "http/client" take HttpTransport;
-import "http/client_policy" take ClientPolicy;
-import "http/message" take Request;
-import "http/header" take HeaderName;
+import "http/client_policy" take ClientPolicy, HttpLimits, ClientTimeouts;
+import "http/message" take Request, Response;
+import "http/header" take HeaderName, Headers, Header;
 import "http/exchange" take ClientResponse, Exchanging;
-import "net/dns" take Resolving;
+import "net/dns" take Resolving, FixedResolution;
 import "net/tls" take TlsClientPolicy;
-import "time/clock" take Timing;
-import "io/stream" take Closing;
+import "time/clock" take Timing, SystemClock;
+import "io/stream" take Closing, AsyncReading;
+import "async/atomic" take Atomic;
+import "io/decorators" take ByteSnapshot;
+import "http/status" take Status, StatusCode;
+import "http/auth" take BasicCredentials;
+import "http/endpoint" take ListedNetworks;
+import "net/tcp" take TcpListening, TcpConnection;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress, IpNetwork;
+import "crypto/x509/trust" take TrustedCertificates;
+import "url/value" take ParsedUrl;
+import "collections/set" take Set, OrderedSet;
+import "http/version" take HttpVersion;
+import "crypto/secret" take SecretBytes;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 
 object Proxied does Exchanging, Closing {
     has client is HttpTransport;
@@ -22,8 +36,8 @@ object Proxied does Exchanging, Closing {
         policy is ClientPolicy,
         clock is Timing
     ) {
-        let routing = HttpProxyRouting(proxy, resolver, tls, policy, clock);
-        client = HttpTransport(resolver, tls, policy, clock, routing);
+        let routing = HttpProxyRouting(proxy: proxy, resolver: resolver, tls: tls, client: policy, clock: clock);
+        client = HttpTransport(resolver: resolver, tls: tls, policy: policy, clock: clock, routing: routing);
     }
 
     closed() is bool {
@@ -47,4 +61,60 @@ object Proxied does Exchanging, Closing {
         catch e is Error {}
         catch e is NativeFailure {}
     }
+}
+
+// A raw loopback proxy: it reads one request head and answers it.
+hidden object ProxyWire {
+    has input is AsyncReading;
+
+    ProxyWire(input is AsyncReading) {
+        self.input = input;
+    }
+
+    async head() is string {
+        let received = Atomic("");
+        loop {
+            let chunk = await input.bytes(4096);
+            last if chunk.size() == 0;
+            received.replace(received.value() + Utf8Decoded(chunk).string());
+            last if received.value().split("\r\n\r\n").size() >= 2;
+        }
+        received.value().split("\r\n\r\n")[0];
+    }
+}
+
+async test "a proxied exchange sends the absolute target and the proxy credentials" {
+    let listener = await TcpListening(port: 0).listener();
+    defer listener.close();
+    let clock = SystemClock();
+    let proxy_url = ParsedUrl("http://127.0.0.1:" + listener.local_endpoint()::Parts::port.string()).parts();
+    let one is Set<HttpVersion> = OrderedSet([HttpVersion.http_1_1]);
+    let policy = ClientPolicy(
+        protocols: one,
+        limits: HttpLimits(),
+        timeouts: ClientTimeouts(),
+        connections: 4,
+        access: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)]),
+    );
+    let proxied = Proxied(
+        proxy: ProxyPolicy(origin: proxy_url, credentials: BasicCredentials(username: "ada", password: SecretBytes(Utf8Encoded("pw").bytes()))),
+        resolver: FixedResolution([]),
+        tls: TlsClientPolicy(TrustedCertificates([])),
+        policy: policy,
+        clock: clock,
+    );
+    defer proxied.close();
+    let accepting is async () is TcpConnection = listener.connection;
+    let arriving = spawn accepting();
+    let asking is async (Request) is ClientResponse = proxied.response;
+    let answer = spawn asking(Request(url: "http://example.test/page?q=1"));
+    let wire = await arriving;
+    defer wire.close();
+    let head = await ProxyWire(wire.input()).head();
+    let lines = head.split("\r\n");
+    test.is(lines[0], "GET http://example.test/page?q=1 HTTP/1.1");
+    test.is(lines.filter() -> line { line == "Proxy-Authorization: Basic YWRhOnB3"; }.size(), 1);
+    test.is(lines.filter() -> line { line.lower() == "host: example.test"; }.size(), 1);
+    await wire.output().write(ByteSnapshot(Utf8Encoded("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok").bytes()));
+    test.is(await (await answer).text(), "ok");
 }

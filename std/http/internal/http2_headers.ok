@@ -59,7 +59,7 @@ object Http2HeaderBlockReading {
         context is HpackDecoder,
         budget is HpackBudget
     ) {
-        let operation = Http2HeaderInput(first, origin, context, budget, 16384);
+        let operation = Http2HeaderInput(first: first, origin: origin, context: context, budget: budget, maximum: 16384);
         pending = operation.reading();
     }
 
@@ -70,11 +70,11 @@ object Http2HeaderBlockReading {
         budget is HpackBudget,
         maximum is int
     ) {
-        let operation = Http2HeaderInput(first, origin, context, budget, maximum);
+        let operation = Http2HeaderInput(first: first, origin: origin, context: context, budget: budget, maximum: maximum);
         pending = operation.reading();
     }
 
-    async result() is Http2HeaderBlock {
+    async block() is Http2HeaderBlock {
         let group is FutureGroup<Http2HeaderBlock> = FutureGroup();
         let cleanup = Http2HeaderSettlement(group);
         defer await cleanup.close();
@@ -83,7 +83,7 @@ object Http2HeaderBlockReading {
     }
 }
 
-object Http2HeaderInput {
+hidden object Http2HeaderInput {
     has first is Http2Frame;
     has origin is AsyncReading;
     has context is HpackDecoder;
@@ -146,7 +146,7 @@ object Http2HeaderInput {
                     0,
                     "field block frame count"
                 );
-            let pending = Http2FrameReading(origin, maximum).result();
+            let pending = Http2FrameReading(origin: origin, maximum: maximum).frame();
             let following = try {
                 await pending;
             }
@@ -188,15 +188,15 @@ object Http2HeaderInput {
         }
         let decoded = context.decoded(buffer.content().bytes(), budget);
         Http2HeaderBlock(
-            decoded.fields(),
-            decoded.context(),
-            stream,
-            (first.header().flags().int() & 1) != 0
+            fields: decoded.fields(),
+            context: decoded.context(),
+            stream: stream,
+            end_stream: (first.header().flags().int() & 1) != 0
         );
     }
 }
 
-object Http2HeaderFragment {
+hidden object Http2HeaderFragment {
     has origin is Http2Frame;
 
     Http2HeaderFragment(origin is Http2Frame) {
@@ -242,11 +242,11 @@ object Http2HeaderBlockWriting {
         fragment is int,
         end_stream is bool
     ) {
-        let operation = Http2HeaderOutput(origin, stream, fields, budget, fragment, end_stream);
+        let operation = Http2HeaderOutput(origin: origin, stream: stream, fields: fields, budget: budget, fragment: fragment, end_stream: end_stream);
         pending = operation.writing();
     }
 
-    async result() is AsyncWriting {
+    async output() is AsyncWriting {
         let group is FutureGroup<AsyncWriting> = FutureGroup();
         let cleanup = Http2HeaderSettlement(group);
         defer await cleanup.close();
@@ -255,7 +255,7 @@ object Http2HeaderBlockWriting {
     }
 }
 
-object Http2HeaderOutput {
+hidden object Http2HeaderOutput {
     has origin is AsyncWriting;
     has stream, fragment is int;
     has fields is Sequencing<HpackField>;
@@ -291,7 +291,7 @@ object Http2HeaderOutput {
     }
 
     async writing() is AsyncWriting {
-        let encoded = Http2EncodedHeaderFrames(stream, fields, budget, fragment, end_stream);
+        let encoded = Http2EncodedHeaderFrames(stream: stream, fields: fields, budget: budget, fragment: fragment, end_stream: end_stream);
         for encoded.frames() -> frame {
             await self.emit(frame);
         }
@@ -325,11 +325,11 @@ object Http2EncodedHeaderFrames {
                 "field block needs table-size update"
             );
         let encoded = HpackEncoded(
-            fields,
-            HpackBudget(budget.encoded() - 1, budget.decoded(), budget.fields())
+            origin: fields,
+            budget: HpackBudget(budget.encoded() - 1, budget.decoded(), budget.fields())
         ).bytes();
         // A zero table at every block start satisfies all peer reductions.
-        let bytes = HttpWireBytes([[32.byte()], encoded], encoded.size() + 1).bytes();
+        let bytes = HttpWireBytes(chunks: [[32.byte()], encoded], maximum: encoded.size() + 1).bytes();
         let count = ((bytes.size() + fragment - 1) / fragment).int();
         confirm count <= 1024
             else throw Http2Fault.detailed(
@@ -364,8 +364,8 @@ object Http2EncodedHeaderFrames {
                 0;
             });
             Http2Frame(
-                Http2FrameHeader(kind.byte(), flags.byte(), stream, end - start),
-                bytes.slice(start, end)
+                header: Http2FrameHeader(kind.byte(), flags.byte(), stream, end - start),
+                payload: bytes.slice(start, end)
             );
         };
     }
@@ -392,8 +392,8 @@ hidden object Http2HeaderSettlement<T> {
 
 test "HEADERS metadata and padding do not enter HPACK" {
     let frame = Http2Frame(
-        Http2FrameHeader(1.byte(), 12.byte(), 1, 3),
-        [1.byte(), 130.byte(), 0.byte()]
+        header: Http2FrameHeader(1.byte(), 12.byte(), 1, 3),
+        payload: [1.byte(), 130.byte(), 0.byte()]
     );
     Http2FrameRules(frame).check();
     let fragment = Http2HeaderFragment(frame).bytes();

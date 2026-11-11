@@ -181,19 +181,19 @@ object WebRequest {
         catch failure is InvalidHttpMediaType {
             throw Exception.status(415, "invalid Content-Type");
         };
-        let suffix = media.subtype().split("+");
-        let accepted = media.type() == "application"
+        let suffix = media::Type::subtype.split("+");
+        let accepted = media::Type::type == "application"
             && if expected == "json" {
-                media.subtype() == "json"
+                media::Type::subtype == "json"
                     || (suffix.size() > 1 && suffix[suffix.size() - 1] == "json");
             }
             else {
-                media.subtype() == "x-www-form-urlencoded";
+                media::Type::subtype == "x-www-form-urlencoded";
             };
         confirm accepted
             else throw Exception.status(
                 415,
-                "unsupported Content-Type: " + media.type() + "/" + media.subtype()
+                "unsupported Content-Type: " + media::Type::type + "/" + media::Type::subtype
             );
     }
 }
@@ -213,7 +213,7 @@ object RequestJson {
         self.origin = origin;
     }
 
-    value() is Json {
+    root() is Json {
         origin;
     }
 

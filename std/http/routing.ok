@@ -22,7 +22,7 @@ enum InvalidRoute is Error = (because(reason is string));
 
 // Split raw separators first, then decode once. Encoded slash remains data in
 // one segment, never a second match position. No Unicode/case normalization.
-object RoutedPath {
+hidden object RoutedPath {
     has segments is @string;
 
     RoutedPath(origin is string) {
@@ -51,7 +51,7 @@ object RoutedPath {
     }
 }
 
-object RouteLiteral {
+hidden object RouteLiteral {
     has value is string;
 
     RouteLiteral(origin is string) {
@@ -73,7 +73,7 @@ object RouteLiteral {
     }
 }
 
-object RouteParameterName {
+hidden object RouteParameterName {
     RouteParameterName(origin is string) {
         let bytes = Utf8Encoded(origin).bytes();
         confirm bytes.size() > 0 && bytes.size() <= 32
@@ -116,12 +116,14 @@ object RouteSegment {
         }
     }
 
-    kind() is RouteSegmentKind {
-        kind;
-    }
+    cap Segment {
+        kind is RouteSegmentKind {
+            kind;
+        }
 
-    value() is string {
-        value;
+        text is string {
+            value;
+        }
     }
 }
 
@@ -144,15 +146,15 @@ object RoutePattern {
         };
         confirm raw.size() <= 128 else throw InvalidRoute.because("pattern segment budget");
         let segments is @RouteSegment = (0..raw.size()).map() -> index {
-            RouteSegment(raw[index], index + 1 == raw.size());
+            RouteSegment(origin: raw[index], final: index + 1 == raw.size());
         };
         // Segment grammar is validated before name uniqueness, as before.
         // Capture names (including the final wildcard) share one namespace.
         let named = segments.filter() -> segment {
-            segment.kind() != RouteSegmentKind.literal;
+            segment::Segment::kind != RouteSegmentKind.literal;
         };
         let names is @string = named.map() -> segment {
-            segment.value();
+            segment::Segment::text;
         };
         let ordered = names.ordering();
         for (0..ordered.size()) -> index {
@@ -180,7 +182,7 @@ object RoutePattern {
     matches(path is @string) is bool {
         confirm path.size() <= 128 else throw InvalidRoute.because("decoded path segment budget");
         let wildcard = parts.size() > 0
-            && parts[parts.size() - 1].kind() == RouteSegmentKind.wildcard;
+            && parts[parts.size() - 1]::Segment::kind == RouteSegmentKind.wildcard;
         let fixed = parts.size() - (if wildcard {
             1;
         }
@@ -192,10 +194,10 @@ object RoutePattern {
         }
         for (0..fixed) -> index {
             let part = parts[index];
-            if part.kind() == RouteSegmentKind.literal && part.value() != path[index] {
+            if part::Segment::kind == RouteSegmentKind.literal && part::Segment::text != path[index] {
                 return false;
             }
-            if part.kind() == RouteSegmentKind.parameter && path[index] == "" {
+            if part::Segment::kind == RouteSegmentKind.parameter && path[index] == "" {
                 return false;
             }
         }
@@ -212,13 +214,13 @@ object RoutePattern {
             used + segment.length();
         };
         let positions is @int = (0..parts.size()).filter() -> index {
-            parts[index].kind() != RouteSegmentKind.literal;
+            parts[index]::Segment::kind != RouteSegmentKind.literal;
         };
         let keys is @string = positions.map() -> index {
-            parts[index].value();
+            parts[index]::Segment::text;
         };
         let values is @string = positions.map() -> index {
-            if parts[index].kind() == RouteSegmentKind.wildcard {
+            if parts[index]::Segment::kind == RouteSegmentKind.wildcard {
                 path.slice(index, path.size()).join("/");
             }
             else {
@@ -247,20 +249,20 @@ object RoutePattern {
         for (0..common) -> index {
             let left = parts[index];
             let peer = right[index];
-            if left.kind() == RouteSegmentKind.wildcard || peer.kind() == RouteSegmentKind.wildcard {
+            if left::Segment::kind == RouteSegmentKind.wildcard || peer::Segment::kind == RouteSegmentKind.wildcard {
                 return true;
             }
-            if left.kind() == RouteSegmentKind.literal
-                && peer.kind() == RouteSegmentKind.literal
-                && left.value() != peer.value() {
+            if left::Segment::kind == RouteSegmentKind.literal
+                && peer::Segment::kind == RouteSegmentKind.literal
+                && left::Segment::text != peer::Segment::text {
                     return false;
                 }
-            if (left.kind() == RouteSegmentKind.parameter
-                && peer.kind() == RouteSegmentKind.literal
-                && peer.value() == "")
-                || (peer.kind() == RouteSegmentKind.parameter
-                && left.kind() == RouteSegmentKind.literal
-                && left.value() == "") {
+            if (left::Segment::kind == RouteSegmentKind.parameter
+                && peer::Segment::kind == RouteSegmentKind.literal
+                && peer::Segment::text == "")
+                || (peer::Segment::kind == RouteSegmentKind.parameter
+                && left::Segment::kind == RouteSegmentKind.literal
+                && left::Segment::text == "") {
                     return false;
                 }
         }
@@ -273,7 +275,7 @@ object RoutePattern {
         else {
             right;
         };
-        longer[common].kind() == RouteSegmentKind.wildcard;
+        longer[common]::Segment::kind == RouteSegmentKind.wildcard;
     }
 }
 
@@ -333,7 +335,7 @@ role RouteRejecting {
     disallowed(request is Request, allowed is @string) is HandlingResult;
 }
 
-object EmptyRouteRejection does RouteRejecting {
+hidden object EmptyRouteRejection does RouteRejecting {
     EmptyRouteRejection();
 
     malformed(request is Request, reason is string) is HandlingResult {
@@ -344,7 +346,7 @@ object EmptyRouteRejection does RouteRejecting {
         ResponseHandling(
             Response(
                 status: Status.method_not_allowed,
-                headers: Headers([Header(HeaderName("Allow"), allowed.join(", "))])
+                headers: Headers([Header(name: HeaderName("Allow"), value: allowed.join(", "))])
             )
         );
     }
@@ -353,7 +355,7 @@ object EmptyRouteRejection does RouteRejecting {
 // Snapshot once and validate only candidate intersections. Method tokens and
 // decoded first literals cannot contain HTAB, so the grouping key is unambiguous.
 // Root/parameter/wildcard prefixes stay broad and retain full overlap checks.
-object RouteConflictEntry {
+hidden object RouteConflictEntry {
     has method, key is string;
     has broad is bool;
     has pattern is RoutePattern;
@@ -366,13 +368,13 @@ object RouteConflictEntry {
         method = verb;
         pattern = compiled;
         self.parts = parts;
-        let wide = parts.size() == 0 || parts[0].kind() != RouteSegmentKind.literal;
+        let wide = parts.size() == 0 || parts[0]::Segment::kind != RouteSegmentKind.literal;
         broad = wide;
         key = verb + "\t" + (if wide {
             "";
         }
         else {
-            parts[0].value();
+            parts[0]::Segment::text;
         });
     }
 
@@ -397,15 +399,15 @@ object RouteConflictEntry {
     }
 
     kind(index is int) is RouteSegmentKind {
-        parts[index].kind();
+        parts[index]::Segment::kind;
     }
 
     literal(index is int) is string {
-        parts[index].value();
+        parts[index]::Segment::text;
     }
 }
 
-object RouteGroupPosition {
+hidden object RouteGroupPosition {
     has index is int;
 
     RouteGroupPosition(index is int) {
@@ -421,7 +423,7 @@ object RouteGroupPosition {
     }
 }
 
-object CheckedRouteSnapshot {
+hidden object CheckedRouteSnapshot {
     has origin is @Route;
 
     CheckedRouteSnapshot(routes is Sequencing<Route>) {
@@ -459,7 +461,7 @@ object CheckedRouteSnapshot {
             for (1..values.size() + 1) -> index {
                 if index == values.size() || keys[index] != keys[index - 1] {
                     if index - group.index() > 1 {
-                        RoutePartitionValidation(values.slice(group.index(), index), 0).validate();
+                        RoutePartitionValidation(entries: values.slice(group.index(), index), beginning: 0).validate();
                     }
                     group = group.following(index);
                 }
@@ -483,7 +485,7 @@ object CheckedRouteSnapshot {
             for (1..values.size() + 1) -> index {
                 if index == values.size() || keys[index] != keys[index - 1] {
                     if index - group.index() > 1 {
-                        RoutePartitionValidation(values.slice(group.index(), index), 1).validate();
+                        RoutePartitionValidation(entries: values.slice(group.index(), index), beginning: 1).validate();
                     }
                     group = group.following(index);
                 }
@@ -496,7 +498,7 @@ object CheckedRouteSnapshot {
 // Different literal values at the same fixed position cannot intersect. Only
 // positions which are literal in every member may divide a family; parameter,
 // terminal wildcard, short/empty paths always retain the exact overlap check.
-object RouteConflictPartition {
+hidden object RouteConflictPartition {
     has entries is @RouteConflictEntry;
     has beginning is int;
 
@@ -567,7 +569,7 @@ object RouteConflictPartition {
                 if index - group.index() > 1 {
                     output.replace(
                         output.value().prefix(
-                            RouteConflictPartition(values.slice(group.index(), index), position + 1)
+                            RouteConflictPartition(entries: values.slice(group.index(), index), beginning: position + 1)
                         )
                     );
                 }
@@ -581,7 +583,7 @@ object RouteConflictPartition {
     }
 }
 
-object RoutePartitionValidation {
+hidden object RoutePartitionValidation {
     has entries is @RouteConflictEntry;
     has beginning is int;
 
@@ -592,7 +594,7 @@ object RoutePartitionValidation {
 
     validate() is void {
         let empty is List<RouteConflictPartition> = EmptyList();
-        let pending = Atomic(empty.prefix(RouteConflictPartition(entries, beginning)));
+        let pending = Atomic(empty.prefix(RouteConflictPartition(entries: entries, beginning: beginning)));
         defer pending.close();
         loop {
             let queue = pending.value();
@@ -725,7 +727,7 @@ object Routes does Handling {
     }
 }
 
-object RouteMethods {
+hidden object RouteMethods {
     has names is @string;
 
     RouteMethods() {
@@ -771,14 +773,14 @@ test "default rejection keeps empty 400 and Allow-carrying 405 responses" {
     let methods is @string = ["GET", "HEAD"];
     test.is(
         EmptyRouteRejection().disallowed(
-            Request(method: Method.put, target: ParsedRequestTarget("/a", Method.put).value()),
+            Request(method: Method.put, target: ParsedRequestTarget(origin: "/a", method: Method.put).target()),
             methods
         ).response()::Head::headers.first(HeaderName("Allow")),
         "GET, HEAD"
     );
     test.is(
         EmptyRouteRejection().malformed(
-            Request(method: Method.get, target: ParsedRequestTarget("/a", Method.get).value()),
+            Request(method: Method.get, target: ParsedRequestTarget(origin: "/a", method: Method.get).target()),
             "x"
         ).response()::Head::status,
         Status.bad_request

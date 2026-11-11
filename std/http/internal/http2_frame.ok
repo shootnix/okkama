@@ -117,7 +117,7 @@ object ParsedHttp2FrameHeader {
         self.maximum = maximum;
     }
 
-    value() is Http2FrameHeader {
+    header() is Http2FrameHeader {
         confirm origin.size() == 9
             else throw Http2Fault.detailed(
                 Http2FaultScope.connection,
@@ -133,7 +133,7 @@ object ParsedHttp2FrameHeader {
         let stream = Binary(bytes: origin.slice(5, 9), order: ByteOrder.big).int(
             Signedness.unsigned
         ) & 2147483647;
-        Http2FrameHeader(origin[3], origin[4], stream, length);
+        Http2FrameHeader(kind: origin[3], flags: origin[4], stream: stream, length: length);
     }
 }
 
@@ -157,7 +157,7 @@ object Http2Frame {
     }
 
     bytes() is @byte {
-        HttpWireBytes([header.bytes(), payload], 9 + payload.size()).bytes();
+        HttpWireBytes(chunks: [header.bytes(), payload], maximum: 9 + payload.size()).bytes();
     }
 }
 
@@ -306,4 +306,35 @@ object Http2FrameRules {
             }
         }
     }
+}
+
+test "a frame header is nine bytes and refuses impossible coordinates" {
+    let header = Http2FrameHeader(kind: 4.byte(), flags: 0.byte(), stream: 0, length: 6);
+    test.is(header.bytes(), [0.byte(), 0.byte(), 6.byte(), 4.byte(), 0.byte(), 0.byte(), 0.byte(), 0.byte(), 0.byte()]);
+    let parsed = ParsedHttp2FrameHeader([0.byte(), 0.byte(), 8.byte(), 6.byte(), 0.byte(), 0.byte(), 0.byte(), 0.byte(), 0.byte()]).header();
+    test.is(parsed.kind().int(), 6);
+    test.is(parsed.length(), 8);
+    test.is(parsed.stream(), 0);
+    test.throws(Http2Fault) {
+        Http2FrameHeader(kind: 0.byte(), flags: 0.byte(), stream: -1, length: 0);
+    };
+    let frame = Http2Frame(header: header, payload: [0.byte(), 3.byte(), 0.byte(), 0.byte(), 0.byte(), 100.byte()]);
+    test.is(frame.bytes().size(), 15);
+    Http2FrameRules(frame).check();
+    test.throws(Http2Fault) {
+        Http2Frame(header: header, payload: [0.byte()]);
+    };
+    let acknowledged = Http2FrameHeader(kind: 4.byte(), flags: 1.byte(), stream: 0, length: 6);
+    test.throws(Http2Fault) {
+        Http2FrameRules(Http2Frame(header: acknowledged, payload: [0.byte(), 3.byte(), 0.byte(), 0.byte(), 0.byte(), 100.byte()])).check();
+    };
+    let fault = try {
+        Http2HeaderRules(Http2FrameHeader(kind: 0.byte(), flags: 0.byte(), stream: 0, length: 0)).check();
+        "";
+    }
+    catch error is Http2Fault {
+        let view = Http2FaultView(error);
+        if view.scope() == Http2FaultScope.connection { "connection " + view.code().string(); } else { "stream"; }
+    };
+    test.is(fault, "connection 1");
 }

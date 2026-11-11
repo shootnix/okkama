@@ -34,7 +34,7 @@ object HttpDirectRequest {
             origin::Head::headers;
         }
         else {
-            origin::Head::headers.addition(Header(HeaderName("Host"), authority));
+            origin::Head::headers.addition(Header(name: HeaderName("Host"), value: authority));
         };
         let path = if parts::Parts::path == "" {
             "/";
@@ -42,7 +42,7 @@ object HttpDirectRequest {
         else {
             parts::Parts::path;
         };
-        let target = OriginTarget(path, parts::Parts::query);
+        let target = OriginTarget(path: path, query: parts::Parts::query);
         request = Request(
             method: origin::Head::method,
             target: target,

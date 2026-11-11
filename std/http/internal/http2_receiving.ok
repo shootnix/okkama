@@ -24,7 +24,7 @@ object Http2ReceiveFlow does Http2BodyEvents {
             else throw InvalidState.because("invalid receive slot limit");
         self.controls = controls;
         self.maximum = maximum;
-        window = Atomic(Http2FlowWindow(Http2FaultScope.connection, 0, 65535));
+        window = Atomic(Http2FlowWindow(scope: Http2FaultScope.connection, stream: 0, remaining: 65535));
         let empty is @Http2ReceivingSlot = [];
         slots = Atomic(empty);
         highest = Atomic(0);
@@ -127,7 +127,7 @@ object Http2ReceiveFlow does Http2BodyEvents {
         if amount > 0 {
             window.replace(window.value().credited(amount));
             if !stopped.ready() {
-                controls.frame(Http2WindowFrame(0, amount).frame());
+                controls.frame(Http2WindowFrame(stream: 0, amount: amount).frame());
             }
         }
     }
@@ -135,7 +135,7 @@ object Http2ReceiveFlow does Http2BodyEvents {
     credit(stream is int, amount is int, stream_update is bool) is void {
         self.return_credit(amount);
         if amount > 0 && stream_update && !stopped.ready() {
-            controls.frame(Http2WindowFrame(stream, amount).frame());
+            controls.frame(Http2WindowFrame(stream: stream, amount: amount).frame());
         }
     }
 
@@ -143,7 +143,7 @@ object Http2ReceiveFlow does Http2BodyEvents {
         self.return_credit(amount);
         self.retire(stream);
         if cancel && !stopped.ready() {
-            controls.frame(Http2ResetFrame(stream, 8).frame());
+            controls.frame(Http2ResetFrame(stream: stream, code: 8).frame());
         }
     }
 

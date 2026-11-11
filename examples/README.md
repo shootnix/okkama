@@ -203,3 +203,13 @@ network. A real program writes `HttpClient()` and a real URL.
 | `http/client/get_text.ok` | GET a page and print it as text, decoded by its charset |
 | `http/client/post_json.ok` | POST a JSON document and read the JSON answer |
 | `http/client/statuses.ok` | compare a status with a case, match on it, take its class, number and phrase |
+
+## web, http/websocket
+
+Each program serves on a free loopback port and calls itself, so it needs no
+network, and drains its server at the end.
+
+| Program | Task |
+|---|---|
+| `web/notes.ok` | a JSON service: routes under a prefix, a path parameter, a JSON body, a query parameter with a default, a fallback |
+| `http/websocket/echo.ok` | a WebSocket server checks the Origin against its own URL and answers each message; the client sends, reads and closes |

@@ -6,7 +6,6 @@ import "db/transaction" take TransactionOptions;
 import "db/statement" take Statement;
 import "db/value" take DbInteger, DbText, DbDecimal, DbNull, ObservedDbValue;
 import "db/row" take RowsEnded;
-import "db/read" take RowReader;
 import "db/error" take DbFailure;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
@@ -25,7 +24,7 @@ async main() is int {
     out.writeln(ObservedDbValue(row.value("big")).integer().string());
     let stored = Decimal(ObservedDbValue(row.value("money")).text());
     out.writeln(if stored.order(Decimal("12345678901234567890.01")) == Order.equal { "decimal exact"; } else { "decimal changed"; });
-    let empty_text = try { RowReader(origin: row).text("empty"); } catch e is Error { "null is not text"; };
+    let empty_text = try { row.text("empty"); } catch e is Error { "null is not text"; };
     out.writeln(empty_text);
     0;
 }

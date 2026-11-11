@@ -80,12 +80,14 @@ object WebSocketLimits {
         message_bytes;
     }
 
-    frame_bytes() is int {
-        frame_bytes;
-    }
+    cap Limits {
+        frame_bytes is int {
+            frame_bytes;
+        }
 
-    queue() is int {
-        queue;
+        queue is int {
+            queue;
+        }
     }
 }
 
@@ -112,12 +114,14 @@ object WebSocketClose {
         self.reason = reason;
     }
 
-    code() is int {
-        code;
-    }
+    cap Close {
+        code is int {
+            code;
+        }
 
-    reason() is string {
-        reason;
+        reason is string {
+            reason;
+        }
     }
 }
 

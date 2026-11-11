@@ -5,7 +5,6 @@ import "db/sqlite" take SqliteMemory, SqliteDatabase, SqliteOptions, SqliteConne
 import "db/transaction" take TransactionOptions;
 import "db/statement" take Statement;
 import "db/value" take DbInteger, DbText, ObservedDbValue;
-import "db/read" take RowReader;
 import "db/row" take RowsEnded;
 import "numbers/bigint" take BigInt;
 
@@ -18,7 +17,7 @@ object Accounts {
         let rows = await connection.rows(Statement(text: "SELECT version FROM accounts WHERE id = ?", values: [DbInteger(BigInt(id.string()))]));
         let row = await rows.row();
         rows.close();
-        RowReader(origin: row).int("version");
+        row.int("version");
     }
     async credit(id is int, amount is int, expected_version is int) is int {
         let done = await connection.execution(Statement(
@@ -31,7 +30,7 @@ object Accounts {
         let rows = await connection.rows(Statement(text: "SELECT balance FROM accounts WHERE id = ?", values: [DbInteger(BigInt(id.string()))]));
         let row = await rows.row();
         rows.close();
-        RowReader(origin: row).int("balance");
+        row.int("balance");
     }
 }
 

@@ -4,6 +4,7 @@ import "net/endpoint" take IpEndpoint;
 import "net/ip" take IpAddress, IpVersion;
 import "net/interface" take NetworkInterface;
 import "io/stream" take ByteSource;
+import "io/decorators" take ByteSnapshot;
 import "runtime/network";
 import "runtime/net" take ip_parse;
 import "strings/parse" take Number;
@@ -113,6 +114,18 @@ object UdpBinding {
     UdpBinding(local is IpEndpoint, options is UdpOptions) {
         self.local = local;
         self.options = options;
+    }
+
+    // UdpBinding(port: 0).socket(): loopback unless address: is given.
+    UdpBinding(
+        port is int,
+        address is IpAddress = IpAddress("127.0.0.1"),
+        broadcast is bool = false,
+        address_reuse is bool = false,
+        dual_stack is bool = false
+    ) {
+        local = IpEndpoint(address: address, port: port);
+        options = UdpOptions(address_reuse: address_reuse, broadcast: broadcast, dual_stack: dual_stack);
     }
 
     async socket() is UdpSocket {
@@ -539,4 +552,15 @@ hidden object UdpMembershipLease does UdpMembership {
     destroy {
         self.close();
     }
+}
+
+async test "a socket bound by port sends to another" {
+    let sender = await UdpBinding(port: 0).socket();
+    defer sender.close();
+    let receiver = await UdpBinding(port: 0).socket();
+    defer receiver.close();
+    await sender.send(receiver.local_endpoint(), ByteSnapshot([7.byte(), 8.byte()]));
+    let received = await receiver.datagram(64);
+    test.is(received.bytes(), [7.byte(), 8.byte()]);
+    test.is(received.source()::Parts::port, sender.local_endpoint()::Parts::port);
 }

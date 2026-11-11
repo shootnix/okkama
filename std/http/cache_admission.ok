@@ -15,7 +15,7 @@ import "async/lock" take Lock, LockGuard;
 
 // Short-lived admission keys never contain wire credentials. A digest collision
 // can only serialize extra calls: cache identity/Vary checks remain independent.
-object CacheAdmissionKey {
+hidden object CacheAdmissionKey {
     has value is string;
 
     CacheAdmissionKey(request is Request) {
@@ -39,7 +39,7 @@ object CacheAdmissionKey {
         value = HexEncoded(native_crypto.digest("sha256", buffer.content().bytes())).string();
     }
 
-    value() is string {
+    key() is string {
         value;
     }
 }
@@ -53,12 +53,12 @@ object CacheAdmissions {
     }
 
     booking(request is Request) is CacheAdmissionBooking {
-        let key = CacheAdmissionKey(request).value();
+        let key = CacheAdmissionKey(request).key();
         let current = entries.value();
         for current -> slot {
             if slot.key() == key {
                 slot.join();
-                return CacheAdmissionBooking(self, slot);
+                return CacheAdmissionBooking(origin: self, slot: slot);
             }
         }
         confirm current.size() < 256 else throw CacheAdmissionExceeded.exceeded;
@@ -72,7 +72,7 @@ object CacheAdmissions {
             }
         };
         entries.replace(revised);
-        CacheAdmissionBooking(self, slot);
+        CacheAdmissionBooking(origin: self, slot: slot);
     }
 
     released(slot is CacheAdmissionSlot) is void {
@@ -112,7 +112,7 @@ object CacheAdmissionSlot {
     }
 
     publish(entry is CachedHttpEntry, revision is int) is void {
-        published.replace([CacheValidatedEntry(entry, revision)]);
+        published.replace([CacheValidatedEntry(entry: entry, revision: revision)]);
         publication.replace(publication.value() + 1);
     }
 

@@ -35,11 +35,11 @@ object HttpResponseObservation {
     }
 
     reading(origin is AsyncReading) is AsyncReading {
-        HttpObservedReading(origin, self);
+        HttpObservedReading(origin: origin, observation: self);
     }
 
     writing(origin is AsyncWriting) is AsyncWriting {
-        HttpObservedWriting(origin, self);
+        HttpObservedWriting(origin: origin, observation: self);
     }
 }
 
@@ -47,7 +47,7 @@ enum HttpPeerGoneBeforeResponse is Error = (reset(cause is NetworkFailure), clos
     cause is NetworkClosed
 ), truncated(cause is InvalidHttpMessage));
 
-object HttpObservedReading does AsyncReading {
+hidden object HttpObservedReading does AsyncReading {
     has origin is AsyncReading;
     has observation is HttpResponseObservation;
 
@@ -93,7 +93,7 @@ object HttpObservedReading does AsyncReading {
     }
 }
 
-object HttpObservedWriting does AsyncWriting {
+hidden object HttpObservedWriting does AsyncWriting {
     has origin is AsyncWriting;
     has observation is HttpResponseObservation;
 
@@ -127,4 +127,17 @@ object HttpObservedWriting does AsyncWriting {
             throw;
         }
     }
+}
+
+test "an observation arms, then records the first response byte" {
+    let observation = HttpResponseObservation();
+    test.is(observation.active(), false);
+    test.is(observation.received(), false);
+    observation.begin();
+    test.is(observation.active(), true);
+    test.is(observation.received(), false);
+    observation.receive();
+    test.is(observation.received(), true);
+    observation.begin();
+    test.is(observation.received(), false);
 }

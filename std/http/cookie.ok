@@ -92,7 +92,7 @@ object CookieAttributes {
             else throw InvalidCookie.because("cookie path must be absolute or omitted");
         confirm CookieAttributeOctets(path).valid()
             else throw InvalidCookie.because("invalid cookie path octets");
-        let checked = CookieFlagSnapshot(flags).value();
+        let checked = CookieFlagSnapshot(flags).flags();
         confirm same_site != SameSite.cross_site || checked.secure()
             else throw InvalidCookie.because("SameSite=None requires Secure");
         confirm !checked.partitioned() || checked.secure()
@@ -106,20 +106,8 @@ object CookieAttributes {
         partitioned = checked.partitioned();
     }
 
-    domain() is string {
-        domain;
-    }
-
-    path() is string {
-        path;
-    }
-
     expiry() is CookieExpiry {
         expiry;
-    }
-
-    same_site() is SameSite {
-        same_site;
     }
 
     flags() is Set<CookieFlag> {
@@ -198,6 +186,20 @@ object CookieAttributes {
                 "";
             });
     }
+
+    cap Attributes {
+        domain is string {
+            domain;
+        }
+
+        path is string {
+            path;
+        }
+
+        same_site is SameSite {
+            same_site;
+        }
+    }
 }
 
 object Cookie {
@@ -231,8 +233,8 @@ object Cookie {
         }
         if candidate.length() >= 7 && candidate.slice(0, 7) == "__host-" {
             confirm flags.membership(CookieFlag.secure)
-                && attributes.domain() == ""
-                && attributes.path() == "/"
+                && attributes::Attributes::domain == ""
+                && attributes::Attributes::path == "/"
                 else throw InvalidCookie.because(
                     "host cookie prefix requires Secure, omitted Domain and explicit Path=/"
                 );
@@ -272,7 +274,7 @@ object Cookie {
     }
 }
 
-object CookieValueOctets {
+hidden object CookieValueOctets {
     has origin is string;
 
     CookieValueOctets(origin is string) {
@@ -292,7 +294,7 @@ object CookieValueOctets {
     }
 }
 
-object CookieValueWire {
+hidden object CookieValueWire {
     has origin is string;
 
     CookieValueWire(origin is string) {
@@ -309,7 +311,7 @@ object CookieValueWire {
     }
 }
 
-object CookieAttributeOctets {
+hidden object CookieAttributeOctets {
     has origin is string;
 
     CookieAttributeOctets(origin is string) {
@@ -324,14 +326,14 @@ object CookieAttributeOctets {
     }
 }
 
-object CookieFlagSnapshot {
+hidden object CookieFlagSnapshot {
     has origin is Set<CookieFlag>;
 
     CookieFlagSnapshot(origin is Set<CookieFlag>) {
         self.origin = origin;
     }
 
-    value() is CookieFlagValues {
+    flags() is CookieFlagValues {
         let count = origin.size();
         confirm count >= 0 && count <= 3
             else throw InvalidCookie.because("cookie flag count must be 0..3");
@@ -339,11 +341,11 @@ object CookieFlagSnapshot {
         for (0..count) -> index {
             state = state.following();
         }
-        state.value();
+        state.flags();
     }
 }
 
-object CookieFlagReading {
+hidden object CookieFlagReading {
     has cursor is Cursor<CookieFlag>;
     has values is CookieFlagValues;
 
@@ -359,14 +361,14 @@ object CookieFlagReading {
         ^cursor = cursor.successor();
     }
 
-    value() is CookieFlagValues {
+    flags() is CookieFlagValues {
         confirm !cursor.available()
             else throw InvalidCookie.because("cookie flag cursor exceeds declared size");
         values;
     }
 }
 
-object CookieFlagValues {
+hidden object CookieFlagValues {
     has secure, http_only, partitioned is bool;
 
     CookieFlagValues() {
@@ -423,18 +425,18 @@ test "session expiry has no absolute instant" {
 
 test "cookie prefix and wire policy" {
     let attrs = CookieAttributes(
-        "",
-        "/",
-        CookieExpiry(),
-        SameSite.cross_site,
-        OrderedSet([CookieFlag.secure])
+        domain: "",
+        path: "/",
+        expiry: CookieExpiry(),
+        same_site: SameSite.cross_site,
+        flags: OrderedSet([CookieFlag.secure])
     );
     test.ok(
-        Cookie("__Host-id", "secret", attrs).string() == "__Host-id=secret; Path=/; SameSite=None; Secure"
+        Cookie(name: "__Host-id", value: "secret", attributes: attrs).string() == "__Host-id=secret; Path=/; SameSite=None; Secure"
     );
-    test.ok(Cookie("id", "secret", CookieAttributes()).diagnostic() == "cookie id=<redacted>");
+    test.ok(Cookie(name: "id", value: "secret", attributes: CookieAttributes()).diagnostic() == "cookie id=<redacted>");
     test.ok(try {
-        Cookie("__secure-id", "secret", CookieAttributes());
+        Cookie(name: "__secure-id", value: "secret", attributes: CookieAttributes());
         false;
     }
     catch e is InvalidCookie {

@@ -37,20 +37,22 @@ object Http1Limits {
         self.body_bytes = body_bytes;
     }
 
-    head_bytes() is int {
-        head_bytes;
-    }
+    cap Limits {
+        head_bytes is int {
+            head_bytes;
+        }
 
-    line_bytes() is int {
-        line_bytes;
-    }
+        line_bytes is int {
+            line_bytes;
+        }
 
-    fields() is int {
-        fields;
-    }
+        fields is int {
+            fields;
+        }
 
-    body_bytes() is int {
-        body_bytes;
+        body_bytes is int {
+            body_bytes;
+        }
     }
 }
 
@@ -70,8 +72,8 @@ object ParsedHttp1RequestHead {
         self.limits = limits;
     }
 
-    value() is Http1RequestHead {
-        let head = Http1HeadLines(origin, limits);
+    head() is Http1RequestHead {
+        let head = Http1HeadLines(origin: origin, limits: limits);
         let words = head.start_line().split(" ");
         confirm words.size() == 3 && words[0] != "" && words[1] != "" && words[2] != ""
             else throw InvalidHttpMessage.because("strict request-line spacing required");
@@ -82,18 +84,18 @@ object ParsedHttp1RequestHead {
             throw InvalidHttpMessage.because("invalid request method token");
         };
         let target = try {
-            ParsedRequestTarget(words[1], method).value();
+            ParsedRequestTarget(origin: words[1], method: method).target();
         }
         catch e is InvalidRequestTarget {
             throw InvalidHttpMessage.because("invalid request target");
         };
         let version = try {
-            ParsedHttp1Version(words[2]).value();
+            ParsedHttp1Version(words[2]).version();
         }
         catch e is UnsupportedHttpVersion {
             throw InvalidHttpMessage.because("unsupported request wire version");
         };
-        Http1RequestHead(method, target, head.headers(), version);
+        Http1RequestHead(method: method, target: target, headers: head.headers(), version: version);
     }
 }
 
@@ -111,13 +113,13 @@ object ParsedHttp1ResponseHead {
         self.limits = limits;
     }
 
-    value() is Http1ResponseHead {
-        let head = Http1HeadLines(origin, limits);
+    head() is Http1ResponseHead {
+        let head = Http1HeadLines(origin: origin, limits: limits);
         let line = head.start_line();
         confirm line.length() >= 13 && line.slice(8, 9) == " " && line.slice(12, 13) == " "
             else throw InvalidHttpMessage.because("strict status-line spacing required");
         let version = try {
-            ParsedHttp1Version(line.slice(0, 8)).value();
+            ParsedHttp1Version(line.slice(0, 8)).version();
         }
         catch e is UnsupportedHttpVersion {
             throw InvalidHttpMessage.because("unsupported response wire version");
@@ -141,18 +143,18 @@ object ParsedHttp1ResponseHead {
             valid && (code == 9 || (code >= 32 && code != 127));
         }
             else throw InvalidHttpMessage.because("invalid reason phrase octets");
-        Http1ResponseHead(status, head.headers(), version);
+        Http1ResponseHead(status: status, headers: head.headers(), version: version);
     }
 }
 
 // Importable implementation collaborator only because module-private exports
 // are not supported. Raw lines stay private even from ordinary helper receivers.
-object Http1HeadLines {
+hidden object Http1HeadLines {
     has lines is @string;
     has limits is Http1Limits;
 
     Http1HeadLines(origin is string, limits is Http1Limits) {
-        confirm origin.length() <= limits.head_bytes()
+        confirm origin.length() <= limits::Limits::head_bytes
             else throw Http1LimitExceeded.kind("head_bytes");
         confirm latin1_representable_prefix(origin) == origin.length()
             else throw InvalidHttpMessage.because("octet head source required");
@@ -161,10 +163,10 @@ object Http1HeadLines {
             else throw InvalidHttpMessage.because("exact CRLF head framing required");
         let values = origin.split("\r\n");
         confirm values.size() >= 3 else throw InvalidHttpMessage.because("missing start line");
-        confirm values.size() - 3 <= limits.fields() else throw Http1LimitExceeded.kind("fields");
+        confirm values.size() - 3 <= limits::Limits::fields else throw Http1LimitExceeded.kind("fields");
         for (0..values.size() - 2) -> index {
             let line = values[index];
-            confirm line.length() <= limits.line_bytes()
+            confirm line.length() <= limits::Limits::line_bytes
                 else throw Http1LimitExceeded.kind("line_bytes");
             confirm line.split("\r").size() == 1 && line.split("\n").size() == 1
                 else throw InvalidHttpMessage.because("bare CR/LF in head");
@@ -186,7 +188,7 @@ object Http1HeadLines {
                 throw InvalidHttpMessage.because("invalid field name or obsolete folding");
             };
             try {
-                Header(name, line.slice(pieces[0].length() + 1, line.length()));
+                Header(name: name, value: line.slice(pieces[0].length() + 1, line.length()));
             }
             catch e is InvalidHeader {
                 throw InvalidHttpMessage.because("invalid field value octets");
@@ -194,7 +196,7 @@ object Http1HeadLines {
         };
         // Logical fields budget canonical ': ' even if the peer omitted that
         // optional space. Wire head bytes were already checked independently.
-        Headers(entries, HeaderLimits(limits.fields(), limits.head_bytes() + limits.fields()));
+        Headers(entries: entries, limits: HeaderLimits(limits::Limits::fields, limits::Limits::head_bytes + limits::Limits::fields));
     }
 
     start_line() is string {
@@ -217,7 +219,7 @@ object Http1RequestHead {
     ) {
         confirm version != HttpVersion.http_2
             else throw InvalidHttpMessage.because("HTTP1 head requires HTTP1 wire version");
-        let canonical = RequestCoordinates(method, target).target();
+        let canonical = RequestCoordinates(method: method, target: target).target();
         let fields = headers.values(HeaderName("Host"));
         confirm fields.size() <= 1 && (version != HttpVersion.http_1_1 || fields.size() == 1)
             else throw InvalidHttpMessage.because("exactly one HTTP1.1 Host required");
@@ -249,20 +251,12 @@ object Http1RequestHead {
         host = authorities;
     }
 
-    method() is Method {
-        method;
-    }
-
     target() is RequestTarget {
         target;
     }
 
     headers() is Headers {
         headers;
-    }
-
-    version() is HttpVersion {
-        version;
     }
 
     // The Host field as the authority-only parts of ParsedUrl("//" + host).
@@ -273,6 +267,16 @@ object Http1RequestHead {
 
     request(body is BodyOpening) is Request {
         Request(method: method, target: target, headers: headers, body: body, version: version);
+    }
+
+    cap Head {
+        method is Method {
+            method;
+        }
+
+        version is HttpVersion {
+            version;
+        }
     }
 }
 
@@ -289,32 +293,34 @@ object Http1ResponseHead {
         self.version = version;
     }
 
-    status() is Status {
-        status;
-    }
-
     headers() is Headers {
         headers;
     }
 
-    version() is HttpVersion {
-        version;
-    }
-
     response(body is BodyOpening) is Response {
         Response(status: status, headers: headers, body: body, version: version);
+    }
+
+    cap Head {
+        status is Status {
+            status;
+        }
+
+        version is HttpVersion {
+            version;
+        }
     }
 }
 
 enum MissingHttp1Host is Error = (missing);
 
 test "strict HTTP1 head preserves extension status and duplicate fields" {
-    let head = ParsedHttp1ResponseHead("HTTP/1.1 299 phrase\r\nX: 1\r\nX: 2\r\n\r\n").value();
+    let head = ParsedHttp1ResponseHead("HTTP/1.1 299 phrase\r\nX: 1\r\nX: 2\r\n\r\n").head();
     test.ok(
-        head.status() == Status.other(299) && head.headers().values(HeaderName("X")).size() == 2
+        head::Head::status == Status.other(299) && head.headers().values(HeaderName("X")).size() == 2
     );
     test.ok(try {
-        ParsedHttp1RequestHead("GET / HTTP/1.1\r\n\r\n").value();
+        ParsedHttp1RequestHead("GET / HTTP/1.1\r\n\r\n").head();
         false;
     }
     catch e is InvalidHttpMessage {

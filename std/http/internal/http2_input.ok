@@ -190,7 +190,7 @@ object Http2ConnectionInput {
     hidden async read_loop() is bool {
         loop {
             let eof = Event();
-            let pending = Http2FrameReading(origin, local.frame_size()).result();
+            let pending = Http2FrameReading(origin: origin, maximum: local::Settings::frame_size).frame();
             let available is @Http2Frame = try {
                 [await pending];
             }
@@ -236,7 +236,7 @@ object Http2ConnectionInput {
     hidden stream_fault(failure is Http2Fault) is void {
         if receiver.stream_fault(failure) {
             controls.frame(
-                Http2ResetFrame(Http2FaultView(failure).stream(), Http2FaultView(failure).code()).frame()
+                Http2ResetFrame(stream: Http2FaultView(failure).stream(), code: Http2FaultView(failure).code()).frame()
             );
         }
     }
@@ -245,12 +245,12 @@ object Http2ConnectionInput {
         let kind = frame.header().kind().int();
         if kind == 1 {
             let pending = Http2HeaderBlockReading(
-                frame,
-                origin,
-                decoder.value(),
-                budget,
-                local.frame_size()
-            ).result();
+                first: frame,
+                origin: origin,
+                context: decoder.value(),
+                budget: budget,
+                maximum: local::Settings::frame_size
+            ).block();
             let block = await pending;
             decoder.replace(block.context());
             receiver.headers(block);
@@ -293,7 +293,7 @@ object Http2ConnectionInput {
                         0,
                         "unexpected settings acknowledgment"
                     );
-                decoder.replace(decoder.value().allowed(local.header_table()));
+                decoder.replace(decoder.value().allowed(local::Settings::header_table));
                 receiver.local_settings(local);
                 acknowledged.set();
                 return true;
@@ -313,7 +313,7 @@ object Http2ConnectionInput {
                 receiver.settings(previous, following);
                 peer.replace(following);
             }
-            controls.frame(Http2Frame(Http2FrameHeader(4.byte(), 1.byte(), 0, 0), []));
+            controls.frame(Http2Frame(header: Http2FrameHeader(4.byte(), 1.byte(), 0, 0), payload: []));
             return true;
         }
         if kind == 9 {

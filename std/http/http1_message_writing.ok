@@ -27,7 +27,7 @@ object Http1RequestWriting {
         pending = Http1MessageOutput().request(origin, request, limits);
     }
 
-    result() is Future<AsyncWriting> {
+    output() is Future<AsyncWriting> {
         pending;
     }
 }
@@ -48,35 +48,35 @@ object Http1ResponseWriting {
         pending = Http1MessageOutput().response(origin, response, method, limits);
     }
 
-    result() is Future<AsyncWriting> {
+    output() is Future<AsyncWriting> {
         pending;
     }
 }
 
-object Http1MessageOutput {
+hidden object Http1MessageOutput {
     Http1MessageOutput();
 
     request(origin is AsyncWriting, request is Request, limits is Http1Limits) is Future<AsyncWriting> {
         let head = Http1RequestHead(
-            request::Head::method,
-            request::Head::target,
-            request::Head::headers,
-            request::Head::version
+            method: request::Head::method,
+            target: request::Head::target,
+            headers: request::Head::headers,
+            version: request::Head::version
         );
-        let plan = Http1RequestFraming(head, limits).plan();
-        let writing = Http1RequestHeadWriting(origin, head, limits);
-        self.writing(writing.result(), request.body(), plan, head.headers(), limits, true);
+        let plan = Http1RequestFraming(head: head, limits: limits).plan();
+        let writing = Http1RequestHeadWriting(origin: origin, head: head, limits: limits);
+        self.writing(writing.output(), request.body(), plan, head.headers(), limits, true);
     }
 
     response(origin is AsyncWriting, response is Response, method is Method, limits is Http1Limits) is Future<AsyncWriting> {
         let head = Http1ResponseHead(
-            response::Head::status,
-            response::Head::headers,
-            response::Head::version
+            status: response::Head::status,
+            headers: response::Head::headers,
+            version: response::Head::version
         );
-        let plan = Http1ResponseFraming(head, method, limits).plan();
-        let writing = Http1ResponseHeadWriting(origin, head, method, limits);
-        self.writing(writing.result(), response.body(), plan, head.headers(), limits, false);
+        let plan = Http1ResponseFraming(head: head, method: method, limits: limits).plan();
+        let writing = Http1ResponseHeadWriting(origin: origin, head: head, method: method, limits: limits);
+        self.writing(writing.output(), response.body(), plan, head.headers(), limits, false);
     }
 
     writing(
@@ -87,17 +87,17 @@ object Http1MessageOutput {
         limits is Http1Limits,
         request is bool
     ) is Future<AsyncWriting> {
-        confirm plan.kind() != Http1BodyKind.tunnel && plan.kind() != Http1BodyKind.upgrade
+        confirm plan::Plan::kind != Http1BodyKind.tunnel && plan::Plan::kind != Http1BodyKind.upgrade
             else throw InvalidHttpMessage.because(
                 "upgraded response requires dedicated protocol handling"
             );
-        let operation = Http1MessageWriteOperation(head, body, plan, fields, limits, request);
+        let operation = Http1MessageWriteOperation(head: head, body: body, plan: plan, fields: fields, limits: limits, request: request);
         let scope is FutureScope<AsyncWriting, AsyncWriting> = FutureScope(action: operation.write);
         scope.outcome();
     }
 }
 
-object Http1MessageWriteOperation {
+hidden object Http1MessageWriteOperation {
     has head is Future<AsyncWriting>;
     has body is BodyOpening;
     has plan is Http1BodyPlan;
@@ -122,10 +122,10 @@ object Http1MessageWriteOperation {
     }
 
     async write(group is Supervising<AsyncWriting>) is AsyncWriting {
-        Http1BodyCheck(body, plan, limits, request).known();
+        Http1BodyCheck(body: body, plan: plan, limits: limits, request: request).known();
         group.start(head);
         let origin = await head;
-        let writing = Http1BodyWriting(origin, body, plan, fields, limits, 4096).result();
+        let writing = Http1BodyWriting(origin: origin, body: body, plan: plan, head: fields, limits: limits, chunk_bytes: 4096).output();
         group.start(writing);
         await writing;
     }
@@ -137,9 +137,9 @@ async test "complete empty request round-trips over a borrowed stream" {
     let input = pair.second();
     defer output.close();
     defer input.close();
-    let head = ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: a\r\n\r\n").value();
-    await Http1RequestWriting(output.output(), head.request(EmptyBody())).result();
-    let parsed = await Http1RequestHeadReading(input.input()).result();
+    let head = ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: a\r\n\r\n").head();
+    await Http1RequestWriting(origin: output.output(), request: head.request(EmptyBody())).output();
+    let parsed = await Http1RequestHeadReading(input.input()).head();
     test.is(parsed.head().target().string(), "/");
     test.ok(!output.closed());
 }

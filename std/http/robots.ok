@@ -28,7 +28,7 @@ enum MissingCrawlDelay is Error = (missing);
 
 enum RobotsFetchFailed is Error = (status(status is int));
 
-object RobotsTrim {
+hidden object RobotsTrim {
     has origin is string;
 
     RobotsTrim(origin is string) {
@@ -64,7 +64,7 @@ object RobotsTrim {
     }
 }
 
-object RobotsRecord {
+hidden object RobotsRecord {
     has name, value is string;
     has group is int;
     has pattern is @RobotsPattern;
@@ -199,7 +199,7 @@ object RobotsPolicy {
                 confirm group.value() < 256 else throw RobotsLimitExceeded.kind("groups");
                 confirm records.value().size() < 4096
                     else throw RobotsLimitExceeded.kind("records");
-                records.replace(records.value().prefix(RobotsRecord(name, token, group.value())));
+                records.replace(records.value().prefix(RobotsRecord(name: name, value: token, group: group.value())));
                 next;
             }
             if group.value() < 0 {
@@ -220,7 +220,7 @@ object RobotsPolicy {
                     confirm records.value().size() < 4096
                         else throw RobotsLimitExceeded.kind("records");
                     records.replace(
-                        records.value().prefix(RobotsRecord(name, value, group.value(), checked))
+                        records.value().prefix(RobotsRecord(name: name, value: value, group: group.value(), pattern: checked))
                     );
                 }
             }
@@ -236,7 +236,7 @@ object RobotsPolicy {
                         else throw RobotsLimitExceeded.kind("records");
                     records.replace(
                         records.value().prefix(
-                            RobotsRecord(name, value, group.value(), [], [checked])
+                            RobotsRecord(name: name, value: value, group: group.value(), patterns: [], delays: [checked])
                         )
                     );
                 }
@@ -289,7 +289,7 @@ object RobotsPolicy {
             throw InvalidRobots.because("ASCII agent required");
         };
         let scores is @int = agents.map() -> entry {
-            RobotsAgentMatch(entry.value(), lower).score();
+            RobotsAgentMatch(token: entry.value(), agent: lower).score();
         };
         let best = scores.reduce(-1) -> old, score {
             if score > old {
@@ -387,7 +387,7 @@ object RobotsPolicy {
     }
 }
 
-object RobotsAgent {
+hidden object RobotsAgent {
     has value is string;
 
     RobotsAgent(origin is string) {
@@ -411,7 +411,7 @@ object RobotsAgent {
     }
 }
 
-object RobotsAgentMatch {
+hidden object RobotsAgentMatch {
     has token, agent is string;
 
     RobotsAgentMatch(token is string, agent is string) {
@@ -434,7 +434,7 @@ object RobotsAgentMatch {
     }
 }
 
-object RobotsRule {
+hidden object RobotsRule {
     has entry is RobotsRecord;
     has pattern is RobotsPattern;
 
@@ -460,7 +460,7 @@ object RobotsRule {
     }
 }
 
-object RobotsPattern {
+hidden object RobotsPattern {
     has value is string;
     has anchored, wildcard is bool;
     has weight is int;
@@ -523,7 +523,7 @@ object RobotsPattern {
     }
 }
 
-object RobotsDelay {
+hidden object RobotsDelay {
     has seconds is rat;
 
     RobotsDelay(origin is string) {
@@ -565,7 +565,7 @@ object FetchedRobots {
         confirm (parts::Parts::scheme == "http" || parts::Parts::scheme == "https")
             && parts::Parts::host != Maybe<string>.none
             else throw InvalidRobots.because("HTTP site required");
-        Header(HeaderName("User-Agent"), agent);
+        Header(name: HeaderName("User-Agent"), value: agent);
         self.origin = origin;
         destination = UrlParts(
             scheme: parts::Parts::scheme,
@@ -596,8 +596,8 @@ object FetchedRobots {
             target: AbsoluteTarget(destination),
             headers: Headers(
                 [
-                    Header(HeaderName("User-Agent"), agent),
-                    Header(HeaderName("Accept"), "text/plain")
+                    Header(name: HeaderName("User-Agent"), value: agent),
+                    Header(name: HeaderName("Accept"), value: "text/plain")
                 ]
             )
         );

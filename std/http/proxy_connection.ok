@@ -47,11 +47,11 @@ object HttpProxyRouting does HttpConversationRouting {
         self.tls = tls;
         self.client = client;
         self.clock = clock;
-        HttpClientProtocols(client, tls);
+        HttpClientProtocols(policy: client, tls: tls);
     }
 
     connecting(url is UrlParts) is HttpConversationConnecting {
-        HttpProxyConnecting(proxy, url, resolver, tls, client, clock);
+        HttpProxyConnecting(proxy: proxy, target: url, resolver: resolver, tls: tls, client: client, clock: clock);
     }
 
     allowed(url is UrlParts, details is ExchangeDetails, access is EndpointAllowing) is bool {
@@ -59,7 +59,7 @@ object HttpProxyRouting does HttpConversationRouting {
     }
 }
 
-object HttpProxyConnecting does HttpConversationConnecting {
+hidden object HttpProxyConnecting does HttpConversationConnecting {
     has proxy is ProxyPolicy;
     has target is UrlParts;
     has route is HttpEndpointSelection;
@@ -75,14 +75,14 @@ object HttpProxyConnecting does HttpConversationConnecting {
         client is ClientPolicy,
         clock is Timing
     ) {
-        HttpClientProtocols(client, tls);
+        HttpClientProtocols(policy: client, tls: tls);
         if target::Parts::scheme == "http" {
             confirm client.protocols().membership(HttpVersion.http_1_1)
                 else throw UnsupportedHttpVersion.unsupported;
         }
         self.proxy = proxy;
         self.target = target;
-        route = HttpEndpointSelection(proxy.url(), resolver, client.access());
+        route = HttpEndpointSelection(url: proxy.url(), resolver: resolver, access: client.access());
         self.tls = tls;
         self.client = client;
         self.clock = clock;
@@ -92,8 +92,8 @@ object HttpProxyConnecting does HttpConversationConnecting {
         let fields is @Header = if proxy.authenticated() {
             [
                 Header(
-                    HeaderName("Proxy-Authorization"),
-                    BasicAuthorization(proxy.credentials()).header().value()
+                    name: HeaderName("Proxy-Authorization"),
+                    value: BasicAuthorization(proxy.credentials()).header().value()
                 )
             ];
         }
@@ -106,7 +106,7 @@ object HttpProxyConnecting does HttpConversationConnecting {
         let empty is @Future<TcpConnection> = [];
         let pending = Atomic(empty);
         let taken = Event();
-        let cleanup = HttpAcquisitionCleanup(raw, pending, taken, HttpTcpDisposal().release);
+        let cleanup = HttpAcquisitionCleanup(group: raw, pending: pending, taken: taken, dispose: HttpTcpDisposal().release);
         defer await cleanup.close();
         let opening = TcpRacing(
             origins: endpoints,
@@ -119,33 +119,33 @@ object HttpProxyConnecting does HttpConversationConnecting {
         let tcp = await opening;
         taken.set();
         let published = Event();
-        let anchor = HttpUnpublishedTcp(tcp, published);
+        let anchor = HttpUnpublishedTcp(origin: tcp, published: published);
         defer anchor.close();
         if target::Parts::scheme == "http" {
             let observation = HttpResponseObservation();
             let session = Http1Conversation(
-                Http1Session(
+                origin: Http1Session(
                     observation.reading(tcp.input()),
                     observation.writing(tcp.output()),
                     tcp,
                     client.limits().http1()
                 ),
-                observation,
-                fields
+                observation: observation,
+                proxy_fields: fields
             );
             let acquired = HttpConversationAcquisition(
-                session,
-                ExchangeDetails(tcp.endpoints(), HttpVersion.http_1_1)
+                session: session,
+                details: ExchangeDetails(tcp.endpoints(), HttpVersion.http_1_1)
             );
             published.set();
             return acquired;
         }
         let tunneling = HttpProxyTunnel(
-            tcp.input(),
-            tcp.output(),
-            target,
-            fields,
-            client.limits().http1()
+            input: tcp.input(),
+            output: tcp.output(),
+            target: target,
+            fields: fields,
+            limits: client.limits().http1()
         ).ready();
         await tunneling;
         let adopted is FutureGroup<HttpConversationAcquisition> = FutureGroup();
@@ -153,13 +153,13 @@ object HttpProxyConnecting does HttpConversationConnecting {
         let acquisition_pending = Atomic(empty_acquired);
         let acquisition_taken = Event();
         let adopted_cleanup = HttpAcquisitionCleanup(
-            adopted,
-            acquisition_pending,
-            acquisition_taken,
-            HttpConversationAcquisitionDisposal().release
+            group: adopted,
+            pending: acquisition_pending,
+            taken: acquisition_taken,
+            dispose: HttpConversationAcquisitionDisposal().release
         );
         defer await adopted_cleanup.close();
-        let adapting = HttpConversationAdopting(tcp, target, tls, client, clock).acquisition();
+        let adapting = HttpConversationAdopting(tcp: tcp, target: target, policy: tls, client: client, clock: clock).acquisition();
         acquisition_pending.replace([adapting]);
         adopted.start(adapting);
         let acquired = await adapting;

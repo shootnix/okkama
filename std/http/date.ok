@@ -28,16 +28,16 @@ object HttpDate does Comparing<HttpDate> {
         self.origin = Instant(Duration(value: whole.rat(), unit: DurationUnit.second));
     }
 
-    value() is Instant {
+    instant() is Instant {
         origin;
     }
 
     order(other is HttpDate) is Order {
-        origin.order(other.value());
+        origin.order(other.instant());
     }
 
     string() is string {
-        let local = HttpDateLocal(origin).value();
+        let local = HttpDateLocal(origin).local();
         let weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
         let months = [
             "Jan",
@@ -77,7 +77,7 @@ object ParsedHttpDate {
         references = [reference];
     }
 
-    value() is Instant {
+    instant() is Instant {
         confirm origin.length() >= 24 && origin.length() <= 33
             else throw InvalidHttpDate.because("date length");
         if origin.length() == 29 && origin.slice(3, 5) == ", " {
@@ -87,12 +87,12 @@ object ParsedHttpDate {
                 && origin.slice(25, 29) == " GMT"
                 else throw InvalidHttpDate.because("IMF layout");
             return HttpDateFields(
-                HttpDateDecimal(origin.slice(12, 16), 4).value(),
-                HttpDateMonth(origin.slice(8, 11)).value(),
-                HttpDateDecimal(origin.slice(5, 7), 2).value(),
-                HttpDateClock(origin.slice(17, 25)).value(),
-                HttpDateWeekday(origin.slice(0, 3), false).value()
-            ).value();
+                year: HttpDateDecimal(origin.slice(12, 16), 4).int(),
+                month: HttpDateMonth(origin.slice(8, 11)).month(),
+                day: HttpDateDecimal(origin.slice(5, 7), 2).int(),
+                time: HttpDateClock(origin.slice(17, 25)).time(),
+                weekday: HttpDateWeekday(origin.slice(0, 3), false).weekday()
+            ).instant();
         }
         if origin.length() == 24 && origin.slice(3, 4) == " " {
             confirm origin.slice(7, 8) == " "
@@ -100,22 +100,22 @@ object ParsedHttpDate {
                 && origin.slice(19, 20) == " "
                 else throw InvalidHttpDate.because("asctime layout");
             let day = if origin.slice(8, 9) == " " {
-                HttpDateDecimal(origin.slice(9, 10), 1).value();
+                HttpDateDecimal(origin: origin.slice(9, 10), width: 1).int();
             }
             else {
-                HttpDateDecimal(origin.slice(8, 10), 2).value();
+                HttpDateDecimal(origin: origin.slice(8, 10), width: 2).int();
             };
             return HttpDateFields(
-                HttpDateDecimal(origin.slice(20, 24), 4).value(),
-                HttpDateMonth(origin.slice(4, 7)).value(),
-                day,
-                HttpDateClock(origin.slice(11, 19)).value(),
-                HttpDateWeekday(origin.slice(0, 3), false).value()
-            ).value();
+                year: HttpDateDecimal(origin.slice(20, 24), 4).int(),
+                month: HttpDateMonth(origin.slice(4, 7)).month(),
+                day: day,
+                time: HttpDateClock(origin.slice(11, 19)).time(),
+                weekday: HttpDateWeekday(origin.slice(0, 3), false).weekday()
+            ).instant();
         }
         let parts = origin.split(", ");
         confirm parts.size() == 2 else throw InvalidHttpDate.because("RFC850 layout");
-        let weekday = HttpDateWeekday(parts[0], true).value();
+        let weekday = HttpDateWeekday(origin: parts[0], full: true).weekday();
         let body = parts[1];
         confirm body.length() == 22
             && body.slice(2, 3) == "-"
@@ -123,12 +123,12 @@ object ParsedHttpDate {
             && body.slice(9, 10) == " "
             && body.slice(18, 22) == " GMT"
             else throw InvalidHttpDate.because("RFC850 layout");
-        let day = HttpDateDecimal(body.slice(0, 2), 2).value();
-        let month = HttpDateMonth(body.slice(3, 6)).value();
-        let short = HttpDateDecimal(body.slice(7, 9), 2).value();
-        let time = HttpDateClock(body.slice(10, 18)).value();
+        let day = HttpDateDecimal(origin: body.slice(0, 2), width: 2).int();
+        let month = HttpDateMonth(body.slice(3, 6)).month();
+        let short = HttpDateDecimal(origin: body.slice(7, 9), width: 2).int();
+        let time = HttpDateClock(body.slice(10, 18)).time();
         confirm references.size() == 1 else throw HttpDateReferenceRequired.required;
-        let reference = HttpDateLocal(HttpDate(references[0]).value()).value();
+        let reference = HttpDateLocal(HttpDate(references[0]).instant()).local();
         let latest = reference.date()::Calendar::year + 50;
         let candidate = (latest / 100).int() * 100 + short;
         let suffix = month * 100000000 + day * 1000000 + time::Clock::hour * 10000 + time::Clock::minute * 100 + time::Clock::second;
@@ -140,25 +140,25 @@ object ParsedHttpDate {
         else {
             candidate;
         };
-        HttpDateFields(year, month, day, time, weekday).value();
+        HttpDateFields(year: year, month: month, day: day, time: time, weekday: weekday).instant();
     }
 }
 
 // Bounded grammar/calendar collaborators. No host locale parser or mail grammar.
-object HttpDateLocal {
+hidden object HttpDateLocal {
     has origin is Instant;
 
     HttpDateLocal(origin is Instant) {
         self.origin = origin;
     }
 
-    value() is LocalDateTime {
+    local() is LocalDateTime {
         let epoch = LocalDateTime(date: Date(1970, 1, 1), time: TimeOfDay(0, 0, 0, 0));
         epoch.plus(origin.unix_duration());
     }
 }
 
-object HttpDateFields {
+hidden object HttpDateFields {
     has local is LocalDateTime;
 
     HttpDateFields(year is int, month is int, day is int, time is TimeOfDay, weekday is int) {
@@ -173,27 +173,27 @@ object HttpDateFields {
         local = LocalDateTime(date: date, time: time);
     }
 
-    value() is Instant {
+    instant() is Instant {
         let epoch = LocalDateTime(date: Date(1970, 1, 1), time: TimeOfDay(0, 0, 0, 0));
         Instant(local.minus(epoch));
     }
 }
 
-object HttpDateClock {
+hidden object HttpDateClock {
     has origin is string;
 
     HttpDateClock(origin is string) {
         self.origin = origin;
     }
 
-    value() is TimeOfDay {
+    time() is TimeOfDay {
         confirm origin.length() == 8 && origin.slice(2, 3) == ":" && origin.slice(5, 6) == ":"
             else throw InvalidHttpDate.because("clock layout");
         try {
             TimeOfDay(
-                hour: HttpDateDecimal(origin.slice(0, 2), 2).value(),
-                minute: HttpDateDecimal(origin.slice(3, 5), 2).value(),
-                second: HttpDateDecimal(origin.slice(6, 8), 2).value(),
+                hour: HttpDateDecimal(origin: origin.slice(0, 2), width: 2).int(),
+                minute: HttpDateDecimal(origin: origin.slice(3, 5), width: 2).int(),
+                second: HttpDateDecimal(origin: origin.slice(6, 8), width: 2).int(),
                 nanosecond: 0
             );
         }
@@ -203,7 +203,7 @@ object HttpDateClock {
     }
 }
 
-object HttpDateDecimal {
+hidden object HttpDateDecimal {
     has origin is string;
     has width is int;
 
@@ -212,7 +212,7 @@ object HttpDateDecimal {
         self.width = width;
     }
 
-    value() is int {
+    int() is int {
         confirm width >= 1 && width <= 4 && origin.length() == width
             else throw InvalidHttpDate.because("decimal width");
         Utf8Encoded(origin).bytes().reduce(0) -> result, octet {
@@ -224,14 +224,14 @@ object HttpDateDecimal {
     }
 }
 
-object HttpDateMonth {
+hidden object HttpDateMonth {
     has origin is string;
 
     HttpDateMonth(origin is string) {
         self.origin = origin;
     }
 
-    value() is int {
+    month() is int {
         let names = [
             "Jan",
             "Feb",
@@ -255,7 +255,7 @@ object HttpDateMonth {
     }
 }
 
-object HttpDateWeekday {
+hidden object HttpDateWeekday {
     has origin is string;
     has full is bool;
 
@@ -264,7 +264,7 @@ object HttpDateWeekday {
         self.full = full;
     }
 
-    value() is int {
+    weekday() is int {
         let names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
         for (0..7) -> index {
             let name = if full {
@@ -286,7 +286,7 @@ enum InvalidHttpDate is Error = (because(reason is string));
 enum HttpDateReferenceRequired is Error = (required);
 
 test "HTTP dates are whole seconds in GMT" {
-    let parsed = ParsedHttpDate("Thu, 01 Jan 1970 00:00:00 GMT").value();
+    let parsed = ParsedHttpDate("Thu, 01 Jan 1970 00:00:00 GMT").instant();
     test.is(HttpDate(parsed).string(), "Thu, 01 Jan 1970 00:00:00 GMT");
     test.is(parsed.unix_duration()::Span::seconds, 0.rat());
 }

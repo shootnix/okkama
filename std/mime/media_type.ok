@@ -44,11 +44,11 @@ object MimeParameters {
     has origin is @MimeParameter;
 
     MimeParameters(entries is Sequencing<MimeParameter>) {
-        origin = MimeSnapshot(entries, 256).entries();
+        origin = MimeSnapshot(origin: entries, maximum: 256).entries();
     }
 
     MimeParameters(entries is Sequencing<MimeParameter>, maximum_parameters is int) {
-        origin = MimeSnapshot(entries, maximum_parameters).entries();
+        origin = MimeSnapshot(origin: entries, maximum: maximum_parameters).entries();
     }
 
     entries() is Sequencing<MimeParameter> {
@@ -113,14 +113,14 @@ object MediaType {
     has entries is MimeParameters;
 
     MediaType(origin is string) {
-        let parsed = MimeScanning(origin, 256, 1048576).value();
+        let parsed = MimeScanning(origin: origin, maximum_parameters: 256, maximum_bytes: 1048576).media_type();
         major = parsed.type();
         minor = parsed.subtype();
         entries = parsed.parameters();
     }
 
     MediaType(origin is string, limits is MediaTypeLimits) {
-        let parsed = MimeScanning(origin, limits.parameters(), limits.bytes()).value();
+        let parsed = MimeScanning(origin: origin, maximum_parameters: limits::Limits::parameters, maximum_bytes: limits::Limits::bytes).media_type();
         major = parsed.type();
         minor = parsed.subtype();
         entries = parsed.parameters();
@@ -134,14 +134,6 @@ object MediaType {
         entries = parameters;
     }
 
-    type() is string {
-        major;
-    }
-
-    subtype() is string {
-        minor;
-    }
-
     parameters() is MimeParameters {
         entries;
     }
@@ -153,6 +145,16 @@ object MediaType {
         else {
             "; " + entries.string();
         };
+    }
+
+    cap Type {
+        type is string {
+            major;
+        }
+
+        subtype is string {
+            minor;
+        }
     }
 }
 
@@ -172,12 +174,14 @@ object MediaTypeLimits {
         maximum_bytes = bytes;
     }
 
-    parameters() is int {
-        maximum_parameters;
-    }
+    cap Limits {
+        parameters is int {
+            maximum_parameters;
+        }
 
-    bytes() is int {
-        maximum_bytes;
+        bytes is int {
+            maximum_bytes;
+        }
     }
 }
 
@@ -224,7 +228,7 @@ object MimeToken {
     }
 }
 
-object MimeSnapshot {
+hidden object MimeSnapshot {
     has origin is Sequencing<MimeParameter>;
     has maximum is int;
 
@@ -290,7 +294,7 @@ object MimePosition {
     }
 }
 
-object MimeScanned {
+hidden object MimeScanned {
     has text is string;
     has end is int;
 
@@ -343,7 +347,7 @@ object MimeScanning {
         self.maximum_bytes = maximum_bytes;
     }
 
-    value() is MimeParsed {
+    media_type() is MimeParsed {
         self.validate();
         let major = self.token(self.space(0));
         let slash = self.space(major.end());
@@ -353,16 +357,16 @@ object MimeScanning {
         confirm major.text() != "*" && minor.text() != "*"
             else throw InvalidMediaType.located(0, "wildcard is not a concrete media type");
         MimeParsed(
-            MimeToken(major.text()).string(),
-            MimeToken(minor.text()).string(),
-            self.parameters(minor.end())
+            type: MimeToken(major.text()).string(),
+            subtype: MimeToken(minor.text()).string(),
+            entries: self.parameters(minor.end())
         );
     }
 
     disposition() is MimeParsed {
         self.validate();
         let kind = self.token(self.space(0));
-        MimeParsed(MimeToken(kind.text()).string(), "", self.parameters(kind.end()));
+        MimeParsed(type: MimeToken(kind.text()).string(), subtype: "", entries: self.parameters(kind.end()));
     }
 
     hidden validate() is void {
@@ -399,11 +403,11 @@ object MimeScanning {
                 self.token(at);
             };
             raw = raw.following(
-                MimeWireParameter(name.text(), value.text(), start, maximum_parameters)
+                MimeWireParameter(name: name.text(), value: value.text(), offset: start, maximum_sections: maximum_parameters)
             );
             position = position.following(self.space(value.end()));
         }
-        MimeAssembly(raw.entries(), maximum_parameters).parameters();
+        MimeAssembly(origin: raw.entries(), maximum: maximum_parameters).parameters();
     }
 
     hidden space(start is int) is int {
@@ -431,7 +435,7 @@ object MimeScanning {
         }
         confirm position.index() > start
             else throw InvalidMediaType.located(start, "expected token");
-        MimeScanned(origin.slice(start, position.index()), position.index());
+        MimeScanned(text: origin.slice(start, position.index()), end: position.index());
     }
 
     hidden quoted(start is int) is MimeScanned {
@@ -445,7 +449,7 @@ object MimeScanning {
                 else throw InvalidMediaType.located(start, "unterminated quoted string");
             let char = origin.slice(index, index + 1);
             if char == "\"" {
-                return MimeScanned(Utf8Decoded(buffer.content().bytes()).string(), index + 1);
+                return MimeScanned(text: Utf8Decoded(buffer.content().bytes()).string(), end: index + 1);
             }
             if char == "\\" {
                 confirm origin.length() - index >= 2
@@ -461,7 +465,7 @@ object MimeScanning {
     }
 }
 
-object MimeWireParameter {
+hidden object MimeWireParameter {
     has key, text is string;
     has number, position is int;
     has encoded is bool;
@@ -534,7 +538,7 @@ object MimeWireParameter {
     }
 }
 
-object MimeAssembly {
+hidden object MimeAssembly {
     has origin is @MimeWireParameter;
     has maximum is int;
 
@@ -554,7 +558,7 @@ object MimeAssembly {
                 other.section() != -2;
             };
             if extended.size() == 0 {
-                output = output.following(MimeParameter(entry.name(), entry.value()));
+                output = output.following(MimeParameter(name: entry.name(), value: entry.value()));
             }
             else {
                 let prior = (0..index).reduce(false) -> found, position {
@@ -562,16 +566,16 @@ object MimeAssembly {
                 };
                 if !prior {
                     output = output.following(
-                        MimeParameter(entry.name(), MimeExtended(extended).string())
+                        MimeParameter(name: entry.name(), value: MimeExtended(extended).string())
                     );
                 }
             }
         }
-        MimeParameters(output.entries(), maximum);
+        MimeParameters(entries: output.entries(), maximum_parameters: maximum);
     }
 }
 
-object MimeExtended {
+hidden object MimeExtended {
     has origin is @MimeWireParameter;
 
     MimeExtended(origin is @MimeWireParameter) {
@@ -603,20 +607,20 @@ object MimeExtended {
             parts;
         };
         let initial = ordered[0];
-        let prefix = MimeCharset(initial.value(), initial.encoded(), initial.offset());
+        let prefix = MimeCharset(origin: initial.value(), encoded: initial.encoded(), offset: initial.offset());
         let output = ByteBuffer();
         defer output.closing().close();
         let writer = output.writing();
         for (0..ordered.size()) -> index {
             let part = ordered[index];
             let text = if index == 0 {
-                prefix.value();
+                prefix.name();
             }
             else {
                 part.value();
             };
             let bytes = if part.encoded() {
-                MimeExtendedBytes(text, part.offset()).bytes();
+                MimeExtendedBytes(origin: text, offset: part.offset()).bytes();
             }
             else {
                 Utf8Encoded(text).bytes();
@@ -646,7 +650,7 @@ object MimeExtended {
     }
 }
 
-object MimeCharset {
+hidden object MimeCharset {
     has encoding, text is string;
 
     MimeCharset(origin is string, encoded is bool, offset is int) {
@@ -691,12 +695,12 @@ object MimeCharset {
         encoding;
     }
 
-    value() is string {
+    name() is string {
         text;
     }
 }
 
-object MimeExtendedBytes {
+hidden object MimeExtendedBytes {
     has origin is string;
     has offset is int;
 
@@ -722,6 +726,6 @@ object MimeExtendedBytes {
 
 test "media type case and extended value are explicit" {
     let value = MediaType("Text/Plain; title*=UTF-8''caf%C3%A9");
-    test.is(value.type(), "text");
+    test.is(value::Type::type, "text");
     test.is(value.parameters().first("TITLE"), "café");
 }

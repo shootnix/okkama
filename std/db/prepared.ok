@@ -2,7 +2,7 @@ module db/prepared v1.0.0;
 
 import "db/value" take DbValue;
 import "db/statement" take Statement, Execution;
-import "db/row" take RowReading;
+import "db/row" take RowReading, DbQuery;
 import "collections/sequence" take Sequencing;
 import "db/transaction" take Transaction, TransactionOptions;
 
@@ -69,5 +69,13 @@ object DbPreparedTransaction does Transaction, DbPreparing {
     async rollback() is Transaction {
         await origin.rollback();
         self;
+    }
+
+    async execution(sql is string, values is Sequencing<DbValue>) is Execution {
+        await origin.execution(sql, values);
+    }
+
+    query(sql is string, values is Sequencing<DbValue>) is DbQuery {
+        origin.query(sql, values);
     }
 }

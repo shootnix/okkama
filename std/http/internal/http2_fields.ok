@@ -30,10 +30,10 @@ object Http2RequestFields {
                     stream,
                     "authority target requires CONNECT"
                 );
-            Http2HostAgreement(request::Head::headers, "", target.string(), stream);
+            Http2HostAgreement(fields: request::Head::headers, scheme: "", authority: target.string(), stream: stream);
             [
-                HpackField(":method", "CONNECT"),
-                HpackField(":authority", target.string())
+                HpackField(name: ":method", value: "CONNECT"),
+                HpackField(name: ":authority", value: target.string())
             ];
         }
         else {
@@ -44,11 +44,11 @@ object Http2RequestFields {
                     stream,
                     "absolute URL or explicit route required"
                 );
-            Http2RequestControl(request, target.url(), stream).fields();
+            Http2RequestControl(request: request, url: target.url(), stream: stream).fields();
         };
         fields = Http2JoinedFields(
-            prefix,
-            Http2OrdinaryFields(request::Head::headers, true, stream).fields()
+            prefix: prefix,
+            ordinary: Http2OrdinaryFields(request::Head::headers, true, stream).fields()
         ).fields();
     }
 
@@ -72,8 +72,8 @@ object Http2RequestFields {
                 "CONNECT uses authority coordinates"
             );
         fields = Http2JoinedFields(
-            Http2RequestControl(request, route, stream).fields(),
-            Http2OrdinaryFields(request::Head::headers, true, stream).fields()
+            prefix: Http2RequestControl(request, route, stream).fields(),
+            ordinary: Http2OrdinaryFields(request::Head::headers, true, stream).fields()
         ).fields();
     }
 
@@ -82,14 +82,14 @@ object Http2RequestFields {
     }
 }
 
-object Http2RequestControl {
+hidden object Http2RequestControl {
     has fields is @HpackField;
 
     Http2RequestControl(request is Request, url is UrlParts, stream is int) {
         AbsoluteTarget(url);
         let parts = url;
         let authority = parts.authority();
-        Http2HostAgreement(request::Head::headers, parts::Parts::scheme, authority, stream);
+        Http2HostAgreement(fields: request::Head::headers, scheme: parts::Parts::scheme, authority: authority, stream: stream);
         let target = request::Head::target;
         let path = match target.kind() {
             case RequestTargetKind.asterisk {
@@ -123,10 +123,10 @@ object Http2RequestControl {
             }
         };
         fields = [
-            HpackField(":method", MethodName(request::Head::method).string()),
-            HpackField(":scheme", parts::Parts::scheme),
-            HpackField(":authority", authority),
-            HpackField(":path", path)
+            HpackField(name: ":method", value: MethodName(request::Head::method).string()),
+            HpackField(name: ":scheme", value: parts::Parts::scheme),
+            HpackField(name: ":authority", value: authority),
+            HpackField(name: ":path", value: path)
         ];
     }
 
@@ -135,14 +135,14 @@ object Http2RequestControl {
     }
 }
 
-object Http2HostAgreement {
+hidden object Http2HostAgreement {
     Http2HostAgreement(fields is Headers, scheme is string, authority is string, stream is int) {
         let hosts = fields.values(HeaderName("Host"));
         confirm hosts.size() <= 1
             else throw Http2Fault.detailed(Http2FaultScope.stream, 1, stream, "duplicate Host");
-        let expected = Http2AuthorityKey(scheme, authority, stream).string();
+        let expected = Http2AuthorityKey(scheme: scheme, origin: authority, stream: stream).string();
         if hosts.size() == 1 {
-            confirm Http2AuthorityKey(scheme, hosts.item(0), stream).string() == expected
+            confirm Http2AuthorityKey(scheme: scheme, origin: hosts.item(0), stream: stream).string() == expected
                 else throw Http2Fault.detailed(
                     Http2FaultScope.stream,
                     1,
@@ -153,7 +153,7 @@ object Http2HostAgreement {
     }
 }
 
-object Http2AuthorityKey {
+hidden object Http2AuthorityKey {
     has key is string;
 
     Http2AuthorityKey(scheme is string, origin is string, stream is int) {
@@ -217,8 +217,8 @@ object Http2ResponseFields {
                 "101 is invalid in HTTP2"
             );
         fields = Http2JoinedFields(
-            [HpackField(":status", StatusCode(response::Head::status).number().string())],
-            Http2OrdinaryFields(response::Head::headers, false, stream).fields()
+            prefix: [HpackField(":status", StatusCode(response::Head::status).number().string())],
+            ordinary: Http2OrdinaryFields(response::Head::headers, false, stream).fields()
         ).fields();
     }
 
@@ -232,7 +232,7 @@ object Http2OrdinaryFields {
 
     Http2OrdinaryFields(origin is Headers, request is bool, stream is int) {
         let checked = try {
-            Http2Headers(origin, request).result();
+            Http2Headers(origin: origin, request: request).headers();
         }
         catch failure is InvalidHeader {
             throw Http2Fault.detailed(
@@ -245,7 +245,7 @@ object Http2OrdinaryFields {
         let entries = checked.entries();
         let rows is @HpackField = (0..entries.size()).map() -> index {
             let field = entries.item(index);
-            HpackField(field.name().string(), field.value());
+            HpackField(name: field.name().string(), value: field.value());
         };
         fields = rows;
     }
@@ -255,7 +255,7 @@ object Http2OrdinaryFields {
     }
 }
 
-object Http2JoinedFields {
+hidden object Http2JoinedFields {
     has fields is @HpackField;
 
     Http2JoinedFields(prefix is @HpackField, ordinary is @HpackField) {
@@ -280,7 +280,7 @@ object ParsedHttp2Response {
     has headers is Headers;
 
     ParsedHttp2Response(origin is @HpackField, stream is int, end_stream is bool) {
-        let section = Http2FieldSection(origin, [":status"], false, stream);
+        let section = Http2FieldSection(origin: origin, allowed: [":status"], request: false, stream: stream);
         let value = section.pseudos().value(":status");
         let bytes = Latin1Encoded(value).bytes();
         confirm bytes.size() == 3
@@ -339,10 +339,10 @@ object ParsedHttp2Request {
 
     ParsedHttp2Request(origin is @HpackField, stream is int) {
         let section = Http2FieldSection(
-            origin,
-            [":method", ":scheme", ":authority", ":path"],
-            true,
-            stream
+            origin: origin,
+            allowed: [":method", ":scheme", ":authority", ":path"],
+            request: true,
+            stream: stream
         );
         let known = section.pseudos();
         let method = try {
@@ -379,7 +379,7 @@ object ParsedHttp2Request {
                 );
             hosts.item(0);
         };
-        Http2HostAgreement(section.headers(), scheme, raw, stream);
+        Http2HostAgreement(fields: section.headers(), scheme: scheme, authority: raw, stream: stream);
         let authority = try {
             ParsedUrl("//" + raw).parts();
         }
@@ -397,7 +397,7 @@ object ParsedHttp2Request {
                     "CONNECT forbids scheme and path"
                 );
             try {
-                ParsedRequestTarget(raw, method).value();
+                ParsedRequestTarget(origin: raw, method: method).target();
             }
             catch failure is InvalidRequestTarget {
                 throw Http2Fault.detailed(
@@ -411,7 +411,7 @@ object ParsedHttp2Request {
         else {
             let path = known.value(":path");
             let checked = try {
-                ParsedRequestTarget(path, method).value();
+                ParsedRequestTarget(origin: path, method: method).target();
             }
             catch failure is InvalidRequestTarget {
                 throw Http2Fault.detailed(Http2FaultScope.stream, 1, stream, "invalid request path");
@@ -480,7 +480,7 @@ object ParsedHttp2Request {
     }
 }
 
-object Http2StreamCoordinate {
+hidden object Http2StreamCoordinate {
     Http2StreamCoordinate(stream is int) {
         confirm stream > 0 && stream <= 2147483647
             else throw Http2Fault.detailed(
@@ -539,13 +539,13 @@ object Http2FieldSection {
             }
             let validated = try {
                 Header(
-                    HeaderName(if pseudo {
+                    name: HeaderName(if pseudo {
                         "x";
                     }
                     else {
                         name;
                     }),
-                    field.value()
+                    value: field.value()
                 );
             }
             catch failure is InvalidHeader {
@@ -563,10 +563,10 @@ object Http2FieldSection {
             field.name().slice(0, 1) != ":";
         };
         let entries is @Header = filtered.map() -> field {
-            Header(HeaderName(field.name()), field.value());
+            Header(name: HeaderName(field.name()), value: field.value());
         };
         headers = try {
-            Http2Headers(Headers(entries, HeaderLimits(1024, 1048576)), request).result();
+            Http2Headers(origin: Headers(entries, HeaderLimits(1024, 1048576)), request: request).headers();
         }
         catch failure is InvalidHeader {
             throw Http2Fault.detailed(
@@ -631,7 +631,7 @@ object Http2PseudoFields {
 }
 
 test "response pseudo-status stays outside ordinary Headers" {
-    let response = ParsedHttp2Response([HpackField(":status", "200")], 1, true);
+    let response = ParsedHttp2Response(origin: [HpackField(":status", "200")], stream: 1, end_stream: true);
     test.is(response.status(), Status.ok);
     test.is(response.headers().entries().size(), 0);
 }

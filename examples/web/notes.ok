@@ -1,0 +1,98 @@
+module examples/web/notes v1.0.0;
+
+import "web/app" take WebApplication;
+import "web/routing" take WebRoutes, Get, Post, Scope;
+import "web/request" take WebRequest;
+import "web/reply" take Text, JsonReply;
+import "http/handler" take HandlingResult;
+import "http/server" take HttpServer, ServerDrain;
+import "http/client" take HttpClient;
+import "http/endpoint" take ListedNetworks;
+import "http/body" take JsonBody;
+import "http/status" take StatusCode;
+import "net/ip" take IpAddress, IpNetwork;
+import "net/dns" take FixedResolution;
+import "json" take Json, JsonField;
+import "strings/parse" take Number;
+import "async/atomic" take Atomic;
+import "async/scope" take FutureGroup;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration, DurationUnit;
+import "io/stdout" take Stdout;
+
+// A small JSON service: routes under /api, a path parameter, a JSON body,
+// a query parameter with a default, and a fallback for everything else.
+// The program serves on a free loopback port, calls itself with the std
+// client, and drains the server at the end. A real service would call
+// `await WebApplication(routes).listen("0.0.0.0", 8080);` instead.
+
+object Notes {
+    has items is Atomic<@string>;
+
+    Notes() {
+        let none_yet is @string = [];
+        items = Atomic(none_yet);
+    }
+
+    async list(request is WebRequest) is HandlingResult {
+        let limit = Number(request.query("limit", "10")).int();
+        let shown is @Json = items.value().slice(0, if limit < items.value().size() { limit; } else { items.value().size(); }).map() -> text {
+            Json(text);
+        };
+        JsonReply(status: 200, value: Json(shown));
+    }
+
+    async add(request is WebRequest) is HandlingResult {
+        let body = await request.json(4096);
+        items.replace(items.value() + [body.text("text")]);
+        JsonReply(status: 201, value: Json([JsonField("id", items.value().size())]));
+    }
+
+    async one(request is WebRequest) is HandlingResult {
+        let id = Number(request.path("id")).int();
+        if id < 1 || id > items.value().size() {
+            return Text(status: 404, text: "no note " + id.string());
+        }
+        Text(status: 200, text: items.value()[id - 1]);
+    }
+
+    async missing(request is WebRequest) is HandlingResult {
+        Text(status: 404, text: "not found");
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    let notes = Notes();
+    let routes = WebRoutes(
+        routings: [Scope(prefix: "/api", routings: [
+            Get(path: "/notes", endpoint: notes.list),
+            Post(path: "/notes", endpoint: notes.add),
+            Get(path: "/notes/:id", endpoint: notes.one),
+        ])],
+        fallback: notes.missing,
+    );
+    let server = await WebApplication(routes).server("127.0.0.1", 0);
+    let serving is FutureGroup<HttpServer> = FutureGroup();
+    serving.start(server.serve());
+    let base = "http://127.0.0.1:" + server.local_endpoint()::Parts::port.string();
+    let client = HttpClient(
+        resolver: FixedResolution([]),
+        endpoints: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)])
+    );
+
+    for ["buy tea", "call Ada"] -> text {
+        let created = await client.post(url: base + "/api/notes", body: JsonBody(Json([JsonField("text", text)])));
+        out.writeln("POST /api/notes -> " + StatusCode(created::Head::status).number().string() + " " + await created.text());
+    }
+    for ["/api/notes", "/api/notes?limit=1", "/api/notes/2", "/api/notes/9", "/elsewhere"] -> path {
+        let page = await client.get(base + path);
+        out.writeln("GET " + path + " -> " + StatusCode(page::Head::status).number().string() + " " + await page.text());
+    }
+
+    client.close();
+    await ServerDrain(server: server, limit: Duration(value: 5.rat(), unit: DurationUnit.second), clock: SystemClock()).drain();
+    await serving.wait();
+    out.writeln("drained");
+    0;
+}

@@ -4,6 +4,7 @@ import "http/request_context" take HttpRequestContext;
 import "http/message" take Request, Response;
 import "http/websocket" take WebSocketConnection;
 import "http/websocket_server" take WebSocketUpgrade;
+import "http/status" take Status;
 
 enum HandlingKind = (response, websocket);
 
@@ -79,3 +80,15 @@ object WebSocketHandlingResult does HandlingResult {
 }
 
 enum WrongHandlingKind is Error = (mismatch);
+
+test "a response result answers its response and refuses the WebSocket view" {
+    let result = ResponseHandling(Response(status: Status.no_content));
+    test.is(result.kind() == HandlingKind.response, true);
+    test.is(result.response()::Head::status == Status.no_content, true);
+    test.throws(WrongHandlingKind) {
+        result.websocket();
+    };
+    test.throws(WrongHandlingKind) {
+        result.application();
+    };
+}

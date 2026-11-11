@@ -3814,7 +3814,8 @@ implementations.
 - A digest is a running state: `Sha256(bytes).bytes()`, or
   `Sha256().state(part).state(part)`, which continues without changing the
   original. SHA-2, SHA-3, SHAKE, BLAKE2, MD5 and SHA-1 are there.
-- Keys live in `SecretBytes`. Entropy, nonces and trust are explicit values.
+- Keys live in `SecretBytes`, which compares itself in constant time:
+  `stored.matches(supplied)`. Entropy, nonces and trust are explicit values.
 - `Hmac(hash:, key:, origin:)` answers `bytes()` and `matches(signature)`,
   in constant time.
 - `PasswordHash(password:, policy: Argon2Policy(), entropy:)` stores a
@@ -3832,16 +3833,21 @@ strictly and classifies (`properties()`). `IpNetwork(address:, prefix:)`
 tests membership. `IpEndpoint(address:, port:)` shows `::Parts::port`.
 `FixedResolution`/`SystemResolution` resolve names. TCP and UDP sockets are
 async:
-- `await TcpListening(local:).acceptance()` listens;
-- `await TcpConnecting(remote:, options:).connection()` connects;
+- `await TcpListening(port: 0).listener()` listens, on loopback unless
+  `address:` is given, and `listener::Local::port` is the port it got;
+- `await TcpConnecting(host: "example.com", port: 443).connection()` resolves
+  the name and races its addresses (RFC 8305), and
+  `TcpConnecting(address:, port:, no_delay:)` connects to one address;
+- `UdpBinding(port:, broadcast:).socket()` binds a UDP socket;
 - `input()`/`output()` stream bytes.
 
 TLS connections show the agreed `details()::Session::protocol`.
 `examples/net/` has an address tour and a loopback echo.
 
-`logging` sends records through writers. `NamedLogging(name: LogName(["shop"]),
-destination:, clock:, fields:)` logs with `log(LogLevel.info, "started")`,
-adds fields and a cause, and makes children with `child("db")`. A record
+`logging` sends records through writers. `NamedLogging(name: "shop",
+destination: logs)` logs with `log(LogLevel.info, "started")`. Its clock is
+the system's unless `clock:` is given, and `fields:` adds fields to every
+record. A call adds fields and a cause, and `child("db")` makes a child. A record
 shows `record::Entry::level` and `::message`. Writers compose:
 - `AllowedLogs(origin:, allowing: LevelThresholds(fallback:, overrides:))`
   filters by level per name;
@@ -3854,9 +3860,11 @@ shows `record::Entry::level` and `::message`. Writers compose:
 `config` layers settings. `Settings`, `IniSettings`, `JsonSettings`,
 `TomlSettings`, `EnvironmentSettings` and `call.settings()` from `cli` are
 layers. `LayeredSettings([defaults, file, environment, line])` lets a later
-layer win key by key. `ScalarSetting(origin:, key:).text()` reads a value,
-`ScalarSettingOr(…, fallback:)` gives a fallback, and `source()::Source::name`
-tells where the value came from.
+layer win key by key. Values are read by their dotted name:
+`settings.int("server.port") else 8080`, `text`, `float` and `bool` answer a
+`Maybe`, `texts("cors.origins")` a list, and `source(name)` where the value came
+from. A value that is there but malformed throws `MalformedSetting` naming the
+key.
 
 `template` fills text. `TextTemplate("Hello, {{user.name}}")` takes bindings.
 `SectionTemplate(source:, partials:)` walks JSON with `{{#list}}`, `{{^list}}`
@@ -3869,10 +3877,11 @@ refuses event attributes.
 that depth, and `DisplayWidth(text).columns()` measures text.
 
 `db` talks to SQLite and PostgreSQL through one set of roles. `await
-SqliteMemory().connection()` opens a database. `Statement(text:, values:
-[Param(…)])` always binds its values. `Query(origin: connection, statement:)` answers
-`one()`, `maybe()`, `all(limit)` or a `rows()` stream, and `row.int("id")`,
-`row.maybe("body").text()` read by column name. `prepared()`, `transaction()`
+SqliteMemory().connection()` opens a database. `await db.execution(sql,
+[Param(…)])` runs SQL with bound values, and `db.query(sql, values)` answers
+`one()`, `maybe()` or `all(limit)`; transactions do the same.
+`row.int("id")` and `row.maybe("body").text()` read by column name, and
+`Query(origin:, statement:).rows()` streams. `prepared()`, `transaction()`
 with `TransactionOptions::Mode`, blobs, scripts and an online backup
 (`SqliteBackup(…).report()`) complete it, and `DbPool` shares connections.
 
@@ -3890,6 +3899,30 @@ with `TransactionOptions::Mode`, blobs, scripts and an online backup
 `i18n/` show each area.
 
 `http/client` sends requests with `HttpClient()`. By default it uses the system's DNS and trusted roots, reaches public endpoints only and speaks HTTP/1.1. Every other part is a named argument: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)` and `cookies: MemoryCookieJar()`. Every REST method has a shortcut: `get(url)`, `head`, `options`, `delete`, and `post(url:, body:)`, `put`, `patch` with a `Content` such as `JsonBody(json)`. Anything else is `client.response(Request(url:, method:, headers:, body:))`. A reply shows its head through the cap `Head` (`page::Head::status`, `::class`, `::headers`) and reads its body with `await page.text()`, `bytes()`, `json()` or `reading()`. `Status` and `Method` are enums: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` and `MethodName` turn them into wire numbers and tokens and back. `examples/http/client/` shows each task as a program.
+
+`http/server` serves HTTP/1.1, or HTTP/2 by prior knowledge, on a listener.
+A `Handling` object answers `handling(request, context)` with
+`ResponseHandling(Response(status:, headers:, body:))`, or with
+`WebSocketHandlingResult(origin: WebSocketUpgrade(…), application:)` to switch
+to WebSocket. `HttpServer(origin: listener, handling:, policy: ServerPolicy(),
+clock:)` serves with `serve()`, and `ServerDrain(server:, limit:, clock:)`
+stops accepting, lets requests in flight finish and closes. A WebSocket server
+also takes `destination:`, its own URL, to check the `Origin` against.
+
+`web` puts routes on top: `WebRoutes(routings: [Scope(prefix: "/api",
+routings: [Get(path: "/notes/:id", endpoint: notes.one), Post(…)])],
+fallback:)`. An endpoint gets a `WebRequest` with `path("id")`,
+`query("limit", "10")`, `await json(limit)` and `await text(limit)`, and answers
+`Text(status:, text:)` or `JsonReply(status:, value:)`.
+`WebApplication(routes).listen(address, port)` serves it.
+
+`Caching(origin: client, cache: MemoryHttpCache(clock:, maximum:), clock:)`
+answers fresh responses from memory, and `Proxied(proxy: ProxyPolicy(…), …)`
+sends requests through a forward proxy. Both are `Exchanging`, like
+`HttpClient`. `WebSocketConnecting(url:, …).connection()` opens a WebSocket
+client, and `mime` parses and renders media types, multipart bodies and
+encoded words. `examples/web/` and `examples/http/websocket/` show a JSON
+service and a WebSocket echo.
 
 `strings/parse` reads text as the type asked for: `Number("42").int()`,
 `Number("ff").int(16)`, `Number("6/8").rat()`, `Number("3.0").float()`,
@@ -3957,70 +3990,6 @@ replace. Offsets count Unicode scalars.
 `Normalized(origin:, form:)` and `UnicodeCharacter(c).name()` follow
 Unicode 16.0.0.
 
-The historical inventory and examples below describe **legacy `stdlib/`**.
-They remain executable with that library, but are not API proposals or completion
-claims for `std/`. Select the library root explicitly; do not combine their modules.
-
-
-The stdlib is intentionally narrow while the language stabilizes:
-
-- `http/headers` — immutable case-insensitive `Headers`, `ExtendedHeaders`/
-  `FilteredHeaders` composition, and CRLF-injection-rejecting `Header`
-  values;
-- `http/handler` — the `Handler` role plus `HandlerChain`'s
-  chain-of-responsibility dispatch, where declining is spelled by throwing
-  `HandlerFailure` rather than returning;
-- `http/router` — `Router`/`GetRoute`/etc. dispatch by method and
-  `PathPattern`, with `:name` segments extracted as `@PathParameter` (not a
-  native map — Okkama cannot build one with a runtime-determined entry
-  count from pure code);
-- `http/server` — a sequential `Server` accepting one connection at a time
-  over plain TCP, parsing requests and writing responses the same
-  byte-by-byte way as `http/client`, in reverse; `ServerPolicy.tls()` is
-  stored but not yet wired up, since `crypto/tls` has no server-side
-  wrapper at all today, only the client side;
-- `runtime/*` — declaration-only native substrate modules (Chapter 27):
-  `runtime/time`, `runtime/fs`, `runtime/process`, `runtime/net`,
-  `runtime/poll`, `runtime/environment`, `runtime/system`, `runtime/debug`,
-  `runtime/regex`, `runtime/stdio`, `runtime/memory`, `runtime/format`, `runtime/crypto`,
-  `runtime/tls`, `runtime/utf8`.
-
-`http/headers` is an immutable, case-insensitive header collection that
-never loses a header's original spelling, plus a small add/remove
-composition pair:
-
-```okkama
-import "http/headers" take HeaderName, Header, Headers, ExtendedHeaders, FilteredHeaders;
-
-main() is int {
-    let base is Headers = Headers([
-        Header(HeaderName("Content-Type"), "text/html"),
-        Header(HeaderName("X-Request-Id"), "abc123"),
-    ]);
-
-    let with_auth is Headers = headers ExtendedHeaders(
-        base,
-        Header(HeaderName("Authorization"), "Bearer token"),
-    );
-    let redacted is Headers = headers FilteredHeaders(with_auth, HeaderName("authorization"));
-
-    redacted.has(HeaderName("Authorization")); // false — filtered out
-    redacted.first(HeaderName("content-type")); // "text/html" — untouched
-    return 0;
-}
-```
-
-Lookups (`has`/`first`/`all`) compare `HeaderName`s case-insensitively, but
-`entries()` always reports each header's original spelling: `Headers`
-never compares two `HeaderName`s with `==` directly (Okkama's default
-object equality is deep-structural over every field, so two names that
-only differ by case aren't `==`) — it folds both sides to lowercase first.
-`Header`'s constructor trims a value's surrounding whitespace and rejects
-any `\r`/`\n` it still contains as `InvalidHeaderValue`, closing off
-classic HTTP header/response-splitting injection. `ExtendedHeaders` adds
-one header to the end; `FilteredHeaders` removes every header matching a
-given name — both return a fresh `Headers` and never modify their source.
-
 ### URL and cookie policy in the active v4 stdlib
 
 The current std uses `url/value`, superseding the historical `net/url`
@@ -4053,8 +4022,8 @@ import "io/stdout" take Stdout;
 main() is int {
     let jar=MemoryCookieJar(SystemClock());defer jar.close();
     let origin=ParsedUrl("https://example.com/a/b").parts();
-    let context=CookieContext(origin,true,Method("GET"));
-    jar.store(origin,Headers([Header(HeaderName("Set-Cookie"),"session=opaque; Secure; HttpOnly; SameSite=Lax; Path=/")]),context);
+    let context=CookieContext(site: origin,top_level: true,method: Method.get);
+    jar.store(origin,Headers([Header(name: HeaderName("Set-Cookie"),value: "session=opaque; Secure; HttpOnly; SameSite=Lax; Path=/")]),context);
     let cookies=jar.cookies(origin,context);confirm cookies.size()==1;
     Stdout().writeln(cookies.item(0).diagnostic());
     0;
@@ -4099,9 +4068,9 @@ Contract (okkama-docs `docs/std/http1-message-writing.md`),
 example (okkama-docs `examples/std-v4/http1-message-writing.ok`).
 
 
-`TcpListening(IpEndpoint(..., 0)).acceptance()` acquires a listener with an actual
-OS-selected port. `TcpConnecting(listener.local_endpoint()).connection()` acquires
-a numeric connection without DNS. The Closing owner exposes async input/output;
+`TcpListening(port: 0).listener()` acquires a listener with an actual
+OS-selected port. `TcpConnecting(address: IpAddress("127.0.0.1"), port:
+listener::Local::port).connection()` acquires a numeric connection without DNS. The Closing owner exposes async input/output;
 closing output drains started writes and shuts down only that direction. Reads
 may be short: accumulate the logical payload rather than expecting packet-sized
 reads. Ownership contract (okkama-docs `docs/std/tcp-stream.md`),
@@ -5374,8 +5343,7 @@ are separate capabilities available on concrete acquisitions.
 
 ```okkama
 let transaction=await connection.transaction(TransactionOptions());
-await transaction.execution(Statement(text: "INSERT INTO customers VALUES(?,?)",
-    values: [Param(7),Param("Ada")]));
+await transaction.execution("INSERT INTO customers VALUES(?,?)",[Param(7),Param("Ada")]);
 await transaction.commit();
 ```
 
@@ -5426,7 +5394,7 @@ let key=SettingKey(["greeting","name"]);
 let defaults=Settings([SettingEntry(key: key,values: ["world"],
     source: SettingSource(kind: SettingSourceKind.defaults,name: "application"))]);
 let settings=LayeredSettings([defaults,invocation.settings()]);
-let name=ScalarSetting(origin: settings,key: key).text();
+let name=settings.text("greeting.name") else "world";
 ```
 
 An async terminal acquisition returns one owned session. Its child input/output,
@@ -5461,8 +5429,7 @@ is installed. A destination receives one LogRecord and propagates failures;
 BestEffort and Fallback make loss/alternate delivery explicit.
 
 ```okkama
-let logger=NamedLogging(name: LogName(["service"]),destination: JsonStreamLogs(Stdout()),
-    clock: SystemClock(),fields: EmptyLogFields().fields());
+let logger=NamedLogging(name: "service",destination: JsonStreamLogs(Stdout()));
 logger.log(LogLevel.info,"started");
 ```
 

@@ -26,7 +26,7 @@ object Http1RequestHeadWriting {
         pending = Http1HeadOutput().request(origin, head, limits);
     }
 
-    result() is Future<AsyncWriting> {
+    output() is Future<AsyncWriting> {
         pending;
     }
 }
@@ -47,21 +47,21 @@ object Http1ResponseHeadWriting {
         pending = Http1HeadOutput().response(origin, head, method, limits);
     }
 
-    result() is Future<AsyncWriting> {
+    output() is Future<AsyncWriting> {
         pending;
     }
 }
 
-object Http1HeadOutput {
+hidden object Http1HeadOutput {
     Http1HeadOutput();
 
     request(origin is AsyncWriting, head is Http1RequestHead, limits is Http1Limits) is Future<AsyncWriting> {
-        Http1RequestFraming(head, limits).plan();
-        let start = MethodName(head.method()).string() + " " + head.target().string() + " " + Http1VersionText(
-            head.version()
+        Http1RequestFraming(head: head, limits: limits).plan();
+        let start = MethodName(head::Head::method).string() + " " + head.target().string() + " " + Http1VersionText(
+            head::Head::version
         ).string();
-        let wire = Http1HeadWire(start, head.headers(), limits).bytes();
-        ParsedHttp1RequestHead(Latin1Decoded(wire).string(), limits).value();
+        let wire = Http1HeadWire(start: start, fields: head.headers(), limits: limits).bytes();
+        ParsedHttp1RequestHead(origin: Latin1Decoded(wire).string(), limits: limits).head();
         self.writing(origin, wire);
     }
 
@@ -71,23 +71,23 @@ object Http1HeadOutput {
         method is Method,
         limits is Http1Limits
     ) is Future<AsyncWriting> {
-        Http1ResponseFraming(head, method, limits).plan();
-        let start = Http1VersionText(head.version()).string() + " " + StatusCode(head.status()).number().string() + " " + StatusCode(
-            head.status()
+        Http1ResponseFraming(head: head, method: method, limits: limits).plan();
+        let start = Http1VersionText(head::Head::version).string() + " " + StatusCode(head::Head::status).number().string() + " " + StatusCode(
+            head::Head::status
         ).phrase();
-        let wire = Http1HeadWire(start, head.headers(), limits).bytes();
-        ParsedHttp1ResponseHead(Latin1Decoded(wire).string(), limits).value();
+        let wire = Http1HeadWire(start: start, fields: head.headers(), limits: limits).bytes();
+        ParsedHttp1ResponseHead(origin: Latin1Decoded(wire).string(), limits: limits).head();
         self.writing(origin, wire);
     }
 
     writing(origin is AsyncWriting, wire is @byte) is Future<AsyncWriting> {
-        let output = Http1HeadWriteOperation(origin, ByteSnapshot(wire));
+        let output = Http1HeadWriteOperation(origin: origin, source: ByteSnapshot(wire));
         let scope is FutureScope<AsyncWriting, AsyncWriting> = FutureScope(action: output.write);
         scope.outcome();
     }
 }
 
-object Http1HeadWriteOperation {
+hidden object Http1HeadWriteOperation {
     has origin is AsyncWriting;
     has source is ByteSource;
 
@@ -105,7 +105,7 @@ object Http1HeadWriteOperation {
 
 // Implementation-only serializer; Request/Response/Head metadata never exposes
 // a raw line. Every serialized field uses canonical ': ' and terminating CRLF.
-object Http1HeadWire {
+hidden object Http1HeadWire {
     has start is string;
     has fields is Headers;
     has limits is Http1Limits;
@@ -117,17 +117,17 @@ object Http1HeadWire {
     }
 
     bytes() is @byte {
-        confirm start.length() <= limits.line_bytes()
+        confirm start.length() <= limits::Limits::line_bytes
             else throw Http1LimitExceeded.kind("line_bytes");
-        confirm start.length() + 4 <= limits.head_bytes()
+        confirm start.length() + 4 <= limits::Limits::head_bytes
             else throw Http1LimitExceeded.kind("head_bytes");
         let entries = fields.entries();
-        confirm entries.size() <= limits.fields() else throw Http1LimitExceeded.kind("fields");
+        confirm entries.size() <= limits::Limits::fields else throw Http1LimitExceeded.kind("fields");
         let total = (0..entries.size()).reduce(start.length() + 4) -> used, index {
             let field = entries.item(index);
             let width = field.name().string().length() + field.value().length() + 2;
-            confirm width <= limits.line_bytes() else throw Http1LimitExceeded.kind("line_bytes");
-            confirm width + 2 <= limits.head_bytes() - used
+            confirm width <= limits::Limits::line_bytes else throw Http1LimitExceeded.kind("line_bytes");
+            confirm width + 2 <= limits::Limits::head_bytes - used
                 else throw Http1LimitExceeded.kind("head_bytes");
             used + width + 2;
         };
@@ -149,6 +149,6 @@ object Http1HeadWire {
 }
 
 test "extension response status keeps mandatory reason separator" {
-    let wire = Http1HeadWire("HTTP/1.1 299 ", Headers([]), Http1Limits()).bytes();
+    let wire = Http1HeadWire(start: "HTTP/1.1 299 ", fields: Headers([]), limits: Http1Limits()).bytes();
     test.is(Latin1Decoded(wire).string(), "HTTP/1.1 299 \r\n\r\n");
 }

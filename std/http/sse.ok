@@ -99,40 +99,42 @@ object ServerEvent {
         keep_alive = false;
     }
 
-    data() is string {
-        data;
-    }
-
-    event() is string {
-        event;
-    }
-
-    identifier() is string {
-        identifier;
-    }
-
-    identifier_supplied() is bool {
-        identifier_supplied;
-    }
-
-    keep_alive() is bool {
-        keep_alive;
-    }
-
     retry() is Duration {
         confirm milliseconds.size() == 1 else throw MissingEventRetry.missing;
         Duration(value: milliseconds[0].rat(), unit: DurationUnit.millisecond);
     }
+
+    cap Event {
+        data is string {
+            data;
+        }
+
+        event is string {
+            event;
+        }
+
+        identifier is string {
+            identifier;
+        }
+
+        identifier_supplied is bool {
+            identifier_supplied;
+        }
+
+        keep_alive is bool {
+            keep_alive;
+        }
+    }
 }
 
-object ServerEventData {
+hidden object ServerEventData {
     ServerEventData(data is string) {
         confirm Utf8Encoded(data).bytes().size() <= 1048576
             else throw EventStreamLimit.kind("data_bytes");
     }
 }
 
-object ServerEventMetadata {
+hidden object ServerEventMetadata {
     ServerEventMetadata(value is string) {
         let bytes = Utf8Encoded(value).bytes();
         confirm bytes.size() <= 1024 else throw EventStreamLimit.kind("metadata_bytes");
@@ -144,7 +146,7 @@ object ServerEventMetadata {
     }
 }
 
-object EventRetry {
+hidden object EventRetry {
     has milliseconds is int;
 
     EventRetry(origin is Duration) {
@@ -170,7 +172,7 @@ object EventRetry {
     }
 }
 
-object ServerEventWire {
+hidden object ServerEventWire {
     has origin is ServerEvent;
 
     ServerEventWire(origin is ServerEvent) {
@@ -178,22 +180,22 @@ object ServerEventWire {
     }
 
     bytes() is @byte {
-        if origin.keep_alive() {
-            return Utf8Encoded(": " + origin.data() + "\n\n").bytes();
+        if origin::Event::keep_alive {
+            return Utf8Encoded(": " + origin::Event::data + "\n\n").bytes();
         }
-        let lines = origin.data().replace("\r\n", "\n").replace("\r", "\n").split("\n");
+        let lines = origin::Event::data.replace("\r\n", "\n").replace("\r", "\n").split("\n");
         confirm lines.size() <= 65536 else throw EventStreamLimit.kind("data_lines");
         let data is @string = lines.map() -> line {
             "data: " + line + "\n";
         };
-        let type = if origin.event() == "message" {
+        let type = if origin::Event::event == "message" {
             "";
         }
         else {
-            "event: " + origin.event() + "\n";
+            "event: " + origin::Event::event + "\n";
         };
-        let id = if origin.identifier_supplied() {
-            "id: " + origin.identifier() + "\n";
+        let id = if origin::Event::identifier_supplied {
+            "id: " + origin::Event::identifier + "\n";
         }
         else {
             "";
@@ -216,9 +218,9 @@ object EventStreamHeaders {
     headers() is Headers {
         Headers(
             [
-                Header(HeaderName("Content-Type"), "text/event-stream; charset=utf-8"),
-                Header(HeaderName("Cache-Control"), "no-cache"),
-                Header(HeaderName("X-Accel-Buffering"), "no")
+                Header(name: HeaderName("Content-Type"), value: "text/event-stream; charset=utf-8"),
+                Header(name: HeaderName("Cache-Control"), value: "no-cache"),
+                Header(name: HeaderName("X-Accel-Buffering"), value: "no")
             ]
         );
     }
@@ -229,7 +231,7 @@ role EventDraining {
     async settled() is bool;
 }
 
-object EventGroup<T> does EventDraining {
+hidden object EventGroup<T> does EventDraining {
     has group is FutureGroup<T>;
 
     EventGroup(group is FutureGroup<T>) {
@@ -253,7 +255,7 @@ object EventGroup<T> does EventDraining {
     }
 }
 
-object EventRegistration {
+hidden object EventRegistration {
     has owner is EventOperation;
 
     EventRegistration(owner is EventOperation, operation is EventDraining) {
@@ -266,7 +268,7 @@ object EventRegistration {
     }
 }
 
-object EventOperation {
+hidden object EventOperation {
     has active is Atomic<@EventDraining>;
     has stopped is Event;
 
@@ -358,7 +360,7 @@ object ServerEvents {
             throw EventStreamEnded.ended;
         }
         let group is FutureGroup<ServerEvent> = FutureGroup();
-        let registration = EventRegistration(operations, EventGroup(group));
+        let registration = EventRegistration(owner: operations, operation: EventGroup(group));
         defer registration.close();
         let cleanup = EventGroup(group);
         defer await cleanup.close();
@@ -369,7 +371,7 @@ object ServerEvents {
 
     async read() is ServerEvent {
         let complete = Event();
-        let cleanup = EventReadCleanup(self, complete);
+        let cleanup = EventReadCleanup(owner: self, complete: complete);
         defer cleanup.close();
         loop {
             let line = await self.line();
@@ -383,11 +385,11 @@ object ServerEvents {
                 if accumulated != "" {
                     complete.set();
                     return ServerEvent(
-                        accumulated.slice(0, accumulated.length() - 1),
-                        selected,
-                        published_identifier.value(),
-                        retry.value(),
-                        true
+                        data: accumulated.slice(0, accumulated.length() - 1),
+                        event: selected,
+                        identifier: published_identifier.value(),
+                        milliseconds: retry.value(),
+                        identifier_supplied: true
                     );
                 }
                 next;
@@ -517,7 +519,7 @@ hidden object EventReadCleanup {
 
 // WHATWG replacement decoding at line boundaries. Native strict prefix scans
 // preserve maximal well-formed runs; malformed maximal subparts consume once.
-object EventUtf8 {
+hidden object EventUtf8 {
     has origin is string;
 
     EventUtf8(origin is @byte) {
@@ -624,7 +626,7 @@ object EventBody does BodyOpening {
     }
 }
 
-object EventBodyInput does BodyReading {
+hidden object EventBodyInput does BodyReading {
     has input is Receiving<ServerEvent>;
     has operations is EventOperation;
     has tail is Atomic<string>;
@@ -655,7 +657,7 @@ object EventBodyInput does BodyReading {
     async bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         let group is FutureGroup<@byte> = FutureGroup();
-        let registration = EventRegistration(operations, EventGroup(group));
+        let registration = EventRegistration(owner: operations, operation: EventGroup(group));
         defer registration.close();
         let cleanup = EventGroup(group);
         defer await cleanup.close();
@@ -666,7 +668,7 @@ object EventBodyInput does BodyReading {
 
     async read(limit is int) is @byte {
         let complete = Event();
-        let cleanup = EventBodyCleanup(self, complete);
+        let cleanup = EventBodyCleanup(owner: self, complete: complete);
         defer cleanup.close();
         if ended.ready() {
             complete.set();
@@ -729,7 +731,7 @@ test "event retry is explicit and negative delays clamp to zero" {
         true;
     });
     test.is(
-        ServerEvent("x", "message", "", Duration(value: (-1).rat(), unit: DurationUnit.second)).retry()::Span::seconds,
+        ServerEvent(data: "x", event: "message", identifier: "", retry: Duration(value: (-1).rat(), unit: DurationUnit.second)).retry()::Span::seconds,
         0.rat()
     );
 }

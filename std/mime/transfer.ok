@@ -43,7 +43,7 @@ object TransferEncodedBody does ByteSource {
                 QuotedPrintableEncoded(snapshot).bytes();
             }
             else {
-                TransferProfile(snapshot, encoding).bytes();
+                TransferProfile(origin: snapshot, encoding: encoding).bytes();
             }
         };
         confirm result.size() <= maximum else throw TransferLimitExceeded.kind("output");
@@ -86,7 +86,7 @@ object TransferDecodedBody does ByteSource {
                 }
             }
             else {
-                TransferProfile(snapshot, encoding).bytes();
+                TransferProfile(origin: snapshot, encoding: encoding).bytes();
             }
         };
         confirm result.size() <= maximum else throw TransferLimitExceeded.kind("output");
@@ -98,7 +98,7 @@ enum InvalidTransferEncoding is Error = (located(offset is int, reason is string
 
 enum TransferLimitExceeded is Error = (kind(kind is string));
 
-object TransferPosition {
+hidden object TransferPosition {
     has index is int;
 
     TransferPosition(index is int) {
@@ -114,7 +114,7 @@ object TransferPosition {
     }
 }
 
-object TransferProfile {
+hidden object TransferProfile {
     has origin is @byte;
     has encoding is TransferEncoding;
 
@@ -154,7 +154,7 @@ object TransferProfile {
     }
 }
 
-object MimeBase64Encoded {
+hidden object MimeBase64Encoded {
     has origin is @byte;
 
     MimeBase64Encoded(origin is @byte) {
@@ -177,7 +177,7 @@ object MimeBase64Encoded {
     }
 }
 
-object MimeBase64Decoded {
+hidden object MimeBase64Decoded {
     has origin is @byte;
 
     MimeBase64Decoded(origin is @byte) {
@@ -239,14 +239,14 @@ object MimeBase64Decoded {
 
 test "MIME binary preserves arbitrary bytes" {
     test.is(
-        TransferEncodedBody(ByteSnapshot([0.byte(), 255.byte()]), TransferEncoding.binary).bytes(),
+        TransferEncodedBody(origin: ByteSnapshot([0.byte(), 255.byte()]), encoding: TransferEncoding.binary).bytes(),
         [0.byte(), 255.byte()]
     );
 }
 
 test "seven bit rejects high bytes and empty Base64 stays empty" {
     let offset = try {
-        TransferEncodedBody(ByteSnapshot([255.byte()]), TransferEncoding.seven_bit).bytes();
+        TransferEncodedBody(origin: ByteSnapshot([255.byte()]), encoding: TransferEncoding.seven_bit).bytes();
         -1;
     }
     catch InvalidTransferEncoding.located(offset, _) {
@@ -254,5 +254,5 @@ test "seven bit rejects high bytes and empty Base64 stays empty" {
     };
     test.is(offset, 0);
     let empty is @byte = [];
-    test.is(TransferEncodedBody(ByteSnapshot(empty), TransferEncoding.base64, 0).bytes().size(), 0);
+    test.is(TransferEncodedBody(origin: ByteSnapshot(empty), encoding: TransferEncoding.base64, maximum_bytes: 0).bytes().size(), 0);
 }

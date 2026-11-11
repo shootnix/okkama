@@ -68,7 +68,7 @@ object XmlRpcInteger does XmlRpcValue {
         origin = value;
     }
 
-    value() is int {
+    int() is int {
         origin;
     }
 
@@ -88,7 +88,7 @@ object XmlRpcBoolean does XmlRpcValue {
         origin = value;
     }
 
-    value() is bool {
+    bool() is bool {
         origin;
     }
 
@@ -108,7 +108,7 @@ object XmlRpcText does XmlRpcValue {
         origin = value;
     }
 
-    value() is string {
+    string() is string {
         origin;
     }
 
@@ -128,7 +128,7 @@ object XmlRpcFloat does XmlRpcValue {
         origin = value;
     }
 
-    value() is float {
+    float() is float {
         origin;
     }
 
@@ -152,7 +152,7 @@ object XmlRpcDouble does XmlRpcValue {
         origin = value;
     }
 
-    value() is Decimal {
+    decimal() is Decimal {
         origin;
     }
 
@@ -174,7 +174,7 @@ object XmlRpcDateTime does XmlRpcValue {
         origin = value;
     }
 
-    value() is LocalDateTime {
+    local_date_time() is LocalDateTime {
         origin;
     }
 
@@ -194,7 +194,7 @@ object XmlRpcBinary does XmlRpcValue {
         origin = value;
     }
 
-    value() is @byte {
+    bytes() is @byte {
         origin;
     }
 
@@ -326,7 +326,7 @@ object XmlRpcCall {
     }
 }
 
-object XmlRpcMethod {
+hidden object XmlRpcMethod {
     XmlRpcMethod(origin is string) {
         confirm origin != "" && origin.length() <= 256
             else throw InvalidXmlRpc.because("method name budget");
@@ -354,12 +354,14 @@ object XmlRpcFault {
         self.message = message;
     }
 
-    code() is int {
-        code;
-    }
+    cap Fault {
+        code is int {
+            code;
+        }
 
-    text() is string {
-        message;
+        text is string {
+            message;
+        }
     }
 }
 
@@ -369,7 +371,7 @@ role XmlRpcResult {
     fault() is XmlRpcFault;
 }
 
-object XmlRpcSuccess does XmlRpcResult {
+hidden object XmlRpcSuccess does XmlRpcResult {
     has origin is XmlRpcValue;
 
     XmlRpcSuccess(origin is XmlRpcValue) {
@@ -389,7 +391,7 @@ object XmlRpcSuccess does XmlRpcResult {
     }
 }
 
-object XmlRpcFailure does XmlRpcResult {
+hidden object XmlRpcFailure does XmlRpcResult {
     has origin is XmlRpcFault;
 
     XmlRpcFailure(origin is XmlRpcFault) {
@@ -422,7 +424,7 @@ object XmlRpcLimits {
     }
 
     XmlRpcLimits(depth is int, values is int, text_bytes is BigInt, binary_bytes is BigInt) {
-        XmlRpcBudget(depth, values, text_bytes, binary_bytes);
+        XmlRpcBudget(depth: depth, values: values, text_bytes: text_bytes, binary_bytes: binary_bytes);
         self.depth = depth;
         self.values = values;
         self.text_bytes = Number(text_bytes.string()).int();
@@ -437,20 +439,12 @@ object XmlRpcLimits {
         binary_bytes is BigInt,
         nil_enabled is bool
     ) {
-        XmlRpcBudget(depth, values, text_bytes, binary_bytes);
+        XmlRpcBudget(depth: depth, values: values, text_bytes: text_bytes, binary_bytes: binary_bytes);
         self.depth = depth;
         self.values = values;
         self.text_bytes = Number(text_bytes.string()).int();
         self.binary_bytes = Number(binary_bytes.string()).int();
         self.nil_enabled = nil_enabled;
-    }
-
-    depth() is int {
-        depth;
-    }
-
-    values() is int {
-        values;
     }
 
     text_bytes() is BigInt {
@@ -459,10 +453,6 @@ object XmlRpcLimits {
 
     binary_bytes() is BigInt {
         BigInt(binary_bytes.string());
-    }
-
-    nil_enabled() is bool {
-        nil_enabled;
     }
 
     wire_bytes() is int {
@@ -474,9 +464,23 @@ object XmlRpcLimits {
             16777216;
         }
     }
+
+    cap Limits {
+        depth is int {
+            depth;
+        }
+
+        values is int {
+            values;
+        }
+
+        nil_enabled is bool {
+            nil_enabled;
+        }
+    }
 }
 
-object XmlRpcBudget {
+hidden object XmlRpcBudget {
     XmlRpcBudget(depth is int, values is int, text_bytes is BigInt, binary_bytes is BigInt) {
         confirm depth >= 0 && depth <= 64 && values >= 0 && values <= 4096
             else throw InvalidXmlRpc.because("structural budgets");
@@ -487,7 +491,7 @@ object XmlRpcBudget {
     }
 }
 
-object XmlRpcUsage {
+hidden object XmlRpcUsage {
     has limits is XmlRpcLimits;
     has values, text, binary is Atomic<int>;
 
@@ -499,8 +503,8 @@ object XmlRpcUsage {
     }
 
     node(depth is int) is void {
-        confirm depth <= limits.depth() else throw XmlRpcLimitExceeded.kind("depth");
-        confirm values.value() < limits.values() else throw XmlRpcLimitExceeded.kind("values");
+        confirm depth <= limits::Limits::depth else throw XmlRpcLimitExceeded.kind("depth");
+        confirm values.value() < limits::Limits::values else throw XmlRpcLimitExceeded.kind("values");
         values.replace(values.value() + 1);
     }
 
@@ -522,7 +526,7 @@ object XmlRpcUsage {
     }
 }
 
-object XmlRpcXmlText {
+hidden object XmlRpcXmlText {
     has origin is string;
 
     XmlRpcXmlText(origin is string) {
@@ -535,7 +539,7 @@ object XmlRpcXmlText {
     }
 }
 
-object XmlRpcWire {
+hidden object XmlRpcWire {
     has usage is XmlRpcUsage;
     has output is Atomic<string>;
     has used is Atomic<int>;
@@ -561,7 +565,7 @@ object XmlRpcWire {
     node(value is XmlRpcValue, depth is int) is void {
         usage.node(depth);
         self.append("<value>");
-        let event = XmlRpcNodeWriting(self, depth);
+        let event = XmlRpcNodeWriting(wire: self, depth: depth);
         value.print(event);
         event.complete();
         self.append("</value>");
@@ -576,7 +580,7 @@ object XmlRpcWire {
     }
 }
 
-object XmlRpcNodeWriting does XmlRpcWriting {
+hidden object XmlRpcNodeWriting does XmlRpcWriting {
     has wire is XmlRpcWire;
     has depth is int;
     has seen is Event;
@@ -664,13 +668,13 @@ object XmlRpcNodeWriting does XmlRpcWriting {
 
     nil_value() is void {
         self.claim();
-        confirm wire.usage().limits().nil_enabled()
+        confirm wire.usage().limits()::Limits::nil_enabled
             else throw InvalidXmlRpc.because("nil extension disabled");
         wire.append("<nil/>");
     }
 }
 
-object XmlRpcDoubleText {
+hidden object XmlRpcDoubleText {
     has origin is Decimal;
 
     XmlRpcDoubleText(origin is Decimal) {
@@ -717,7 +721,7 @@ object XmlRpcDoubleText {
     }
 }
 
-object XmlRpcPadded {
+hidden object XmlRpcPadded {
     has value, width is int;
 
     XmlRpcPadded(value is int, width is int) {
@@ -734,7 +738,7 @@ object XmlRpcPadded {
     }
 }
 
-object XmlRpcDateText {
+hidden object XmlRpcDateText {
     has origin is LocalDateTime;
 
     XmlRpcDateText(origin is LocalDateTime) {
@@ -744,13 +748,13 @@ object XmlRpcDateText {
     string() is string {
         let date = origin.date();
         let time = origin.time();
-        XmlRpcPadded(date::Calendar::year, 4).string() + XmlRpcPadded(date::Calendar::month, 2).string() + XmlRpcPadded(
-            date::Calendar::day,
-            2
-        ).string() + "T" + XmlRpcPadded(time::Clock::hour, 2).string() + ":" + XmlRpcPadded(
-            time::Clock::minute,
-            2
-        ).string() + ":" + XmlRpcPadded(time::Clock::second, 2).string();
+        XmlRpcPadded(value: date::Calendar::year, width: 4).string() + XmlRpcPadded(value: date::Calendar::month, width: 2).string() + XmlRpcPadded(
+            value: date::Calendar::day,
+            width: 2
+        ).string() + "T" + XmlRpcPadded(value: time::Clock::hour, width: 2).string() + ":" + XmlRpcPadded(
+            value: time::Clock::minute,
+            width: 2
+        ).string() + ":" + XmlRpcPadded(value: time::Clock::second, width: 2).string();
     }
 }
 
@@ -780,7 +784,7 @@ object XmlRpcCallWire {
     }
 }
 
-object XmlRpcResultWire {
+hidden object XmlRpcResultWire {
     has origin is XmlRpcResult;
     has limits is XmlRpcLimits;
 
@@ -803,8 +807,8 @@ object XmlRpcResultWire {
             wire.node(
                 XmlRpcStruct(
                     [
-                        XmlRpcMember("faultCode", XmlRpcInteger(fault.code())),
-                        XmlRpcMember("faultString", XmlRpcText(fault.text()))
+                        XmlRpcMember(name: "faultCode", value: XmlRpcInteger(fault::Fault::code)),
+                        XmlRpcMember(name: "faultString", value: XmlRpcText(fault::Fault::text))
                     ]
                 ),
                 1
@@ -818,7 +822,7 @@ object XmlRpcResultWire {
 
 // Narrow XML1 token consumption reuses the existing plist lexical primitives.
 // DTD/PI/attributes/extension tags are rejected by this protocol grammar.
-object XmlRpcXmlCharacters {
+hidden object XmlRpcXmlCharacters {
     XmlRpcXmlCharacters(origin is string) {
         for (0..32) -> code {
             if code == 9 || code == 10 || code == 13 {
@@ -835,7 +839,7 @@ object XmlRpcXmlCharacters {
     }
 }
 
-object XmlRpcXmlDecoded {
+hidden object XmlRpcXmlDecoded {
     has origin is string;
 
     XmlRpcXmlDecoded(origin is string) {
@@ -887,7 +891,7 @@ object XmlRpcXmlDecoded {
     }
 }
 
-object XmlRpcParsing {
+hidden object XmlRpcParsing {
     has source is PlistXmlSource;
     has position is Atomic<int>;
     has usage is XmlRpcUsage;
@@ -1063,7 +1067,7 @@ object XmlRpcParsing {
                             self.close("member");
                             confirm collected.value().size() < 4096
                                 else throw XmlRpcLimitExceeded.kind("container_items");
-                            collected.replace(collected.value().prefix(XmlRpcMember(name, value)));
+                            collected.replace(collected.value().prefix(XmlRpcMember(name: name, value: value)));
                         }
                         self.close("struct");
                     }
@@ -1082,7 +1086,7 @@ object XmlRpcParsing {
                 }
                 case "int", "i4" {
                     let text = self.text_element(tag);
-                    XmlRpcInteger(XmlRpcIntegerText(text).value());
+                    XmlRpcInteger(XmlRpcIntegerText(text).int());
                 }
                 case "boolean" {
                     let text = self.text_element(tag);
@@ -1092,10 +1096,10 @@ object XmlRpcParsing {
                 }
                 case "double" {
                     let text = self.text_element(tag);
-                    XmlRpcDouble(XmlRpcParsedDouble(text).value());
+                    XmlRpcDouble(XmlRpcParsedDouble(text).decimal());
                 }
                 case "dateTime.iso8601" {
-                    XmlRpcDateTime(XmlRpcParsedDate(self.text_element(tag)).value());
+                    XmlRpcDateTime(XmlRpcParsedDate(self.text_element(tag)).local_date_time());
                 }
                 case "base64" {
                     let text = self.text_element(tag).replace(" ", "").replace("\t", "").replace(
@@ -1115,7 +1119,7 @@ object XmlRpcParsing {
                     XmlRpcBinary(bytes);
                 }
                 case "nil" {
-                    confirm usage.limits().nil_enabled() && self.text_element("nil") == ""
+                    confirm usage.limits()::Limits::nil_enabled && self.text_element("nil") == ""
                         else throw InvalidXmlRpc.because("nil disabled or nonempty");
                     XmlRpcNil();
                 }
@@ -1165,10 +1169,10 @@ object XmlRpcParsing {
         let ordered is @XmlRpcValue = (0..reverse.size()).map() -> index {
             reverse[reverse.size() - index - 1];
         };
-        XmlRpcCall(name, ordered);
+        XmlRpcCall(method: name, parameters: ordered);
     }
 
-    result() is XmlRpcResult {
+    response() is XmlRpcResult {
         confirm self.open("methodResponse") else throw InvalidXmlRpc.because("empty response");
         let first = self.peek();
         let result is XmlRpcResult = if first.text() == "params" {
@@ -1203,11 +1207,11 @@ object ParsedXmlRpcCall {
     }
 
     call() is XmlRpcCall {
-        XmlRpcParsing(bytes, limits).call();
+        XmlRpcParsing(bytes: bytes, limits: limits).call();
     }
 }
 
-object ParsedXmlRpcResult {
+hidden object ParsedXmlRpcResult {
     has bytes is @byte;
     has limits is XmlRpcLimits;
 
@@ -1216,12 +1220,12 @@ object ParsedXmlRpcResult {
         self.limits = limits;
     }
 
-    result() is XmlRpcResult {
-        XmlRpcParsing(bytes, limits).result();
+    response() is XmlRpcResult {
+        XmlRpcParsing(bytes: bytes, limits: limits).response();
     }
 }
 
-object XmlRpcIntegerText {
+hidden object XmlRpcIntegerText {
     has value is int;
 
     XmlRpcIntegerText(origin is string) {
@@ -1242,12 +1246,12 @@ object XmlRpcIntegerText {
         XmlRpcInteger(self.value);
     }
 
-    value() is int {
+    int() is int {
         value;
     }
 }
 
-object XmlRpcParsedDouble {
+hidden object XmlRpcParsedDouble {
     has value is Decimal;
 
     XmlRpcParsedDouble(origin is string) {
@@ -1295,12 +1299,12 @@ object XmlRpcParsedDouble {
         XmlRpcDouble(self.value);
     }
 
-    value() is Decimal {
+    decimal() is Decimal {
         value;
     }
 }
 
-object XmlRpcParsedDate {
+hidden object XmlRpcParsedDate {
     has value is LocalDateTime;
 
     XmlRpcParsedDate(origin is string) {
@@ -1329,12 +1333,12 @@ object XmlRpcParsedDate {
         };
     }
 
-    value() is LocalDateTime {
+    local_date_time() is LocalDateTime {
         value;
     }
 }
 
-object XmlRpcFaultCapture does XmlRpcWriting {
+hidden object XmlRpcFaultCapture does XmlRpcWriting {
     has code is Atomic<@int>;
     has message is Atomic<@string>;
     has seen is Event;
@@ -1350,7 +1354,7 @@ object XmlRpcFaultCapture does XmlRpcWriting {
     fault() is XmlRpcFault {
         confirm seen.ready() && code.value().size() == 1 && message.value().size() == 1
             else throw InvalidXmlRpc.because("fault fields");
-        XmlRpcFault(code.value()[0], message.value()[0]);
+        XmlRpcFault(code: code.value()[0], message: message.value()[0]);
     }
 
     members(values is Sequencing<XmlRpcMember>) is void {
@@ -1361,7 +1365,7 @@ object XmlRpcFaultCapture does XmlRpcWriting {
             let member = values.item(index);
             confirm member.name() == "faultCode" || member.name() == "faultString"
                 else throw InvalidXmlRpc.because("unknown fault member");
-            member.value().print(XmlRpcFaultScalar(member.name(), code, message));
+            member.value().print(XmlRpcFaultScalar(name: member.name(), code: code, message: message));
         }
     }
 
@@ -1398,7 +1402,7 @@ object XmlRpcFaultCapture does XmlRpcWriting {
     }
 }
 
-object XmlRpcFaultScalar does XmlRpcWriting {
+hidden object XmlRpcFaultScalar does XmlRpcWriting {
     has name is string;
     has code is Atomic<@int>;
     has message is Atomic<@string>;
@@ -1472,16 +1476,16 @@ object XmlRpcClient does XmlRpcCalling {
     }
 
     async result(call is XmlRpcCall) is XmlRpcResult {
-        let bytes = XmlRpcCallWire(call, limits).bytes();
+        let bytes = XmlRpcCallWire(origin: call, limits: limits).bytes();
         let request = Request(
             method: Method.post,
             target: AbsoluteTarget(endpoint),
             headers: Headers(
                 [
-                    Header(HeaderName("Content-Type"), "text/xml; charset=utf-8"),
-                    Header(HeaderName("Accept"), "text/xml"),
-                    Header(HeaderName("User-Agent"), "Okkama-XMLRPC/1.0"),
-                    Header(HeaderName("Content-Length"), bytes.size().string())
+                    Header(name: HeaderName("Content-Type"), value: "text/xml; charset=utf-8"),
+                    Header(name: HeaderName("Accept"), value: "text/xml"),
+                    Header(name: HeaderName("User-Agent"), value: "Okkama-XMLRPC/1.0"),
+                    Header(name: HeaderName("Content-Length"), value: bytes.size().string())
                 ]
             ),
             body: ByteBody(bytes)
@@ -1494,13 +1498,13 @@ object XmlRpcClient does XmlRpcCalling {
         confirm StatusCode(response::Head::status).class() == StatusClass.successful
             else throw XmlRpcHttpFailed.status(StatusCode(response::Head::status).number());
         XmlRpcMedia(response::Head::headers);
-        let body = XmlRpcBodyBytes(input, limits);
+        let body = XmlRpcBodyBytes(input: input, limits: limits);
         let pending = body.bytes();
-        ParsedXmlRpcResult(await pending, limits).result();
+        ParsedXmlRpcResult(bytes: await pending, limits: limits).response();
     }
 }
 
-object XmlRpcBodyBytes {
+hidden object XmlRpcBodyBytes {
     has input is BodyReading;
     has limits is XmlRpcLimits;
 
@@ -1533,7 +1537,7 @@ object XmlRpcBodyBytes {
     }
 }
 
-object XmlRpcMedia {
+hidden object XmlRpcMedia {
     XmlRpcMedia(headers is Headers) {
         let types = headers.values(HeaderName("Content-Type"));
         confirm types.size() == 1 else throw InvalidXmlRpc.because("one XML media type required");
@@ -1543,8 +1547,8 @@ object XmlRpcMedia {
         catch e is Error {
             throw InvalidXmlRpc.because("XML media type");
         };
-        confirm (media.type() == "text" || media.type() == "application")
-            && media.subtype() == "xml"
+        confirm (media::Type::type == "text" || media::Type::type == "application")
+            && media::Type::subtype == "xml"
             else throw InvalidXmlRpc.because("XML media type required");
         let charsets = media.parameters().values("charset");
         confirm charsets.size() <= 1 else throw InvalidXmlRpc.because("duplicate charset");
@@ -1592,7 +1596,7 @@ object XmlRpcHandling does Handling {
             return ResponseHandling(
                 Response(
                     status: Status.method_not_allowed,
-                    headers: Headers([Header(HeaderName("Allow"), "POST")])
+                    headers: Headers([Header(name: HeaderName("Allow"), value: "POST")])
                 )
             );
         }
@@ -1608,9 +1612,9 @@ object XmlRpcHandling does Handling {
         }
         let source = request.body().reading();
         defer source.close();
-        let pending = XmlRpcBodyBytes(source, limits).bytes();
+        let pending = XmlRpcBodyBytes(input: source, limits: limits).bytes();
         let calls is @XmlRpcCall = try {
-            [ParsedXmlRpcCall(await pending, limits).call()];
+            [ParsedXmlRpcCall(bytes: await pending, limits: limits).call()];
         }
         catch e is InvalidXmlRpc {
             [];
@@ -1623,14 +1627,14 @@ object XmlRpcHandling does Handling {
         }
         let waiting = calling.result(calls[0]);
         let result = await waiting;
-        let bytes = XmlRpcResultWire(result, limits).bytes();
+        let bytes = XmlRpcResultWire(origin: result, limits: limits).bytes();
         ResponseHandling(
             Response(
                 status: Status.ok,
                 headers: Headers(
                     [
-                        Header(HeaderName("Content-Type"), "text/xml; charset=utf-8"),
-                        Header(HeaderName("Content-Length"), bytes.size().string())
+                        Header(name: HeaderName("Content-Type"), value: "text/xml; charset=utf-8"),
+                        Header(name: HeaderName("Content-Length"), value: bytes.size().string())
                     ]
                 ),
                 body: ByteBody(bytes)
@@ -1647,5 +1651,5 @@ test "standard XMLRPC values do not require casts" {
     catch e is InvalidXmlRpc {
         true;
     });
-    test.is(XmlRpcInteger(-2147483648).value(), -2147483648);
+    test.is(XmlRpcInteger(-2147483648).int(), -2147483648);
 }

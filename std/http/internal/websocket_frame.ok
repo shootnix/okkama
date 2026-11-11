@@ -90,7 +90,7 @@ object WebSocketFrameHeader {
                 empty;
             }
         };
-        HttpWireBytes([[first, second], extended, mask], 14).bytes();
+        HttpWireBytes(chunks: [[first, second], extended, mask], maximum: 14).bytes();
     }
 }
 
@@ -141,8 +141,8 @@ object ParsedWebSocketFrameHeader {
         self.maximum = maximum;
     }
 
-    value() is WebSocketFrameHeader {
-        WebSocketHeaderPrefix(origin, masked).checked();
+    header() is WebSocketFrameHeader {
+        WebSocketHeaderPrefix(origin: origin, masked: masked).checked();
         let first = origin[0].int();
         let second = origin[1].int();
         let indicator = second & 127;
@@ -175,11 +175,11 @@ object ParsedWebSocketFrameHeader {
         if opcode < 8 {
             confirm length <= maximum else throw WebSocketFailure.because("data frame byte limit");
         }
-        WebSocketFrameHeader(opcode, (first & 128) != 0, length, masked);
+        WebSocketFrameHeader(opcode: opcode, final: (first & 128) != 0, length: length, masked: masked);
     }
 }
 
-object WebSocketMaskPosition {
+hidden object WebSocketMaskPosition {
     has index is int;
 
     WebSocketMaskPosition(index is int) {
@@ -234,7 +234,7 @@ object WebSocketFrame {
     has payload is @byte;
 
     WebSocketFrame(opcode is int, final is bool, payload is @byte) {
-        WebSocketFrameHeader(opcode, final, payload.size(), false);
+        WebSocketFrameHeader(opcode: opcode, final: final, length: payload.size(), masked: false);
         self.opcode = opcode;
         self.final = final;
         self.payload = payload;
@@ -255,20 +255,20 @@ object WebSocketFrame {
     bytes(mask is @byte) is @byte {
         confirm mask.size() == 0 || mask.size() == 4
             else throw WebSocketFailure.because("mask width");
-        let header = WebSocketFrameHeader(opcode, final, payload.size(), mask.size() == 4).bytes(
+        let header = WebSocketFrameHeader(opcode: opcode, final: final, length: payload.size(), masked: mask.size() == 4).bytes(
             mask
         );
         let data = if mask.size() == 4 {
-            WebSocketMaskedBytes(payload, mask, 0).bytes();
+            WebSocketMaskedBytes(origin: payload, mask: mask, offset: 0).bytes();
         }
         else {
             payload;
         };
-        HttpWireBytes([header, data], 14 + data.size()).bytes();
+        HttpWireBytes(chunks: [header, data], maximum: 14 + data.size()).bytes();
     }
 }
 
 test "WebSocket server frame contains no mask" {
-    let frame = WebSocketFrame(2, true, [0.byte(), 255.byte()]);
+    let frame = WebSocketFrame(opcode: 2, final: true, payload: [0.byte(), 255.byte()]);
     test.is(frame.bytes([]), [130.byte(), 2.byte(), 0.byte(), 255.byte()]);
 }

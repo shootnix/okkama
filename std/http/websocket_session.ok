@@ -37,14 +37,14 @@ object WebSocketSession does WebSocketConnection, Closing {
         clock is Timing
     ) {
         state = WebSocketSessionState(
-            input,
-            output,
-            owner,
-            client,
-            random,
-            limits,
-            close_timeout,
-            clock
+            input: input,
+            output: output,
+            owner: owner,
+            client: client,
+            random: random,
+            limits: limits,
+            close_timeout: close_timeout,
+            clock: clock
         );
     }
 
@@ -93,7 +93,7 @@ object WebSocketSession does WebSocketConnection, Closing {
     }
 }
 
-object WebSocketSessionState {
+hidden object WebSocketSessionState {
     has input is AsyncReading;
     has output is WebSocketOutput;
     has owner is Closing;
@@ -120,11 +120,11 @@ object WebSocketSessionState {
             else throw WebSocketFailure.because("positive close deadline required");
         confirm !owner.closed() else throw WebSocketClosed.detailed(1006, "");
         self.input = input;
-        self.output = WebSocketOutput(output, client, random, limits);
+        self.output = WebSocketOutput(origin: output, masked: client, random: random, limits: limits);
         self.owner = owner;
         self.client = client;
         self.limits = limits;
-        incoming = Channel(limits.queue());
+        incoming = Channel(limits::Limits::queue);
         let initial is Error = WebSocketClosed.detailed(1006, "");
         failure = Atomic(initial);
         loops = FutureGroup();
@@ -209,10 +209,10 @@ object WebSocketSessionState {
         defer assembly.close();
         try {
             loop {
-                let pending = WebSocketFrameReading(input, !client, limits.frame_bytes()).result();
+                let pending = WebSocketFrameReading(origin: input, masked: !client, maximum: limits::Limits::frame_bytes).frame();
                 let frame = await pending;
                 if frame.opcode() == 8 {
-                    let received = ParsedWebSocketClose(frame.payload(), client).value();
+                    let received = ParsedWebSocketClose(origin: frame.payload(), from_server: client).closure();
                     let responding = !closing.ready();
                     if responding {
                         closing.set();
@@ -222,7 +222,7 @@ object WebSocketSessionState {
                     incoming.sending().close();
                     if responding {
                         let echo is Within<bool> = Within(
-                            origin: output.control(8, frame.payload()).result(),
+                            origin: output.control(8, frame.payload()).delivered(),
                             limit: close_timeout,
                             clock: clock
                         );
@@ -237,7 +237,7 @@ object WebSocketSessionState {
                     return true;
                 }
                 if frame.opcode() == 9 {
-                    let pong = output.control(10, frame.payload()).result();
+                    let pong = output.control(10, frame.payload()).delivered();
                     await pong;
                     next;
                 }
@@ -272,7 +272,7 @@ object WebSocketSessionState {
                         origin: output.control(
                             8,
                             IntegerBytes(1002, 2, Signedness.unsigned, ByteOrder.big).bytes()
-                        ).result(),
+                        ).delivered(),
                         limit: close_timeout,
                         clock: clock
                     );
@@ -306,19 +306,19 @@ object WebSocketSessionState {
 
     async send(message is WebSocketMessage) is bool {
         confirm !self.closed() && !closing.ready() else throw failure.value();
-        let pending = output.message(message).result();
+        let pending = output.message(message).delivered();
         await pending;
     }
 
     async ping(payload is @byte) is bool {
         confirm !self.closed() && !closing.ready() else throw failure.value();
-        let pending = output.control(9, payload).result();
+        let pending = output.control(9, payload).delivered();
         await pending;
     }
 
     async handshake(code is int, reason is string) is bool {
         if !closing.ready() {
-            let value = WebSocketClose(code, reason);
+            let value = WebSocketClose(code: code, reason: reason);
             confirm client || code != 1010
                 else throw WebSocketFailure.because("server cannot emit client-only close code");
             closing.set();
@@ -326,13 +326,13 @@ object WebSocketSessionState {
             failure.replace(WebSocketClosed.detailed(code, reason));
             incoming.sending().close();
             let payload = HttpWireBytes(
-                [
-                    IntegerBytes(value: value.code(), size: 2, signedness: Signedness.unsigned, order: ByteOrder.big).bytes(),
-                    Utf8Encoded(value.reason()).bytes()
+                chunks: [
+                    IntegerBytes(value: value::Close::code, size: 2, signedness: Signedness.unsigned, order: ByteOrder.big).bytes(),
+                    Utf8Encoded(value::Close::reason).bytes()
                 ],
-                125
+                maximum: 125
             ).bytes();
-            let pending = output.control(8, payload).result();
+            let pending = output.control(8, payload).delivered();
             await pending;
             close_sent.set();
         }
@@ -352,7 +352,7 @@ object WebSocketSessionState {
     }
 }
 
-object WebSocketSessionFinish {
+hidden object WebSocketSessionFinish {
     has owner is WebSocketSessionState;
 
     WebSocketSessionFinish(owner is WebSocketSessionState) {

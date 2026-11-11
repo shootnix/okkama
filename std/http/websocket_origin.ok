@@ -3,6 +3,7 @@ module http/websocket_origin v1.0.0;
 import "http/message" take Request;
 import "http/header" take HeaderName;
 import "url/value" take UrlParts, ParsedUrl, InvalidUrl, MissingUrlPort, UrlHostKind;
+import "http/header" take Header, Headers;
 
 // Trusted destination is supplied by the server's routing configuration, not
 // reconstructed from an untrusted Host field. Non-browser clients must supply
@@ -47,7 +48,7 @@ object SameOriginWebSockets does WebSocketAllowing {
     }
 }
 
-object WebSocketOriginCoordinates {
+hidden object WebSocketOriginCoordinates {
     has scheme, host is string;
     has port is int;
 
@@ -91,4 +92,19 @@ object WebSocketOriginCoordinates {
     port() is int {
         port;
     }
+}
+
+test "a WebSocket upgrade is allowed only from the same origin" {
+    let site = ParsedUrl("https://chat.example.com/socket").parts();
+    let policy = SameOriginWebSockets();
+    let from = (origin is string) is Request {
+        Request(url: "https://chat.example.com/socket", headers: Headers([Header(name: HeaderName("Origin"), value: origin)]));
+    };
+    test.is(policy.allowed(from("https://chat.example.com"), site), true);
+    test.is(policy.allowed(from("https://chat.example.com:443"), site), true);
+    test.is(policy.allowed(from("https://evil.example.com"), site), false);
+    test.is(policy.allowed(from("http://chat.example.com"), site), false);
+    test.is(policy.allowed(from("https://chat.example.com/path"), site), false);
+    test.is(policy.allowed(from("null"), site), false);
+    test.is(policy.allowed(Request(url: "https://chat.example.com/socket"), site), false);
 }

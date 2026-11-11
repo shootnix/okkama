@@ -1,17 +1,23 @@
 module db/connection v1.0.0;
 
 import "db/statement" take Statement, Execution;
-import "db/row" take RowReading;
+import "db/row" take RowReading, DbQuery;
+import "db/value" take DbValue;
+import "collections/sequence" take Sequencing;
 import "db/transaction" take Transaction, TransactionOptions;
 
 role DbExecuting {
     async execution(origin is Statement) is Execution;
     async rows(origin is Statement) is RowReading;
+    async execution(sql is string, values is Sequencing<DbValue>) is Execution;
+    query(sql is string, values is Sequencing<DbValue>) is DbQuery;
 }
 
 role DbConnection {
     async execution(origin is Statement) is Execution;
     async rows(origin is Statement) is RowReading;
+    async execution(sql is string, values is Sequencing<DbValue>) is Execution;
+    query(sql is string, values is Sequencing<DbValue>) is DbQuery;
     async transaction(options is TransactionOptions) is Transaction;
     closed() is bool;
     close() is void;

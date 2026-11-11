@@ -126,7 +126,7 @@ object MboxArchive does ByteSource {
         let output = MboxOutput(buffer, limits.wire_bytes(), "wire_bytes");
         for records -> record {
             let message = record.message();
-            let wire = MimePart(message.headers(), message.body(), limits.mime()).bytes();
+            let wire = MimePart(headers: message.headers(), body: message.body(), limits: limits.mime()).bytes();
             output.write(Utf8Encoded(record.separator().string() + "\n").bytes());
             let start = MimePosition(0);
             loop {
@@ -433,7 +433,7 @@ object MboxDecodedRecord {
             else throw InvalidMbox.located(stop, "record requires an extra empty delimiter line");
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        let output = MboxOutput(buffer, limits.body_bytes(), "message_bytes");
+        let output = MboxOutput(buffer, limits::Limits::body_bytes, "message_bytes");
         let position = MimePosition(start);
         loop {
             let beginning = position.index();

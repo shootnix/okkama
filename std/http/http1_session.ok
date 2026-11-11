@@ -114,36 +114,36 @@ object Http1Session does Closing {
     async exchange(request is Request) is Http1Exchange {
         confirm !self.closed() else throw Http1SessionClosed.closed;
         let outgoing = Http1RequestHead(
-            request::Head::method,
-            request::Head::target,
-            request::Head::headers,
-            request::Head::version
+            method: request::Head::method,
+            target: request::Head::target,
+            headers: request::Head::headers,
+            version: request::Head::version
         );
-        let outgoing_plan = Http1RequestFraming(outgoing, limits).plan();
-        let sending = Http1RequestStart(output, request, outgoing, outgoing_plan, limits);
+        let outgoing_plan = Http1RequestFraming(head: outgoing, limits: limits).plan();
+        let sending = Http1RequestStart(origin: output, request: request, head: outgoing, plan: outgoing_plan, limits: limits);
         confirm busy.compare_and_replace(false, true)
             else throw InvalidState.because("HTTP1 response body still owns the session");
-        let lease = Http1SessionLease(owner, busy, stopped);
+        let lease = Http1SessionLease(owner: owner, busy: busy, stopped: stopped);
         current.replace([lease]);
         let published = Event();
-        let cleanup = Http1SessionCleanup(lease, published);
+        let cleanup = Http1SessionCleanup(lease: lease, published: published);
         defer await cleanup.close();
-        let writing = sending.result();
+        let writing = sending.output();
         lease.writing().start(writing);
         let writer = await writing;
-        let continuation = Http1ContinueState(sending.expectation(), clock, continue_wait);
+        let continuation = Http1ContinueState(active: sending.expectation(), clock: clock, limit: continue_wait);
         continuation = continuation.begun();
         let accumulated = Http1SessionHeads();
         loop {
             let pending = continuation.reading(
-                Http1ResponseHeadReading(input, accumulated.prefix(), limits, 4096).result()
+                Http1ResponseHeadReading(origin: input, prefix: accumulated.prefix(), limits: limits, chunk_bytes: 4096).head()
             );
             lease.heads().start(pending);
             let parsed = await pending;
             let head = parsed.head();
-            let plan = Http1ResponseFraming(head, request::Head::method, limits).plan();
-            let status = head.status();
-            confirm plan.kind() != Http1BodyKind.tunnel && plan.kind() != Http1BodyKind.upgrade
+            let plan = Http1ResponseFraming(head: head, method: request::Head::method, limits: limits).plan();
+            let status = head::Head::status;
+            confirm plan::Plan::kind != Http1BodyKind.tunnel && plan::Plan::kind != Http1BodyKind.upgrade
                 else throw InvalidHttpMessage.because(
                     "upgraded response requires dedicated protocol ownership"
                 );
@@ -153,36 +153,36 @@ object Http1Session does Closing {
                 accumulated = accumulated.following(parsed);
                 if status == Status.continue && !continuation.body_sent() {
                     let body = Http1BodyWriting(
-                        writer,
-                        request.body(),
-                        outgoing_plan,
-                        outgoing.headers(),
-                        limits,
-                        4096
-                    ).result();
+                        origin: writer,
+                        body: request.body(),
+                        plan: outgoing_plan,
+                        head: outgoing.headers(),
+                        limits: limits,
+                        chunk_bytes: 4096
+                    ).output();
                     lease.writing().start(body);
                     await body;
                     continuation = continuation.sending_completed();
                 }
             }
             else {
-                let reusable = outgoing_plan.reuse_after_eof()
-                    && plan.reuse_after_eof()
+                let reusable = outgoing_plan::Plan::reuse_after_eof
+                    && plan::Plan::reuse_after_eof
                     && continuation.body_sent();
                 let framer = Http1BodyReading(
-                    input,
-                    Http1FramerOwner(),
-                    plan,
-                    parsed.remainder(),
-                    head.headers(),
-                    limits
+                    origin: input,
+                    owner: Http1FramerOwner(),
+                    plan: plan,
+                    prefix: parsed.remainder(),
+                    head: head.headers(),
+                    limits: limits
                 );
-                let reader = Http1SessionReading(framer, lease, reusable);
-                let body = Http1SessionBody(reader, plan);
+                let reader = Http1SessionReading(origin: framer, lease: lease, reusable: reusable);
+                let body = Http1SessionBody(origin: reader, plan: plan);
                 let response = head.response(body);
-                let result = Http1Exchange(request, response, accumulated.entries());
-                if plan.kind() == Http1BodyKind.empty
-                    || (plan.kind() == Http1BodyKind.fixed && plan.length().sign() == 0) {
+                let result = Http1Exchange(request: request, response: response, information: accumulated.entries());
+                if plan::Plan::kind == Http1BodyKind.empty
+                    || (plan::Plan::kind == Http1BodyKind.fixed && plan.length().sign() == 0) {
                         let group is FutureGroup<@byte> = FutureGroup();
                         lease.priming().replace([group]);
                         let prime = reader.bytes(1);
@@ -228,7 +228,7 @@ object Http1Exchange {
     }
 }
 
-object Http1SessionHeads {
+hidden object Http1SessionHeads {
     has prefix is @byte;
     has entries is @Http1ResponseHead;
 
@@ -259,7 +259,7 @@ object Http1SessionHeads {
     }
 }
 
-object Http1SessionLease {
+hidden object Http1SessionLease {
     has owner is Closing;
     has busy is Atomic<bool>;
     has stopped is Event;
@@ -418,7 +418,7 @@ hidden object Http1SessionCleanup {
     }
 }
 
-object Http1StartupRelease {
+hidden object Http1StartupRelease {
     has lease is Http1SessionLease;
 
     Http1StartupRelease(lease is Http1SessionLease) {
@@ -430,7 +430,7 @@ object Http1StartupRelease {
     }
 }
 
-object Http1FramerOwner does Closing {
+hidden object Http1FramerOwner does Closing {
     has stopped is Event;
 
     Http1FramerOwner() {
@@ -446,7 +446,7 @@ object Http1FramerOwner does Closing {
     }
 }
 
-object Http1SessionReading does BodyReading {
+hidden object Http1SessionReading does BodyReading {
     has origin is Http1BodyReading;
     has lease is Http1SessionLease;
     has reusable is bool;
@@ -472,7 +472,7 @@ object Http1SessionReading does BodyReading {
             else throw InvalidState.because("HTTP1 body already has a pending read");
         let group is FutureGroup<@byte> = FutureGroup();
         let complete = Event();
-        let cleanup = Http1SessionReadCleanup(lease, group, complete, busy);
+        let cleanup = Http1SessionReadCleanup(lease: lease, group: group, complete: complete, busy: busy);
         defer await cleanup.close();
         lease.reads().replace([group]);
         let pending = origin.bytes(limit);
@@ -534,7 +534,7 @@ hidden object Http1SessionReadCleanup {
     }
 
     async close() is void {
-        let release = Http1SessionReadRelease(lease.reads(), busy);
+        let release = Http1SessionReadRelease(groups: lease.reads(), busy: busy);
         defer release.close();
         if !complete.ready() {
             defer lease.abort();
@@ -562,7 +562,7 @@ hidden object Http1ReadSettlement {
     }
 }
 
-object Http1SessionReadRelease {
+hidden object Http1SessionReadRelease {
     has groups is Atomic<@FutureGroup<@byte>>;
     has busy is Atomic<bool>;
 
@@ -578,7 +578,7 @@ object Http1SessionReadRelease {
     }
 }
 
-object Http1SessionBody does BodyOpening {
+hidden object Http1SessionBody does BodyOpening {
     has origin is Http1SessionReading;
     has plan is Http1BodyPlan;
     has opened is Atomic<bool>;
@@ -616,7 +616,7 @@ object Http1SessionBody does BodyOpening {
 
 enum Http1SessionClosed is Error = (closed);
 
-object Http1UnstartedTransport does AsyncReading, AsyncWriting, Closing {
+hidden object Http1UnstartedTransport does AsyncReading, AsyncWriting, Closing {
     has stopped is Event;
 
     Http1UnstartedTransport() {
@@ -642,9 +642,9 @@ object Http1UnstartedTransport does AsyncReading, AsyncWriting, Closing {
 
 async test "unstarted exchange cancellation leaves its explicit session owner available" {
     let transport = Http1UnstartedTransport();
-    let session = Http1Session(transport, transport, transport);
+    let session = Http1Session(input: transport, output: transport, owner: transport);
     defer session.close();
-    let request = ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: a\r\n\r\n").value().request(
+    let request = ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: a\r\n\r\n").head().request(
         EmptyBody()
     );
     let pending = session.exchange(request);

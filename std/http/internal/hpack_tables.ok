@@ -12,14 +12,14 @@ object HpackField {
     has sensitive is bool;
 
     HpackField(name is string, value is string) {
-        self.name = HpackOctetText(name).value();
-        self.value = HpackOctetText(value).value();
+        self.name = HpackOctetText(name).string();
+        self.value = HpackOctetText(value).string();
         sensitive = false;
     }
 
     HpackField(name is string, value is string, sensitive is bool) {
-        self.name = HpackOctetText(name).value();
-        self.value = HpackOctetText(value).value();
+        self.name = HpackOctetText(name).string();
+        self.value = HpackOctetText(value).string();
         self.sensitive = sensitive;
     }
 
@@ -40,7 +40,7 @@ object HpackField {
     }
 }
 
-object HpackOctetText {
+hidden object HpackOctetText {
     has origin is string;
 
     HpackOctetText(origin is string) {
@@ -65,7 +65,7 @@ object HpackOctetText {
         self.origin = origin;
     }
 
-    value() is string {
+    string() is string {
         origin;
     }
 }
@@ -78,7 +78,7 @@ object HpackStaticTable {
         let names = fixed.names();
         let values = fixed.values();
         let rows is @HpackField = (0..61).map() -> index {
-            HpackField(names[index], values[index]);
+            HpackField(name: names[index], value: values[index]);
         };
         entries = rows;
     }
@@ -149,7 +149,7 @@ object HpackDynamicTable {
 
     resized(capacity is int) is ^HpackDynamicTable {
         HpackTableBound(capacity);
-        let retained = HpackKept(entries, capacity);
+        let retained = HpackKept(origin: entries, maximum: capacity);
         ^entries = retained.entries();
         ^used = retained.used();
         ^capacity = capacity;
@@ -163,7 +163,7 @@ object HpackDynamicTable {
             ^used = 0;
         }
         else {
-            let retained = HpackKept(entries, capacity - size);
+            let retained = HpackKept(origin: entries, maximum: capacity - size);
             let rows = retained.entries();
             let following is @HpackField = (0..rows.size() + 1).map() -> index {
                 if index == 0 {
@@ -186,7 +186,7 @@ object HpackTableBound {
     }
 }
 
-object HpackKept {
+hidden object HpackKept {
     has entries is @HpackField;
     has used is int;
 
@@ -230,4 +230,37 @@ object HpackLookup {
     field() is HpackField {
         field;
     }
+}
+
+test "static lookups, dynamic insertion with eviction, and combined indexes" {
+    let fixed = HpackStaticTable();
+    test.is(fixed.size(), 61);
+    test.is(fixed.field(2).name(), ":method");
+    test.is(fixed.field(2).value(), "GET");
+    test.is(fixed.named(":path"), 4);
+    test.is(fixed.exact(HpackField(name: ":method", value: "POST")), 3);
+    test.is(fixed.exact(HpackField(name: ":method", value: "PUT")), 0);
+    let field = HpackField(name: "x-a", value: "1");
+    test.is(field.size(), 36);
+    let table = HpackDynamicTable(80);
+    table = table.added(field);
+    table = table.added(HpackField(name: "x-b", value: "2"));
+    test.is(table.size(), 2);
+    test.is(table.used(), 72);
+    test.is(table.field(1).name(), "x-b");
+    table = table.added(HpackField(name: "x-c", value: "3"));
+    test.is(table.size(), 2);
+    test.is(table.field(2).name(), "x-b");
+    test.is(HpackLookup(fixed: fixed, dynamic: table, index: 62).field().name(), "x-c");
+    test.is(HpackLookup(fixed: fixed, dynamic: table, index: 2).field().value(), "GET");
+    table = table.resized(0);
+    test.is(table.size(), 0);
+    test.is(table.capacity(), 0);
+    test.throws(Http2Fault) {
+        HpackLookup(fixed: fixed, dynamic: table, index: 0);
+    };
+    test.throws(Http2Fault) {
+        HpackDynamicTable(1048577);
+    };
+    test.is(HpackField(name: "authorization", value: "x", sensitive: true).sensitive(), true);
 }

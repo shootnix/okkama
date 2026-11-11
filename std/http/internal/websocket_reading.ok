@@ -16,11 +16,11 @@ object WebSocketFrameReading {
     has waiting is Future<WebSocketFrame>;
 
     WebSocketFrameReading(origin is AsyncReading, masked is bool, maximum is int) {
-        let input = WebSocketFrameInput(origin, masked, maximum);
+        let input = WebSocketFrameInput(origin: origin, masked: masked, maximum: maximum);
         waiting = input.reading();
     }
 
-    async result() is WebSocketFrame {
+    async frame() is WebSocketFrame {
         let group is FutureGroup<WebSocketFrame> = FutureGroup();
         let cleanup = WebSocketFrameSettlement(group);
         defer await cleanup.close();
@@ -29,7 +29,7 @@ object WebSocketFrameReading {
     }
 }
 
-object WebSocketFrameInput {
+hidden object WebSocketFrameInput {
     has origin is AsyncReading;
     has masked is bool;
     has maximum is int;
@@ -73,7 +73,7 @@ object WebSocketFrameInput {
 
     async reading() is WebSocketFrame {
         let prefix = await self.exact(2, true);
-        WebSocketHeaderPrefix(prefix, masked).checked();
+        WebSocketHeaderPrefix(origin: prefix, masked: masked).checked();
         let indicator = prefix[1].int() & 127;
         let width = if indicator == 126 {
             2;
@@ -88,10 +88,10 @@ object WebSocketFrameInput {
         };
         let extended = await self.exact(width, false);
         let header = ParsedWebSocketFrameHeader(
-            HttpWireBytes([prefix, extended], 10).bytes(),
-            masked,
-            maximum
-        ).value();
+            origin: HttpWireBytes([prefix, extended], 10).bytes(),
+            masked: masked,
+            maximum: maximum
+        ).header();
         let mask is @byte = if masked {
             await self.exact(4, false);
         }
@@ -101,12 +101,12 @@ object WebSocketFrameInput {
         };
         let bytes = await self.exact(header.length(), false);
         let payload = if masked {
-            WebSocketMaskedBytes(bytes, mask, 0).bytes();
+            WebSocketMaskedBytes(origin: bytes, mask: mask, offset: 0).bytes();
         }
         else {
             bytes;
         };
-        WebSocketFrame(header.opcode(), header.final(), payload);
+        WebSocketFrame(opcode: header.opcode(), final: header.final(), payload: payload);
     }
 }
 

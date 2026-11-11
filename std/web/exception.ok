@@ -38,14 +38,6 @@ object Problem does HandlingResult {
         ^extra = extra.added(name, value);
     }
 
-    status() is int {
-        code;
-    }
-
-    detail() is string {
-        message;
-    }
-
     title() is string {
         let phrase = StatusCode(code).phrase();
         if phrase == "" {
@@ -68,10 +60,10 @@ object Problem does HandlingResult {
             JsonField("detail", message)
         ]);
         ReplyResponse(
-            code,
-            "application/problem+json",
-            Utf8Encoded(problem.string()).bytes(),
-            extra
+            status: code,
+            media: "application/problem+json",
+            content: Utf8Encoded(problem.string()).bytes(),
+            extra: extra
         ).response();
     }
 
@@ -82,6 +74,16 @@ object Problem does HandlingResult {
     application() is WebSocketHandling {
         throw WrongHandlingKind.mismatch;
     }
+
+    cap Problem {
+        status is int {
+            code;
+        }
+
+        detail is string {
+            message;
+        }
+    }
 }
 
 test "problems name status, title and detail" {
@@ -89,9 +91,9 @@ test "problems name status, title and detail" {
         Exception.status(404, "user 7 not found").text(),
         "Exception.status(404, \"user 7 not found\")"
     );
-    test.is(Problem(404, "user 7 not found").title(), "Not Found");
-    test.is(Problem(599, "x").title(), "HTTP 599");
+    test.is(Problem(status: 404, detail: "user 7 not found").title(), "Not Found");
+    test.is(Problem(status: 599, detail: "x").title(), "HTTP 599");
     test.throws(InvalidReply) {
-        Problem(302, "x");
+        Problem(status: 302, detail: "x");
     };
 }

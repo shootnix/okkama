@@ -25,7 +25,7 @@ object Http1BodyWriting {
         plan is Http1BodyPlan,
         head is Headers
     ) {
-        pending = Http1BodyWriteOperation(origin, body, plan, head, Http1Limits(), 4096).write();
+        pending = Http1BodyWriteOperation(origin: origin, body: body, plan: plan, head: head, limits: Http1Limits(), chunk_bytes: 4096).write();
     }
 
     Http1BodyWriting(
@@ -36,17 +36,17 @@ object Http1BodyWriting {
         limits is Http1Limits,
         chunk_bytes is int
     ) {
-        pending = Http1BodyWriteOperation(origin, body, plan, head, limits, chunk_bytes).write();
+        pending = Http1BodyWriteOperation(origin: origin, body: body, plan: plan, head: head, limits: limits, chunk_bytes: chunk_bytes).write();
     }
 
-    result() is Future<AsyncWriting> {
+    output() is Future<AsyncWriting> {
         pending;
     }
 }
 
 // One current group per direction, replaced only after its operation has been
 // awaited. Completed chunks/futures are not retained across the complete body.
-object Http1BodyWriteOperation {
+hidden object Http1BodyWriteOperation {
     has body is BodyOpening;
     has plan is Http1BodyPlan;
     has head is Headers;
@@ -66,13 +66,13 @@ object Http1BodyWriteOperation {
     ) {
         confirm chunk_bytes >= 1 && chunk_bytes <= 65536
             else throw InvalidHttpMessage.because("HTTP1 write chunk must be 1..65536");
-        let kind = plan.kind();
+        let kind = plan::Plan::kind;
         confirm kind != Http1BodyKind.tunnel && kind != Http1BodyKind.upgrade
             else throw InvalidHttpMessage.because(
                 "upgraded bytes require a dedicated protocol writer"
             );
         if kind == Http1BodyKind.fixed {
-            confirm plan.length().order(BigInt(limits.body_bytes().string())) != Order.greater
+            confirm plan.length().order(BigInt(limits::Limits::body_bytes.string())) != Order.greater
                 else throw Http1LimitExceeded.kind("body_bytes");
         }
         self.body = body;
@@ -88,11 +88,11 @@ object Http1BodyWriteOperation {
     }
 
     async write() is AsyncWriting {
-        let kind = plan.kind();
+        let kind = plan::Plan::kind;
         if kind == Http1BodyKind.empty {
             return destination.value();
         }
-        let cleanup = Http1BodyWriteCleanup(reads, writes);
+        let cleanup = Http1BodyWriteCleanup(reads: reads, writes: writes);
         defer await cleanup.close();
         let known is @BigInt = try {
             [body.length()];
@@ -104,7 +104,7 @@ object Http1BodyWriteOperation {
         if known.size() > 0 {
             confirm known[0].sign() >= 0
                 else throw InvalidHttpMessage.because("negative body source length");
-            confirm known[0].order(BigInt(limits.body_bytes().string())) != Order.greater
+            confirm known[0].order(BigInt(limits::Limits::body_bytes.string())) != Order.greater
                 else throw Http1LimitExceeded.kind("body_bytes");
             if kind == Http1BodyKind.fixed {
                 confirm known[0].order(plan.length()) == Order.equal
@@ -119,7 +119,7 @@ object Http1BodyWriteOperation {
             Number(plan.length().string()).int();
         }
         else {
-            limits.body_bytes();
+            limits::Limits::body_bytes;
         };
         loop {
             let remaining = required - used.value();
@@ -148,8 +148,8 @@ object Http1BodyWriteOperation {
                 }
                 let end = reader.trailers();
                 if kind == Http1BodyKind.chunked {
-                    let wire = Http1TrailerWire(end, head, limits).bytes();
-                    confirm wire.size() <= limits.head_bytes() - metadata.value()
+                    let wire = Http1TrailerWire(origin: end, head: head, limits: limits).bytes();
+                    confirm wire.size() <= limits::Limits::head_bytes - metadata.value()
                         else throw Http1LimitExceeded.kind("chunk_metadata_bytes");
                     let sent = await self.writing(ByteSnapshot(wire));
                     destination.replace(sent);
@@ -171,14 +171,14 @@ object Http1BodyWriteOperation {
             }
             used.replace(used.value() + chunk.size());
             let wire = if kind == Http1BodyKind.chunked {
-                Http1ChunkWire(chunk, limits).bytes();
+                Http1ChunkWire(origin: chunk, limits: limits).bytes();
             }
             else {
                 chunk;
             };
             if kind == Http1BodyKind.chunked {
                 let overhead = wire.size() - chunk.size();
-                confirm overhead <= limits.head_bytes() - metadata.value()
+                confirm overhead <= limits::Limits::head_bytes - metadata.value()
                     else throw Http1LimitExceeded.kind("chunk_metadata_bytes");
                 metadata.replace(metadata.value() + overhead);
             }
@@ -264,7 +264,7 @@ hidden object Http1WriteSettlement {
     }
 }
 
-object Http1ChunkWire {
+hidden object Http1ChunkWire {
     has origin is @byte;
     has limits is Http1Limits;
 
@@ -280,7 +280,7 @@ object Http1ChunkWire {
         defer buffer.closing().close();
         let writer = buffer.writing();
         let size = Http1HexSize(origin.size()).string();
-        confirm size.length() <= limits.line_bytes()
+        confirm size.length() <= limits::Limits::line_bytes
             else throw Http1LimitExceeded.kind("line_bytes");
         writer.write(ByteSnapshot(Latin1Encoded(size + "\r\n").bytes()));
         writer.write(ByteSnapshot(origin));
@@ -289,7 +289,7 @@ object Http1ChunkWire {
     }
 }
 
-object Http1HexSize {
+hidden object Http1HexSize {
     has origin is int;
 
     Http1HexSize(origin is int) {
@@ -299,7 +299,7 @@ object Http1HexSize {
     }
 
     string() is string {
-        let digits = Http1HexDigits(BigInt(origin.string()), "");
+        let digits = Http1HexDigits(number: BigInt(origin.string()), origin: "");
         loop {
             let value = digits.number();
             last if value.sign() == 0;
@@ -314,7 +314,7 @@ object Http1HexSize {
     }
 }
 
-object Http1HexDigits {
+hidden object Http1HexDigits {
     has number is BigInt;
     has origin is string;
 
@@ -337,7 +337,7 @@ object Http1HexDigits {
     }
 }
 
-object Http1TrailerWire {
+hidden object Http1TrailerWire {
     has origin, head is Headers;
     has limits is Http1Limits;
 
@@ -349,16 +349,16 @@ object Http1TrailerWire {
 
     bytes() is @byte {
         let entries = origin.entries();
-        confirm entries.size() <= limits.fields() else throw Http1LimitExceeded.kind("fields");
+        confirm entries.size() <= limits::Limits::fields else throw Http1LimitExceeded.kind("fields");
         let total = (0..entries.size()).reduce(2) -> used, index {
             let field = entries.item(index);
             let width = field.name().string().length() + field.value().length() + 2;
-            confirm width <= limits.line_bytes() else throw Http1LimitExceeded.kind("line_bytes");
-            confirm width + 2 <= limits.head_bytes() - used
+            confirm width <= limits::Limits::line_bytes else throw Http1LimitExceeded.kind("line_bytes");
+            confirm width + 2 <= limits::Limits::head_bytes - used
                 else throw Http1LimitExceeded.kind("trailer_bytes");
             used + width + 2;
         };
-        confirm total <= limits.head_bytes() else throw Http1LimitExceeded.kind("trailer_bytes");
+        confirm total <= limits::Limits::head_bytes else throw Http1LimitExceeded.kind("trailer_bytes");
         let buffer = ByteBuffer();
         defer buffer.closing().close();
         let writer = buffer.writing();
@@ -372,7 +372,7 @@ object Http1TrailerWire {
         }
         writer.write(ByteSnapshot([13.byte(), 10.byte()]));
         let raw = buffer.content().bytes();
-        ParsedHttp1Trailers(Latin1Decoded(raw).string(), head, limits).value();
+        ParsedHttp1Trailers(origin: Latin1Decoded(raw).string(), head: head, limits: limits).trailers();
         let final = ByteBuffer([48.byte(), 13.byte(), 10.byte()]);
         defer final.closing().close();
         final.writing().write(ByteSnapshot(raw));

@@ -10,7 +10,8 @@ import "db/prepared" take DbPreparing, PreparedStatement, DbPreparedOpening, DbP
 import "db/acquisition" take DbAcquiring, DbAcquisition;
 import "db/transaction" take Transaction, TransactionOptions, Isolation;
 import "db/statement" take Statement, Execution;
-import "db/row" take DbRowSchema, DbRowData, Row, Column, RowReading, RowsEnded;
+import "db/query" take Query;
+import "db/row" take DbRowSchema, DbRowData, Row, Column, RowReading, RowsEnded, DbQuery;
 import "db/value" take DbValue, DbValueKind, ObservedDbValue, DbNull, DbBoolean, DbInteger,
     DbFloating, DbDecimal, DbText, DbBytes;
 import "db/error" take DbFailure, DbFailureKind, DbOperation, DbClosed, DbBusy, TransactionEnded,
@@ -701,6 +702,15 @@ object PostgresConnection does DbConnection, DbExecuting, DbPreparing, DbPrepare
 
     destroy {
         origin.close();
+    }
+    // db.execution(sql, values) and db.query(sql, values).one(): the values
+    // are always bound, never pasted into the SQL.
+    async execution(sql is string, values is Sequencing<DbValue>) is Execution {
+        await self.execution(Statement(text: sql, values: values));
+    }
+
+    query(sql is string, values is Sequencing<DbValue>) is DbQuery {
+        Query(origin: self, statement: Statement(text: sql, values: values));
     }
 }
 
@@ -2209,6 +2219,15 @@ object PgTransaction does Transaction, DbExecuting, DbPreparing {
         if outcome.value() == 0 {
             owner.abandon(token);
         }
+    }
+    // db.execution(sql, values) and db.query(sql, values).one(): the values
+    // are always bound, never pasted into the SQL.
+    async execution(sql is string, values is Sequencing<DbValue>) is Execution {
+        await self.execution(Statement(text: sql, values: values));
+    }
+
+    query(sql is string, values is Sequencing<DbValue>) is DbQuery {
+        Query(origin: self, statement: Statement(text: sql, values: values));
     }
 }
 

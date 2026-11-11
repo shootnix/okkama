@@ -33,8 +33,8 @@ object WebSocketOutput {
         self.origin = origin;
         self.masked = masked;
         self.random = random;
-        frame_maximum = limits.frame_bytes();
-        maximum = limits.queue();
+        frame_maximum = limits::Limits::frame_bytes;
+        maximum = limits::Limits::queue;
         message_maximum = Number(limits.message_bytes().string()).int();
         let empty is @WebSocketOutputTicket = [];
         jobs = Atomic(empty);
@@ -57,22 +57,22 @@ object WebSocketOutput {
         confirm payload.size() <= message_maximum
             else throw WebSocketFailure.because("outgoing message byte limit");
         WebSocketOutputTicket(
-            self,
-            if text {
+            owner: self,
+            opcode: if text {
                 1;
             }
             else {
                 2;
             },
-            payload
+            payload: payload
         );
     }
 
     control(opcode is int, payload is @byte) is WebSocketOutputTicket {
         confirm opcode == 8 || opcode == 9 || opcode == 10
             else throw WebSocketFailure.because("outgoing control opcode");
-        WebSocketFrame(opcode, true, payload);
-        WebSocketOutputTicket(self, opcode, payload);
+        WebSocketFrame(opcode: opcode, final: true, payload: payload);
+        WebSocketOutputTicket(owner: self, opcode: opcode, payload: payload);
     }
 
     async submit(ticket is WebSocketOutputTicket) is bool {
@@ -176,7 +176,7 @@ object WebSocketOutput {
         let payload = ticket.payload();
         let kind = ticket.opcode();
         if kind >= 8 {
-            await self.frame(WebSocketFrame(kind, true, payload));
+            await self.frame(WebSocketFrame(opcode: kind, final: true, payload: payload));
             return true;
         }
         let offset = Atomic(0);
@@ -189,14 +189,14 @@ object WebSocketOutput {
                 payload.size();
             };
             await self.frame(WebSocketFrame(
-                if start == 0 {
+                opcode: if start == 0 {
                     kind;
                 }
                 else {
                     0;
                 },
-                end == payload.size(),
-                payload.slice(start, end)
+                final: end == payload.size(),
+                payload: payload.slice(start, end)
             ));
             if end == payload.size() {
                 return true;
@@ -294,7 +294,7 @@ object WebSocketOutputTicket {
         true;
     }
 
-    async result() is bool {
+    async delivered() is bool {
         let group is FutureGroup<bool> = FutureGroup();
         let cleanup = WebSocketOutputSettlement(group);
         defer await cleanup.close();

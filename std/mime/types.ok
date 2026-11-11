@@ -39,12 +39,14 @@ object MediaTypeExtension {
         value = type;
     }
 
-    extension() is string {
-        suffix;
-    }
-
     type() is MediaType {
         value;
+    }
+
+    cap Extension {
+        extension is string {
+            suffix;
+        }
     }
 }
 
@@ -54,7 +56,7 @@ object MappedMediaTypes does MediaIdentifying {
     has maximum is int;
 
     MappedMediaTypes(entries is Sequencing<MediaTypeExtension>, fallback is MediaIdentifying) {
-        self.entries = MediaMappingSnapshot(entries, 10000).entries();
+        self.entries = MediaMappingSnapshot(entries: entries, maximum: 10000).entries();
         self.fallback = fallback;
         maximum = 10000;
     }
@@ -64,13 +66,13 @@ object MappedMediaTypes does MediaIdentifying {
         fallback is MediaIdentifying,
         maximum_entries is int
     ) {
-        self.entries = MediaMappingSnapshot(entries, maximum_entries).entries();
+        self.entries = MediaMappingSnapshot(entries: entries, maximum: maximum_entries).entries();
         self.fallback = fallback;
         maximum = maximum_entries;
     }
 
     type(path is Path) is MediaType {
-        let index = MediaMatch(entries, MediaFileName(path).string()).index();
+        let index = MediaMatch(entries: entries, name: MediaFileName(path).string()).index();
         if index >= 0 {
             entries[index].type();
         }
@@ -82,10 +84,10 @@ object MappedMediaTypes does MediaIdentifying {
     extensions(type is MediaType) is Sequencing<string> {
         let output = MediaAliases(maximum);
         for entries -> entry {
-            let index = MediaMatch(entries, "x." + entry.extension()).index();
+            let index = MediaMatch(entries: entries, name: "x." + entry::Extension::extension).index();
             if MediaTypeKey(entries[index].type()).string() == MediaTypeKey(type).string()
-                && !output.membership(entry.extension()) {
-                    output = output.addition(entry.extension());
+                && !output.membership(entry::Extension::extension) {
+                    output = output.addition(entry::Extension::extension);
                 }
         }
         let other = fallback.extensions(type);
@@ -94,8 +96,8 @@ object MappedMediaTypes does MediaIdentifying {
             else throw InvalidArgument.because("media extension source size must be nonnegative");
         confirm size <= maximum else throw MediaTypeLimitExceeded.kind("entries");
         for (0..size) -> position {
-            let extension = MediaTypeExtension(other.item(position), type).extension();
-            let index = MediaMatch(entries, "x." + extension).index();
+            let extension = MediaTypeExtension(extension: other.item(position), type: type)::Extension::extension;
+            let index = MediaMatch(entries: entries, name: "x." + extension).index();
             let shadowed = index >= 0
                 && MediaTypeKey(entries[index].type()).string() != MediaTypeKey(type).string();
             if !shadowed && !output.membership(extension) {
@@ -110,7 +112,7 @@ object StandardMediaTypes does MediaIdentifying {
     has table is MappedMediaTypes;
 
     StandardMediaTypes() {
-        table = MappedMediaTypes(StandardMediaEntries().entries(), EmptyMediaTypes());
+        table = MappedMediaTypes(entries: StandardMediaEntries().entries(), fallback: EmptyMediaTypes());
     }
 
     type(path is Path) is MediaType {
@@ -133,15 +135,15 @@ object SystemMediaTypes does MediaIdentifying {
             [];
         };
         table = MappedMediaTypes(
-            SystemMediaSnapshot(files, MediaTypeFileLimits()).entries(),
-            fallback
+            entries: SystemMediaSnapshot(files, MediaTypeFileLimits()).entries(),
+            fallback: fallback
         );
     }
 
     SystemMediaTypes(fallback is MediaIdentifying, files is Sequencing<Path>) {
         table = MappedMediaTypes(
-            SystemMediaSnapshot(files, MediaTypeFileLimits()).entries(),
-            fallback
+            entries: SystemMediaSnapshot(files, MediaTypeFileLimits()).entries(),
+            fallback: fallback
         );
     }
 
@@ -151,9 +153,9 @@ object SystemMediaTypes does MediaIdentifying {
         limits is MediaTypeFileLimits
     ) {
         table = MappedMediaTypes(
-            SystemMediaSnapshot(files, limits).entries(),
-            fallback,
-            limits.entries()
+            entries: SystemMediaSnapshot(files, limits).entries(),
+            fallback: fallback,
+            maximum_entries: limits.entries()
         );
     }
 
@@ -217,7 +219,7 @@ object EmptyMediaTypes does MediaIdentifying {
     }
 }
 
-object MediaAsciiLower {
+hidden object MediaAsciiLower {
     has origin is string;
 
     MediaAsciiLower(origin is string) {
@@ -238,7 +240,7 @@ object MediaAsciiLower {
     }
 }
 
-object MediaFileName {
+hidden object MediaFileName {
     has origin is Path;
 
     MediaFileName(origin is Path) {
@@ -282,7 +284,7 @@ object MediaMatch {
         let selected = MimePosition(-1);
         let longest = MimePosition(0);
         for (0..entries.size()) -> index {
-            let suffix = "." + entries[index].extension();
+            let suffix = "." + entries[index]::Extension::extension;
             if name.length() > suffix.length()
                 && suffix.length() > longest.index()
                 && name.slice(name.length() - suffix.length(), name.length()) == suffix {
@@ -294,7 +296,7 @@ object MediaMatch {
     }
 }
 
-object MediaTypeKey {
+hidden object MediaTypeKey {
     has origin is MediaType;
 
     MediaTypeKey(origin is MediaType) {
@@ -302,11 +304,11 @@ object MediaTypeKey {
     }
 
     string() is string {
-        origin.type() + "/" + origin.subtype();
+        origin::Type::type + "/" + origin::Type::subtype;
     }
 }
 
-object MediaMappingSnapshot {
+hidden object MediaMappingSnapshot {
     has values is @MediaTypeExtension;
 
     MediaMappingSnapshot(entries is Sequencing<MediaTypeExtension>, maximum is int) {
@@ -327,7 +329,7 @@ object MediaMappingSnapshot {
     }
 }
 
-object MediaAliases {
+hidden object MediaAliases {
     has reversed is List<string>;
     has maximum is int;
 
@@ -359,7 +361,7 @@ object MediaAliases {
     }
 }
 
-object SystemMediaSnapshot {
+hidden object SystemMediaSnapshot {
     has values is @MediaTypeExtension;
 
     SystemMediaSnapshot(files is Sequencing<Path>, limits is MediaTypeFileLimits) {
@@ -373,9 +375,9 @@ object SystemMediaSnapshot {
         let count = MimePosition(0);
         let output is MimeItems<MediaTypeExtension> = MimeItems();
         for paths -> path {
-            let bytes = OptionalMediaFile(path, limits.bytes() - count.index()).bytes();
+            let bytes = OptionalMediaFile(path: path, maximum: limits.bytes() - count.index()).bytes();
             count = count.following(count.index() + bytes.size());
-            let entries = MediaDatabaseEntries(bytes, limits.entries() - output.size()).entries();
+            let entries = MediaDatabaseEntries(origin: bytes, maximum: limits.entries() - output.size()).entries();
             for entries -> entry {
                 output = output.following(entry);
             }
@@ -388,7 +390,7 @@ object SystemMediaSnapshot {
     }
 }
 
-object OptionalMediaFile {
+hidden object OptionalMediaFile {
     has path is Path;
     has maximum is int;
 
@@ -425,7 +427,7 @@ object OptionalMediaFile {
     }
 }
 
-object MediaDatabaseEntries {
+hidden object MediaDatabaseEntries {
     has origin is @byte;
     has maximum is int;
 
@@ -475,7 +477,7 @@ object MediaDatabaseEntries {
                     confirm output.size() < maximum
                         else throw MediaTypeLimitExceeded.kind("entries");
                     let entry = try {
-                        MediaTypeExtension(fields[position], type);
+                        MediaTypeExtension(extension: fields[position], type: type);
                     }
                     catch failure is InvalidMediaExtension {
                         throw InvalidMediaTypeDatabase.located(index + 1, "invalid extension");
@@ -488,7 +490,7 @@ object MediaDatabaseEntries {
     }
 }
 
-object StandardMediaEntries {
+hidden object StandardMediaEntries {
     StandardMediaEntries() {}
 
     entries() is @MediaTypeExtension {
@@ -521,7 +523,7 @@ object StandardMediaEntries {
             "audio/ogg oga ogg",
             "video/mp4 mp4"
         ];
-        MediaDatabaseEntries(Utf8Encoded(rows.join("\n")).bytes(), 10000).entries();
+        MediaDatabaseEntries(origin: Utf8Encoded(rows.join("\n")).bytes(), maximum: 10000).entries();
     }
 }
 
@@ -534,15 +536,15 @@ test "standard media types identify names without inspecting files" {
 
 test "media mappings prefer a longer compound suffix and reject invalid extensions" {
     let types = MappedMediaTypes(
-        [
+        entries: [
             MediaTypeExtension("gz", MediaType("application/gzip")),
             MediaTypeExtension("tar.gz", MediaType("application/x-archive"))
         ],
-        EmptyMediaTypes()
+        fallback: EmptyMediaTypes()
     );
     test.is(types.type(Path("file.tar.gz")).string(), "application/x-archive");
     let invalid = try {
-        MediaTypeExtension(".bad", MediaType("text/plain"));
+        MediaTypeExtension(extension: ".bad", type: MediaType("text/plain"));
         false;
     }
     catch failure is InvalidMediaExtension {

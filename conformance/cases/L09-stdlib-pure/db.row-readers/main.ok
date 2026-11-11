@@ -1,7 +1,7 @@
 module app v1.0.0;
 import "conformance/check" take Checks;
 import "db/row" take Row,Column,DbColumns,InvalidRow,MissingColumn,AmbiguousColumn;
-import "db/read" take RowReader,RowValueFailure;
+import "db/read" take RowValueFailure;
 import "db/value" take DbValue,DbValueKind,DbValueWriting,DbValueCapture,ObservedDbValue,InvalidDbValue,DbNull,DbText,DbInteger,DbBoolean,DbDecimal,DbFloating,DbBytes;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
@@ -111,7 +111,7 @@ main() is int {
     c = c.ok("ambiguous duplicate.maybe(\"x\").text()", try { duplicate.maybe("x").text(); false; } catch AmbiguousColumn.name(name) { name == "x"; });
     c = c.ok("ambiguous duplicate.presence(\"x\").text()", try { duplicate.presence("x").text(); false; } catch AmbiguousColumn.name(name) { name == "x"; });
     c = c.ok("NULL fallback", (row.maybe("nil").text() else "guest") == "guest");
-    c = c.ok("legacy adapter", RowReader(row).text("empty") == "");
+    c = c.ok("row text", row.text("empty") == "");
     let underflow = Row(columns: [Column(0,"n","")],values: [DbInteger(BigInt("-9223372036854775809"))]);
     c = c.ok("int underflow retains cause",try { underflow.int("n");false; } catch RowValueFailure.located(column, _, _, cause) { column=="n" && cause=="InvalidDbValue.because(\"integer outside int range\")"; });
     c = c.ok("maybe int underflow remains error",try { underflow.maybe("n").int();false; } catch RowValueFailure.located(_, expected, _, _) { expected=="int"; });

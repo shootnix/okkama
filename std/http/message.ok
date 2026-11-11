@@ -27,7 +27,7 @@ object Request {
         body is BodyOpening = EmptyBody(),
         version is HttpVersion = HttpVersion.http_1_1
     ) {
-        self.target = RequestCoordinates(method, target).target();
+        self.target = RequestCoordinates(method: method, target: target).target();
         self.method = method;
         self.headers = headers;
         self.body = body;
@@ -42,7 +42,7 @@ object Request {
         body is BodyOpening = EmptyBody(),
         version is HttpVersion = HttpVersion.http_1_1
     ) {
-        self.target = RequestCoordinates(method, AbsoluteTarget(ParsedUrl(url).parts())).target();
+        self.target = RequestCoordinates(method: method, target: AbsoluteTarget(ParsedUrl(url).parts())).target();
         self.method = method;
         self.headers = headers;
         self.body = body;
@@ -117,8 +117,8 @@ object RequestCoordinates {
     RequestCoordinates(method is Method, target is RequestTarget) {
         confirm MethodName(method).string().length() <= 8192
             else throw InvalidHttpMessage.because("method source limit exceeded");
-        let checked = RequestTargetSnapshot(target).value();
-        confirm RequestTargetMethod(method, checked.kind()).valid()
+        let checked = RequestTargetSnapshot(target).target();
+        confirm RequestTargetMethod(method: method, kind: checked.kind()).valid()
             else throw InvalidHttpMessage.because("method does not permit target form");
         self.target = checked;
     }

@@ -24,11 +24,11 @@ object CacheValidation {
     CacheValidation(original is Request, entry is CachedHttpEntry) {
         self.original = original;
         self.entry = entry;
-        let fields = entry.result()::Head::headers;
+        let fields = entry.response()::Head::headers;
         let etags = fields.values(HeaderName("ETag"));
         let parsed is @EntityTag = try {
             confirm etags.size() == 1 else throw InvalidCacheRevalidation.invalid;
-            let value = ParsedEntityTags(etags.item(0)).value();
+            let value = ParsedEntityTags(etags.item(0)).tags();
             confirm !value.wildcard() && value.values().size() == 1
                 else throw InvalidCacheRevalidation.invalid;
             [value.values().item(0)];
@@ -41,7 +41,7 @@ object CacheValidation {
         let dates = fields.values(HeaderName("Last-Modified"));
         let dates_checked is @string = try {
             confirm dates.size() == 1 else throw InvalidCacheRevalidation.invalid;
-            ParsedHttpDate(dates.item(0), entry.timing().received()).value();
+            ParsedHttpDate(origin: dates.item(0), reference: entry.timing().received()).instant();
             [dates.item(0)];
         }
         catch e is Error {
@@ -51,16 +51,16 @@ object CacheValidation {
         modified = dates_checked;
         let conditional = if parsed.size() == 1 {
             ReplacedHeader(
-                original::Head::headers,
-                Header(HeaderName("If-None-Match"), parsed[0].string())
-            ).result();
+                origin: original::Head::headers,
+                entry: Header(name: HeaderName("If-None-Match"), value: parsed[0].string())
+            ).headers();
         }
         else {
             if dates_checked.size() == 1 {
                 ReplacedHeader(
-                    original::Head::headers,
-                    Header(HeaderName("If-Modified-Since"), dates_checked[0])
-                ).result();
+                    origin: original::Head::headers,
+                    entry: Header(name: HeaderName("If-Modified-Since"), value: dates_checked[0])
+                ).headers();
             }
             else {
                 original::Head::headers;
@@ -93,11 +93,11 @@ object CacheValidation {
         let etags = updated.values(HeaderName("ETag"));
         confirm etags.size() <= 1 else throw InvalidCacheRevalidation.invalid;
         if etags.size() == 1 {
-            let value = ParsedEntityTags(etags.item(0)).value();
+            let value = ParsedEntityTags(etags.item(0)).tags();
             confirm !value.wildcard() && value.values().size() == 1 && tags.size() == 1
                 else throw InvalidCacheRevalidation.invalid;
             let tag = value.values().item(0);
-            confirm if tag.weak() {
+            confirm if tag::Tag::weak {
                 tag.weak_matches(tags[0]);
             }
             else {
@@ -113,17 +113,17 @@ object CacheValidation {
             confirm dates.size() <= 1 else throw InvalidCacheRevalidation.invalid;
             if dates.size() == 1 {
                 let changed = try {
-                    ParsedHttpDate(dates.item(0), timing.received()).value();
+                    ParsedHttpDate(origin: dates.item(0), reference: timing.received()).instant();
                 }
                 catch e is Error {
                     throw InvalidCacheRevalidation.invalid;
                 };
-                let stored = ParsedHttpDate(modified[0], entry.timing().received()).value();
+                let stored = ParsedHttpDate(origin: modified[0], reference: entry.timing().received()).instant();
                 confirm changed.order(stored) == Order.equal
                     else throw InvalidCacheRevalidation.invalid;
             }
         }
-        let old = entry.result()::Exchange::response;
+        let old = entry.response()::Exchange::response;
         if updated.membership(HeaderName("Content-Encoding")) {
             confirm updated.values(HeaderName("Content-Encoding")).size() == old::Head::headers.values(
                 HeaderName("Content-Encoding")
@@ -133,7 +133,7 @@ object CacheValidation {
                 )
                 else throw InvalidCacheRevalidation.invalid;
         }
-        let fields = Cache304Fields(old::Head::headers, updated, timing).result();
+        let fields = Cache304Fields(stored: old::Head::headers, updated: updated, timing: timing).headers();
         let response = Response(
             status: old::Head::status,
             headers: fields,
@@ -141,26 +141,26 @@ object CacheValidation {
             version: old::Head::version
         );
         CachedHttpEntry(
-            original,
-            ClientResponse(
+            request: original,
+            result: ClientResponse(
                 request: original,
                 response: response,
                 details: result::Exchange::details
             ),
-            timing,
-            entry.bytes(),
-            entry.trailers()
+            timing: timing,
+            bytes: entry.bytes(),
+            trailers: entry.trailers()
         );
     }
 }
 
-object Cache304Fields {
+hidden object Cache304Fields {
     has result is Headers;
 
     Cache304Fields(stored is Headers, updated is Headers, timing is CacheResponseTiming) {
-        let sanitized = CacheStoredHeaders(updated).result();
+        let sanitized = CacheStoredHeaders(updated).headers();
         let replacements = if sanitized.membership(HeaderName("Content-Length")) {
-            HeadersWithout(sanitized, [HeaderName("Content-Length")]).result();
+            HeadersWithout(origin: sanitized, names: [HeaderName("Content-Length")]).headers();
         }
         else {
             sanitized;
@@ -168,28 +168,28 @@ object Cache304Fields {
         let names is @HeaderName = (0..replacements.entries().size()).map() -> index {
             replacements.entries().item(index).name();
         };
-        let initial = HeadersWithout(stored, names).result();
-        let fields = CacheMergedFields(initial, replacements).result();
+        let initial = HeadersWithout(origin: stored, names: names).headers();
+        let fields = CacheMergedFields(stored: initial, updated: replacements).headers();
         let dated = if updated.membership(HeaderName("Date")) {
             fields;
         }
         else {
-            ReplacedHeader(fields, Header(HeaderName("Date"), HttpDate(timing.received()).string())).result();
+            ReplacedHeader(origin: fields, entry: Header(name: HeaderName("Date"), value: HttpDate(timing.received()).string())).headers();
         };
         result = if updated.membership(HeaderName("Age")) {
             dated;
         }
         else {
-            ReplacedHeader(dated, Header(HeaderName("Age"), "0")).result();
+            ReplacedHeader(origin: dated, entry: Header(name: HeaderName("Age"), value: "0")).headers();
         };
     }
 
-    result() is Headers {
+    headers() is Headers {
         result;
     }
 }
 
-object CacheMergedFields {
+hidden object CacheMergedFields {
     has result is Headers;
 
     CacheMergedFields(stored is Headers, updated is Headers) {
@@ -197,22 +197,22 @@ object CacheMergedFields {
         for updated.entries() -> field {
             state = state.following(field);
         }
-        result = state.result();
+        result = state.headers();
     }
 
-    result() is Headers {
+    headers() is Headers {
         result;
     }
 }
 
-object CacheFieldState {
+hidden object CacheFieldState {
     has result is Headers;
 
     CacheFieldState(origin is Headers) {
         result = origin;
     }
 
-    result() is Headers {
+    headers() is Headers {
         result;
     }
 
@@ -251,7 +251,7 @@ object CacheRequestFreshness {
                     true;
                 }
                 else {
-                    let incoming = CacheControl(entry.result()::Head::headers);
+                    let incoming = CacheControl(entry.response()::Head::headers);
                     let arguments = control.arguments("max-stale");
                     control.count("max-stale") == 1
                         && arguments.size() <= 1
@@ -259,7 +259,7 @@ object CacheRequestFreshness {
                         && !incoming.present("no-cache")
                         && !incoming.present("no-store")
                         && (arguments.size() == 0
-                        || age - observed.lifetime()::Span::seconds <= CacheDeltaSeconds(arguments[0]).value().rat());
+                        || age - observed.lifetime()::Span::seconds <= CacheDeltaSeconds(arguments[0]).seconds().rat());
                 }
             }
         }

@@ -2,6 +2,7 @@ module http/internal/trailers v1.0.0;
 
 import "http/header" take Header;
 import "http/message" take InvalidHttpMessage;
+import "http/header" take HeaderName;
 
 // Shared conservative trailer policy for HTTP1 and HTTP2. HTTP1 additionally
 // provides Connection-nominated names; HTTP2 forbids Connection altogether.
@@ -64,4 +65,18 @@ object HttpTrailerRules {
         confirm !connection
             else throw InvalidHttpMessage.because("Connection nominated trailer field");
     }
+}
+
+test "trailers refuse framing and routing fields, and the ones Connection nominates" {
+    let rules = HttpTrailerRules(["x-debug"]);
+    rules.check(Header(name: HeaderName("X-Checksum"), value: "abc"));
+    test.throws(InvalidHttpMessage) {
+        rules.check(Header(name: HeaderName("Content-Length"), value: "3"));
+    };
+    test.throws(InvalidHttpMessage) {
+        rules.check(Header(name: HeaderName("Set-Cookie"), value: "a=b"));
+    };
+    test.throws(InvalidHttpMessage) {
+        rules.check(Header(name: HeaderName("X-Debug"), value: "1"));
+    };
 }

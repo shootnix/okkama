@@ -1,11 +1,11 @@
 module logging/named v1.0.0;
 
 import "logging/level" take LogLevel;
-import "logging/name" take LogName, ChildLogName;
+import "logging/name" take LogName, ChildLogName, InvalidLogName;
 import "logging/field" take LogFields, EmptyLogFields, CombinedLogFields;
 import "logging/record" take LogContext, LogRecord, InvalidLogProcess;
 import "logging/write" take LogWriting, CollectedLogs;
-import "time/clock" take Timing, Instant;
+import "time/clock" take Timing, Instant, SystemClock;
 import "runtime/process" take process_current_id;
 import "json" take JsonField;
 import "testing/time" take ManualClock;
@@ -36,7 +36,27 @@ object NamedLogging does Logging {
     has fields is LogFields;
     has process is LogProcessReading;
 
-    NamedLogging(name is LogName, destination is LogWriting, clock is Timing, fields is LogFields) {
+    // The common case: NamedLogging(name: "shop", destination: logs). The
+    // clock is the system's and no fields are added unless given.
+    NamedLogging(
+        name is string,
+        destination is LogWriting,
+        clock is Timing = SystemClock(),
+        fields is LogFields = LogFields([])
+    ) {
+        self.name = LogName(name.split("."));
+        self.destination = destination;
+        self.clock = clock;
+        self.fields = fields;
+        process = CurrentLogProcess();
+    }
+
+    NamedLogging(
+        name is LogName,
+        destination is LogWriting,
+        clock is Timing = SystemClock(),
+        fields is LogFields = LogFields([])
+    ) {
         self.name = name;
         self.destination = destination;
         self.clock = clock;
@@ -117,4 +137,16 @@ test "a named logger stamps time, name and process, and merges its fields" {
     test.ok(records.item(2).has_cause());
     test.is(records.item(3).context().name().string(), "app.db");
     test.is(logging.name().string(), "app");
+}
+
+test "a named logger needs only its name and destination" {
+    let kept = CollectedLogs();
+    let shop = NamedLogging(name: "shop.db", destination: kept);
+    test.is(shop.name().string(), "shop.db");
+    shop.log(LogLevel.info, "up");
+    test.is(kept.records().first()::Entry::message, "up");
+    test.is(kept.records().first().context().fields().values().names().size(), 0);
+    test.throws(InvalidLogName) {
+        NamedLogging(name: "shop..db", destination: kept);
+    };
 }

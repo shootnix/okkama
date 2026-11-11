@@ -1,12 +1,22 @@
 module web/app v1.0.0;
 
-import "http/server" take HttpServer;
+import "http/server" take HttpServer, ServerDrain;
 import "http/server_policy" take ServerPolicy;
 import "net/tcp" take TcpListening;
 import "net/endpoint" take IpEndpoint;
-import "net/ip" take IpAddress;
+import "net/ip" take IpAddress, IpNetwork;
 import "time/clock" take Timing, SystemClock;
-import "web/routing" take WebRoutes;
+import "web/routing" take WebRoutes, Get, Post, Scope;
+import "web/request" take WebRequest;
+import "web/reply" take Text;
+import "http/handler" take HandlingResult;
+import "http/client" take HttpClient;
+import "http/endpoint" take ListedNetworks;
+import "http/body" take TextBody;
+import "http/status" take Status;
+import "net/dns" take FixedResolution;
+import "async/scope" take FutureGroup;
+import "time/duration" take Duration, DurationUnit;
 
 // Binds a route table to a plaintext HTTP/1.1 listener.
 //
@@ -36,8 +46,8 @@ object WebApplication {
     }
 
     async server(address is string, port is int) is HttpServer {
-        let listener = await TcpListening(IpEndpoint(address: IpAddress(address), port: port)).acceptance();
-        HttpServer(listener, routes.table(), policy, clock);
+        let listener = await TcpListening(port: port, address: IpAddress(address)).listener();
+        HttpServer(origin: listener, handling: routes.table(), policy: policy, clock: clock);
     }
 
     async listen(address is string, port is int) is void {
@@ -46,4 +56,46 @@ object WebApplication {
         defer server.close();
         await server.serve();
     }
+}
+
+hidden object Greetings {
+    Greetings();
+
+    async hello(request is WebRequest) is HandlingResult {
+        Text(status: 200, text: "Hello, " + request.path("name") + request.query("mark", "") + "!");
+    }
+
+    async echo(request is WebRequest) is HandlingResult {
+        Text(status: 201, text: (await request.text(1024)).upper());
+    }
+
+    async missing(request is WebRequest) is HandlingResult {
+        Text(status: 404, text: "no " + request.method() + " here");
+    }
+}
+
+async test "a web application routes requests over loopback and drains" {
+    let greetings = Greetings();
+    let routes = WebRoutes(
+        routings: [Scope(prefix: "/api", routings: [Get(path: "/hello/:name", endpoint: greetings.hello), Post(path: "/echo", endpoint: greetings.echo)])],
+        fallback: greetings.missing,
+    );
+    let server = await WebApplication(routes).server("127.0.0.1", 0);
+    let workers is FutureGroup<HttpServer> = FutureGroup();
+    workers.start(server.serve());
+    let base = "http://127.0.0.1:" + server.local_endpoint()::Parts::port.string();
+    let client = HttpClient(
+        resolver: FixedResolution([]),
+        endpoints: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)])
+    );
+    test.is(await (await client.get(base + "/api/hello/Ada?mark=%21")).text(), "Hello, Ada!!");
+    let created = await client.post(url: base + "/api/echo", body: TextBody(text: "quiet"));
+    test.is(created::Head::status, Status.created);
+    test.is(await created.text(), "QUIET");
+    let lost = await client.get(base + "/nowhere");
+    test.is(lost::Head::status, Status.not_found);
+    test.is(await lost.text(), "no GET here");
+    client.close();
+    await ServerDrain(server: server, limit: Duration(value: 5.rat(), unit: DurationUnit.second), clock: SystemClock()).drain();
+    await workers.wait();
 }

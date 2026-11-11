@@ -6,7 +6,7 @@ import "db/value" take DbValue, DbValueKind, ObservedDbValue, DbNativeValue;
 import "db/statement" take DbLimits, DbBoundaryLimit;
 import "collections/sequence" take Sequencing;
 import "encoding/utf" take Utf8Encoded;
-import "db/read" take RowValues, RowReader, DbColumnReader, DbMaybeReader, DbPresenceReader, DbPage;
+import "db/read" take RowValues, DbColumnReader, DbMaybeReader, DbPresenceReader, DbPage;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
 import "db/param" take Param;
@@ -339,6 +339,14 @@ object Row does RowValues {
         };
         DbPresenceReader(found);
     }
+}
+
+// The answer of connection.query(sql, values): exactly one row, at most one
+// row, or a bounded list. db/query's Query does it.
+role DbQuery {
+    async one() is Row;
+    async maybe() is Maybe<Row>;
+    async all(max_rows is int) is @Row;
 }
 
 role RowReading {

@@ -62,12 +62,12 @@ object ParsedHpackInteger {
     has number, following is int;
 
     ParsedHpackInteger(origin is @byte, offset is int, prefix is int) {
-        let parsed = HpackIntegerInput(origin, offset, prefix).result();
-        number = parsed.value();
+        let parsed = HpackIntegerInput(origin: origin, offset: offset, prefix: prefix).number();
+        number = parsed.int();
         following = parsed.following();
     }
 
-    value() is int {
+    int() is int {
         number;
     }
 
@@ -76,7 +76,7 @@ object ParsedHpackInteger {
     }
 }
 
-object HpackNumber {
+hidden object HpackNumber {
     has value, following is int;
 
     HpackNumber(value is int, following is int) {
@@ -84,7 +84,7 @@ object HpackNumber {
         self.following = following;
     }
 
-    value() is int {
+    int() is int {
         value;
     }
 
@@ -93,7 +93,7 @@ object HpackNumber {
     }
 }
 
-object HpackIntegerInput {
+hidden object HpackIntegerInput {
     has origin is @byte;
     has offset, prefix is int;
 
@@ -103,7 +103,7 @@ object HpackIntegerInput {
         self.prefix = prefix;
     }
 
-    result() is HpackNumber {
+    number() is HpackNumber {
         confirm offset >= 0 && offset < origin.size() && prefix >= 1 && prefix <= 8
             else throw Http2Fault.detailed(
                 Http2FaultScope.connection,
@@ -114,7 +114,7 @@ object HpackIntegerInput {
         let maximum = (1 << prefix) - 1;
         let initial = origin[offset].int() & maximum;
         if initial < maximum {
-            return HpackNumber(initial, offset + 1);
+            return HpackNumber(value: initial, following: offset + 1);
         }
         let value = Atomic(initial);
         for (0..5) -> step {
@@ -137,7 +137,7 @@ object HpackIntegerInput {
                 );
             value.replace(value.value() + amount);
             if octet < 128 {
-                return HpackNumber(value.value(), index + 1);
+                return HpackNumber(value: value.value(), following: index + 1);
             }
         }
         throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "oversized HPACK integer");
@@ -154,8 +154,8 @@ object HpackString {
     }
 
     bytes() is @byte {
-        let prefix = HpackInteger(origin.size(), 7, 0).bytes();
-        HttpWireBytes([prefix, origin], prefix.size() + origin.size()).bytes();
+        let prefix = HpackInteger(value: origin.size(), prefix: 7, pattern: 0).bytes();
+        HttpWireBytes(chunks: [prefix, origin], maximum: prefix.size() + origin.size()).bytes();
     }
 }
 
@@ -171,9 +171,9 @@ object ParsedHpackString {
                 0,
                 "invalid HPACK string budget"
             );
-        let length = ParsedHpackInteger(origin, offset, 7);
+        let length = ParsedHpackInteger(origin: origin, offset: offset, prefix: 7);
         let start = length.following();
-        let count = length.value();
+        let count = length.int();
         confirm count <= 1048576 && count <= origin.size() - start
             else throw Http2Fault.detailed(
                 Http2FaultScope.connection,
@@ -191,7 +191,7 @@ object ParsedHpackString {
             );
         let encoded = origin.slice(start, start + count);
         data = if huffman {
-            HpackHuffman(encoded, maximum).bytes();
+            HpackHuffman(origin: encoded, maximum: maximum).bytes();
         }
         else {
             encoded;
@@ -241,7 +241,7 @@ object HpackHuffman {
 }
 
 test "bounded HPACK primitives preserve wire values" {
-    let encoded = HpackInteger(1337, 5, 0).bytes();
-    test.is(ParsedHpackInteger(encoded, 0, 5).value(), 1337);
-    test.is(HpackHuffman([31.byte()], 1).bytes()[0].int(), 97);
+    let encoded = HpackInteger(value: 1337, prefix: 5, pattern: 0).bytes();
+    test.is(ParsedHpackInteger(origin: encoded, offset: 0, prefix: 5).int(), 1337);
+    test.is(HpackHuffman(origin: [31.byte()], maximum: 1).bytes()[0].int(), 97);
 }

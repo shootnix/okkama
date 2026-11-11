@@ -34,18 +34,20 @@ object Http1BodyPlan {
             && kind != Http1BodyKind.upgrade;
     }
 
-    kind() is Http1BodyKind {
-        kind;
-    }
-
     length() is BigInt {
         confirm kind == Http1BodyKind.empty || kind == Http1BodyKind.fixed
             else throw UnknownBodyLength.unknown;
         count;
     }
 
-    reuse_after_eof() is bool {
-        reusable;
+    cap Plan {
+        kind is Http1BodyKind {
+            kind;
+        }
+
+        reuse_after_eof is bool {
+            reusable;
+        }
     }
 }
 
@@ -64,7 +66,7 @@ object Http1RequestFraming {
     }
 
     plan() is Http1BodyPlan {
-        let fields = Http1FramingFields(head.headers(), head.version(), limits);
+        let fields = Http1FramingFields(origin: head.headers(), version: head::Head::version, limits: limits);
         let reuse = fields.reusable();
         let length = fields.length();
         let codings = fields.codings();
@@ -72,12 +74,12 @@ object Http1RequestFraming {
             else throw InvalidHttpMessage.because("Transfer-Encoding with Content-Length");
         if codings.size() > 0 {
             fields.supported(codings);
-            return Http1BodyPlan(Http1BodyKind.chunked, BigInt("0"), reuse);
+            return Http1BodyPlan(kind: Http1BodyKind.chunked, count: BigInt("0"), reusable: reuse);
         }
         if length.size() > 0 {
             return fields.fixed(length[0], reuse);
         }
-        Http1BodyPlan(Http1BodyKind.empty, BigInt("0"), reuse);
+        Http1BodyPlan(kind: Http1BodyKind.empty, count: BigInt("0"), reusable: reuse);
     }
 }
 
@@ -99,12 +101,12 @@ object Http1ResponseFraming {
     }
 
     plan() is Http1BodyPlan {
-        let status = head.status();
+        let status = head::Head::status;
         let class = StatusCode(status).class();
         if method == Method.connect && class == StatusClass.successful {
-            return Http1BodyPlan(Http1BodyKind.tunnel, BigInt("0"), false);
+            return Http1BodyPlan(kind: Http1BodyKind.tunnel, count: BigInt("0"), reusable: false);
         }
-        let fields = Http1FramingFields(head.headers(), head.version(), limits);
+        let fields = Http1FramingFields(origin: head.headers(), version: head::Head::version, limits: limits);
         let length = fields.length();
         let codings = fields.codings();
         confirm length.size() == 0 || codings.size() == 0
@@ -113,21 +115,21 @@ object Http1ResponseFraming {
             confirm length.size() == 0 && codings.size() == 0
                 else throw InvalidHttpMessage.because("framing field on body-forbidden status");
             if status == Status.switching_protocols {
-                return Http1BodyPlan(Http1BodyKind.upgrade, BigInt("0"), false);
+                return Http1BodyPlan(kind: Http1BodyKind.upgrade, count: BigInt("0"), reusable: false);
             }
-            return Http1BodyPlan(Http1BodyKind.empty, BigInt("0"), fields.reusable());
+            return Http1BodyPlan(kind: Http1BodyKind.empty, count: BigInt("0"), reusable: fields.reusable());
         }
         if method == Method.head || status == Status.not_modified {
-            return Http1BodyPlan(Http1BodyKind.empty, BigInt("0"), fields.reusable());
+            return Http1BodyPlan(kind: Http1BodyKind.empty, count: BigInt("0"), reusable: fields.reusable());
         }
         if codings.size() > 0 {
             fields.supported(codings);
-            return Http1BodyPlan(Http1BodyKind.chunked, BigInt("0"), fields.reusable());
+            return Http1BodyPlan(kind: Http1BodyKind.chunked, count: BigInt("0"), reusable: fields.reusable());
         }
         if length.size() > 0 {
             return fields.fixed(length[0], fields.reusable());
         }
-        Http1BodyPlan(Http1BodyKind.close_delimited, BigInt("0"), false);
+        Http1BodyPlan(kind: Http1BodyKind.close_delimited, count: BigInt("0"), reusable: false);
     }
 }
 
@@ -140,13 +142,13 @@ object Http1FramingFields {
         confirm version != HttpVersion.http_2
             else throw InvalidHttpMessage.because("HTTP1 body plan requires HTTP1 version");
         let entries = origin.entries();
-        confirm entries.size() <= limits.fields() else throw Http1LimitExceeded.kind("fields");
+        confirm entries.size() <= limits::Limits::fields else throw Http1LimitExceeded.kind("fields");
         let size = (0..entries.size()).reduce(0) -> used, index {
             let entry = entries.item(index);
             let width = entry.name().string().length() + entry.value().length() + 3;
-            confirm width - 2 <= limits.line_bytes()
+            confirm width - 2 <= limits::Limits::line_bytes
                 else throw Http1LimitExceeded.kind("line_bytes");
-            confirm width <= limits.head_bytes() - used
+            confirm width <= limits::Limits::head_bytes - used
                 else throw Http1LimitExceeded.kind("head_bytes");
             used + width;
         };
@@ -176,7 +178,7 @@ object Http1FramingFields {
         };
         let items = joined.split(",");
         let clean is @string = items.map() -> value {
-            let part = Header(HeaderName(name), value).value();
+            let part = Header(name: HeaderName(name), value: value).value();
             confirm part != "" else throw InvalidHttpMessage.because("empty framing list member");
             part;
         };
@@ -237,9 +239,9 @@ object Http1FramingFields {
     }
 
     fixed(length is BigInt, reuse is bool) is Http1BodyPlan {
-        confirm length.order(BigInt(limits.body_bytes().string())) != Order.greater
+        confirm length.order(BigInt(limits::Limits::body_bytes.string())) != Order.greater
             else throw Http1LimitExceeded.kind("body_bytes");
-        Http1BodyPlan(Http1BodyKind.fixed, length, reuse);
+        Http1BodyPlan(kind: Http1BodyKind.fixed, count: length, reusable: reuse);
     }
 
     reusable() is bool {
@@ -266,7 +268,7 @@ object Http1FramingFields {
 enum UnsupportedTransferCoding is Error = (unsupported);
 
 test "request body boundaries are decided before reading" {
-    let head = ParsedHttp1RequestHead("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 0\r\n\r\n").value();
+    let head = ParsedHttp1RequestHead("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 0\r\n\r\n").head();
     let plan = Http1RequestFraming(head).plan();
-    test.ok(plan.kind() == Http1BodyKind.fixed && plan.length().string() == "0");
+    test.ok(plan::Plan::kind == Http1BodyKind.fixed && plan.length().string() == "0");
 }
