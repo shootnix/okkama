@@ -95,6 +95,9 @@ struct LoopFrame {
     base: usize,
     /// Глубина областей при входе в тело: глубже — локальные для итерации.
     depth: usize,
+    /// The traversal scope of a cursor or batch loop (#483, #484): `last`
+    /// leaves it with the body's scopes, `next` does not.
+    retire: Option<usize>,
     want: bool,
 }
 
@@ -1258,6 +1261,15 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             .flatten()
             .copied()
             .chain(self.field_vars.iter().copied())
+    }
+
+    /// A call result no region tracks: its owner takes it right away (the
+    /// cursor and batch of a traversal step, #484).
+    fn emit_untracked(&mut self, kind: InstKind, ty: Type, span: Span) -> Typed {
+        Typed {
+            value: self.b.emit(kind, ty.clone(), span),
+            ty,
+        }
     }
 
     fn emit(&mut self, kind: InstKind, ty: Type, span: Span) -> Typed {
@@ -3001,6 +3013,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             exits: Vec::new(),
             base,
             depth: self.scopes.len(),
+            retire: None,
             want,
         });
         // Значение последнего оператора тела `loop` отбрасывается.
@@ -3049,7 +3062,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             }
             None => Out::Unit,
         };
-        let depth = self.loops[frame].depth;
+        let depth = self.loops[frame].retire.unwrap_or(self.loops[frame].depth);
         let payload = match &out {
             Out::Value(value) => Some(value.clone()),
             _ => None,
@@ -3060,7 +3073,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         // Значение `last` освобождено регионами итерации: его учитывает
         // область, содержащая цикл.
         if let Some(value) = &payload
-            && let Some(region) = self.region_at(depth.saturating_sub(1))
+            && let Some(region) = self.tracking_region_at(depth.saturating_sub(1))
                 && !self.ctx.is_plain(&value.ty) && !value.ty.is_builder() {
                     self.note_owned(&value.ty);
                     self.b.emit_void(
@@ -3081,11 +3094,11 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
     /// value is computed (`any`/`all`/`find`, #150).
     fn leave_loop(&mut self, value: Typed, span: Span) -> Result<()> {
         let frame = self.loops.len() - 1;
-        let depth = self.loops[frame].depth;
+        let depth = self.loops[frame].retire.unwrap_or(self.loops[frame].depth);
         if !self.exit_scopes(depth, Some(&value), span)? {
             return Ok(());
         }
-        if let Some(region) = self.region_at(depth.saturating_sub(1))
+        if let Some(region) = self.tracking_region_at(depth.saturating_sub(1))
             && !self.ctx.is_plain(&value.ty)
             && !value.ty.is_builder()
         {

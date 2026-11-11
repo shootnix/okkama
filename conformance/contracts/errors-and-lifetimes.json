@@ -297,6 +297,22 @@
       "family": "Errors, cleanup and lifetimes"
     },
     {
+      "id": "LIFE.TRAVERSAL",
+      "title": "A traversal owns its source for the enclosing scope and each cursor or batch for one step; a superseded cursor's own resources are destroyed once",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.9",
+        "docs/okkama-spec-11072026.md#10"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: the contract defines no rejected form",
+        "interaction": "required"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
       "id": "LIFE.CONSTRUCTOR-FAILURE",
       "title": "A failed constructor runs no destroy for the unfinished receiver but cleans owned resources",
       "spec_refs": [

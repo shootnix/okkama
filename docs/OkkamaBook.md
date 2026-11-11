@@ -1287,6 +1287,15 @@ and the array loop per item, about ten times less on Tomato. `file.text()`
 hands out lines and `file.binary()` bytes this way, with the batch made by the
 runtime.
 
+A traversal owns what it walks (#483, #484):
+- The source belongs to the scope around the loop, as with a `let`, so
+  `for Resource().view() -> x` is as safe as the bound form.
+- Each step owns its cursor. When `successor()` replaces it, the old cursor
+  and what only it reached are destroyed once.
+- A batch lives until the next one is requested.
+- Nothing about past cursors is kept, so a loop over a resource-backed cursor
+  runs in constant memory.
+
 ### Async streams: `for await`
 
 Inside an async action, use `for await stream -> item { ... }` to consume

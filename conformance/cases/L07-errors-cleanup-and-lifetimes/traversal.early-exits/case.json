@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.traversal.early-exits",
+  "title": "last, return, throw and find release the current cursor, then the source, in order",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.TRAVERSAL",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "plain last:      +src i0(src,src) body0 i1(src,src) after -src\nplain return:    +src i0(src,src) i1(src,src) -src\nplain throw:     +src i0(src,src) i1(src,src) -src caught\nplain map:       +src i0(src,src) i1(src,src) i2(src,src) mapped3 -src\nplain find:      +src i0(src,src) i1(src,src) found1 -src\nfresh last:      +src +c0 i0(src,c0) body0 +c1 -c0 i1(src,c1) -c1 after -src\nfresh return:    +src +c0 i0(src,c0) +c1 -c0 i1(src,c1) -c1 -src\nfresh throw:     +src +c0 i0(src,c0) +c1 -c0 i1(src,c1) -c1 -src caught\nfresh map:       +src +c0 i0(src,c0) +c1 -c0 i1(src,c1) +c2 -c1 i2(src,c2) +c3 -c2 -c3 mapped3 -src\nfresh find:      +src +c0 i0(src,c0) +c1 -c0 i1(src,c1) -c1 found1 -src\nshared last:      +src +shared i0(src,shared) body0 i1(src,shared) -shared after -src\nshared return:    +src +shared i0(src,shared) i1(src,shared) -shared -src\nshared throw:     +src +shared i0(src,shared) i1(src,shared) -shared -src caught\nshared map:       +src +shared i0(src,shared) i1(src,shared) i2(src,shared) -shared mapped3 -src\nshared find:      +src +shared i0(src,shared) i1(src,shared) -shared found1 -src\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.9",
+    "docs/okkama-spec-11072026.md#10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #483/#484 from the cited contract text",
+    "expected_basis": "#483/#484: leaving a traversal early closes the step that owns the current cursor first, then the scope that owns the source; a throw is caught after both cleanups."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.traversal.batches",
+  "title": "a batch belongs to its step: its items live until the next batch, the source until the end of the scope",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.TRAVERSAL",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "COLL.BATCHING",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "stream:          +stream b0(stream) +x +y got x got y -y -x b1(stream) +z got z -z b2(stream) after -stream\nstream last:     +stream b0(stream) +x +y got x -y -x after -stream\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.9",
+    "docs/okkama-spec-11072026.md#10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #483/#484 from the cited contract text",
+    "expected_basis": "#483/#484/#465: the scope owns the Batching source; each batch is owned while it is walked and its items are destroyed, in reverse order, before the next batch is asked for; last closes the batch first."
+  },
+  "status": "mandatory"
+}

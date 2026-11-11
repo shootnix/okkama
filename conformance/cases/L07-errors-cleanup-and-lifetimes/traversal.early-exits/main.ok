@@ -1,0 +1,266 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/atomic" take Atomic;
+import "collections/iteration" take Iterating, Cursor, Batching, IterationEnded;
+
+// The lifecycle log: every resource writes when it is made and destroyed.
+object Log {
+    has events is Atomic<@string>;
+    Log() { events = Atomic(@string()); }
+    add(event is string) is void { events.replace(events.value() + [event]); }
+    take() is string {
+        let text = events.value().join(" ");
+        events.replace(@string());
+        text;
+    }
+}
+
+object Res {
+    has name is string;
+    has log is Log;
+    Res(name is string, log is Log) {
+        self.name = name;
+        self.log = log;
+        log.add("+" + name);
+    }
+    destroy { log.add("-" + name); }
+    name() is string { name; }
+}
+
+// A source that owns a resource; its cursors reach it and, by kind, own one
+// resource each (fresh per step) or share one made by cursor().
+enum Kind = (plain, fresh, shared, own_destroy);
+
+object Source does Iterating<int> {
+    has res is Res;
+    has kind is Kind;
+    has log is Log;
+    has size is int;
+    Source(log is Log, kind is Kind, size is int) {
+        self.log = log;
+        self.kind = kind;
+        self.size = size;
+        res = Res("src", log);
+    }
+    cursor() is Cursor<int> {
+        if kind == Kind.shared {
+            Step(log, kind, res, Res("shared", log), 0, size);
+        }
+        else if kind == Kind.fresh || kind == Kind.own_destroy {
+            Step(log, kind, res, Res("c0", log), 0, size);
+        }
+        else {
+            Step(log, kind, res, res, 0, size);
+        }
+    }
+}
+
+object Step does Cursor<int> {
+    has log is Log;
+    has kind is Kind;
+    has source, mine is Res;
+    has at, size is int;
+    Step(log is Log, kind is Kind, source is Res, mine is Res, at is int, size is int) {
+        self.log = log;
+        self.kind = kind;
+        self.source = source;
+        self.mine = mine;
+        self.at = at;
+        self.size = size;
+    }
+    available() is bool { at < size; }
+    item() is int {
+        log.add("i" + at.string() + "(" + source.name() + "," + mine.name() + ")");
+        at;
+    }
+    successor() is Cursor<int> {
+        if kind == Kind.fresh || kind == Kind.own_destroy {
+            Step(log, kind, source, Res("c" + (at + 1).string(), log), at + 1, size);
+        }
+        else {
+            Step(log, kind, source, mine, at + 1, size);
+        }
+    }
+}
+
+// Items are the cursor's own resource; fails, by name, in one of its actions.
+object Owned does Iterating<Res> {
+    has log is Log;
+    has fail is string;
+    Owned(log is Log, fail is string) {
+        self.log = log;
+        self.fail = fail;
+    }
+    cursor() is Cursor<Res> { OwnedStep(log, fail, Res("r0", log), 0); }
+}
+
+object OwnedStep does Cursor<Res> {
+    has log is Log;
+    has fail is string;
+    has mine is Res;
+    has at is int;
+    OwnedStep(log is Log, fail is string, mine is Res, at is int) {
+        self.log = log;
+        self.fail = fail;
+        self.mine = mine;
+        self.at = at;
+    }
+    available() is bool {
+        confirm !(fail == "available" && at == 1) else throw IterationEnded.ended;
+        at < 3;
+    }
+    item() is Res {
+        confirm !(fail == "item" && at == 1) else throw IterationEnded.ended;
+        mine;
+    }
+    successor() is Cursor<Res> {
+        confirm !(fail == "successor" && at == 1) else throw IterationEnded.ended;
+        OwnedStep(log, fail, Res("r" + (at + 1).string(), log), at + 1);
+    }
+}
+
+object Lines does Batching<Res> {
+    has res is Res;
+    has log is Log;
+    has served is Atomic<int>;
+    Lines(log is Log) {
+        self.log = log;
+        res = Res("stream", log);
+        served = Atomic(0);
+    }
+    batch() is @Res {
+        let at = served.value();
+        served.replace(at + 1);
+        log.add("b" + at.string() + "(" + res.name() + ")");
+        if at == 0 { [Res("x", log), Res("y", log)]; }
+        else if at == 1 { [Res("z", log)]; }
+        else { []; }
+    }
+}
+
+object Scenarios {
+    has log is Log;
+    Scenarios(log is Log) { self.log = log; }
+
+    temporary(kind is Kind) is void {
+        for Source(log, kind, 3) -> n {
+            log.add("body" + n.string());
+        }
+        log.add("after");
+    }
+
+    bound(kind is Kind) is void {
+        let source = Source(log, kind, 3);
+        for source -> n {
+            log.add("body" + n.string());
+        }
+        log.add("after");
+    }
+
+    early(kind is Kind) is void {
+        for Source(log, kind, 3) -> n {
+            last if n == 1;
+            log.add("body" + n.string());
+        }
+        log.add("after");
+    }
+
+    returned(kind is Kind) is int {
+        for Source(log, kind, 3) -> n {
+            if n == 1 {
+                return n;
+            }
+        }
+        -1;
+    }
+
+    thrown(kind is Kind) is void {
+        try {
+            for Source(log, kind, 3) -> n {
+                confirm n < 1 else throw IterationEnded.ended;
+            }
+        }
+        catch e is IterationEnded {
+            log.add("caught");
+        }
+    }
+
+    mapped(kind is Kind) is void {
+        let items is @int = Source(log, kind, 3).map() -> n { n * 10; };
+        log.add("mapped" + items.size().string());
+    }
+
+    found(kind is Kind) is void {
+        let first = Source(log, kind, 3).find() -> n { n == 1; };
+        log.add("found" + (first else -1).string());
+    }
+
+    kept() is void {
+        let all is @Res = Owned(log, "").map() -> res { res; };
+        log.add("kept" + all.size().string());
+    }
+
+    chosen() is Res {
+        for Owned(log, "") -> res {
+            last res if res.name() == "r1";
+            res;
+        }
+    }
+
+    chosen_name() is string {
+        let found = self.chosen();
+        log.add("chose " + found.name());
+        found.name();
+    }
+
+    failing(where is string) is void {
+        try {
+            for Owned(log, where) -> res {
+                log.add("use " + res.name());
+            }
+        }
+        catch e is IterationEnded {
+            log.add("caught");
+        }
+    }
+
+    nested() is void {
+        for Source(log, Kind.fresh, 2) -> a {
+            for Source(log, Kind.shared, 1) -> b {
+                log.add("pair" + a.string() + b.string());
+            }
+        }
+        log.add("after");
+    }
+
+    stream_last() is void {
+        for Lines(log) -> res {
+            last if res.name() == "y";
+            log.add("got " + res.name());
+        }
+        log.add("after");
+    }
+
+    stream() is void {
+        for Lines(log) -> res {
+            log.add("got " + res.name());
+        }
+        log.add("after");
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let log = Log();
+    let scenarios = Scenarios(log);
+    for [Kind.plain, Kind.fresh, Kind.shared] -> kind {
+        let name = if kind == Kind.plain { "plain"; } else if kind == Kind.fresh { "fresh"; } else { "shared"; };
+        scenarios.early(kind); out.writeln(name + " last:      " + log.take());
+        scenarios.returned(kind); out.writeln(name + " return:    " + log.take());
+        scenarios.thrown(kind); out.writeln(name + " throw:     " + log.take());
+        scenarios.mapped(kind); out.writeln(name + " map:       " + log.take());
+        scenarios.found(kind); out.writeln(name + " find:      " + log.take());
+    }
+    0;
+}

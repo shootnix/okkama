@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.traversal.cursor-lifetimes",
+  "title": "a temporary source lives as a bound one; each cursor owns its own resource for one step; a shared one goes once",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.TRAVERSAL",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "COLL.ITERABLE",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "plain temporary: +src i0(src,src) body0 i1(src,src) body1 i2(src,src) body2 after -src\nplain bound:     +src i0(src,src) body0 i1(src,src) body1 i2(src,src) body2 after -src\nfresh temporary: +src +c0 i0(src,c0) body0 +c1 -c0 i1(src,c1) body1 +c2 -c1 i2(src,c2) body2 +c3 -c2 -c3 after -src\nfresh bound:     +src +c0 i0(src,c0) body0 +c1 -c0 i1(src,c1) body1 +c2 -c1 i2(src,c2) body2 +c3 -c2 -c3 after -src\nshared temporary: +src +shared i0(src,shared) body0 i1(src,shared) body1 i2(src,shared) body2 -shared after -src\nshared bound:     +src +shared i0(src,shared) body0 i1(src,shared) body1 i2(src,shared) body2 -shared after -src\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.9",
+    "docs/okkama-spec-11072026.md#10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #483/#484 from the cited contract text",
+    "expected_basis": "#483/#484: the scope of the loop owns the temporary source like a let; each step owns its cursor, the next step takes the new one, and a superseded cursor and what only it reached are destroyed once (+c1 -c0); a resource shared by all cursors goes when the last cursor does, before the code after the loop."
+  },
+  "status": "mandatory"
+}

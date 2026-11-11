@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.traversal.failures",
+  "title": "a failing available, item or successor still destroys the cursors and their resources once",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.TRAVERSAL",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "fail available: +r0 use r0 +r1 -r0 -r1 caught\nfail item: +r0 use r0 +r1 -r0 -r1 caught\nfail successor: +r0 use r0 +r1 -r0 use r1 -r1 caught\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.9",
+    "docs/okkama-spec-11072026.md#10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #483/#484 from the cited contract text",
+    "expected_basis": "#483/#484: a failure in a cursor action unwinds the step that owns the cursor: its resource is destroyed before the handler runs."
+  },
+  "status": "mandatory"
+}

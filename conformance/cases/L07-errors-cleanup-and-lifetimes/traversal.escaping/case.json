@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.traversal.escaping",
+  "title": "results that reach a cursor resource keep it; nested traversals keep their own steps",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.TRAVERSAL",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "LIFE.OWNERSHIP",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "kept by map:     +r0 +r1 +r2 +r3 -r3 kept3 -r2 -r1 -r0\nlast value:      +r0 +r1 -r0 chose r1 -r1\nnested:          +src +c0 i0(src,c0) +src +shared i0(src,shared) pair00 -shared -src +c1 -c0 i1(src,c1) +src +shared i0(src,shared) pair10 -shared -src +c2 -c1 -c2 after -src\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.9",
+    "docs/okkama-spec-11072026.md#10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #483/#484 from the cited contract text",
+    "expected_basis": "#484: what a map result or a last value reaches belongs to the scope that receives it, not to the step that produced it; the final cursor, never yielded, still goes at exhaustion; an inner temporary source lives for one outer body."
+  },
+  "status": "mandatory"
+}

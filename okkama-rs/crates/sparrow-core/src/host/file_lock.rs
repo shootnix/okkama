@@ -78,6 +78,8 @@ impl Lock {
     /// Whether `file` is locked now, `shared` or exclusively: this process's
     /// locks come from the table, another process's from F_GETLK, which
     /// reports the kind of the lock in the way and never the caller's own.
+    // F_RDLCK and F_WRLCK are c_short on macOS and c_int on Linux.
+    #[allow(clippy::unnecessary_cast)]
     pub(crate) fn held(n: Native, file: &File, shared: bool) -> Result<bool, ProviderError> {
         let meta = file.metadata().map_err(|e| host(n, e))?;
         let key = (meta.dev(), meta.ino());

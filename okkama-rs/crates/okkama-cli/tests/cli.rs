@@ -1539,3 +1539,46 @@ fn a_cancelled_worker_stops_before_its_future_settles() {
         assert!(started.elapsed() < std::time::Duration::from_secs(20), "{engine}");
     }
 }
+
+/// #483, #484: a cursor loop owns each cursor for one step. The step's region
+/// takes the cursor before `available()`, `successor()` is not tracked by the
+/// scope around the loop, and the step closes keeping the new cursor: no
+/// record of a past cursor stays behind, whatever the number of steps.
+#[test]
+fn traversal_steps_own_their_cursor_and_keep_no_record_of_past_ones() {
+    let std = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../std");
+    let source = TempFile::new(
+        "steps.ok",
+        b"module app v1.0.0;\n\
+          import \"collections/iteration\" take Iterating, Cursor, IterationEnded;\n\
+          object Res { Res(); destroy {} }\n\
+          object View does Iterating<int> { has res is Res; View(res is Res) { self.res = res; } cursor() is Cursor<int> { Step(res, 0); } }\n\
+          object Step does Cursor<int> { has res is Res; has at is int; Step(res is Res, at is int) { self.res = res; self.at = at; }\n\
+              available() is bool { at < 3; } item() is int { at; } successor() is Cursor<int> { Step(res, at + 1); } }\n\
+          main() is int { for View(Res()) -> n { n; } 0; }\n",
+    );
+    let output = okkama().args(["ir", source.path()]).env("OKKAMA_STDLIB_DIR", &std).output().unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let text = stdout(&output);
+    let main = &text[text.find("func @main").expect("main")..];
+    let main = &main[..main.find("\n}").expect("end of main")];
+    let line = |needle: &str| {
+        main.lines()
+            .find(|line| line.contains(needle))
+            .unwrap_or_else(|| panic!("no {needle} in\n{main}"))
+            .trim()
+            .to_string()
+    };
+    let value = |line: &str| line.split(':').next().unwrap().trim().to_string();
+    // The source is adopted by the scope around the loop.
+    let source_wrap = value(&line("= role.wrap"));
+    assert!(main.contains(&format!("region.adopt %0, {source_wrap}")), "{main}");
+    // The step's region takes the cursor before available().
+    let step_region = value(&main.lines().filter(|line| line.contains("= region.enter")).nth(1).expect("a step region").trim().to_string());
+    let adopt = main.find(&format!("region.adopt {step_region},")).expect("the step adopts its cursor");
+    assert!(adopt < main.find("available()").unwrap(), "{main}");
+    // successor() is kept by the step's close and tracked nowhere.
+    let successor = value(&line("successor()"));
+    assert!(main.contains(&format!("region.leave {step_region}, keep {successor}")), "{main}");
+    assert!(!main.contains(&format!("region.track %0, {successor}")), "{main}");
+}

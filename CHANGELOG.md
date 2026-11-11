@@ -151,13 +151,33 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
 
 ### Fixed
 
-- `for` and `map`/`filter`/`reduce`/`find` over a temporary source destroyed
-  it after the first call (#483). In `for Resource().view() -> n`, the source
-  was free, so the first action its cursor was passed to took the cursor and
-  destroyed it, with everything it reached, on return. The scope of the loop
-  now adopts the source once, as a `let` does; cursors still live one step,
-  and memory per step is unchanged. A cursor that reaches a `destroy` still
-  keeps about 200 bytes per step until the scope ends, as before (#484).
+- Traversals own what they walk, and keep no record of what they walked
+  (#483, #484). This was fixed as one lifetime model.
+  - The scope of the loop adopts the source once, as a `let` would.
+  - Each step has a region of its own. It takes the current cursor before
+    `available()` and closes keeping the cursor `successor()` made. That
+    destroys the superseded cursor, and what only it reached, exactly once.
+  - A batch belongs to its own region while it is walked.
+  - `last`, `return` and failures close the step first, then the scope.
+  - What a `map` or `filter` result reaches is handed to the scope of the
+    operation.
+  - Before: a temporary source, or a resource of a cursor, was destroyed by
+    the first action called on the cursor (`for Resource().view()`,
+    `File(path: p).binary().map(…)`), and a failing `item()` leaked the
+    cursor's resource.
+  - Before: every cursor that reached a `destroy` stayed tracked by the
+    scope, about 200 bytes per step. A loop of 10⁶ steps over a
+    resource-backed cursor now runs as follows:
+
+    | engine | memory, release → now | time, release → now |
+    |---|---|---|
+    | IR | 238 MB → 9 MB | 2.8 s → 2.4 s |
+    | Tomato (live, GC stress) | 29 MB → 14 MB at 10⁵ steps | 0.60 s → 0.43 s |
+    | JVM | out of memory at `-Xmx48m` → runs | 1.13 s → 0.71 s |
+
+  - Range, array and plain-cursor loops are unchanged.
+  - Conformance contract `LIFE.TRAVERSAL` has five cases with exact
+    destroy-event sequences on every engine.
 - `config/document` turned a JSON number into a setting in the canonical form
   of `Decimal`, so `"port": 5432` became `"5.432e3"` while INI and the
   environment gave `5432` (#366). Numbers are now written as JSON writes

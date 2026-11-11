@@ -395,6 +395,8 @@ fn lock_fd(file: &File, shared: bool, wait: bool) -> Result<bool, Option<std::io
 /// Whether `file` is locked now, `shared` or exclusively: this process's
 /// locks come from LOCKS, another process's from F_GETLK, which reports the
 /// kind of the lock in the way and never the caller's own.
+// F_RDLCK and F_WRLCK are c_short on macOS and c_int on Linux.
+#[allow(clippy::unnecessary_cast)]
 fn locked_fd(file: &File, shared: bool) -> std::io::Result<bool> {
     use std::os::fd::AsRawFd;
     let meta = file.metadata()?;
