@@ -1,0 +1,28 @@
+module examples/random/seeded v1.0.0;
+
+import "random/source" take Randomizing, PcgRandom, SecureRandom;
+import "random/distribution" take UniformIntegers, Choices, PermutationSamples;
+import "io/stdout" take Stdout;
+
+// A seeded source repeats its sequence on every engine, which is what tests
+// and simulations need. SecureRandom is for keys and tokens.
+
+main() is int {
+    let out = Stdout();
+    let random is Randomizing = PcgRandom(2026);
+    let dice = UniformIntegers(random: random, start: 1, stop: 7);
+    out.writeln("rolls: " + (0..5).map() -> index {
+        dice.sample().string();
+    }.join(" "));
+    out.writeln("pick: " + Choices(random: random, values: ["red", "green", "blue"]).sample());
+    out.writeln("deck: " + PermutationSamples(random: random, values: ["A", "K", "Q", "J", "10", "9"]).sample().join(" "));
+
+    // The same seed gives the same rolls again.
+    let again = UniformIntegers(random: PcgRandom(2026), start: 1, stop: 7);
+    out.writeln("again: " + (0..5).map() -> index {
+        again.sample().string();
+    }.join(" "));
+
+    out.writeln("token bytes: " + SecureRandom().bytes(16).size().string());
+    0;
+}

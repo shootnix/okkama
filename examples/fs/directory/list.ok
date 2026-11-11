@@ -1,0 +1,35 @@
+module examples/fs/directory/list v1.0.0;
+
+import "fs/directory" take Directory, DirectoryEntries, DirectoryTree;
+import "fs/file" take File, FileMode;
+import "fs/path" take Path;
+import "fs/stat" take FileKind;
+import "io/stdout" take Stdout;
+
+// List one directory: its entries come sorted by name, each with its kind;
+// a file also tells its size. Only this level is read, not the directories
+// below it.
+
+main() is int {
+    let out = Stdout();
+    let root = Path("project");
+    Directory(path: root).create();
+    Directory(path: root.child("src")).create();
+    for ["README.md", "build.ok"] -> name {
+        let file = File(path: root.child(name), mode: FileMode.writing);
+        file.text().write("contents of " + name);
+        file.close();
+    }
+
+    for DirectoryEntries(origin: Directory(path: root)) -> entry {
+        if entry.kind() == FileKind.directory {
+            out.writeln("dir  " + entry.path().string());
+        }
+        else {
+            out.writeln("file " + entry.path().string() + ", " + entry.stat().size().string() + " bytes");
+        }
+    }
+
+    DirectoryTree(origin: Directory(path: root)).remove();
+    0;
+}

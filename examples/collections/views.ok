@@ -1,0 +1,35 @@
+module examples/collections/views v1.0.0;
+
+import "collections/views" take Filtered, Mapped, Taken, Chunked, Pairwise, Reduced;
+import "io/stdout" take Stdout;
+
+// Lazy views: nothing is copied until a for walks them, and they compose.
+
+main() is int {
+    let out = Stdout();
+    let readings = [12, 15, 11, 30, 31, 9, 14, 40];
+    let high is (int) is bool = (value is int) is bool { value >= 15; };
+    let label is (int) is string = (value is int) is string { value.string() + "C"; };
+
+    // The first three high readings, labelled.
+    for Taken(origin: Mapped(origin: Filtered(origin: readings, condition: high), mapping: label), count: 3) -> text {
+        out.writeln(text);
+    }
+
+    for Chunked(origin: readings, size: 3) -> batch {
+        out.writeln("batch of " + batch.size().string());
+    }
+
+    let rises = Pairwise(origin: readings).reduce(0) -> count, pair {
+        if pair.second() > pair.first() {
+            count + 1;
+        }
+        else {
+            count;
+        }
+    };
+    out.writeln("rises: " + rises.string());
+    let plus is (int, int) is int = (total is int, value is int) is int { total + value; };
+    out.writeln("sum: " + Reduced(origin: readings, initial: 0, action: plus).total().string());
+    0;
+}

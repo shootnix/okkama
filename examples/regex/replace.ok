@@ -1,0 +1,40 @@
+module examples/regex/replace v1.0.0;
+
+import "regex/pattern" take Regex;
+import "regex/replace" take RegexSubstitution, LiteralRegexReplacement, ExpandedRegexReplacement;
+import "regex/split" take RegexParts;
+import "io/stdout" take Stdout;
+
+// Replace matches, by a literal or a template with groups, and split text.
+// The dialect has no lookahead or backreferences: it is portable and linear.
+
+main() is int {
+    let out = Stdout();
+    // Every group of four digits followed by a space: all but the last.
+    let masked = RegexSubstitution(
+        origin: "card 4111 1111 1111 1234",
+        regex: Regex("\\d{4} "),
+        replacing: LiteralRegexReplacement("**** "),
+    );
+    out.writeln(masked.string() + " (" + masked.amount().string() + " replaced)");
+
+    let swapped = RegexSubstitution(
+        origin: "Lovelace, Ada; Hopper, Grace",
+        regex: Regex("(?<last>\\w+), (?<first>\\w+)"),
+        replacing: ExpandedRegexReplacement("${first} ${last}"),
+    );
+    out.writeln(swapped.string());
+
+    let once = RegexSubstitution(
+        origin: "a-b-c-d",
+        regex: Regex("-"),
+        replacing: LiteralRegexReplacement(" "),
+        limit: 2,
+    );
+    out.writeln(once.string());
+
+    for RegexParts(origin: "one, two;three ,four", regex: Regex("\\s*[,;]\\s*")) -> field {
+        out.writeln("[" + field + "]");
+    }
+    0;
+}

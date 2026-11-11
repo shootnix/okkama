@@ -1,0 +1,43 @@
+module examples/regex/search v1.0.0;
+
+import "regex/pattern" take Regex, RegexFlag, NoRegexMatch;
+import "regex/search" take FirstRegexMatch, EntireRegexMatch, RegexMatches;
+import "io/stdout" take Stdout;
+
+// Find the first match, every match, named groups, and check a whole string.
+
+main() is int {
+    let out = Stdout();
+    let log = "GET /index 200 12ms; POST /login 401 3ms; GET /about 200 7ms";
+    let request = Regex("(?<method>[A-Z]+) (?<path>/\\w*) (?<status>\\d{3})");
+
+    let first = FirstRegexMatch(origin: log, regex: request);
+    out.writeln("first: " + first.text() + " at " + first.range().start().string());
+
+    for RegexMatches(origin: log, regex: request) -> found {
+        out.writeln(found.group("method").text() + " " + found.group("path").text() + " -> " + found.group("status").text());
+    }
+
+    let failures = RegexMatches(origin: log, regex: request).reduce(0) -> count, found {
+        if found.group("status").text().starts_with("4") {
+            count + 1;
+        }
+        else {
+            count;
+        }
+    };
+    out.writeln("failures: " + failures.string());
+
+    // A whole string, case-insensitively.
+    let code = Regex("[a-z]{3}-\\d{4}", [RegexFlag.ignore_case]);
+    for ["ABC-1234", "abc-12345"] -> text {
+        let verdict = try {
+            EntireRegexMatch(origin: text, regex: code).text() + " is a code";
+        }
+        catch error is NoRegexMatch {
+            text + " is not a code";
+        };
+        out.writeln(verdict);
+    }
+    0;
+}

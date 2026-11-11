@@ -1,0 +1,53 @@
+module examples/async/timeout v1.0.0;
+
+import "async/timeout" take Within, TimedOut;
+import "async/collect" take Raced, AllFutures;
+import "time/clock" take SystemClock, Timing;
+import "time/duration" take Duration, DurationUnit;
+import "io/stdout" take Stdout;
+
+// Bound a slow operation by time, race two answers, wait for several.
+
+object Lookup {
+    has name is string;
+    has delay is int;
+    has clock is Timing;
+    Lookup(:name, :delay, :clock);
+
+    async answer() is string {
+        await clock.wait(Duration(value: delay.rat(), unit: DurationUnit.millisecond));
+        name;
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    let clock = SystemClock();
+    let limit = Duration(value: 50.rat(), unit: DurationUnit.millisecond);
+
+    let fast = await Within(origin: Lookup(name: "cache", delay: 1, clock: clock).answer(), limit: limit, clock: clock).outcome();
+    out.writeln("within the limit: " + fast);
+    let slow = try {
+        await Within(origin: Lookup(name: "archive", delay: 2000, clock: clock).answer(), limit: limit, clock: clock).outcome();
+    }
+    catch error is TimedOut {
+        "archive timed out";
+    };
+    out.writeln(slow);
+
+    // The first to answer wins; the other is cancelled.
+    let mirrors is @Future<string> = [
+        Lookup(name: "far mirror", delay: 500, clock: clock).answer(),
+        Lookup(name: "near mirror", delay: 5, clock: clock).answer(),
+    ];
+    out.writeln("winner: " + await Raced(origins: mirrors).winner());
+
+    // All of them, in input order.
+    let parts is @Future<string> = [
+        Lookup(name: "header", delay: 20, clock: clock).answer(),
+        Lookup(name: "body", delay: 1, clock: clock).answer(),
+    ];
+    let all = await AllFutures(origins: parts).results();
+    out.writeln("all: " + all.item(0) + ", " + all.item(1));
+    0;
+}

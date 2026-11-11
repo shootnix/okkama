@@ -1,0 +1,31 @@
+module examples/strings/parse/numbers v1.0.0;
+
+import "strings/parse" take Number, Truth, InvalidInteger;
+import "io/stdout" take Stdout;
+
+// Read numbers and truth values written as text. The object names the text,
+// the action names the type you want. Nothing is trimmed.
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Number("42").int().string());
+    out.writeln(Number("ff").int(16).string());            // a base from 2 to 36
+    out.writeln(Number("0b1010").int(0).string());         // base 0 reads 0b, 0o and 0x
+    out.writeln(Number("-12.75").float().string());
+    out.writeln(Number("6/8").rat().string());             // reduced: 3/4
+    out.writeln(Number("200").byte().int().string());
+    out.writeln(Truth("true").bool().string());
+
+    // A setting from text, with a fallback when it is not a number.
+    for ["8080", " 8080", "80a", ""] -> text {
+        let port = try {
+            Number(text).int();
+        }
+        catch InvalidInteger.source(source) {
+            out.writeln("not a port: [" + source + "]");
+            80;
+        };
+        out.writeln("port " + port.string());
+    }
+    0;
+}

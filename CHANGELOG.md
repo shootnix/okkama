@@ -32,6 +32,18 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   - Conformance contract `COLL.BATCHING` has six cases.
   - Book §12.5 and §13, spec §9.9 and Bible §8.6 describe the protocol.
 
+- **Examples for the modules people use directly (#352).** 22 new programs
+  in `examples/`, each with its `.expected` output, run by
+  `examples/check.py` on IR, Sparrow and the JVM (the owner: «примеров бы
+  еще накинуть на нужные модули. fs/directory, например»):
+  - `fs/directory`: list, walk a tree, create/rename/remove, errors;
+  - `strings/parse`, `time` (dates, durations, zones, formats), `regex`
+    (search, replace and split), `encoding` (text and bytes, a binary
+    record), `collections` (sort and search, lazy views), `random`
+    (seeded), `text/layout`;
+  - `async` (a channel between a producer and a consumer; timeouts, races
+    and waiting for all), checked in a container like the async tests.
+
 ### Changed
 
 - **Language: `hidden` marks an action (#365).** An action that only its own

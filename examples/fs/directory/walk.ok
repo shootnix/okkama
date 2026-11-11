@@ -1,0 +1,48 @@
+module examples/fs/directory/walk v1.0.0;
+
+import "fs/directory" take Directory, Descendants, DirectoryTree;
+import "fs/file" take File, FileMode;
+import "fs/path" take Path;
+import "fs/stat" take FileKind;
+import "io/stdout" take Stdout;
+
+// Walk a whole tree: every entry below the root, a directory before what is
+// in it, names in order at each level. A symlink to a directory is listed
+// but never followed.
+
+main() is int {
+    let out = Stdout();
+    let root = Path("site");
+    for ["site", "site/pages", "site/pages/blog", "site/assets"] -> folder {
+        Directory(path: Path(folder)).create();
+    }
+    for ["site/index.html", "site/pages/about.html", "site/pages/blog/first.html", "site/assets/logo.svg"] -> name {
+        let file = File(path: Path(name), mode: FileMode.writing);
+        file.text().write("<!-- " + name + " -->");
+        file.close();
+    }
+
+    for Descendants(origin: Directory(path: root)) -> entry {
+        let marker = if entry.kind() == FileKind.directory {
+            "+ ";
+        }
+        else {
+            "  ";
+        };
+        out.writeln(marker + entry.path().string());
+    }
+
+    // Count the HTML files of the tree.
+    let pages = Descendants(origin: Directory(path: root)).reduce(0) -> count, entry {
+        if entry.kind() == FileKind.file && entry.path().string().ends_with(".html") {
+            count + 1;
+        }
+        else {
+            count;
+        }
+    };
+    out.writeln(pages.string() + " pages");
+
+    DirectoryTree(origin: Directory(path: root)).remove();
+    0;
+}

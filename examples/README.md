@@ -23,6 +23,73 @@ and compares the output.
 | `fs/file/lock.ok` | lock a file without waiting, handle a busy file, read-change-write |
 | `fs/file/errors.ok` | catch the cases of `FileError` |
 
+## fs/directory
+
+| Program | Task |
+|---|---|
+| `fs/directory/list.ok` | list one directory, sorted, with each entry's kind and a file's size |
+| `fs/directory/walk.ok` | walk a whole tree, a directory before its contents, and count files of a kind |
+| `fs/directory/manage.ok` | create, rename and remove a directory; remove a full one |
+| `fs/directory/errors.ok` | catch the cases of `FileError`: missing, already there, not empty |
+
+## strings/parse
+
+| Program | Task |
+|---|---|
+| `strings/parse/numbers.ok` | read integers in a base, floats, rationals, bytes and truth values; fall back on bad input |
+
+## time
+
+| Program | Task |
+|---|---|
+| `time/dates.ok` | build a date, shift it by days, count days between, read and write ISO 8601 |
+| `time/durations.ok` | add, scale and compare exact durations |
+| `time/zones.ok` | a local time in one zone as an instant and in another zone; a repeated and a missing hour |
+| `time/formats.ok` | RFC 3339 in and out, a custom pattern that reads its own text back |
+
+## regex
+
+| Program | Task |
+|---|---|
+| `regex/search.ok` | the first match, every match with named groups, a whole string ignoring case |
+| `regex/replace.ok` | replace by a literal or a template with groups, up to a limit; split text |
+
+## encoding
+
+| Program | Task |
+|---|---|
+| `encoding/text_and_bytes.ok` | text to UTF-8 bytes and back, as hex and Base64; refuse broken UTF-8 |
+| `encoding/binary.ok` | write and read a fixed-width binary record with explicit byte orders |
+
+## collections
+
+| Program | Task |
+|---|---|
+| `collections/sort_and_search.ok` | sort by value or by a key, then binary-search the sorted values |
+| `collections/views.ok` | filter, map, take, chunk and pair lazily; fold to a total |
+
+## random
+
+| Program | Task |
+|---|---|
+| `random/seeded.ok` | reproducible dice, a choice and a shuffle from a seed; secure bytes |
+
+## text
+
+| Program | Task |
+|---|---|
+| `text/layout.ok` | wrap, indent, dedent and shorten text |
+
+## async
+
+These run real timers and tasks; like the async tests, check them in a
+container.
+
+| Program | Task |
+|---|---|
+| `async/channel.ok` | a producer and a consumer over a bounded channel, until it closes |
+| `async/timeout.ok` | bound an operation by time, race two answers, wait for all of several |
+
 ## http/client
 
 Each program starts a stand-in server on 127.0.0.1 (`LocalServer`, at the

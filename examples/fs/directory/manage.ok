@@ -1,0 +1,36 @@
+module examples/fs/directory/manage v1.0.0;
+
+import "fs/directory" take Directory, DirectoryTree;
+import "fs/file" take File, FileMode;
+import "fs/path" take Path;
+import "io/stdout" take Stdout;
+
+// Create a directory, rename it, and remove it: remove() takes only an empty
+// directory, DirectoryTree removes one with everything in it.
+
+main() is int {
+    let out = Stdout();
+    let drafts = Directory(path: Path("drafts"));
+    out.writeln("exists before: " + drafts.existence().string());
+    drafts.create();
+    out.writeln("exists after: " + drafts.existence().string());
+
+    drafts.move(Path("published"));
+    let published = Directory(path: Path("published"));
+    out.writeln("drafts: " + drafts.existence().string() + ", published: " + published.existence().string());
+
+    // An empty directory goes with remove().
+    published.remove();
+    out.writeln("published removed: " + (!published.existence()).string());
+
+    // A full one goes with DirectoryTree.
+    let archive = Directory(path: Path("archive"));
+    archive.create();
+    Directory(path: Path("archive/2026")).create();
+    let note = File(path: Path("archive/2026/note.txt"), mode: FileMode.writing);
+    note.text().write("kept");
+    note.close();
+    DirectoryTree(origin: archive).remove();
+    out.writeln("archive removed: " + (!archive.existence()).string());
+    0;
+}

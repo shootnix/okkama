@@ -1,0 +1,37 @@
+module examples/time/zones v1.0.0;
+
+import "time/zone" take Zone, Zoned, ZonedDateTime, ZoneObservation, Fold, MissingLocalTime;
+import "time/iso" take IsoText, IsoLocalDateTime;
+import "time/rfc3339" take Rfc3339;
+import "time/duration" take Duration, DurationUnit;
+import "io/stdout" take Stdout;
+
+// A meeting at 09:00 in Berlin: the instant it is, and what the clock shows
+// in New York then. Zones come from the bundled IANA tzdata.
+
+main() is int {
+    let out = Stdout();
+    let berlin = Zone("Europe/Berlin");
+    let york = Zone("America/New_York");
+    let utc = Duration(value: 0.rat(), unit: DurationUnit.second);
+
+    let meeting = Zoned(local: IsoText("2026-12-01T09:00:00").local_date_time(), zone: berlin, fold: Fold.earlier).instant();
+    out.writeln("instant: " + Rfc3339(origin: meeting, offset: utc).string());
+    let there = ZonedDateTime(instant: meeting, zone: york);
+    out.writeln("New York: " + IsoLocalDateTime(origin: there.local_datetime()).string() + " " + ZoneObservation(origin: there).abbreviation());
+
+    // When summer time ends, 02:30 happens twice: the fold picks one.
+    let early = Zoned(local: IsoText("2026-10-25T02:30:00").local_date_time(), zone: berlin, fold: Fold.earlier).instant();
+    let late = Zoned(local: IsoText("2026-10-25T02:30:00").local_date_time(), zone: berlin, fold: Fold.later).instant();
+    out.writeln("02:30 twice: " + Rfc3339(origin: early, offset: utc).string() + " and " + Rfc3339(origin: late, offset: utc).string());
+
+    // When it starts, 02:30 never happens.
+    let gap = try {
+        Rfc3339(origin: Zoned(local: IsoText("2026-03-29T02:30:00").local_date_time(), zone: berlin, fold: Fold.earlier).instant(), offset: utc).string();
+    }
+    catch MissingLocalTime.zone(name) {
+        "no 02:30 in " + name + " that night";
+    };
+    out.writeln(gap);
+    0;
+}

@@ -1,0 +1,19 @@
+module examples/text/layout v1.0.0;
+
+import "text/layout" take Indented, Dedented, Wrapped, Shortened;
+import "io/stdout" take Stdout;
+
+// Wrap a paragraph to a width, indent it, take an indent off, shorten a title.
+
+main() is int {
+    let out = Stdout();
+    let paragraph = "Okkama objects are mechanisms: each one does its work and gives its answer.";
+    let wrapped = Wrapped(origin: paragraph, width: 28).string();
+    out.writeln(Indented(origin: wrapped, prefix: "> ").string());
+
+    let snippet = "        if ready {\n            start();\n        }";
+    out.writeln(Dedented(origin: snippet).string());
+
+    out.writeln(Shortened(origin: "A very long title for a short card", width: 20, placeholder: "...").string());
+    0;
+}

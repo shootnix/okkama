@@ -1,0 +1,33 @@
+module examples/collections/sort_and_search v1.0.0;
+
+import "collections/ordering" take Sorted, SortedBy, LowerBound, PositionOf, MissingItem;
+import "io/stdout" take Stdout;
+
+// Sort by the values' own order or by a key, then search the sorted values
+// in O(log n).
+
+main() is int {
+    let out = Stdout();
+    let scores = Sorted([72, 95, 58, 95, 81]);
+    out.writeln("sorted: " + scores.map() -> score {
+        score.string();
+    }.join(" "));
+    out.writeln("lowest " + scores.first().string() + ", highest " + scores.last().string());
+
+    // Equal keys keep their input order.
+    let names = SortedBy(origin: ["Grace", "Ada", "Alan", "Barbara"], key: (name is string) is int { name.length(); });
+    out.writeln("by length: " + names.map() -> name {
+        name;
+    }.join(", "));
+
+    out.writeln("scores below 80: " + LowerBound(origin: scores, item: 80).index().string());
+    out.writeln("first 95 at " + PositionOf(origin: scores, item: 95).index().string());
+    let absent = try {
+        PositionOf(origin: scores, item: 60).index().string();
+    }
+    catch error is MissingItem {
+        "no 60";
+    };
+    out.writeln(absent);
+    0;
+}

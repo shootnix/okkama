@@ -1,0 +1,35 @@
+module examples/time/formats v1.0.0;
+
+import "time/rfc3339" take Rfc3339, InvalidRfc3339;
+import "time/format" take FormattedDate, FormattedLocalDateTime;
+import "time/iso" take IsoDate, IsoText;
+import "time/duration" take Duration, DurationUnit;
+import "io/stdout" take Stdout;
+
+// Timestamps in and out: RFC 3339 for exchange, a pattern for people.
+// Each formatter also reads its own text back.
+
+main() is int {
+    let out = Stdout();
+    let stamp = Rfc3339("2026-08-11T12:30:45.125+05:00");
+    out.writeln("as read: " + stamp.string());
+    let utc = Duration(value: 0.rat(), unit: DurationUnit.second);
+    out.writeln("in UTC:  " + Rfc3339(origin: stamp.instant(), offset: utc).string());
+
+    let date = IsoText("2026-08-11").date();
+    let printed = FormattedDate(origin: date, pattern: "%d/%m/%Y").string();
+    out.writeln("printed: " + printed);
+    out.writeln("read back: " + IsoDate(origin: FormattedDate(text: printed, pattern: "%d/%m/%Y").date()).string());
+    // Reading a local date-time needs every field down to the second.
+    let local = FormattedLocalDateTime(text: "2026-08-11 14:30:00", pattern: "%Y-%m-%d %H:%M:%S").local_date_time();
+    out.writeln("local: " + FormattedLocalDateTime(origin: local, pattern: "%H:%M on %d.%m.%Y").string());
+
+    let wrong = try {
+        Rfc3339("2026-08-11 12:30:45Z").string();
+    }
+    catch error is InvalidRfc3339 {
+        "refused: a space instead of T";
+    };
+    out.writeln(wrong);
+    0;
+}

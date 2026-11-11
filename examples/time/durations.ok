@@ -1,0 +1,18 @@
+module examples/time/durations v1.0.0;
+
+import "time/duration" take Duration, DurationUnit, DurationString;
+import "io/stdout" take Stdout;
+
+// Durations are exact: rational seconds, never a float.
+
+main() is int {
+    let out = Stdout();
+    let lap = Duration(value: 90.rat(), unit: DurationUnit.second);
+    let pause = Duration(value: 250.rat(), unit: DurationUnit.millisecond);
+    let total = lap + lap + pause;
+    out.writeln("total: " + DurationString(origin: total).string());
+    out.writeln("seconds: " + total.seconds().string());
+    out.writeln("tripled: " + DurationString(origin: total.times(3.rat())).string());
+    out.writeln("longer than three minutes: " + (total > Duration(value: 3.rat(), unit: DurationUnit.minute)).string());
+    0;
+}

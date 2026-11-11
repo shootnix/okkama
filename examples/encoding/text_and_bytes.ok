@@ -1,0 +1,32 @@
+module examples/encoding/text_and_bytes v1.0.0;
+
+import "encoding/utf" take Utf8Encoded, Utf8Decoded, Utf16Encoded, ByteOrder, InvalidUtf8;
+import "encoding/base64" take Base64Encoded, Base64Decoded, Base64Alphabet;
+import "encoding/hex" take HexEncoded, HexDecoded;
+import "io/stdout" take Stdout;
+
+// Text becomes bytes only through a named encoding, and bytes become text
+// the same way. Base64 and hex write bytes as ASCII.
+
+main() is int {
+    let out = Stdout();
+    let bytes = Utf8Encoded(origin: "Привет, 猫").bytes();
+    out.writeln("UTF-8 bytes: " + bytes.size().string());
+    out.writeln("hex: " + HexEncoded(origin: bytes).string());
+    let token = Base64Encoded(origin: bytes).string();
+    out.writeln("base64: " + token);
+    out.writeln("url-safe: " + Base64Encoded(origin: bytes, alphabet: Base64Alphabet.url).string());
+    out.writeln("back: " + Utf8Decoded(origin: Base64Decoded(origin: token).bytes()).string());
+    out.writeln("UTF-16 bytes: " + Utf16Encoded(origin: "Привет, 猫", order: ByteOrder.big).bytes().size().string());
+
+    // Broken input is refused with the offset of the first bad byte.
+    let broken = HexDecoded(origin: "48ff69").bytes();
+    let text = try {
+        Utf8Decoded(origin: broken).string();
+    }
+    catch InvalidUtf8.at(offset) {
+        "not UTF-8 at byte " + offset.string();
+    };
+    out.writeln(text);
+    0;
+}

@@ -1,0 +1,50 @@
+module examples/fs/directory/errors v1.0.0;
+
+import "fs/directory" take Directory, DirectoryEntries, DirectoryTree;
+import "fs/error" take FileError;
+import "fs/file" take File, FileMode;
+import "fs/path" take Path;
+import "io/stdout" take Stdout;
+
+// Every failure is a FileError; catch the cases you handle.
+
+main() is int {
+    let out = Stdout();
+
+    let missing = try {
+        for DirectoryEntries(origin: Directory(path: Path("nowhere"))) -> entry {
+            out.writeln(entry.path().string());
+        }
+        "listed";
+    }
+    catch FileError.not_found(path) {
+        "no directory " + path;
+    };
+    out.writeln(missing);
+
+    let box = Directory(path: Path("box"));
+    box.create();
+    let twice = try {
+        box.create();
+        "created twice";
+    }
+    catch FileError.already_exists(path) {
+        path + " already exists";
+    };
+    out.writeln(twice);
+
+    let item = File(path: Path("box/item.txt"), mode: FileMode.writing);
+    item.text().write("x");
+    item.close();
+    let full = try {
+        box.remove();
+        "removed";
+    }
+    catch FileError.not_empty(path) {
+        path + " is not empty";
+    };
+    out.writeln(full);
+
+    DirectoryTree(origin: box).remove();
+    0;
+}

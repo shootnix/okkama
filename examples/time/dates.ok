@@ -1,0 +1,26 @@
+module examples/time/dates v1.0.0;
+
+import "time/date" take Date, DaysBetween, GregorianDay;
+import "time/iso" take IsoDate, IsoText;
+import "io/stdout" take Stdout;
+
+// Calendar dates: build one, move it by days, count the days between two,
+// read and write ISO 8601.
+
+main() is int {
+    let out = Stdout();
+    let release = Date(year: 2026, month: 11, day: 11);
+    let deadline = release.shifted(30);
+    out.writeln("release:  " + IsoDate(origin: release).string());
+    out.writeln("deadline: " + IsoDate(origin: deadline).string());
+    out.writeln("days: " + DaysBetween(left: release, right: deadline).count().string());
+
+    // A leap day and the day after it.
+    let leap = IsoText("2028-02-29").date();
+    out.writeln("after the leap day: " + IsoDate(origin: leap.shifted(1)).string());
+
+    // Day numbers count from 0001-01-01; equal numbers mean the same day.
+    out.writeln("day number: " + GregorianDay(release).number().string());
+    out.writeln("same day: " + (GregorianDay(GregorianDay(release).number()).date() == release).string());
+    0;
+}
