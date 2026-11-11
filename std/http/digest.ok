@@ -844,7 +844,7 @@ object DigestText {
     }
 
     string() is string {
-        let normalized = Normalized(origin, NormalizationForm.nfc).string();
+        let normalized = Normalized(origin: origin, form: NormalizationForm.nfc).string();
         for Utf8Encoded(normalized).bytes() -> octet {
             confirm octet.int() >= 32 && octet.int() != 127
                 else throw InvalidAuthentication.because("digest control character");

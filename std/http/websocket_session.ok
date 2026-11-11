@@ -222,9 +222,9 @@ object WebSocketSessionState {
                     incoming.sending().close();
                     if responding {
                         let echo is Within<bool> = Within(
-                            output.control(8, frame.payload()).result(),
-                            close_timeout,
-                            clock
+                            origin: output.control(8, frame.payload()).result(),
+                            limit: close_timeout,
+                            clock: clock
                         );
                         await echo.outcome();
                         close_sent.set();
@@ -269,12 +269,12 @@ object WebSocketSessionState {
                 output.closing();
                 try {
                     let bounded is Within<bool> = Within(
-                        output.control(
+                        origin: output.control(
                             8,
                             IntegerBytes(1002, 2, Signedness.unsigned, ByteOrder.big).bytes()
                         ).result(),
-                        close_timeout,
-                        clock
+                        limit: close_timeout,
+                        clock: clock
                     );
                     await bounded.outcome();
                 }
@@ -327,7 +327,7 @@ object WebSocketSessionState {
             incoming.sending().close();
             let payload = HttpWireBytes(
                 [
-                    IntegerBytes(value.code(), 2, Signedness.unsigned, ByteOrder.big).bytes(),
+                    IntegerBytes(value: value.code(), size: 2, signedness: Signedness.unsigned, order: ByteOrder.big).bytes(),
                     Utf8Encoded(value.reason()).bytes()
                 ],
                 125
@@ -344,7 +344,7 @@ object WebSocketSessionState {
         let cleanup = WebSocketSessionFinish(self);
         defer await cleanup.close();
         if !self.closed() {
-            let bounded is Within<bool> = Within(self.handshake(code, reason), close_timeout, clock);
+            let bounded is Within<bool> = Within(origin: self.handshake(code, reason), limit: close_timeout, clock: clock);
             let pending = bounded.outcome();
             await pending;
         }

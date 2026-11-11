@@ -33,7 +33,7 @@ object ParsedCookieDate {
         let separators = Regex(
             "[\\x{09}\\x{20}-\\x{2f}\\x{3b}-\\x{40}\\x{5b}-\\x{60}\\x{7b}-\\x{7e}]+"
         );
-        for RegexParts(origin, separators) -> token {
+        for RegexParts(origin: origin, regex: separators) -> token {
             if token != "" {
                 fields = fields.following(token);
             }
@@ -60,27 +60,27 @@ object CookieDateReading {
     }
 
     following(token is string) is ^CookieDateReading {
-        if hour < 0 && RegexMatches(token, time_pattern).found() {
-            let found = FirstRegexMatch(token, time_pattern);
+        if hour < 0 && RegexMatches(origin: token, regex: time_pattern).found() {
+            let found = FirstRegexMatch(origin: token, regex: time_pattern);
             ^hour = CookieDateDecimal(found.capture(1).text()).value();
             ^minute = CookieDateDecimal(found.capture(2).text()).value();
             ^second = CookieDateDecimal(found.capture(3).text()).value();
         }
         else {
-            if day < 0 && RegexMatches(token, day_pattern).found() {
-                ^day = CookieDateDecimal(FirstRegexMatch(token, day_pattern).capture(1).text()).value();
+            if day < 0 && RegexMatches(origin: token, regex: day_pattern).found() {
+                ^day = CookieDateDecimal(FirstRegexMatch(origin: token, regex: day_pattern).capture(1).text()).value();
             }
             else {
                 let lower = HttpAsciiLowercase(token).string();
-                if month < 0 && RegexMatches(lower, month_pattern).found() {
+                if month < 0 && RegexMatches(origin: lower, regex: month_pattern).found() {
                     ^month = CookieDateMonth(
-                        FirstRegexMatch(lower, month_pattern).capture(1).text()
+                        FirstRegexMatch(origin: lower, regex: month_pattern).capture(1).text()
                     ).value();
                 }
                 else {
-                    if year < 0 && RegexMatches(token, year_pattern).found() {
+                    if year < 0 && RegexMatches(origin: token, regex: year_pattern).found() {
                         ^year = CookieDateDecimal(
-                            FirstRegexMatch(token, year_pattern).capture(1).text()
+                            FirstRegexMatch(origin: token, regex: year_pattern).capture(1).text()
                         ).value();
                     }
                 }
@@ -104,19 +104,19 @@ object CookieDateReading {
         };
         confirm full >= 1601 else throw InvalidCookieDate.because("year before 1601");
         let date = try {
-            Date(full, month, day);
+            Date(year: full, month: month, day: day);
         }
         catch e is InvalidDate {
             throw InvalidCookieDate.because("calendar fields");
         };
         let time = try {
-            TimeOfDay(hour, minute, second, 0);
+            TimeOfDay(hour: hour, minute: minute, second: second, nanosecond: 0);
         }
         catch e is InvalidTimeOfDay {
             throw InvalidCookieDate.because("clock fields");
         };
         Instant(
-            LocalDateTime(date, time).minus(LocalDateTime(Date(1970, 1, 1), TimeOfDay(0, 0, 0, 0)))
+            LocalDateTime(date: date, time: time).minus(LocalDateTime(date: Date(1970, 1, 1), time: TimeOfDay(0, 0, 0, 0)))
         );
     }
 }

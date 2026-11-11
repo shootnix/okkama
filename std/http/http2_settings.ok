@@ -94,8 +94,8 @@ object Http2Setting {
     }
 
     bytes() is @byte {
-        let key = IntegerBytes(identifier, 2, Signedness.unsigned, ByteOrder.big).bytes();
-        let data = IntegerBytes(value, 4, Signedness.unsigned, ByteOrder.big).bytes();
+        let key = IntegerBytes(value: identifier, size: 2, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+        let data = IntegerBytes(value: value, size: 4, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
         (0..6).map() -> index {
             if index < 2 {
                 key[index];

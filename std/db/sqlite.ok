@@ -43,7 +43,7 @@ object SqliteOptions {
         read_only = false;
         create = true;
         foreign_keys = true;
-        busy = Duration(0.rat(), DurationUnit.second);
+        busy = Duration(value: 0.rat(), unit: DurationUnit.second);
         journal = SqliteJournal.default_mode;
     }
 
@@ -687,13 +687,13 @@ object SqliteSession does Closing {
                 return BackupReport(frame.copies(), frame.total());
             }
             await clock.wait(Duration(
-                if frame.busy() {
+                value: if frame.busy() {
                     5.rat();
                 }
                 else {
                     0.rat();
                 },
-                DurationUnit.millisecond
+                unit: DurationUnit.millisecond
             ));
         }
     }
@@ -1679,7 +1679,7 @@ test "SQLite rejects contradictory flags and sub-millisecond busy timeouts" {
             true,
             true,
             true,
-            Duration(0.rat(), DurationUnit.second),
+            Duration(value: 0.rat(), unit: DurationUnit.second),
             SqliteJournal.default_mode
         );
         false;
@@ -1692,7 +1692,7 @@ test "SQLite rejects contradictory flags and sub-millisecond busy timeouts" {
             false,
             true,
             true,
-            Duration(1.rat() / 2000.rat(), DurationUnit.second),
+            Duration(value: 1.rat() / 2000.rat(), unit: DurationUnit.second),
             SqliteJournal.default_mode
         );
         false;

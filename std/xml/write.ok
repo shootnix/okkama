@@ -9,9 +9,9 @@ object XmlCharacters {
         confirm origin.length() <= 33554432
             else throw InvalidXml.located(0, "XML text exceeds 32 Mi scalars");
         let invalid = Regex("[\\x{0}-\\x{8}\\x{B}\\x{C}\\x{E}-\\x{1F}\\x{FFFE}\\x{FFFF}]");
-        if RegexMatches(origin, invalid).found() {
+        if RegexMatches(origin: origin, regex: invalid).found() {
             throw InvalidXml.located(
-                FirstRegexMatch(origin, invalid).range().start(),
+                FirstRegexMatch(origin: origin, regex: invalid).range().start(),
                 "character forbidden by XML 1.0"
             );
         }

@@ -352,6 +352,6 @@ enum MissingTestPosition is Error = (missing);
 enum InvalidTestResult is Error = (because(reason is string));
 
 test "empty reports have successful exit status" {
-    let duration = Duration(0.rat(), DurationUnit.second);
+    let duration = Duration(value: 0.rat(), unit: DurationUnit.second);
     test.is(TestReport(Instant(duration), duration, 42, []).exit_status(), 0);
 }

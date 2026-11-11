@@ -8,40 +8,40 @@ import "regex/match" take RegexCapture, RegexMatch, RegexMatching, UnmatchedRege
 // Mandatory searches are matches themselves: read them directly.
 // Work is lazy and memoized by an opaque query state on the first observation.
 //
-//     let first = FirstRegexMatch("one 22 three", Regex("\\d+"));
+//     let first = FirstRegexMatch(origin: "one 22 three", regex: Regex("\\d+"));
 //     first.text(); // "22"
 //
-//     let prefix = PrefixRegexMatch("22 three", Regex("\\d+"));
-//     let entire = EntireRegexMatch("22", Regex("\\d+"));
+//     let prefix = PrefixRegexMatch(origin: "22 three", regex: Regex("\\d+"));
+//     let entire = EntireRegexMatch(origin: "22", regex: Regex("\\d+"));
 //
 // Ordinary absence is checked without an exception or a value wrapper:
 //
-//     if RegexMatches(document, pattern).found() { ... }
+//     if RegexMatches(origin: document, regex: pattern).found() { ... }
 //
 // Traverse every non-overlapping match lazily:
 //
-//     for RegexMatches("a1 b22", Regex("\\d+")) -> found {
+//     for RegexMatches(origin: "a1 b22", regex: Regex("\\d+")) -> found {
 //         Stdout().writeln(found.text());
 //     }
 //
 // A selected range uses absolute Unicode-scalar offsets:
 //
-//     FirstRegexMatch(text, pattern, RegexRange(start: 10, end: 40));
+//     FirstRegexMatch(origin: text, regex: pattern, range: RegexRange(start: 10, end: 40));
 
 object FirstRegexMatch does RegexMatching {
     has observation is RegexMatchObservation;
 
     FirstRegexMatch(origin is string, regex is Regex) {
         observation = RegexMatchObservation(
-            origin,
-            regex,
-            RegexRange(0, origin.length()),
-            RegexQuery.first,
+            origin: origin,
+            regex: regex,
+            range: RegexRange(0, origin.length()),
+            mode: RegexQuery.first,
         );
     }
 
     FirstRegexMatch(origin is string, regex is Regex, range is RegexRange) {
-        observation = RegexMatchObservation(origin, regex, range, RegexQuery.first);
+        observation = RegexMatchObservation(origin: origin, regex: regex, range: range, mode: RegexQuery.first);
     }
 
     text() is string {
@@ -70,15 +70,15 @@ object PrefixRegexMatch does RegexMatching {
 
     PrefixRegexMatch(origin is string, regex is Regex) {
         observation = RegexMatchObservation(
-            origin,
-            regex,
-            RegexRange(0, origin.length()),
-            RegexQuery.prefix,
+            origin: origin,
+            regex: regex,
+            range: RegexRange(0, origin.length()),
+            mode: RegexQuery.prefix,
         );
     }
 
     PrefixRegexMatch(origin is string, regex is Regex, range is RegexRange) {
-        observation = RegexMatchObservation(origin, regex, range, RegexQuery.prefix);
+        observation = RegexMatchObservation(origin: origin, regex: regex, range: range, mode: RegexQuery.prefix);
     }
 
     text() is string {
@@ -107,15 +107,15 @@ object EntireRegexMatch does RegexMatching {
 
     EntireRegexMatch(origin is string, regex is Regex) {
         observation = RegexMatchObservation(
-            origin,
-            regex,
-            RegexRange(0, origin.length()),
-            RegexQuery.entire,
+            origin: origin,
+            regex: regex,
+            range: RegexRange(0, origin.length()),
+            mode: RegexQuery.entire,
         );
     }
 
     EntireRegexMatch(origin is string, regex is Regex, range is RegexRange) {
-        observation = RegexMatchObservation(origin, regex, range, RegexQuery.entire);
+        observation = RegexMatchObservation(origin: origin, regex: regex, range: range, mode: RegexQuery.entire);
     }
 
     text() is string {
@@ -147,7 +147,7 @@ object RegexMatches does Iterating<RegexMatching> {
     RegexMatches(origin is string, regex is Regex) {
         source = origin;
         pattern = regex;
-        selected = RegexRange(0, origin.length());
+        selected = RegexRange(start: 0, end: origin.length());
     }
 
     RegexMatches(origin is string, regex is Regex, range is RegexRange) {
@@ -198,10 +198,10 @@ hidden object RegexMatchCursor does Cursor<RegexMatching> {
         limit = end;
         self.exhausted = exhausted;
         observation = RegexMatchObservation(
-            origin,
-            regex,
-            RegexRange(position, end),
-            RegexQuery.first,
+            origin: origin,
+            regex: regex,
+            range: RegexRange(position, end),
+            mode: RegexQuery.first,
         );
     }
 
@@ -240,16 +240,16 @@ hidden object RegexMatchCursor does Cursor<RegexMatching> {
 
 test "first, prefix and entire searches" {
     let digits = Regex("\\d+");
-    let first = FirstRegexMatch("one 22 three", digits);
+    let first = FirstRegexMatch(origin: "one 22 three", regex: digits);
     test.is(first.text(), "22");
     test.is(first.range().start(), 4);
     test.is(first.range().end(), 6);
-    test.is(PrefixRegexMatch("22 three", digits).text(), "22");
-    test.is(EntireRegexMatch("22", digits).text(), "22");
-    test.ok(!RegexMatches("22x", Regex("^\\d+$")).found());
+    test.is(PrefixRegexMatch(origin: "22 three", regex: digits).text(), "22");
+    test.is(EntireRegexMatch(origin: "22", regex: digits).text(), "22");
+    test.ok(!RegexMatches(origin: "22x", regex: Regex("^\\d+$")).found());
     test.is(
         try {
-            EntireRegexMatch("22x", digits).text();
+            EntireRegexMatch(origin: "22x", regex: digits).text();
         }
         catch error is NoRegexMatch {
             "none";
@@ -257,12 +257,12 @@ test "first, prefix and entire searches" {
         "none"
     );
     // Offsets count Unicode scalars: the digit after "a😀я" is at 3.
-    test.is(FirstRegexMatch("a😀я1", Regex("\\d"), RegexRange(1, 4)).range().start(), 3);
+    test.is(FirstRegexMatch(origin: "a😀я1", regex: Regex("\\d"), range: RegexRange(1, 4)).range().start(), 3);
 }
 
 test "captures and named groups" {
     let pair = Regex("(?<key>\\w+)=(\\d+)?");
-    let found = FirstRegexMatch("x key= y", pair);
+    let found = FirstRegexMatch(origin: "x key= y", regex: pair);
     test.is(found.text(), "key=");
     test.is(found.group("key").text(), "key");
     test.is(found.capture(0).text(), "key=");
@@ -289,15 +289,15 @@ test "captures and named groups" {
 }
 
 test "matches walk every non-overlapping match" {
-    test.is(RegexMatches("a1 b22 c", Regex("\\d+")).map() -> found {
+    test.is(RegexMatches(origin: "a1 b22 c", regex: Regex("\\d+")).map() -> found {
         found.text() + "@" + found.range().start().string();
     }.join(","), "1@1,22@4");
     // An empty match advances by one scalar.
-    test.is(RegexMatches("abc", Regex("x*")).map() -> found {
+    test.is(RegexMatches(origin: "abc", regex: Regex("x*")).map() -> found {
         found.range().start().string();
     }.join(","), "0,1,2,3");
-    test.ok(RegexMatches("abc", Regex("b")).found());
-    test.is(RegexMatches("abc", Regex("\\d")).map() -> found {
+    test.ok(RegexMatches(origin: "abc", regex: Regex("b")).found());
+    test.is(RegexMatches(origin: "abc", regex: Regex("\\d")).map() -> found {
         found.text();
     }.join(","), "");
 }

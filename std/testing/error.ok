@@ -45,7 +45,7 @@ object ErrorRegexMatching does ErrorMatching {
     }
 
     match(origin is Error) is bool {
-        RegexMatches(origin.text(), pattern).found();
+        RegexMatches(origin: origin.text(), regex: pattern).found();
     }
 
     description() is string {

@@ -55,7 +55,7 @@ object IntervalRotating does Rotating {
     }
 
     suffix(now is Instant, index is int) is string {
-        Rfc3339(now, zone.offset(now)).string().split(":").join("-") + "-" + index.string();
+        Rfc3339(origin: now, offset: zone.offset(now)).string().split(":").join("-") + "-" + index.string();
     }
 }
 

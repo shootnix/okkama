@@ -31,7 +31,7 @@ object TextLogLine {
             "";
         };
         PhysicalLogLine(
-            Rfc3339(time, zone.offset(time)).string() + " level=" + LogLevelName(origin.level()).string() + " name=" + name + " process=" + context.process().string() + " message=" + message + " fields=" + fields + cause
+            Rfc3339(origin: time, offset: zone.offset(time)).string() + " level=" + LogLevelName(origin.level()).string() + " name=" + name + " process=" + context.process().string() + " message=" + message + " fields=" + fields + cause
         ).string();
     }
 }
@@ -48,7 +48,7 @@ object JsonLogLine {
         let members is @JsonField = [
             JsonField(
                 "time",
-                Rfc3339(origin.time(), Duration(0.rat(), DurationUnit.second)).string()
+                Rfc3339(origin: origin.time(), offset: Duration(0.rat(), DurationUnit.second)).string()
             ),
             JsonField("level", LogLevelName(origin.level()).string()),
             JsonField("name", context.name().string()),

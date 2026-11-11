@@ -12,8 +12,8 @@ object NameAttribute {
         confirm identifier.length() <= 1024 && value.length() <= 4096
             else throw InvalidDistinguishedName.because("attribute limit exceeded");
         confirm RegexMatches(
-            identifier,
-            Regex("^[012]\\.(?:0|[1-9][0-9]*)(?:\\.(?:0|[1-9][0-9]*))*$")
+            origin: identifier,
+            regex: Regex("^[012]\\.(?:0|[1-9][0-9]*)(?:\\.(?:0|[1-9][0-9]*))*$")
         ).found()
             else throw InvalidDistinguishedName.because("canonical dotted OID required");
         let parts = identifier.split(".");

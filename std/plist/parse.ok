@@ -293,7 +293,7 @@ object PlistXmlSource {
     }
 
     checked(text is string, at is int) is string {
-        let bytes = Utf32Encoded(text, ByteOrder.big).bytes();
+        let bytes = Utf32Encoded(origin: text, order: ByteOrder.big).bytes();
         for (0..text.length()) -> index {
             let scalar = Binary(bytes: bytes.slice(index * 4, index * 4 + 4), order: ByteOrder.big).int(
                 Signedness.unsigned
@@ -387,8 +387,8 @@ object PlistXmlSource {
                         confirm PlistXmlCharacter(scalar).valid()
                             else throw self.failure(at + index, "invalid character reference");
                         Utf32Decoded(
-                            IntegerBytes(scalar, 4, Signedness.unsigned, ByteOrder.big).bytes(),
-                            ByteOrder.big
+                            origin: IntegerBytes(scalar, 4, Signedness.unsigned, ByteOrder.big).bytes(),
+                            order: ByteOrder.big
                         ).string();
                     }
                 };
@@ -950,7 +950,7 @@ object PlistBinaryDocument {
         );
         try {
             if unicode {
-                Utf16Decoded(payload, ByteOrder.big).string();
+                Utf16Decoded(origin: payload, order: ByteOrder.big).string();
             }
             else {
                 for payload -> part {
@@ -1093,7 +1093,7 @@ object PlistBinaryDocument {
                         if marker == 51 {
                             PlistDate(
                                 Instant(
-                                    Duration(number.rat() + 978307200.rat(), DurationUnit.second)
+                                    Duration(value: number.rat() + 978307200.rat(), unit: DurationUnit.second)
                                 )
                             );
                         }

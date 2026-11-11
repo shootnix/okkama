@@ -125,7 +125,7 @@ object UrlComponentText {
                     }
                     else {
                         let code = Binary(
-                            bytes: Utf32Encoded(scalar, ByteOrder.big).bytes(),
+                            bytes: Utf32Encoded(origin: scalar, order: ByteOrder.big).bytes(),
                             order: ByteOrder.big
                         ).int(Signedness.unsigned);
                         confirm self.unicode_allowed(code)

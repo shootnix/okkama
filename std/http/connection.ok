@@ -89,7 +89,7 @@ object Http1Connecting {
         let waiting = TcpRacing(
             endpoints,
             TcpOptions(),
-            Duration(250.rat(), DurationUnit.millisecond),
+            Duration(value: 250.rat(), unit: DurationUnit.millisecond),
             clock
         ).connection();
         pending.replace([waiting]);

@@ -9,13 +9,13 @@ import "regex/escape" take EscapedRegex;
 
 main() is int {
     let c = Checks();
-    c = c.same_text("first match", FirstRegexMatch("one 22 three", Regex("\\d+")).text(), "22");
-    c = c.same_bool("absent match", RegexMatches("abc", Regex("\\d")).found(), false);
-    c = c.same_text("literal substitution", RegexSubstitution("a1 b22", Regex("\\d+"), LiteralRegexReplacement("N")).string(), "aN bN");
-    c = c.same_int("substitution count", RegexSubstitution("a1 b22", Regex("\\d+"), LiteralRegexReplacement("N")).amount(), 2);
-    c = c.same_text("named groups", RegexSubstitution("Ada Lovelace", Regex("(?<first>\\w+) (?<last>\\w+)"), ExpandedRegexReplacement("${last}, ${first}")).string(), "Lovelace, Ada");
-    c = c.same_text("literal dollar", RegexSubstitution("x", Regex("x"), LiteralRegexReplacement("$1")).string(), "$1");
-    c = c.same_texts("split keeps empty", (RegexParts("a,,b", Regex(","))).map() -> p { p; }, ["a", "", "b"]);
-    c = c.same_text("escaped literal", EntireRegexMatch("price: $5.00", Regex(EscapedRegex("price: $5.00").string())).text(), "price: $5.00");
+    c = c.same_text("first match", FirstRegexMatch(origin: "one 22 three", regex: Regex("\\d+")).text(), "22");
+    c = c.same_bool("absent match", RegexMatches(origin: "abc", regex: Regex("\\d")).found(), false);
+    c = c.same_text("literal substitution", RegexSubstitution(origin: "a1 b22", regex: Regex("\\d+"), replacing: LiteralRegexReplacement("N")).string(), "aN bN");
+    c = c.same_int("substitution count", RegexSubstitution(origin: "a1 b22", regex: Regex("\\d+"), replacing: LiteralRegexReplacement("N")).amount(), 2);
+    c = c.same_text("named groups", RegexSubstitution(origin: "Ada Lovelace", regex: Regex("(?<first>\\w+) (?<last>\\w+)"), replacing: ExpandedRegexReplacement("${last}, ${first}")).string(), "Lovelace, Ada");
+    c = c.same_text("literal dollar", RegexSubstitution(origin: "x", regex: Regex("x"), replacing: LiteralRegexReplacement("$1")).string(), "$1");
+    c = c.same_texts("split keeps empty", (RegexParts(origin: "a,,b", regex: Regex(","))).map() -> p { p; }, ["a", "", "b"]);
+    c = c.same_text("escaped literal", EntireRegexMatch(origin: "price: $5.00", regex: Regex(EscapedRegex("price: $5.00").string())).text(), "price: $5.00");
     c.done();
 }

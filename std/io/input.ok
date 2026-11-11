@@ -68,7 +68,7 @@ object ByteInput {
         confirm start >= 0 && start <= end && end <= self.available()
             else throw OutOfRange.because("range is outside the buffered input");
         let at is int = position.value();
-        ByteRange(buffer.value(), at + start, at + end);
+        ByteRange(source: buffer.value(), start: at + start, end: at + end);
     }
 
     // Consume count buffered bytes and return them.
@@ -93,7 +93,7 @@ object ByteInput {
         let searched = Atomic(0);
         loop {
             let at is int = position.value();
-            let found is int = ByteSearch(buffer.value(), terminator).from(at + searched.value());
+            let found is int = ByteSearch(source: buffer.value(), pattern: terminator).from(at + searched.value());
             if found >= 0 {
                 confirm found - at <= limit else throw LineTooLong.after(limit);
                 position.replace(found + terminator.size());

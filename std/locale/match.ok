@@ -172,7 +172,7 @@ object LocaleRangeIndex {
         }
         else {
             let slots is @Ranked<int, string> = (0..requested.size()).map() -> index {
-                Ranked(index, requested[index].string());
+                Ranked(item: index, key: requested[index].string());
             };
             let sorted = slots.ordering();
             let keys is @string = sorted.map() -> slot {
@@ -196,7 +196,7 @@ object LocaleRangeIndex {
             -1;
         }
         else {
-            let index = LowerBound(names, prefix).index();
+            let index = LowerBound(origin: names, item: prefix).index();
             if index < names.size() && names[index] == prefix {
                 priorities[index];
             }
@@ -400,7 +400,7 @@ object LocaleAvailableIndex {
         }
         else {
             let slots is @Ranked<int, string> = (0..available.size()).map() -> index {
-                Ranked(index, normalized[index]);
+                Ranked(item: index, key: normalized[index]);
             };
             let sorted = slots.ordering();
             let keys is @string = sorted.map() -> slot {
@@ -427,8 +427,8 @@ object LocaleAvailableIndex {
             -1;
         }
         else {
-            let start = LowerBound(names, prefix).index();
-            let stop = LowerBound(names, prefix + ".").index();
+            let start = LowerBound(origin: names, item: prefix).index();
+            let stop = LowerBound(origin: names, item: prefix + ".").index();
             positions[0].earliest(start, stop);
         }
     }

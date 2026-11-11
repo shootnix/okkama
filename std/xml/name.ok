@@ -60,10 +60,10 @@ object XmlNCName {
             "[" + start + "][\\-.0-9\\x{B7}\\x{300}-\\x{36F}\\x{203F}-\\x{2040}" + start + "]*"
         );
         confirm RegexMatchObservation(
-            origin,
-            pattern,
-            RegexRange(0, origin.length()),
-            RegexQuery.entire
+            origin: origin,
+            regex: pattern,
+            range: RegexRange(0, origin.length()),
+            mode: RegexQuery.entire
         ).found()
             else throw InvalidXml.located(0, "invalid XML NCName");
     }

@@ -83,12 +83,12 @@ object HttpFieldValue {
                 origin.length();
             };
             let piece = origin.slice(position, stop);
-            confirm !RegexMatches(piece, non_octet).found()
+            confirm !RegexMatches(origin: piece, regex: non_octet).found()
                 else throw InvalidHeader.detailed(
                     name.string(),
                     "field value is not an octet string"
                 );
-            state = state.following(stop, state.control() || RegexMatches(piece, controls).found());
+            state = state.following(stop, state.control() || RegexMatches(origin: piece, regex: controls).found());
         }
         confirm !state.control()
             else throw InvalidHeader.detailed(name.string(), "control in field value");
@@ -110,7 +110,7 @@ object HttpFieldValue {
                 end;
             };
             let piece = origin.slice(start, stop);
-            let removed = PrefixRegexMatch(piece, spaces).range().end();
+            let removed = PrefixRegexMatch(origin: piece, regex: spaces).range().end();
             range = range.following(start + removed, end);
             last if removed < piece.length();
         }
@@ -125,12 +125,12 @@ object HttpFieldValue {
                 start;
             };
             let piece = origin.slice(from, end);
-            let removed = PrefixRegexMatch(piece, spaces).range().end();
+            let removed = PrefixRegexMatch(origin: piece, regex: spaces).range().end();
             if removed == piece.length() {
                 range = range.following(start, from);
             }
             else {
-                range = range.following(start, from + PrefixRegexMatch(piece, ending).range().end());
+                range = range.following(start, from + PrefixRegexMatch(origin: piece, regex: ending).range().end());
                 last;
             }
         }

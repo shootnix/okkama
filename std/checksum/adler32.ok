@@ -3,7 +3,7 @@ module checksum/adler32 v1.0.0;
 import "checksum/state" take Checksumming, InvalidChecksumInitial;
 
 // Adler-32 of an immutable byte chunk continued from an unsigned 32-bit seed.
-// Adler32() and Adler32(bytes) use seed 1. Adler32(bytes, initial) rejects seeds
+// Adler32() and Adler32(bytes) use seed 1. Adler32(origin: bytes, initial: initial) rejects seeds
 // outside 0..4294967295 with InvalidChecksumInitial at construction.
 //
 //     let prefix = Adler32([byte(87), byte(105), byte(107), byte(105)]);
@@ -85,13 +85,13 @@ test "Adler-32 successors preserve their origins and branches" {
 }
 
 test "Adler-32 seeds normalize and reject out-of-range integers" {
-    test.is(Adler32([], 0).checksum(), 0);
-    test.is(Adler32([], 4294967295).checksum(), 917518);
-    test.is(Adler32([byte(0)], 4294967295).checksum(), 1835022);
+    test.is(Adler32(origin: [], initial: 0).checksum(), 0);
+    test.is(Adler32(origin: [], initial: 4294967295).checksum(), 917518);
+    test.is(Adler32(origin: [byte(0)], initial: 4294967295).checksum(), 1835022);
     test.throws(Error) {
-        Adler32([], -1);
+        Adler32(origin: [], initial: -1);
     };
     test.throws(Error) {
-        Adler32([], 4294967296);
+        Adler32(origin: [], initial: 4294967296);
     };
 }

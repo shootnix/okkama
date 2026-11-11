@@ -183,15 +183,15 @@ test "UTF encoders preserve noncharacters in every byte order" {
     ).string();
     test.is(text.length(), 3);
     test.is(
-        Utf16Encoded(text, ByteOrder.big).bytes(),
+        Utf16Encoded(origin: text, order: ByteOrder.big).bytes(),
         [byte(253), byte(208), byte(255), byte(255), byte(219), byte(255), byte(223), byte(255)]
     );
     test.is(
-        Utf16Encoded(text, ByteOrder.little).bytes(),
+        Utf16Encoded(origin: text, order: ByteOrder.little).bytes(),
         [byte(208), byte(253), byte(255), byte(255), byte(255), byte(219), byte(255), byte(223)]
     );
     test.is(
-        Utf32Encoded(text, ByteOrder.big).bytes(),
+        Utf32Encoded(origin: text, order: ByteOrder.big).bytes(),
         [
             byte(0),
             byte(0),
@@ -208,7 +208,7 @@ test "UTF encoders preserve noncharacters in every byte order" {
         ]
     );
     test.is(
-        Utf32Encoded(text, ByteOrder.little).bytes(),
+        Utf32Encoded(origin: text, order: ByteOrder.little).bytes(),
         [
             byte(208),
             byte(253),
@@ -225,8 +225,8 @@ test "UTF encoders preserve noncharacters in every byte order" {
         ]
     );
     for [ByteOrder.big, ByteOrder.little] -> order {
-        test.is(Utf16Decoded(Utf16Encoded(text, order).bytes(), order).string(), text);
-        test.is(Utf32Decoded(Utf32Encoded(text, order).bytes(), order).string(), text);
+        test.is(Utf16Decoded(origin: Utf16Encoded(text, order).bytes(), order: order).string(), text);
+        test.is(Utf32Decoded(origin: Utf32Encoded(text, order).bytes(), order: order).string(), text);
     }
     test.is(Utf8Decoded(Utf8Encoded(text).bytes()).string(), text);
 }
@@ -235,14 +235,14 @@ test "empty UTF values and BOM-shaped scalars are stable" {
     test.is(Utf8Encoded("").bytes().size(), 0);
     test.is(Utf8Decoded([]).string(), "");
     for [ByteOrder.big, ByteOrder.little] -> order {
-        test.is(Utf16Encoded("", order).bytes().size(), 0);
-        test.is(Utf32Encoded("", order).bytes().size(), 0);
-        test.is(Utf16Decoded([], order).string(), "");
-        test.is(Utf32Decoded([], order).string(), "");
+        test.is(Utf16Encoded(origin: "", order: order).bytes().size(), 0);
+        test.is(Utf32Encoded(origin: "", order: order).bytes().size(), 0);
+        test.is(Utf16Decoded(origin: [], order: order).string(), "");
+        test.is(Utf32Decoded(origin: [], order: order).string(), "");
     }
     let bom = Utf8Decoded([byte(239), byte(187), byte(191)]).string();
     test.is(bom.length(), 1);
-    test.is(Utf16Encoded(bom, ByteOrder.big).bytes(), [byte(254), byte(255)]);
+    test.is(Utf16Encoded(origin: bom, order: ByteOrder.big).bytes(), [byte(254), byte(255)]);
 }
 
 test "malformed scalar boundaries retain typed byte offsets" {
@@ -258,7 +258,7 @@ test "malformed scalar boundaries retain typed byte offsets" {
     );
     test.is(
         try {
-            Utf16Decoded([byte(0), byte(65), byte(216), byte(0)], ByteOrder.big).string();
+            Utf16Decoded(origin: [byte(0), byte(65), byte(216), byte(0)], order: ByteOrder.big).string();
             -1;
         }
         catch InvalidUtf16.at(offset) {
@@ -269,8 +269,8 @@ test "malformed scalar boundaries retain typed byte offsets" {
     test.is(
         try {
             Utf32Decoded(
-                [byte(0), byte(0), byte(0), byte(65), byte(0), byte(17), byte(0), byte(0)],
-                ByteOrder.big
+                origin: [byte(0), byte(0), byte(0), byte(65), byte(0), byte(17), byte(0), byte(0)],
+                order: ByteOrder.big
             ).string();
             -1;
         }

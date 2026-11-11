@@ -38,9 +38,9 @@ object ParsedHttp1ChunkLine {
         let quoted = "\"(?:[\\x{09}\\x{20}\\x{21}\\x{23}-\\x{5b}\\x{5d}-\\x{7e}\\x{80}-\\x{ff}]|\\\\[\\x{09}\\x{20}-\\x{7e}\\x{80}-\\x{ff}])*\"";
         let extensions = "(?:[ \\t]*;[ \\t]*" + token + "(?:[ \\t]*=[ \\t]*(?:" + token + "|" + quoted + "))?)*";
         let pattern = Regex("^([0-9A-Fa-f]+)" + extensions + "$");
-        confirm RegexMatches(origin, pattern).found()
+        confirm RegexMatches(origin: origin, regex: pattern).found()
             else throw InvalidHttpMessage.because("invalid chunk size or extension syntax");
-        let hex = EntireRegexMatch(origin, pattern).capture(1).text();
+        let hex = EntireRegexMatch(origin: origin, regex: pattern).capture(1).text();
         confirm hex.length() <= 16 else throw Http1LimitExceeded.kind("chunk_digits");
         let value = Latin1Encoded(hex).bytes().reduce(BigInt("0")) -> size, octet {
             let code = octet.int();

@@ -444,7 +444,7 @@ object GettextTokens {
         let position = Atomic(0);
         defer items.close();
         defer position.close();
-        for RegexMatches(origin, Regex("[0-9]+|n|==|!=|<=|>=|&&|\\|\\||[!?:()+*/%<>-]")) -> token {
+        for RegexMatches(origin: origin, regex: Regex("[0-9]+|n|==|!=|<=|>=|&&|\\|\\||[!?:()+*/%<>-]")) -> token {
             let at = token.range().start();
             for (position.value()..at) -> index {
                 confirm GettextSpace(origin.slice(index, index + 1)).value()
@@ -492,7 +492,7 @@ object GettextExpressionParsing {
             let token = tokens[index];
             let text = token.text();
             let at = token.offset();
-            if text == "n" || RegexMatches(text, Regex("^[0-9]+$")).found() {
+            if text == "n" || RegexMatches(origin: text, regex: Regex("^[0-9]+$")).found() {
                 confirm expected.value()
                     else throw InvalidCatalog.located(at, "trailing plural token");
                 values.replace(values.value().prefix(GettextLiteral(text, at)));
@@ -659,15 +659,15 @@ object GettextPluralRule {
     GettextPluralRule(origin is string) {
         confirm origin.length() <= 4096
             && RegexMatches(
-                origin,
-                Regex(
+                origin: origin,
+                regex: Regex(
                     "^nplurals[ \\t]*=[ \\t]*[0-9]{1,2}[ \\t]*;[ \\t]*plural[ \\t]*=[ \\t]*[^;]+;?[ \\t]*$"
                 )
             ).found()
             else throw InvalidCatalog.located(0, "invalid Plural-Forms header");
         let fields = EntireRegexMatch(
-            origin,
-            Regex(
+            origin: origin,
+            regex: Regex(
                 "^nplurals[ \\t]*=[ \\t]*([0-9]{1,2})[ \\t]*;[ \\t]*plural[ \\t]*=[ \\t]*([^;]+);?[ \\t]*$"
             )
         );
@@ -938,7 +938,7 @@ object GettextMetadata {
                 confirm parts.size() >= 2
                     else throw InvalidCatalog.located(0, "metadata field lacks colon");
                 let name = parts[0];
-                confirm RegexMatches(name, Regex("^[A-Za-z][A-Za-z0-9-]*$")).found()
+                confirm RegexMatches(origin: name, regex: Regex("^[A-Za-z][A-Za-z0-9-]*$")).found()
                     else throw InvalidCatalog.located(0, "invalid metadata name");
                 let key = GettextAscii(name).lower();
                 let list = cell.value();
@@ -981,7 +981,7 @@ object GettextMetadata {
             else throw InvalidCatalog.located(0, "MO metadata requires Content-Type charset");
         let content = self.text("content-type");
         let expression = Regex("[cC][hH][aA][rR][sS][eE][tT][ \\t]*=[ \\t]*([A-Za-z0-9._-]+)");
-        let matches = RegexMatches(content, expression);
+        let matches = RegexMatches(origin: content, regex: expression);
         let empty is List<string> = EmptyList();
         let found is Atomic<List<string>> = Atomic(empty);
         defer found.close();
@@ -1103,8 +1103,8 @@ object PoQuoted {
         defer pieces.close();
         defer position.close();
         for RegexMatches(
-            text,
-            Regex("[^\\\\\"\\r\\n]+|\\\\(?:[abfnrtv\\\\\"']|[0-7]{1,3}|x[0-9A-Fa-f]+)")
+            origin: text,
+            regex: Regex("[^\\\\\"\\r\\n]+|\\\\(?:[abfnrtv\\\\\"']|[0-7]{1,3}|x[0-9A-Fa-f]+)")
         ) -> token {
             let at = token.range().start();
             confirm at == position.value()
@@ -1234,8 +1234,8 @@ object PoEscaped {
         let pieces is Atomic<List<string>> = Atomic(empty);
         defer pieces.close();
         for RegexMatches(
-            origin,
-            Regex("[^\\\\\"\\x{0}-\\x{1f}\\x{7f}]+|[\\\\\"\\x{0}-\\x{1f}\\x{7f}]")
+            origin: origin,
+            regex: Regex("[^\\\\\"\\x{0}-\\x{1f}\\x{7f}]+|[\\\\\"\\x{0}-\\x{1f}\\x{7f}]")
         ) -> part {
             let scalar = part.text();
             let escaped = if scalar.length() > 1 {
@@ -1395,7 +1395,7 @@ object PoLineStrings {
         let position = Atomic(0);
         defer pieces.close();
         defer position.close();
-        for RegexMatches(origin, Regex("\"(?:[^\\\\\"\\r\\n]|\\\\.)*\"")) -> part {
+        for RegexMatches(origin: origin, regex: Regex("\"(?:[^\\\\\"\\r\\n]|\\\\.)*\"")) -> part {
             for (position.value()..part.range().start()) -> index {
                 confirm GettextSpace(origin.slice(index, index + 1)).value()
                     else throw InvalidCatalog.located(offset + index, "text between quoted strings");
@@ -1737,9 +1737,9 @@ object PoParsing {
         let expression = Regex(
             "^(msgctxt|msgid_plural|msgid|msgstr)(?:\\[([0-9]{1,2})\\])?[ \\t]+(.*)$"
         );
-        confirm RegexMatches(text, expression).found()
+        confirm RegexMatches(origin: text, regex: expression).found()
             else throw InvalidCatalog.located(at, "unknown PO directive");
-        let directive = EntireRegexMatch(text, expression);
+        let directive = EntireRegexMatch(origin: text, regex: expression);
         let name = directive.capture(1).text();
         let indexed = directive.capture(2).matched();
         confirm !indexed || name == "msgstr"

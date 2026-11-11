@@ -32,7 +32,7 @@ async main() is int {
     let connection = await TlsClientHandshake(tcp, IpCertificateIdentity(IpAddress("127.0.0.1")), policy).connection();
     defer connection.close();
     let timed = try {
-        await Within(Reader(connection: connection).bytes(), Duration(1.rat() / 10.rat(), DurationUnit.second), SystemClock()).outcome();
+        await Within(origin: Reader(connection: connection).bytes(), limit: Duration(1.rat() / 10.rat(), DurationUnit.second), clock: SystemClock()).outcome();
         "read early";
     } catch TimedOut.elapsed { "timed out"; };
     out.writeln(timed);

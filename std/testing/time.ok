@@ -19,7 +19,7 @@ object ManualClock does Timing {
         CheckContext().verify();
         domain = clock_domain(true);
         cell = Atomic(
-            ManualClockFrame(start, Duration(0.rat(), DurationUnit.second), [], 0, false, false)
+            ManualClockFrame(start, Duration(value: 0.rat(), unit: DurationUnit.second), [], 0, false, false)
         );
     }
 
@@ -30,7 +30,7 @@ object ManualClock does Timing {
 
     monotonic_instant() is MonotonicInstant {
         CheckContext().verify();
-        MonotonicInstant(self.open().elapsed(), domain);
+        MonotonicInstant(origin: self.open().elapsed(), domain: domain);
     }
 
     set_wall(value is Instant) is void {
@@ -257,8 +257,8 @@ enum ManualClockClosed is Error = (closed);
 enum InvalidManualClock is Error = (because(reason is string));
 
 test "manual clock changes no host clock" {
-    let clock = ManualClock(Instant(Duration(0.rat(), DurationUnit.second)));
+    let clock = ManualClock(Instant(Duration(value: 0.rat(), unit: DurationUnit.second)));
     defer clock.close();
-    clock.advance(Duration(2.rat(), DurationUnit.second));
+    clock.advance(Duration(value: 2.rat(), unit: DurationUnit.second));
     test.is(clock.monotonic_instant().reading().seconds(), 2.rat());
 }

@@ -45,7 +45,7 @@ object Http2ResetFrame {
     frame() is Http2Frame {
         Http2Frame(
             Http2FrameHeader(3.byte(), 0.byte(), stream, 4),
-            IntegerBytes(code, 4, Signedness.unsigned, ByteOrder.big).bytes()
+            IntegerBytes(value: code, size: 4, signedness: Signedness.unsigned, order: ByteOrder.big).bytes()
         );
     }
 }
@@ -127,8 +127,8 @@ object Http2GoAwayFrame {
     }
 
     frame() is Http2Frame {
-        let id = IntegerBytes(last_stream, 4, Signedness.unsigned, ByteOrder.big).bytes();
-        let status = IntegerBytes(code, 4, Signedness.unsigned, ByteOrder.big).bytes();
+        let id = IntegerBytes(value: last_stream, size: 4, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+        let status = IntegerBytes(value: code, size: 4, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
         let payload = HttpWireBytes([id, status, debug], 8 + debug.size()).bytes();
         Http2Frame(Http2FrameHeader(7.byte(), 0.byte(), 0, payload.size()), payload);
     }

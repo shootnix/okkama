@@ -340,8 +340,8 @@ object RobotsPolicy {
             if index > 0 && selected[index - 1] == id {
                 next;
             }
-            let start = LowerBound(rule_groups, id).index();
-            let stop = LowerBound(rule_groups, id + 1).index();
+            let start = LowerBound(origin: rule_groups, item: id).index();
+            let stop = LowerBound(origin: rule_groups, item: id + 1).index();
             for (start..stop) -> at {
                 let entry = rules[at];
                 if entry.matches(target) {
@@ -367,8 +367,8 @@ object RobotsPolicy {
             if index > 0 && ids[index - 1] == id {
                 next;
             }
-            let start = LowerBound(delay_groups, id).index();
-            let stop = LowerBound(delay_groups, id + 1).index();
+            let start = LowerBound(origin: delay_groups, item: id).index();
+            let stop = LowerBound(origin: delay_groups, item: id + 1).index();
             for (start..stop) -> at {
                 found.replace(true);
                 let value = delays[at].delay().seconds();
@@ -378,7 +378,7 @@ object RobotsPolicy {
             }
         }
         confirm found.value() else throw MissingCrawlDelay.missing;
-        Duration(seconds.value(), DurationUnit.second);
+        Duration(value: seconds.value(), unit: DurationUnit.second);
     }
 
     sitemaps() is Sequencing<Url> {
@@ -549,7 +549,7 @@ object RobotsDelay {
     }
 
     duration() is Duration {
-        Duration(seconds, DurationUnit.second);
+        Duration(value: seconds, unit: DurationUnit.second);
     }
 }
 

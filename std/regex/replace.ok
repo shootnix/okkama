@@ -18,17 +18,17 @@ role ReplacingRegexMatch {
 // Literal replacement never interprets dollars:
 //
 //     RegexSubstitution(
-//         "a1 b22",
-//         Regex("\\d+"),
-//         LiteralRegexReplacement("N"),
+//         origin: "a1 b22",
+//         regex: Regex("\\d+"),
+//         replacing: LiteralRegexReplacement("N"),
 //     ).string(); // "aN bN"
 //
 // Expanded replacement supports $0, $1, ${name} and $$:
 //
 //     let changed = RegexSubstitution(
-//         "Ada Lovelace",
-//         Regex("(?<first>\\w+) (?<last>\\w+)"),
-//         ExpandedRegexReplacement("${last}, ${first}"),
+//         origin: "Ada Lovelace",
+//         regex: Regex("(?<first>\\w+) (?<last>\\w+)"),
+//         replacing: ExpandedRegexReplacement("${last}, ${first}"),
 //     );
 //     changed.string(); // "Lovelace, Ada"
 //     changed.amount(); // 1
@@ -154,7 +154,7 @@ hidden object ReplacementTokenCursor does Cursor<ReplacementToken> {
 
     item() is ReplacementToken {
         confirm self.available() else throw IterationEnded.ended;
-        ReplacementToken(origin[position], origin[position + 1]);
+        ReplacementToken(kind: origin[position], text: origin[position + 1]);
     }
 
     successor() is Cursor<ReplacementToken> {
@@ -207,7 +207,7 @@ object RegexSubstitution {
     }
 
     hidden matches() is Iterating<RegexMatching> {
-        let found = RegexMatches(source, pattern);
+        let found = RegexMatches(origin: source, regex: pattern);
         if maximum < 0 {
             found;
         }

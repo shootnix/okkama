@@ -20,7 +20,7 @@ object SnapshotFile {
             && name != "."
             && name != ".."
             && Utf8Encoded(name).bytes().size() <= 255
-            && !RegexMatches(name, Regex("[/\\\\\\x{0}]")).found()
+            && !RegexMatches(origin: name, regex: Regex("[/\\\\\\x{0}]")).found()
             else throw InvalidSnapshot.because("name must be one relative component");
         self.root = root.path();
         self.name = name;

@@ -36,8 +36,8 @@ object WebSocketPolicy {
 
     WebSocketPolicy() {
         limits = WebSocketLimits();
-        opening = Duration(30.rat(), DurationUnit.second);
-        closing = Duration(5.rat(), DurationUnit.second);
+        opening = Duration(value: 30.rat(), unit: DurationUnit.second);
+        closing = Duration(value: 5.rat(), unit: DurationUnit.second);
         access = PublicEndpoints();
     }
 
@@ -110,9 +110,9 @@ object WebSocketConnecting {
         let route = HttpEndpointSelection(transport, resolver, policy.access());
         let operation = WebSocketOpening(url, protocols, headers, route, tls, policy, clock);
         let bounded is Within<WebSocketSession> = Within(
-            operation.open(),
-            policy.opening_timeout(),
-            clock
+            origin: operation.open(),
+            limit: policy.opening_timeout(),
+            clock: clock
         );
         waiting = bounded.outcome();
     }
@@ -170,7 +170,7 @@ object WebSocketOpening {
         let waiting = TcpRacing(
             endpoints,
             TcpOptions(),
-            Duration(250.rat(), DurationUnit.millisecond),
+            Duration(value: 250.rat(), unit: DurationUnit.millisecond),
             clock
         ).connection();
         pending.replace([waiting]);

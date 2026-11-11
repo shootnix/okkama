@@ -19,7 +19,7 @@ async main() is int {
     let c=Checks();
     let scratch=TemporaryDirectory(Directory(Path(".")),"db-api-");defer scratch.close();
     let database=SqliteDatabase(Path(scratch.path().string()+"/test.sqlite"),SqliteOptions());
-    let options=PoolOptions(0,1,Duration(30.rat(),DurationUnit.second),Duration(60.rat(),DurationUnit.second),Duration(5.rat(),DurationUnit.second));
+    let options=PoolOptions(0,1,Duration(value: 30.rat(),unit: DurationUnit.second),Duration(value: 60.rat(),unit: DurationUnit.second),Duration(value: 5.rat(),unit: DurationUnit.second));
     let pool=DbPreparedPool(SqliteAcquiring(database),options,SystemClock());
     defer await pool.settled();defer pool.close();
     let lease=await pool.connection();

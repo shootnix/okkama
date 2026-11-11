@@ -18,7 +18,7 @@ object ShortestFloat {
 
     ShortestFloat(origin is float) {
         self.origin = origin;
-        let bytes = FloatBytes(origin, FloatWidth.bits64, ByteOrder.big).bytes();
+        let bytes = FloatBytes(value: origin, width: FloatWidth.bits64, order: ByteOrder.big).bytes();
         negative = bytes[0].int() >= 128;
         let magnitude is @byte = (0..8).map() -> index {
             if index == 0 {
@@ -98,10 +98,10 @@ hidden object Binary64RoundingInterval {
     hidden ratio(numerator is int, power is int) is BigRational {
         let whole = BigInt(numerator.string());
         if power >= 0 {
-            BigRational((whole * BigInt("2").power(power, 1100)), BigInt("1"));
+            BigRational(numerator: (whole * BigInt("2").power(power, 1100)), denominator: BigInt("1"));
         }
         else {
-            BigRational(whole, BigInt("2").power(-power, 1100));
+            BigRational(numerator: whole, denominator: BigInt("2").power(-power, 1100));
         }
     }
 }

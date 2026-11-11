@@ -79,11 +79,11 @@ object WebSocketFrameHeader {
             0;
         }).byte();
         let extended is @byte = if indicator == 126 {
-            IntegerBytes(length, 2, Signedness.unsigned, ByteOrder.big).bytes();
+            IntegerBytes(value: length, size: 2, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
         }
         else {
             if indicator == 127 {
-                IntegerBytes(length, 8, Signedness.unsigned, ByteOrder.big).bytes();
+                IntegerBytes(value: length, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
             }
             else {
                 let empty is @byte = [];

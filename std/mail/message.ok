@@ -188,7 +188,7 @@ object MailDatePrinting {
         confirm known || seconds == 0
             else throw InvalidMail.located(0, "unknown mail offset must have zero displacement");
         let local = try {
-            LocalDateTime(Date(1970, 1, 1), TimeOfDay(0, 0, 0, 0)).plus(elapsed.plus(offset));
+            LocalDateTime(date: Date(1970, 1, 1), time: TimeOfDay(0, 0, 0, 0)).plus(elapsed.plus(offset));
         }
         catch failure is InvalidDate {
             throw InvalidMail.located(0, "mail date outside supported calendar");
@@ -235,8 +235,8 @@ object MailParsedDate {
     }
 
     value() is ZonedDateTime {
-        let zone = FixedZone("mail", Duration(offset.seconds().rat(), DurationUnit.second));
-        ZonedDateTime(zone.instant(local, Fold.earlier), zone);
+        let zone = FixedZone(name: "mail", offset: Duration(offset.seconds().rat(), DurationUnit.second));
+        ZonedDateTime(instant: zone.instant(local, Fold.earlier), zone: zone);
     }
 
     offset_known() is bool {
@@ -316,7 +316,7 @@ object MailDateParsing {
             0;
         };
         let local = try {
-            LocalDateTime(Date(year, month, day), TimeOfDay(hour, minute, second, 0));
+            LocalDateTime(date: Date(year, month, day), time: TimeOfDay(hour, minute, second, 0));
         }
         catch failure is InvalidDate {
             throw InvalidMail.located(0, "invalid mail calendar date");

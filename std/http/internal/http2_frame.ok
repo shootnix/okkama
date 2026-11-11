@@ -90,8 +90,8 @@ object Http2FrameHeader {
     }
 
     bytes() is @byte {
-        let size = IntegerBytes(length, 3, Signedness.unsigned, ByteOrder.big).bytes();
-        let id = IntegerBytes(stream, 4, Signedness.unsigned, ByteOrder.big).bytes();
+        let size = IntegerBytes(value: length, size: 3, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+        let id = IntegerBytes(value: stream, size: 4, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
         [size[0], size[1], size[2], kind, flags, id[0], id[1], id[2], id[3]];
     }
 }

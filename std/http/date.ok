@@ -25,7 +25,7 @@ object HttpDate does Comparing<HttpDate> {
         else {
             truncated;
         };
-        self.origin = Instant(Duration(whole.rat(), DurationUnit.second));
+        self.origin = Instant(Duration(value: whole.rat(), unit: DurationUnit.second));
     }
 
     value() is Instant {
@@ -55,8 +55,8 @@ object HttpDate does Comparing<HttpDate> {
         ];
         let weekday = weekdays[(GregorianDay(local.date()).number() - 1) % 7];
         weekday + ", " + FormattedLocalDateTime(
-            local,
-            "%d " + months[local.date().month() - 1] + " %Y %H:%M:%S GMT"
+            origin: local,
+            pattern: "%d " + months[local.date().month() - 1] + " %Y %H:%M:%S GMT"
         ).string();
     }
 }
@@ -153,7 +153,7 @@ object HttpDateLocal {
     }
 
     value() is LocalDateTime {
-        let epoch = LocalDateTime(Date(1970, 1, 1), TimeOfDay(0, 0, 0, 0));
+        let epoch = LocalDateTime(date: Date(1970, 1, 1), time: TimeOfDay(0, 0, 0, 0));
         epoch.plus(origin.unix_duration());
     }
 }
@@ -163,18 +163,18 @@ object HttpDateFields {
 
     HttpDateFields(year is int, month is int, day is int, time is TimeOfDay, weekday is int) {
         let date = try {
-            Date(year, month, day);
+            Date(year: year, month: month, day: day);
         }
         catch failure is InvalidDate {
             throw InvalidHttpDate.because("calendar date");
         };
         confirm (GregorianDay(date).number() - 1) % 7 == weekday
             else throw InvalidHttpDate.because("weekday disagrees with date");
-        local = LocalDateTime(date, time);
+        local = LocalDateTime(date: date, time: time);
     }
 
     value() is Instant {
-        let epoch = LocalDateTime(Date(1970, 1, 1), TimeOfDay(0, 0, 0, 0));
+        let epoch = LocalDateTime(date: Date(1970, 1, 1), time: TimeOfDay(0, 0, 0, 0));
         Instant(local.minus(epoch));
     }
 }
@@ -191,10 +191,10 @@ object HttpDateClock {
             else throw InvalidHttpDate.because("clock layout");
         try {
             TimeOfDay(
-                HttpDateDecimal(origin.slice(0, 2), 2).value(),
-                HttpDateDecimal(origin.slice(3, 5), 2).value(),
-                HttpDateDecimal(origin.slice(6, 8), 2).value(),
-                0
+                hour: HttpDateDecimal(origin.slice(0, 2), 2).value(),
+                minute: HttpDateDecimal(origin.slice(3, 5), 2).value(),
+                second: HttpDateDecimal(origin.slice(6, 8), 2).value(),
+                nanosecond: 0
             );
         }
         catch failure is InvalidTimeOfDay {

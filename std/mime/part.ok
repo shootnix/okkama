@@ -1064,16 +1064,16 @@ object MimeDecodedText {
                     Latin1Decoded(origin).string();
                 }
                 case "UTF-16BE" {
-                    Utf16Decoded(origin, ByteOrder.big).string();
+                    Utf16Decoded(origin: origin, order: ByteOrder.big).string();
                 }
                 case "UTF-16LE" {
-                    Utf16Decoded(origin, ByteOrder.little).string();
+                    Utf16Decoded(origin: origin, order: ByteOrder.little).string();
                 }
                 case "UTF-32BE" {
-                    Utf32Decoded(origin, ByteOrder.big).string();
+                    Utf32Decoded(origin: origin, order: ByteOrder.big).string();
                 }
                 case "UTF-32LE" {
-                    Utf32Decoded(origin, ByteOrder.little).string();
+                    Utf32Decoded(origin: origin, order: ByteOrder.little).string();
                 }
                 else {
                     throw UnsupportedMimeCharset.charset(charset);
@@ -1685,16 +1685,16 @@ object MimeTextBytes {
                 Latin1Encoded(origin).bytes();
             }
             case "UTF-16BE" {
-                Utf16Encoded(origin, ByteOrder.big).bytes();
+                Utf16Encoded(origin: origin, order: ByteOrder.big).bytes();
             }
             case "UTF-16LE" {
-                Utf16Encoded(origin, ByteOrder.little).bytes();
+                Utf16Encoded(origin: origin, order: ByteOrder.little).bytes();
             }
             case "UTF-32BE" {
-                Utf32Encoded(origin, ByteOrder.big).bytes();
+                Utf32Encoded(origin: origin, order: ByteOrder.big).bytes();
             }
             case "UTF-32LE" {
-                Utf32Encoded(origin, ByteOrder.little).bytes();
+                Utf32Encoded(origin: origin, order: ByteOrder.little).bytes();
             }
             else {
                 throw UnsupportedMimeCharset.charset(charset);

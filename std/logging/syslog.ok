@@ -196,7 +196,7 @@ object SyslogMessage does ByteSource {
         let priority = SyslogFacilityCode(options.facility()).value() * 8 + SyslogSeverity(
             record.level()
         ).value();
-        let time = Rfc3339(record.time(), Duration(0.rat(), DurationUnit.second)).string();
+        let time = Rfc3339(origin: record.time(), offset: Duration(0.rat(), DurationUnit.second)).string();
         let parts = time.split(".");
         let timestamp = if parts.size() == 1 {
             time;

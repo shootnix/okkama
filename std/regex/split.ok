@@ -8,7 +8,7 @@ import "regex/search" take RegexMatches;
 // RegexParts is the collection itself. It does not wrap an array behind
 // values(), and it does not materialize the complete split before traversal.
 //
-//     let fields = RegexParts("one, two;three", Regex("[,;]\\s*"));
+//     let fields = RegexParts(origin: "one, two;three", regex: Regex("[,;]\\s*"));
 //     for fields -> field {
 //         Stdout().writeln(field);
 //     }
@@ -36,7 +36,7 @@ object RegexParts does Iterating<string> {
     cursor() is Cursor<string> {
         RegexPartsCursor(
             origin: source,
-            separators: RegexMatches(source, pattern).cursor(),
+            separators: RegexMatches(origin: source, regex: pattern).cursor(),
             offset: 0,
             remaining: maximum,
             final: false,
@@ -119,14 +119,14 @@ test "parts keep empty fields and honour a limit" {
             "[" + part + "]";
         }.join("");
     };
-    test.is(text(RegexParts(",a,,b,", Regex(","))), "[][a][][b][]");
-    test.is(text(RegexParts("one, two;three", Regex("[,;]\\s*"))), "[one][two][three]");
-    test.is(text(RegexParts("a,b,c", Regex(","), 1)), "[a][b,c]");
-    test.is(text(RegexParts("abc", Regex(","))), "[abc]");
-    test.is(text(RegexParts("", Regex(","))), "[]");
+    test.is(text(RegexParts(origin: ",a,,b,", regex: Regex(","))), "[][a][][b][]");
+    test.is(text(RegexParts(origin: "one, two;three", regex: Regex("[,;]\\s*"))), "[one][two][three]");
+    test.is(text(RegexParts(origin: "a,b,c", regex: Regex(","), limit: 1)), "[a][b,c]");
+    test.is(text(RegexParts(origin: "abc", regex: Regex(","))), "[abc]");
+    test.is(text(RegexParts(origin: "", regex: Regex(","))), "[]");
     test.is(
         try {
-            text(RegexParts("a,b", Regex(","), 0));
+            text(RegexParts(origin: "a,b", regex: Regex(","), limit: 0));
         }
         catch InvalidRegexSplitLimit.limit(limit) {
             "limit " + limit.string();

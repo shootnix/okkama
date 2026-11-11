@@ -3862,8 +3862,8 @@ URL-safe), Base32, Base85, hex, quoted-printable, ASCII и Latin-1 устрое�
 целых полуоткрыты.
 
 `regex` — переносимый диалект без обратных ссылок и lookaround:
-`FirstRegexMatch(text, Regex("\\d+")).text()`,
-`for RegexMatches(text, pattern) -> found`, `RegexParts` для разбиения и
+`FirstRegexMatch(origin: text, regex: Regex("\\d+")).text()`,
+`for RegexMatches(origin: text, regex: pattern) -> found`, `RegexParts` для разбиения и
 `RegexSubstitution` с `ExpandedRegexReplacement("${last}, ${first}")` для
 замены. Смещения считают скалярные значения Unicode.
 

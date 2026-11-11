@@ -122,11 +122,11 @@ object ArchiveModificationFromEpoch {
     has elapsed is Duration;
 
     ArchiveModificationFromEpoch(seconds is rat) {
-        elapsed = Duration(seconds, DurationUnit.second);
+        elapsed = Duration(value: seconds, unit: DurationUnit.second);
     }
 
     value() is LocalDateTime {
-        LocalDateTime(Date(1970, 1, 1), TimeOfDay(0, 0, 0, 0)).plus(elapsed);
+        LocalDateTime(date: Date(1970, 1, 1), time: TimeOfDay(0, 0, 0, 0)).plus(elapsed);
     }
 }
 

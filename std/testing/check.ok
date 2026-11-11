@@ -140,7 +140,7 @@ object CheckValueText {
             256;
         };
         let text = origin.slice(0, limit);
-        let unsafe = RegexMatches(text, Regex("[\\x{0}-\\x{8}\\x{b}\\x{c}\\x{e}-\\x{1f}\\x{7f}]")).found();
+        let unsafe = RegexMatches(origin: text, regex: Regex("[\\x{0}-\\x{8}\\x{b}\\x{c}\\x{e}-\\x{1f}\\x{7f}]")).found();
         let rendered = if unsafe {
             "UTF-8 bytes " + HexEncoded(Utf8Encoded(text).bytes()).string();
         }
@@ -491,7 +491,7 @@ object MatchingRegex does Checking {
 
     check() is void {
         CheckContext().verify();
-        if !RegexMatches(origin, pattern).found() {
+        if !RegexMatches(origin: origin, regex: pattern).found() {
             test.fail("text does not match regex " + data_dump(pattern.expression()));
         }
     }

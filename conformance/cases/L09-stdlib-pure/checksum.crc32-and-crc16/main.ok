@@ -10,8 +10,8 @@ main() is int {
     c = c.same_int("crc32 check value", Crc32(Utf8Encoded(origin: "123456789").bytes()).checksum(), 3421780262);
     c = c.same_int("crc32 chunked", Crc32(Utf8Encoded(origin: "1234").bytes()).state(Utf8Encoded(origin: "56789").bytes()).checksum(), 3421780262);
     c = c.same_int("crc32 empty", Crc32().checksum(), 0);
-    c = c.same_int("crc16 seed 65535", Crc16Ccitt(Utf8Encoded(origin: "123456789").bytes(), 65535).checksum(), 10673);
-    c = c.same_int("crc16 seed 0", Crc16Ccitt(Utf8Encoded(origin: "123456789").bytes(), 0).checksum(), 12739);
-    c = c.same_text("invalid seed", try { let probe = Crc32(@byte(), -1).checksum(); "no error"; } catch e is InvalidChecksumInitial { "rejected"; }, "rejected");
+    c = c.same_int("crc16 seed 65535", Crc16Ccitt(origin: Utf8Encoded(origin: "123456789").bytes(), initial: 65535).checksum(), 10673);
+    c = c.same_int("crc16 seed 0", Crc16Ccitt(origin: Utf8Encoded(origin: "123456789").bytes(), initial: 0).checksum(), 12739);
+    c = c.same_text("invalid seed", try { let probe = Crc32(origin: @byte(), initial: -1).checksum(); "no error"; } catch e is InvalidChecksumInitial { "rejected"; }, "rejected");
     c.done();
 }

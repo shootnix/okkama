@@ -395,7 +395,7 @@ object LocalizedZoneObservation {
     }
 
     local() is LocalDateTime {
-        ZonedDateTime(instant, FixedZone(name, offset)).local_datetime();
+        ZonedDateTime(instant: instant, zone: FixedZone(name, offset)).local_datetime();
     }
 
     name() is string {
@@ -854,5 +854,5 @@ object LocalizedInstant {
 }
 
 test "localized date keeps the Gregorian year explicit" {
-    test.is(LocalizedDate(Date(2026, 8, 11), Locale("en"), DateStyle.short).string(), "8/11/26");
+    test.is(LocalizedDate(Date(year: 2026, month: 8, day: 11), Locale("en"), DateStyle.short).string(), "8/11/26");
 }

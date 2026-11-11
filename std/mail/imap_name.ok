@@ -153,7 +153,7 @@ object ImapUtf7Run {
     }
 
     string() is string {
-        let encoded = Base64Encoded(Utf16Encoded(origin, ByteOrder.big).bytes()).string();
+        let encoded = Base64Encoded(Utf16Encoded(origin: origin, order: ByteOrder.big).bytes()).string();
         let chars is @string = (0..encoded.length()).map() -> index {
             let char = encoded.slice(index, index + 1);
             if char == "=" {
@@ -279,7 +279,7 @@ object ImapUtf7Shift {
             throw InvalidImapUtf7.located(offset, "invalid Base64 padding bits");
         };
         try {
-            Utf16Decoded(bytes, ByteOrder.big).string();
+            Utf16Decoded(origin: bytes, order: ByteOrder.big).string();
         }
         catch failure is InvalidUtf16 {
             throw InvalidImapUtf7.located(offset, "invalid UTF-16BE shift");

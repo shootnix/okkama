@@ -10,10 +10,10 @@ import "runtime/bytes" take bytes_find, bytes_utf8_invalid, bytes_text, bytes_de
 // bytes in place, without slicing them into new arrays first.
 //
 //     let frame is @byte = ...; // "VALUE key 0 5\r\nhello\r\n"
-//     let eol is int = ByteSearch(frame, Utf8Encoded("\r\n").bytes()).from(0);
-//     let space is int = ByteSearch(frame, [byte(32)]).from(10);
-//     let size is int = ByteRange(frame, space + 1, eol).decimal();      // 5
-//     let value is string = ByteRange(frame, eol + 2, eol + 2 + size).text();
+//     let eol is int = ByteSearch(source: frame, pattern: Utf8Encoded("\r\n").bytes()).from(0);
+//     let space is int = ByteSearch(source: frame, pattern: [byte(32)]).from(10);
+//     let size is int = ByteRange(source: frame, start: space + 1, end: eol).decimal();      // 5
+//     let value is string = ByteRange(source: frame, start: eol + 2, end: eol + 2 + size).text();
 //
 // Offsets are byte offsets into the source. A range is start..end, end
 // excluded. InvalidUtf8 and InvalidByteDecimal report offsets relative to the
@@ -100,15 +100,15 @@ object ByteRange {
 test "byte search finds patterns from an offset" {
     let source is @byte = [byte(97), byte(13), byte(10), byte(98), byte(13), byte(10)];
     let crlf is @byte = [byte(13), byte(10)];
-    test.is(ByteSearch(source, crlf).from(0), 1);
-    test.is(ByteSearch(source, crlf).from(2), 4);
-    test.is(ByteSearch(source, crlf).from(5), -1);
-    test.is(ByteSearch(source, crlf).from(6), -1);
-    test.is(ByteSearch(source, [byte(98)]).from(0), 3);
-    test.is(ByteSearch([], crlf).from(0), -1);
+    test.is(ByteSearch(source: source, pattern: crlf).from(0), 1);
+    test.is(ByteSearch(source: source, pattern: crlf).from(2), 4);
+    test.is(ByteSearch(source: source, pattern: crlf).from(5), -1);
+    test.is(ByteSearch(source: source, pattern: crlf).from(6), -1);
+    test.is(ByteSearch(source: source, pattern: [byte(98)]).from(0), 3);
+    test.is(ByteSearch(source: [], pattern: crlf).from(0), -1);
     test.is(
         try {
-            ByteSearch(source, crlf).from(7);
+            ByteSearch(source: source, pattern: crlf).from(7);
             "found";
         }
         catch OutOfRange.because(reason) {
@@ -118,7 +118,7 @@ test "byte search finds patterns from an offset" {
     );
     test.is(
         try {
-            ByteSearch(source, []).from(0);
+            ByteSearch(source: source, pattern: []).from(0);
             "found";
         }
         catch InvalidArgument.because(reason) {
@@ -130,12 +130,12 @@ test "byte search finds patterns from an offset" {
 
 test "byte ranges decode UTF-8 in place" {
     let source is @byte = [byte(120), byte(208), byte(175), byte(121), byte(255)];
-    test.is(ByteRange(source, 1, 3).text(), "Я");
-    test.is(ByteRange(source, 0, 4).text(), "xЯy");
-    test.is(ByteRange(source, 2, 2).text(), "");
+    test.is(ByteRange(source: source, start: 1, end: 3).text(), "Я");
+    test.is(ByteRange(source: source, start: 0, end: 4).text(), "xЯy");
+    test.is(ByteRange(source: source, start: 2, end: 2).text(), "");
     test.is(
         try {
-            ByteRange(source, 2, 4).text();
+            ByteRange(source: source, start: 2, end: 4).text();
             -1;
         }
         catch InvalidUtf8.at(offset) {
@@ -145,7 +145,7 @@ test "byte ranges decode UTF-8 in place" {
     );
     test.is(
         try {
-            ByteRange(source, 3, 5).text();
+            ByteRange(source: source, start: 3, end: 5).text();
             -1;
         }
         catch InvalidUtf8.at(offset) {
@@ -155,7 +155,7 @@ test "byte ranges decode UTF-8 in place" {
     );
     test.is(
         try {
-            ByteRange(source, 0, 2).text();
+            ByteRange(source: source, start: 0, end: 2).text();
             -1;
         }
         catch InvalidUtf8.at(offset) {
@@ -165,7 +165,7 @@ test "byte ranges decode UTF-8 in place" {
     );
     test.is(
         try {
-            ByteRange(source, 3, 6);
+            ByteRange(source: source, start: 3, end: 6);
             "made";
         }
         catch OutOfRange.because(reason) {
@@ -175,7 +175,7 @@ test "byte ranges decode UTF-8 in place" {
     );
     test.is(
         try {
-            ByteRange(source, 3, 2);
+            ByteRange(source: source, start: 3, end: 2);
             "made";
         }
         catch OutOfRange.because(reason) {
@@ -197,12 +197,12 @@ test "byte ranges read ASCII decimals" {
         byte(48),
         byte(120)
     ];
-    test.is(ByteRange(source, 1, 3).decimal(), 42);
-    test.is(ByteRange(source, 4, 6).decimal(), -7);
-    test.is(ByteRange(source, 6, 8).decimal(), 0);
+    test.is(ByteRange(source: source, start: 1, end: 3).decimal(), 42);
+    test.is(ByteRange(source: source, start: 4, end: 6).decimal(), -7);
+    test.is(ByteRange(source: source, start: 6, end: 8).decimal(), 0);
     test.is(
         try {
-            ByteRange(source, 0, 3).decimal();
+            ByteRange(source: source, start: 0, end: 3).decimal();
             0;
         }
         catch InvalidByteDecimal.at(offset) {
@@ -212,7 +212,7 @@ test "byte ranges read ASCII decimals" {
     );
     test.is(
         try {
-            ByteRange(source, 1, 4).decimal();
+            ByteRange(source: source, start: 1, end: 4).decimal();
             0;
         }
         catch InvalidByteDecimal.at(offset) {
@@ -222,7 +222,7 @@ test "byte ranges read ASCII decimals" {
     );
     test.is(
         try {
-            ByteRange(source, 7, 9).decimal();
+            ByteRange(source: source, start: 7, end: 9).decimal();
             0;
         }
         catch InvalidByteDecimal.at(offset) {
@@ -232,7 +232,7 @@ test "byte ranges read ASCII decimals" {
     );
     test.is(
         try {
-            ByteRange(source, 1, 1).decimal();
+            ByteRange(source: source, start: 1, end: 1).decimal();
             0;
         }
         catch InvalidByteDecimal.at(offset) {
@@ -242,7 +242,7 @@ test "byte ranges read ASCII decimals" {
     );
     test.is(
         try {
-            ByteRange(source, 4, 5).decimal();
+            ByteRange(source: source, start: 4, end: 5).decimal();
             0;
         }
         catch InvalidByteDecimal.at(offset) {
@@ -252,7 +252,7 @@ test "byte ranges read ASCII decimals" {
     );
     test.is(
         try {
-            ByteRange(source, 4, 7).decimal();
+            ByteRange(source: source, start: 4, end: 7).decimal();
             0;
         }
         catch InvalidByteDecimal.at(offset) {
@@ -282,17 +282,17 @@ test "byte ranges read ASCII decimals" {
         byte(57),
         byte(57)
     ];
-    test.is(ByteRange(large, 0, 20).decimal(), 99999999999999999999);
+    test.is(ByteRange(source: large, start: 0, end: 20).decimal(), 99999999999999999999);
 }
 
 test "byte ranges read fixed-width integers like Binary.int" {
     let source is @byte = [byte(0), byte(1), byte(2), byte(255), byte(254)];
-    test.is(ByteRange(source, 1, 3).integer(Signedness.unsigned, ByteOrder.big), 258);
-    test.is(ByteRange(source, 1, 3).integer(Signedness.unsigned, ByteOrder.little), 513);
-    test.is(ByteRange(source, 3, 5).integer(Signedness.signed, ByteOrder.big), -2);
-    test.is(ByteRange(source, 3, 5).integer(Signedness.unsigned, ByteOrder.big), 65534);
-    test.is(ByteRange(source, 3, 5).integer(Signedness.signed, ByteOrder.little), -257);
-    test.is(ByteRange(source, 0, 5).integer(Signedness.unsigned, ByteOrder.big), 16973822);
+    test.is(ByteRange(source: source, start: 1, end: 3).integer(Signedness.unsigned, ByteOrder.big), 258);
+    test.is(ByteRange(source: source, start: 1, end: 3).integer(Signedness.unsigned, ByteOrder.little), 513);
+    test.is(ByteRange(source: source, start: 3, end: 5).integer(Signedness.signed, ByteOrder.big), -2);
+    test.is(ByteRange(source: source, start: 3, end: 5).integer(Signedness.unsigned, ByteOrder.big), 65534);
+    test.is(ByteRange(source: source, start: 3, end: 5).integer(Signedness.signed, ByteOrder.little), -257);
+    test.is(ByteRange(source: source, start: 0, end: 5).integer(Signedness.unsigned, ByteOrder.big), 16973822);
     let wide is @byte = [
         byte(255),
         byte(255),
@@ -303,10 +303,10 @@ test "byte ranges read fixed-width integers like Binary.int" {
         byte(255),
         byte(255)
     ];
-    test.is(ByteRange(wide, 0, 8).integer(Signedness.signed, ByteOrder.big), -1);
+    test.is(ByteRange(source: wide, start: 0, end: 8).integer(Signedness.signed, ByteOrder.big), -1);
     test.is(
         try {
-            ByteRange(wide, 0, 8).integer(Signedness.unsigned, ByteOrder.big);
+            ByteRange(source: wide, start: 0, end: 8).integer(Signedness.unsigned, ByteOrder.big);
             "read";
         }
         catch InvalidArgument.because(reason) {
@@ -316,7 +316,7 @@ test "byte ranges read fixed-width integers like Binary.int" {
     );
     test.is(
         try {
-            ByteRange(source, 2, 2).integer(Signedness.unsigned, ByteOrder.big);
+            ByteRange(source: source, start: 2, end: 2).integer(Signedness.unsigned, ByteOrder.big);
             "read";
         }
         catch InvalidArgument.because(reason) {
@@ -327,9 +327,9 @@ test "byte ranges read fixed-width integers like Binary.int" {
     test.is(
         try {
             ByteRange(
-                [byte(0), byte(0), byte(0), byte(0), byte(0), byte(0), byte(0), byte(0), byte(1)],
-                0,
-                9
+                source: [byte(0), byte(0), byte(0), byte(0), byte(0), byte(0), byte(0), byte(0), byte(1)],
+                start: 0,
+                end: 9
             ).integer(Signedness.unsigned, ByteOrder.big);
             "read";
         }
@@ -342,9 +342,9 @@ test "byte ranges read fixed-width integers like Binary.int" {
 
 test "byte ranges compare and copy" {
     let source is @byte = [byte(71), byte(69), byte(84), byte(32), byte(47)];
-    test.is(ByteRange(source, 0, 3).equals([byte(71), byte(69), byte(84)]), true);
-    test.is(ByteRange(source, 0, 3).equals([byte(71), byte(69)]), false);
-    test.is(ByteRange(source, 1, 1).equals([]), true);
-    test.is(ByteRange(source, 3, 5).bytes(), [byte(32), byte(47)]);
-    test.is(ByteRange(source, 3, 5).size(), 2);
+    test.is(ByteRange(source: source, start: 0, end: 3).equals([byte(71), byte(69), byte(84)]), true);
+    test.is(ByteRange(source: source, start: 0, end: 3).equals([byte(71), byte(69)]), false);
+    test.is(ByteRange(source: source, start: 1, end: 1).equals([]), true);
+    test.is(ByteRange(source: source, start: 3, end: 5).bytes(), [byte(32), byte(47)]);
+    test.is(ByteRange(source: source, start: 3, end: 5).size(), 2);
 }

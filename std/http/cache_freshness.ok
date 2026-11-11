@@ -52,13 +52,13 @@ object CacheFreshness {
         };
         let corrected = metadata.age().rat() + timing.delay().seconds();
         initial = Duration(
-            if nonnegative > corrected {
+            value: if nonnegative > corrected {
                 nonnegative;
             }
             else {
                 corrected;
             },
-            DurationUnit.second
+            unit: DurationUnit.second
         );
         lifetime = metadata.lifetime();
         reusable = metadata.reusable();
@@ -131,7 +131,7 @@ object CacheFreshnessObservations {
     CacheFreshnessObservations(received is Instant) {
         date = received;
         age = 0;
-        lifetime = Duration(0.rat(), DurationUnit.second);
+        lifetime = Duration(value: 0.rat(), unit: DurationUnit.second);
         reusable = false;
     }
 
@@ -174,7 +174,7 @@ object CacheFreshnessObservations {
                 0.rat();
             }
         };
-        lifetime = Duration(duration, DurationUnit.second);
+        lifetime = Duration(value: duration, unit: DurationUnit.second);
         reusable = !control.present("no-cache") && !control.present("no-store");
     }
 
@@ -200,9 +200,9 @@ enum InvalidCacheMetadata is Error = (invalid);
 enum InvalidCacheTiming is Error = (invalid);
 
 test "cache age includes monotonic response delay" {
-    let received = Instant(Duration(100.rat(), DurationUnit.second));
-    let began = MonotonicInstant(Duration(0.rat(), DurationUnit.second));
-    let ended = began.plus(Duration(2.rat(), DurationUnit.second));
+    let received = Instant(Duration(value: 100.rat(), unit: DurationUnit.second));
+    let began = MonotonicInstant(Duration(value: 0.rat(), unit: DurationUnit.second));
+    let ended = began.plus(Duration(value: 2.rat(), unit: DurationUnit.second));
     let value = CacheFreshness(Headers([]), CacheResponseTiming(received, began, ended));
     test.is(value.age(ended).seconds(), 2.rat());
 }

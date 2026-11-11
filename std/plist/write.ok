@@ -196,7 +196,7 @@ object PlistWireSession {
 
     escaped(value is string) is void {
         self.capacity(value.length());
-        let scalars = Utf32Encoded(value, ByteOrder.big).bytes();
+        let scalars = Utf32Encoded(origin: value, order: ByteOrder.big).bytes();
         for (0..value.length()) -> index {
             let code = Binary(bytes: scalars.slice(index * 4, index * 4 + 4), order: ByteOrder.big).int(
                 Signedness.unsigned
@@ -233,10 +233,10 @@ object PlistWireSession {
         self.capacity(8 + header.size() + payload.size());
         let index = (offsets.content().size() / 8).int();
         offsets.writing() <- IntegerBytes(
-            output.content().size(),
-            8,
-            Signedness.unsigned,
-            ByteOrder.big
+            value: output.content().size(),
+            size: 8,
+            signedness: Signedness.unsigned,
+            order: ByteOrder.big
         ).bytes();
         output.writing() <- header <- payload;
         index;
@@ -248,7 +248,7 @@ object PlistWireSession {
         if utf8.size() == value.length() {
             return self.record(PlistWireLength(80, utf8.size()).bytes(), utf8);
         }
-        let utf16 = Utf16Encoded(value, ByteOrder.big).bytes();
+        let utf16 = Utf16Encoded(origin: value, order: ByteOrder.big).bytes();
         self.record(PlistWireLength(96, (utf16.size() / 2).int()).bytes(), utf16);
     }
 
@@ -281,12 +281,12 @@ object PlistWireSession {
                 byte(0),
                 byte(8),
                 byte(8)
-            ] <- IntegerBytes(count, 8, Signedness.unsigned, ByteOrder.big).bytes() <- IntegerBytes(
-                root,
-                8,
-                Signedness.unsigned,
-                ByteOrder.big
-            ).bytes() <- IntegerBytes(table, 8, Signedness.unsigned, ByteOrder.big).bytes();
+            ] <- IntegerBytes(value: count, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes() <- IntegerBytes(
+                value: root,
+                size: 8,
+                signedness: Signedness.unsigned,
+                order: ByteOrder.big
+            ).bytes() <- IntegerBytes(value: table, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
         }
         confirm output.content().size() <= maximum_bytes
             else throw PlistWriteLimitExceeded.kind("bytes");
@@ -370,7 +370,7 @@ object PlistWireValue does PlistWriting {
             self.end(
                 session.record(
                     [byte(35)],
-                    FloatBytes(value, FloatWidth.bits64, ByteOrder.big).bytes()
+                    FloatBytes(value: value, width: FloatWidth.bits64, order: ByteOrder.big).bytes()
                 )
             );
         }
@@ -411,7 +411,7 @@ object PlistWireValue does PlistWriting {
             else throw UnsupportedPlistValue.because("date outside UTC years 0001..9999");
         if session.xml() {
             session.text("<date>");
-            session.text(Rfc3339(value, Duration(0.rat(), DurationUnit.second)).string());
+            session.text(Rfc3339(origin: value, offset: Duration(0.rat(), DurationUnit.second)).string());
             session.text("</date>");
             self.end(0);
         }
@@ -423,7 +423,7 @@ object PlistWireValue does PlistWriting {
             self.end(
                 session.record(
                     [byte(51)],
-                    FloatBytes(number, FloatWidth.bits64, ByteOrder.big).bytes()
+                    FloatBytes(value: number, width: FloatWidth.bits64, order: ByteOrder.big).bytes()
                 )
             );
         }
@@ -448,7 +448,7 @@ object PlistWireValue does PlistWriting {
         for (0..size) -> index {
             let id = session.node(values.item(index), depth + 1);
             if !session.xml() {
-                refs.writing() <- IntegerBytes(id, 8, Signedness.unsigned, ByteOrder.big).bytes();
+                refs.writing() <- IntegerBytes(value: id, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
             }
         }
         if session.xml() {
@@ -479,8 +479,8 @@ object PlistWireValue does PlistWriting {
             let key = session.key(name, depth + 1);
             let value = session.node(member.value(), depth + 1);
             if !session.xml() {
-                keys.writing() <- IntegerBytes(key, 8, Signedness.unsigned, ByteOrder.big).bytes();
-                refs.writing() <- IntegerBytes(value, 8, Signedness.unsigned, ByteOrder.big).bytes();
+                keys.writing() <- IntegerBytes(value: key, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+                refs.writing() <- IntegerBytes(value: value, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
             }
         }
         if session.xml() {
@@ -504,7 +504,7 @@ object PlistWireValue does PlistWriting {
     }
 
     hidden end(index is int) is void {
-        identity.writing() <- IntegerBytes(index, 8, Signedness.unsigned, ByteOrder.big).bytes();
+        identity.writing() <- IntegerBytes(value: index, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
     }
 }
 

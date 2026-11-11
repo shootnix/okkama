@@ -73,8 +73,8 @@ object Certificate {
     validity() is CertificateValidity {
         let times = x509.certificate_times(facts);
         CertificateValidity(
-            Instant(Duration(Number(times[0]).int().rat(), DurationUnit.second)),
-            Instant(Duration(Number(times[1]).int().rat(), DurationUnit.second))
+            Instant(Duration(value: Number(times[0]).int().rat(), unit: DurationUnit.second)),
+            Instant(Duration(value: Number(times[1]).int().rat(), unit: DurationUnit.second))
         );
     }
 

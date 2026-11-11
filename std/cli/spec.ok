@@ -255,7 +255,7 @@ object CliSyntaxValidation {
             self.key(index);
         };
         let ranked is @Ranked<int, SettingKey> = (0..declarations).map() -> index {
-            Ranked(index, keys[index]);
+            Ranked(item: index, key: keys[index]);
         };
         let sorted = ranked.ordering();
         let incompatible = (0..sorted.size()).reduce(CliKeyFailure(declarations, "")) -> old, index {
@@ -508,7 +508,7 @@ object CliAliasIndex {
     }
 
     position(name is string) is int {
-        let index = LowerBound(names, name).index();
+        let index = LowerBound(origin: names, item: name).index();
         if index < names.size() && names[index] == name {
             positions[index];
         }

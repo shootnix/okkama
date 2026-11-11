@@ -137,20 +137,20 @@ object PgFields {
 
     int16() is int {
         let start = self.advance(2);
-        ByteRange(body, start, start + 2).integer(Signedness.signed, ByteOrder.big);
+        ByteRange(source: body, start: start, end: start + 2).integer(Signedness.signed, ByteOrder.big);
     }
 
     int32() is int {
         let start = self.advance(4);
-        ByteRange(body, start, start + 4).integer(Signedness.signed, ByteOrder.big);
+        ByteRange(source: body, start: start, end: start + 4).integer(Signedness.signed, ByteOrder.big);
     }
 
     cstring() is string {
         let start = position.value();
-        let end = ByteSearch(body, [0.byte()]).from(start);
+        let end = ByteSearch(source: body, pattern: [0.byte()]).from(start);
         confirm end >= 0 else throw PgWireFailure.because("unterminated string in message");
         position.replace(end + 1);
-        ByteRange(body, start, end).text();
+        ByteRange(source: body, start: start, end: end).text();
     }
 
     rest() is @byte {

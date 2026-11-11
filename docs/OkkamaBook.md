@@ -3690,8 +3690,8 @@ answer `sample()`: `UniformIntegers(random:, start:, stop:)`,
 Integer ranges are half-open.
 
 `regex` is a portable dialect without backreferences or lookaround:
-`FirstRegexMatch(text, Regex("\\d+")).text()`,
-`for RegexMatches(text, pattern) -> found`, `RegexParts` to split, and
+`FirstRegexMatch(origin: text, regex: Regex("\\d+")).text()`,
+`for RegexMatches(origin: text, regex: pattern) -> found`, `RegexParts` to split, and
 `RegexSubstitution` with `ExpandedRegexReplacement("${last}, ${first}")` to
 replace. Offsets count Unicode scalars.
 

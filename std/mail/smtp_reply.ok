@@ -212,7 +212,7 @@ object SmtpReplyValue {
         };
         status = code;
         entries = values;
-        summary = Joined("\n", values, count, limits.wire_bytes()).string();
+        summary = Joined(separator: "\n", values: values, maximum_items: count, maximum_length: limits.wire_bytes()).string();
         wire = buffer.content().bytes();
     }
 

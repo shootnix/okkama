@@ -9,7 +9,7 @@ object Joined {
     has snapshot is JoinedParts;
 
     Joined(separator is string, values is Iterating<string>) {
-        snapshot = values.reduce(JoinedParts(separator, 10000, 1048576)) -> parts, value {
+        snapshot = values.reduce(JoinedParts(separator: separator, maximum_items: 10000, maximum_length: 1048576)) -> parts, value {
             parts.following(value);
         };
     }
@@ -21,7 +21,7 @@ object Joined {
         maximum_length is int
     ) {
         confirm maximum_items >= 0 && maximum_length >= 0 else throw InvalidJoinLimits.invalid;
-        snapshot = values.reduce(JoinedParts(separator, maximum_items, maximum_length)) -> parts, value {
+        snapshot = values.reduce(JoinedParts(separator: separator, maximum_items: maximum_items, maximum_length: maximum_length)) -> parts, value {
             parts.following(value);
         };
     }
@@ -80,18 +80,18 @@ enum InvalidJoinLimits is Error = (invalid);
 enum JoinLimitExceeded is Error = (kind(kind is JoinLimit));
 
 test "joined keeps order and its separator" {
-    test.is(Joined(", ", ["a", "b", "c"]).string(), "a, b, c");
-    test.is(Joined("-", ["only"]).string(), "only");
+    test.is(Joined(separator: ", ", values: ["a", "b", "c"]).string(), "a, b, c");
+    test.is(Joined(separator: "-", values: ["only"]).string(), "only");
     let nothing is @string = [];
-    test.is(Joined("-", nothing).string(), "");
-    test.is(Joined("", ["a", "", "b"]).string(), "ab");
+    test.is(Joined(separator: "-", values: nothing).string(), "");
+    test.is(Joined(separator: "", values: ["a", "", "b"]).string(), "ab");
 }
 
 test "limits bound the items and the length" {
-    test.is(Joined(",", ["ab", "cd"], 2, 5).string(), "ab,cd");
+    test.is(Joined(separator: ",", values: ["ab", "cd"], maximum_items: 2, maximum_length: 5).string(), "ab,cd");
     let refused = (values is @string, items is int, length is int) is string {
         try {
-            Joined(",", values, items, length).string();
+            Joined(separator: ",", values: values, maximum_items: items, maximum_length: length).string();
         }
         catch JoinLimitExceeded.kind(kind) {
             if kind == JoinLimit.items {
@@ -106,13 +106,13 @@ test "limits bound the items and the length" {
     test.is(refused(["ab", "cd"], 5, 4), "length");
     test.is(
         try {
-            Joined(",", ["a"], -1, 10).string();
+            Joined(separator: ",", values: ["a"], maximum_items: -1, maximum_length: 10).string();
         }
         catch error is InvalidJoinLimits {
             "invalid";
         },
         "invalid"
     );
-    let parts = JoinedParts(" ", 3, 20).following("x").following("y");
+    let parts = JoinedParts(separator: " ", maximum_items: 3, maximum_length: 20).following("x").following("y");
     test.is(parts.string(), "x y");
 }

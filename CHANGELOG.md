@@ -372,6 +372,16 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     `FrequencyTally`/`Building`/`Revision`, and the replacement tokens of
     regex. The objects people use return them as roles (`Cursor<T>`,
     `Iterating<T>`), so no call changes.
+  - Constructors of several values are called with named arguments
+    everywhere (the owner, 2026-11-11: «да»; `docs/std-principles.md` §2):
+    341 calls in std, conformance and the Book, and 46 in the okkama-docs
+    examples, such as `FirstRegexMatch(origin: text, regex: pattern)`,
+    `RegexRange(start: 1, end: 4)`, `Joined(separator: ", ", values: xs)`,
+    `Duration(value: 5.rat(), unit: DurationUnit.second)` and
+    `Pair(first: a, second: b)`. A call is renamed only when exactly one
+    constructor takes that many arguments, so the constructor chosen is
+    the one chosen before. Positional calls still compile; std no longer
+    uses them for these objects.
   - Every public object of the wave's modules has an inline test now
     (`regex/match` through `regex/search`, which alone can make a match),
     and the async selectors no case used (`FirstSuccessful`,

@@ -1921,7 +1921,7 @@ object TarStreamCounts {
         let buffer = ByteBuffer();
         defer buffer.closing().close();
         for [entries_left, total_left, metadata_left, extensions_left] -> value {
-            buffer.writing() <- IntegerBytes(value, 8, Signedness.unsigned, ByteOrder.big).bytes();
+            buffer.writing() <- IntegerBytes(value: value, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
         }
         buffer.content().bytes();
     }

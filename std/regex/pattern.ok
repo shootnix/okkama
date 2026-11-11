@@ -98,7 +98,7 @@ object Regex {
                 }
             }
         );
-        RegexQueryObservation(origin, self, range, query);
+        RegexQueryObservation(source: origin, pattern: self, selected: range, query: query);
     }
 
     hidden prepare() is void {
@@ -191,7 +191,7 @@ object RegexQueryObservation {
 
     match() is RegexMatching {
         confirm self.found() else throw NoRegexMatch.none;
-        RegexMatch(source, regex_query_match(query));
+        RegexMatch(origin: source, state: regex_query_match(query));
     }
 }
 
@@ -200,7 +200,7 @@ test "a regex reports its groups, flags and syntax errors" {
     test.is(pair.expression(), "(?<key>\\w+)=(\\d+)?");
     test.is(pair.group_count(), 2);
     test.is(pair.group_names()["key"], 1);
-    test.is(Regex("ABC", [RegexFlag.ignore_case]).flags(), [RegexFlag.ignore_case]);
+    test.is(Regex(expression: "ABC", flags: [RegexFlag.ignore_case]).flags(), [RegexFlag.ignore_case]);
     test.is(Regex("x").flags().size(), 0);
     let offset = (expression is string) is int {
         try {
@@ -221,7 +221,7 @@ test "an observation finds a match inside a range" {
     test.ok(found.found());
     test.is(found.match().text(), "22");
     test.ok(!RegexMatchObservation(origin: "one 22 three", regex: digits, range: whole, mode: RegexQuery.entire).found());
-    test.ok(RegexMatchObservation(origin: "ABC", regex: Regex("abc", [RegexFlag.ignore_case]), range: RegexRange(start: 0, end: 3), mode: RegexQuery.entire).found());
+    test.ok(RegexMatchObservation(origin: "ABC", regex: Regex(expression: "abc", flags: [RegexFlag.ignore_case]), range: RegexRange(start: 0, end: 3), mode: RegexQuery.entire).found());
     test.is(
         try {
             RegexMatchObservation(origin: "abc", regex: digits, range: RegexRange(start: 0, end: 9), mode: RegexQuery.first).found();

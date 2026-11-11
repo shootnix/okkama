@@ -101,7 +101,7 @@ object ChangedLogRecord {
 test "redaction replaces the named members and keeps the rest in order" {
     let collected = CollectedLogs();
     let redacted = RedactedLogs(collected, ["pass", "token"], Json("***"));
-    let time = Instant(Duration(0.rat(), DurationUnit.second));
+    let time = Instant(Duration(value: 0.rat(), unit: DurationUnit.second));
     let fields = LogFields([JsonField("user", "ann"), JsonField("id", 7), JsonField("pass", "x")]);
     redacted.write(LogRecord(time, LogLevel.info, "hi", LogContext(LogName(["app"]), fields, 1)));
     redacted.write(

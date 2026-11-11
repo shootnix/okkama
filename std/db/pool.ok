@@ -928,8 +928,8 @@ object DbRetirement {
 }
 
 test "pool bounds precede physical acquisition" {
-    let zero = Duration(0.rat(), DurationUnit.second);
-    let one = Duration(1.rat(), DurationUnit.second);
+    let zero = Duration(value: 0.rat(), unit: DurationUnit.second);
+    let one = Duration(value: 1.rat(), unit: DurationUnit.second);
     test.ok(try {
         PoolOptions(2, 1, zero, zero, one);
         false;

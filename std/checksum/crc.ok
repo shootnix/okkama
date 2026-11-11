@@ -17,7 +17,7 @@ import "checksum/state" take Checksumming, InvalidChecksumInitial;
 // Crc32 is CRC-32/ISO-HDLC: width 32, polynomial 0x04C11DB7, reflected input
 // and output, init register 0xFFFFFFFF, xorout 0xFFFFFFFF. The public seed is
 // a finalized CRC (as in zlib), so it is XORed before and after calculation.
-// Crc32()/Crc32(bytes) default to public seed 0. Crc32(bytes, initial) requires
+// Crc32()/Crc32(bytes) default to public seed 0. Crc32(origin: bytes, initial: initial) requires
 // 0..4294967295 and throws InvalidChecksumInitial at construction otherwise.
 object Crc32 does Checksumming {
     has origin is @byte;
@@ -63,7 +63,7 @@ object Crc32 does Checksumming {
 // CRC-16 with polynomial 0x1021, MSB first, no input/output reflection and no
 // final XOR. The mandatory seed directly initializes the 16-bit register;
 // there is deliberately no implicit choice of a CCITT variant.
-// Crc16Ccitt(initial) denotes the empty chunk; Crc16Ccitt(bytes, initial) binds
+// Crc16Ccitt(initial) denotes the empty chunk; Crc16Ccitt(origin: bytes, initial: initial) binds
 // bytes. Both require 0..65535 or throw InvalidChecksumInitial immediately.
 // "123456789" gives 10673 with seed 65535, or 12739 with seed 0. These exact
 // parameters match binascii.crc_hqx, not the reflected KERMIT/X-25 variants.
@@ -106,7 +106,7 @@ object Crc16Ccitt does Checksumming {
 
 test "CRC-32 empty and 123456789 independent reference vectors" {
     test.is(Crc32().checksum(), 0);
-    test.is(Crc32([], 4294967295).checksum(), 4294967295);
+    test.is(Crc32(origin: [], initial: 4294967295).checksum(), 4294967295);
     let digits = [
         byte(49),
         byte(50),
@@ -119,12 +119,12 @@ test "CRC-32 empty and 123456789 independent reference vectors" {
         byte(57)
     ];
     test.is(Crc32(digits).checksum(), 3421780262);
-    test.is(Crc32(digits, 305419896).checksum(), 32800891);
+    test.is(Crc32(origin: digits, initial: 305419896).checksum(), 32800891);
 }
 
 test "CRC-16 specifies seed reflection and final xor" {
     test.is(Crc16Ccitt(65535).checksum(), 65535);
-    test.is(Crc16Ccitt([], 0).checksum(), 0);
+    test.is(Crc16Ccitt(origin: [], initial: 0).checksum(), 0);
     let digits = [
         byte(49),
         byte(50),
@@ -136,13 +136,13 @@ test "CRC-16 specifies seed reflection and final xor" {
         byte(56),
         byte(57)
     ];
-    test.is(Crc16Ccitt(digits, 0).checksum(), 12739);
-    test.is(Crc16Ccitt(digits, 65535).checksum(), 10673);
+    test.is(Crc16Ccitt(origin: digits, initial: 0).checksum(), 12739);
+    test.is(Crc16Ccitt(origin: digits, initial: 65535).checksum(), 10673);
 }
 
 test "CRC branches preserve origin states and empty chunks" {
     let a = Crc32([byte(1), byte(2)]);
-    let b = Crc16Ccitt([byte(1), byte(2)], 65535);
+    let b = Crc16Ccitt(origin: [byte(1), byte(2)], initial: 65535);
     test.is(a.state([byte(3)]).checksum(), 1438416925);
     test.is(a.state([byte(4)]).checksum(), 3419936190);
     test.is(a.checksum(), 3066839698);
@@ -155,16 +155,16 @@ test "CRC branches preserve origin states and empty chunks" {
 
 test "CRC treats high-bit bytes as unsigned" {
     test.is(Crc32([byte(255)]).checksum(), 4278190080);
-    test.is(Crc16Ccitt([byte(128)], 0).checksum(), 37256);
-    test.is(Crc16Ccitt([byte(255)], 65535).checksum(), 65280);
+    test.is(Crc16Ccitt(origin: [byte(128)], initial: 0).checksum(), 37256);
+    test.is(Crc16Ccitt(origin: [byte(255)], initial: 65535).checksum(), 65280);
 }
 
 test "CRC rejects negative and oversized initial values" {
     test.throws(Error) {
-        Crc32([], -1);
+        Crc32(origin: [], initial: -1);
     };
     test.throws(Error) {
-        Crc32([], 4294967296);
+        Crc32(origin: [], initial: 4294967296);
     };
     test.throws(Error) {
         Crc16Ccitt(-1);
@@ -173,9 +173,9 @@ test "CRC rejects negative and oversized initial values" {
         Crc16Ccitt(65536);
     };
     test.throws(Error) {
-        Crc16Ccitt([], -1);
+        Crc16Ccitt(origin: [], initial: -1);
     };
     test.throws(Error) {
-        Crc16Ccitt([], 65536);
+        Crc16Ccitt(origin: [], initial: 65536);
     };
 }

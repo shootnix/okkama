@@ -29,7 +29,7 @@ async main() is int {
     defer connection.close();
     // The peer answers only after a whole line, so both reads find nothing.
     let timed = try {
-        await Within(Reader(connection: connection).bytes(), Duration(1.rat() / 10.rat(), DurationUnit.second), SystemClock()).outcome();
+        await Within(origin: Reader(connection: connection).bytes(), limit: Duration(1.rat() / 10.rat(), DurationUnit.second), clock: SystemClock()).outcome();
         "read early";
     } catch TimedOut.elapsed { "timed out"; };
     out.writeln(timed);

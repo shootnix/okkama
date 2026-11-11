@@ -9,8 +9,8 @@ import "regex/escape" take EscapedRegex;
 
 main() is int {
     let c = Checks();
-    c = c.same_text("unbalanced group", try { let probe = FirstRegexMatch("a", Regex("(a")).text(); "no error"; } catch e is InvalidRegex { "InvalidRegex"; }, "InvalidRegex");
-    c = c.same_text("backreference", try { let probe = FirstRegexMatch("aa", Regex("(a)\\1")).text(); "no error"; } catch e is InvalidRegex { "InvalidRegex"; }, "InvalidRegex");
-    c = c.same_text("lookahead", try { let probe = FirstRegexMatch("ab", Regex("a(?=b)")).text(); "no error"; } catch e is InvalidRegex { "InvalidRegex"; }, "InvalidRegex");
+    c = c.same_text("unbalanced group", try { let probe = FirstRegexMatch(origin: "a", regex: Regex("(a")).text(); "no error"; } catch e is InvalidRegex { "InvalidRegex"; }, "InvalidRegex");
+    c = c.same_text("backreference", try { let probe = FirstRegexMatch(origin: "aa", regex: Regex("(a)\\1")).text(); "no error"; } catch e is InvalidRegex { "InvalidRegex"; }, "InvalidRegex");
+    c = c.same_text("lookahead", try { let probe = FirstRegexMatch(origin: "ab", regex: Regex("a(?=b)")).text(); "no error"; } catch e is InvalidRegex { "InvalidRegex"; }, "InvalidRegex");
     c.done();
 }
