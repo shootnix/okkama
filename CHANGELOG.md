@@ -88,18 +88,28 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     `optional(n).items()` becomes `maybe(n).list() else []`, and
     `optional(a).optional(b)` becomes `maybe(a).maybe(b)`. `JsonMaybeReader`
     gained `maybe(name)`, `present()` and `pointer()`.
-  - Objects are walked whole: `each((name, value) -> void)`,
-    `merged(other)` and `mapped((name, value) -> Json)`. These replace
-    `fields()`, and `JsonField` no longer has `name()` and `value()`.
-  - `web/request` follows. `RequestJson.fields()` becomes `each(visit)`, the
-    body parse catches `JsonError`, and `RequestJsonOptional` is built on
-    `JsonMaybeReader`.
+  - Objects are walked by name with `for`, not with closures:
+    `for doc.names() -> name { doc.get(name) }`. An object built from
+    another is `Json(doc.names().map() -> name { JsonField(name, …) })`, and
+    `merged(other)` joins two. This replaces `fields()`, and `JsonField` no
+    longer has `name()` and `value()`. Lookup by name is indexed (see
+    Performance), so the walk is linear.
+  - The readers of `maybe(name)` and `presence(name)` give the member as a
+    node of any kind with `node()`, which was `value()`:
+    `order.maybe("meta").node() else Json()`.
+  - `JsonInteger` and `JsonInt` were helpers of `integer()` and `int()`. They
+    are one hidden `ExactJsonNumber` now.
+  - `web/request` follows. `RequestJson.fields()` is gone, since its objects
+    are walked with `names()` and `get(name)`. The body parse catches
+    `JsonError`. `RequestJsonOptional` is built on `JsonMaybeReader`, and its
+    `value()` is `node()`.
   - `logging/field` follows. `LogFields(values is Json)` is a new
-    constructor; `CombinedLogFields` is `merged` and redaction is `mapped`.
+    constructor; `CombinedLogFields` is `merged`, and redaction rebuilds the
+    fields by name.
     For a list with both an empty and a repeated name, the error is now
     "duplicate field name", not "invalid field name"; both are still
     `InvalidLogField`.
-  - `config/document` walks JSON with `each`.
+  - `config/document` walks JSON objects with `for … names()`.
   - New characterization tests pin `config/document`, `logging/field` and
     `logging/redact`, which had none.
 

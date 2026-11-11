@@ -3653,7 +3653,7 @@ lists the removed APIs.
 or built from `JsonField`s. Strict readers (`int("id")`, `get("customer")`)
 throw; `maybe(name)` reads an absent or null member as a fallback
 (`body.maybe("age").int() else 18`), and `presence(name)` tells absent from
-null. Objects are walked whole with `each`, `merged` and `mapped`. Everything
+null. Objects are walked by name, `for doc.names() -> name { doc.get(name) }`, and joined with `merged`. Everything
 that goes wrong is one `JsonError`, whose reading cases carry the RFC 6901
 pointer of the value: `catch JsonError.missing(pointer)`. The guide is
 `docs/std/json.md` in okkama-docs.

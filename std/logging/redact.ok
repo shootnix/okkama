@@ -31,19 +31,18 @@ object RedactedLogs does LogWriting {
     }
 
     write(record is LogRecord) is void {
-        let fields = record.context().fields().values().mapped(
-            (name is string, value is Json) is Json {
-                let matches = names.reduce(false) -> old, candidate {
-                    old || candidate == name;
-                };
-                if matches {
-                    replacement;
-                }
-                else {
-                    value;
-                }
+        let values = record.context().fields().values();
+        let fields = Json(values.names().map() -> name {
+            let matches = names.reduce(false) -> old, candidate {
+                old || candidate == name;
+            };
+            if matches {
+                JsonField(name, replacement);
             }
-        );
+            else {
+                JsonField(name, values.get(name));
+            }
+        });
         let causes is @Error = if record.has_cause() {
             [record.cause()];
         }

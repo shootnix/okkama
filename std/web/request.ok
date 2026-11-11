@@ -292,18 +292,6 @@ object RequestJson {
         }
     }
 
-    // Each member of an object in order, as visit(name, value).
-    each(visit is (string, RequestJson) is void) is void {
-        try {
-            origin.each((name is string, value is Json) is void {
-                visit(name, RequestJson(value));
-            });
-        }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
-        }
-    }
-
     has(name is string) is bool {
         try {
             origin.has(name);
@@ -401,8 +389,9 @@ object RequestJsonOptional {
         origin.pointer();
     }
 
-    value() is RequestJson {
-        let found = origin.value() else throw Exception.status(
+    // The member as a node of any kind; absent or null is a 422.
+    node() is RequestJson {
+        let found = origin.node() else throw Exception.status(
             422,
             JsonProblem().missing(origin.pointer())
         );

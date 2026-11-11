@@ -93,10 +93,10 @@ object JsonSettingTree {
         match value.kind() {
             case JsonKind.object_value {
                 confirm value.size() <= 4096 else throw SettingLimitExceeded.exceeded;
-                value.each((name is string, member is Json) is void {
+                for value.names() -> name {
                     let child is @string = path + [name];
-                    JsonSettingTree(child, source, entries, depth - 1).add(member);
-                });
+                    JsonSettingTree(child, source, entries, depth - 1).add(value.get(name));
+                }
             }
             case JsonKind.array_value {
                 let items = value.items();

@@ -6,10 +6,10 @@ import "json" take Json, ParsedJson, JsonError;
 main() is int {
     let c = Checks();
     let doc = ParsedJson("{\"nil\":null,\"empty\":\"\",\"zero\":0,\"flag\":false,\"decimal\":1.25,\"big\":9223372036854775808,\"items\":[],\"object\":{}}").root();
-    c = c.same_bool("value preserves missing", doc.presence("absent").value() ?? .missing: true !! _: false, true);
-    c = c.same_bool("value folds missing", doc.maybe("absent").value() ?? .none: true !! _: false, true);
-    c = c.same_bool("value preserves none", doc.presence("nil").value() ?? .none: true !! _: false, true);
-    c = c.same_bool("value folds none", doc.maybe("nil").value() ?? .none: true !! _: false, true);
+    c = c.same_bool("node preserves missing", doc.presence("absent").node() ?? .missing: true !! _: false, true);
+    c = c.same_bool("node folds missing", doc.maybe("absent").node() ?? .none: true !! _: false, true);
+    c = c.same_bool("node preserves none", doc.presence("nil").node() ?? .none: true !! _: false, true);
+    c = c.same_bool("node folds none", doc.maybe("nil").node() ?? .none: true !! _: false, true);
     c = c.same_bool("object preserves missing", doc.presence("absent").object() ?? .missing: true !! _: false, true);
     c = c.same_bool("object folds missing", doc.maybe("absent").object() ?? .none: true !! _: false, true);
     c = c.same_bool("object preserves none", doc.presence("nil").object() ?? .none: true !! _: false, true);

@@ -3789,7 +3789,7 @@ hidden const SALT = "x";
 (`int("id")`, `get("customer")`) бросают ошибку; `maybe(name)` читает
 отсутствующий или null-член как запасное значение
 (`body.maybe("age").int() else 18`), а `presence(name)` отличает отсутствие от
-null. Объекты обходятся целиком через `each`, `merged` и `mapped`. Всё, что
+null. Объекты обходятся по именам, `for doc.names() -> name { doc.get(name) }`, и склеиваются через `merged`. Всё, что
 идёт не так, — один `JsonError`; случаи чтения несут RFC 6901 pointer значения:
 `catch JsonError.missing(pointer)`. Гайд — `docs/std/json.md` в okkama-docs.
 

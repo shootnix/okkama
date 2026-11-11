@@ -193,7 +193,7 @@ object Json {
     // The exact integer of any size; fractions and exponents beyond 4096 bits
     // are JsonError.invalid_number.
     integer() is BigInt {
-        JsonInteger(exact: self.number(), origin: self).value();
+        ExactJsonNumber(exact: self.number(), origin: self).integer();
     }
 
     // A builtin int: the integer must fit the signed 64-bit range.
@@ -203,7 +203,7 @@ object Json {
             int_parse(spelling, 10);
         }
         else {
-            JsonInt(exact: Decimal(spelling), origin: self).value();
+            ExactJsonNumber(exact: Decimal(spelling), origin: self).int();
         }
     }
 
@@ -259,16 +259,6 @@ object Json {
         values;
     }
 
-    // Members in document order.
-    // Each member of an object in order, as visit(name, value).
-    each(visit is (string, Json) is void) is void {
-        let names = self.names();
-        let values = self.values();
-        for (0..names.size()) -> position {
-            visit(names[position], values[position]);
-        }
-    }
-
     // This object with the members of other: a member of both takes other's
     // value in this object's place, and other's new members follow in its
     // order.
@@ -289,17 +279,6 @@ object Json {
             JsonField(name, other.get(name));
         };
         Json(kept + added);
-    }
-
-    // This object with each member's value replaced by change(name, value),
-    // in the same order.
-    mapped(change is (string, Json) is Json) is Json {
-        let names = self.names();
-        let values = self.values();
-        let changed is @JsonField = (0..names.size()).map() -> position {
-            JsonField(names[position], change(names[position], values[position]));
-        };
-        Json(changed);
     }
 
     has(name is string) is bool {
@@ -527,7 +506,8 @@ object JsonPresenceReader {
 
     JsonPresenceReader(:origin);
 
-    value() is Presence<Json> {
+    // The member as a node of any kind.
+    node() is Presence<Json> {
         origin;
     }
 
@@ -647,7 +627,7 @@ object JsonMaybeReader {
 
     // There and not null.
     present() is bool {
-        match origin.value() {
+        match origin.node() {
             case Presence.some(found) {
                 true;
             }
@@ -666,7 +646,7 @@ object JsonMaybeReader {
 
     // A member of this member; absent whenever this one is absent or null.
     maybe(name is string) is JsonMaybeReader {
-        match origin.value() {
+        match origin.node() {
             case Presence.some(found) {
                 found.maybe(name);
             }
@@ -679,8 +659,9 @@ object JsonMaybeReader {
         }
     }
 
-    value() is Maybe<Json> {
-        origin.value().fold();
+    // The member as a node of any kind.
+    node() is Maybe<Json> {
+        origin.node().fold();
     }
 
     object() is Maybe<Json> {
@@ -733,14 +714,15 @@ object JsonPointerToken {
     }
 }
 
-// The exact integer value of a JSON number.
-object JsonInteger {
+// The exact value of a JSON number as an integer: of any size up to 4096
+// bits, or a builtin int.
+hidden object ExactJsonNumber {
     has exact is Decimal;
     has origin is Json;
 
-    JsonInteger(:exact, :origin);
+    ExactJsonNumber(:exact, :origin);
 
-    value() is BigInt {
+    integer() is BigInt {
         confirm exact.exponent() >= 0
             else throw JsonError.invalid_number(
                 origin.pointer(),
@@ -764,17 +746,10 @@ object JsonInteger {
             (exact.coefficient() * scale);
         }
     }
-}
 
-// A JSON number as builtin int: an integer in the signed 64-bit range.
-object JsonInt {
-    has exact is Decimal;
-    has origin is Json;
-
-    JsonInt(:exact, :origin);
-
-    value() is int {
-        let integer = JsonInteger(exact: exact, origin: origin).value();
+    // A builtin int: an integer in the signed 64-bit range.
+    int() is int {
+        let integer = self.integer();
         confirm integer.order(BigInt("9223372036854775807")) != Order.greater
             && integer.order(BigInt("-9223372036854775808")) != Order.less
             else throw JsonError.invalid_number(
@@ -1046,8 +1021,8 @@ test "reads check kinds and name the pointer" {
         "JsonError.wrong_kind(\"\", JsonKind.string_value, JsonKind.object_value)"
     );
     test.is(doc.names(), ["a/b", "s", "t", "n", "o"]);
-    let kinds = doc.mapped((name is string, value is Json) is Json {
-        Json(JsonKindName(value.kind()).string());
+    let kinds = Json(doc.names().map() -> name {
+        JsonField(name, Json(JsonKindName(doc.get(name).kind()).string()));
     });
     test.is(
         kinds.string(),
@@ -1057,23 +1032,22 @@ test "reads check kinds and name the pointer" {
     test.is(doc.get("o").string(), "{\"k\":\"v\"}");
 }
 
-test "objects are walked, merged and mapped member by member" {
+test "objects are walked by name and merged" {
     let doc = ParsedJson("{\"a\":1,\"b\":\"x\",\"c\":null}").root();
     let other = ParsedJson("{\"c\":3,\"d\":[4]}").root();
     test.is(doc.merged(other).string(), "{\"a\":1,\"b\":\"x\",\"c\":3,\"d\":[4]}");
     test.is(other.merged(doc).string(), "{\"c\":null,\"d\":[4],\"a\":1,\"b\":\"x\"}");
     test.is(doc.merged(Json(fields: [])).string(), doc.string());
     test.is(
-        doc.mapped((name is string, value is Json) is Json {
-            Json(name + ":" + value.string());
+        Json(doc.names().map() -> name {
+            JsonField(name, Json(name + ":" + doc.get(name).string()));
         }).string(),
         "{\"a\":\"a:1\",\"b\":\"b:\\\"x\\\"\",\"c\":\"c:null\"}"
     );
-    let seen = Cell("");
-    doc.each((name is string, value is Json) is void {
-        seen.replace(seen.value() + name + "=" + value.string() + ";");
-    });
-    test.is(seen.value(), "a=1;b=\"x\";c=null;");
+    let seen = doc.names().reduce("") -> walked, name {
+        walked + name + "=" + doc.get(name).string() + ";";
+    };
+    test.is(seen, "a=1;b=\"x\";c=null;");
     test.is(
         try {
             Json(1).merged(doc);
@@ -1090,20 +1064,20 @@ test "presence distinguishes missing null and non-null members" {
     let doc = ParsedJson(
         "{\"null\":null,\"empty\":\"\",\"zero\":0,\"false\":false,\"array\":[],\"object\":{},\"a/b\":{\"~\":\"Anton\"}}"
     ).root();
-    test.is(doc.presence("missing").value() ?? .missing: true !! _: false, true);
-    test.is(doc.presence("null").value() ?? .none: true !! _: false, true);
-    test.is(doc.presence("empty").value() ?? .some(value): value.text() !! _: "absent", "");
-    test.is(doc.presence("zero").value() ?? .some(value): value.int() !! _: -1, 0);
-    test.is(doc.presence("false").value() ?? .some(value): !value.boolean() !! _: false, true);
-    test.is(doc.presence("array").value() ?? .some(value): value.items().size() !! _: -1, 0);
-    test.is(doc.presence("object").value() ?? .some(value): value.names().size() !! _: -1, 0);
-    let nested = doc.presence("a/b").value().fold() else panic "expected object";
-    let name = nested.presence("~").value().fold() else panic "expected name";
+    test.is(doc.presence("missing").node() ?? .missing: true !! _: false, true);
+    test.is(doc.presence("null").node() ?? .none: true !! _: false, true);
+    test.is(doc.presence("empty").node() ?? .some(value): value.text() !! _: "absent", "");
+    test.is(doc.presence("zero").node() ?? .some(value): value.int() !! _: -1, 0);
+    test.is(doc.presence("false").node() ?? .some(value): !value.boolean() !! _: false, true);
+    test.is(doc.presence("array").node() ?? .some(value): value.items().size() !! _: -1, 0);
+    test.is(doc.presence("object").node() ?? .some(value): value.names().size() !! _: -1, 0);
+    let nested = doc.presence("a/b").node().fold() else panic "expected object";
+    let name = nested.presence("~").node().fold() else panic "expected name";
     test.is(name.text(), "Anton");
     test.is(name.pointer(), "/a~1b/~0");
     test.is(
         try {
-            name.presence("field").value();
+            name.presence("field").node();
             "no error";
         }
         catch JsonError.wrong_kind(pointer, _, _) {
@@ -1114,7 +1088,7 @@ test "presence distinguishes missing null and non-null members" {
     for [Json(), Json(items: []), Json(false), Json(0)] -> value {
         test.is(
             try {
-                value.presence("field").value();
+                value.presence("field").node();
                 false;
             }
             catch JsonError.wrong_kind(_, _, _) {
@@ -1123,9 +1097,9 @@ test "presence distinguishes missing null and non-null members" {
             true
         );
     }
-    let missing = doc.presence("missing").value().fold() else Json("fallback");
-    let null_fallback = doc.presence("null").value().fold() else Json("fallback");
-    let present = doc.presence("empty").value().fold() else panic "fallback must be lazy";
+    let missing = doc.presence("missing").node().fold() else Json("fallback");
+    let null_fallback = doc.presence("null").node().fold() else Json("fallback");
+    let present = doc.presence("empty").node().fold() else panic "fallback must be lazy";
     test.is(missing.text(), "fallback");
     test.is(null_fallback.text(), "fallback");
     test.is(present.text(), "");
@@ -1182,10 +1156,10 @@ test "typed member readers preserve absence and reject invalid values" {
     let doc = ParsedJson(
         "{\"nil\":null,\"empty\":\"\",\"zero\":0,\"flag\":false,\"decimal\":1.25,\"big\":9223372036854775808,\"items\":[],\"object\":{}}"
     ).root();
-    test.is(doc.presence("absent").value() ?? .missing: true !! _: false, true);
-    test.is(doc.maybe("absent").value() ?? .none: true !! _: false, true);
-    test.is(doc.presence("nil").value() ?? .none: true !! _: false, true);
-    test.is(doc.maybe("nil").value() ?? .none: true !! _: false, true);
+    test.is(doc.presence("absent").node() ?? .missing: true !! _: false, true);
+    test.is(doc.maybe("absent").node() ?? .none: true !! _: false, true);
+    test.is(doc.presence("nil").node() ?? .none: true !! _: false, true);
+    test.is(doc.maybe("nil").node() ?? .none: true !! _: false, true);
     test.is(doc.presence("absent").object() ?? .missing: true !! _: false, true);
     test.is(doc.maybe("absent").object() ?? .none: true !! _: false, true);
     test.is(doc.presence("nil").object() ?? .none: true !! _: false, true);
