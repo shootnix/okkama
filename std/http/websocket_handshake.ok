@@ -285,11 +285,9 @@ object WebSocketServerHandshake {
         confirm protocol == "" || offered.contains(protocol)
             else throw WebSocketFailure.because("unoffered subprotocol");
         let fields = Headers(
-            [
-                Header(name: HeaderName("Upgrade"), value: "websocket"),
-                Header(name: HeaderName("Connection"), value: "Upgrade"),
-                Header(name: HeaderName("Sec-WebSocket-Accept"), value: accept.string())
-            ]
+            Header(name: HeaderName("Upgrade"), value: "websocket"),
+            Header(name: HeaderName("Connection"), value: "Upgrade"),
+            Header(name: HeaderName("Sec-WebSocket-Accept"), value: accept.string())
         );
         Response(
             status: Status.switching_protocols,

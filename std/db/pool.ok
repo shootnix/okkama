@@ -951,8 +951,8 @@ hidden object DbRetirement {
 }
 
 test "pool bounds precede physical acquisition" {
-    let zero = Duration(value: 0.rat(), unit: DurationUnit.second);
-    let one = Duration(value: 1.rat(), unit: DurationUnit.second);
+    let zero = Duration(seconds: 0);
+    let one = Duration(seconds: 1);
     test.ok(try {
         PoolOptions(minimum: 2, maximum: 1, idle_timeout: zero, lifetime: zero, acquisition_timeout: one);
         false;

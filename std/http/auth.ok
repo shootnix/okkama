@@ -155,7 +155,7 @@ object AuthenticationScope {
             else throw InvalidAuthentication.because(
                 "HTTPS scope without query or fragment required"
             );
-        HttpEndpointSelection(url: origin, resolver: FixedResolution([]), access: AllEndpoints());
+        HttpEndpointSelection(url: origin, resolver: FixedResolution(), access: AllEndpoints());
         key = HttpClientKey(origin).string();
         let normalized = origin.normalized();
         let canonical = normalized::Parts::path;

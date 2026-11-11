@@ -108,6 +108,12 @@ object ImapUidSet {
         value = ImapUidSnapshot(origin: origin, limits: ImapUidSetLimits());
     }
 
+    // The same, one argument per part: ImapUidSet(a, b).
+    ImapUidSet(origin is ...ImapUid) {
+        let listed is @ImapUid = origin...;
+        value = ImapUidSnapshot(origin: listed, limits: ImapUidSetLimits());
+    }
+
     ImapUidSet(origin is Sequencing<ImapUid>, limits is ImapUidSetLimits) {
         value = ImapUidSnapshot(origin: origin, limits: limits);
     }
@@ -274,8 +280,7 @@ hidden object ImapUidSeen {
 }
 
 test "UID snapshots deduplicate and preserve stable identifiers" {
-    let uids = ImapUidSet(
-        [ImapUid(BigInt("4294967295")), ImapUid(BigInt("1")), ImapUid(BigInt("1"))]
+    let uids = ImapUidSet(ImapUid(BigInt("4294967295")), ImapUid(BigInt("1")), ImapUid(BigInt("1"))
     );
     test.is(uids.argument(), "4294967295,1");
     test.is(uids.entries().size(), 2);

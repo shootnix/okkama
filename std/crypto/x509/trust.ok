@@ -219,6 +219,22 @@ object TrustedCertificates does TrustStore {
         origin = values;
     }
 
+    // The same, one argument per part: TrustedCertificates(a, b).
+    TrustedCertificates(certificates is ...Certificate) {
+        let listed is @Certificate = certificates...;
+        let count = listed.size();
+        confirm count >= 0 else throw InvalidTrustStore.because("negative certificate count");
+        confirm count <= 1024 else throw TrustStoreLimitExceeded.kind("listed");
+        let values is @Certificate = (0..count).map() -> index {
+            listed.item(index);
+        };
+        let bytes = values.reduce(0) -> sum, certificate {
+            sum + certificate.der().size();
+        };
+        confirm bytes <= 16777216 else throw TrustStoreLimitExceeded.kind("DER bytes");
+        origin = values;
+    }
+
     certificates() is Sequencing<Certificate> {
         origin;
     }
@@ -255,7 +271,7 @@ enum InvalidTrustStore is Error = (because(reason is string));
 enum TrustStoreLimitExceeded is Error = (kind(kind is string));
 
 test "explicit empty roots do not acquire system trust" {
-    let store is TrustStore = TrustedCertificates([]);
+    let store is TrustStore = TrustedCertificates();
     test.is(store.certificates().size(), 0);
     test.is(PemTrustStore("").certificates().size(), 0);
 }

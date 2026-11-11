@@ -7,7 +7,7 @@ import "compare" take Order;
 
 // Explicit immutable string data for plain template interpolation. No arbitrary
 // application objects, reflection, implicit JSON traversal, HTML trust or I/O.
-// TemplateBinding(TemplatePath(["user","name"]), "Ada") binds exact coordinates.
+// TemplateBinding(TemplatePath("user","name"), "Ada") binds exact coordinates.
 // Its path()/string() expose those coordinates without parsing or escaping.
 //
 // TemplateBindings snapshots a Sequencing<TemplateBinding>; optional nonnegative
@@ -58,6 +58,12 @@ object TemplateBindings does TemplateStrings {
 
     TemplateBindings(values is Sequencing<TemplateBinding>) {
         origin = TemplateBindingSnapshot(source: values, maximum: 1024).items();
+    }
+
+    // The same, one argument per part: TemplateBindings(a, b).
+    TemplateBindings(values is ...TemplateBinding) {
+        let listed is @TemplateBinding = values...;
+        origin = TemplateBindingSnapshot(source: listed, maximum: 1024).items();
     }
 
     TemplateBindings(values is Sequencing<TemplateBinding>, maximum_bindings is int) {
@@ -116,19 +122,19 @@ enum InvalidTemplateBindingSize is Error = (invalid);
 enum TemplateBindingLimitExceeded is Error = (exceeded);
 
 test "explicit template strings have exact nominal paths" {
-    let data is TemplateStrings = TemplateBindings([
-        TemplateBinding(path: TemplatePath(["user.name"]), value: "literal"),
-        TemplateBinding(path: TemplatePath(["user", "name"]), value: "nested")
-    ]);
-    test.is(data.string(TemplatePath(["user.name"])), "literal");
-    test.is(data.string(TemplatePath(["user", "name"])), "nested");
-    test.is(TemplateStrings.fake().string(TemplatePath(["name"])), "Ada");
+    let data is TemplateStrings = TemplateBindings(
+        TemplateBinding(path: TemplatePath("user.name"), value: "literal"),
+        TemplateBinding(path: TemplatePath("user", "name"), value: "nested")
+    );
+    test.is(data.string(TemplatePath("user.name")), "literal");
+    test.is(data.string(TemplatePath("user", "name")), "nested");
+    test.is(TemplateStrings.fake().string(TemplatePath("name")), "Ada");
 }
 
 test "template binding errors retain path and budget contracts" {
     test.is(
         try {
-            TemplateBindings(values: [], maximum_bindings: 0).string(TemplatePath(["missing"]));
+            TemplateBindings(values: [], maximum_bindings: 0).string(TemplatePath("missing"));
             "";
         }
         catch MissingTemplateValue.path(path) {
@@ -144,7 +150,7 @@ test "template binding errors retain path and budget contracts" {
         true;
     });
     test.ok(try {
-        TemplateBindings(values: [TemplateBinding(path: TemplatePath(["a"]), value: "")], maximum_bindings: 0);
+        TemplateBindings(values: [TemplateBinding(path: TemplatePath("a"), value: "")], maximum_bindings: 0);
         false;
     }
     catch error is TemplateBindingLimitExceeded {
@@ -152,10 +158,10 @@ test "template binding errors retain path and budget contracts" {
     });
     test.is(
         try {
-            TemplateBindings([
-                TemplateBinding(path: TemplatePath(["x"]), value: "1"),
-                TemplateBinding(path: TemplatePath(["x"]), value: "2")
-            ]);
+            TemplateBindings(
+                TemplateBinding(path: TemplatePath("x"), value: "1"),
+                TemplateBinding(path: TemplatePath("x"), value: "2")
+            );
             "";
         }
         catch DuplicateTemplateValue.path(path) {

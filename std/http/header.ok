@@ -221,6 +221,14 @@ object Headers {
         limits = bounds;
     }
 
+    // The same, one argument per part: Headers(a, b).
+    Headers(entries is ...Header) {
+        let listed is @Header = entries...;
+        let bounds = HeaderLimits();
+        origin = HeaderSnapshot(entries: listed, limits: bounds).entries();
+        limits = bounds;
+    }
+
     Headers(entries is Sequencing<Header>, limits is HeaderLimits) {
         origin = HeaderSnapshot(entries: entries, limits: limits).entries();
         self.limits = limits;
@@ -407,8 +415,7 @@ hidden object HeaderSnapshot {
 }
 
 test "HTTP fields retain duplicates and compare names without case" {
-    let fields = Headers(
-        [Header(name: HeaderName("Set-Cookie"), value: " a=1 "), Header(name: HeaderName("set-cookie"), value: "b=2")]
+    let fields = Headers(Header(name: HeaderName("Set-Cookie"), value: " a=1 "), Header(name: HeaderName("set-cookie"), value: "b=2")
     );
     test.is(fields.values(HeaderName("SET-COOKIE")).size(), 2);
     test.is(fields.first(HeaderName("set-cookie")), "a=1");

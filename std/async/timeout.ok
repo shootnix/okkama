@@ -16,7 +16,7 @@ C<Within<T>> limits one future by an exact non-negative duration:
 
     let request is Within<Response> = Within(
         origin: client.request(),
-        limit: Duration(value: 5.rat(), unit: DurationUnit.second),
+        limit: Duration(seconds: 5),
         clock: SystemClock(),
     );
     let response = await request.outcome();
@@ -78,7 +78,7 @@ enum TimedOut is Error = (elapsed);
 
 async test "time wins over a future that never settles" {
     let clock = SystemClock();
-    let short = Duration(value: 20.rat(), unit: DurationUnit.millisecond);
+    let short = Duration(milliseconds: 20);
     let within is Within<Event> = Within(origin: Event().wait(), limit: short, clock: clock);
     test.is(
         try {
@@ -105,12 +105,12 @@ async test "time wins over a future that never settles" {
 
 async test "a settled future wins and a negative limit is refused" {
     let clock = SystemClock();
-    let long = Duration(value: 30.rat(), unit: DurationUnit.second);
+    let long = Duration(seconds: 30);
     test.ok((await Within(origin: Event(ready: true).wait(), limit: long, clock: clock).outcome()).ready());
     test.is(
         try {
             let refused is Within<Event> = Within(origin: Event(ready: true).wait(),
-                limit: Duration(value: -1.rat(), unit: DurationUnit.second), clock: clock);
+                limit: Duration(seconds: -1), clock: clock);
             "accepted";
         }
         catch error is InvalidArgument {

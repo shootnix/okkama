@@ -595,10 +595,8 @@ object FetchedRobots {
             method: Method.get,
             target: AbsoluteTarget(destination),
             headers: Headers(
-                [
-                    Header(name: HeaderName("User-Agent"), value: agent),
-                    Header(name: HeaderName("Accept"), value: "text/plain")
-                ]
+                Header(name: HeaderName("User-Agent"), value: agent),
+                Header(name: HeaderName("Accept"), value: "text/plain")
             )
         );
         let waiting = origin.response(request);
@@ -606,7 +604,7 @@ object FetchedRobots {
         let response = exchange::Exchange::response;
         let input = response.body().reading();
         defer input.close();
-        let class = StatusCode(response::Head::status).class();
+        let class = response::Head::class;
         if class == StatusClass.client_error {
             return RobotsPolicy("");
         }
@@ -614,7 +612,7 @@ object FetchedRobots {
             return RobotsPolicy("User-agent: *\nDisallow: /\n");
         }
         confirm class == StatusClass.successful
-            else throw RobotsFetchFailed.status(StatusCode(response::Head::status).number());
+            else throw RobotsFetchFailed.status(response::Head::code);
         let text = Atomic("");
         loop {
             let remaining = 524288 - text.value().length();

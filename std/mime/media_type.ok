@@ -47,6 +47,12 @@ object MimeParameters {
         origin = MimeSnapshot(origin: entries, maximum: 256).entries();
     }
 
+    // The same, one argument per part: MimeParameters(a, b).
+    MimeParameters(entries is ...MimeParameter) {
+        let listed is @MimeParameter = entries...;
+        origin = MimeSnapshot(origin: listed, maximum: 256).entries();
+    }
+
     MimeParameters(entries is Sequencing<MimeParameter>, maximum_parameters is int) {
         origin = MimeSnapshot(origin: entries, maximum: maximum_parameters).entries();
     }

@@ -235,8 +235,8 @@ test "local times resolve to instants through a named zone" {
 }
 
 test "a zone shows an instant as local time with its offset" {
-    let summer = Instant(origin: Duration(value: 1792888200.rat(), unit: DurationUnit.second));
-    let winter = Instant(origin: Duration(value: 1792891800.rat(), unit: DurationUnit.second));
+    let summer = Instant(origin: Duration(seconds: 1792888200));
+    let winter = Instant(origin: Duration(seconds: 1792891800));
     let berlin = Zone("Europe/Berlin");
     test.is(berlin.name(), "Europe/Berlin");
     let before = ZonedDateTime(instant: summer, zone: berlin);
@@ -253,15 +253,15 @@ test "a zone shows an instant as local time with its offset" {
 }
 
 test "fixed zones have one offset and refuse bad ones" {
-    let plus_five = FixedZone(name: "UTC+5", offset: Duration(value: 5.rat(), unit: DurationUnit.hour));
-    let instant = Instant(origin: Duration(value: 0.rat(), unit: DurationUnit.second));
+    let plus_five = FixedZone(name: "UTC+5", offset: Duration(hours: 5));
+    let instant = Instant(origin: Duration(seconds: 0));
     test.is(plus_five.offset(instant)::Span::seconds, 18000.rat());
     test.is(plus_five.abbreviation(instant), "UTC+5");
     test.ok(!plus_five.daylight_saving(instant));
     test.is(ZonedDateTime(instant: instant, zone: plus_five).local_datetime().time()::Clock::hour, 5);
     test.is(
         try {
-            FixedZone(name: "far", offset: Duration(value: 25.rat(), unit: DurationUnit.hour)).name();
+            FixedZone(name: "far", offset: Duration(hours: 25)).name();
         }
         catch error is InvalidTimeZone {
             "refused";

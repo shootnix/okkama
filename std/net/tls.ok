@@ -417,7 +417,7 @@ object TlsWriting does AsyncWriting, Closing {
 }
 
 test "client defaults retain only modern versions and explicit empty trust" {
-    let policy = TlsClientPolicy(TrustedCertificates([]));
+    let policy = TlsClientPolicy(TrustedCertificates());
     test.is(policy.trust().certificates().size(), 0);
     test.ok(
         policy.versions().membership(TlsVersion.tls1_2)

@@ -60,6 +60,35 @@ object Duration does Comparing<Duration>, Adding<Duration, Duration>, Subtractin
         origin = seconds;
     }
 
+    // Whole amounts of one unit: Duration(seconds: 5), Duration(milliseconds: 250).
+    Duration(days is int) {
+        origin = days.rat() * 86400.rat();
+    }
+
+    Duration(hours is int) {
+        origin = hours.rat() * 3600.rat();
+    }
+
+    Duration(minutes is int) {
+        origin = minutes.rat() * 60.rat();
+    }
+
+    Duration(seconds is int) {
+        origin = seconds.rat();
+    }
+
+    Duration(milliseconds is int) {
+        origin = rat(milliseconds, 1000);
+    }
+
+    Duration(microseconds is int) {
+        origin = rat(microseconds, 1000000);
+    }
+
+    Duration(nanoseconds is int) {
+        origin = rat(nanoseconds, 1000000000);
+    }
+
     // The exact length in seconds, normalised by the constructor.
     cap Span {
         seconds is rat {
@@ -115,8 +144,19 @@ object DurationString {
 enum InvalidDuration is Error = (because(message is string));
 
 test "durations scale exactly" {
-    let minute = Duration(value: 1.rat(), unit: DurationUnit.minute);
+    let minute = Duration(minutes: 1);
     test.is(minute.times(rat(3, 2))::Span::seconds.string(), "90");
     test.is(minute.times(0.rat())::Span::seconds.string(), "0");
     test.is(minute.times(-2.rat())::Span::seconds.string(), "-120");
+}
+
+test "whole amounts of one unit" {
+    test.is(Duration(seconds: 5) == Duration(value: 5.rat(), unit: DurationUnit.second), true);
+    test.is(Duration(milliseconds: 250)::Span::seconds, rat(1, 4));
+    test.is(Duration(minutes: 2)::Span::seconds, 120.rat());
+    test.is(Duration(hours: 1) == Duration(minutes: 60), true);
+    test.is(Duration(days: 1)::Span::seconds, 86400.rat());
+    test.is(Duration(microseconds: 1500)::Span::seconds, rat(3, 2000));
+    test.is(Duration(nanoseconds: 1).nanoseconds().string(), "1");
+    test.is(Duration(seconds: -3)::Span::seconds, -3.rat());
 }

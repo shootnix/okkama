@@ -16,15 +16,15 @@ import "io/stdout" take Stdout;
 
 main() is int {
     let out = Stdout();
-    let host = SettingKey(["server", "host"]);
-    let port = SettingKey(["server", "port"]);
-    let workers = SettingKey(["server", "workers"]);
-    let origins = SettingKey(["cors", "origins"]);
+    let host = SettingKey("server", "host");
+    let port = SettingKey("server", "port");
+    let workers = SettingKey("server", "workers");
+    let origins = SettingKey("cors", "origins");
 
-    let defaults = Settings([
+    let defaults = Settings(
         SettingEntry(key: host, values: ["127.0.0.1"], source: SettingSource(kind: SettingSourceKind.defaults, name: "built-in")),
         SettingEntry(key: port, values: ["8080"], source: SettingSource(kind: SettingSourceKind.defaults, name: "built-in")),
-    ]);
+    );
     let file = IniSettings(
         document: ParsedIni("[server]\nhost = 0.0.0.0\nworkers = 4\n\n[cors]\norigins = https://example.com\n").document(),
         source: SettingSource(kind: SettingSourceKind.document, name: "app.ini"),
@@ -37,7 +37,7 @@ main() is int {
     let command = CliCommand(name: "serve", options: [Option(name: "workers", value: "N", help: "Worker count", key: workers)]);
     let line = command.invocation(["--workers", "8"]).settings();
 
-    let settings = LayeredSettings([defaults, file, environment, line]);
+    let settings = LayeredSettings(defaults, file, environment, line);
     let unknown = SettingSource(kind: SettingSourceKind.defaults, name: "?");
     for ["server.host", "server.port", "server.workers"] -> name {
         out.writeln(name + " = " + (settings.text(name) else "?") + "  (" + (settings.source(name) else unknown)::Source::name + ")");

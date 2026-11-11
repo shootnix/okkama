@@ -2,7 +2,7 @@ module http/server v1.0.0;
 
 import "http/http2_server" take Http2ServerSession;
 import "http/server_policy" take ServerPolicy, ServerTimeouts;
-import "http/handler" take Handling, HandlingResult, HandlingKind, ResponseHandling, WebSocketHandling;
+import "http/handler" take Handling, HandlingResult, HandlingKind, ResponseHandling;
 import "http/request_context" take HttpRequestContext;
 import "http/message" take Response, InvalidHttpMessage, Request;
 import "http/status" take Status, StatusCode;
@@ -31,12 +31,11 @@ import "async/scope" take FutureGroup;
 import "async/cancellation" take Cancellation;
 import "async/timeout" take Within, TimedOut;
 import "time/clock" take Timing, SystemClock;
-import "time/duration" take Duration, DurationUnit;
+import "time/duration" take Duration;
 import "http/body" take TextBody;
 import "http/client" take HttpClient;
-import "http/endpoint" take ListedNetworks;
-import "net/ip" take IpAddress, IpNetwork;
-import "net/dns" take FixedResolution;
+import "http/endpoint" take LoopbackEndpoints;
+import "net/ip" take IpAddress;
 import "http/client_policy" take HttpLimits;
 import "collections/set" take Set, OrderedSet;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded;
@@ -46,6 +45,7 @@ import "io/decorators" take ByteSnapshot;
 // prior-knowledge H2; mixed ALPN/TLS selection remains a separate transport.
 object HttpServer does Closing {
     has state is HttpServerState;
+    has background is FutureGroup<HttpServer>;
 
     // HttpServer(listener:, handling:): HTTP/1.1 under ServerPolicy() and the
     // system clock unless policy: and clock: say otherwise.
@@ -60,6 +60,7 @@ object HttpServer does Closing {
             || policy.protocols().membership(HttpVersion.http_2))
             else throw UnsupportedHttpVersion.unsupported;
         state = HttpServerState(origin: listener, handling: handling, policy: policy, clock: clock, destinations: []);
+        background = FutureGroup();
     }
 
     // With url:, the server's own URL, it also accepts WebSocket upgrades: the
@@ -84,10 +85,18 @@ object HttpServer does Closing {
             && parts::Parts::fragment == Maybe<string>.none
             else throw BadRequest.because("trusted plaintext server URL required");
         state = HttpServerState(origin: origin, handling: handling, policy: policy, clock: clock, destinations: [destination]);
+        background = FutureGroup();
     }
 
     local_endpoint() is IpEndpoint {
         state.local_endpoint();
+    }
+
+    // The port it listens on, as TcpListener shows it: server::Local::port.
+    cap Local {
+        port is int {
+            state.local_endpoint()::Parts::port;
+        }
     }
 
     closed() is bool {
@@ -115,9 +124,18 @@ object HttpServer does Closing {
         await state.settled();
     }
 
-    // Stop accepting, let requests in flight finish within limit, and close.
+    // Serve in the background: let server = HttpServer(…).started(). drain()
+    // waits for it.
+    started() is HttpServer {
+        background.start(self.serve());
+        self;
+    }
+
+    // Stop accepting, let requests in flight finish within limit, close, and
+    // wait for the background serving that started() began.
     async drain(limit is Duration) is HttpServer {
         await ServerDrain(server: self, limit: limit, clock: state.clock()).drain();
+        await background.wait();
         self;
     }
 
@@ -490,7 +508,7 @@ hidden object HttpServerPeer {
         if !sent.value() && !(phase.value() == 0 && seen.value() == 0) {
             let response = Response(
                 status: StatusCode(status).status(),
-                headers: Headers([Header(name: HeaderName("Connection"), value: "close")])
+                headers: Headers(Header(name: HeaderName("Connection"), value: "close"))
             );
             let pending = Http1ResponseWriting(
                 origin: connection.output(),
@@ -593,7 +611,7 @@ hidden object HttpServerPeer {
                 || head::Head::version != HttpVersion.http_1_1) {
                     let response = Response(
                         status: Status.expectation_failed,
-                        headers: Headers([Header(name: HeaderName("Connection"), value: "close")])
+                        headers: Headers(Header(name: HeaderName("Connection"), value: "close"))
                     );
                     let pending = Http1ResponseWriting(
                         origin: connection.output(),
@@ -654,7 +672,7 @@ hidden object HttpServerPeer {
                 ResponseHandling(
                     Response(
                         status: Status.internal_server_error,
-                        headers: Headers([Header(name: HeaderName("Connection"), value: "close")])
+                        headers: Headers(Header(name: HeaderName("Connection"), value: "close"))
                     )
                 );
             };
@@ -666,7 +684,7 @@ hidden object HttpServerPeer {
                     let refusal = Response(
                         status: Status.internal_server_error,
                         content: TextBody(text: "WebSocket upgrades need the server's own URL: HttpServer(listener:, handling:, url: …)\n"),
-                        headers: Headers([Header(name: HeaderName("Connection"), value: "close")])
+                        headers: Headers(Header(name: HeaderName("Connection"), value: "close"))
                     );
                     sent.replace(true);
                     let refusing = Http1ResponseWriting(
@@ -854,7 +872,7 @@ hidden object HttpServerContinueInput does AsyncReading {
             started.set();
             let sending = Http1ResponseHeadWriting(
                 origin: output,
-                head: Http1ResponseHead(Status.continue, Headers([]), HttpVersion.http_1_1),
+                head: Http1ResponseHead(Status.continue, Headers(), HttpVersion.http_1_1),
                 method: Method.post
             ).output();
             await sending;
@@ -918,22 +936,15 @@ hidden object EchoApplication does Handling {
         if target == "/missing" {
             return ResponseHandling(Response(status: Status.not_found));
         }
-        let reading = request.body().reading();
-        let received = Atomic("");
-        loop {
-            let chunk = await reading.bytes(4096);
-            last if chunk.size() == 0;
-            received.replace(received.value() + Utf8Decoded(chunk).string());
-        }
-        reading.close();
+        let received = await request.text(limit: 4096);
         let peer = context.endpoints().remote_endpoint().address().string();
-        let text = TextBody(text: MethodName(request::Head::method).string() + " " + target + " " + received.value());
+        let text = TextBody(text: MethodName(request::Head::method).string() + " " + target + " " + received);
         ResponseHandling(Response(
             status: Status.ok,
-            headers: Headers([
+            headers: Headers(
                 Header(name: HeaderName("Content-Type"), value: text.media_type()),
                 Header(name: HeaderName("X-Peer"), value: peer),
-            ]),
+            ),
             body: text.opening(),
         ));
     }
@@ -942,14 +953,9 @@ hidden object EchoApplication does Handling {
 async test "a server answers over loopback, reads bodies, and drains" {
     let listener = await TcpListening(port: 0).listener();
     let clock = SystemClock();
-    let server = HttpServer(listener: listener, handling: EchoApplication(), policy: ServerPolicy(), clock: clock);
-    let workers is FutureGroup<HttpServer> = FutureGroup();
-    workers.start(server.serve());
-    let base = "http://127.0.0.1:" + server.local_endpoint()::Parts::port.string();
-    let client = HttpClient(
-        resolver: FixedResolution([]),
-        endpoints: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)])
-    );
+    let server = HttpServer(listener: listener, handling: EchoApplication(), policy: ServerPolicy(), clock: clock).started();
+        let base = "http://127.0.0.1:" + server::Local::port.string();
+    let client = HttpClient(endpoints: LoopbackEndpoints());
     let page = await client.get(base + "/hello?x=1");
     test.is(page::Head::status, Status.ok);
     test.is(page::Head::headers.values(HeaderName("X-Peer")).item(0), "127.0.0.1");
@@ -959,7 +965,7 @@ async test "a server answers over loopback, reads bodies, and drains" {
     let posted = await client.post(url: base + "/notes", body: TextBody(text: "héllo"));
     test.is(await posted.text(), "POST /notes héllo");
     // A server accepts the absolute form too (RFC 9112 §3.2.2).
-    let raw = await TcpConnecting(address: IpAddress("127.0.0.1"), port: server.local_endpoint()::Parts::port).connection();
+    let raw = await TcpConnecting(address: IpAddress("127.0.0.1"), port: server::Local::port).connection();
     await raw.output().write(ByteSnapshot(Utf8Encoded(
         "GET " + base + "/absolute?y=2 HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
     ).bytes()));
@@ -973,8 +979,7 @@ async test "a server answers over loopback, reads bodies, and drains" {
     test.ok(answer.value().starts_with("HTTP/1.1 200 OK\r\n"));
     test.ok(answer.value().ends_with("GET /absolute?y=2 "));
     client.close();
-    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
-    await workers.wait();
+    await server.drain(limit: Duration(seconds: 5));
     test.is(server.closed(), true);
 }
 
@@ -983,15 +988,9 @@ async test "a server speaks HTTP/2 over cleartext and multiplexes one connection
     let clock = SystemClock();
     let two is Set<HttpVersion> = OrderedSet([HttpVersion.http_2]);
     let policy = ServerPolicy(protocols: two, limits: HttpLimits(), timeouts: ServerTimeouts(), connections: 8, ranges: 16);
-    let server = HttpServer(listener: listener, handling: EchoApplication(), policy: policy, clock: clock);
-    let workers is FutureGroup<HttpServer> = FutureGroup();
-    workers.start(server.serve());
-    let base = "http://127.0.0.1:" + server.local_endpoint()::Parts::port.string();
-    let client = HttpClient(
-        resolver: FixedResolution([]),
-        endpoints: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)]),
-        protocols: two,
-    );
+    let server = HttpServer(listener: listener, handling: EchoApplication(), policy: policy, clock: clock).started();
+        let base = "http://127.0.0.1:" + server::Local::port.string();
+    let client = HttpClient(endpoints: LoopbackEndpoints(), protocols: two);
     let get is async (string) is ClientResponse = client.get;
     let first = spawn get(base + "/one");
     let second = spawn get(base + "/two");
@@ -1004,7 +1003,6 @@ async test "a server speaks HTTP/2 over cleartext and multiplexes one connection
     test.is(await posted.text(), "POST /notes h2 body");
     test.is((await client.get(base + "/missing"))::Head::status, Status.not_found);
     client.close();
-    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
-    await workers.wait();
+    await server.drain(limit: Duration(seconds: 5));
     test.is(server.closed(), true);
 }

@@ -241,6 +241,6 @@ hidden object CacheControlScanning {
 enum InvalidCacheControl is Error = (because(reason is string));
 
 test "cache control keeps duplicate freshness directives" {
-    let c = CacheControl(Headers([Header(name: HeaderName("Cache-Control"), value: "max-age=60,max-age=60")]));
+    let c = CacheControl(Headers(Header(name: HeaderName("Cache-Control"), value: "max-age=60,max-age=60")));
     test.is(c.count("max-age"), 2);
 }

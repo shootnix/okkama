@@ -98,7 +98,7 @@ test "a WebSocket upgrade is allowed only from the same origin" {
     let site = ParsedUrl("https://chat.example.com/socket").parts();
     let policy = SameOriginWebSockets();
     let from = (origin is string) is Request {
-        Request(url: "https://chat.example.com/socket", headers: Headers([Header(name: HeaderName("Origin"), value: origin)]));
+        Request(url: "https://chat.example.com/socket", headers: Headers(Header(name: HeaderName("Origin"), value: origin)));
     };
     test.is(policy.allowed(from("https://chat.example.com"), site), true);
     test.is(policy.allowed(from("https://chat.example.com:443"), site), true);

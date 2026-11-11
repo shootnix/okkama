@@ -219,6 +219,17 @@ object XmlRpcArray does XmlRpcValue {
         origin = copied;
     }
 
+    // The same, one argument per part: XmlRpcArray(a, b).
+    XmlRpcArray(values is ...XmlRpcValue) {
+        let listed is @XmlRpcValue = values...;
+        let count = listed.size();
+        confirm count >= 0 && count <= 4096 else throw XmlRpcLimitExceeded.kind("container_items");
+        let copied is @XmlRpcValue = (0..count).map() -> index {
+            listed.item(index);
+        };
+        origin = copied;
+    }
+
     values() is Sequencing<XmlRpcValue> {
         origin;
     }
@@ -258,6 +269,32 @@ object XmlRpcStruct does XmlRpcValue {
         confirm count >= 0 && count <= 4096 else throw XmlRpcLimitExceeded.kind("container_items");
         let copied is @XmlRpcMember = (0..count).map() -> index {
             let entry = values.item(index);
+            confirm Utf8Encoded(entry.name()).bytes().size() <= 1024
+                else throw XmlRpcLimitExceeded.kind("member_name");
+            entry;
+        };
+        // Sort only immutable names for uniqueness; members keep source order.
+        // All source/name budgets still run before duplicate validation.
+        let names is @string = copied.map() -> entry {
+            entry.name();
+        };
+        let ordered = names.ordering();
+        for (0..ordered.size()) -> index {
+            if index > 0 {
+                confirm (ordered[index - 1] != ordered[index])
+                    else throw InvalidXmlRpc.because("duplicate member");
+            }
+        }
+        origin = copied;
+    }
+
+    // The same, one argument per part: XmlRpcStruct(a, b).
+    XmlRpcStruct(values is ...XmlRpcMember) {
+        let listed is @XmlRpcMember = values...;
+        let count = listed.size();
+        confirm count >= 0 && count <= 4096 else throw XmlRpcLimitExceeded.kind("container_items");
+        let copied is @XmlRpcMember = (0..count).map() -> index {
+            let entry = listed.item(index);
             confirm Utf8Encoded(entry.name()).bytes().size() <= 1024
                 else throw XmlRpcLimitExceeded.kind("member_name");
             entry;
@@ -806,10 +843,8 @@ hidden object XmlRpcResultWire {
             wire.append("<fault>");
             wire.node(
                 XmlRpcStruct(
-                    [
-                        XmlRpcMember(name: "faultCode", value: XmlRpcInteger(fault::Fault::code)),
-                        XmlRpcMember(name: "faultString", value: XmlRpcText(fault::Fault::text))
-                    ]
+                    XmlRpcMember(name: "faultCode", value: XmlRpcInteger(fault::Fault::code)),
+                    XmlRpcMember(name: "faultString", value: XmlRpcText(fault::Fault::text))
                 ),
                 1
             );
@@ -1481,12 +1516,10 @@ object XmlRpcClient does XmlRpcCalling {
             method: Method.post,
             target: AbsoluteTarget(endpoint),
             headers: Headers(
-                [
-                    Header(name: HeaderName("Content-Type"), value: "text/xml; charset=utf-8"),
-                    Header(name: HeaderName("Accept"), value: "text/xml"),
-                    Header(name: HeaderName("User-Agent"), value: "Okkama-XMLRPC/1.0"),
-                    Header(name: HeaderName("Content-Length"), value: bytes.size().string())
-                ]
+                Header(name: HeaderName("Content-Type"), value: "text/xml; charset=utf-8"),
+                Header(name: HeaderName("Accept"), value: "text/xml"),
+                Header(name: HeaderName("User-Agent"), value: "Okkama-XMLRPC/1.0"),
+                Header(name: HeaderName("Content-Length"), value: bytes.size().string())
             ),
             body: ByteBody(bytes)
         );
@@ -1495,8 +1528,8 @@ object XmlRpcClient does XmlRpcCalling {
         let response = exchange::Exchange::response;
         let input = response.body().reading();
         defer input.close();
-        confirm StatusCode(response::Head::status).class() == StatusClass.successful
-            else throw XmlRpcHttpFailed.status(StatusCode(response::Head::status).number());
+        confirm response::Head::class == StatusClass.successful
+            else throw XmlRpcHttpFailed.status(response::Head::code);
         XmlRpcMedia(response::Head::headers);
         let body = XmlRpcBodyBytes(input: input, limits: limits);
         let pending = body.bytes();
@@ -1596,7 +1629,7 @@ object XmlRpcHandling does Handling {
             return ResponseHandling(
                 Response(
                     status: Status.method_not_allowed,
-                    headers: Headers([Header(name: HeaderName("Allow"), value: "POST")])
+                    headers: Headers(Header(name: HeaderName("Allow"), value: "POST"))
                 )
             );
         }
@@ -1632,10 +1665,8 @@ object XmlRpcHandling does Handling {
             Response(
                 status: Status.ok,
                 headers: Headers(
-                    [
-                        Header(name: HeaderName("Content-Type"), value: "text/xml; charset=utf-8"),
-                        Header(name: HeaderName("Content-Length"), value: bytes.size().string())
-                    ]
+                    Header(name: HeaderName("Content-Type"), value: "text/xml; charset=utf-8"),
+                    Header(name: HeaderName("Content-Length"), value: bytes.size().string())
                 ),
                 body: ByteBody(bytes)
             )

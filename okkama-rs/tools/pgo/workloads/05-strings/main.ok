@@ -1,7 +1,7 @@
 module bench/strings v1.0.0;
 
 // Строки: сборка CSV на 30000 строк, разбор split, замены, длины и разбор чисел.
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "io/stdout" take Stdout;
 
 object Records {
@@ -13,7 +13,7 @@ object Records {
 
     price(line is string) is int {
         let fields = line.split(";");
-        ParsedInt(fields[2].replace("price=", "")).value();
+        Number(fields[2].replace("price=", "")).int();
     }
 }
 

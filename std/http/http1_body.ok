@@ -34,7 +34,7 @@ object Http1BodyReading does BodyReading {
     ) {
         let source = Http1BodyInput(origin: origin, plan: plan, prefix: prefix, head: head, limits: Http1Limits());
         input = source;
-        reading = StreamBodyReading(input: source, owner: owner, trailers: Headers([]));
+        reading = StreamBodyReading(input: source, owner: owner, trailers: Headers());
         self.plan = plan;
     }
 
@@ -48,7 +48,7 @@ object Http1BodyReading does BodyReading {
     ) {
         let source = Http1BodyInput(origin: origin, plan: plan, prefix: prefix, head: head, limits: limits);
         input = source;
-        reading = StreamBodyReading(input: source, owner: owner, trailers: Headers([]));
+        reading = StreamBodyReading(input: source, owner: owner, trailers: Headers());
         self.plan = plan;
     }
 
@@ -157,7 +157,7 @@ hidden object Http1BodyInput does AsyncReading {
         remaining = Atomic(Number(length.string()).int());
         used = Atomic(0);
         metadata = Atomic(0);
-        trailers = Atomic(Headers([]));
+        trailers = Atomic(Headers());
     }
 
     async bytes(limit is int) is @byte {
@@ -405,7 +405,7 @@ async test "empty framing closes its explicit owner without a source read" {
         owner: buffer.closing(),
         plan: Http1BodyPlan(Http1BodyKind.empty, BigInt("0"), true),
         prefix: [],
-        head: Headers([])
+        head: Headers()
     );
     test.is(await reader.bytes(1), []);
     test.ok(buffer.closing().closed() && !input.closed());

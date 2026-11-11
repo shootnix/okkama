@@ -9,15 +9,12 @@ import "http/websocket" take WebSocketConnection, WebSocketLimits, TextWebSocket
 import "http/websocket_server" take WebSocketUpgrade;
 import "http/websocket_origin" take SameOriginWebSockets;
 import "http/websocket_client" take WebSocketConnecting, WebSocketPolicy;
-import "http/endpoint" take ListedNetworks;
+import "http/endpoint" take LoopbackEndpoints;
 import "net/tcp" take TcpListening;
-import "net/endpoint" take IpEndpoint;
-import "net/ip" take IpAddress, IpNetwork;
 import "net/dns" take FixedResolution;
 import "url/value" take ParsedUrl;
-import "async/scope" take FutureGroup;
 import "time/clock" take SystemClock;
-import "time/duration" take Duration, DurationUnit;
+import "time/duration" take Duration;
 import "io/stdout" take Stdout;
 
 // A WebSocket server and client in one program. The handler answers an
@@ -34,7 +31,7 @@ object Shouting does Handling, WebSocketHandling {
                 protocols: [],
                 limits: WebSocketLimits(),
                 access: SameOriginWebSockets(),
-                deadline: Duration(value: 5.rat(), unit: DurationUnit.second),
+                deadline: Duration(seconds: 5),
             ),
             application: self,
         );
@@ -59,19 +56,17 @@ async main() is int {
     let clock = SystemClock();
     let listener = await TcpListening(port: 0).listener();
     let site = "http://127.0.0.1:" + listener::Local::port.string();
-    let server = HttpServer(listener: listener, handling: Shouting(), url: ParsedUrl(site + "/").parts());
-    let serving is FutureGroup<HttpServer> = FutureGroup();
-    serving.start(server.serve());
-
+    let server = HttpServer(listener: listener, handling: Shouting(), url: ParsedUrl(site + "/").parts()).started();
+    
     let connection = await WebSocketConnecting(
-        url: ParsedUrl("ws://127.0.0.1:" + server.local_endpoint()::Parts::port.string() + "/shout").parts(),
-        headers: Headers([Header(name: HeaderName("Origin"), value: site)]),
-        resolver: FixedResolution([]),
+        url: ParsedUrl("ws://127.0.0.1:" + server::Local::port.string() + "/shout").parts(),
+        headers: Headers(Header(name: HeaderName("Origin"), value: site)),
+        resolver: FixedResolution(),
         policy: WebSocketPolicy(
             limits: WebSocketLimits(),
-            opening: Duration(value: 5.rat(), unit: DurationUnit.second),
-            closing: Duration(value: 2.rat(), unit: DurationUnit.second),
-            access: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)]),
+            opening: Duration(seconds: 5),
+            closing: Duration(seconds: 2),
+            access: LoopbackEndpoints(),
         ),
     ).connection();
     for ["hello", "how are you"] -> text {
@@ -81,7 +76,6 @@ async main() is int {
     await connection.close(1000, "bye");
     out.writeln("closed: " + connection.closed().string());
 
-    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
-    await serving.wait();
+    await server.drain(limit: Duration(seconds: 5));
     0;
 }

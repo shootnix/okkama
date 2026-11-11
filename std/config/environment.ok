@@ -69,8 +69,8 @@ object EnvironmentSettings does SettingReading {
 
 test "environment variables become settings through explicit bindings" {
     let environment = Environment(values: ["APP_PORT": "8080", "HOME": "/home/ada"]);
-    let port = SettingKey(["server", "port"]);
-    let host = SettingKey(["server", "host"]);
+    let port = SettingKey("server", "port");
+    let host = SettingKey("server", "host");
     let settings = EnvironmentSettings(
         environment: environment,
         names: [EnvironmentBinding(name: "APP_PORT", key: port), EnvironmentBinding(name: "APP_HOST", key: host)],

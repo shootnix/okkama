@@ -3859,7 +3859,7 @@ shows `record::Entry::level` and `::message`. Writers compose:
 
 `config` layers settings. `Settings`, `IniSettings`, `JsonSettings`,
 `TomlSettings`, `EnvironmentSettings` and `call.settings()` from `cli` are
-layers. `LayeredSettings([defaults, file, environment, line])` lets a later
+layers. `LayeredSettings(defaults, file, environment, line)` lets a later
 layer win key by key. Values are read by their dotted name:
 `settings.int("server.port") else 8080`, `text`, `float` and `bool` answer a
 `Maybe`, `texts("cors.origins")` a list, and `source(name)` where the value came
@@ -4038,7 +4038,7 @@ main() is int {
     let jar=MemoryCookieJar(SystemClock());defer jar.close();
     let origin=ParsedUrl("https://example.com/a/b").parts();
     let context=CookieContext(site: origin,top_level: true,method: Method.get);
-    jar.store(origin,Headers([Header(name: HeaderName("Set-Cookie"),value: "session=opaque; Secure; HttpOnly; SameSite=Lax; Path=/")]),context);
+    jar.store(origin,Headers(Header(name: HeaderName("Set-Cookie"),value: "session=opaque; Secure; HttpOnly; SameSite=Lax; Path=/")),context);
     let cookies=jar.cookies(origin,context);confirm cookies.size()==1;
     Stdout().writeln(cookies.item(0).diagnostic());
     0;
@@ -5405,10 +5405,10 @@ apply only to absence. Environment mappings and JSON/TOML/INI adapters are expli
 These objects represent configuration entities; they do not inspect domain fields.
 
 ```okkama
-let key=SettingKey(["greeting","name"]);
-let defaults=Settings([SettingEntry(key: key,values: ["world"],
-    source: SettingSource(kind: SettingSourceKind.defaults,name: "application"))]);
-let settings=LayeredSettings([defaults,invocation.settings()]);
+let key=SettingKey("greeting","name");
+let defaults=Settings(SettingEntry(key: key,values: ["world"],
+    source: SettingSource(kind: SettingSourceKind.defaults,name: "application")));
+let settings=LayeredSettings(defaults,invocation.settings());
 let name=settings.text("greeting.name") else "world";
 ```
 

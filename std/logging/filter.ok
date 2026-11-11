@@ -130,23 +130,23 @@ enum InvalidLogThreshold is Error = (invalid);
 test "thresholds: the most specific override wins; allowed logs drop the rest" {
     let thresholds = LevelThresholds(
         fallback: LogLevel.warning,
-        overrides: [LevelOverride(name: LogName(["app", "db"]), level: LogLevel.debug)],
+        overrides: [LevelOverride(name: LogName("app", "db"), level: LogLevel.debug)],
     );
-    test.ok(!thresholds.allowed(LogName(["app"]), LogLevel.info));
-    test.ok(thresholds.allowed(LogName(["app"]), LogLevel.error));
-    test.ok(thresholds.allowed(LogName(["app", "db"]), LogLevel.debug));
-    test.ok(thresholds.allowed(LogName(["app", "db", "pool"]), LogLevel.debug));
-    test.ok(!thresholds.allowed(LogName(["app", "http"]), LogLevel.debug));
+    test.ok(!thresholds.allowed(LogName("app"), LogLevel.info));
+    test.ok(thresholds.allowed(LogName("app"), LogLevel.error));
+    test.ok(thresholds.allowed(LogName("app", "db"), LogLevel.debug));
+    test.ok(thresholds.allowed(LogName("app", "db", "pool"), LogLevel.debug));
+    test.ok(!thresholds.allowed(LogName("app", "http"), LogLevel.debug));
     let collected = CollectedLogs();
     let allowed = AllowedLogs(origin: collected, allowing: thresholds);
     for [[LogLevel.info, LogLevel.error]] -> pair {
         for pair -> level {
-            let name = LogName(["app"]);
+            let name = LogName("app");
             allowed.write(LogRecord(
-        occurred: Instant(Duration(value: 0.rat(), unit: DurationUnit.second)),
+        occurred: Instant(Duration(seconds: 0)),
         level: level,
         message: "m",
-        context: LogContext(name: name, fields: LogFields([]), process: 1),
+        context: LogContext(name: name, fields: LogFields(), process: 1),
     ));
         }
     }

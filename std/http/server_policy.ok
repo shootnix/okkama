@@ -9,10 +9,10 @@ object ServerTimeouts {
     has headers, body_idle, keep_alive, handling is Duration;
 
     ServerTimeouts() {
-        headers = Duration(value: 30.rat(), unit: DurationUnit.second);
-        body_idle = Duration(value: 30.rat(), unit: DurationUnit.second);
-        keep_alive = Duration(value: 5.rat(), unit: DurationUnit.second);
-        handling = Duration(value: 30.rat(), unit: DurationUnit.second);
+        headers = Duration(seconds: 30);
+        body_idle = Duration(seconds: 30);
+        keep_alive = Duration(seconds: 5);
+        handling = Duration(seconds: 30);
     }
 
     ServerTimeouts(
@@ -133,8 +133,8 @@ test "server policy has bounded defaults and refuses unsupported budgets" {
     test.throws(InvalidServerPolicy) {
         ServerPolicy(protocols: ancient, limits: HttpLimits(), timeouts: ServerTimeouts(), connections: 8, ranges: 16);
     };
-    let second = Duration(value: 1.rat(), unit: DurationUnit.second);
+    let second = Duration(seconds: 1);
     test.throws(InvalidServerPolicy) {
-        ServerTimeouts(headers: second, body_idle: second, keep_alive: Duration(value: -1.rat(), unit: DurationUnit.second), handling: second);
+        ServerTimeouts(headers: second, body_idle: second, keep_alive: Duration(seconds: -1), handling: second);
     };
 }

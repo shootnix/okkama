@@ -48,9 +48,9 @@ object ChildLogging {
 
 test "field logging adds its fields; a child logger extends the name" {
     let collected = CollectedLogs();
-    let base = NamedLogging(name: LogName(["app"]), destination: collected, clock: ManualClock(Instant(Duration(value: 0.rat(), unit: DurationUnit.second))), fields: LogFields([]));
-    let request = FieldLogging(origin: base, fields: LogFields([JsonField("request", "r-1")]));
-    request.log(LogLevel.info, "handled", LogFields([JsonField("ms", 3)]));
+    let base = NamedLogging(name: LogName("app"), destination: collected, clock: ManualClock(Instant(Duration(seconds: 0))), fields: LogFields());
+    let request = FieldLogging(origin: base, fields: LogFields(JsonField("request", "r-1")));
+    request.log(LogLevel.info, "handled", LogFields(JsonField("ms", 3)));
     test.is(collected.records().item(0).context().fields().values().string(), "{\"request\":\"r-1\",\"ms\":3}");
     let child = ChildLogging(origin: base, segment: "http").logging();
     child.log(LogLevel.info, "up");

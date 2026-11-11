@@ -221,6 +221,23 @@ object CertificateChain {
         origin = values;
     }
 
+    // The same, one argument per part: CertificateChain(a, b).
+    CertificateChain(certificates is ...Certificate) {
+        let listed is @Certificate = certificates...;
+        let count = listed.size();
+        confirm count > 0
+            else throw InvalidCertificate.because("empty or invalid certificate chain size");
+        confirm count <= 32 else throw CertificateLimitExceeded.exceeded;
+        let values is @Certificate = (0..count).map() -> index {
+            listed.item(index);
+        };
+        let bytes = values.reduce(0) -> sum, certificate {
+            sum + certificate.der().size();
+        };
+        confirm bytes <= 8388608 else throw CertificateLimitExceeded.exceeded;
+        origin = values;
+    }
+
     certificates() is Sequencing<Certificate> {
         origin;
     }
@@ -435,7 +452,7 @@ test "empty DER is rejected before certificate publication" {
 
 test "empty supplied chain cannot denote a peer chain" {
     test.ok(try {
-        CertificateChain([]);
+        CertificateChain();
         false;
     }
     catch e is InvalidCertificate {

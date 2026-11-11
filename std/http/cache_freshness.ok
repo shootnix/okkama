@@ -131,7 +131,7 @@ hidden object CacheFreshnessObservations {
     CacheFreshnessObservations(received is Instant) {
         date = received;
         age = 0;
-        lifetime = Duration(value: 0.rat(), unit: DurationUnit.second);
+        lifetime = Duration(seconds: 0);
         reusable = false;
     }
 
@@ -200,9 +200,9 @@ enum InvalidCacheMetadata is Error = (invalid);
 enum InvalidCacheTiming is Error = (invalid);
 
 test "cache age includes monotonic response delay" {
-    let received = Instant(Duration(value: 100.rat(), unit: DurationUnit.second));
-    let began = MonotonicInstant(Duration(value: 0.rat(), unit: DurationUnit.second));
-    let ended = began.plus(Duration(value: 2.rat(), unit: DurationUnit.second));
-    let value = CacheFreshness(headers: Headers([]), timing: CacheResponseTiming(received, began, ended));
+    let received = Instant(Duration(seconds: 100));
+    let began = MonotonicInstant(Duration(seconds: 0));
+    let ended = began.plus(Duration(seconds: 2));
+    let value = CacheFreshness(headers: Headers(), timing: CacheResponseTiming(received, began, ended));
     test.is(value.age(ended)::Span::seconds, 2.rat());
 }

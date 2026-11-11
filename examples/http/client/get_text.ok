@@ -8,12 +8,9 @@ import "http/message" take Request, Response;
 import "http/method" take MethodName;
 import "http/body" take TextBody;
 import "http/status" take Status;
-import "http/endpoint" take ListedNetworks;
+import "http/endpoint" take LoopbackEndpoints;
 import "net/tcp" take TcpListening;
-import "net/ip" take IpAddress, IpNetwork;
-import "net/dns" take FixedResolution;
-import "async/scope" take FutureGroup;
-import "time/duration" take Duration, DurationUnit;
+import "time/duration" take Duration;
 import "io/stdout" take Stdout;
 
 // GET a page and print it as text, decoded by its charset. The page comes
@@ -31,14 +28,9 @@ object Greeting does Handling {
 async main() is int {
     let listener = await TcpListening(port: 0).listener();
     let base = "http://127.0.0.1:" + listener::Local::port.string();
-    let server = HttpServer(listener: listener, handling: Greeting());
-    let serving is FutureGroup<HttpServer> = FutureGroup();
-    serving.start(server.serve());
-    // A real program writes HttpClient(); this one may reach 127.0.0.1.
-    let client = HttpClient(
-        resolver: FixedResolution([]),
-        endpoints: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)])
-    );
+    let server = HttpServer(listener: listener, handling: Greeting()).started();
+        // A real program writes HttpClient(); this one may reach 127.0.0.1.
+    let client = HttpClient(endpoints: LoopbackEndpoints());
 
     let page = await client.get(base + "/hello");
     if page::Head::status == Status.ok {
@@ -46,7 +38,6 @@ async main() is int {
     }
 
     client.close();
-    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
-    await serving.wait();
+    await server.drain(limit: Duration(seconds: 5));
     0;
 }

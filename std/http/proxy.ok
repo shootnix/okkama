@@ -4,8 +4,8 @@ import "http/proxy_policy" take ProxyPolicy, ProxyAuthorizationConflict;
 import "http/proxy_connection" take HttpProxyRouting;
 import "http/client" take HttpTransport;
 import "http/client_policy" take ClientPolicy, HttpLimits, ClientTimeouts;
-import "http/message" take Request, Response;
-import "http/header" take HeaderName, Headers, Header;
+import "http/message" take Request;
+import "http/header" take HeaderName;
 import "http/exchange" take ClientResponse, Exchanging;
 import "net/dns" take Resolving, FixedResolution;
 import "net/tls" take TlsClientPolicy;
@@ -13,12 +13,9 @@ import "time/clock" take Timing, SystemClock;
 import "io/stream" take Closing, AsyncReading;
 import "async/atomic" take Atomic;
 import "io/decorators" take ByteSnapshot;
-import "http/status" take Status, StatusCode;
 import "http/auth" take BasicCredentials;
-import "http/endpoint" take ListedNetworks;
+import "http/endpoint" take LoopbackEndpoints;
 import "net/tcp" take TcpListening, TcpConnection;
-import "net/endpoint" take IpEndpoint;
-import "net/ip" take IpAddress, IpNetwork;
 import "crypto/x509/trust" take TrustedCertificates;
 import "url/value" take ParsedUrl;
 import "collections/set" take Set, OrderedSet;
@@ -87,19 +84,19 @@ async test "a proxied exchange sends the absolute target and the proxy credentia
     let listener = await TcpListening(port: 0).listener();
     defer listener.close();
     let clock = SystemClock();
-    let proxy_url = ParsedUrl("http://127.0.0.1:" + listener.local_endpoint()::Parts::port.string()).parts();
+    let proxy_url = ParsedUrl("http://127.0.0.1:" + listener::Local::port.string()).parts();
     let one is Set<HttpVersion> = OrderedSet([HttpVersion.http_1_1]);
     let policy = ClientPolicy(
         protocols: one,
         limits: HttpLimits(),
         timeouts: ClientTimeouts(),
         connections: 4,
-        access: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)]),
+        access: LoopbackEndpoints(),
     );
     let proxied = Proxied(
         proxy: ProxyPolicy(origin: proxy_url, credentials: BasicCredentials(username: "ada", password: SecretBytes(Utf8Encoded("pw").bytes()))),
-        resolver: FixedResolution([]),
-        tls: TlsClientPolicy(TrustedCertificates([])),
+        resolver: FixedResolution(),
+        tls: TlsClientPolicy(TrustedCertificates()),
         policy: policy,
         clock: clock,
     );

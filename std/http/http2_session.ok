@@ -977,7 +977,7 @@ hidden object Http2StreamEntry does Closing {
             known;
         });
         if block.end_stream() {
-            body.ending(Headers([]));
+            body.ending(Headers());
         }
         response.replace([head]);
         life.replace(life.value().remote_headers(block.end_stream()));

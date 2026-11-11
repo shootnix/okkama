@@ -97,7 +97,7 @@ object Http2BodyBuffer does BodyReading {
         busy = Atomic(false);
         let errors is @Error = [];
         failure = Atomic(errors);
-        end = Atomic(Headers([]));
+        end = Atomic(Headers());
     }
 
     configure(expected is @BigInt, empty is bool) is void {

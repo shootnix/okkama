@@ -13,7 +13,7 @@ main() is int {
     let out = Stdout();
     let berlin = Zone("Europe/Berlin");
     let york = Zone("America/New_York");
-    let utc = Duration(value: 0.rat(), unit: DurationUnit.second);
+    let utc = Duration(seconds: 0);
 
     let meeting = Zoned(local: IsoText("2026-12-01T09:00:00").local_date_time(), zone: berlin, fold: Fold.earlier).instant();
     out.writeln("instant: " + Rfc3339(origin: meeting, offset: utc).string());

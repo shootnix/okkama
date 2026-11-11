@@ -52,7 +52,7 @@ object SqliteOptions {
         read_only = false;
         create = true;
         foreign_keys = true;
-        busy = Duration(value: 0.rat(), unit: DurationUnit.second);
+        busy = Duration(seconds: 0);
         journal = SqliteJournal.default_mode;
     }
 
@@ -1708,7 +1708,7 @@ test "SQLite rejects contradictory flags and sub-millisecond busy timeouts" {
             read_only: true,
             create: true,
             foreign_keys: true,
-            busy_timeout: Duration(value: 0.rat(), unit: DurationUnit.second),
+            busy_timeout: Duration(seconds: 0),
             journal: SqliteJournal.default_mode
         );
         false;
@@ -1811,7 +1811,7 @@ async test "scripts, blobs and an online backup" {
     blob.close();
     test.is(blob.closed(), true);
     let target = scratch.path().child("copy.db");
-    let report = await SqliteBackup(origin: connection, target: target, pages: 8, clock: SystemClock(), timeout: Duration(value: 5.rat(), unit: DurationUnit.second)).report();
+    let report = await SqliteBackup(origin: connection, target: target, pages: 8, clock: SystemClock(), timeout: Duration(seconds: 5)).report();
     test.is(report.copies().string() == report.total().string(), true);
     let copy = await SqliteDatabase(path: target, options: SqliteOptions()).connection();
     test.is((await Query(origin: copy, statement: Statement("SELECT hex(data) AS h FROM b")).one()).text("h"), "00070800");

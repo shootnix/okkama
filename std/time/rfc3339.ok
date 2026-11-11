@@ -12,7 +12,7 @@ import "strings/parse" take Number, InvalidInteger;
 //
 //     Rfc3339(
 //         origin: clock.instant(),
-//         offset: Duration(value: 0.rat(), unit: DurationUnit.second),
+//         offset: Duration(seconds: 0),
 //     ).string(); // ...Z
 //
 //     let instant = Rfc3339("2026-08-11T12:30:45.125+05:00").instant();
@@ -47,8 +47,8 @@ object Rfc3339 {
 
     // Keeps a timestamp to read; instant() and string() read it.
     Rfc3339(text is string) {
-        origin = Instant(origin: Duration(value: 0.rat(), unit: DurationUnit.second));
-        offset = Duration(value: 0.rat(), unit: DurationUnit.second);
+        origin = Instant(origin: Duration(seconds: 0));
+        offset = Duration(seconds: 0);
         source = text;
         reading = true;
     }
@@ -126,7 +126,7 @@ object Rfc3339 {
         };
 
         let offset is Duration = if utc {
-            Duration(value: 0.rat(), unit: DurationUnit.second);
+            Duration(seconds: 0);
         }
         else {
             try {
@@ -167,7 +167,7 @@ test "RFC 3339 text reads an instant and keeps its offset" {
     test.is(read.string(), "2026-08-11T12:30:45.125+05:00");
     let utc = Rfc3339(
         origin: read.instant(),
-        offset: Duration(value: 0.rat(), unit: DurationUnit.second)
+        offset: Duration(seconds: 0)
     );
     test.is(utc.string(), "2026-08-11T07:30:45.125Z");
     test.is(Rfc3339("1970-01-01T00:00:00Z").instant().unix_duration()::Span::seconds.string(), "0");

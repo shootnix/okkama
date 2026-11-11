@@ -217,11 +217,9 @@ object EventStreamHeaders {
 
     headers() is Headers {
         Headers(
-            [
-                Header(name: HeaderName("Content-Type"), value: "text/event-stream; charset=utf-8"),
-                Header(name: HeaderName("Cache-Control"), value: "no-cache"),
-                Header(name: HeaderName("X-Accel-Buffering"), value: "no")
-            ]
+            Header(name: HeaderName("Content-Type"), value: "text/event-stream; charset=utf-8"),
+            Header(name: HeaderName("Cache-Control"), value: "no-cache"),
+            Header(name: HeaderName("X-Accel-Buffering"), value: "no")
         );
     }
 }
@@ -651,7 +649,7 @@ hidden object EventBodyInput does BodyReading {
 
     trailers() is Headers {
         confirm ended.ready() else throw TrailersUnavailable.unavailable;
-        Headers([]);
+        Headers();
     }
 
     async bytes(limit is int) is @byte {

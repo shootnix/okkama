@@ -25,6 +25,24 @@ object LogFields {
         origin = LogFieldLimits(fields).json();
     }
 
+    // The same, one argument per part: LogFields(a, b).
+    LogFields(members is ...JsonField) {
+        let listed is @JsonField = members...;
+        let size = listed.size();
+        confirm size >= 0 && size <= 256
+            else throw InvalidLogField.because("field count exceeds 256");
+        let snapshot is @JsonField = (0..size).map() -> index {
+            listed.item(index);
+        };
+        let fields = try {
+            Json(snapshot);
+        }
+        catch JsonError.duplicate_member(_) {
+            throw InvalidLogField.because("duplicate field name");
+        };
+        origin = LogFieldLimits(fields).json();
+    }
+
     LogFields(values is Json) {
         origin = LogFieldLimits(values).json();
     }
@@ -80,7 +98,7 @@ object EmptyLogFields {
     EmptyLogFields();
 
     fields() is LogFields {
-        LogFields([]);
+        LogFields();
     }
 }
 
@@ -108,7 +126,7 @@ enum MissingLogField is Error = (name(name is string));
 enum InvalidLogField is Error = (because(reason is string));
 
 test "log fields keep member order, reject bad names and merge by name" {
-    let fields = LogFields([JsonField("user", "ann"), JsonField("id", 7), JsonField("pass", "x")]);
+    let fields = LogFields(JsonField("user", "ann"), JsonField("id", 7), JsonField("pass", "x"));
     test.is(fields.values().string(), "{\"user\":\"ann\",\"id\":7,\"pass\":\"x\"}");
     test.ok(fields.membership("id") && !fields.membership("nope"));
     test.is(fields.value("user").string(), "\"ann\"");
@@ -124,7 +142,7 @@ test "log fields keep member order, reject bad names and merge by name" {
     test.is(EmptyLogFields().fields().values().string(), "{}");
     test.is(
         try {
-            LogFields([JsonField("a", 1), JsonField("a", 2)]).values().string();
+            LogFields(JsonField("a", 1), JsonField("a", 2)).values().string();
         }
         catch failure is InvalidLogField {
             failure.text();
@@ -133,7 +151,7 @@ test "log fields keep member order, reject bad names and merge by name" {
     );
     test.is(
         try {
-            LogFields([JsonField("", 1)]).values().string();
+            LogFields(JsonField("", 1)).values().string();
         }
         catch failure is InvalidLogField {
             failure.text();
@@ -161,7 +179,7 @@ test "log fields keep member order, reject bad names and merge by name" {
         },
         "InvalidLogField.because(\"fields are not an object\")"
     );
-    let added = LogFields([JsonField("id", 8), JsonField("trace", "t1")]);
+    let added = LogFields(JsonField("id", 8), JsonField("trace", "t1"));
     test.is(
         CombinedLogFields(base: fields, added: added).fields().values().string(),
         "{\"user\":\"ann\",\"id\":8,\"pass\":\"x\",\"trace\":\"t1\"}"

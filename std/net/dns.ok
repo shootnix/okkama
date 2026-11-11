@@ -62,6 +62,15 @@ object FixedResolution does Resolving {
         names = records.names();
     }
 
+    // The same, one argument per part: FixedResolution(a, b).
+    FixedResolution(hosts is ...HostAddresses) {
+        let listed is @HostAddresses = hosts...;
+        let empty is @AddressName = [];
+        let records = DnsConfiguration(hosts: listed, names: empty);
+        self.hosts = records.hosts();
+        names = records.names();
+    }
+
     FixedResolution(hosts is Sequencing<HostAddresses>, names is Sequencing<AddressName>) {
         let records = DnsConfiguration(hosts: hosts, names: names);
         self.hosts = records.hosts();
@@ -255,8 +264,7 @@ enum UnknownAddress is Error = (address(address is string));
 enum ResolutionLimitExceeded is Error = (kind(kind is string));
 
 async test "fixed lookup preserves requested port without a system resolver" {
-    let resolver = FixedResolution(
-        [HostAddresses(host: HostName("example.com"), addresses: [IpAddress("192.0.2.1")])]
+    let resolver = FixedResolution(HostAddresses(host: HostName("example.com"), addresses: [IpAddress("192.0.2.1")])
     );
     test.is(
         (await resolver.addresses(HostEndpoint(host: HostName("EXAMPLE.com"), port: 443))).item(0)::Parts::port,

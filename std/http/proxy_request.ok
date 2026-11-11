@@ -49,7 +49,7 @@ object HttpConnectRequest {
         let port = parts::Parts::port else 443;
         let authority = ParsedUrl("//" + (parts::Parts::host else "") + ":" + port.string()).parts();
         let fields = ProxyRequestFields(
-            origin: Headers([Header(name: HeaderName("Host"), value: authority.authority())]),
+            origin: Headers(Header(name: HeaderName("Host"), value: authority.authority())),
             fields: proxy_fields
         ).headers();
         request = Request(

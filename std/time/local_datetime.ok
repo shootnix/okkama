@@ -111,7 +111,7 @@ test "local date-times add whole civil days" {
         date: Date(year: 2026, month: 8, day: 11),
         time: TimeOfDay(hour: 23, minute: 30, second: 0, nanosecond: 0),
     );
-    let finish = start.plus(Duration(value: 2.rat(), unit: DurationUnit.hour));
+    let finish = start.plus(Duration(hours: 2));
     test.is(finish.date()::Calendar::day, 12);
     test.is(finish.time()::Clock::hour, 1);
     test.is(finish.time()::Clock::minute, 30);
@@ -121,15 +121,15 @@ test "local date-times add whole civil days" {
         date: Date(year: 2026, month: 12, day: 31),
         time: TimeOfDay(hour: 12, minute: 0, second: 0, nanosecond: 0),
     );
-    test.is(year_end.plus(Duration(value: 1.rat(), unit: DurationUnit.day)).date()::Calendar::year, 2027);
-    test.is(start.plus(Duration(value: -1.rat(), unit: DurationUnit.day)).date()::Calendar::day, 10);
+    test.is(year_end.plus(Duration(days: 1)).date()::Calendar::year, 2027);
+    test.is(start.plus(Duration(days: -1)).date()::Calendar::day, 10);
     let final = LocalDateTime(
         date: Date(year: 9999, month: 12, day: 31),
         time: TimeOfDay(hour: 23, minute: 0, second: 0, nanosecond: 0),
     );
     test.is(
         try {
-            final.plus(Duration(value: 2.rat(), unit: DurationUnit.hour)).date()::Calendar::year;
+            final.plus(Duration(hours: 2)).date()::Calendar::year;
         }
         catch error is InvalidDate {
             -1;

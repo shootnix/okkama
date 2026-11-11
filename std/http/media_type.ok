@@ -88,6 +88,12 @@ object HttpMediaParameters {
         origin = HttpMediaSnapshot(values: values, maximum: 128).values();
     }
 
+    // The same, one argument per part: HttpMediaParameters(a, b).
+    HttpMediaParameters(values is ...HttpMediaParameter) {
+        let listed is @HttpMediaParameter = values...;
+        origin = HttpMediaSnapshot(values: listed, maximum: 128).values();
+    }
+
     HttpMediaParameters(values is Sequencing<HttpMediaParameter>, maximum is int) {
         origin = HttpMediaSnapshot(values: values, maximum: maximum).values();
     }
