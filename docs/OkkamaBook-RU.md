@@ -6608,10 +6608,10 @@ reset. close планирует освобождение ресурсов, settl
 
 Контракт application/CLI (okkama-docs `docs/std/application-cli.md`) оставляет политику приложения
 в std-объектах. ProcessArguments() получает оставшийся argv runner без повторного
-разбиения; Utf8Arguments декодирует каждый аргумент отдельно. ParsedCommand работает
-с явно заданным деревом команд и возвращает Invocation. Он не печатает help и не
-завершает процесс: CliFailure и явно объявленные help/version flags обрабатывает
-приложение. [Исполняемый пример](../examples/std-v4/application-cli.ok).
+разбиения, а `strings()` декодирует каждый аргумент отдельно.
+`command.invocation(arguments)` читает их по явно заданному дереву `CliCommand` и
+возвращает Invocation. Он не печатает help и не завершает процесс: CliFailure и
+явно объявленные help/version flags обрабатывает приложение. [Исполняемый пример](../examples/std-v4/application-cli.ok).
 
 Ключ настройки состоит из точных непустых сегментов. Поздний слой заменяет запись
 целиком вместе с источником, сохраняя первую позицию ключа. Scalar fallback работает

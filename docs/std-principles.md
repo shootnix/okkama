@@ -83,7 +83,8 @@ actions should still be the questions callers actually ask
 - **Short common path.** A common task takes one to three lines from the
   caller's side. If it takes more, the module is missing an entry point.
 - **No matryoshkas.** Three or more constructors nested in one expression to
-  do one thing (`Number(Utf8Arguments(ProcessArguments()).item(0)).int()`) is a
+  do one thing (`Number(Utf8Arguments(ProcessArguments()).item(0)).int()`, as
+  it was before 0.5.4; now `call.int("port")`) is a
   smell. Give the task one object that does it.
 - **One way to do each thing**, and a small public surface. A second way to
   do the same task needs a reason in the module's comment.
@@ -217,7 +218,7 @@ As in Chapter 21 of the Bible:
 - **Domains.** Large and in the worst shape:
   - `http`: 102 modules, 543 accessors;
   - `mail`: 236 accessors;
-  - `mime`, `i18n`, `cli/spec`, `testing`.
+  - `mime`, `i18n`, `cli` (done in wave 2), `testing`.
 - **Nothing leaves std.** The owner, 2026-11-11, at the start of the review:
   «сразу договариваемся, что мы ничего выбрасывать не будем, это все наша
   стандартная библиотека». No module is deleted or moved into a Blade

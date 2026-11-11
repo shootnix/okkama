@@ -6191,11 +6191,12 @@ prepared reuse, incremental BLOB, script parsing and a bounded online backup.
 ### Application arguments, settings and terminals
 
 The application/CLI contract (okkama-docs `docs/std/application-cli.md`) keeps application policy
-in std objects. `ProcessArguments()` observes the runner's exact remaining argv;
-`Utf8Arguments` decodes each argument separately without interpreting shell text.
-`ParsedCommand` validates an explicit command tree and returns an `Invocation`.
-It never prints help or exits; the application handles `CliFailure` and declared
-help/version flags itself. [Executable example](../examples/std-v4/application-cli.ok).
+in std objects. `ProcessArguments()` observes the runner's exact remaining argv,
+and `strings()` decodes each argument separately, without interpreting shell
+text. `command.invocation(arguments)` reads them against an explicit
+`CliCommand` tree and returns an `Invocation`. It never prints help or exits:
+the application handles `CliFailure` and its declared help/version flags
+itself. [Executable example](../examples/std-v4/application-cli.ok).
 
 Settings retains an index of actual segment keys for binary lookup. keys() keeps
 source order and DuplicateSetting keeps the earliest original repeated key.
