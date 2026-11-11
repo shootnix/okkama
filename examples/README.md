@@ -213,3 +213,9 @@ network, and drains its server at the end.
 |---|---|
 | `web/notes.ok` | a JSON service: routes under a prefix, a path parameter, a JSON body, a query parameter with a default, a fallback |
 | `http/websocket/echo.ok` | a WebSocket server checks the Origin against its own URL and answers each message; the client sends, reads and closes |
+
+## mail
+
+| Program | Task |
+|---|---|
+| `mail/compose.ok` | compose a message with headers and a text body, render it, parse it back, keep it in a Maildir |
