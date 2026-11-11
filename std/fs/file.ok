@@ -75,7 +75,7 @@ object File does Closing {
     has location is string;
 
     File(path is Path, mode is FileMode = FileMode.reading, encoding is string = "utf-8") {
-        state = OpenedFileState(mode, path, encoding).value();
+        state = FileOpening(mode: mode, path: path, encoding: encoding).state();
         location = path.string();
     }
 
@@ -94,7 +94,7 @@ object File does Closing {
     // A lock on the whole file, or none when another lock is in the way.
     lock(mode is FileLockMode) is Maybe<FileLock> {
         try {
-            Maybe.some(FileLock(file_state_lock(state, LockModeCode(mode).value(), 1), self));
+            Maybe.some(FileLock(file_state_lock(state, NativeLockMode(mode).code(), 1), self));
         }
         catch failure is NativeFailure {
             if failure.code() == "would_block" {
@@ -109,7 +109,7 @@ object File does Closing {
     // Whether the file is locked in mode now, by this process or another one.
     locked(mode is FileLockMode) is bool {
         try {
-            file_state_locked(state, LockModeCode(mode).value());
+            file_state_locked(state, NativeLockMode(mode).code());
         }
         catch failure is NativeFailure {
             throw FileFailure(failure, location).error();
@@ -296,7 +296,7 @@ object FileBytes does Reading, Writing, ByteSource, Batching<byte> {
 
     seek(offset is int, from is SeekOrigin) is void {
         try {
-            file_state_seek(state, offset, SeekOriginCode(from).value());
+            file_state_seek(state, offset, NativeSeekOrigin(from).code());
         }
         catch failure is NativeFailure {
             throw FileFailure(failure, location).error();
@@ -315,22 +315,22 @@ object FileBytes does Reading, Writing, ByteSource, Batching<byte> {
 
 enum SeekOrigin = (start, current, end);
 
-hidden object OpenedFileState {
+hidden object FileOpening {
     has mode is FileMode;
     has path is Path;
     has encoding is string;
 
-    OpenedFileState(mode is FileMode, path is Path, encoding is string) {
+    FileOpening(mode is FileMode, path is Path, encoding is string) {
         self.mode = mode;
         self.path = path;
         self.encoding = encoding;
     }
 
-    value() is FileState {
-        confirm SupportedFileEncoding(encoding).value()
+    state() is FileState {
+        confirm FileEncoding(encoding).supported()
             else throw FileError.unsupported_encoding(encoding);
         try {
-            file_state_open(path_encode(path.string()), FileModeCode(mode).value(), encoding);
+            file_state_open(path_encode(path.string()), NativeFileMode(mode).code(), encoding);
         }
         catch failure is NativeFailure {
             throw FileFailure(failure, path.string()).error();
@@ -338,14 +338,14 @@ hidden object OpenedFileState {
     }
 }
 
-hidden object SupportedFileEncoding {
+hidden object FileEncoding {
     has origin is string;
 
-    SupportedFileEncoding(origin is string) {
+    FileEncoding(origin is string) {
         self.origin = origin;
     }
 
-    value() is bool {
+    supported() is bool {
         origin == "utf-8"
             || origin == "utf-16-le"
             || origin == "utf-16-be"
@@ -356,14 +356,14 @@ hidden object SupportedFileEncoding {
     }
 }
 
-hidden object FileModeCode {
+hidden object NativeFileMode {
     has origin is FileMode;
 
-    FileModeCode(origin is FileMode) {
+    NativeFileMode(origin is FileMode) {
         self.origin = origin;
     }
 
-    value() is int {
+    code() is int {
         if origin == FileMode.reading {
             0;
         }
@@ -382,14 +382,14 @@ hidden object FileModeCode {
     }
 }
 
-hidden object SeekOriginCode {
+hidden object NativeSeekOrigin {
     has origin is SeekOrigin;
 
-    SeekOriginCode(origin is SeekOrigin) {
+    NativeSeekOrigin(origin is SeekOrigin) {
         self.origin = origin;
     }
 
-    value() is int {
+    code() is int {
         if origin == SeekOrigin.start {
             0;
         }
@@ -402,14 +402,14 @@ hidden object SeekOriginCode {
     }
 }
 
-hidden object LockModeCode {
+hidden object NativeLockMode {
     has origin is FileLockMode;
 
-    LockModeCode(origin is FileLockMode) {
+    NativeLockMode(origin is FileLockMode) {
         self.origin = origin;
     }
 
-    value() is int {
+    code() is int {
         if origin == FileLockMode.shared {
             0;
         }

@@ -78,6 +78,18 @@ actions should still be the questions callers actually ask
 - **One name, one meaning, one type.** The same action name never returns an
   iterator here and an array there. Actions that answer are nouns (`lines()`,
   `content()`); verbs are commands that answer nothing (`write`, `close`).
+- **A computation names its answer** (the owner, 2026-11-11). An object that
+  computes one thing has no `value()` or `result()`: its action is the noun
+  of what it returns, `DaysBetween(left: a, right: b).count()`,
+  `Crc32(bytes).checksum()`, and an adjective when it answers yes or no,
+  `FileEncoding(name).supported()`. The object names what is asked about and
+  the action names the answer, so neither repeats the other:
+  `NativeFileMode(mode).code()`, not `FileModeCode(mode).code()`. A role
+  names the noun for all who do it (`Checksumming` → `checksum()`). `value()`
+  stays only where it is the domain's word: the value of a name/value pair
+  (`Cookie`, `Header`, `QueryParameter`) and the content of a holder (`Cell`,
+  `Atomic`). The review renames the rest module by module: 406 at 0.5.4
+  start (`okkama-docs/std-review/inventory.py`, "answers").
 - **No dependency cycles, and no workarounds for them.** A domain's errors
   live in a module below everything that throws them (`fs/error`); a lower
   concept never imports a higher one (`fs/entry` and `fs/lock` sit below
