@@ -1,0 +1,103 @@
+module examples/toml/read v1.0.0;
+
+import "collections/sequence" take Sequencing;
+import "io/stdout" take Stdout;
+import "toml/parse" take ParsedToml, InvalidToml;
+import "toml/value" take TomlLocalDate, TomlLocalDateTime, TomlLocalTime, TomlMember,
+    TomlOffsetDateTime, TomlTable, TomlValue, TomlVisitor;
+
+// Parse a TOML document and print every value with its dotted name. A value
+// is read through a visitor: each kind of TOML value arrives in its own
+// action, tables and arrays included. Dates and times keep the fields they
+// were written with.
+
+object Printer does TomlVisitor {
+    has out is Stdout;
+    has name is string;
+
+    Printer(:out, :name);
+
+    text(value is string) is void {
+        out.writeln(name + " = \"" + value + "\"");
+    }
+
+    integer(value is int) is void {
+        out.writeln(name + " = " + value.string());
+    }
+
+    real(value is float) is void {
+        out.writeln(name + " = " + value.string());
+    }
+
+    infinity(negative is bool) is void {
+        out.writeln(name + " = " + if negative { "-inf"; } else { "inf"; });
+    }
+
+    not_a_number() is void {
+        out.writeln(name + " = nan");
+    }
+
+    boolean(value is bool) is void {
+        out.writeln(name + " = " + value.string());
+    }
+
+    elements(values is Sequencing<TomlValue>) is void {
+        out.writeln(name + " = " + values.size().string() + " values:");
+        for (0..values.size()) -> index {
+            values.item(index).accept(Printer(out: out, name: name + "[" + index.string() + "]"));
+        }
+    }
+
+    members(values is Sequencing<TomlMember>) is void {
+        for values -> member {
+            let path = if name.empty() { member.name(); } else { name + "." + member.name(); };
+            member.value().accept(Printer(out: out, name: path));
+        }
+    }
+
+    local_date(value is TomlLocalDate) is void {
+        out.writeln(name + " = date " + value.string() + ", year " + value::Calendar::year.string());
+    }
+
+    local_time(value is TomlLocalTime) is void {
+        out.writeln(name + " = time " + value.string() + ", hour " + value::Clock::hour.string());
+    }
+
+    local_datetime(value is TomlLocalDateTime) is void {
+        out.writeln(name + " = local " + value.string());
+    }
+
+    offset_datetime(value is TomlOffsetDateTime) is void {
+        out.writeln(name + " = instant " + value.string() + ", offset "
+            + value.offset()::Offset::minutes.string() + " min");
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let document is TomlTable = ParsedToml(
+        "title = \"Okkama\"\n" +
+        "released = 2026-11-11\n" +
+        "backup = 03:30:00\n" +
+        "\n" +
+        "[database]\n" +
+        "ports = [5432, 5433]\n" +
+        "timeout = 2.5\n" +
+        "enabled = true\n" +
+        "checked = 2026-11-11T09:15:00+03:00\n" +
+        "\n",
+    ).root();
+
+    document.accept(Printer(out: out, name: ""));
+    out.writeln("has owner: " + document.membership("owner").string());
+
+    let broken = try {
+        ParsedToml("a = 1\na = 2\n").root();
+        "parsed";
+    }
+    catch InvalidToml.located(offset, line, column, message) {
+        "line " + line.string() + ": " + message;
+    };
+    out.writeln(broken);
+    0;
+}

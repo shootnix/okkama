@@ -521,6 +521,17 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
       `os/command`, `os/process` and `os/environment`.
     - The Book drops the legacy `os`, `env/var`, `env/cwd` and `proc/cmd`
       passages and describes the current `os` in §26.5.
+  - `toml`:
+    - `ParsedToml(text).root()` replaces `.value()`, as `json` does.
+      `TomlNode` is hidden.
+    - Caps show what was written:
+      - `TomlLocalDate::Calendar` holds `year`, `month` and `day`;
+      - `TomlLocalTime::Clock` holds `hour` through `nanosecond`;
+      - `TomlOffset::Offset` holds `minutes` and `known`.
+    - `TomlArray` and `TomlTable` still take their snapshot when made.
+      `==` depends on it, and `memo let` cannot keep a role-typed value,
+      which might be a resource.
+    - Named arguments in 35 calls. There is an example, `examples/toml/`.
 
 ### Fixed
 

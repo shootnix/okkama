@@ -360,16 +360,19 @@ object TomlLocalDate does TomlValue {
         dd = day;
     }
 
-    year() is int {
-        yyyy;
-    }
+    // The date as written.
+    cap Calendar {
+        year is int {
+            yyyy;
+        }
 
-    month() is int {
-        mm;
-    }
+        month is int {
+            mm;
+        }
 
-    day() is int {
-        dd;
+        day is int {
+            dd;
+        }
     }
 
     string() is string {
@@ -408,20 +411,23 @@ object TomlLocalTime does TomlValue {
         ns = nanosecond;
     }
 
-    hour() is int {
-        hh;
-    }
+    // The time as written; the second may be 60.
+    cap Clock {
+        hour is int {
+            hh;
+        }
 
-    minute() is int {
-        mm;
-    }
+        minute is int {
+            mm;
+        }
 
-    second() is int {
-        ss;
-    }
+        second is int {
+            ss;
+        }
 
-    nanosecond() is int {
-        ns;
+        nanosecond is int {
+            ns;
+        }
     }
 
     string() is string {
@@ -499,12 +505,15 @@ object TomlOffset {
         certain = known;
     }
 
-    minutes() is int {
-        amount;
-    }
+    // The displacement, and whether it is known (`-00:00` is not UTC).
+    cap Offset {
+        minutes is int {
+            amount;
+        }
 
-    known() is bool {
-        certain;
+        known is bool {
+            certain;
+        }
     }
 
     string() is string {
@@ -581,18 +590,18 @@ test "typed scalar dispatch" {
 }
 
 test "mixed array retains order and dispatches snapshot" {
-    let array = TomlArray([TomlString("é\n"), TomlBoolean(true)], 2);
+    let array = TomlArray(values: [TomlString("é\n"), TomlBoolean(true)], maximum_items: 2);
     test.is(array.values().size(), 2);
     array.values().first().accept(TomlVisitor.fake());
     array.values().last().accept(TomlVisitor.fake());
     array.accept(TomlVisitor.fake());
     test.is(TomlArray([]).values().size(), 0);
-    test.is(TomlArray([], 0).values().size(), 0);
+    test.is(TomlArray(values: [], maximum_items: 0).values().size(), 0);
 }
 
 test "ordered literal table names and typed lookup" {
     let table = TomlTable(
-        [TomlMember("", TomlInteger(9007199254740993)), TomlMember("a.b", TomlBoolean(true))]
+        [TomlMember(name: "", value: TomlInteger(9007199254740993)), TomlMember(name: "a.b", value: TomlBoolean(true))]
     );
     test.ok(table.membership(""));
     test.ok(table.membership("a.b"));
@@ -602,7 +611,7 @@ test "ordered literal table names and typed lookup" {
     table.value("").accept(TomlVisitor.fake());
     table.value("a.b").accept(TomlVisitor.fake());
     table.accept(TomlVisitor.fake());
-    test.is(TomlTable([], 0).members().size(), 0);
+    test.is(TomlTable(members: [], maximum_members: 0).members().size(), 0);
     try {
         table.value("missing");
         test.fail("missing name accepted");
@@ -614,7 +623,7 @@ test "ordered literal table names and typed lookup" {
 
 test "duplicate keys reject and distinct Unicode names survive" {
     try {
-        TomlTable([TomlMember("x", TomlBoolean(true)), TomlMember("x", TomlBoolean(false))]);
+        TomlTable([TomlMember(name: "x", value: TomlBoolean(true)), TomlMember(name: "x", value: TomlBoolean(false))]);
         test.fail("duplicate accepted");
     }
     catch DuplicateTomlMember.name(name) {
@@ -622,10 +631,10 @@ test "duplicate keys reject and distinct Unicode names survive" {
     }
     let table = TomlTable(
         [
-            TomlMember("A", TomlBoolean(true)),
-            TomlMember("a", TomlBoolean(false)),
-            TomlMember("é", TomlBoolean(true)),
-            TomlMember("é", TomlBoolean(false))
+            TomlMember(name: "A", value: TomlBoolean(true)),
+            TomlMember(name: "a", value: TomlBoolean(false)),
+            TomlMember(name: "é", value: TomlBoolean(true)),
+            TomlMember(name: "é", value: TomlBoolean(false))
         ]
     );
     test.is(table.members().size(), 4);
@@ -633,28 +642,28 @@ test "duplicate keys reject and distinct Unicode names survive" {
 
 test "container budgets reject before traversal" {
     try {
-        TomlArray([], -1);
+        TomlArray(values: [], maximum_items: -1);
         test.fail("negative array limit accepted");
     }
     catch error is InvalidTomlLimit {
         test.is(error.text(), "InvalidTomlLimit.invalid");
     }
     try {
-        TomlTable([], -1);
+        TomlTable(members: [], maximum_members: -1);
         test.fail("negative table limit accepted");
     }
     catch error is InvalidTomlLimit {
         test.ok(true);
     }
     try {
-        TomlArray([TomlBoolean(true)], 0);
+        TomlArray(values: [TomlBoolean(true)], maximum_items: 0);
         test.fail("array limit ignored");
     }
     catch error is TomlLimitExceeded {
         test.is(error.text(), "TomlLimitExceeded.exceeded");
     }
     try {
-        TomlTable([TomlMember("x", TomlBoolean(true))], 0);
+        TomlTable(members: [TomlMember("x", TomlBoolean(true))], maximum_members: 0);
         test.fail("table limit ignored");
     }
     catch error is TomlLimitExceeded {
@@ -663,20 +672,20 @@ test "container budgets reject before traversal" {
 }
 
 test "temporal coordinates preserve year zero and leap notation" {
-    let date = TomlLocalDate(0, 2, 29);
-    test.is([date.year(), date.month(), date.day()], [0, 2, 29]);
+    let date = TomlLocalDate(year: 0, month: 2, day: 29);
+    test.is([date::Calendar::year, date::Calendar::month, date::Calendar::day], [0, 2, 29]);
     test.is(date.string(), "0000-02-29");
-    let time = TomlLocalTime(23, 59, 60, 123400000);
-    test.is([time.hour(), time.minute(), time.second(), time.nanosecond()], [23, 59, 60, 123400000]);
+    let time = TomlLocalTime(hour: 23, minute: 59, second: 60, nanosecond: 123400000);
+    test.is([time::Clock::hour, time::Clock::minute, time::Clock::second, time::Clock::nanosecond], [23, 59, 60, 123400000]);
     test.is(time.string(), "23:59:60.1234");
-    let local = TomlLocalDateTime(date, time);
+    let local = TomlLocalDateTime(date: date, time: time);
     test.is(local.date(), date);
     test.is(local.time(), time);
     test.is(local.string(), "0000-02-29T23:59:60.1234");
-    let stamp = TomlOffsetDateTime(local, TomlOffset(0, false));
+    let stamp = TomlOffsetDateTime(local: local, offset: TomlOffset(0, false));
     test.is(stamp.local(), local);
-    test.is(stamp.offset().minutes(), 0);
-    test.ok(!stamp.offset().known());
+    test.is(stamp.offset()::Offset::minutes, 0);
+    test.ok(!stamp.offset()::Offset::known);
     test.is(stamp.string(), "0000-02-29T23:59:60.1234-00:00");
     let values is @TomlValue = [date, time, local, stamp];
     for values -> value {
@@ -685,15 +694,15 @@ test "temporal coordinates preserve year zero and leap notation" {
 }
 
 test "temporal canonical boundaries and precision" {
-    test.is(TomlLocalDate(9999, 12, 31).string(), "9999-12-31");
-    test.is(TomlLocalTime(0, 0, 0, 0).string(), "00:00:00");
-    test.is(TomlLocalTime(1, 2, 3, 1).string(), "01:02:03.000000001");
-    test.is(TomlLocalTime(1, 2, 3, 999999999).string(), "01:02:03.999999999");
+    test.is(TomlLocalDate(year: 9999, month: 12, day: 31).string(), "9999-12-31");
+    test.is(TomlLocalTime(hour: 0, minute: 0, second: 0, nanosecond: 0).string(), "00:00:00");
+    test.is(TomlLocalTime(hour: 1, minute: 2, second: 3, nanosecond: 1).string(), "01:02:03.000000001");
+    test.is(TomlLocalTime(hour: 1, minute: 2, second: 3, nanosecond: 999999999).string(), "01:02:03.999999999");
     test.is(TomlOffset(0).string(), "Z");
     test.is(TomlOffset(1439).string(), "+23:59");
     test.is(TomlOffset(-1439).string(), "-23:59");
     test.is(TomlOffset(-30).string(), "-00:30");
-    test.ok(TomlOffset(0).known());
+    test.ok(TomlOffset(0)::Offset::known);
 }
 
 test "invalid temporal coordinates fail at construction" {
@@ -709,7 +718,7 @@ test "invalid temporal coordinates fail at construction" {
         [2024, 4, 31]
     ] -> args {
         try {
-            TomlLocalDate(args[0], args[1], args[2]);
+            TomlLocalDate(year: args[0], month: args[1], day: args[2]);
             test.fail("bad date accepted");
         }
         catch error is InvalidTomlDate {
@@ -727,7 +736,7 @@ test "invalid temporal coordinates fail at construction" {
         [0, 0, 0, 1000000000]
     ] -> args {
         try {
-            TomlLocalTime(args[0], args[1], args[2], args[3]);
+            TomlLocalTime(hour: args[0], minute: args[1], second: args[2], nanosecond: args[3]);
             test.fail("bad time accepted");
         }
         catch error is InvalidTomlTime {
@@ -744,7 +753,7 @@ test "invalid temporal coordinates fail at construction" {
         }
     }
     try {
-        TomlOffset(1, false);
+        TomlOffset(minutes: 1, known: false);
         test.fail("unknown nonzero offset accepted");
     }
     catch error is InvalidTomlOffset {

@@ -34,6 +34,6 @@ object Printer does TomlVisitor {
 
 main() is int {
     let source = "title = \"Ada\"\ncount = 42\nratio = 0.5\nenabled = true\ntags = [\"a\", 'b']\nborn = 1815-12-10\n\n[server]\nport = 8080\n";
-    ParsedToml(source).value().accept(Printer());
+    ParsedToml(source).root().accept(Printer());
     0;
 }

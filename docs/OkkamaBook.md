@@ -3713,6 +3713,15 @@ Both answer `variable(name)`, `home()`, `addition()` and `difference()`;
 `Group(name:)`, `WorkingDirectory()` and `Storage(path:).usage()` answer
 when asked. `examples/os/` shows each task as a program.
 
+`toml` reads TOML 1.0. `ParsedToml(text).root()` is the document's
+`TomlTable`, and `InvalidToml.located(offset, line, column, message)` names
+what is wrong. A table answers `membership(name)` and `value(name)`, and a
+value is read through a `TomlVisitor`: `text`, `integer`, `real`,
+`boolean`, `elements`, `members` and the four date and time kinds. Those
+keep what was written: `date::Calendar::year`, `time::Clock::second` (60
+stays 60) and `offset::Offset::known` (`-00:00` is not UTC).
+`examples/toml/` shows a whole document walked.
+
 `http/client` sends requests with `HttpClient()`. By default it uses the system's DNS and trusted roots, reaches public endpoints only and speaks HTTP/1.1. Every other part is a named argument: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)` and `cookies: MemoryCookieJar()`. Every REST method has a shortcut: `get(url)`, `head`, `options`, `delete`, and `post(url:, body:)`, `put`, `patch` with a `Content` such as `JsonBody(json)`. Anything else is `client.response(Request(url:, method:, headers:, body:))`. A reply shows its head through the cap `Head` (`page::Head::status`, `::class`, `::headers`) and reads its body with `await page.text()`, `bytes()`, `json()` or `reading()`. `Status` and `Method` are enums: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` and `MethodName` turn them into wire numbers and tokens and back. `examples/http/client/` shows each task as a program.
 
 `strings/parse` reads text as the type asked for: `Number("42").int()`,

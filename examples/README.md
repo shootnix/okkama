@@ -51,6 +51,12 @@ and compares the output.
 | `os/process/talk.ok` | write to a running program, read its answer, stop a long-running one with a signal |
 | `os/environment/variables.ok` | read a snapshot, derive a child's environment, find home and the search path |
 
+## toml
+
+| Program | Task |
+|---|---|
+| `toml/read.ok` | parse a document, walk every value with a visitor, read dates and times, report an error's line |
+
 ## strings/parse
 
 | Program | Task |
