@@ -44,11 +44,11 @@ hidden object ImapUtf7Encoded {
     has value is string;
 
     ImapUtf7Encoded(origin is string) {
-        value = ImapUtf7Encoder(origin, ImapNameLimits()).string();
+        value = ImapUtf7Encoder(origin: origin, limits: ImapNameLimits()).string();
     }
 
     ImapUtf7Encoded(origin is string, limits is ImapNameLimits) {
-        value = ImapUtf7Encoder(origin, limits).string();
+        value = ImapUtf7Encoder(origin: origin, limits: limits).string();
     }
 
     string() is string {
@@ -60,11 +60,11 @@ object ImapUtf7Decoded {
     has value is string;
 
     ImapUtf7Decoded(origin is string) {
-        value = ImapUtf7Parser(origin, ImapNameLimits()).string();
+        value = ImapUtf7Parser(origin: origin, limits: ImapNameLimits()).string();
     }
 
     ImapUtf7Decoded(origin is string, limits is ImapNameLimits) {
-        value = ImapUtf7Parser(origin, limits).string();
+        value = ImapUtf7Parser(origin: origin, limits: limits).string();
     }
 
     string() is string {
@@ -76,14 +76,14 @@ object ImapMailboxName {
     has value, wire, argument is string;
 
     ImapMailboxName(origin is string) {
-        let prepared = ImapNameValue(origin, ImapNameLimits());
+        let prepared = ImapNameValue(origin: origin, limits: ImapNameLimits());
         value = origin;
         wire = prepared.wire();
         argument = prepared.quoted();
     }
 
     ImapMailboxName(origin is string, limits is ImapNameLimits) {
-        let prepared = ImapNameValue(origin, limits);
+        let prepared = ImapNameValue(origin: origin, limits: limits);
         value = origin;
         wire = prepared.wire();
         argument = prepared.quoted();
@@ -122,7 +122,7 @@ hidden object ImapUtf7Encoder {
             else throw ImapNameLimitExceeded.kind("scalars");
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        let output = ImapNameOutput(buffer, limits::Limits::wire_bytes);
+        let output = ImapNameOutput(buffer: buffer, maximum: limits::Limits::wire_bytes);
         let start = MimePosition(0);
         for (0..origin.length()) -> index {
             let char = origin.slice(index, index + 1);
@@ -217,7 +217,7 @@ hidden object ImapUtf7Parser {
                     "&";
                 }
                 else {
-                    ImapUtf7Shift(origin.slice(start + 1, end.index()), start).string();
+                    ImapUtf7Shift(origin: origin.slice(start + 1, end.index()), offset: start).string();
                 }
             };
             confirm piece.length() <= limits::Limits::scalars - count.index()
@@ -226,7 +226,7 @@ hidden object ImapUtf7Parser {
             count = count.following(count.index() + piece.length());
         }
         let decoded = Utf8Decoded(buffer.content().bytes()).string();
-        confirm ImapUtf7Encoded(decoded, limits).string() == origin
+        confirm ImapUtf7Encoded(origin: decoded, limits: limits).string() == origin
             else throw InvalidImapUtf7.located(0, "noncanonical shift or encoded printable ASCII");
         decoded;
     }
@@ -300,10 +300,10 @@ hidden object ImapNameValue {
             confirm bytes.size() != 1 || (bytes[0].int() >= 32 && bytes[0].int() != 127)
                 else throw InvalidImapMailboxName.at(index);
         }
-        let encoded = ImapUtf7Encoded(origin, limits).string();
+        let encoded = ImapUtf7Encoded(origin: origin, limits: limits).string();
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        let output = ImapNameOutput(buffer, limits::Limits::wire_bytes);
+        let output = ImapNameOutput(buffer: buffer, maximum: limits::Limits::wire_bytes);
         output.write("\"");
         for (0..encoded.length()) -> index {
             let char = encoded.slice(index, index + 1);

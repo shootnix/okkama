@@ -61,10 +61,10 @@ object ImapCopiedUids {
                 && arguments.item(2).kind() == ImapValueKind.atom
                 else throw InvalidImapData.because("invalid COPYUID code");
             let validity = ImapUidValidity(
-                BigInt(ImapUnsigned(arguments.item(0).string(), true).int().string())
+                BigInt(ImapUnsigned(origin: arguments.item(0).string(), nonzero: true).int().string())
             );
-            let source = ImapUidRanges(arguments.item(1).string(), ImapUidSetLimits());
-            let target = ImapUidRanges(arguments.item(2).string(), ImapUidSetLimits());
+            let source = ImapUidRanges(origin: arguments.item(1).string(), limits: ImapUidSetLimits());
+            let target = ImapUidRanges(origin: arguments.item(2).string(), limits: ImapUidSetLimits());
             let from = source.uids();
             let to = target.uids();
             confirm from.entries().size() == to.entries().size()
@@ -81,7 +81,7 @@ object ImapCopiedUids {
                     else throw InvalidImapData.because("COPYUID source was not requested");
             }
             sources = from;
-            assigned = ImapAssignedUids(MailboxUids(destination, validity, to, account));
+            assigned = ImapAssignedUids(MailboxUids(mailbox: destination, validity: validity, uids: to, account: account));
         }
         else {
             sources = ImapUidSet([]);
@@ -117,7 +117,7 @@ object CopiedMail {
     has pending is Future<ImapCopiedUids>;
 
     CopiedMail(origin is SelectedMailbox, uids is MailboxUids, destination is ImapMailboxName) {
-        pending = ImapCopying(origin, uids, destination, false).uids();
+        pending = ImapCopying(origin: origin, uids: uids, destination: destination, move: false).uids();
     }
 
     uids() is Future<ImapCopiedUids> {
@@ -129,7 +129,7 @@ object MovedMail {
     has pending is Future<ImapCopiedUids>;
 
     MovedMail(origin is SelectedMailbox, uids is MailboxUids, destination is ImapMailboxName) {
-        pending = ImapCopying(origin, uids, destination, true).uids();
+        pending = ImapCopying(origin: origin, uids: uids, destination: destination, move: true).uids();
     }
 
     uids() is Future<ImapCopiedUids> {
@@ -166,11 +166,11 @@ hidden object ImapCopying {
         reply.read().require_success();
         uids.checked(origin.name(), reply.state().uid_validity(), origin.session().account());
         ImapCopiedUids(
-            reply.read(),
-            uids.uids(),
-            destination,
-            origin.session().capabilities(),
-            origin.session().account()
+            result: reply.read(),
+            requested: uids.uids(),
+            destination: destination,
+            capabilities: origin.session().capabilities(),
+            account: origin.session().account()
         );
     }
 }
@@ -179,7 +179,7 @@ object ExpungedMail {
     has pending is Future<Sequencing<ImapSequence>>;
 
     ExpungedMail(origin is SelectedMailbox, uids is MailboxUids) {
-        pending = ImapExpunging(origin, uids).sequences();
+        pending = ImapExpunging(origin: origin, uids: uids).sequences();
     }
 
     identifiers() is Future<Sequencing<ImapSequence>> {
@@ -214,7 +214,7 @@ hidden object ImapExpunging {
             if response.name() == "EXPUNGE" {
                 let values = ParsedImapData(response).entries();
                 removed = removed.following(
-                    ImapSequence(ImapUnsigned(values.item(1).string(), true).int())
+                    ImapSequence(ImapUnsigned(origin: values.item(1).string(), nonzero: true).int())
                 );
             }
         }
@@ -232,9 +232,9 @@ object AppendedMail {
         flags is MailFlags
     ) {
         pending = ImapAppending(
-            origin,
-            mailbox,
-            ImapCommand(mailbox: mailbox, message: message, flags: flags)
+            origin: origin,
+            mailbox: mailbox,
+            command: ImapCommand(mailbox: mailbox, message: message, flags: flags)
         ).uids();
     }
 
@@ -269,12 +269,12 @@ hidden object ImapAppending {
             && arguments.item(1).kind() == ImapValueKind.atom
             else throw InvalidImapData.because("invalid APPENDUID code");
         let validity = ImapUidValidity(
-            BigInt(ImapUnsigned(arguments.item(0).string(), true).int().string())
+            BigInt(ImapUnsigned(origin: arguments.item(0).string(), nonzero: true).int().string())
         );
         let assigned = ImapUidSet(
-            [ImapUid(BigInt(ImapUnsigned(arguments.item(1).string(), true).int().string()))]
+            [ImapUid(BigInt(ImapUnsigned(origin: arguments.item(1).string(), nonzero: true).int().string()))]
         );
-        ImapAssignedUids(MailboxUids(mailbox, validity, assigned, origin.account()));
+        ImapAssignedUids(MailboxUids(mailbox: mailbox, validity: validity, uids: assigned, account: origin.account()));
     }
 }
 
@@ -283,9 +283,9 @@ object CreatedImapMailbox {
 
     CreatedImapMailbox(origin is ImapSession, name is ImapMailboxName) {
         pending = ImapMailboxChanging(
-            origin,
-            name,
-            ImapCommand(operation: ImapMailboxCommand.create, mailbox: name)
+            origin: origin,
+            name: name,
+            command: ImapCommand(operation: ImapMailboxCommand.create, mailbox: name)
         ).mailbox();
     }
 
@@ -299,9 +299,9 @@ object ImapMailboxDeletion {
 
     ImapMailboxDeletion(origin is ImapSession, name is ImapMailboxName) {
         pending = ImapMailboxChanging(
-            origin,
-            name,
-            ImapCommand(operation: ImapMailboxCommand.delete, mailbox: name)
+            origin: origin,
+            name: name,
+            command: ImapCommand(operation: ImapMailboxCommand.delete, mailbox: name)
         ).mailbox();
     }
 
@@ -319,9 +319,9 @@ object RenamedImapMailbox {
         destination is ImapMailboxName
     ) {
         pending = ImapMailboxChanging(
-            origin,
-            destination,
-            ImapCommand(source: source, destination: destination)
+            origin: origin,
+            name: destination,
+            command: ImapCommand(source: source, destination: destination)
         ).mailbox();
     }
 
@@ -340,7 +340,7 @@ object ImapSubscription {
         else {
             ImapMailboxCommand.unsubscribe;
         };
-        pending = ImapMailboxChanging(origin, name, ImapCommand(operation: action, mailbox: name)).mailbox();
+        pending = ImapMailboxChanging(origin: origin, name: name, command: ImapCommand(operation: action, mailbox: name)).mailbox();
     }
 
     apply() is Future<ImapMailboxName> {

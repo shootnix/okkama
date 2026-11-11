@@ -296,7 +296,7 @@ object ImapResponseProgress {
             else {
                 ImapResponsePartKind.literal;
             };
-            let appended = parts.following(ImapResponsePart(kind, buffer.content().bytes()));
+            let appended = parts.following(ImapResponsePart(kind: kind, value: buffer.content().bytes()));
             ^parts = appended;
             let empty is MimeItems<ByteSnapshot> = MimeItems();
             ^pieces = empty;
@@ -332,9 +332,9 @@ object ImapResponseProgress {
             };
             let header = ImapResponseHeader(initial);
             let start = used - pending.length();
-            let marker = ImapResponseLine(line, start, header.structured(), limits).marker();
+            let marker = ImapResponseLine(origin: line, offset: start, structured: header.structured(), limits: limits).marker();
             let extended = parts.following(
-                ImapResponsePart(ImapResponsePartKind.text, Utf8Encoded(pending + "\n").bytes())
+                ImapResponsePart(kind: ImapResponsePartKind.text, value: Utf8Encoded(pending + "\n").bytes())
             );
             if marker.present() {
                 confirm literals < limits::Limits::literals
@@ -348,7 +348,7 @@ object ImapResponseProgress {
                     else {
                         ImapResponsePartKind.literal;
                     };
-                    extended = extended.following(ImapResponsePart(kind, []));
+                    extended = extended.following(ImapResponsePart(kind: kind, value: []));
                 }
                 ^remaining = marker.size();
                 ^binary = marker.binary();
@@ -381,7 +381,7 @@ object ImapResponseHeader {
         confirm fields.size() >= 2 && first != ""
             else throw InvalidImapResponse.located(0, "missing response prefix");
         if first == "+" {
-            ImapResponseText(origin.slice(2, origin.length()), 2).validate();
+            ImapResponseText(origin: origin.slice(2, origin.length()), offset: 2).validate();
             kind = ImapResponseKind.continuation;
             tag = "";
             name = "";
@@ -445,7 +445,7 @@ object ImapResponseHeader {
                             "status requires a space before text"
                         );
                     let start = 3 + raw.length();
-                    ImapResponseText(origin.slice(start, origin.length()), start).validate();
+                    ImapResponseText(origin: origin.slice(start, origin.length()), offset: start).validate();
                 }
                 kind = ImapResponseKind.untagged;
                 tag = "";
@@ -474,7 +474,7 @@ object ImapResponseHeader {
                         "invalid tagged status"
                     );
                 let start = first.length() + fields[1].length() + 2;
-                ImapResponseText(origin.slice(start, origin.length()), start).validate();
+                ImapResponseText(origin: origin.slice(start, origin.length()), offset: start).validate();
                 kind = ImapResponseKind.tagged;
                 tag = first;
                 name = upper;
@@ -598,9 +598,9 @@ hidden object ImapResponseLine {
                         "literal marker must start a string"
                     );
                 return ImapLiteralMarker(
-                    origin.slice(start, origin.length()),
-                    offset + start,
-                    limits::Limits::literal_bytes
+                    origin: origin.slice(start, origin.length()),
+                    offset: offset + start,
+                    maximum: limits::Limits::literal_bytes
                 );
             }
             quote = quote.accepted(char, offset + index);

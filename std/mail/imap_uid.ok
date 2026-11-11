@@ -105,11 +105,11 @@ object ImapUidSet {
     has value is ImapUidSnapshot;
 
     ImapUidSet(origin is Sequencing<ImapUid>) {
-        value = ImapUidSnapshot(origin, ImapUidSetLimits());
+        value = ImapUidSnapshot(origin: origin, limits: ImapUidSetLimits());
     }
 
     ImapUidSet(origin is Sequencing<ImapUid>, limits is ImapUidSetLimits) {
-        value = ImapUidSnapshot(origin, limits);
+        value = ImapUidSnapshot(origin: origin, limits: limits);
     }
 
     entries() is Sequencing<ImapUid> {

@@ -55,12 +55,12 @@ object ImapCapability {
 
     ImapCapability(origin is string) {
         original = origin;
-        name = ImapCapabilityToken(origin, ImapCapabilityLimits()).name();
+        name = ImapCapabilityToken(origin: origin, limits: ImapCapabilityLimits()).name();
     }
 
     ImapCapability(origin is string, limits is ImapCapabilityLimits) {
         original = origin;
-        name = ImapCapabilityToken(origin, limits).name();
+        name = ImapCapabilityToken(origin: origin, limits: limits).name();
     }
 
     string() is string {
@@ -76,11 +76,11 @@ object ImapCapabilities does ByteSource {
     has value is ImapCapabilitySnapshot;
 
     ImapCapabilities(entries is Sequencing<string>) {
-        value = ImapCapabilitySnapshot(entries, ImapCapabilityLimits());
+        value = ImapCapabilitySnapshot(origin: entries, limits: ImapCapabilityLimits());
     }
 
     ImapCapabilities(entries is Sequencing<string>, limits is ImapCapabilityLimits) {
-        value = ImapCapabilitySnapshot(entries, limits);
+        value = ImapCapabilitySnapshot(origin: entries, limits: limits);
     }
 
     tokens() is Sequencing<ImapCapability> {
@@ -108,11 +108,11 @@ object ParsedImapCapabilities {
     has value is ImapCapabilities;
 
     ParsedImapCapabilities(origin is @byte) {
-        value = ImapCapabilityLine(origin, ImapCapabilityLimits()).capabilities();
+        value = ImapCapabilityLine(origin: origin, limits: ImapCapabilityLimits()).capabilities();
     }
 
     ParsedImapCapabilities(origin is @byte, limits is ImapCapabilityLimits) {
-        value = ImapCapabilityLine(origin, limits).capabilities();
+        value = ImapCapabilityLine(origin: origin, limits: limits).capabilities();
     }
 
     capabilities() is ImapCapabilities {
@@ -216,7 +216,7 @@ hidden object ImapCapabilitySnapshot {
         let known is MimeItems<ImapFeature> = MimeItems();
         let auth is MimeItems<string> = MimeItems();
         let tokens is @ImapCapability = (0..count).map() -> index {
-            let token = ImapCapability(origin.item(index), limits);
+            let token = ImapCapability(origin: origin.item(index), limits: limits);
             let raw = token.string();
             let name = token.name();
             confirm raw.length() <= limits::Limits::wire_bytes - buffer.content().size() - 3
@@ -297,7 +297,7 @@ hidden object ImapCapabilityLine {
             && ImapCapabilityUpper(text.slice(0, 13)).string() == "* CAPABILITY "
             else throw InvalidImapCapabilities.because("expected one untagged CAPABILITY response");
         let entries = text.slice(13, text.length() - 2).split(" ");
-        ImapCapabilities(entries, limits);
+        ImapCapabilities(entries: entries, limits: limits);
     }
 }
 

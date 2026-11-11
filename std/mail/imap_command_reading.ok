@@ -146,7 +146,7 @@ hidden object ImapCommandReading {
     has pending is Future<ImapCommandRead>;
 
     ImapCommandReading(origin is AsyncReading, tag is ImapTag) {
-        pending = ImapCommandInput(origin, tag, [], ImapCommandLimits()).read();
+        pending = ImapCommandInput(origin: origin, tag: tag, prefix: [], limits: ImapCommandLimits()).read();
     }
 
     ImapCommandReading(
@@ -155,7 +155,7 @@ hidden object ImapCommandReading {
         prefix is @byte,
         limits is ImapCommandLimits
     ) {
-        pending = ImapCommandInput(origin, tag, prefix, limits).read();
+        pending = ImapCommandInput(origin: origin, tag: tag, prefix: prefix, limits: limits).read();
     }
 
     read() is Future<ImapCommandRead> {
@@ -268,28 +268,28 @@ object ImapCommandInput {
                 per::Limits::wire_bytes;
             };
             let bounded = ImapResponseLimits(
-                per::Limits::line_bytes,
-                per::Limits::literal_bytes,
-                maximum,
-                per::Limits::literals
+                line_bytes: per::Limits::line_bytes,
+                literal_bytes: per::Limits::literal_bytes,
+                wire_bytes: maximum,
+                literals: per::Limits::literals
             );
             // A previous read can contain bytes beyond this command. Feed only
             // the bounded prefix and retain the rest explicitly without loss.
-            let split = ImapCommandPrefix(tail.bytes(), maximum);
+            let split = ImapCommandPrefix(origin: tail.bytes(), maximum: maximum);
             let read = await ImapResponseReading(
-                origin,
-                split.head(),
-                bounded,
-                limits::Limits::chunk_bytes
+                origin: origin,
+                prefix: split.head(),
+                limits: bounded,
+                chunk_bytes: limits::Limits::chunk_bytes
             ).read();
             let response = read.response();
             used = used.following(used.index() + read.consumed());
             count = count.following(count.index() + 1);
-            tail = tail.following(ImapCommandPrefixJoin(read.remainder(), split.tail()).bytes());
+            tail = tail.following(ImapCommandPrefixJoin(first: read.remainder(), second: split.tail()).bytes());
             if response.kind() == ImapResponseKind.tagged {
                 confirm response.tag() == tag.string()
                     else throw UnexpectedImapTag.detailed(tag.string(), response.tag());
-                return ImapCommandRead(collected.entries(), response, tail.bytes(), used.index());
+                return ImapCommandRead(responses: collected.entries(), completion: response, remainder: tail.bytes(), consumed: used.index());
             }
             if response.kind() == ImapResponseKind.continuation {
                 confirm !continued.ready() else throw UnexpectedImapContinuation.unexpected;
@@ -378,7 +378,7 @@ enum ImapServerClosed is Error = (bye);
 test "tagged rejection remains a completed aligned outcome" {
     let wire = Utf8Encoded("O1 NO rejected\r\n").bytes();
     let response = ParsedImapResponse(wire).response();
-    let result = ImapCommandRead([], response, [7.byte()], wire.size());
+    let result = ImapCommandRead(responses: [], completion: response, remainder: [7.byte()], consumed: wire.size());
     test.is(result.successful(), false);
     test.is(result.remainder(), [7.byte()]);
     let rejected = try {

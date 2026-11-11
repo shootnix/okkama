@@ -130,7 +130,7 @@ object ImapSession does Closing {
         defer guard.close();
         confirm !self.closed() else throw ImapChannelClosed.closed;
         let completed = Event();
-        let cleanup = ImapSessionCleanup(self, completed);
+        let cleanup = ImapSessionCleanup(origin: self, completed: completed);
         defer cleanup.close();
         let state = await states.receiving().item();
         state = state.cleared();
@@ -146,12 +146,12 @@ object ImapSession does Closing {
             completed.set();
             result.require_success();
         }
-        let snapshot = ImapMailboxState(result, read_only);
+        let snapshot = ImapMailboxState(result: result, read_only: read_only);
         state = state.selected(name, snapshot);
         let token = state.selection().token();
         await states.sending().send(state);
         completed.set();
-        SelectedMailbox(self, token);
+        SelectedMailbox(origin: self, token: token);
     }
 
     async observation(token is ImapSelectionToken) is ImapMailboxState {
@@ -161,7 +161,7 @@ object ImapSession does Closing {
         defer guard.close();
         confirm !self.closed() else throw ImapChannelClosed.closed;
         let completed = Event();
-        let cleanup = ImapSessionCleanup(self, completed);
+        let cleanup = ImapSessionCleanup(origin: self, completed: completed);
         defer cleanup.close();
         let state = await states.receiving().item();
         try {
@@ -190,7 +190,7 @@ object ImapSession does Closing {
         defer guard.close();
         confirm !self.closed() else throw ImapChannelClosed.closed;
         let completed = Event();
-        let cleanup = ImapSessionCleanup(self, completed);
+        let cleanup = ImapSessionCleanup(origin: self, completed: completed);
         defer cleanup.close();
         let state = await states.receiving().item();
         try {
@@ -244,7 +244,7 @@ object ImapSession does Closing {
         let selections = state.selections();
         await states.sending().send(state);
         completed.set();
-        ImapSessionReply(result, selections);
+        ImapSessionReply(result: result, selection: selections);
     }
 
     async entry() is LockGuard {
@@ -253,7 +253,7 @@ object ImapSession does Closing {
         let control = await idle_control.guard();
         defer control.close();
         let complete = Event();
-        let cleanup = ImapSessionCleanup(self, complete);
+        let cleanup = ImapSessionCleanup(origin: self, completed: complete);
         defer cleanup.close();
         let slot = await idle_slots.receiving().item();
         if slot.active() {
@@ -287,7 +287,7 @@ object ImapSession does Closing {
         let control = await idle_control.guard();
         defer control.close();
         let complete = Event();
-        let cleanup = ImapSessionCleanup(self, complete);
+        let cleanup = ImapSessionCleanup(origin: self, completed: complete);
         defer cleanup.close();
         let slot = await idle_slots.receiving().item();
         if slot.active() {
@@ -301,7 +301,7 @@ object ImapSession does Closing {
                 }
             }
         }
-        let task = ImapIdleTask(self, token, events, stop, finished);
+        let task = ImapIdleTask(origin: self, token: token, events: events, stop: stop, finished: finished);
         await idle_slots.sending().send(ImapIdleSlot(task));
         task.start();
         complete.set();
@@ -314,7 +314,7 @@ object ImapSession does Closing {
         stop is Event,
         finished is Event
     ) is int {
-        let ending = ImapIdleEnding(events, finished);
+        let ending = ImapIdleEnding(events: events, finished: finished);
         defer ending.close();
         if stop.ready() {
             return 0;
@@ -328,7 +328,7 @@ object ImapSession does Closing {
         }
         confirm !self.closed() else throw ImapChannelClosed.closed;
         let completed = Event();
-        let cleanup = ImapSessionCleanup(self, completed);
+        let cleanup = ImapSessionCleanup(origin: self, completed: completed);
         defer cleanup.close();
         let state = await states.receiving().item();
         try {
@@ -339,7 +339,7 @@ object ImapSession does Closing {
             completed.set();
             throw;
         }
-        let observer = ImapEventObservation(state.selection().state(), events);
+        let observer = ImapEventObservation(state: state.selection().state(), events: events);
         let replies = await origin.idle(stop, observer);
         if replies.size() > 0 {
             let result = replies[0];
@@ -482,9 +482,9 @@ hidden object ImapSessionState {
 
     selected(name is ImapMailboxName, value is ImapMailboxState) is ^ImapSessionState {
         let following = (serial + BigInt("1"));
-        let token = ImapSelectionToken(name, following);
+        let token = ImapSelectionToken(name: name, generation: following);
         ^serial = following;
-        ^selection = [ImapSelectedState(token, value)];
+        ^selection = [ImapSelectedState(token: token, value: value)];
     }
 
     observed(response is ImapResponse) is ^ImapSessionState {
@@ -534,7 +534,7 @@ object SearchedMail {
     has pending is Future<MailboxUids>;
 
     SearchedMail(origin is SelectedMailbox, matching is MailMatching) {
-        pending = ImapSearching(origin, ImapCommand(matching: matching)).read();
+        pending = ImapSearching(origin: origin, command: ImapCommand(matching: matching)).read();
     }
 
     uids() is Future<MailboxUids> {
@@ -568,9 +568,9 @@ hidden object ImapSearching {
             if response.name() == "SEARCH" || response.name() == "ESEARCH" {
                 matches = matches.following(
                     ImapSearchResult(
-                        response,
-                        ImapTag(result.completion().tag()),
-                        ImapUidSetLimits()
+                        origin: response,
+                        tag: ImapTag(result.completion().tag()),
+                        limits: ImapUidSetLimits()
                     ).uids()
                 );
             }
@@ -583,10 +583,10 @@ hidden object ImapSearching {
                 "UIDNOTSTICKY cannot produce reusable mailbox UID snapshots"
             );
         MailboxUids(
-            origin.name(),
-            reply.state().uid_validity(),
-            values[0],
-            origin.session().account()
+            mailbox: origin.name(),
+            validity: reply.state().uid_validity(),
+            uids: values[0],
+            account: origin.session().account()
         );
     }
 }
@@ -596,7 +596,7 @@ object FetchedMail {
 
     FetchedMail(origin is SelectedMailbox, uids is MailboxUids, data is Sequencing<ImapDatum>) {
         let ids = uids.checked(origin.name(), uids.validity(), origin.session().account());
-        pending = ImapFetching(origin, uids, ImapCommand(uids: ids, data: data), false).read();
+        pending = ImapFetching(origin: origin, uids: uids, command: ImapCommand(uids: ids, data: data), writable: false).read();
     }
 
     messages() is Future<Sequencing<ImapMessage>> {
@@ -615,10 +615,10 @@ object ChangedMailFlags {
     ) {
         let ids = uids.checked(origin.name(), uids.validity(), origin.session().account());
         pending = ImapFetching(
-            origin,
-            uids,
-            ImapCommand(uids: ids, flags: flags, change: change),
-            true
+            origin: origin,
+            uids: uids,
+            command: ImapCommand(uids: ids, flags: flags, change: change),
+            writable: true
         ).read();
     }
 
@@ -701,7 +701,7 @@ object MailboxEvent {
         }
         if response.name() == "EXPUNGE" {
             let values = ParsedImapData(response).entries();
-            return ImapSequence(ImapUnsigned(values.item(1).string(), true).int());
+            return ImapSequence(ImapUnsigned(origin: values.item(1).string(), nonzero: true).int());
         }
         throw MissingImapDatum.name("sequence");
     }
@@ -912,7 +912,7 @@ object ImapEventObservation does ImapResponseObserving {
         let state = await states.receiving().item();
         state = state.observed(response);
         await states.sending().send(state);
-        await events.send(MailboxEvent(response, state));
+        await events.send(MailboxEvent(response: response, state: state));
         1;
     }
 }

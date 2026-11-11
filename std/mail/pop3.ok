@@ -117,7 +117,7 @@ object PopCapabilities {
         let recognized is MimeItems<PopFeature> = MimeItems();
         let advertised is MimeItems<string> = MimeItems();
         if reply::Reply::successful {
-            let lines = PopDataLines(reply, PopListingLimits(256, 40)).entries();
+            let lines = PopDataLines(reply: reply, limits: PopListingLimits(256, 40)).entries();
             for lines -> line {
                 confirm line.length() > 0 && line.length() <= 510
                     else throw InvalidPopData.because("invalid CAPA line length");
@@ -235,9 +235,9 @@ object PopMailboxState {
             else throw InvalidPopData.because("STAT requires positive single reply");
         let parts = reply::Reply::text.split(" ");
         confirm parts.size() >= 2 else throw InvalidPopData.because("STAT requires count and size");
-        let amount = PopDecimal(parts[0], limits).number();
+        let amount = PopDecimal(origin: parts[0], limits: limits).number();
         confirm amount <= limits::Limits::entries else throw PopListingLimitExceeded.kind("entries");
-        let total = PopDecimal(parts[1], limits).integer();
+        let total = PopDecimal(origin: parts[1], limits: limits).integer();
         confirm amount > 0 || total.sign() == 0
             else throw InvalidPopData.because("empty maildrop reports nonzero size");
         count = amount;
@@ -261,14 +261,14 @@ object PopListing {
     PopListing(reply is PopReply, identifiers is @PopReply, limits is PopListingLimits) {
         confirm identifiers.size() <= 1
             else throw InvalidPopData.because("one optional UIDL reply required");
-        let rows = PopDataLines(reply, limits).entries();
+        let rows = PopDataLines(reply: reply, limits: limits).entries();
         let seen = PopNumbers();
         let values is @PopMessage = rows.map() -> row {
             let parts = row.split(" ");
             confirm parts.size() >= 2
                 else throw InvalidPopData.because("LIST requires number and size");
-            let number = PopNumber(PopDecimal(parts[0], limits).number());
-            PopMessage(number, PopDecimal(parts[1], limits).integer(), []);
+            let number = PopNumber(PopDecimal(origin: parts[0], limits: limits).number());
+            PopMessage(number: number, size: PopDecimal(parts[1], limits).integer(), identifiers: []);
         };
         for values -> message {
             confirm !seen.membership(message.number().number())
@@ -279,14 +279,14 @@ object PopListing {
             entries = values;
         }
         else {
-            let uid_rows = PopDataLines(identifiers[0], limits).entries();
+            let uid_rows = PopDataLines(reply: identifiers[0], limits: limits).entries();
             let numbers = PopNumbers();
             let identified is @PopMessage = uid_rows.map() -> row {
                 let parts = row.split(" ");
                 confirm parts.size() == 2
                     else throw InvalidPopData.because("UIDL requires number and identifier");
-                let number = PopNumber(PopDecimal(parts[0], limits).number());
-                PopMessage(number, BigInt("0"), [PopIdentifier(parts[1])]);
+                let number = PopNumber(PopDecimal(origin: parts[0], limits: limits).number());
+                PopMessage(number: number, size: BigInt("0"), identifiers: [PopIdentifier(parts[1])]);
             };
             for identified -> message {
                 let number = message.number().number();
@@ -300,7 +300,7 @@ object PopListing {
                 let matching is @PopMessage = identified.filter() -> entry {
                     entry.number().number() == message.number().number();
                 };
-                PopMessage(message.number(), message.size(), [matching[0].identifier()]);
+                PopMessage(number: message.number(), size: message.size(), identifiers: [matching[0].identifier()]);
             };
             entries = joined;
         }
@@ -320,7 +320,7 @@ enum MissingPopIdentifier is Error = (missing);
 test "POP3 number and opaque identifier have different identities" {
     test.is(PopNumber(7).number(), 7);
     test.is(PopIdentifier("7").string(), "7");
-    let absent = PopMessage(PopNumber(7), BigInt("0"), []);
+    let absent = PopMessage(number: PopNumber(7), size: BigInt("0"), identifiers: []);
     test.is(absent.identified(), false);
 }
 

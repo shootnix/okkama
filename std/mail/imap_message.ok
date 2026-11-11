@@ -46,7 +46,7 @@ object ImapFetch {
         let values = ParsedImapData(origin).entries();
         confirm values.size() == 4 && values.item(1).kind() == ImapValueKind.atom
             else throw InvalidImapData.because("invalid FETCH prefix");
-        sequence = ImapSequence(ImapUnsigned(values.item(1).string(), true).int());
+        sequence = ImapSequence(ImapUnsigned(origin: values.item(1).string(), nonzero: true).int());
         let fields = values.item(3).entries();
         confirm fields.size() % 2 == 0 && fields.size() <= 256
             else throw InvalidImapData.because("FETCH requires at most 128 attribute/value pairs");
@@ -66,7 +66,7 @@ object ImapFetch {
             if name == "UID" {
                 confirm value.kind() == ImapValueKind.atom
                     else throw InvalidImapData.because("FETCH UID is not an atom");
-                ImapUnsigned(value.string(), true).int();
+                ImapUnsigned(origin: value.string(), nonzero: true).int();
             }
             if name == "FLAGS" {
                 ImapFlagsValue(value).flags();
@@ -77,7 +77,7 @@ object ImapFetch {
                     || value.kind() == ImapValueKind.literal
                     else throw InvalidImapData.because("FETCH BODY value requires an nstring");
             }
-            result = result.following(ImapFetchAttribute(name, value));
+            result = result.following(ImapFetchAttribute(name: name, value: value));
         }
         attributes = result.entries();
     }

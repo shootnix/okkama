@@ -186,14 +186,14 @@ object AndMail does MailMatching {
 
     AndMail(left is MailMatching, right is MailMatching) {
         value = ImapSearchKey(
-            ImapSearchOperator.conjunction,
-            [left.key(), right.key()],
-            ImapSearchLimits()
+            operation: ImapSearchOperator.conjunction,
+            children: [left.key(), right.key()],
+            limits: ImapSearchLimits()
         );
     }
 
     AndMail(left is MailMatching, right is MailMatching, limits is ImapSearchLimits) {
-        value = ImapSearchKey(ImapSearchOperator.conjunction, [left.key(), right.key()], limits);
+        value = ImapSearchKey(operation: ImapSearchOperator.conjunction, children: [left.key(), right.key()], limits: limits);
     }
 
     key() is ImapSearchKey {
@@ -206,14 +206,14 @@ object OrMail does MailMatching {
 
     OrMail(left is MailMatching, right is MailMatching) {
         value = ImapSearchKey(
-            ImapSearchOperator.disjunction,
-            [left.key(), right.key()],
-            ImapSearchLimits()
+            operation: ImapSearchOperator.disjunction,
+            children: [left.key(), right.key()],
+            limits: ImapSearchLimits()
         );
     }
 
     OrMail(left is MailMatching, right is MailMatching, limits is ImapSearchLimits) {
-        value = ImapSearchKey(ImapSearchOperator.disjunction, [left.key(), right.key()], limits);
+        value = ImapSearchKey(operation: ImapSearchOperator.disjunction, children: [left.key(), right.key()], limits: limits);
     }
 
     key() is ImapSearchKey {
@@ -225,11 +225,11 @@ object NotMail does MailMatching {
     has value is ImapSearchKey;
 
     NotMail(origin is MailMatching) {
-        value = ImapSearchKey(ImapSearchOperator.negation, [origin.key()], ImapSearchLimits());
+        value = ImapSearchKey(operation: ImapSearchOperator.negation, children: [origin.key()], limits: ImapSearchLimits());
     }
 
     NotMail(origin is MailMatching, limits is ImapSearchLimits) {
-        value = ImapSearchKey(ImapSearchOperator.negation, [origin.key()], limits);
+        value = ImapSearchKey(operation: ImapSearchOperator.negation, children: [origin.key()], limits: limits);
     }
 
     key() is ImapSearchKey {
@@ -281,7 +281,7 @@ hidden object ImapSearchDate {
 }
 
 test "IMAP search preserves grouping and uses internal date" {
-    let search = OrMail(AndMail(UnseenMail(), SinceMail(Date(year: 2026, month: 9, day: 27))), NotMail(AllMail()));
+    let search = OrMail(left: AndMail(UnseenMail(), SinceMail(Date(year: 2026, month: 9, day: 27))), right: NotMail(AllMail()));
     test.is(search.key().string(), "OR ((UNSEEN SINCE 27-Sep-2026)) (NOT (ALL))");
     test.is(search.key().nodes(), 6);
     test.is(search.key().depth(), 3);

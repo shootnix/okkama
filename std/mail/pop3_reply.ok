@@ -119,13 +119,13 @@ object PopReplyDecoder {
     PopReplyDecoder(mode is PopReplyMode) {
         let bounds = PopReplyLimits();
         limits = bounds;
-        progress = PopReplyProgress(mode, bounds);
+        progress = PopReplyProgress(mode: mode, limits: bounds);
         tail = [];
     }
 
     PopReplyDecoder(mode is PopReplyMode, limits is PopReplyLimits) {
         self.limits = limits;
-        progress = PopReplyProgress(mode, limits);
+        progress = PopReplyProgress(mode: mode, limits: limits);
         tail = [];
     }
 
@@ -195,7 +195,7 @@ object ParsedPopReply {
     reply() is PopReply {
         confirm origin.size() <= limits::Limits::wire_bytes
             else throw PopReplyLimitExceeded.kind("wire_bytes");
-        let decoder = PopReplyDecoder(mode, limits);
+        let decoder = PopReplyDecoder(mode: mode, limits: limits);
         decoder = decoder.fed(origin);
         let result = decoder.finish();
         confirm decoder.remainder().size() == 0
@@ -273,11 +273,11 @@ hidden object PopReplyProgress {
 
     reply() is PopReply {
         PopReply(
-            success,
-            summary,
-            Latin1Encoded(content).bytes(),
-            count,
-            success && mode == PopReplyMode.multiline
+            successful: success,
+            text: summary,
+            body: Latin1Encoded(content).bytes(),
+            lines: count,
+            multiline: success && mode == PopReplyMode.multiline
         );
     }
 
@@ -308,7 +308,7 @@ hidden object PopReplyProgress {
             confirm cr else throw InvalidPopReply.located(used, "bare LF");
             let line = pending.slice(0, pending.length() - 1);
             if !status_seen {
-                let status = PopStatusLine(line, used - pending.length());
+                let status = PopStatusLine(origin: line, offset: used - pending.length());
                 ^success = status.successful();
                 ^summary = status.text();
                 ^status_seen = true;
@@ -355,7 +355,7 @@ test "POP3 negative multiline response retains the following reply" {
 }
 
 test "POP3 removes the terminal dot line and one stuffing dot" {
-    let reply = ParsedPopReply(Utf8Encoded("+OK\r\n..\r\n.\r\n").bytes(), PopReplyMode.multiline).reply();
+    let reply = ParsedPopReply(origin: Utf8Encoded("+OK\r\n..\r\n.\r\n").bytes(), mode: PopReplyMode.multiline).reply();
     test.is(reply::Reply::body, [46.byte(), 13.byte(), 10.byte()]);
     test.is(reply::Reply::lines, 1);
 }

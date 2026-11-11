@@ -64,7 +64,7 @@ object PreparedSmtpData does ByteSource {
     has value is SmtpDataValue;
 
     PreparedSmtpData(origin is MailMessage, capabilities is SmtpCapabilities) {
-        value = SmtpDataValue(origin, capabilities, SmtpDataLimits());
+        value = SmtpDataValue(origin: origin, capabilities: capabilities, limits: SmtpDataLimits());
     }
 
     PreparedSmtpData(
@@ -72,7 +72,7 @@ object PreparedSmtpData does ByteSource {
         capabilities is SmtpCapabilities,
         limits is SmtpDataLimits
     ) {
-        value = SmtpDataValue(origin, capabilities, limits);
+        value = SmtpDataValue(origin: origin, capabilities: capabilities, limits: limits);
     }
 
     bytes() is @byte {
@@ -115,7 +115,7 @@ hidden object SmtpDataValue {
             body_bytes: maximum
         );
         let rendered = try {
-            DeliveredMail(MailMessage(origin.headers(), origin.body(), mime)).bytes();
+            DeliveredMail(MailMessage(headers: origin.headers(), body: origin.body(), limits: mime)).bytes();
         }
         catch failure is MimeLimitFailure {
             match failure {
@@ -171,11 +171,11 @@ hidden object SmtpDataValue {
         }
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        let output = SmtpDataOutput(buffer, limits::Limits::wire_bytes);
+        let output = SmtpDataOutput(buffer: buffer, maximum: limits::Limits::wire_bytes);
         let start = MimePosition(0);
         loop {
             last if start.index() == content.size();
-            let end = SmtpDataLine(content, start.index(), limits::Limits::line_bytes).end();
+            let end = SmtpDataLine(origin: content, start: start.index(), maximum: limits::Limits::line_bytes).end();
             if content[start.index()].int() == 46 {
                 output.write([46.byte()]);
             }
@@ -307,7 +307,7 @@ hidden object SmtpDataOutput {
 
 test "SMTP DATA counts original content and quotes a dot-only line" {
     let message = ParsedMail(Utf8Encoded("\r\n.\r\n").bytes()).message();
-    let prepared = PreparedSmtpData(message, SmtpCapabilities(SmtpReply(250, ["server", "SIZE 5"])));
+    let prepared = PreparedSmtpData(origin: message, capabilities: SmtpCapabilities(SmtpReply(250, ["server", "SIZE 5"])));
     test.is(prepared.message_size(), 5);
     test.is(Utf8Decoded(prepared.bytes()).string(), "\r\n..\r\n.\r\n");
 }

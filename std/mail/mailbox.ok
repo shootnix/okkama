@@ -161,12 +161,12 @@ object MailFlags does Set<MailFlag>, Sequencing<MailFlag>, Iterating<MailFlag> {
     has maximum is int;
 
     MailFlags(entries is Sequencing<MailFlag>) {
-        self.entries = MailFlagEntries(entries, 256).values();
+        self.entries = MailFlagEntries(origin: entries, maximum: 256).values();
         maximum = 256;
     }
 
     MailFlags(entries is Sequencing<MailFlag>, maximum_entries is int) {
-        self.entries = MailFlagEntries(entries, maximum_entries).values();
+        self.entries = MailFlagEntries(origin: entries, maximum: maximum_entries).values();
         maximum = maximum_entries;
     }
 
@@ -211,7 +211,7 @@ object MailFlags does Set<MailFlag>, Sequencing<MailFlag>, Iterating<MailFlag> {
                 snapshot;
             }
         };
-        MailFlags(following, maximum);
+        MailFlags(entries: following, maximum_entries: maximum);
     }
 
     difference(value is MailFlag) is Set<MailFlag> {
@@ -219,7 +219,7 @@ object MailFlags does Set<MailFlag>, Sequencing<MailFlag>, Iterating<MailFlag> {
         let following is @MailFlag = entries.filter() -> entry {
             MailFlagName(entry.string()).key() != key;
         };
-        MailFlags(following, maximum);
+        MailFlags(entries: following, maximum_entries: maximum);
     }
 }
 
@@ -325,7 +325,7 @@ object StoredMail {
         MailStorageIdentifier(identifier).validate();
         self.identifier = identifier;
         marks = MailFlags(MailSetEntries(flags).values());
-        content = StoredMailContent(message, message.limits()).message();
+        content = StoredMailContent(origin: message, limits: message.limits()).message();
     }
 
     StoredMail(
@@ -337,7 +337,7 @@ object StoredMail {
         MailStorageIdentifier(identifier).validate();
         self.identifier = identifier;
         marks = MailFlags(MailSetEntries(flags).values());
-        content = StoredMailContent(message, limits).message();
+        content = StoredMailContent(origin: message, limits: limits).message();
     }
 
     message() is MailMessage {
@@ -365,7 +365,7 @@ hidden object StoredMailContent {
     }
 
     message() is MailMessage {
-        ParsedMail(MimePart(headers: origin.headers(), body: origin.body(), limits: limits).bytes(), limits).message();
+        ParsedMail(origin: MimePart(headers: origin.headers(), body: origin.body(), limits: limits).bytes(), limits: limits).message();
     }
 }
 
@@ -531,24 +531,24 @@ object Maildir {
     }
 
     messages() is Sequencing<StoredMail> {
-        let access = MaildirAccess(origin, FileLockMode.shared);
+        let access = MaildirAccess(path: origin, mode: FileLockMode.shared);
         defer access.close();
-        let entries = MaildirEntries(origin, bounds::Limits::messages).values();
+        let entries = MaildirEntries(origin: origin, maximum: bounds::Limits::messages).values();
         let total = MimePosition(0);
         let messages is MimeItems<StoredMail> = MimeItems();
         for entries -> entry {
             let bytes = MaildirFileBytes(
-                entry.path(),
-                bounds.mime()::Limits::body_bytes,
-                bounds::Limits::wire_bytes - total.index()
+                path: entry.path(),
+                maximum: bounds.mime()::Limits::body_bytes,
+                aggregate: bounds::Limits::wire_bytes - total.index()
             ).bytes();
             total = total.following(total.index() + bytes.size());
             messages = messages.following(
                 StoredMail(
-                    entry.name().identifier(),
-                    ParsedMail(bytes, bounds.mime()).message(),
-                    entry.name().flags(),
-                    bounds.mime()
+                    identifier: entry.name().identifier(),
+                    message: ParsedMail(bytes, bounds.mime()).message(),
+                    flags: entry.name().flags(),
+                    limits: bounds.mime()
                 )
             );
         }
@@ -556,20 +556,20 @@ object Maildir {
     }
 
     add(message is MailMessage) is void {
-        MaildirDelivery(self, message).deliver();
+        MaildirDelivery(origin: self, message: message).deliver();
     }
 
     remove(identifier is string) is void {
         let name = MaildirName(identifier);
         confirm !name.current()
             else throw InvalidMailbox.located(0, "remove requires a base identifier");
-        let access = MaildirAccess(origin, FileLockMode.exclusive);
+        let access = MaildirAccess(path: origin, mode: FileLockMode.exclusive);
         defer access.close();
-        let entries = MaildirEntries(origin, bounds::Limits::messages).values();
+        let entries = MaildirEntries(origin: origin, maximum: bounds::Limits::messages).values();
         for entries -> entry {
             if entry.name().identifier() == identifier {
                 FileEntry(entry.path()).remove();
-                MaildirCommitRelease(access, identifier).close();
+                MaildirCommitRelease(access: access, identifier: identifier).close();
                 return;
             }
         }
@@ -595,10 +595,10 @@ hidden object MaildirDelivery {
     }
 
     deliver() is void {
-        let access = MaildirAccess(origin.path(), FileLockMode.exclusive);
+        let access = MaildirAccess(path: origin.path(), mode: FileLockMode.exclusive);
         defer access.close();
         let limits = origin.limits();
-        let entries = MaildirEntries(origin.path(), limits::Limits::messages).values();
+        let entries = MaildirEntries(origin: origin.path(), maximum: limits::Limits::messages).values();
         confirm entries.size() < limits::Limits::messages else throw MailboxLimitExceeded.kind("messages");
         let bytes = MimePart(headers: message.headers(), body: message.body(), limits: limits.mime()).bytes();
         confirm bytes.size() <= limits::Limits::wire_bytes
@@ -607,7 +607,7 @@ hidden object MaildirDelivery {
         let identifier = try {
             temporary.write(ByteSnapshot(bytes));
             temporary.flush();
-            MaildirPublication(origin.path(), temporary, entries, random).identifier();
+            MaildirPublication(path: origin.path(), temporary: temporary, entries: entries, random: random).identifier();
         }
         catch failure is Error {
             try {
@@ -622,7 +622,7 @@ hidden object MaildirDelivery {
         catch failure is FileError {
             throw CommittedMaildirFailure.detailed(identifier, "file", failure.text());
         }
-        MaildirCommitRelease(access, identifier).close();
+        MaildirCommitRelease(access: access, identifier: identifier).close();
     }
 }
 
@@ -702,7 +702,7 @@ object ChangedMaildirFlags {
         confirm !base.current()
             else throw InvalidMailbox.located(0, "flag change requires a base identifier");
         let snapshot = MailFlags(MailSetEntries(flags).values());
-        let target = MaildirFlagName(identifier, snapshot).name();
+        let target = MaildirFlagName(identifier: identifier, marks: snapshot).name();
         self.origin = origin;
         self.identifier = identifier;
         marks = snapshot;
@@ -710,28 +710,28 @@ object ChangedMaildirFlags {
     }
 
     mail() is StoredMail {
-        let access = MaildirAccess(origin.path(), FileLockMode.exclusive);
+        let access = MaildirAccess(path: origin.path(), mode: FileLockMode.exclusive);
         defer access.close();
         let limits = origin.limits();
-        let entries = MaildirEntries(origin.path(), limits::Limits::messages).values();
+        let entries = MaildirEntries(origin: origin.path(), maximum: limits::Limits::messages).values();
         for entries -> entry {
             if entry.name().identifier() == identifier {
                 let bytes = MaildirFileBytes(
-                    entry.path(),
-                    limits.mime()::Limits::body_bytes,
-                    limits::Limits::wire_bytes
+                    path: entry.path(),
+                    maximum: limits.mime()::Limits::body_bytes,
+                    aggregate: limits::Limits::wire_bytes
                 ).bytes();
                 let result = StoredMail(
-                    identifier,
-                    ParsedMail(bytes, limits.mime()).message(),
-                    marks,
-                    limits.mime()
+                    identifier: identifier,
+                    message: ParsedMail(bytes, limits.mime()).message(),
+                    flags: marks,
+                    limits: limits.mime()
                 );
                 let destination = origin.path().child("cur").child(name.string());
                 if entry.path().string() != destination.string() {
                     FileEntry(entry.path()).move(destination);
                 }
-                MaildirCommitRelease(access, identifier).close();
+                MaildirCommitRelease(access: access, identifier: identifier).close();
                 return result;
             }
         }
@@ -891,7 +891,7 @@ hidden object MaildirEntries {
                     };
                     confirm !duplicate
                         else throw InvalidMailbox.located(0, "duplicate maildir base identifier");
-                    entries = entries.following(MaildirEntry(path, name));
+                    entries = entries.following(MaildirEntry(path: path, name: name));
                 }
             }
         }
@@ -974,9 +974,9 @@ test "maildir filenames retain identifiers and interpret standard flags" {
 
 test "stored messages retain content and protocol flags" {
     let stored = StoredMail(
-        "id",
-        ParsedMail(Utf8Encoded("\r\nbody").bytes()).message(),
-        MailFlags([KeywordFlag("Tag")])
+        identifier: "id",
+        message: ParsedMail(Utf8Encoded("\r\nbody").bytes()).message(),
+        flags: MailFlags([KeywordFlag("Tag")])
     );
     test.is(Utf8Decoded(stored.message().body().bytes()).string(), "body");
     test.ok(stored.flags().membership(KeywordFlag("TAG")));
@@ -984,9 +984,9 @@ test "stored messages retain content and protocol flags" {
 
 test "maildir flag names use canonical order" {
     let flags = MailFlags([SystemFlag(SystemMailFlag.seen), SystemFlag(SystemMailFlag.draft)]);
-    test.is(MaildirFlagName("id", flags).name().string(), "id:2,DS");
+    test.is(MaildirFlagName(identifier: "id", marks: flags).name().string(), "id:2,DS");
     let rejected = try {
-        MaildirFlagName("id", MailFlags([KeywordFlag("custom")])).name();
+        MaildirFlagName(identifier: "id", marks: MailFlags([KeywordFlag("custom")])).name();
         false;
     }
     catch failure is InvalidMailbox {

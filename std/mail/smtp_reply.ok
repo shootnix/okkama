@@ -55,11 +55,11 @@ object SmtpReply does ByteSource {
     has value is SmtpReplyValue;
 
     SmtpReply(code is int, lines is Sequencing<string>) {
-        value = SmtpReplyValue(code, lines, SmtpReplyLimits());
+        value = SmtpReplyValue(code: code, lines: lines, limits: SmtpReplyLimits());
     }
 
     SmtpReply(code is int, lines is Sequencing<string>, limits is SmtpReplyLimits) {
-        value = SmtpReplyValue(code, lines, limits);
+        value = SmtpReplyValue(code: code, lines: lines, limits: limits);
     }
 
     code() is int {
@@ -339,7 +339,7 @@ hidden object SmtpReplyProgress {
     }
 
     reply() is SmtpReply {
-        SmtpReply(status, lines.entries(), limits);
+        SmtpReply(code: status, lines: lines.entries(), limits: limits);
     }
 
     accepted(octet is byte) is ^SmtpReplyProgress {
@@ -358,7 +358,7 @@ hidden object SmtpReplyProgress {
         if value == 10 {
             confirm cr else throw InvalidSmtpReply.located(used, "bare LF");
             let start = used - pending.length();
-            let line = SmtpReplyLine(pending.slice(0, pending.length() - 1), start);
+            let line = SmtpReplyLine(origin: pending.slice(0, pending.length() - 1), offset: start);
             confirm status == 0 || status == line.code()
                 else throw InvalidSmtpReply.located(start, "multiline reply changed code");
             let extended = lines.following(line.text());

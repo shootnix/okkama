@@ -88,11 +88,11 @@ object ParsedImapData {
     has entries is @ImapValue;
 
     ParsedImapData(origin is ImapResponse) {
-        entries = ImapDataParsing(origin, ImapDataLimits()).entries();
+        entries = ImapDataParsing(origin: origin, limits: ImapDataLimits()).entries();
     }
 
     ParsedImapData(origin is ImapResponse, limits is ImapDataLimits) {
-        entries = ImapDataParsing(origin, limits).entries();
+        entries = ImapDataParsing(origin: origin, limits: limits).entries();
     }
 
     entries() is Sequencing<ImapValue> {
@@ -194,7 +194,7 @@ hidden object ImapDataParsing {
                             end = end.following(end.index() - 1);
                         }
                     }
-                tokens = ImapDataLexing(text.slice(0, end.index()), tokens).tokens();
+                tokens = ImapDataLexing(origin: text.slice(0, end.index()), initial: tokens).tokens();
             }
             else {
                 let kind = if part.kind() == ImapResponsePartKind.literal {
@@ -203,13 +203,13 @@ hidden object ImapDataParsing {
                 else {
                     ImapTokenKind.literal8;
                 };
-                tokens = tokens.following(ImapDataToken(kind, part.bytes()));
+                tokens = tokens.following(ImapDataToken(kind: kind, bytes: part.bytes()));
             }
         }
         let flat = tokens.entries();
         let values is MimeItems<ImapValue> = MimeItems();
         let position = MimePosition(0);
-        let parser = ImapDataTree(flat, limits);
+        let parser = ImapDataTree(tokens: flat, limits: limits);
         loop {
             last if position.index() == flat.size();
             let parsed = parser.item(position.index(), 0);
@@ -252,7 +252,7 @@ object ImapDataLexing {
                 else {
                     ImapTokenKind.closing;
                 };
-                tokens = tokens.following(ImapDataToken(kind, []));
+                tokens = tokens.following(ImapDataToken(kind: kind, bytes: []));
                 at = at.following(start + 1);
                 next;
             }
@@ -287,7 +287,7 @@ object ImapDataLexing {
                         "quoted value requires a following separator"
                     );
                 tokens = tokens.following(
-                    ImapDataToken(ImapTokenKind.quoted, buffer.content().bytes())
+                    ImapDataToken(kind: ImapTokenKind.quoted, bytes: buffer.content().bytes())
                 );
                 next;
             }
@@ -313,8 +313,8 @@ object ImapDataLexing {
                 else throw InvalidImapData.because("unterminated section bracket");
             tokens = tokens.following(
                 ImapDataToken(
-                    ImapTokenKind.atom,
-                    Utf8Encoded(origin.slice(start, at.index())).bytes()
+                    kind: ImapTokenKind.atom,
+                    bytes: Utf8Encoded(origin.slice(start, at.index())).bytes()
                 )
             );
         }
@@ -349,8 +349,8 @@ object ImapDataTree {
                 position = position.following(parsed.after());
             }
             return ImapParsedValue(
-                ImapValue(ImapValueKind.list, [], values.entries()),
-                position.index() + 1
+                value: ImapValue(ImapValueKind.list, [], values.entries()),
+                after: position.index() + 1
             );
         }
         let kind = match token.kind() {
@@ -370,7 +370,7 @@ object ImapDataTree {
                 throw InvalidImapData.because("invalid scalar token");
             }
         };
-        ImapParsedValue(ImapValue(kind, token.bytes(), []), at + 1);
+        ImapParsedValue(value: ImapValue(kind, token.bytes(), []), after: at + 1);
     }
 }
 

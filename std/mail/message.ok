@@ -125,11 +125,11 @@ object MailDate {
     has text is string;
 
     MailDate(origin is ZonedDateTime) {
-        text = MailDatePrinting(origin, true).string();
+        text = MailDatePrinting(origin: origin, known: true).string();
     }
 
     MailDate(origin is ZonedDateTime, offset_known is bool) {
-        text = MailDatePrinting(origin, offset_known).string();
+        text = MailDatePrinting(origin: origin, known: offset_known).string();
     }
 
     string() is string {
@@ -154,11 +154,11 @@ object ParsedMailDate {
     }
 
     date_time() is ZonedDateTime {
-        MailDateParsing(origin, maximum).parsed().date_time();
+        MailDateParsing(origin: origin, maximum: maximum).parsed().date_time();
     }
 
     offset_known() is bool {
-        MailDateParsing(origin, maximum).parsed().offset_known();
+        MailDateParsing(origin: origin, maximum: maximum).parsed().offset_known();
     }
 }
 
@@ -272,7 +272,7 @@ hidden object MailDateParsing {
     }
 
     parsed() is MailParsedDate {
-        let tokens = MailDateTokens(origin, maximum).values();
+        let tokens = MailDateTokens(origin: origin, maximum: maximum).values();
         let count = tokens.size();
         let calendar = MailCalendar();
         confirm count == 5 || count == 6
@@ -330,7 +330,7 @@ hidden object MailDateParsing {
             )
                 else throw InvalidMail.located(0, "mail weekday does not match date");
         }
-        MailParsedDate(local, self.zone(tokens[start + 4]));
+        MailParsedDate(local: local, offset: self.zone(tokens[start + 4]));
     }
 
     hidden zone(text is string) is MailDateOffset {
@@ -347,7 +347,7 @@ hidden object MailDateParsing {
             else {
                 1;
             };
-            return MailDateOffset(sign * (hour * 3600 + minute * 60), text != "-0000");
+            return MailDateOffset(seconds: sign * (hour * 3600 + minute * 60), known: text != "-0000");
         }
         let hours = match name {
             case "ut", "gmt" {
@@ -382,10 +382,10 @@ hidden object MailDateParsing {
             }
         };
         if hours != 100 {
-            return MailDateOffset(hours * 3600, true);
+            return MailDateOffset(seconds: hours * 3600, known: true);
         }
         if name.length() == 1 && "abcdefghiklmnopqrstuvwxyz".split(name).size() == 2 {
-            return MailDateOffset(0, false);
+            return MailDateOffset(seconds: 0, known: false);
         }
         throw InvalidMail.located(0, "unsupported mail date zone");
     }
@@ -640,7 +640,7 @@ hidden object MailIdentifier {
 
 test "delivery preparation retains the source message" {
     let fields = MessageHeaders([MessageHeader(name: MessageHeaderName("Bcc"), value: "private@example.test")]);
-    let message = MailMessage(fields, BinaryBody([]));
+    let message = MailMessage(headers: fields, body: BinaryBody([]));
     test.is(DeliveredMail(message).bytes().size(), 2);
     test.is(message.headers().entries().size(), 1);
 }
@@ -660,7 +660,7 @@ test "message identifiers preserve case and literal spelling" {
 test "mail dates preserve unknown zero offsets" {
     let parsed = ParsedMailDate("Fri, 21 Nov 1997 09:55:06 -0000");
     test.is(
-        MailDate(parsed.date_time(), parsed.offset_known()).string(),
+        MailDate(origin: parsed.date_time(), offset_known: parsed.offset_known()).string(),
         "Fri, 21 Nov 1997 09:55:06 -0000"
     );
 }
