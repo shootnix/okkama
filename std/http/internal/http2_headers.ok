@@ -83,7 +83,7 @@ object Http2HeaderBlockReading {
     }
 }
 
-object Http2HeaderInput {
+hidden object Http2HeaderInput {
     has first is Http2Frame;
     has origin is AsyncReading;
     has context is HpackDecoder;
@@ -196,7 +196,7 @@ object Http2HeaderInput {
     }
 }
 
-object Http2HeaderFragment {
+hidden object Http2HeaderFragment {
     has origin is Http2Frame;
 
     Http2HeaderFragment(origin is Http2Frame) {
@@ -255,7 +255,7 @@ object Http2HeaderBlockWriting {
     }
 }
 
-object Http2HeaderOutput {
+hidden object Http2HeaderOutput {
     has origin is AsyncWriting;
     has stream, fragment is int;
     has fields is Sequencing<HpackField>;

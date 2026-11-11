@@ -98,7 +98,7 @@ enum InvalidTransferEncoding is Error = (located(offset is int, reason is string
 
 enum TransferLimitExceeded is Error = (kind(kind is string));
 
-object TransferPosition {
+hidden object TransferPosition {
     has index is int;
 
     TransferPosition(index is int) {
@@ -114,7 +114,7 @@ object TransferPosition {
     }
 }
 
-object TransferProfile {
+hidden object TransferProfile {
     has origin is @byte;
     has encoding is TransferEncoding;
 
@@ -154,7 +154,7 @@ object TransferProfile {
     }
 }
 
-object MimeBase64Encoded {
+hidden object MimeBase64Encoded {
     has origin is @byte;
 
     MimeBase64Encoded(origin is @byte) {
@@ -177,7 +177,7 @@ object MimeBase64Encoded {
     }
 }
 
-object MimeBase64Decoded {
+hidden object MimeBase64Decoded {
     has origin is @byte;
 
     MimeBase64Decoded(origin is @byte) {

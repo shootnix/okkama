@@ -220,7 +220,7 @@ object Caching does Exchanging {
     }
 }
 
-object CacheRequestSelection {
+hidden object CacheRequestSelection {
     has request is Request;
 
     CacheRequestSelection(request is Request) {
@@ -260,7 +260,7 @@ object CacheRequestSelection {
     }
 }
 
-object CacheResponseSelection {
+hidden object CacheResponseSelection {
     has headers is Headers;
 
     CacheResponseSelection(headers is Headers) {
@@ -281,7 +281,7 @@ object CacheResponseSelection {
     }
 }
 
-object CacheBodyReading does BodyReading {
+hidden object CacheBodyReading does BodyReading {
     has origin is BodyReading;
     has cache is ResponseCaching;
     has request is Request;
@@ -428,7 +428,7 @@ object CacheBodyReading does BodyReading {
     }
 }
 
-object CacheReaderAnchor {
+hidden object CacheReaderAnchor {
     has reader is BodyReading;
     has retained is Event;
 
@@ -467,7 +467,7 @@ hidden object CacheReadSettlement {
     }
 }
 
-object CacheVerifiedPublication {
+hidden object CacheVerifiedPublication {
     has cache is ResponseCaching;
     has request is Request;
     has entry is CachedHttpEntry;

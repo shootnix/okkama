@@ -53,7 +53,7 @@ object Http1ResponseWriting {
     }
 }
 
-object Http1MessageOutput {
+hidden object Http1MessageOutput {
     Http1MessageOutput();
 
     request(origin is AsyncWriting, request is Request, limits is Http1Limits) is Future<AsyncWriting> {
@@ -97,7 +97,7 @@ object Http1MessageOutput {
     }
 }
 
-object Http1MessageWriteOperation {
+hidden object Http1MessageWriteOperation {
     has head is Future<AsyncWriting>;
     has body is BodyOpening;
     has plan is Http1BodyPlan;

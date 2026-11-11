@@ -129,7 +129,7 @@ object Http2Exchange does Closing {
     }
 }
 
-object Http2SessionState does Http2ReceivingEvents, Http2BodyEvents {
+hidden object Http2SessionState does Http2ReceivingEvents, Http2BodyEvents {
     has input is AsyncReading;
     has owner is Closing;
     has local is Http2Settings;
@@ -562,7 +562,7 @@ object Http2SessionState does Http2ReceivingEvents, Http2BodyEvents {
 
 // Ready but unclaimed response bodies stay owned in a supervised task, just
 // as pooled HTTP1 transports do; Atomic observations borrow this native owner.
-object Http2StreamHolding {
+hidden object Http2StreamHolding {
     has owner is Http2SessionState;
     has stream is int;
     has request is Request;
@@ -671,7 +671,7 @@ object Http2StreamHolding {
     }
 }
 
-object Http2HoldingSignal {
+hidden object Http2HoldingSignal {
     has signal is Event;
 
     Http2HoldingSignal(signal is Event) {
@@ -701,7 +701,7 @@ hidden object Http2HoldingCleanup {
     }
 }
 
-object Http2SessionExchange {
+hidden object Http2SessionExchange {
     has owner is Http2SessionState;
     has request is Request;
 
@@ -761,7 +761,7 @@ object Http2SessionExchange {
     }
 }
 
-object Http2StreamEntry does Closing {
+hidden object Http2StreamEntry does Closing {
     has owner is Http2SessionState;
     has stream is int;
     has request is Request;
@@ -1070,7 +1070,7 @@ object Http2StreamEntry does Closing {
     }
 }
 
-object Http2RequestHeaderStart does Http2OutputStarting {
+hidden object Http2RequestHeaderStart does Http2OutputStarting {
     has entry is Http2StreamEntry;
     has ending is bool;
 
@@ -1084,7 +1084,7 @@ object Http2RequestHeaderStart does Http2OutputStarting {
     }
 }
 
-object Http2RequestBodySending {
+hidden object Http2RequestBodySending {
     has entry is Http2StreamEntry;
     has sender is Http2DataScheduler;
     has opening is BodyOpening;
@@ -1154,7 +1154,7 @@ object Http2RequestBodySending {
     }
 }
 
-object Http2SessionBody does BodyOpening {
+hidden object Http2SessionBody does BodyOpening {
     has entry is Http2StreamEntry;
     has opened is Atomic<bool>;
 
@@ -1186,7 +1186,7 @@ object Http2SessionBody does BodyOpening {
     }
 }
 
-object Http2SessionReading does BodyReading {
+hidden object Http2SessionReading does BodyReading {
     has entry is Http2StreamEntry;
 
     Http2SessionReading(entry is Http2StreamEntry) {

@@ -28,7 +28,7 @@ enum MissingCrawlDelay is Error = (missing);
 
 enum RobotsFetchFailed is Error = (status(status is int));
 
-object RobotsTrim {
+hidden object RobotsTrim {
     has origin is string;
 
     RobotsTrim(origin is string) {
@@ -64,7 +64,7 @@ object RobotsTrim {
     }
 }
 
-object RobotsRecord {
+hidden object RobotsRecord {
     has name, value is string;
     has group is int;
     has pattern is @RobotsPattern;
@@ -387,7 +387,7 @@ object RobotsPolicy {
     }
 }
 
-object RobotsAgent {
+hidden object RobotsAgent {
     has value is string;
 
     RobotsAgent(origin is string) {
@@ -411,7 +411,7 @@ object RobotsAgent {
     }
 }
 
-object RobotsAgentMatch {
+hidden object RobotsAgentMatch {
     has token, agent is string;
 
     RobotsAgentMatch(token is string, agent is string) {
@@ -434,7 +434,7 @@ object RobotsAgentMatch {
     }
 }
 
-object RobotsRule {
+hidden object RobotsRule {
     has entry is RobotsRecord;
     has pattern is RobotsPattern;
 
@@ -460,7 +460,7 @@ object RobotsRule {
     }
 }
 
-object RobotsPattern {
+hidden object RobotsPattern {
     has value is string;
     has anchored, wildcard is bool;
     has weight is int;
@@ -523,7 +523,7 @@ object RobotsPattern {
     }
 }
 
-object RobotsDelay {
+hidden object RobotsDelay {
     has seconds is rat;
 
     RobotsDelay(origin is string) {
@@ -554,7 +554,7 @@ object RobotsDelay {
     }
 }
 
-object FetchedRobots {
+hidden object FetchedRobots {
     has origin is Exchanging;
     has destination is UrlParts;
     has agent is string;

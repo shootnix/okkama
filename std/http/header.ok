@@ -60,7 +60,7 @@ object Header {
 
 // Bounded regex windows preserve the Header contract beyond the regex input
 // limit. Validation checks every window before reporting a control error.
-object HttpFieldValue {
+hidden object HttpFieldValue {
     has name is HeaderName;
     has origin is string;
 
@@ -138,7 +138,7 @@ object HttpFieldValue {
     }
 }
 
-object HttpFieldScan {
+hidden object HttpFieldScan {
     has position is int;
     has control is bool;
 
@@ -161,7 +161,7 @@ object HttpFieldScan {
     }
 }
 
-object HttpFieldRange {
+hidden object HttpFieldRange {
     has start, end is int;
 
     HttpFieldRange(start is int, end is int) {
@@ -381,7 +381,7 @@ object HttpAsciiLowercase {
     }
 }
 
-object HeaderSnapshot {
+hidden object HeaderSnapshot {
     has origin is @Header;
 
     HeaderSnapshot(entries is Sequencing<Header>, limits is HeaderLimits) {

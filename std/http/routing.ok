@@ -22,7 +22,7 @@ enum InvalidRoute is Error = (because(reason is string));
 
 // Split raw separators first, then decode once. Encoded slash remains data in
 // one segment, never a second match position. No Unicode/case normalization.
-object RoutedPath {
+hidden object RoutedPath {
     has segments is @string;
 
     RoutedPath(origin is string) {
@@ -51,7 +51,7 @@ object RoutedPath {
     }
 }
 
-object RouteLiteral {
+hidden object RouteLiteral {
     has value is string;
 
     RouteLiteral(origin is string) {
@@ -73,7 +73,7 @@ object RouteLiteral {
     }
 }
 
-object RouteParameterName {
+hidden object RouteParameterName {
     RouteParameterName(origin is string) {
         let bytes = Utf8Encoded(origin).bytes();
         confirm bytes.size() > 0 && bytes.size() <= 32
@@ -333,7 +333,7 @@ role RouteRejecting {
     disallowed(request is Request, allowed is @string) is HandlingResult;
 }
 
-object EmptyRouteRejection does RouteRejecting {
+hidden object EmptyRouteRejection does RouteRejecting {
     EmptyRouteRejection();
 
     malformed(request is Request, reason is string) is HandlingResult {
@@ -353,7 +353,7 @@ object EmptyRouteRejection does RouteRejecting {
 // Snapshot once and validate only candidate intersections. Method tokens and
 // decoded first literals cannot contain HTAB, so the grouping key is unambiguous.
 // Root/parameter/wildcard prefixes stay broad and retain full overlap checks.
-object RouteConflictEntry {
+hidden object RouteConflictEntry {
     has method, key is string;
     has broad is bool;
     has pattern is RoutePattern;
@@ -405,7 +405,7 @@ object RouteConflictEntry {
     }
 }
 
-object RouteGroupPosition {
+hidden object RouteGroupPosition {
     has index is int;
 
     RouteGroupPosition(index is int) {
@@ -421,7 +421,7 @@ object RouteGroupPosition {
     }
 }
 
-object CheckedRouteSnapshot {
+hidden object CheckedRouteSnapshot {
     has origin is @Route;
 
     CheckedRouteSnapshot(routes is Sequencing<Route>) {
@@ -496,7 +496,7 @@ object CheckedRouteSnapshot {
 // Different literal values at the same fixed position cannot intersect. Only
 // positions which are literal in every member may divide a family; parameter,
 // terminal wildcard, short/empty paths always retain the exact overlap check.
-object RouteConflictPartition {
+hidden object RouteConflictPartition {
     has entries is @RouteConflictEntry;
     has beginning is int;
 
@@ -581,7 +581,7 @@ object RouteConflictPartition {
     }
 }
 
-object RoutePartitionValidation {
+hidden object RoutePartitionValidation {
     has entries is @RouteConflictEntry;
     has beginning is int;
 
@@ -725,7 +725,7 @@ object Routes does Handling {
     }
 }
 
-object RouteMethods {
+hidden object RouteMethods {
     has names is @string;
 
     RouteMethods() {

@@ -124,7 +124,7 @@ object ParsedMultipartForm {
     }
 }
 
-object FormBoundary {
+hidden object FormBoundary {
     has origin is string;
 
     FormBoundary(origin is string) {
@@ -154,7 +154,7 @@ object FormBoundary {
 // A fixed window retains at most marker+256 padding+closing/CRLF octets.
 // Search all candidates once per fill; safe bytes are cached between small
 // caller reads, avoiding a full-window scan for every requested byte.
-object FormBoundarySpot {
+hidden object FormBoundarySpot {
     has position, width is int;
     has ending is bool;
 
@@ -177,7 +177,7 @@ object FormBoundarySpot {
     }
 }
 
-object FormBoundarySearch {
+hidden object FormBoundarySearch {
     has text, marker is string;
     has initial, eof is bool;
 
@@ -240,7 +240,7 @@ object FormBoundarySearch {
     }
 }
 
-object MultipartSession does MultipartParts {
+hidden object MultipartSession does MultipartParts {
     has state is MultipartState;
 
     MultipartSession(state is MultipartState) {
@@ -276,7 +276,7 @@ object MultipartSession does MultipartParts {
     }
 }
 
-object MultipartState {
+hidden object MultipartState {
     has origin is BodyReading;
     has boundary, marker is string;
     has limits is FormLimits;
@@ -571,7 +571,7 @@ object MultipartState {
     }
 }
 
-object MultipartFormPart does FormPart {
+hidden object MultipartFormPart does FormPart {
     has owner is MultipartState;
     has id, maximum is int;
     has details is FormMetadata;
@@ -633,7 +633,7 @@ object MultipartFormPart does FormPart {
     }
 }
 
-object FormPartInput does BodyReading {
+hidden object FormPartInput does BodyReading {
     has part is MultipartFormPart;
     has owner is MultipartState;
     has stopped is Event;
@@ -676,7 +676,7 @@ object FormPartInput does BodyReading {
     }
 }
 
-object FormHeaders {
+hidden object FormHeaders {
     has fields is Headers;
 
     FormHeaders(origin is string) {
@@ -707,7 +707,7 @@ object FormHeaders {
     }
 }
 
-object FormDispositionRules {
+hidden object FormDispositionRules {
     FormDispositionRules(origin is string) {
         let quoted = Atomic(false);
         let escaped = Atomic(false);
@@ -740,7 +740,7 @@ object FormDispositionRules {
     }
 }
 
-object FormMetadata {
+hidden object FormMetadata {
     has name is string;
     has filename is @string;
     has headers is Headers;
@@ -805,7 +805,7 @@ object FormMetadata {
 
 // RFC7578 disposition: ASCII tokens, byte-preserving quoted parameter values.
 // General mail MIME is intentionally stricter ASCII and is not weakened here.
-object FormParameter {
+hidden object FormParameter {
     has name, value is string;
 
     FormParameter(name is string, value is string) {
@@ -822,7 +822,7 @@ object FormParameter {
     }
 }
 
-object FormDisposition {
+hidden object FormDisposition {
     has kind is string;
     has entries is @FormParameter;
 
@@ -887,7 +887,7 @@ object FormDisposition {
     }
 }
 
-object FormDispositionScan {
+hidden object FormDispositionScan {
     has origin is string;
     has position is Atomic<int>;
 
@@ -957,7 +957,7 @@ object FormDispositionScan {
     }
 }
 
-object FormMetadataText {
+hidden object FormMetadataText {
     has value is string;
 
     FormMetadataText(origin is string, maximum is int) {
@@ -1026,7 +1026,7 @@ object FormText {
     }
 }
 
-object FormTextCharset {
+hidden object FormTextCharset {
     has declared is bool;
     has value is string;
 
@@ -1062,7 +1062,7 @@ object FormTextCharset {
     }
 }
 
-object FormCharset {
+hidden object FormCharset {
     has charset is string;
 
     FormCharset(charset is string) {
@@ -1094,7 +1094,7 @@ object FormCharset {
 
 // This field-only format deliberately materializes at most 1 MiB of wire data.
 // Its single lazy Future owns the body and returns immutable ordered parameters.
-object ParsedUrlEncodedForm {
+hidden object ParsedUrlEncodedForm {
     has origin is BodyReading;
     has limits is FormLimits;
     has pending is Atomic<@Future<QueryParameters>>;
@@ -1188,7 +1188,7 @@ object ParsedUrlEncodedForm {
 
 // Only an explicit caller-selected directory/prefix can acquire a spool. The
 // returned TemporaryFile owns deletion/preservation; cancellation deletes it.
-object FormFileSpooling {
+hidden object FormFileSpooling {
     has part is FormPart;
     has directory is DirectoryLocating;
     has prefix is string;
@@ -1277,7 +1277,7 @@ hidden object FormGroupDrain<T> does FormDraining {
     }
 }
 
-object FormRegistration {
+hidden object FormRegistration {
     has state is MultipartState;
 
     FormRegistration(state is MultipartState, operation is FormDraining) {

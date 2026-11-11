@@ -145,7 +145,7 @@ object HpackDecodedBlock {
     }
 }
 
-object HpackBlockInput {
+hidden object HpackBlockInput {
     has context is HpackDecoder;
     has origin is @byte;
     has budget is HpackBudget;
@@ -243,7 +243,7 @@ object HpackBlockInput {
     }
 }
 
-object HpackReadOffset {
+hidden object HpackReadOffset {
     has value is int;
 
     HpackReadOffset(value is int) {
@@ -259,7 +259,7 @@ object HpackReadOffset {
     }
 }
 
-object HpackDecodedProgress {
+hidden object HpackDecodedProgress {
     has fields is @HpackField;
     has used is int;
 
@@ -297,7 +297,7 @@ object HpackDecodedProgress {
     }
 }
 
-object HpackLiteral {
+hidden object HpackLiteral {
     has field is HpackField;
     has following is int;
     has incremental is bool;
@@ -410,7 +410,7 @@ object HpackEncoded {
     }
 }
 
-object HpackSensitive {
+hidden object HpackSensitive {
     has field is HpackField;
 
     HpackSensitive(field is HpackField) {
@@ -427,7 +427,7 @@ object HpackSensitive {
     }
 }
 
-object HpackOutput {
+hidden object HpackOutput {
     has buffer is ByteBuffer;
     has maximum is int;
 

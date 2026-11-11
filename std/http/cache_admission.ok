@@ -15,7 +15,7 @@ import "async/lock" take Lock, LockGuard;
 
 // Short-lived admission keys never contain wire credentials. A digest collision
 // can only serialize extra calls: cache identity/Vary checks remain independent.
-object CacheAdmissionKey {
+hidden object CacheAdmissionKey {
     has value is string;
 
     CacheAdmissionKey(request is Request) {

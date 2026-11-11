@@ -52,7 +52,7 @@ object Http1ResponseHeadWriting {
     }
 }
 
-object Http1HeadOutput {
+hidden object Http1HeadOutput {
     Http1HeadOutput();
 
     request(origin is AsyncWriting, head is Http1RequestHead, limits is Http1Limits) is Future<AsyncWriting> {
@@ -87,7 +87,7 @@ object Http1HeadOutput {
     }
 }
 
-object Http1HeadWriteOperation {
+hidden object Http1HeadWriteOperation {
     has origin is AsyncWriting;
     has source is ByteSource;
 
@@ -105,7 +105,7 @@ object Http1HeadWriteOperation {
 
 // Implementation-only serializer; Request/Response/Head metadata never exposes
 // a raw line. Every serialized field uses canonical ': ' and terminating CRLF.
-object Http1HeadWire {
+hidden object Http1HeadWire {
     has start is string;
     has fields is Headers;
     has limits is Http1Limits;

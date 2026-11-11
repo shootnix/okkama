@@ -117,7 +117,7 @@ object Http1IncomingBody does BodyOpening {
     }
 }
 
-object Http1BodyInput does AsyncReading {
+hidden object Http1BodyInput does AsyncReading {
     has origin is AsyncReading;
     has kind is Http1BodyKind;
     has limits is Http1Limits;
@@ -356,7 +356,7 @@ object Http1BodyInput does AsyncReading {
     }
 }
 
-object Http1LineTail {
+hidden object Http1LineTail {
     has origin is string;
 
     Http1LineTail() {

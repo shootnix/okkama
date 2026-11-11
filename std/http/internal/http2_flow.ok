@@ -95,7 +95,7 @@ object Http2FlowWindow {
     }
 }
 
-object Http2FlowDebit {
+hidden object Http2FlowDebit {
     Http2FlowDebit(length is int) {
         confirm length >= 0 && length <= 2147483647
             else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "invalid flow debit");

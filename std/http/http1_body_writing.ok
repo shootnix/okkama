@@ -46,7 +46,7 @@ object Http1BodyWriting {
 
 // One current group per direction, replaced only after its operation has been
 // awaited. Completed chunks/futures are not retained across the complete body.
-object Http1BodyWriteOperation {
+hidden object Http1BodyWriteOperation {
     has body is BodyOpening;
     has plan is Http1BodyPlan;
     has head is Headers;
@@ -264,7 +264,7 @@ hidden object Http1WriteSettlement {
     }
 }
 
-object Http1ChunkWire {
+hidden object Http1ChunkWire {
     has origin is @byte;
     has limits is Http1Limits;
 
@@ -289,7 +289,7 @@ object Http1ChunkWire {
     }
 }
 
-object Http1HexSize {
+hidden object Http1HexSize {
     has origin is int;
 
     Http1HexSize(origin is int) {
@@ -314,7 +314,7 @@ object Http1HexSize {
     }
 }
 
-object Http1HexDigits {
+hidden object Http1HexDigits {
     has number is BigInt;
     has origin is string;
 
@@ -337,7 +337,7 @@ object Http1HexDigits {
     }
 }
 
-object Http1TrailerWire {
+hidden object Http1TrailerWire {
     has origin, head is Headers;
     has limits is Http1Limits;
 

@@ -224,7 +224,7 @@ object MimeToken {
     }
 }
 
-object MimeSnapshot {
+hidden object MimeSnapshot {
     has origin is Sequencing<MimeParameter>;
     has maximum is int;
 
@@ -290,7 +290,7 @@ object MimePosition {
     }
 }
 
-object MimeScanned {
+hidden object MimeScanned {
     has text is string;
     has end is int;
 
@@ -461,7 +461,7 @@ object MimeScanning {
     }
 }
 
-object MimeWireParameter {
+hidden object MimeWireParameter {
     has key, text is string;
     has number, position is int;
     has encoded is bool;
@@ -534,7 +534,7 @@ object MimeWireParameter {
     }
 }
 
-object MimeAssembly {
+hidden object MimeAssembly {
     has origin is @MimeWireParameter;
     has maximum is int;
 
@@ -571,7 +571,7 @@ object MimeAssembly {
     }
 }
 
-object MimeExtended {
+hidden object MimeExtended {
     has origin is @MimeWireParameter;
 
     MimeExtended(origin is @MimeWireParameter) {
@@ -646,7 +646,7 @@ object MimeExtended {
     }
 }
 
-object MimeCharset {
+hidden object MimeCharset {
     has encoding, text is string;
 
     MimeCharset(origin is string, encoded is bool, offset is int) {
@@ -696,7 +696,7 @@ object MimeCharset {
     }
 }
 
-object MimeExtendedBytes {
+hidden object MimeExtendedBytes {
     has origin is string;
     has offset is int;
 

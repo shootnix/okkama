@@ -9,7 +9,7 @@ import "encoding/utf" take Utf8Encoded;
 import "http/media_type" take HttpMediaItems;
 import "compare" take Order;
 
-object EnvironmentProxy {
+hidden object EnvironmentProxy {
     has environment is Environment;
     has bypass is @NoProxyRule;
 
@@ -85,7 +85,7 @@ object EnvironmentProxy {
 
 enum NoProxyKind = (all, host, network);
 
-object NoProxyRule {
+hidden object NoProxyRule {
     has kind is NoProxyKind;
     has host is @UrlParts;
     has port is @int;
@@ -141,7 +141,7 @@ object NoProxyRule {
     }
 }
 
-object NoProxyCoordinates {
+hidden object NoProxyCoordinates {
     has kind is NoProxyKind;
     has host is @UrlParts;
     has port is @int;
@@ -277,7 +277,7 @@ test "environment proxies are selected only from the supplied snapshot" {
 
 // Environment text is Unicode, not a Latin-1 HTTP field value. Strip only
 // ASCII OWS; retain IDNA text and classify malformed controls as configuration.
-object ProxyEnvironmentValue {
+hidden object ProxyEnvironmentValue {
     has origin is string;
 
     ProxyEnvironmentValue(origin is string) {

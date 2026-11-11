@@ -47,7 +47,7 @@ enum HttpPeerGoneBeforeResponse is Error = (reset(cause is NetworkFailure), clos
     cause is NetworkClosed
 ), truncated(cause is InvalidHttpMessage));
 
-object HttpObservedReading does AsyncReading {
+hidden object HttpObservedReading does AsyncReading {
     has origin is AsyncReading;
     has observation is HttpResponseObservation;
 
@@ -93,7 +93,7 @@ object HttpObservedReading does AsyncReading {
     }
 }
 
-object HttpObservedWriting does AsyncWriting {
+hidden object HttpObservedWriting does AsyncWriting {
     has origin is AsyncWriting;
     has observation is HttpResponseObservation;
 

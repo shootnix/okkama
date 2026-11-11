@@ -155,7 +155,7 @@ enum InvalidEncodedWord is Error = (located(offset is int, reason is string));
 
 enum EncodedWordLimitExceeded is Error = (kind(kind is string));
 
-object WordPrevious {
+hidden object WordPrevious {
     has encoded is bool;
 
     WordPrevious(encoded is bool) {
@@ -171,7 +171,7 @@ object WordPrevious {
     }
 }
 
-object WordCharset {
+hidden object WordCharset {
     has label is string;
 
     WordCharset(origin is string, offset is int) {
@@ -196,7 +196,7 @@ object WordCharset {
     }
 }
 
-object WordText {
+hidden object WordText {
     has origin, charset is string;
     has offset is int;
 
@@ -218,7 +218,7 @@ object WordText {
     }
 }
 
-object ParsedEncodedWord {
+hidden object ParsedEncodedWord {
     has origin is string;
     has offset is int;
 
@@ -265,7 +265,7 @@ object ParsedEncodedWord {
     }
 }
 
-object QWordBytes {
+hidden object QWordBytes {
     has origin is string;
     has offset is int;
 

@@ -102,7 +102,7 @@ object Redirecting does Exchanging {
     }
 }
 
-object RedirectState {
+hidden object RedirectState {
     has request is Request;
     has visited is @string;
     has history is @ExchangeHop;
@@ -149,7 +149,7 @@ object RedirectState {
     }
 }
 
-object RedirectHistory {
+hidden object RedirectHistory {
     has items is @ExchangeHop;
 
     RedirectHistory(previous is @ExchangeHop, result is ClientResponse) {
@@ -172,7 +172,7 @@ object RedirectHistory {
     }
 }
 
-object RedirectDestination {
+hidden object RedirectDestination {
     has url is UrlParts;
 
     RedirectDestination(base is UrlParts, location is string, policy is Redirects) {
@@ -207,7 +207,7 @@ object RedirectDestination {
     }
 }
 
-object RedirectRequest {
+hidden object RedirectRequest {
     has request is Request;
 
     RedirectRequest(origin is Request, destination is UrlParts, status is Status) {
@@ -273,7 +273,7 @@ object RedirectRequest {
     }
 }
 
-object RedirectKey {
+hidden object RedirectKey {
     has key is string;
 
     RedirectKey(request is Request) {

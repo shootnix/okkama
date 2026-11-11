@@ -228,7 +228,7 @@ object Http1Exchange {
     }
 }
 
-object Http1SessionHeads {
+hidden object Http1SessionHeads {
     has prefix is @byte;
     has entries is @Http1ResponseHead;
 
@@ -259,7 +259,7 @@ object Http1SessionHeads {
     }
 }
 
-object Http1SessionLease {
+hidden object Http1SessionLease {
     has owner is Closing;
     has busy is Atomic<bool>;
     has stopped is Event;
@@ -418,7 +418,7 @@ hidden object Http1SessionCleanup {
     }
 }
 
-object Http1StartupRelease {
+hidden object Http1StartupRelease {
     has lease is Http1SessionLease;
 
     Http1StartupRelease(lease is Http1SessionLease) {
@@ -430,7 +430,7 @@ object Http1StartupRelease {
     }
 }
 
-object Http1FramerOwner does Closing {
+hidden object Http1FramerOwner does Closing {
     has stopped is Event;
 
     Http1FramerOwner() {
@@ -446,7 +446,7 @@ object Http1FramerOwner does Closing {
     }
 }
 
-object Http1SessionReading does BodyReading {
+hidden object Http1SessionReading does BodyReading {
     has origin is Http1BodyReading;
     has lease is Http1SessionLease;
     has reusable is bool;
@@ -562,7 +562,7 @@ hidden object Http1ReadSettlement {
     }
 }
 
-object Http1SessionReadRelease {
+hidden object Http1SessionReadRelease {
     has groups is Atomic<@FutureGroup<@byte>>;
     has busy is Atomic<bool>;
 
@@ -578,7 +578,7 @@ object Http1SessionReadRelease {
     }
 }
 
-object Http1SessionBody does BodyOpening {
+hidden object Http1SessionBody does BodyOpening {
     has origin is Http1SessionReading;
     has plan is Http1BodyPlan;
     has opened is Atomic<bool>;
@@ -616,7 +616,7 @@ object Http1SessionBody does BodyOpening {
 
 enum Http1SessionClosed is Error = (closed);
 
-object Http1UnstartedTransport does AsyncReading, AsyncWriting, Closing {
+hidden object Http1UnstartedTransport does AsyncReading, AsyncWriting, Closing {
     has stopped is Event;
 
     Http1UnstartedTransport() {

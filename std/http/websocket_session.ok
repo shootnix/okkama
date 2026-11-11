@@ -93,7 +93,7 @@ object WebSocketSession does WebSocketConnection, Closing {
     }
 }
 
-object WebSocketSessionState {
+hidden object WebSocketSessionState {
     has input is AsyncReading;
     has output is WebSocketOutput;
     has owner is Closing;
@@ -352,7 +352,7 @@ object WebSocketSessionState {
     }
 }
 
-object WebSocketSessionFinish {
+hidden object WebSocketSessionFinish {
     has owner is WebSocketSessionState;
 
     WebSocketSessionFinish(owner is WebSocketSessionState) {

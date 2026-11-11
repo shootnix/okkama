@@ -239,7 +239,7 @@ object ParsedEntityTags {
 }
 
 // Snapshot size is validated before invoking a user sequence's item action.
-object EntityTagSnapshot {
+hidden object EntityTagSnapshot {
     has origin is @EntityTag;
 
     EntityTagSnapshot(values is Sequencing<EntityTag>, limits is ConditionalLimits) {
@@ -292,7 +292,7 @@ object ConditionalItems<T> {
     }
 }
 
-object ConditionalPosition {
+hidden object ConditionalPosition {
     has index, slots is int;
 
     ConditionalPosition(index is int, slots is int) {
@@ -400,7 +400,7 @@ object ByteRanges {
 
 // A validated wire spec has zero/one first and last coordinates: suffix, open,
 // or bounded. No negative/maximum sentinel pretends to be a missing position.
-object ByteRangeSpec {
+hidden object ByteRangeSpec {
     has lower, upper is @BigInt;
 
     ByteRangeSpec(origin is string) {
@@ -479,7 +479,7 @@ object ByteRangeSpec {
     }
 }
 
-object ByteRangeParsing {
+hidden object ByteRangeParsing {
     has origin is string;
     has limits is ConditionalLimits;
 
@@ -522,7 +522,7 @@ object ByteRangeParsing {
     }
 }
 
-object ConditionalDecimal {
+hidden object ConditionalDecimal {
     has origin is string;
 
     ConditionalDecimal(origin is string) {
@@ -546,7 +546,7 @@ object ConditionalDecimal {
 }
 
 // Strict HTTP OWS, not the host's Unicode whitespace trimming policy.
-object ConditionalText {
+hidden object ConditionalText {
     has origin is string;
 
     ConditionalText(origin is string) {
@@ -572,7 +572,7 @@ object ConditionalText {
     }
 }
 
-object CoalescedByteRanges {
+hidden object CoalescedByteRanges {
     has reversed is List<ByteRange>;
 
     CoalescedByteRanges() {

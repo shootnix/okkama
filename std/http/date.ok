@@ -145,7 +145,7 @@ object ParsedHttpDate {
 }
 
 // Bounded grammar/calendar collaborators. No host locale parser or mail grammar.
-object HttpDateLocal {
+hidden object HttpDateLocal {
     has origin is Instant;
 
     HttpDateLocal(origin is Instant) {
@@ -158,7 +158,7 @@ object HttpDateLocal {
     }
 }
 
-object HttpDateFields {
+hidden object HttpDateFields {
     has local is LocalDateTime;
 
     HttpDateFields(year is int, month is int, day is int, time is TimeOfDay, weekday is int) {
@@ -179,7 +179,7 @@ object HttpDateFields {
     }
 }
 
-object HttpDateClock {
+hidden object HttpDateClock {
     has origin is string;
 
     HttpDateClock(origin is string) {
@@ -203,7 +203,7 @@ object HttpDateClock {
     }
 }
 
-object HttpDateDecimal {
+hidden object HttpDateDecimal {
     has origin is string;
     has width is int;
 
@@ -224,7 +224,7 @@ object HttpDateDecimal {
     }
 }
 
-object HttpDateMonth {
+hidden object HttpDateMonth {
     has origin is string;
 
     HttpDateMonth(origin is string) {
@@ -255,7 +255,7 @@ object HttpDateMonth {
     }
 }
 
-object HttpDateWeekday {
+hidden object HttpDateWeekday {
     has origin is string;
     has full is bool;
 

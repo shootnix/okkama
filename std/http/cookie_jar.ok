@@ -185,7 +185,7 @@ object MemoryCookieJar does CookieStoring, Closing {
     }
 }
 
-object CookieJarState {
+hidden object CookieJarState {
     has records is @CookieRecord;
     has counter is int;
 
@@ -208,7 +208,7 @@ object CookieJarState {
     }
 }
 
-object CookieRecord does Comparing<CookieRecord> {
+hidden object CookieRecord does Comparing<CookieRecord> {
     has cookie is Cookie;
     has domain, partition is string;
     has host_only is bool;
@@ -376,7 +376,7 @@ object CookieRecord does Comparing<CookieRecord> {
     }
 }
 
-object CookieJarUpdate {
+hidden object CookieJarUpdate {
     has records is @CookieRecord;
     has counter is int;
     has limits is CookieLimits;
@@ -440,7 +440,7 @@ object CookieJarUpdate {
     }
 }
 
-object CookieEvictionKey does Comparing<CookieEvictionKey> {
+hidden object CookieEvictionKey does Comparing<CookieEvictionKey> {
     has secure is bool;
     has access, creation is int;
 
@@ -479,7 +479,7 @@ object CookieEvictionKey does Comparing<CookieEvictionKey> {
     }
 }
 
-object CookieJarBounded {
+hidden object CookieJarBounded {
     has records is @CookieRecord;
     has limits is CookieLimits;
     has domain is string;
@@ -599,7 +599,7 @@ object LoadedCookieJar {
     }
 }
 
-object CookieStoreText {
+hidden object CookieStoreText {
     has state is CookieJarState;
     has limits is CookieLimits;
 
@@ -633,7 +633,7 @@ object CookieStoreText {
     }
 }
 
-object CookieStoreRow {
+hidden object CookieStoreRow {
     has origin is CookieRecord;
 
     CookieStoreRow(origin is CookieRecord) {
@@ -701,7 +701,7 @@ object CookieStoreRow {
     }
 }
 
-object CookieStoreSnapshot {
+hidden object CookieStoreSnapshot {
     has state is CookieJarState;
     has limits is CookieLimits;
 
@@ -719,7 +719,7 @@ object CookieStoreSnapshot {
     }
 }
 
-object ParsedCookieStore {
+hidden object ParsedCookieStore {
     has origin is string;
 
     ParsedCookieStore(origin is string) {
@@ -785,7 +785,7 @@ object ParsedCookieStore {
     }
 }
 
-object CookieStoreIdentity {
+hidden object CookieStoreIdentity {
     has origin is CookieRecord;
 
     CookieStoreIdentity(origin is CookieRecord) {
@@ -812,7 +812,7 @@ object CookieStoreIdentity {
     }
 }
 
-object CookieStoreDomainCount {
+hidden object CookieStoreDomainCount {
     has domain is string;
     has amount, maximum is int;
 
@@ -836,7 +836,7 @@ object CookieStoreDomainCount {
     }
 }
 
-object ParsedCookieStoreRow {
+hidden object ParsedCookieStoreRow {
     has origin is string;
     has counter is int;
 
@@ -932,7 +932,7 @@ object ParsedCookieStoreRow {
     }
 }
 
-object CookieStoreBoolean {
+hidden object CookieStoreBoolean {
     has origin is string;
 
     CookieStoreBoolean(origin is string) {
@@ -946,7 +946,7 @@ object CookieStoreBoolean {
     }
 }
 
-object CookieStoreNumber {
+hidden object CookieStoreNumber {
     has origin is string;
 
     CookieStoreNumber(origin is string) {

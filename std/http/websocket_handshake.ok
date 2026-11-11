@@ -16,7 +16,7 @@ import "digest/legacy" take Sha1;
 
 // The nonce is checked canonical standard Base64, exactly sixteen bytes.
 // SHA-1 is mandated solely for protocol interoperability, not authentication.
-object WebSocketAccept {
+hidden object WebSocketAccept {
     has key is string;
 
     WebSocketAccept(key is string) {
@@ -84,7 +84,7 @@ object WebSocketProtocols {
 }
 
 // Bounded field/token parsing without silently joining singleton fields.
-object WebSocketHandshakeFields {
+hidden object WebSocketHandshakeFields {
     has origin is Headers;
 
     WebSocketHandshakeFields(origin is Headers) {

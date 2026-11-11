@@ -94,7 +94,7 @@ object StaticPolicy {
     }
 }
 
-object StaticIndexes {
+hidden object StaticIndexes {
     has origin is @string;
 
     StaticIndexes(values is Sequencing<string>) {
@@ -118,7 +118,7 @@ object StaticIndexes {
     }
 }
 
-object StaticCoordinate {
+hidden object StaticCoordinate {
     StaticCoordinate(name is string) {
         confirm name != ""
             && name != "."
@@ -133,7 +133,7 @@ object StaticCoordinate {
     }
 }
 
-object StaticPath {
+hidden object StaticPath {
     has segments is @string;
     has wire, query is string;
     has slash is bool;
@@ -651,7 +651,7 @@ object StaticFiles does Handling {
     }
 }
 
-object StaticSelection {
+hidden object StaticSelection {
     has current is Atomic<RootedEntry>;
     has encoding, name is Atomic<string>;
     has claimed is Event;
@@ -733,7 +733,7 @@ object StaticRepresentation {
     }
 }
 
-object StaticRepresentations {
+hidden object StaticRepresentations {
     has rows is @StaticRepresentation;
     has claimed is Atomic<string>;
 
@@ -755,7 +755,7 @@ object StaticRepresentations {
     }
 }
 
-object StaticEncoding {
+hidden object StaticEncoding {
     has head is Headers;
 
     StaticEncoding(head is Headers) {
@@ -776,7 +776,7 @@ object StaticEncoding {
     }
 }
 
-object StaticValidator {
+hidden object StaticValidator {
     has tag is EntityTag;
 
     StaticValidator(facts is FileStat, coding is string) {
@@ -789,7 +789,7 @@ object StaticValidator {
     }
 }
 
-object StaticPreconditions {
+hidden object StaticPreconditions {
     has head is Headers;
     has tag is EntityTag;
     has date is HttpDate;
@@ -855,7 +855,7 @@ object StaticPreconditions {
 
 // Metadata validators are weak; no date-only or tag If-Range can certify byte
 // identity under in-place filesystem mutation. Such requests receive full 200.
-object StaticIfRange {
+hidden object StaticIfRange {
     has head is Headers;
 
     StaticIfRange(head is Headers, tag is EntityTag, date is HttpDate) {
@@ -867,7 +867,7 @@ object StaticIfRange {
     }
 }
 
-object StaticRanges {
+hidden object StaticRanges {
     has ranges is @ByteRange;
     has present is bool;
 
@@ -907,7 +907,7 @@ object StaticRanges {
     }
 }
 
-object StaticPiece {
+hidden object StaticPiece {
     has data is @byte;
     has start, size is int;
     has file is bool;
@@ -945,7 +945,7 @@ object StaticPiece {
     }
 }
 
-object StaticBody does BodyOpening {
+hidden object StaticBody does BodyOpening {
     has reading is StaticBodyReading;
     has size is int;
     has opened is Atomic<bool>;
@@ -980,7 +980,7 @@ object StaticBody does BodyOpening {
     }
 }
 
-object StaticBodyReading does BodyReading {
+hidden object StaticBodyReading does BodyReading {
     has entry is RootedEntry;
     has pieces is @StaticPiece;
     has index, offset is Atomic<int>;

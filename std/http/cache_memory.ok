@@ -338,7 +338,7 @@ object MemoryHttpCache does ResponseCaching, Closing {
     }
 }
 
-object CacheStorageSelection {
+hidden object CacheStorageSelection {
     has offset is int;
 
     CacheStorageSelection(entries is @CachedHttpEntry, budget is int) {
@@ -358,7 +358,7 @@ object CacheStorageSelection {
     }
 }
 
-object CacheStoragePosition {
+hidden object CacheStoragePosition {
     has offset, cost is int;
 
     CacheStoragePosition(offset is int, cost is int) {
@@ -380,7 +380,7 @@ object CacheStoragePosition {
     }
 }
 
-object CacheVary {
+hidden object CacheVary {
     has names is @HeaderName;
 
     CacheVary(headers is Headers) {
@@ -406,7 +406,7 @@ object CacheVary {
     }
 }
 
-object CacheFieldMatching {
+hidden object CacheFieldMatching {
     has left, right is Headers;
     has name is HeaderName;
 
@@ -434,7 +434,7 @@ object CacheFieldMatching {
     }
 }
 
-object CacheHeaderSize {
+hidden object CacheHeaderSize {
     has origin is Headers;
 
     CacheHeaderSize(origin is Headers) {
@@ -448,7 +448,7 @@ object CacheHeaderSize {
     }
 }
 
-object CacheMemoryBudget {
+hidden object CacheMemoryBudget {
     has value is int;
 
     CacheMemoryBudget(maximum is BigInt) {
@@ -464,7 +464,7 @@ object CacheMemoryBudget {
     }
 }
 
-object CachedByteBody does BodyOpening {
+hidden object CachedByteBody does BodyOpening {
     has bytes is @byte;
     has trailers is Headers;
 
@@ -493,7 +493,7 @@ enum MissingCachedResponse is Error = (missing);
 
 enum CacheClosed is Error = (closed);
 
-object CacheEntrySelection {
+hidden object CacheEntrySelection {
     has selected is @CachedHttpEntry;
 
     CacheEntrySelection() {
@@ -553,7 +553,7 @@ object CacheStoredHeaders {
     }
 }
 
-object CacheAdmissionControl {
+hidden object CacheAdmissionControl {
     has headers is Headers;
 
     CacheAdmissionControl(headers is Headers) {

@@ -271,7 +271,7 @@ object AcceptedContentCodings {
 
 // Original client position is retained separately from the name-sorted index.
 // Ordering here is by token key only; quality/position determine selection.
-object CodingPreference does Comparing<CodingPreference> {
+hidden object CodingPreference does Comparing<CodingPreference> {
     has token is string;
     has quality is Quality;
     has position is int;
@@ -308,7 +308,7 @@ object CodingPreference does Comparing<CodingPreference> {
 
 // Common exact key observation used by field-specific policies. The legacy
 // CodingPreference name is preserved for import compatibility.
-object WeightedTokenLookup {
+hidden object WeightedTokenLookup {
     has origin is Sorted<CodingPreference>;
     has token is string;
 
@@ -328,7 +328,7 @@ object WeightedTokenLookup {
     }
 }
 
-object CodingIndex {
+hidden object CodingIndex {
     has origin is @CodingPreference;
 
     CodingIndex(origin is @CodingPreference) {
@@ -347,7 +347,7 @@ object CodingIndex {
     }
 }
 
-object CodingField {
+hidden object CodingField {
     has origin is string;
     has limits is NegotiationLimits;
 
@@ -384,7 +384,7 @@ object CodingField {
     }
 }
 
-object CodingMember {
+hidden object CodingMember {
     has origin is string;
     has position is int;
 
@@ -419,7 +419,7 @@ object CodingMember {
 
 // Selection only retains a supplied immutable coding. Equal quality uses
 // client position, then keeps the already-seen (server-first) choice.
-object CodingChoice {
+hidden object CodingChoice {
     has selected is @ContentCoding;
     has quality is Quality;
     has position is int;
@@ -566,7 +566,7 @@ object AcceptedCharsets {
     }
 }
 
-object CharsetChoice {
+hidden object CharsetChoice {
     has selected is @CharsetName;
     has quality is Quality;
     has position is int;
@@ -718,7 +718,7 @@ object AcceptedLanguages {
     }
 }
 
-object LanguageField {
+hidden object LanguageField {
     has origin is string;
     has limits is NegotiationLimits;
 
@@ -741,7 +741,7 @@ object LanguageField {
     }
 }
 
-object LanguageMatch {
+hidden object LanguageMatch {
     has origin is WeightedLanguageRange;
     has position is int;
 
@@ -765,7 +765,7 @@ object LanguageMatch {
     }
 }
 
-object LanguageChoice {
+hidden object LanguageChoice {
     has selected is @Locale;
     has quality is Quality;
     has specificity, position is int;
@@ -926,7 +926,7 @@ object MediaRange {
     }
 }
 
-object ParsedMediaRange {
+hidden object ParsedMediaRange {
     has origin is string;
     has limits is HttpMediaLimits;
 
@@ -1171,7 +1171,7 @@ object MediaMatch {
     }
 }
 
-object MediaChoice {
+hidden object MediaChoice {
     has selected is @HttpMediaType;
     has matched is MediaMatch;
 
@@ -1200,7 +1200,7 @@ object MediaChoice {
     }
 }
 
-object MediaField {
+hidden object MediaField {
     has origin is string;
     has limits is MediaNegotiationLimits;
 
@@ -1236,7 +1236,7 @@ object MediaField {
 }
 
 // Quote/escape-aware member boundaries: no split(',') corrupts a parameter.
-object MediaMembers {
+hidden object MediaMembers {
     has origin is string;
     has maximum is int;
 
@@ -1255,7 +1255,7 @@ object MediaMembers {
     }
 }
 
-object MediaMemberPosition {
+hidden object MediaMemberPosition {
     has origin is string;
     has start, slots, maximum is int;
     has quoted, escaped is bool;

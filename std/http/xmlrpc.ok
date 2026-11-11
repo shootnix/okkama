@@ -81,7 +81,7 @@ object XmlRpcInteger does XmlRpcValue {
     }
 }
 
-object XmlRpcBoolean does XmlRpcValue {
+hidden object XmlRpcBoolean does XmlRpcValue {
     has origin is bool;
 
     XmlRpcBoolean(value is bool) {
@@ -121,7 +121,7 @@ object XmlRpcText does XmlRpcValue {
     }
 }
 
-object XmlRpcFloat does XmlRpcValue {
+hidden object XmlRpcFloat does XmlRpcValue {
     has origin is float;
 
     XmlRpcFloat(value is float) {
@@ -142,7 +142,7 @@ object XmlRpcFloat does XmlRpcValue {
 }
 
 // Decoding preserves exact decimal wire text rather than silently rounding it.
-object XmlRpcDouble does XmlRpcValue {
+hidden object XmlRpcDouble does XmlRpcValue {
     has origin is Decimal;
 
     XmlRpcDouble(value is Decimal) {
@@ -165,7 +165,7 @@ object XmlRpcDouble does XmlRpcValue {
     }
 }
 
-object XmlRpcDateTime does XmlRpcValue {
+hidden object XmlRpcDateTime does XmlRpcValue {
     has origin is LocalDateTime;
 
     XmlRpcDateTime(value is LocalDateTime) {
@@ -187,7 +187,7 @@ object XmlRpcDateTime does XmlRpcValue {
     }
 }
 
-object XmlRpcBinary does XmlRpcValue {
+hidden object XmlRpcBinary does XmlRpcValue {
     has origin is @byte;
 
     XmlRpcBinary(value is @byte) {
@@ -207,7 +207,7 @@ object XmlRpcBinary does XmlRpcValue {
     }
 }
 
-object XmlRpcArray does XmlRpcValue {
+hidden object XmlRpcArray does XmlRpcValue {
     has origin is @XmlRpcValue;
 
     XmlRpcArray(values is Sequencing<XmlRpcValue>) {
@@ -250,7 +250,7 @@ object XmlRpcMember {
     }
 }
 
-object XmlRpcStruct does XmlRpcValue {
+hidden object XmlRpcStruct does XmlRpcValue {
     has origin is @XmlRpcMember;
 
     XmlRpcStruct(values is Sequencing<XmlRpcMember>) {
@@ -290,7 +290,7 @@ object XmlRpcStruct does XmlRpcValue {
     }
 }
 
-object XmlRpcNil does XmlRpcValue {
+hidden object XmlRpcNil does XmlRpcValue {
     XmlRpcNil();
 
     kind() is XmlRpcKind {
@@ -326,7 +326,7 @@ object XmlRpcCall {
     }
 }
 
-object XmlRpcMethod {
+hidden object XmlRpcMethod {
     XmlRpcMethod(origin is string) {
         confirm origin != "" && origin.length() <= 256
             else throw InvalidXmlRpc.because("method name budget");
@@ -369,7 +369,7 @@ role XmlRpcResult {
     fault() is XmlRpcFault;
 }
 
-object XmlRpcSuccess does XmlRpcResult {
+hidden object XmlRpcSuccess does XmlRpcResult {
     has origin is XmlRpcValue;
 
     XmlRpcSuccess(origin is XmlRpcValue) {
@@ -389,7 +389,7 @@ object XmlRpcSuccess does XmlRpcResult {
     }
 }
 
-object XmlRpcFailure does XmlRpcResult {
+hidden object XmlRpcFailure does XmlRpcResult {
     has origin is XmlRpcFault;
 
     XmlRpcFailure(origin is XmlRpcFault) {
@@ -476,7 +476,7 @@ object XmlRpcLimits {
     }
 }
 
-object XmlRpcBudget {
+hidden object XmlRpcBudget {
     XmlRpcBudget(depth is int, values is int, text_bytes is BigInt, binary_bytes is BigInt) {
         confirm depth >= 0 && depth <= 64 && values >= 0 && values <= 4096
             else throw InvalidXmlRpc.because("structural budgets");
@@ -487,7 +487,7 @@ object XmlRpcBudget {
     }
 }
 
-object XmlRpcUsage {
+hidden object XmlRpcUsage {
     has limits is XmlRpcLimits;
     has values, text, binary is Atomic<int>;
 
@@ -522,7 +522,7 @@ object XmlRpcUsage {
     }
 }
 
-object XmlRpcXmlText {
+hidden object XmlRpcXmlText {
     has origin is string;
 
     XmlRpcXmlText(origin is string) {
@@ -535,7 +535,7 @@ object XmlRpcXmlText {
     }
 }
 
-object XmlRpcWire {
+hidden object XmlRpcWire {
     has usage is XmlRpcUsage;
     has output is Atomic<string>;
     has used is Atomic<int>;
@@ -576,7 +576,7 @@ object XmlRpcWire {
     }
 }
 
-object XmlRpcNodeWriting does XmlRpcWriting {
+hidden object XmlRpcNodeWriting does XmlRpcWriting {
     has wire is XmlRpcWire;
     has depth is int;
     has seen is Event;
@@ -670,7 +670,7 @@ object XmlRpcNodeWriting does XmlRpcWriting {
     }
 }
 
-object XmlRpcDoubleText {
+hidden object XmlRpcDoubleText {
     has origin is Decimal;
 
     XmlRpcDoubleText(origin is Decimal) {
@@ -717,7 +717,7 @@ object XmlRpcDoubleText {
     }
 }
 
-object XmlRpcPadded {
+hidden object XmlRpcPadded {
     has value, width is int;
 
     XmlRpcPadded(value is int, width is int) {
@@ -734,7 +734,7 @@ object XmlRpcPadded {
     }
 }
 
-object XmlRpcDateText {
+hidden object XmlRpcDateText {
     has origin is LocalDateTime;
 
     XmlRpcDateText(origin is LocalDateTime) {
@@ -780,7 +780,7 @@ object XmlRpcCallWire {
     }
 }
 
-object XmlRpcResultWire {
+hidden object XmlRpcResultWire {
     has origin is XmlRpcResult;
     has limits is XmlRpcLimits;
 
@@ -818,7 +818,7 @@ object XmlRpcResultWire {
 
 // Narrow XML1 token consumption reuses the existing plist lexical primitives.
 // DTD/PI/attributes/extension tags are rejected by this protocol grammar.
-object XmlRpcXmlCharacters {
+hidden object XmlRpcXmlCharacters {
     XmlRpcXmlCharacters(origin is string) {
         for (0..32) -> code {
             if code == 9 || code == 10 || code == 13 {
@@ -835,7 +835,7 @@ object XmlRpcXmlCharacters {
     }
 }
 
-object XmlRpcXmlDecoded {
+hidden object XmlRpcXmlDecoded {
     has origin is string;
 
     XmlRpcXmlDecoded(origin is string) {
@@ -887,7 +887,7 @@ object XmlRpcXmlDecoded {
     }
 }
 
-object XmlRpcParsing {
+hidden object XmlRpcParsing {
     has source is PlistXmlSource;
     has position is Atomic<int>;
     has usage is XmlRpcUsage;
@@ -1207,7 +1207,7 @@ object ParsedXmlRpcCall {
     }
 }
 
-object ParsedXmlRpcResult {
+hidden object ParsedXmlRpcResult {
     has bytes is @byte;
     has limits is XmlRpcLimits;
 
@@ -1221,7 +1221,7 @@ object ParsedXmlRpcResult {
     }
 }
 
-object XmlRpcIntegerText {
+hidden object XmlRpcIntegerText {
     has value is int;
 
     XmlRpcIntegerText(origin is string) {
@@ -1247,7 +1247,7 @@ object XmlRpcIntegerText {
     }
 }
 
-object XmlRpcParsedDouble {
+hidden object XmlRpcParsedDouble {
     has value is Decimal;
 
     XmlRpcParsedDouble(origin is string) {
@@ -1300,7 +1300,7 @@ object XmlRpcParsedDouble {
     }
 }
 
-object XmlRpcParsedDate {
+hidden object XmlRpcParsedDate {
     has value is LocalDateTime;
 
     XmlRpcParsedDate(origin is string) {
@@ -1334,7 +1334,7 @@ object XmlRpcParsedDate {
     }
 }
 
-object XmlRpcFaultCapture does XmlRpcWriting {
+hidden object XmlRpcFaultCapture does XmlRpcWriting {
     has code is Atomic<@int>;
     has message is Atomic<@string>;
     has seen is Event;
@@ -1398,7 +1398,7 @@ object XmlRpcFaultCapture does XmlRpcWriting {
     }
 }
 
-object XmlRpcFaultScalar does XmlRpcWriting {
+hidden object XmlRpcFaultScalar does XmlRpcWriting {
     has name is string;
     has code is Atomic<@int>;
     has message is Atomic<@string>;
@@ -1455,7 +1455,7 @@ role XmlRpcCalling {
     async result(call is XmlRpcCall) is XmlRpcResult;
 }
 
-object XmlRpcClient does XmlRpcCalling {
+hidden object XmlRpcClient does XmlRpcCalling {
     has origin is Exchanging;
     has endpoint is UrlParts;
     has limits is XmlRpcLimits;
@@ -1500,7 +1500,7 @@ object XmlRpcClient does XmlRpcCalling {
     }
 }
 
-object XmlRpcBodyBytes {
+hidden object XmlRpcBodyBytes {
     has input is BodyReading;
     has limits is XmlRpcLimits;
 
@@ -1533,7 +1533,7 @@ object XmlRpcBodyBytes {
     }
 }
 
-object XmlRpcMedia {
+hidden object XmlRpcMedia {
     XmlRpcMedia(headers is Headers) {
         let types = headers.values(HeaderName("Content-Type"));
         confirm types.size() == 1 else throw InvalidXmlRpc.because("one XML media type required");
@@ -1555,7 +1555,7 @@ object XmlRpcMedia {
     }
 }
 
-object XmlRpcHandling does Handling {
+hidden object XmlRpcHandling does Handling {
     has path is string;
     has calling is XmlRpcCalling;
     has limits is XmlRpcLimits;

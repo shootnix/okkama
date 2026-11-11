@@ -106,7 +106,7 @@ object HttpServer does Closing {
     }
 }
 
-object HttpServerState {
+hidden object HttpServerState {
     has origin is TcpAcceptance;
     has handling is Handling;
     has policy is ServerPolicy;
@@ -310,7 +310,7 @@ hidden object HttpServerCleanup {
     }
 }
 
-object HttpServerPeer {
+hidden object HttpServerPeer {
     has server is HttpServerState;
     has id is int;
     has waiting is Future<TcpConnection>;
@@ -700,7 +700,7 @@ object HttpServerPeer {
     }
 }
 
-object HttpServerBodyLease does Closing {
+hidden object HttpServerBodyLease does Closing {
     has ended is Event;
 
     HttpServerBodyLease() {
@@ -716,7 +716,7 @@ object HttpServerBodyLease does Closing {
     }
 }
 
-object HttpServerDeadline<T> {
+hidden object HttpServerDeadline<T> {
     has waiting is Future<T>;
 
     HttpServerDeadline(waiting is Future<T>, limit is Duration, clock is Timing) {
@@ -734,7 +734,7 @@ object HttpServerDeadline<T> {
     }
 }
 
-object HttpServerTimedInput does AsyncReading {
+hidden object HttpServerTimedInput does AsyncReading {
     has origin is AsyncReading;
     has limit is Duration;
     has clock is Timing;
@@ -763,7 +763,7 @@ object HttpServerTimedInput does AsyncReading {
 
 enum BadRequest is Error = (because(reason is string));
 
-object HttpServerObservedInput does AsyncReading {
+hidden object HttpServerObservedInput does AsyncReading {
     has origin is AsyncReading;
     has seen is Atomic<int>;
 
@@ -783,7 +783,7 @@ object HttpServerObservedInput does AsyncReading {
 // Interims are emitted only upon the first actual source body read. Bodies
 // already in the head prefix may legitimately proceed without 100. A final
 // response before consumption closes rather than emitting 100 while draining.
-object HttpServerContinueInput does AsyncReading {
+hidden object HttpServerContinueInput does AsyncReading {
     has origin is AsyncReading;
     has output is AsyncWriting;
     has expected is bool;

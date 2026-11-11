@@ -170,7 +170,7 @@ object WebRoutes does Handling {
     }
 }
 
-object WebRouteTable {
+hidden object WebRouteTable {
     has routings is @WebRouting;
     has scopes is @ExceptionScope;
     has fallback is async (WebRequest) is HandlingResult;
@@ -195,7 +195,7 @@ object WebRouteTable {
 }
 
 // Requests rejected by std Routes before any endpoint runs get problem bodies too.
-object WebRejection does RouteRejecting {
+hidden object WebRejection does RouteRejecting {
     WebRejection();
 
     malformed(request is Request, reason is string) is HandlingResult {
@@ -213,7 +213,7 @@ object WebRejection does RouteRejecting {
     }
 }
 
-object MethodRoute {
+hidden object MethodRoute {
     has method is Method;
     has path is string;
     has endpoint is async (WebRequest) is HandlingResult;
@@ -234,7 +234,7 @@ object MethodRoute {
     }
 }
 
-object WebPrefix {
+hidden object WebPrefix {
     has origin is string;
 
     WebPrefix(origin is string) {
@@ -253,7 +253,7 @@ object WebPrefix {
 }
 
 // Adapts one endpoint and its scope chain to std Handling.
-object WebEndpoint does Handling {
+hidden object WebEndpoint does Handling {
     has endpoint is async (WebRequest) is HandlingResult;
     has scopes is @ExceptionScope;
 
@@ -273,7 +273,7 @@ object WebEndpoint does Handling {
 }
 
 // scopes[index] wraps the rest of the chain; past the last scope is the endpoint.
-object ScopedEndpoint {
+hidden object ScopedEndpoint {
     has endpoint is async (WebRequest) is HandlingResult;
     has scopes is @ExceptionScope;
     has index is int;
@@ -298,7 +298,7 @@ object ScopedEndpoint {
     }
 }
 
-object RouteList {
+hidden object RouteList {
     has left is @Route;
     has right is @Route;
 
@@ -320,7 +320,7 @@ object RouteList {
     }
 }
 
-object ScopeList {
+hidden object ScopeList {
     has left is @ExceptionScope;
     has right is @ExceptionScope;
 

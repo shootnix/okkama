@@ -243,7 +243,7 @@ object DigestChallenge {
     }
 }
 
-object DigestFlag {
+hidden object DigestFlag {
     has origin is AuthenticationChallenge;
     has name is string;
 
@@ -263,7 +263,7 @@ object DigestFlag {
     }
 }
 
-object DigestAuthorization does HttpAuthorizing {
+hidden object DigestAuthorization does HttpAuthorizing {
     has credentials is DigestCredentials;
     has challenge is DigestChallenge;
     has uri, method, cnonce, count is string;
@@ -360,7 +360,7 @@ object DigestAuthorization does HttpAuthorizing {
     }
 }
 
-object DigestAscii {
+hidden object DigestAscii {
     has origin is string;
 
     DigestAscii(origin is string) {
@@ -382,7 +382,7 @@ object DigestAscii {
     }
 }
 
-object DigestHash {
+hidden object DigestHash {
     has origin is @byte;
     has algorithm is string;
 
@@ -420,7 +420,7 @@ object DigestHash {
     }
 }
 
-object DigestQuoted {
+hidden object DigestQuoted {
     has origin is string;
 
     DigestQuoted(origin is string) {
@@ -453,7 +453,7 @@ object DigestQuoted {
     }
 }
 
-object DigestNonce {
+hidden object DigestNonce {
     has nonce is string;
     has count is int;
 
@@ -471,7 +471,7 @@ object DigestNonce {
     }
 }
 
-object DigestNonces {
+hidden object DigestNonces {
     has entries is Atomic<@DigestNonce>;
     has maximum is int;
 
@@ -648,7 +648,7 @@ object DigestExchanging does Exchanging {
     }
 }
 
-object DigestSelection {
+hidden object DigestSelection {
     has headers is Headers;
 
     DigestSelection(headers is Headers) {
@@ -703,7 +703,7 @@ hidden object DigestResponseCleanup {
     }
 }
 
-object DigestServerProof {
+hidden object DigestServerProof {
     has expected, cnonce, count is string;
 
     DigestServerProof(expected is string, cnonce is string, count is string) {
@@ -768,7 +768,7 @@ object DigestServerProof {
     }
 }
 
-object DigestBody does BodyOpening {
+hidden object DigestBody does BodyOpening {
     has origin is BodyOpening;
     has proof is DigestServerProof;
 
@@ -790,7 +790,7 @@ object DigestBody does BodyOpening {
     }
 }
 
-object DigestReading does BodyReading {
+hidden object DigestReading does BodyReading {
     has origin is BodyReading;
     has proof is DigestServerProof;
 
@@ -836,7 +836,7 @@ test "Digest nonce counts remain independent and monotone" {
     test.ok(counts.ticket("n") == 1 && counts.ticket("n") == 2 && counts.ticket("other") == 1);
 }
 
-object DigestText {
+hidden object DigestText {
     has origin is string;
 
     DigestText(origin is string) {

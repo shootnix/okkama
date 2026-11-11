@@ -7,7 +7,7 @@ import "io/buffer" take ByteBuffer;
 import "io/decorators" take ByteSnapshot;
 
 // Preserve duplicates: a repeated freshness directive cannot authorize reuse.
-object CacheDirective {
+hidden object CacheDirective {
     has name is string;
     has arguments is @string;
 
@@ -103,7 +103,7 @@ object CacheDeltaSeconds {
     }
 }
 
-object CacheControlFields {
+hidden object CacheControlFields {
     has values is @CacheDirective;
 
     CacheControlFields(headers is Headers, budget is int, entries is int) {
@@ -132,7 +132,7 @@ object CacheControlFields {
     }
 }
 
-object CacheControlScanning {
+hidden object CacheControlScanning {
     has text is string;
     has bytes is @byte;
     has width, limit is int;

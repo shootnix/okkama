@@ -96,7 +96,7 @@ object Http2ServerSession does Closing {
     }
 }
 
-object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier, Http2BodyEvents {
+hidden object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier, Http2BodyEvents {
     has input is AsyncReading;
     has output_origin is AsyncWriting;
     has owner is Closing;
@@ -631,7 +631,7 @@ object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier, Http2B
     }
 }
 
-object Http2ServerStream {
+hidden object Http2ServerStream {
     has owner is Http2ServerState;
     has block is Http2HeaderBlock;
     has head is ParsedHttp2Request;
@@ -933,7 +933,7 @@ object Http2ServerStream {
     }
 }
 
-object Http2ServerBodySending {
+hidden object Http2ServerBodySending {
     has sender is Http2DataScheduler;
     has output is Http2ConnectionOutput;
     has budget is HpackBudget;
@@ -1008,7 +1008,7 @@ object Http2ServerBodySending {
     }
 }
 
-object Http2ServerBody does BodyOpening {
+hidden object Http2ServerBody does BodyOpening {
     has entry is Http2ServerStream;
     has origin is BodyOpening;
     has timeout is Duration;
@@ -1039,7 +1039,7 @@ object Http2ServerBody does BodyOpening {
     }
 }
 
-object Http2ServerBodyReading does BodyReading {
+hidden object Http2ServerBodyReading does BodyReading {
     has entry is Http2ServerStream;
     has origin is BodyReading;
     has timeout is Duration;
@@ -1095,7 +1095,7 @@ object Http2ServerBodyReading does BodyReading {
 
 // One memoized informational write per admitted request. A complete body
 // permits skipping100; construction and body opening alone emit nothing.
-object Http2ServerContinue {
+hidden object Http2ServerContinue {
     has entry is Http2ServerStream;
 
     Http2ServerContinue(entry is Http2ServerStream) {
@@ -1112,7 +1112,7 @@ object Http2ServerContinue {
 // payload reads use the separate body-idle budget. The idle monitor observes
 // busy transitions, so it can start after an unrelated handler completes while
 // the sole physical reader is already waiting for its next byte.
-object Http2ServerWireInput does AsyncReading, Http2ReadBoundary {
+hidden object Http2ServerWireInput does AsyncReading, Http2ReadBoundary {
     has origin is AsyncReading;
     has owner is Http2ServerState;
     has between is Atomic<bool>;

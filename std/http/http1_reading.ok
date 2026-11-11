@@ -86,7 +86,7 @@ object Http1HeadRead<T> {
     }
 }
 
-object Http1RequestHeadDecoding {
+hidden object Http1RequestHeadDecoding {
     Http1RequestHeadDecoding();
 
     decode(origin is string, tail is @byte, count is int, limits is Http1Limits) is Http1HeadRead<Http1RequestHead> {
@@ -106,7 +106,7 @@ object Http1RequestHeadDecoding {
     }
 }
 
-object Http1ResponseHeadDecoding {
+hidden object Http1ResponseHeadDecoding {
     Http1ResponseHeadDecoding();
 
     decode(origin is string, tail is @byte, count is int, limits is Http1Limits) is Http1HeadRead<Http1ResponseHead> {
@@ -126,7 +126,7 @@ object Http1ResponseHeadDecoding {
     }
 }
 
-object Http1HeadInput<T> {
+hidden object Http1HeadInput<T> {
     has origin is AsyncReading;
     has prefix is @byte;
     has limits is Http1Limits;
@@ -223,7 +223,7 @@ object Http1HeadInput<T> {
 
 // Each standard physical read owns one group and drains it before the next
 // read. The await chain propagates cancellation without a head-long registry.
-object Http1ScopedReading does AsyncReading {
+hidden object Http1ScopedReading does AsyncReading {
     has origin is AsyncReading;
 
     Http1ScopedReading(origin is AsyncReading) {
@@ -237,7 +237,7 @@ object Http1ScopedReading does AsyncReading {
     }
 }
 
-object Http1PhysicalRead {
+hidden object Http1PhysicalRead {
     has origin is AsyncReading;
     has limit is int;
 
@@ -254,7 +254,7 @@ object Http1PhysicalRead {
 }
 
 // Explicit supplied supervision retains its original whole-head contract.
-object Http1SupervisedReading does AsyncReading {
+hidden object Http1SupervisedReading does AsyncReading {
     has origin is AsyncReading;
     has group is Supervising<@byte>;
 
@@ -272,7 +272,7 @@ object Http1SupervisedReading does AsyncReading {
 
 // Scan only the new chunk plus at most three preceding delimiter bytes. The
 // accumulated head is materialized once after completion, never per feed.
-object Http1HeadBoundary {
+hidden object Http1HeadBoundary {
     has after is int;
     has tail is string;
 
@@ -304,7 +304,7 @@ object Http1HeadBoundary {
     }
 }
 
-object Http1BoundaryTail {
+hidden object Http1BoundaryTail {
     has origin is string;
 
     Http1BoundaryTail() {

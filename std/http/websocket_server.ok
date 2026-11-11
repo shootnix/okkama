@@ -103,7 +103,7 @@ object WebSocketAccepting {
     }
 }
 
-object WebSocketServerOpening {
+hidden object WebSocketServerOpening {
     has input is AsyncReading;
     has output is AsyncWriting;
     has owner is Closing;
@@ -162,7 +162,7 @@ object WebSocketServerOpening {
     }
 }
 
-object WebSocketServerProtocol {
+hidden object WebSocketServerProtocol {
     has offered, supported is @string;
 
     WebSocketServerProtocol(offered is @string, supported is @string) {
@@ -182,7 +182,7 @@ object WebSocketServerProtocol {
     }
 }
 
-object WebSocketServerUnpublished {
+hidden object WebSocketServerUnpublished {
     has owner is Closing;
     has published is Event;
 

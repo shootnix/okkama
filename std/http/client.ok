@@ -598,7 +598,7 @@ object HttpTransport does Exchanging, Closing {
     }
 }
 
-object HttpClientIdle {
+hidden object HttpClientIdle {
     has key is string;
     has transport is HttpClientTransport;
 
@@ -616,7 +616,7 @@ object HttpClientIdle {
     }
 }
 
-object HttpClientState does Closing {
+hidden object HttpClientState does Closing {
     has capacity is Semaphore;
     has stopped is Event;
     has serial is Atomic<int>;
@@ -743,7 +743,7 @@ object HttpClientState does Closing {
     }
 }
 
-object HttpClientOperation does Closing {
+hidden object HttpClientOperation does Closing {
     has owner is HttpClientState;
     has position is int;
     has key is Atomic<string>;
@@ -906,7 +906,7 @@ object HttpClientOperation does Closing {
     }
 }
 
-object HttpClientAcquired {
+hidden object HttpClientAcquired {
     has acquired is Http1Acquisition;
     has permit is Permit;
     has transport is HttpClientTransport;
@@ -935,7 +935,7 @@ object HttpClientAcquired {
 
 // Atomic payloads are borrowed. A long-lived, supervised task owns the actual
 // acquired session in its lexical scope until eviction or client close.
-object HttpClientTransport {
+hidden object HttpClientTransport {
     has connecting is Http1Connecting;
     has ready, stopped is Event;
     has acquired is Atomic<@Http1Acquisition>;
@@ -1013,7 +1013,7 @@ object HttpClientTransport {
     }
 }
 
-object HttpClientSignal {
+hidden object HttpClientSignal {
     has ready is Event;
 
     HttpClientSignal(ready is Event) {
@@ -1039,7 +1039,7 @@ hidden object HttpClientTransportSettlement {
     }
 }
 
-object HttpClientPermitDisposal {
+hidden object HttpClientPermitDisposal {
     HttpClientPermitDisposal();
 
     release(permit is Permit) is void {
@@ -1047,7 +1047,7 @@ object HttpClientPermitDisposal {
     }
 }
 
-object HttpClientAcquisitionDisposal {
+hidden object HttpClientAcquisitionDisposal {
     HttpClientAcquisitionDisposal();
 
     release(acquired is Http1Acquisition) is void {
@@ -1077,7 +1077,7 @@ hidden object HttpClientStartupCleanup {
     }
 }
 
-object HttpDeadline<T> {
+hidden object HttpDeadline<T> {
     has origin is Future<T>;
     has limit is Duration;
     has clock is Timing;
@@ -1104,7 +1104,7 @@ object HttpDeadline<T> {
     }
 }
 
-object HttpClientBody does BodyOpening {
+hidden object HttpClientBody does BodyOpening {
     has origin is BodyOpening;
     has operation is HttpClientOperation;
     has retained is HttpClientAcquired;
@@ -1152,7 +1152,7 @@ object HttpClientBody does BodyOpening {
     }
 }
 
-object HttpClientReading does BodyReading {
+hidden object HttpClientReading does BodyReading {
     has origin is BodyReading;
     has operation is HttpClientOperation;
     has retained is HttpClientAcquired;
@@ -1283,7 +1283,7 @@ async test "unstarted client response cancellation acquires no route or connecti
 // Policy and TLS identity are scoped to this state; no proxy is implicit.
 // Each shared H2 conversation owns one physical connection permit;
 // request/body leases are independent of that transport lifetime.
-object Http2ClientProtocols {
+hidden object Http2ClientProtocols {
     Http2ClientProtocols(policy is ClientPolicy, tls is TlsClientPolicy) {
         confirm policy.protocols().size() == 1 && policy.protocols().membership(HttpVersion.http_2)
             else throw UnsupportedHttpVersion.unsupported;
@@ -1293,7 +1293,7 @@ object Http2ClientProtocols {
     }
 }
 
-object Http2DirectRequest {
+hidden object Http2DirectRequest {
     has url is UrlParts;
     has request is Request;
 
@@ -1326,7 +1326,7 @@ object Http2DirectRequest {
     }
 }
 
-object HttpSharedClientIdle {
+hidden object HttpSharedClientIdle {
     has key is string;
     has transport is HttpSharedClientTransport;
 
@@ -1344,7 +1344,7 @@ object HttpSharedClientIdle {
     }
 }
 
-object HttpSharedClientState does Closing {
+hidden object HttpSharedClientState does Closing {
     has capacity is Semaphore;
     has stopped is Event;
     has serial is Atomic<int>;
@@ -1459,7 +1459,7 @@ object HttpSharedClientState does Closing {
     }
 }
 
-object HttpSharedClientSelected {
+hidden object HttpSharedClientSelected {
     has transport is HttpSharedClientTransport;
     has reused is bool;
 
@@ -1477,7 +1477,7 @@ object HttpSharedClientSelected {
     }
 }
 
-object HttpSharedClientOperation does Closing {
+hidden object HttpSharedClientOperation does Closing {
     has owner is HttpSharedClientState;
     has position is int;
     has stopped, finished, entered is Event;
@@ -1617,7 +1617,7 @@ object HttpSharedClientOperation does Closing {
     }
 }
 
-object HttpSharedSessionWait<T> {
+hidden object HttpSharedSessionWait<T> {
     has group is FutureGroup<T>;
 
     HttpSharedSessionWait(group is FutureGroup<T>) {
@@ -1632,7 +1632,7 @@ object HttpSharedSessionWait<T> {
     }
 }
 
-object HttpSharedClientAcquired {
+hidden object HttpSharedClientAcquired {
     has acquired is HttpConversationAcquisition;
     has transport is HttpSharedClientTransport;
     has reused is bool;
@@ -1656,7 +1656,7 @@ object HttpSharedClientAcquired {
     }
 }
 
-object HttpSharedClientTransport {
+hidden object HttpSharedClientTransport {
     has connecting is HttpConversationConnecting;
     has capacity is Semaphore;
     has ready, stopped, admission, granted is Event;
@@ -1826,7 +1826,7 @@ object HttpSharedClientTransport {
     }
 }
 
-object HttpSharedClientSignal {
+hidden object HttpSharedClientSignal {
     has ready is Event;
 
     HttpSharedClientSignal(ready is Event) {
@@ -1838,7 +1838,7 @@ object HttpSharedClientSignal {
     }
 }
 
-object HttpSharedClientAcquisitionDisposal {
+hidden object HttpSharedClientAcquisitionDisposal {
     HttpSharedClientAcquisitionDisposal();
 
     release(acquired is HttpConversationAcquisition) is void {
@@ -1863,7 +1863,7 @@ hidden object HttpSharedClientStartupCleanup {
     }
 }
 
-object HttpSharedClientBody does BodyOpening {
+hidden object HttpSharedClientBody does BodyOpening {
     has origin is BodyOpening;
     has operation is HttpSharedClientOperation;
     has retained is HttpSharedClientAcquired;
@@ -1911,7 +1911,7 @@ object HttpSharedClientBody does BodyOpening {
     }
 }
 
-object HttpSharedClientReading does BodyReading {
+hidden object HttpSharedClientReading does BodyReading {
     has origin is BodyReading;
     has operation is HttpSharedClientOperation;
     has retained is HttpSharedClientAcquired;
@@ -1998,7 +1998,7 @@ hidden object HttpSharedClientReadCleanup {
     }
 }
 
-object HttpMixedDirectRequest {
+hidden object HttpMixedDirectRequest {
     has url is UrlParts;
     has request is Request;
 

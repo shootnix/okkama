@@ -361,7 +361,7 @@ object Http2DataGrant does Http2OutputStarting {
     }
 }
 
-object Http2DataSending {
+hidden object Http2DataSending {
     has owner is Http2DataScheduler;
     has slot is Http2SendingSlot;
     has bytes is @byte;
@@ -450,7 +450,7 @@ object Http2DataSending {
     }
 }
 
-object Http2ProducerRelease {
+hidden object Http2ProducerRelease {
     has slot is Http2SendingSlot;
 
     Http2ProducerRelease(slot is Http2SendingSlot) {

@@ -122,7 +122,7 @@ object StandardMediaTypes does MediaIdentifying {
     }
 }
 
-object SystemMediaTypes does MediaIdentifying {
+hidden object SystemMediaTypes does MediaIdentifying {
     has table is MappedMediaTypes;
 
     SystemMediaTypes(fallback is MediaIdentifying) {
@@ -166,7 +166,7 @@ object SystemMediaTypes does MediaIdentifying {
     }
 }
 
-object MediaTypeFileLimits {
+hidden object MediaTypeFileLimits {
     has maximum_files, maximum_bytes, maximum_entries is int;
 
     MediaTypeFileLimits() {
@@ -204,7 +204,7 @@ enum InvalidMediaTypeDatabase is Error = (located(line is int, reason is string)
 
 enum MediaTypeLimitExceeded is Error = (kind(kind is string));
 
-object EmptyMediaTypes does MediaIdentifying {
+hidden object EmptyMediaTypes does MediaIdentifying {
     EmptyMediaTypes() {}
 
     type(path is Path) is MediaType {
@@ -217,7 +217,7 @@ object EmptyMediaTypes does MediaIdentifying {
     }
 }
 
-object MediaAsciiLower {
+hidden object MediaAsciiLower {
     has origin is string;
 
     MediaAsciiLower(origin is string) {
@@ -238,7 +238,7 @@ object MediaAsciiLower {
     }
 }
 
-object MediaFileName {
+hidden object MediaFileName {
     has origin is Path;
 
     MediaFileName(origin is Path) {
@@ -294,7 +294,7 @@ object MediaMatch {
     }
 }
 
-object MediaTypeKey {
+hidden object MediaTypeKey {
     has origin is MediaType;
 
     MediaTypeKey(origin is MediaType) {
@@ -306,7 +306,7 @@ object MediaTypeKey {
     }
 }
 
-object MediaMappingSnapshot {
+hidden object MediaMappingSnapshot {
     has values is @MediaTypeExtension;
 
     MediaMappingSnapshot(entries is Sequencing<MediaTypeExtension>, maximum is int) {
@@ -327,7 +327,7 @@ object MediaMappingSnapshot {
     }
 }
 
-object MediaAliases {
+hidden object MediaAliases {
     has reversed is List<string>;
     has maximum is int;
 
@@ -359,7 +359,7 @@ object MediaAliases {
     }
 }
 
-object SystemMediaSnapshot {
+hidden object SystemMediaSnapshot {
     has values is @MediaTypeExtension;
 
     SystemMediaSnapshot(files is Sequencing<Path>, limits is MediaTypeFileLimits) {
@@ -388,7 +388,7 @@ object SystemMediaSnapshot {
     }
 }
 
-object OptionalMediaFile {
+hidden object OptionalMediaFile {
     has path is Path;
     has maximum is int;
 
@@ -425,7 +425,7 @@ object OptionalMediaFile {
     }
 }
 
-object MediaDatabaseEntries {
+hidden object MediaDatabaseEntries {
     has origin is @byte;
     has maximum is int;
 
@@ -488,7 +488,7 @@ object MediaDatabaseEntries {
     }
 }
 
-object StandardMediaEntries {
+hidden object StandardMediaEntries {
     StandardMediaEntries() {}
 
     entries() is @MediaTypeExtension {

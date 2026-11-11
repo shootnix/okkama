@@ -125,14 +125,14 @@ object ServerEvent {
     }
 }
 
-object ServerEventData {
+hidden object ServerEventData {
     ServerEventData(data is string) {
         confirm Utf8Encoded(data).bytes().size() <= 1048576
             else throw EventStreamLimit.kind("data_bytes");
     }
 }
 
-object ServerEventMetadata {
+hidden object ServerEventMetadata {
     ServerEventMetadata(value is string) {
         let bytes = Utf8Encoded(value).bytes();
         confirm bytes.size() <= 1024 else throw EventStreamLimit.kind("metadata_bytes");
@@ -144,7 +144,7 @@ object ServerEventMetadata {
     }
 }
 
-object EventRetry {
+hidden object EventRetry {
     has milliseconds is int;
 
     EventRetry(origin is Duration) {
@@ -170,7 +170,7 @@ object EventRetry {
     }
 }
 
-object ServerEventWire {
+hidden object ServerEventWire {
     has origin is ServerEvent;
 
     ServerEventWire(origin is ServerEvent) {
@@ -210,7 +210,7 @@ object ServerEventWire {
 
 // Deliberate response metadata; applications select this rather than receiving
 // hidden cache/proxy defaults from the server or transport.
-object EventStreamHeaders {
+hidden object EventStreamHeaders {
     EventStreamHeaders();
 
     headers() is Headers {
@@ -229,7 +229,7 @@ role EventDraining {
     async settled() is bool;
 }
 
-object EventGroup<T> does EventDraining {
+hidden object EventGroup<T> does EventDraining {
     has group is FutureGroup<T>;
 
     EventGroup(group is FutureGroup<T>) {
@@ -253,7 +253,7 @@ object EventGroup<T> does EventDraining {
     }
 }
 
-object EventRegistration {
+hidden object EventRegistration {
     has owner is EventOperation;
 
     EventRegistration(owner is EventOperation, operation is EventDraining) {
@@ -266,7 +266,7 @@ object EventRegistration {
     }
 }
 
-object EventOperation {
+hidden object EventOperation {
     has active is Atomic<@EventDraining>;
     has stopped is Event;
 
@@ -517,7 +517,7 @@ hidden object EventReadCleanup {
 
 // WHATWG replacement decoding at line boundaries. Native strict prefix scans
 // preserve maximal well-formed runs; malformed maximal subparts consume once.
-object EventUtf8 {
+hidden object EventUtf8 {
     has origin is string;
 
     EventUtf8(origin is @byte) {
@@ -624,7 +624,7 @@ object EventBody does BodyOpening {
     }
 }
 
-object EventBodyInput does BodyReading {
+hidden object EventBodyInput does BodyReading {
     has input is Receiving<ServerEvent>;
     has operations is EventOperation;
     has tail is Atomic<string>;
