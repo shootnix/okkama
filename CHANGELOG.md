@@ -86,6 +86,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Native groups fail closed (#361). `Limits::natives` sorted a native into a
+  group by its module and counted every module it did not name as pure, so
+  two host facts, the preferred language tags (`runtime/locale`) and the
+  system's trusted certificates (`runtime/x509`), passed a host that had
+  denied `Env`, and so would any module added later. Every module is now
+  named, in a group or among the pure ones; a native in neither is refused
+  while the groups are restricted, and a test fails the build when a module
+  is left out. Both need `Env` now.
+
 - The Book describes process workers as the engines run them (#358): its
   §31.5.1 spoke of "the current Perl runtime" sending TERM and then KILL
   after 250 ms, of a versioned JSON protocol, and of embedded and multi-file

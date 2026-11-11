@@ -70,37 +70,77 @@ pub enum NativeGroup {
     Terminal,
 }
 
+/// What a native reaches: the host through one group, nothing beyond the
+/// program (computation, stdout and stderr), or unknown: a module this table
+/// does not name, refused while the groups are restricted (#361).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reach {
+    Group(NativeGroup),
+    Pure,
+    Unclassified,
+}
+
+/// Modules whose natives compute without reaching the host. A module added
+/// to the runtime is in no list until someone puts it in one, and the test
+/// `every_native_is_classified` fails until then.
+const PURE: &[&str] = &[
+    "runtime/bigint", "runtime/binary", "runtime/buffer", "runtime/bytes", "runtime/collation",
+    "runtime/collections", "runtime/crypto", "runtime/csv_state", "runtime/db", "runtime/debug",
+    "runtime/decimal", "runtime/diff", "runtime/format", "runtime/hex", "runtime/host_crypto",
+    "runtime/hpack", "runtime/html", "runtime/idna", "runtime/io_decorators", "runtime/json",
+    "runtime/layout", "runtime/math_aggregate", "runtime/number_text", "runtime/pem",
+    "runtime/public_suffix", "runtime/quoted_printable", "runtime/random_distribution",
+    "runtime/regex", "runtime/secret", "runtime/single_byte", "runtime/statistics",
+    "runtime/template", "runtime/testing", "runtime/time_format", "runtime/time_zone",
+    "runtime/toml", "runtime/unicode_character", "runtime/unicode_normalization",
+    "runtime/url_text", "runtime/utf", "runtime/uuid", "runtime/stdio", "runtime/base32",
+    "runtime/base64", "runtime/base85", "runtime/x509",
+];
+
 impl NativeGroup {
     /// The group of `native`, if it reaches the host.
     pub fn of(native: okkama_runtime_abi::Native) -> Option<Self> {
-        static GROUPS: std::sync::OnceLock<Vec<Option<NativeGroup>>> = std::sync::OnceLock::new();
-        let groups = GROUPS.get_or_init(|| {
+        match Reach::of(native) {
+            Reach::Group(group) => Some(group),
+            Reach::Pure | Reach::Unclassified => None,
+        }
+    }
+}
+
+impl Reach {
+    pub fn of(native: okkama_runtime_abi::Native) -> Self {
+        static REACH: std::sync::OnceLock<Vec<Reach>> = std::sync::OnceLock::new();
+        let reach = REACH.get_or_init(|| {
             let size = okkama_runtime_abi::Native::ALL.iter().map(|&n| n as usize + 1).max().unwrap_or(0);
-            let mut groups = vec![None; size];
+            let mut reach = vec![Reach::Unclassified; size];
             for &native in okkama_runtime_abi::Native::ALL {
-                groups[native as usize] = Self::classify(native);
+                reach[native as usize] = Self::classify(native);
             }
-            groups
+            reach
         });
-        groups.get(native as usize).copied().flatten()
+        reach.get(native as usize).copied().unwrap_or(Reach::Unclassified)
     }
 
-    fn classify(native: okkama_runtime_abi::Native) -> Option<Self> {
+    fn classify(native: okkama_runtime_abi::Native) -> Self {
         let symbol = native.symbol();
         let module = symbol.split('@').next().unwrap_or(symbol);
         let name = symbol.split("::").nth(1).unwrap_or("");
-        Some(match module {
-            "runtime/fs" | "runtime/fs_root" | "runtime/snapshot" | "runtime/database" => Self::Fs,
-            "runtime/network" | "runtime/net" | "runtime/tls_transport" | "runtime/postgres" => Self::Net,
-            "runtime/process" => Self::Process,
-            "runtime/system" if name.starts_with("secure_random") => Self::Random,
-            "runtime/environment" | "runtime/account" | "runtime/system" => Self::Env,
-            "runtime/time_zone" if name.starts_with("timezone_local") => Self::Env,
-            "runtime/time" => Self::Clock,
-            "runtime/random" => Self::Random,
-            "runtime/application" | "runtime/input_state" => Self::Terminal,
-            "runtime/stdio" if name.starts_with("stdin") => Self::Terminal,
-            _ => return None,
+        Self::Group(match module {
+            "runtime/fs" | "runtime/fs_root" | "runtime/snapshot" | "runtime/database" => NativeGroup::Fs,
+            "runtime/network" | "runtime/net" | "runtime/tls_transport" | "runtime/postgres" => NativeGroup::Net,
+            "runtime/process" => NativeGroup::Process,
+            "runtime/system" if name.starts_with("secure_random") => NativeGroup::Random,
+            "runtime/environment" | "runtime/account" | "runtime/system" => NativeGroup::Env,
+            "runtime/time_zone" if name.starts_with("timezone_local") => NativeGroup::Env,
+            // The host's language preferences and trust anchors (#361).
+            "runtime/locale" => NativeGroup::Env,
+            "runtime/x509" if name.starts_with("system_certificates") => NativeGroup::Env,
+            "runtime/time" => NativeGroup::Clock,
+            "runtime/random" => NativeGroup::Random,
+            "runtime/application" | "runtime/input_state" => NativeGroup::Terminal,
+            "runtime/stdio" if name.starts_with("stdin") => NativeGroup::Terminal,
+            _ if PURE.contains(&module) => return Self::Pure,
+            _ => return Self::Unclassified,
         })
     }
 }
@@ -112,9 +152,15 @@ impl Limits {
         let Some(allowed) = &self.natives else {
             return Ok(());
         };
-        match NativeGroup::of(native) {
-            Some(group) if !allowed.contains(&group) => Err(format!("Native {} needs the {group:?} permission", native.symbol())),
-            _ => Ok(()),
+        match Reach::of(native) {
+            Reach::Group(group) if !allowed.contains(&group) => {
+                Err(format!("Native {} needs the {group:?} permission", native.symbol()))
+            }
+            Reach::Unclassified => Err(format!(
+                "Native {} is in no native group; it is refused while the native groups are restricted",
+                native.symbol()
+            )),
+            Reach::Group(_) | Reach::Pure => Ok(()),
         }
     }
 }
@@ -313,5 +359,34 @@ impl Watch {
             // SAFETY: the runtime owns both the heap and its fuel cell.
             unsafe { self.fuel.write_volatile(0) };
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use okkama_runtime_abi::Native;
+
+    /// Every native is in a group or among the pure ones (#361): a module
+    /// added without a place in the table fails here instead of passing a
+    /// host that restricted the groups.
+    #[test]
+    fn every_native_is_classified() {
+        let unclassified: Vec<&str> = Native::ALL
+            .iter()
+            .filter(|&&native| Reach::of(native) == Reach::Unclassified)
+            .map(|native| native.symbol())
+            .collect();
+        assert!(unclassified.is_empty(), "natives in no group and not pure: {unclassified:?}");
+    }
+
+    #[test]
+    fn the_preferred_languages_need_env() {
+        let native = *Native::ALL.iter().find(|native| native.symbol().starts_with("runtime/locale@")).unwrap();
+        assert_eq!(Reach::of(native), Reach::Group(NativeGroup::Env));
+        let limits = Limits { natives: Some(vec![NativeGroup::Clock]), ..Limits::default() };
+        assert!(limits.permits(native).unwrap_err().contains("needs the Env permission"));
+        let everything = Limits::default();
+        assert!(everything.permits(native).is_ok());
     }
 }
