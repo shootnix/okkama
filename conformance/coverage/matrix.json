@@ -1840,11 +1840,13 @@
      "cases": [
       "L05.batching.functional",
       "L05.batching.preferred-over-cursor",
+      "L07.traversal.batches",
       "L10.fs.text-lines-in-batches"
      ],
      "mandatory_cases": [
       "L05.batching.functional",
       "L05.batching.preferred-over-cursor",
+      "L07.traversal.batches",
       "L10.fs.text-lines-in-batches"
      ],
      "requirement": "required"
@@ -1892,11 +1894,13 @@
     "interaction": {
      "cases": [
       "L05.batching.preferred-over-cursor",
-      "L05.iterable.functional"
+      "L05.iterable.functional",
+      "L07.traversal.cursor-lifetimes"
      ],
      "mandatory_cases": [
       "L05.batching.preferred-over-cursor",
-      "L05.iterable.functional"
+      "L05.iterable.functional",
+      "L07.traversal.cursor-lifetimes"
      ],
      "requirement": "required"
     },
@@ -6734,7 +6738,8 @@
       "L07.ownership.shared-structure-loop",
       "L07.ownership.shared-structure-returned",
       "L07.ownership.successor-independent",
-      "L07.regions.role-instances"
+      "L07.regions.role-instances",
+      "L07.traversal.escaping"
      ],
      "mandatory_cases": [
       "L07.ownership.reduce-builder",
@@ -6742,7 +6747,8 @@
       "L07.ownership.shared-structure-loop",
       "L07.ownership.shared-structure-returned",
       "L07.ownership.successor-independent",
-      "L07.regions.role-instances"
+      "L07.regions.role-instances",
+      "L07.traversal.escaping"
      ],
      "requirement": "required"
     },
@@ -6771,6 +6777,55 @@
    ],
    "status": "mandatory",
    "title": "Ownership follows identity: aliases, parameters and self borrow; returned objects survive"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L07.traversal.early-exits",
+      "L07.traversal.failures"
+     ],
+     "mandatory_cases": [
+      "L07.traversal.early-exits",
+      "L07.traversal.failures"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L07.traversal.escaping"
+     ],
+     "mandatory_cases": [
+      "L07.traversal.escaping"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: the contract defines no rejected form"
+    },
+    "normal": {
+     "cases": [
+      "L07.traversal.batches",
+      "L07.traversal.cursor-lifetimes"
+     ],
+     "mandatory_cases": [
+      "L07.traversal.batches",
+      "L07.traversal.cursor-lifetimes"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "LIFE.TRAVERSAL",
+   "discrepancies": [],
+   "family": "Errors, cleanup and lifetimes",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.9",
+    "docs/okkama-spec-11072026.md#10"
+   ],
+   "status": "mandatory",
+   "title": "A traversal owns its source for the enclosing scope and each cursor or batch for one step; a superseded cursor's own resources are destroyed once"
   },
   {
    "aspects": {
@@ -32589,5 +32644,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "02d078eeeccbdc65298eddb3cebba9e20cc6d2c527490c101c9a244cfff803ed"
+ "suite_tree_sha256": "3ff3748917a0379b0e54b49a59fb1cea842da8649ce36f1aa9db77b24fc5c564"
 }
