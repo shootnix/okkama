@@ -38,17 +38,17 @@ object LogPermissionBits {
     }
 
     value() is int {
-        (if origin.readable() {
+        (if origin::Access::readable {
             4;
         }
         else {
             0;
-        }) + (if origin.writable() {
+        }) + (if origin::Access::writable {
             2;
         }
         else {
             0;
-        }) + (if origin.executable() {
+        }) + (if origin::Access::executable {
             1;
         }
         else {

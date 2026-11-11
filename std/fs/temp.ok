@@ -1,24 +1,25 @@
 module fs/temp v1.0.0;
 
-import "fs/directory" take DirectoryLocating;
+import "fs/directory" take Directory, DirectoryLocating;
 import "fs/entry" take FileEntry;
 import "fs/error" take FileError, FileFailure;
 import "fs/path" take Path;
+import "io/decorators" take ByteSnapshot;
 import "io/stream" take ByteSource, Reading, Writing, Closing, IncompleteWrite, InvalidReadLimit;
 import "runtime/fs" take FileState, TemporaryDirectoryState, path_encode, path_decode,
     file_state_read, file_state_write, file_state_flush, file_state_close, file_state_closed,
     temporary_file_create, temporary_file_path, temporary_file_preserve, temporary_directory_create,
-    temporary_directory_path, temporary_directory_closed, temporary_directory_close;
+    temporary_directory_path, temporary_directory_closed, temporary_directory_close, symlink;
 
 // Temporary resources are created eagerly with unpredictable names inside an
 // explicitly supplied directory. prefix is one filename component, not a path.
 // Temporary files are binary read/write streams with owner-only permissions:
 //
-//     let temporary = TemporaryFile(directory: scratch, prefix: "upload-");
+//     let temporary = TemporaryFile(directory: Directory(path: scratch.path()), prefix: "upload-");
 //     defer temporary.close();
 //     temporary.write(payload);
 //     temporary.flush();
-//     let path is Path = TemporaryFilePath(origin: temporary).value();
+//     let path is Path = temporary.path();
 //
 // close() is idempotent and deletes an unpreserved temporary file. Preserve a
 // completed file under a deliberate destination before the deferred close:
@@ -48,7 +49,7 @@ object TemporaryFile does Reading, Writing, Closing {
             );
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, directory.path().string()).error();
+            throw FileFailure(failure: failure, path: directory.path().string()).error();
         };
     }
 
@@ -118,20 +119,8 @@ object TemporaryFile does Reading, Writing, Closing {
             temporary_file_preserve(state, path_encode(destination.string()));
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, destination.string()).error();
+            throw FileFailure(failure: failure, path: destination.string()).error();
         }
-    }
-}
-
-object TemporaryFilePath {
-    has owner is TemporaryFile;
-
-    TemporaryFilePath(origin is TemporaryFile) {
-        owner = origin;
-    }
-
-    value() is Path {
-        owner.path();
     }
 }
 
@@ -164,7 +153,7 @@ object TemporaryDirectory does Closing {
             );
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, parent.path().string()).error();
+            throw FileFailure(failure: failure, path: parent.path().string()).error();
         };
     }
 
@@ -198,4 +187,78 @@ object TemporaryDirectory does Closing {
             throw FileFailure(failure).error();
         }
     }
+}
+
+test "a temporary file is written, named under its directory and gone after close" {
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "fs-temp-test-");
+    let temporary = TemporaryFile(directory: Directory(path: scratch.path()), prefix: "upload-");
+    let path = temporary.path();
+    test.is(path.parent(), scratch.path());
+    test.ok(path.string().slice(scratch.path().string().length() + 1, path.string().length()).starts_with("upload-"));
+    temporary.write(ByteSnapshot([byte(1), byte(2), byte(3)]));
+    temporary.flush();
+    test.is(FileEntry(path: path).stat()::Shape::size, 3);
+    test.ok(!temporary.closed());
+    temporary.close();
+    temporary.close();
+    test.ok(temporary.closed());
+    test.ok(!FileEntry(path: path).existence());
+    let other = TemporaryFile(directory: Directory(path: scratch.path()), prefix: "upload-");
+    test.ok(other.path() != path);
+    other.close();
+    scratch.close();
+}
+
+test "a preserved file stays under its destination and never replaces one" {
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "fs-temp-test-");
+    let output = scratch.path().child("report.bin");
+    let temporary = TemporaryFile(directory: Directory(path: scratch.path()), prefix: "report-");
+    temporary.write(ByteSnapshot([byte(7), byte(8)]));
+    temporary.flush();
+    let preservation = TemporaryFilePreservation(origin: temporary, destination: output);
+    preservation.preserve();
+    temporary.close();
+    test.is(preservation.destination().path(), output);
+    test.ok(preservation.destination().existence());
+    test.is(FileEntry(path: output).stat()::Shape::size, 2);
+    let second = TemporaryFile(directory: Directory(path: scratch.path()), prefix: "report-");
+    test.ok(try {
+        second.preserve(output);
+        false;
+    }
+    catch FileError.already_exists(failed) {
+        failed == output.string();
+    });
+    second.close();
+    test.is(FileEntry(path: output).stat()::Shape::size, 2);
+    scratch.close();
+}
+
+test "a temporary directory removes its whole tree on close, links as leaves" {
+    let outside = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "fs-temp-test-");
+    let kept = outside.path().child("kept");
+    Directory(path: kept).create();
+    let scratch = TemporaryDirectory(parent: Directory(path: outside.path()), prefix: "tree-");
+    let root = scratch.path();
+    test.is(root.parent(), outside.path());
+    Directory(path: root.child("a")).create();
+    Directory(path: root.child("a").child("b")).create();
+    let file = TemporaryFile(directory: Directory(path: root.child("a").child("b")), prefix: "f-");
+    file.preserve(root.child("a").child("b").child("data"));
+    file.close();
+    symlink(path_encode(kept.string()), path_encode(root.child("link").string()));
+    test.ok(!scratch.closed());
+    scratch.close();
+    scratch.close();
+    test.ok(scratch.closed());
+    test.ok(!Directory(path: root).existence());
+    test.ok(Directory(path: kept).existence());
+    test.ok(try {
+        TemporaryFile(directory: Directory(path: root), prefix: "late-");
+        false;
+    }
+    catch FileError.not_found(failed) {
+        failed == root.string();
+    });
+    outside.close();
 }

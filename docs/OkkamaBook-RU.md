@@ -3851,6 +3851,26 @@ Path("notes.txt"))` открывает на чтение; `for file.text() -> li
 `FileEntry` (путь на диске) живёт в `fs/entry`. `examples/fs/file/`
 показывает каждую задачу программой.
 
+Остальной `fs` называет путь и действует над ним. `Path` лексичен и
+не трогает диск: `Path("var").child("log")`, `parent()`, `absolute()`,
+а `Path("etc", "app", "config.toml")` соединяет части. Грамматика хоста
+входит в его значение (`path::Grammar::style`). Чужую называют явно:
+`Path("C:\\x", PathStyle.windows)`. Корень сам себе родитель, а пути,
+которые он делает, опрятны: `.` и повторные разделители уходят, `..`
+остаётся. `FileEntry(path:)` отвечает на `existence()`, `stat()`,
+`move(to)` и `remove()`. Stat показывает `stat::Shape::kind` и `::size`,
+а его `mode()` и `times()` отвечают объектами. `Directory(path:)`
+создаёт, удаляет и переносит один уровень. `DirectoryEntries(origin:)`
+обходит один уровень по имени, `Descendants(origin:)` обходит дерево в
+прямом порядке, а `DirectoryTree(origin:).remove()` удаляет его.
+Симлинк на каталог — лист: его перечисляют, но внутрь не заходят.
+`MatchingPaths(root:, pattern:)` ищет по шаблону (`*`, `?`, классы,
+`**`). `SymbolicLink(path:)` и `HardLink(source:, destination:)` — это
+команды. `TemporaryFile` и `TemporaryDirectory` удаляют себя при
+`close()`. `FileWatch(path:)` отвечает на `await watch.event()`
+`FileEvent`'ом, вид которого лежит в `event::Change::kind`.
+`examples/fs/directory/` показывает каждую задачу программой.
+
 `http/client` отправляет запросы через `HttpClient()`. По умолчанию он берёт системные DNS и доверенные корни, ходит только на публичные адреса и говорит по HTTP/1.1. Всё остальное задаётся именованными аргументами: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)`, `cookies: MemoryCookieJar()`. Для каждого REST-метода есть шорткат: `get(url)`, `head`, `options`, `delete`, а также `post(url:, body:)`, `put`, `patch` с `Content`, например `JsonBody(json)`. Любой другой запрос пишется как `client.response(Request(url:, method:, headers:, body:))`. Ответ показывает голову через cap `Head` (`page::Head::status`, `::class`, `::headers`) и читает тело через `await page.text()`, `bytes()`, `json()` или `reading()`. `Status` и `Method` — enum'ы: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` и `MethodName` переводят их в числа и токены протокола и обратно. Каждая задача показана программой в `examples/http/client/`.
 
 `strings/parse` читает текст как тип, который у него просят: `Number("42").int()`,
@@ -3955,8 +3975,6 @@ Stdlib намеренно узка, пока язык стабилизирует
   опциональный `last_id()`) для `INSERT`/`UPDATE`/`DELETE`;
 - `db/row` — доступ по имени/индексу к `SqlValue` одной строки результата
   запроса;
-- `fs/dir` — создание/листинг/удаление директорий, рекурсивный
-  `DirectoryWalk` и symlink-safe рекурсивный `remove_all()`;
 - `socket/tcp` — настоящие TCP `TcpSocket`/`TcpListener` и DNS-driven
   упорядоченные попытки подключения `TcpConnection`;
 - `socket/udp` — настоящий `UdpSocket` для отправки/приёма датаграмм с
@@ -3991,10 +4009,6 @@ Stdlib намеренно узка, пока язык стабилизирует
   восстанавливает события точно, сериализуя их в ячейку `runtime/memory`,
   поскольку у Okkama нет примитива изменяемой ячейки для произвольных
   значений — только для байтов;
-- `fs/temp` — `TempFile`/`TempDir` удаляют свою владеемую сущность при
-  `destroy`, если владение не передано наружу через `keep()`; `TempRoot`
-  генерирует бесколлизионные уникальные имена через настоящее эксклюзивное
-  создание, а не через гоночную проверку "существует? тогда создать";
 - `db/transaction` — роль `Transaction` и `InactiveTransaction`; каждый
   конкретный реализатор — это ещё предстоящий драйвер базы данных, поскольку
   оформление транзакций неотделимо специфично для конкретной БД — этим
@@ -4035,10 +4049,6 @@ Stdlib намеренно узка, пока язык стабилизирует
   `let` — см. `db-migration-22072026.md`;
 - `os` — типизированное описание хоста и явных POSIX/Windows-систем с закрытыми
   enum платформы, архитектуры и стиля путей;
-- `fs/path` — выбранные по хосту и явные POSIX/Windows неизменяемые лексические
-  пути с точной UTF-8-проекцией и типизированными ошибками;
-- `fs/meta` — портируемые metadata `FileKind`/`Permissions`, читаемые через
-  `lstat`, так что symlink никогда не следуется молча;
 - `test/fake_clock` — реализация `Clock`, которую тест явно продвигает,
   откатывает или устанавливает, так что `sleep` никогда не блокирует;
 - `test/benchmark` — repeatable измерение длительности через внедряемый
@@ -4102,85 +4112,6 @@ main() is int {
 строках бросает `UnsupportedPlatform`, а не делает догадку. `Posix` и
 `Windows` описывают явно выбранную чужую или тестовую систему; их
 перегруженные конструкторы только сохраняют enum-состояние.
-
-Путь является синтаксическим значением до превращения в аргумент файловой
-системы:
-
-```okkama
-import "fs/path" take PathValue, Path, PosixPath, WindowsPath;
-
-main() is int {
-    let log is PathValue = Path("var")
-        .joined("log")
-        .joined("okkama.log");
-    let archive = PosixPath("/srv//data/../archive").normalized();
-    let artifact = WindowsPath("C:/build/./out/app.exe").normalized();
-
-    log.bytes();
-    archive.string();  // "/srv/archive"
-    artifact.string(); // "C:\\build\\out\\app.exe"
-    return 0;
-}
-```
-
-`Path` использует `Host().path_style()` при вычислении экшена. Он не выбирает
-грамматику в конструкторе, а неизвестный host бросает `UnsupportedPlatform`.
-`PosixPath` и `WindowsPath` задают явную foreign grammar и не смотрят на host.
-Все три конструктора только сохраняют источник; ни один path action не
-проверяет существование, не следует по ссылкам, не вычисляет real path и не
-меняет cwd.
-
-`string()` сохраняет валидное исходное написание, а `bytes()` является его
-точной UTF-8-кодировкой. Только `normalized()` канонизирует: убирает повторные
-разделители и `.`, разрешает `..` без выхода выше root, снимает конечный
-разделитель у не-root пути и превращает пустой относительный путь в `.`.
-`parent()` использует эту нормализованную структуру. Roots, `.`, пустые
-нормализованные значения, голый drive context и UNC share root бросают
-`MissingPathParent`.
-
-`joined(part)` принимает относительный фрагмент и никогда не отбрасывает base;
-rooted, drive-qualified и UNC-фрагменты бросают `InvalidPath`. POSIX запрещает
-NUL и считает backslash обычным символом. Windows принимает оба разделителя,
-канонизирует их в backslash и различает drive-rooted (`C:\\x`),
-drive-relative (`C:x`), root-relative (`\\x`) и UNC-пути. Абсолютны только
-drive-rooted и полные UNC-пути. Сырые не-UTF-8 имена каталогов из `runtime/fs`
-остаются `@byte`; этот text-originated API их не переписывает.
-
-`fs/meta` нормализует `stat`/`lstat` в портируемые типизированные metadata:
-
-```okkama
-import "fs/meta" take FileKind, Meta, Permissions, MissingPath;
-import "fs/path" take Path;
-
-main() is int {
-    try {
-        let meta is Meta = Meta(Path("README.md"));
-
-        if meta.kind() == FileKind.file {
-            meta.size();
-            meta.modified();               // Instant, ClockIdentity.system
-            meta.permissions().readable();
-        }
-    }
-    catch error is MissingPath {
-        error.text();
-    }
-    return 0;
-}
-```
-
-`Meta` читает через `lstat`, а не `stat`: пройденный symlink всегда
-резолвится в то, на что он указывает, поэтому только `lstat` вообще может
-вернуть `FileKind.link`. `FileKind` намеренно узкий — file, directory, link
-или other — так что device-файлы, fifo и socket попадают в `other`, а не
-расширяют enum. `Permissions` декодирует только owner-биты read/write/
-execute из сырого POSIX mode; provider не предоставляет ни владельца, ни
-identity процесса, поэтому "может ли текущий процесс получить доступ"
-portable не вычислить, а owner-биты — ближайшее последовательно осмысленное
-чтение и для POSIX, и для Windows. Путь у `Meta` — вход от вызывающего кода,
-поэтому ошибка `not_found` — это catchable `MissingPath` выше; любая другая
-native-ошибка (permission denied, unexpected) — invariant panic, поскольку
-этот модуль не объявляет для неё более широкий словарь ошибок.
 
 Код, написанный против role `Clock`, можно тестировать без реальных часов
 через `test/fake_clock`:
@@ -4794,55 +4725,6 @@ main() is int {
 вызывающему коду), чтобы бросить его, когда *адаптер* сверяет
 `sql_type()` найденного значения с ожидаемым — та же схема "экспортирован,
 но не бросается внутри", что уже использует `crypto/digest.DigestMismatch`.
-
-`fs/dir` завершает файловую работу Phase 6: создание, листинг,
-рекурсивный обход и удаление:
-
-```okkama
-import "fs/dir" take Dir, DirEntry, DirectoryWalk;
-import "fs/file" take File;
-import "fs/path" take Path;
-
-main() is int {
-    let dir = Dir(Path("project/nested"));
-    dir.create_all();
-    File(Path("project/a.txt")).write_string("a");
-    File(Path("project/nested/b.txt")).write_string("b");
-
-    let walked is @DirEntry = DirectoryWalk(Path("project")).entries();
-    walked.size(); // 3 — файл, вложенная директория и её файл
-
-    Dir(Path("project")).remove_all();
-    return 0;
-}
-```
-
-И `remove_all()`, и `DirectoryWalk` классифицируют каждый entry через
-`kind()` из `Meta`, основанный на `lstat`, а не на `stat` — symlink,
-указывающий на директорию, всегда сообщает `FileKind.link`, никогда
-`FileKind.directory`, так что он всегда обрабатывается как лист (удаляется
-или перечисляется, но никогда не обходится вглубь). Рекурсия происходит
-один раз на уровень вложенности директорий (реалистично — единицы), а не
-один раз на entry (которых может быть сколь угодно много) — ширина на
-каждом уровне обрабатывается итеративно, а не рекурсивно.
-
-Разработка этого модуля вскрыла настоящий, ранее неизвестный
-**квадратичный performance-баг в самом интерпретаторе**: любой оператор
-`let`, выполняемый пока в scope находится большая persistent-структура
-(например, растущий `List<T>`), платит стоимость, пропорциональную
-текущему размеру этой структуры, потому что механизм отслеживания
-владения в интерпретаторе на КАЖДОМ `let` заново обходит весь достижимый
-граф объектов каждой живой переменной, не отсекая уже учтённые подграфы.
-На цикле это даёт O(n²). Баг воспроизводится одинаково для `int`,
-`string` и `@byte` (composite-типы стоят дороже на узел, но форма та же)
-— это не специфично ни для generics, ни для `collections/list`.
-`fs/dir.ok` обходит его, не оставляя промежуточных `let` внутри тела
-цикла, пока в scope есть аккумулятор (проверено напрямую: листинг
-директорий с 500/1000/2000 файлами теперь стоит 3.57s/7.67s/16.6s — по-
-настоящему линейно). Сам баг был root-caused до конкретных строк в
-`Interpreter.pm`, но намеренно не исправлен здесь — патчинг core
-ownership/lifetime-семантики — принципиально другой тип изменения, чем
-поставка stdlib-модуля.
 
 `socket/tcp` — первый модуль, работающий с настоящим сетевым I/O: клиентский
 socket, listener и DNS-driven помощник с упорядоченными попытками

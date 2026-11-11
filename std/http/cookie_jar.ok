@@ -549,14 +549,14 @@ object SavedCookieJar {
 
     result() is FileEntry {
         let text = origin.persisted_text();
-        let scratch = TemporaryDirectory(Directory(destination.path().parent()), "okkama-cookie-");
+        let scratch = TemporaryDirectory(parent: Directory(destination.path().parent()), prefix: "okkama-cookie-");
         defer scratch.close();
-        let temporary = TemporaryFile(Directory(scratch.path()), "snapshot-");
+        let temporary = TemporaryFile(directory: Directory(scratch.path()), prefix: "snapshot-");
         defer temporary.close();
         temporary.write(ByteSnapshot(AsciiEncoded(text).bytes()));
         temporary.flush();
         let staged = scratch.path().child("complete");
-        TemporaryFilePreservation(temporary, staged).preserve();
+        TemporaryFilePreservation(origin: temporary, destination: staged).preserve();
         temporary.close();
         FileEntry(staged).move(destination.path());
         destination;
@@ -573,7 +573,7 @@ object LoadedCookieJar {
     }
 
     result() is MemoryCookieJar {
-        confirm origin.stat().size() <= 67108864
+        confirm origin.stat()::Shape::size <= 67108864
             else throw InvalidCookieStore.because("file byte limit exceeded");
         let file = File(path: origin.path());
         defer file.close();

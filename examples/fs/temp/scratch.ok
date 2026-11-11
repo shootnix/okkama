@@ -1,0 +1,42 @@
+module examples/fs/temp/scratch v1.0.0;
+
+import "fs/directory" take Directory, DirectoryEntries;
+import "fs/entry" take FileEntry;
+import "fs/path" take Path;
+import "fs/temp" take TemporaryDirectory, TemporaryFile, TemporaryFilePreservation;
+import "io/decorators" take ByteSnapshot;
+import "io/stdout" take Stdout;
+
+// Scratch space with unpredictable names: a temporary directory removes its
+// whole tree on close, and a temporary file is deleted on close unless it
+// was preserved under a name of your choosing first.
+
+main() is int {
+    let out = Stdout();
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "build-");
+    let root = scratch.path();
+    out.writeln("named build-: " + root.string().starts_with("build-").string());
+
+    let upload = TemporaryFile(directory: Directory(path: root), prefix: "upload-");
+    upload.write(ByteSnapshot([byte(1), byte(2), byte(3)]));
+    upload.flush();
+    out.writeln("inside: " + (upload.path().parent() == root).string());
+    out.writeln("bytes: " + FileEntry(path: upload.path()).stat()::Shape::size.string());
+
+    let report = root.child("report.bin");
+    TemporaryFilePreservation(origin: upload, destination: report).preserve();
+    upload.close();
+    let names is @string = DirectoryEntries(origin: Directory(path: root)).map() -> entry {
+        entry.path().string().slice(root.string().length() + 1, entry.path().string().length());
+    };
+    out.writeln("kept: " + names[0]);
+
+    let throwaway = TemporaryFile(directory: Directory(path: root), prefix: "tmp-");
+    let gone = throwaway.path();
+    throwaway.close();
+    out.writeln("deleted: " + (!FileEntry(path: gone).existence()).string());
+
+    scratch.close();
+    out.writeln("tree removed: " + (!Directory(path: root).existence()).string());
+    0;
+}

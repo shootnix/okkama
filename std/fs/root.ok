@@ -18,7 +18,7 @@ object FileRoot does Closing {
             rooted.file_root_open(path_encode(directory.path().string()));
         }
         catch e is NativeFailure {
-            throw FileFailure(e, directory.path().string()).error();
+            throw FileFailure(failure: e, path: directory.path().string()).error();
         };
     }
 
@@ -64,7 +64,7 @@ object RootedEntry does Closing {
         catch e is NativeFailure {
             throw FileFailure(e).error();
         };
-        FileStatFromMap(origin: metadata).value();
+        FileStatFromMap(origin: metadata).stat();
     }
 
     bytes_at(offset is int, limit is int) is @byte {

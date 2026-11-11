@@ -10,7 +10,7 @@ import "fs/error" take FileError;
 import "fs/directory" take Directory, DirectoryEntry;
 import "fs/stat" take FileKind;
 import "fs/lock" take FileLock, FileLockMode;
-import "fs/temp" take TemporaryFile, TemporaryFilePath;
+import "fs/temp" take TemporaryFile;
 import "io/buffer" take ByteBuffer;
 import "io/decorators" take ByteSnapshot;
 import "io/stream" take Closing;
@@ -202,7 +202,7 @@ object MboxLease does Closing {
     has guard is FileLock;
 
     MboxLease(path is Path) {
-        let coordinate = Path(path.string() + ".okkama-mbox.lock", path.style());
+        let coordinate = Path(path.string() + ".okkama-mbox.lock", path::Grammar::style);
         try {
             confirm DirectoryEntry(coordinate).kind() == FileKind.file
                 else throw InvalidMailbox.located(0, "mbox lock is not a regular file");
@@ -337,11 +337,11 @@ object MboxReplacement {
 
     commit() is void {
         lease.check();
-        let temporary = TemporaryFile(Directory(path.parent()), ".okkama-mbox-");
+        let temporary = TemporaryFile(directory: Directory(path.parent()), prefix: ".okkama-mbox-");
         try {
             temporary.write(ByteSnapshot(wire));
             temporary.flush();
-            FileEntry(TemporaryFilePath(temporary).value()).move(path);
+            FileEntry(temporary.path()).move(path);
         }
         catch failure is Error {
             try {

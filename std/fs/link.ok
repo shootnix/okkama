@@ -1,8 +1,11 @@
 module fs/link v1.0.0;
 
+import "fs/directory" take Directory;
 import "fs/entry" take FileEntry;
+import "fs/file" take File, FileMode;
 import "fs/error" take FileError, FileFailure;
 import "fs/path" take Path;
+import "fs/temp" take TemporaryDirectory;
 import "runtime/fs" take path_encode, path_decode, lstat, unlink, link, symlink, readlink;
 
 // SymbolicLink is a path command object. Construction never touches the
@@ -46,7 +49,7 @@ object SymbolicLink {
                 false;
             }
             else {
-                throw FileFailure(failure, origin.string()).error();
+                throw FileFailure(failure: failure, path: origin.string()).error();
             }
         }
     }
@@ -57,7 +60,7 @@ object SymbolicLink {
             Path(path_decode(readlink(path_encode(origin.string()))));
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, origin.string()).error();
+            throw FileFailure(failure: failure, path: origin.string()).error();
         }
     }
 
@@ -69,7 +72,7 @@ object SymbolicLink {
             );
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, origin.string()).error();
+            throw FileFailure(failure: failure, path: origin.string()).error();
         }
     }
 
@@ -79,7 +82,7 @@ object SymbolicLink {
             unlink(path_encode(origin.string()));
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, origin.string()).error();
+            throw FileFailure(failure: failure, path: origin.string()).error();
         }
     }
 }
@@ -96,7 +99,7 @@ object HardLink {
             lstat(path_encode(source_path.string()))["kind"];
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, source_path.string()).error();
+            throw FileFailure(failure: failure, path: source_path.string()).error();
         };
         confirm kind == 1 else throw FileError.invalid_hard_link_source(source_path.string());
         try {
@@ -106,7 +109,101 @@ object HardLink {
             );
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, destination.string()).error();
+            throw FileFailure(failure: failure, path: destination.string()).error();
         }
     }
+}
+
+test "a symbolic link stores its target as given; a broken one still exists" {
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "fs-link-test-");
+    let root = scratch.path();
+    let current = SymbolicLink(path: root.child("current"));
+    test.ok(!current.existence());
+    current.create(Path("v3.2.0"));
+    test.ok(current.existence());
+    test.is(current.target(), Path("v3.2.0"));
+    test.ok(!FileEntry(path: root.child("v3.2.0")).existence());
+    test.ok(try {
+        current.create(Path("v4"));
+        false;
+    }
+    catch FileError.already_exists(failed) {
+        failed == current.path().string();
+    });
+    current.remove();
+    test.ok(!current.existence());
+    test.ok(try {
+        current.target();
+        false;
+    }
+    catch FileError.not_symbolic_link(failed) {
+        failed == current.path().string();
+    });
+    scratch.close();
+}
+
+test "remove() never deletes what is not a link" {
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "fs-link-test-");
+    let notes = scratch.path().child("notes.txt");
+    File(path: notes, mode: FileMode.writing).text().write("kept");
+    test.ok(!SymbolicLink(path: notes).existence());
+    test.ok(try {
+        SymbolicLink(path: notes).remove();
+        false;
+    }
+    catch FileError.not_symbolic_link(failed) {
+        failed == notes.string();
+    });
+    test.is(File(path: notes).text().content(), "kept");
+    test.ok(try {
+        SymbolicLink(path: scratch.path()).remove();
+        false;
+    }
+    catch FileError.not_symbolic_link(failed) {
+        failed == scratch.path().string();
+    });
+    scratch.close();
+}
+
+test "a hard link shares the file; only a regular file can be its source" {
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "fs-link-test-");
+    let root = scratch.path();
+    let state = root.child("state.db");
+    File(path: state, mode: FileMode.writing).text().write("v1");
+    let snapshot = root.child("snapshot.db");
+    HardLink(source: FileEntry(path: state), destination: snapshot).create();
+    test.is(File(path: snapshot).text().content(), "v1");
+    File(path: state, mode: FileMode.appending).text().write("+v2");
+    test.is(File(path: snapshot).text().content(), "v1+v2");
+    test.ok(try {
+        HardLink(source: FileEntry(path: state), destination: snapshot).create();
+        false;
+    }
+    catch FileError.already_exists(failed) {
+        failed == snapshot.string();
+    });
+    Directory(path: root.child("folder")).create();
+    test.ok(try {
+        HardLink(source: FileEntry(path: root.child("folder")), destination: root.child("x")).create();
+        false;
+    }
+    catch FileError.invalid_hard_link_source(failed) {
+        failed == root.child("folder").string();
+    });
+    SymbolicLink(path: root.child("alias")).create(state);
+    test.ok(try {
+        HardLink(source: FileEntry(path: root.child("alias")), destination: root.child("y")).create();
+        false;
+    }
+    catch FileError.invalid_hard_link_source(failed) {
+        failed == root.child("alias").string();
+    });
+    test.ok(try {
+        HardLink(source: FileEntry(path: root.child("absent")), destination: root.child("z")).create();
+        false;
+    }
+    catch FileError.not_found(failed) {
+        failed == root.child("absent").string();
+    });
+    scratch.close();
 }

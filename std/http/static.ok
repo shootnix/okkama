@@ -315,14 +315,14 @@ object StaticFiles does Handling {
         let owned = StaticSelection(opened, "");
         defer owned.close_unclaimed();
         let metadata = opened.stat();
-        if metadata.kind() == FileKind.directory && !path.slash() {
+        if metadata::Shape::kind == FileKind.directory && !path.slash() {
             return Response(
                 status: Status.permanent_redirect,
                 headers: Headers([Header(HeaderName("Location"), path.redirect())])
             );
         }
-        let chosen = self.index(coordinates, metadata.kind() == FileKind.directory);
-        if metadata.kind() == FileKind.directory {
+        let chosen = self.index(coordinates, metadata::Shape::kind == FileKind.directory);
+        if metadata::Shape::kind == FileKind.directory {
             if chosen.size() == 0 {
                 if !policy.listing() {
                     return Response(status: Status.forbidden);
@@ -332,7 +332,7 @@ object StaticFiles does Handling {
             owned.replace(chosen[0].entry(), "", chosen[0].name());
         }
         else {
-            confirm metadata.kind() == FileKind.file else throw InvalidStaticPath.invalid;
+            confirm metadata::Shape::kind == FileKind.file else throw InvalidStaticPath.invalid;
             if path.slash() {
                 return Response(status: Status.not_found);
             }
@@ -354,7 +354,7 @@ object StaticFiles does Handling {
         let companions = self.companions(
             coordinates,
             owned.name(),
-            metadata.kind() == FileKind.directory,
+            metadata::Shape::kind == FileKind.directory,
             source_stat,
             policy.precompressed()
         );
@@ -389,9 +389,9 @@ object StaticFiles does Handling {
         }
         let file = owned.entry();
         let facts = file.stat();
-        confirm facts.size() >= 0 && facts.size() <= 9007199254740991
+        confirm facts::Shape::size >= 0 && facts::Shape::size <= 9007199254740991
             else throw InvalidStaticPolicy.because("file size exceeds exact offsets");
-        let size = facts.size();
+        let size = facts::Shape::size;
         let tag = StaticValidator(facts, owned.coding()).tag();
         let modified = facts.times().modification();
         let date = HttpDate(if modified.order(now) == Order.greater {
@@ -541,7 +541,7 @@ object StaticFiles does Handling {
             };
             if candidates.size() == 1 {
                 let candidate = candidates[0];
-                if candidate.stat().kind() == FileKind.file {
+                if candidate.stat()::Shape::kind == FileKind.file {
                     return [StaticIndexFile(candidate, name)];
                 }
                 candidate.close();
@@ -599,7 +599,7 @@ object StaticFiles does Handling {
             if candidates.size() == 1 {
                 let candidate = candidates[0];
                 let metadata = candidate.stat();
-                if metadata.kind() == FileKind.file
+                if metadata::Shape::kind == FileKind.file
                     && metadata.times().modification().order(facts.times().modification()) == Order.equal {
                         return [StaticRepresentation(candidate, coding)];
                     }
@@ -778,7 +778,7 @@ object StaticValidator {
     has tag is EntityTag;
 
     StaticValidator(facts is FileStat, coding is string) {
-        let value = facts.identity().device().string() + "-" + facts.identity().inode().string() + "-" + facts.size().string() + "-" + facts.times().modification().unix_duration()::Span::seconds.int().string() + "-" + facts.times().change().unix_duration()::Span::seconds.int().string() + "-" + coding;
+        let value = facts.identity()::Identity::device.string() + "-" + facts.identity().inode().string() + "-" + facts::Shape::size.string() + "-" + facts.times().modification().unix_duration()::Span::seconds.int().string() + "-" + facts.times().change().unix_duration()::Span::seconds.int().string() + "-" + coding;
         tag = EntityTag(value, true);
     }
 

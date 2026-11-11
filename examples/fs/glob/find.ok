@@ -1,0 +1,50 @@
+module examples/fs/glob/find v1.0.0;
+
+import "fs/directory" take Directory, DirectoryTree;
+import "fs/file" take File, FileMode;
+import "fs/glob" take MatchingPaths, InvalidGlobPattern;
+import "fs/path" take Path;
+import "io/stdout" take Stdout;
+
+// Find files by pattern below a root. `*` and `?` stay inside one segment,
+// `[a-z]` and `[!x]` are classes, and `**` crosses any number of segments.
+// Results come sorted and joined to the root.
+
+main() is int {
+    let out = Stdout();
+    for ["app", "app/src", "app/src/net", "app/logs"] -> folder {
+        Directory(path: Path(folder)).create();
+    }
+    for [
+        "app/src/main.ok", "app/src/util.ok", "app/src/util-test.ok", "app/src/net/tcp.ok",
+        "app/src/net/tcp-test.ok", "app/logs/2026-01.log", "app/logs/2026-11.log",
+    ] -> name {
+        File(path: Path(name), mode: FileMode.writing).text().write("");
+    }
+    let app = Directory(path: Path("app"));
+
+    out.writeln("sources:");
+    for MatchingPaths(root: app, pattern: "src/*.ok") -> path {
+        out.writeln("  " + path.string());
+    }
+    out.writeln("tests anywhere:");
+    for MatchingPaths(root: app, pattern: "**/*-test.ok") -> path {
+        out.writeln("  " + path.string());
+    }
+    let late = MatchingPaths(root: app, pattern: "logs/2026-1?.log").map() -> path {
+        path.string();
+    };
+    out.writeln("late logs: " + late.size().string());
+
+    let refused = try {
+        MatchingPaths(root: app, pattern: "src/[a-").map() -> path { path.string(); };
+        "accepted";
+    }
+    catch failure is InvalidGlobPattern {
+        "refused";
+    };
+    out.writeln("bad pattern: " + refused);
+
+    DirectoryTree(origin: app).remove();
+    0;
+}

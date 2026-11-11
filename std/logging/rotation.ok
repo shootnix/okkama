@@ -88,7 +88,7 @@ object LogArchiveCatalog {
     }
 
     records() is @LogArchive {
-        let lexical = if path.style() == PathStyle.windows {
+        let lexical = if path::Grammar::style == PathStyle.windows {
             path.string().split("\\").join("/");
         }
         else {
@@ -285,7 +285,7 @@ object RotatingLogFile does Writing, Closing {
             else throw InvalidLogRotation.because("invalid archive suffix");
         let target = Path(
             path.string() + ".archive." + generation.string() + "." + suffix,
-            path.style()
+            path::Grammar::style
         );
         file.release();
         try {

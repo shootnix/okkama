@@ -473,8 +473,54 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     fs/file, the http client side): 1 375 lines that described APIs no
     longer in the tree. §17.6 shows a plain call after a constructor
     instead of the removed `#projected` (#367).
+- **std review, wave 2: formats and system (#352).** The card is
+  `okkama-docs/std-review/cards/wave-2-formats.md`, and the owner's decision
+  is at its end. This entry grows as each area is done.
+  - `fs`:
+    - Records show their data through caps (the owner: a cap holds ready
+      fields, not work):
+      - `FileStat::Shape` holds `kind` and `size`;
+      - `FileIdentity::Identity` holds `device`;
+      - `Permissions::Access` holds `readable`, `writable` and `executable`;
+      - `FileEvent::Change` holds `kind`;
+      - `Path::Grammar` holds `style`.
+
+      `mode()`, `times()`, `identity()` and `path()` stay actions, because
+      they answer objects.
+    - Helpers answer with their nouns: `FileStatFromMap(...).stat()` and
+      `NativePathStyle().style()`. `EpochInstant`, `PermissionBits`,
+      `FileKindFromCode`, `PathStyleCode`, the directory and glob cursors
+      and `ExhaustedDescendantCursor` are hidden, and the unused
+      `TemporaryFilePath` is gone.
+    - Constructors bind:
+      - `FileEvent` keeps its previous path as a `Maybe<Path>`;
+      - `Path` keeps the host grammar it reads (`==` depends on it).
+
+      Resource handles (`File`, `FileWatch`, `TemporaryFile`,
+      `TemporaryDirectory`, `FileRoot`) still open in their constructor.
+      That is a question for the owner.
+    - Constructors of several values are called with named arguments: 49
+      calls in std and the examples.
+    - Inline tests for every fs module that had none: `path`, `entry`,
+      `directory`, `glob`, `link`, `temp` and `watch`. That includes an
+      async watch test, run in a container. `error` and `lock` are tested
+      through `entry` and `file`.
+
 ### Fixed
 
+- **fs/path: a Windows root is its own parent (#492).**
+  `Path("C:\\", PathStyle.windows).parent()` gave `C:`, which is the
+  current directory of drive C, not its root. All three engines had the bug,
+  because they carry the same port of `File::Spec`. The fs/path comment now
+  says what joining really does: it tidies `.` segments and repeated
+  separators and keeps `..`. Conformance case `L09.path.lexical-grammar`
+  covers both.
+- **Temporary paths are tidy on every engine.** `TemporaryDirectory(parent:
+  Directory(path: Path(".")), …).path()` was `./ocs-…` on IR and the JVM,
+  and `/cwd/./ocs-…` on Sparrow. So `file.path().parent()` did not equal
+  the directory it was made in. All three now join the parent as the program
+  spelled it and tidy the result, as `child()` does. Case
+  `L10.fs.temporary-paths-are-tidy` covers it.
 - Traversals own what they walk, and keep no record of what they walked
   (#483, #484). This was fixed as one lifetime model.
   - The scope of the loop adopts the source once, as a `let` would.

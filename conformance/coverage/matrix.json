@@ -13045,7 +13045,7 @@
     "std/fs/directory.ok"
    ],
    "status": "mandatory",
-   "title": "std fs/directory public contract (DescendantCursor, DescendantCursorFrom, Descendants, Directory, DirectoryEntries, DirectoryEntry, DirectoryEntryCursor, DirectoryLocating, DirectoryTree, ExhaustedDescendantCursor)"
+   "title": "std fs/directory public contract (Descendants, Directory, DirectoryEntries, DirectoryEntry, DirectoryLocating, DirectoryTree)"
   },
   {
    "aspects": {
@@ -13212,7 +13212,7 @@
     "std/fs/glob.ok"
    ],
    "status": "mandatory",
-   "title": "std fs/glob public contract (InvalidGlobPattern, MatchingPathCursor, MatchingPaths)"
+   "title": "std fs/glob public contract (InvalidGlobPattern, MatchingPaths)"
   },
   {
    "aspects": {
@@ -13287,9 +13287,12 @@
   {
    "aspects": {
     "boundary": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L09.path.lexical-grammar"
+     ],
+     "mandatory_cases": [
+      "L09.path.lexical-grammar"
+     ],
      "requirement": "required"
     },
     "interaction": {
@@ -13304,9 +13307,14 @@
      "requirement": "required"
     },
     "normal": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L09.path.lexical-grammar",
+      "L10.fs.temporary-paths-are-tidy"
+     ],
+     "mandatory_cases": [
+      "L09.path.lexical-grammar",
+      "L10.fs.temporary-paths-are-tidy"
+     ],
      "requirement": "required"
     }
    },
@@ -13317,7 +13325,7 @@
     "std/fs/path.ok"
    ],
    "status": "mandatory",
-   "title": "std fs/path public contract (InvalidPath, NativePathStyle, Path, PathStyle, PathStyleCode)"
+   "title": "std fs/path public contract (InvalidPath, NativePathStyle, Path, PathStyle)"
   },
   {
    "aspects": {
@@ -13387,16 +13395,18 @@
     "std/fs/stat.ok"
    ],
    "status": "mandatory",
-   "title": "std fs/stat public contract (EpochInstant, FileIdentity, FileKind, FileKindFromCode, FileStat, FileStatFromMap, FileTimes, InvalidPermissionMode, MissingCreationTime, PermissionBits, PermissionMode, Permissions)"
+   "title": "std fs/stat public contract (FileIdentity, FileKind, FileStat, FileStatFromMap, FileTimes, InvalidPermissionMode, MissingCreationTime, PermissionMode, Permissions)"
   },
   {
    "aspects": {
     "boundary": {
      "cases": [
-      "L10.fs.temporary-directory-cleanup"
+      "L10.fs.temporary-directory-cleanup",
+      "L10.fs.temporary-paths-are-tidy"
      ],
      "mandatory_cases": [
-      "L10.fs.temporary-directory-cleanup"
+      "L10.fs.temporary-directory-cleanup",
+      "L10.fs.temporary-paths-are-tidy"
      ],
      "requirement": "required"
     },
@@ -13413,10 +13423,12 @@
     },
     "normal": {
      "cases": [
-      "L10.fs.temporary-directory-cleanup"
+      "L10.fs.temporary-directory-cleanup",
+      "L10.fs.temporary-paths-are-tidy"
      ],
      "mandatory_cases": [
-      "L10.fs.temporary-directory-cleanup"
+      "L10.fs.temporary-directory-cleanup",
+      "L10.fs.temporary-paths-are-tidy"
      ],
      "requirement": "required"
     }
@@ -13428,7 +13440,7 @@
     "std/fs/temp.ok"
    ],
    "status": "mandatory",
-   "title": "std fs/temp public contract (TemporaryDirectory, TemporaryFile, TemporaryFilePath, TemporaryFilePreservation)"
+   "title": "std fs/temp public contract (TemporaryDirectory, TemporaryFile, TemporaryFilePreservation)"
   },
   {
    "aspects": {
@@ -31381,8 +31393,6 @@
    "STD.FS.LOCK [normal]",
    "STD.FS.LOCK [boundary]",
    "STD.FS.LOCK [invalid]",
-   "STD.FS.PATH [normal]",
-   "STD.FS.PATH [boundary]",
    "STD.FS.PATH [invalid]",
    "STD.FS.ROOT [normal]",
    "STD.FS.ROOT [boundary]",
@@ -32441,7 +32451,6 @@
    "STD.FS.GLOB",
    "STD.FS.LINK",
    "STD.FS.LOCK",
-   "STD.FS.PATH",
    "STD.FS.ROOT",
    "STD.FS.STAT",
    "STD.FS.WATCH",
@@ -32764,5 +32773,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "032386fa6ff1d6e0a7007404c663c6af295b950b7f931d9a9ca0bf12fed93770"
+ "suite_tree_sha256": "b607dde5aa1c2688a36a29d7e3270732ad66862e0a9567a844f12166a82447b3"
 }

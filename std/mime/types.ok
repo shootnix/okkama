@@ -126,7 +126,7 @@ object SystemMediaTypes does MediaIdentifying {
     has table is MappedMediaTypes;
 
     SystemMediaTypes(fallback is MediaIdentifying) {
-        let files is @Path = if NativePathStyle().value() == PathStyle.posix {
+        let files is @Path = if NativePathStyle().style() == PathStyle.posix {
             [Path("/etc/mime.types")];
         }
         else {
@@ -247,7 +247,7 @@ object MediaFileName {
 
     string() is string {
         let text = origin.string();
-        let windows = origin.style() == PathStyle.windows;
+        let windows = origin::Grammar::style == PathStyle.windows;
         let start = MimePosition(0);
         for (0..text.length()) -> index {
             let char = text.slice(index, index + 1);

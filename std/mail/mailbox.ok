@@ -15,7 +15,7 @@ import "fs/lock" take FileLock, FileLockMode;
 import "fs/file" take File, FileMode;
 import "fs/entry" take FileEntry;
 import "fs/error" take FileError;
-import "fs/temp" take TemporaryFile, TemporaryFilePath;
+import "fs/temp" take TemporaryFile;
 import "fs/link" take HardLink;
 import "random/source" take Randomizing, SecureRandom;
 import "encoding/hex" take HexEncoded;
@@ -599,7 +599,7 @@ object MaildirDelivery {
         let bytes = MimePart(message.headers(), message.body(), limits.mime()).bytes();
         confirm bytes.size() <= limits.wire_bytes()
             else throw MailboxLimitExceeded.kind("wire_bytes");
-        let temporary = TemporaryFile(Directory(origin.path().child("tmp")), ".okkama-");
+        let temporary = TemporaryFile(directory: Directory(origin.path().child("tmp")), prefix: ".okkama-");
         let identifier = try {
             temporary.write(ByteSnapshot(bytes));
             temporary.flush();
@@ -790,7 +790,7 @@ object MaildirPublication {
     }
 
     identifier() is string {
-        let source = FileEntry(TemporaryFilePath(temporary).value());
+        let source = FileEntry(temporary.path());
         for (0..32) -> attempt {
             let bytes = random.bytes(24);
             confirm bytes.size() == 24
@@ -862,7 +862,7 @@ object MaildirEntries {
         for ["new", "cur"] -> child {
             for DirectoryEntries(Directory(origin.child(child))) -> entry {
                 let path = entry.path();
-                let text = if path.style() == PathStyle.windows {
+                let text = if path::Grammar::style == PathStyle.windows {
                     path.string().split("\\").last().split("/").last();
                 }
                 else {

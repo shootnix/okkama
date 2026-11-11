@@ -32,6 +32,17 @@ and compares the output.
 | `fs/directory/manage.ok` | create, rename and remove a directory; remove a full one |
 | `fs/directory/errors.ok` | catch the cases of `FileError`: missing, already there, not empty |
 
+## fs/path, fs/entry, fs/temp, fs/glob, fs/link, fs/watch
+
+| Program | Task |
+|---|---|
+| `fs/path/paths.ok` | join parts, walk up to parents, tidy `.` and doubled separators, name a foreign grammar |
+| `fs/entry/inspect.ok` | ask whether a path exists, its kind, size and permissions; move it, remove it |
+| `fs/temp/scratch.ok` | a scratch directory and file with unpredictable names; keep one file, let the rest go |
+| `fs/glob/find.ok` | find files by `*`, `?`, classes and `**`; refuse a bad pattern |
+| `fs/link/links.ok` | switch a release with a symbolic link, share a file with a hard link |
+| `fs/watch/changes.ok` | react to files created, modified, renamed and removed in a directory |
+
 ## strings/parse
 
 | Program | Task |

@@ -1,9 +1,11 @@
 module fs/entry v1.0.0;
 
 import "fs/path" take Path;
-import "fs/stat" take FileStat, FileStatFromMap;
-import "fs/error" take FileFailure;
-import "runtime/fs" take path_encode, stat, unlink, rename;
+import "fs/stat" take FileKind, FileStat, FileStatFromMap;
+import "fs/error" take FileError, FileFailure;
+import "runtime/fs" take path_encode, stat, unlink, rename, path_decode, temporary_directory_create,
+    temporary_directory_path, temporary_directory_close, temporary_file_create, temporary_file_path,
+    temporary_file_preserve, file_state_write, file_state_flush, file_state_close;
 
 // A path on disk, opened or not: whether something is there, what it is, and
 // removing or moving it. Reading and writing go through fs/file.
@@ -34,17 +36,17 @@ object FileEntry {
                 false;
             }
             else {
-                throw FileFailure(failure, origin.string()).error();
+                throw FileFailure(failure: failure, path: origin.string()).error();
             }
         }
     }
 
     stat() is FileStat {
         try {
-            FileStatFromMap(origin: stat(path_encode(origin.string()))).value();
+            FileStatFromMap(origin: stat(path_encode(origin.string()))).stat();
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, origin.string()).error();
+            throw FileFailure(failure: failure, path: origin.string()).error();
         }
     }
 
@@ -53,7 +55,7 @@ object FileEntry {
             unlink(path_encode(origin.string()));
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, origin.string()).error();
+            throw FileFailure(failure: failure, path: origin.string()).error();
         }
     }
 
@@ -65,7 +67,66 @@ object FileEntry {
             );
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, origin.string()).error();
+            throw FileFailure(failure: failure, path: origin.string()).error();
         }
     }
+}
+
+test "an entry tells whether something is there, what it is and how big" {
+    let scratch = temporary_directory_create(path_encode("."), "fs-entry-test-");
+    let root = Path(path_decode(temporary_directory_path(scratch)));
+    let file = temporary_file_create(path_encode(root.string()), "notes-");
+    file_state_write(file, [byte(104), byte(105), byte(10)]);
+    file_state_flush(file);
+    let entry = FileEntry(path: Path(path_decode(temporary_file_path(file))));
+    test.ok(entry.existence());
+    test.is(entry.stat()::Shape::kind, FileKind.file);
+    test.is(entry.stat()::Shape::size, 3);
+    test.ok(entry.stat().mode().owner()::Access::readable);
+    let folder = FileEntry(path: root);
+    test.ok(folder.existence());
+    test.is(folder.stat()::Shape::kind, FileKind.directory);
+    let missing = FileEntry(path: root.child("missing.txt"));
+    test.ok(!missing.existence());
+    test.ok(try {
+        missing.stat();
+        false;
+    }
+    catch FileError.not_found(failed) {
+        failed == missing.path().string();
+    });
+    file_state_close(file);
+    temporary_directory_close(scratch);
+}
+
+test "an entry moves and is removed; both name the path when it is gone" {
+    let scratch = temporary_directory_create(path_encode("."), "fs-entry-test-");
+    let root = Path(path_decode(temporary_directory_path(scratch)));
+    let file = temporary_file_create(path_encode(root.string()), "draft-");
+    temporary_file_preserve(file, path_encode(root.child("draft.txt").string()));
+    file_state_close(file);
+    let draft = FileEntry(path: root.child("draft.txt"));
+    test.ok(draft.existence());
+    draft.move(root.child("final.txt"));
+    test.ok(!draft.existence());
+    let kept = FileEntry(path: root.child("final.txt"));
+    test.ok(kept.existence());
+    test.is(kept.path(), root.child("final.txt"));
+    test.ok(try {
+        draft.move(root.child("other.txt"));
+        false;
+    }
+    catch FileError.not_found(failed) {
+        failed == draft.path().string();
+    });
+    kept.remove();
+    test.ok(!kept.existence());
+    test.ok(try {
+        kept.remove();
+        false;
+    }
+    catch FileError.not_found(failed) {
+        failed == kept.path().string();
+    });
+    temporary_directory_close(scratch);
 }

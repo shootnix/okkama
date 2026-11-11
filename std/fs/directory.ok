@@ -6,7 +6,9 @@ import "fs/error" take FileError, FileFailure;
 import "fs/path" take Path;
 import "fs/stat" take FileKind, FileStat, FileStatFromMap;
 import "runtime/fs" take path_encode, lstat, mkdir, rmdir, rename, directory_entries,
-    directory_remove_tree;
+    directory_remove_tree, path_decode, symlink, temporary_directory_create,
+    temporary_directory_path, temporary_directory_close, temporary_file_create, temporary_file_path,
+    file_state_close;
 
 // Directory is a narrow path command object. create() creates one level with
 // portable 0755 permissions filtered by the process umask. remove() removes
@@ -55,7 +57,7 @@ object Directory does DirectoryLocating {
                 false;
             }
             else {
-                throw FileFailure(failure, origin.string()).error();
+                throw FileFailure(failure: failure, path: origin.string()).error();
             }
         }
     }
@@ -65,7 +67,7 @@ object Directory does DirectoryLocating {
             mkdir(path_encode(origin.string()), 493);
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, origin.string()).error();
+            throw FileFailure(failure: failure, path: origin.string()).error();
         }
     }
 
@@ -74,7 +76,7 @@ object Directory does DirectoryLocating {
             rmdir(path_encode(origin.string()));
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, origin.string()).error();
+            throw FileFailure(failure: failure, path: origin.string()).error();
         }
     }
 
@@ -86,7 +88,7 @@ object Directory does DirectoryLocating {
             );
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, origin.string()).error();
+            throw FileFailure(failure: failure, path: origin.string()).error();
         }
     }
 }
@@ -103,15 +105,15 @@ object DirectoryEntry {
     }
 
     kind() is FileKind {
-        self.stat().kind();
+        self.stat()::Shape::kind;
     }
 
     stat() is FileStat {
         try {
-            FileStatFromMap(origin: lstat(path_encode(origin.string()))).value();
+            FileStatFromMap(origin: lstat(path_encode(origin.string()))).stat();
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, origin.string()).error();
+            throw FileFailure(failure: failure, path: origin.string()).error();
         }
     }
 }
@@ -134,12 +136,12 @@ object DirectoryEntries does Iterating<DirectoryEntry> {
             );
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, origin.path().string()).error();
+            throw FileFailure(failure: failure, path: origin.path().string()).error();
         }
     }
 }
 
-object DirectoryEntryCursor does Cursor<DirectoryEntry> {
+hidden object DirectoryEntryCursor does Cursor<DirectoryEntry> {
     has parent is Path;
     has names is @string;
     has position is int;
@@ -177,11 +179,11 @@ object Descendants does Iterating<DirectoryEntry> {
         DescendantCursorFrom(
             current: DirectoryEntries(origin: origin).cursor(),
             following: following,
-        ).value();
+        ).cursor();
     }
 }
 
-object DescendantCursor does Cursor<DirectoryEntry> {
+hidden object DescendantCursor does Cursor<DirectoryEntry> {
     has current is Cursor<DirectoryEntry>;
     has following is List<Cursor<DirectoryEntry>>;
 
@@ -204,24 +206,24 @@ object DescendantCursor does Cursor<DirectoryEntry> {
                     origin: Directory(path: entry.path()),
                 ).cursor(),
                 following: following.prefix(sibling),
-            ).value();
+            ).cursor();
         }
         else {
             DescendantCursorFrom(
                 current: sibling,
                 following: following,
-            ).value();
+            ).cursor();
         }
     }
 }
 
-object DescendantCursorFrom {
+hidden object DescendantCursorFrom {
     has current is Cursor<DirectoryEntry>;
     has following is List<Cursor<DirectoryEntry>>;
 
     DescendantCursorFrom(:current, :following);
 
-    value() is Cursor<DirectoryEntry> {
+    cursor() is Cursor<DirectoryEntry> {
         if current.available() {
             DescendantCursor(current: current, following: following);
         }
@@ -230,7 +232,7 @@ object DescendantCursorFrom {
                 DescendantCursorFrom(
                     current: following.first(),
                     following: following.tail(),
-                ).value();
+                ).cursor();
             }
             else {
                 ExhaustedDescendantCursor();
@@ -239,7 +241,7 @@ object DescendantCursorFrom {
     }
 }
 
-object ExhaustedDescendantCursor does Cursor<DirectoryEntry> {
+hidden object ExhaustedDescendantCursor does Cursor<DirectoryEntry> {
     ExhaustedDescendantCursor();
 
     available() is bool {
@@ -268,7 +270,150 @@ object DirectoryTree {
             directory_remove_tree(path_encode(removed.string()));
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, removed.string()).error();
+            throw FileFailure(failure: failure, path: removed.string()).error();
         }
     }
+}
+
+test "a directory is created, found, moved and removed one level at a time" {
+    let scratch = temporary_directory_create(path_encode("."), "fs-directory-test-");
+    let root = Path(path_decode(temporary_directory_path(scratch)));
+    let first = Directory(path: root.child("first"));
+    test.ok(Directory(path: root).existence());
+    test.ok(!first.existence());
+    first.create();
+    test.ok(first.existence());
+    test.ok(try {
+        first.create();
+        false;
+    }
+    catch FileError.already_exists(failed) {
+        failed == root.child("first").string();
+    });
+    first.move(root.child("second"));
+    test.ok(!first.existence());
+    let second = Directory(path: root.child("second"));
+    test.ok(second.existence());
+    test.is(second.path(), root.child("second"));
+    Directory(path: second.path().child("inner")).create();
+    test.ok(try {
+        second.remove();
+        false;
+    }
+    catch FileError.not_empty(failed) {
+        failed == second.path().string();
+    });
+    Directory(path: second.path().child("inner")).remove();
+    second.remove();
+    test.ok(!second.existence());
+    test.ok(try {
+        second.remove();
+        false;
+    }
+    catch FileError.not_found(failed) {
+        failed == second.path().string();
+    });
+    test.ok(try {
+        Directory(path: root.child("absent").child("x")).create();
+        false;
+    }
+    catch FileError.not_found(failed) {
+        failed == root.child("absent").child("x").string();
+    });
+    temporary_directory_close(scratch);
+}
+
+test "entries come sorted by name, one level only; a file is not a directory" {
+    let scratch = temporary_directory_create(path_encode("."), "fs-directory-test-");
+    let root = Path(path_decode(temporary_directory_path(scratch)));
+    for ["b", "a", "c"] -> name {
+        Directory(path: root.child(name)).create();
+    }
+    Directory(path: root.child("c").child("d")).create();
+    let file = temporary_file_create(path_encode(root.string()), "f-");
+    let file_path = Path(path_decode(temporary_file_path(file)));
+    let listed is @string = DirectoryEntries(origin: Directory(path: root)).map() -> entry {
+        entry.path().string();
+    };
+    test.is(listed, [root.child("a").string(), root.child("b").string(), root.child("c").string(), file_path.string()]);
+    let kinds is @FileKind = DirectoryEntries(origin: Directory(path: root)).map() -> entry {
+        entry.kind();
+    };
+    test.is(kinds, [FileKind.directory, FileKind.directory, FileKind.directory, FileKind.file]);
+    test.ok(!Directory(path: file_path).existence());
+    test.is(DirectoryEntry(path: file_path).stat()::Shape::size, 0);
+    let empty is @Path = DirectoryEntries(origin: Directory(path: root.child("a"))).map() -> entry {
+        entry.path();
+    };
+    test.is(empty, []);
+    test.ok(try {
+        DirectoryEntries(origin: Directory(path: root.child("absent"))).cursor();
+        false;
+    }
+    catch FileError.not_found(failed) {
+        failed == root.child("absent").string();
+    });
+    file_state_close(file);
+    temporary_directory_close(scratch);
+}
+
+test "descendants come in preorder, children sorted; a tree is removed bottom-up" {
+    let scratch = temporary_directory_create(path_encode("."), "fs-directory-test-");
+    let root = Path(path_decode(temporary_directory_path(scratch)));
+    for [["b"], ["a"], ["a", "y"], ["a", "x"], ["a", "x", "deep"], ["c"]] -> parts {
+        let path is Path = parts.reduce(root) -> at, part {
+            at.child(part);
+        };
+        Directory(path: path).create();
+    }
+    let walked is @Path = Descendants(origin: Directory(path: root)).map() -> entry {
+        entry.path();
+    };
+    test.is(walked, [
+        root.child("a"),
+        root.child("a").child("x"),
+        root.child("a").child("x").child("deep"),
+        root.child("a").child("y"),
+        root.child("b"),
+        root.child("c"),
+    ]);
+    let none_below is @Path = Descendants(origin: Directory(path: root.child("c"))).map() -> entry {
+        entry.path();
+    };
+    test.is(none_below, []);
+    DirectoryTree(origin: Directory(path: root.child("a"))).remove();
+    test.ok(!Directory(path: root.child("a")).existence());
+    test.ok(Directory(path: root.child("b")).existence());
+    test.ok(try {
+        DirectoryTree(origin: Directory(path: root.child("a"))).remove();
+        false;
+    }
+    catch FileError.not_found(failed) {
+        failed == root.child("a").string();
+    });
+    temporary_directory_close(scratch);
+}
+
+test "a directory symlink is a leaf: listed, never entered, removed without its target" {
+    let scratch = temporary_directory_create(path_encode("."), "fs-directory-test-");
+    let root = Path(path_decode(temporary_directory_path(scratch)));
+    let target = root.child("target");
+    Directory(path: target).create();
+    Directory(path: target.child("kept")).create();
+    let tree = root.child("tree");
+    Directory(path: tree).create();
+    symlink(path_encode(target.string()), path_encode(tree.child("link").string()));
+    let walked is @Path = Descendants(origin: Directory(path: tree)).map() -> entry {
+        entry.path();
+    };
+    test.is(walked, [tree.child("link")]);
+    let kinds is @FileKind = Descendants(origin: Directory(path: tree)).map() -> entry {
+        entry.kind();
+    };
+    test.is(kinds, [FileKind.symbolic_link]);
+    test.ok(!Directory(path: tree.child("link")).existence());
+    DirectoryTree(origin: Directory(path: tree)).remove();
+    test.ok(!Directory(path: tree).existence());
+    test.ok(Directory(path: target.child("kept")).existence());
+    temporary_directory_close(scratch);
 }

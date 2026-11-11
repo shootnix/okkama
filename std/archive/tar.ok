@@ -659,19 +659,19 @@ object TarPermissionBits {
     }
 
     value() is int {
-        let read = if origin.readable() {
+        let read = if origin::Access::readable {
             4;
         }
         else {
             0;
         };
-        let write = if origin.writable() {
+        let write = if origin::Access::writable {
             2;
         }
         else {
             0;
         };
-        let execute = if origin.executable() {
+        let execute = if origin::Access::executable {
             1;
         }
         else {

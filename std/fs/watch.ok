@@ -1,7 +1,11 @@
 module fs/watch v1.0.0;
 
+import "fs/directory" take Directory;
+import "fs/entry" take FileEntry;
 import "fs/error" take FileError, FileFailure;
+import "fs/file" take File, FileMode;
 import "fs/path" take Path;
+import "fs/temp" take TemporaryDirectory;
 import "io/stream" take Closing;
 import "runtime/fs" take FileWatchState, path_encode, file_watch_create, file_watch_event,
     file_watch_closed, file_watch_close;
@@ -16,7 +20,7 @@ import "runtime/fs" take FileWatchState, path_encode, file_watch_create, file_wa
 //     let watch = FileWatch(path: workspace.path());
 //     defer watch.close();
 //     let event is FileEvent = await watch.event();
-//     output.writeln(event.kind().string(), ": ", event.path().string());
+//     output.writeln(event::Change::kind.string(), ": ", event.path().string());
 //
 // Consume changes continuously:
 //
@@ -33,7 +37,7 @@ import "runtime/fs" take FileWatchState, path_encode, file_watch_create, file_wa
 // previous_path():
 //
 //     let event is FileEvent = await watch.event();
-//     if event.kind() == FileEventKind.renamed {
+//     if event::Change::kind == FileEventKind.renamed {
 //         output.writeln(
 //             event.previous_path().string(),
 //             " -> ",
@@ -50,32 +54,41 @@ enum FileEventKind = (created, modified, removed, renamed);
 
 object FileEvent {
     has origin is Path;
-    has classification is FileEventKind;
-    has previous is string;
+    has change is FileEventKind;
+    has previous is Maybe<Path>;
 
     FileEvent(path is Path, kind is FileEventKind) {
         origin = path;
-        classification = kind;
-        previous = "";
+        change = kind;
+        previous = Maybe<Path>.none;
     }
 
     FileEvent(path is Path, kind is FileEventKind, previous_path is Path) {
         origin = path;
-        classification = kind;
-        previous = previous_path.string();
+        change = kind;
+        previous = Maybe.some(previous_path);
     }
 
     path() is Path {
         origin;
     }
 
-    kind() is FileEventKind {
-        classification;
+    // What happened to the path.
+    cap Change {
+        kind is FileEventKind {
+            change;
+        }
     }
 
     previous_path() is Path {
-        confirm !previous.empty() else throw MissingPreviousPath.path(origin.string());
-        Path(previous);
+        match previous {
+            case Maybe.some(path) {
+                path;
+            }
+            else {
+                throw MissingPreviousPath.path(origin.string());
+            }
+        }
     }
 }
 
@@ -87,7 +100,7 @@ object FileWatch does Closing {
             file_watch_create(path_encode(path.string()));
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, path.string()).error();
+            throw FileFailure(failure: failure, path: path.string()).error();
         };
     }
 
@@ -151,3 +164,67 @@ object FileWatch does Closing {
 }
 
 enum MissingPreviousPath is Error = (path(path is string));
+
+test "an event carries its path and kind; only a rename has a previous path" {
+    let created = FileEvent(path: Path("a.txt"), kind: FileEventKind.created);
+    test.is(created.path(), Path("a.txt"));
+    test.ok(created::Change::kind == FileEventKind.created);
+    test.ok(try {
+        created.previous_path();
+        false;
+    }
+    catch MissingPreviousPath.path(failed) {
+        failed == "a.txt";
+    });
+    let renamed = FileEvent(
+        path: Path("b.txt"),
+        kind: FileEventKind.renamed,
+        previous_path: Path("a.txt"),
+    );
+    test.ok(renamed::Change::kind == FileEventKind.renamed);
+    test.is(renamed.previous_path(), Path("a.txt"));
+    test.ok(renamed != FileEvent(path: Path("b.txt"), kind: FileEventKind.renamed));
+}
+
+async test "a directory watch reports its children created, modified, renamed and removed" {
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "fs-watch-test-");
+    let root = scratch.path();
+    let watch = FileWatch(path: root);
+    let notes = root.child("notes.txt");
+    File(path: notes, mode: FileMode.writing).text().write("one");
+    let created is FileEvent = await watch.event();
+    test.ok(created::Change::kind == FileEventKind.created);
+    test.is(created.path(), notes);
+    File(path: notes, mode: FileMode.appending).text().write(", two");
+    let modified is FileEvent = await watch.event();
+    test.ok(modified::Change::kind == FileEventKind.modified);
+    test.is(modified.path(), notes);
+    let kept = root.child("kept.txt");
+    FileEntry(path: notes).move(kept);
+    let renamed is FileEvent = await watch.event();
+    test.ok(renamed::Change::kind == FileEventKind.renamed);
+    test.is(renamed.path(), kept);
+    test.is(renamed.previous_path(), notes);
+    FileEntry(path: kept).remove();
+    let removed is FileEvent = await watch.event();
+    test.ok(removed::Change::kind == FileEventKind.removed);
+    test.is(removed.path(), kept);
+    test.ok(!watch.closed());
+    watch.close();
+    watch.close();
+    test.ok(watch.closed());
+    scratch.close();
+}
+
+test "a missing path cannot be watched" {
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "fs-watch-test-");
+    let missing = scratch.path().child("absent");
+    test.ok(try {
+        FileWatch(path: missing);
+        false;
+    }
+    catch FileError.not_found(failed) {
+        failed == missing.string();
+    });
+    scratch.close();
+}

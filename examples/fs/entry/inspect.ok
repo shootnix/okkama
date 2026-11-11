@@ -1,0 +1,33 @@
+module examples/fs/entry/inspect v1.0.0;
+
+import "fs/entry" take FileEntry;
+import "fs/file" take File, FileMode;
+import "fs/path" take Path;
+import "fs/stat" take FileKind;
+import "io/stdout" take Stdout;
+
+// A path on disk: is something there, what is it, how big, who may read it;
+// then move it and remove it. Reading and writing belong to fs/file.
+
+main() is int {
+    let out = Stdout();
+    let notes = FileEntry(path: Path("notes.txt"));
+    out.writeln("before: " + notes.existence().string());
+
+    let file = File(path: notes.path(), mode: FileMode.writing);
+    file.text().writeln("buy milk");
+    file.close();
+
+    let stat = notes.stat();
+    out.writeln("after: " + notes.existence().string());
+    out.writeln("file: " + (stat::Shape::kind == FileKind.file).string());
+    out.writeln("bytes: " + stat::Shape::size.string());
+    out.writeln("owner reads: " + stat.mode().owner()::Access::readable.string());
+
+    notes.move(Path("notes.old"));
+    let old = FileEntry(path: Path("notes.old"));
+    out.writeln("moved: " + notes.existence().string() + " " + old.existence().string());
+    old.remove();
+    out.writeln("removed: " + old.existence().string());
+    0;
+}

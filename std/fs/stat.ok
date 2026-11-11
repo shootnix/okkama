@@ -32,12 +32,15 @@ object FileStat {
         file_identity = identity;
     }
 
-    kind() is FileKind {
-        file_kind;
-    }
+    // What the entry is and how many bytes it holds.
+    cap Shape {
+        kind is FileKind {
+            file_kind;
+        }
 
-    size() is int {
-        byte_size;
+        size is int {
+            byte_size;
+        }
     }
 
     mode() is PermissionMode {
@@ -67,20 +70,20 @@ object FileTimes {
     }
 
     access() is Instant {
-        EpochInstant(seconds: accessed).value();
+        EpochInstant(seconds: accessed).instant();
     }
 
     modification() is Instant {
-        EpochInstant(seconds: modified).value();
+        EpochInstant(seconds: modified).instant();
     }
 
     change() is Instant {
-        EpochInstant(seconds: changed).value();
+        EpochInstant(seconds: changed).instant();
     }
 
     creation() is Instant {
         confirm created >= 0 else throw MissingCreationTime.missing;
-        EpochInstant(seconds: created).value();
+        EpochInstant(seconds: created).instant();
     }
 }
 
@@ -97,8 +100,10 @@ object FileIdentity {
         self == other;
     }
 
-    device() is int {
-        device_number;
+    cap Identity {
+        device is int {
+            device_number;
+        }
     }
 
     inode() is BigInt {
@@ -117,16 +122,18 @@ object Permissions {
         execute_bit = executable;
     }
 
-    readable() is bool {
-        read_bit;
-    }
+    cap Access {
+        readable is bool {
+            read_bit;
+        }
 
-    writable() is bool {
-        write_bit;
-    }
+        writable is bool {
+            write_bit;
+        }
 
-    executable() is bool {
-        execute_bit;
+        executable is bool {
+            execute_bit;
+        }
     }
 }
 
@@ -141,15 +148,15 @@ object PermissionMode {
 
     // These are integer bit fields; division produces a rat in Okkama.
     owner() is Permissions {
-        PermissionBits(bits: (bits >> 6) & 7).value();
+        PermissionBits(bits: (bits >> 6) & 7).permissions();
     }
 
     group() is Permissions {
-        PermissionBits(bits: (bits >> 3) & 7).value();
+        PermissionBits(bits: (bits >> 3) & 7).permissions();
     }
 
     others() is Permissions {
-        PermissionBits(bits: bits % 8).value();
+        PermissionBits(bits: bits % 8).permissions();
     }
 
     special() is int {
@@ -162,9 +169,9 @@ object FileStatFromMap {
 
     FileStatFromMap(:origin);
 
-    value() is FileStat {
+    stat() is FileStat {
         FileStat(
-            kind: FileKindFromCode(code: origin["kind"]).value(),
+            kind: FileKindFromCode(code: origin["kind"]).kind(),
             size: origin["size"],
             mode: PermissionMode(bits: origin["permissions"]),
             times: FileTimes(
@@ -181,12 +188,12 @@ object FileStatFromMap {
     }
 }
 
-object EpochInstant {
+hidden object EpochInstant {
     has seconds is int;
 
     EpochInstant(:seconds);
 
-    value() is Instant {
+    instant() is Instant {
         Instant(origin: Duration(
             value: seconds.rat(),
             unit: DurationUnit.second,
@@ -194,12 +201,12 @@ object EpochInstant {
     }
 }
 
-object PermissionBits {
+hidden object PermissionBits {
     has bits is int;
 
     PermissionBits(:bits);
 
-    value() is Permissions {
+    permissions() is Permissions {
         Permissions(
             readable: (bits & 4) != 0,
             writable: (bits & 2) != 0,
@@ -208,12 +215,12 @@ object PermissionBits {
     }
 }
 
-object FileKindFromCode {
+hidden object FileKindFromCode {
     has code is int;
 
     FileKindFromCode(:code);
 
-    value() is FileKind {
+    kind() is FileKind {
         if code == 1 {
             FileKind.file;
         }
@@ -247,17 +254,17 @@ enum InvalidPermissionMode is Error = (bits(bits is int));
 
 test "permission observations retain integer bit groups" {
     let mode = PermissionMode(416); // 0640
-    test.ok(mode.owner().readable());
-    test.ok(mode.owner().writable());
-    test.ok(!mode.owner().executable());
-    test.ok(mode.group().readable());
-    test.ok(!mode.group().writable());
-    test.ok(!mode.others().readable());
+    test.ok(mode.owner()::Access::readable);
+    test.ok(mode.owner()::Access::writable);
+    test.ok(!mode.owner()::Access::executable);
+    test.ok(mode.group()::Access::readable);
+    test.ok(!mode.group()::Access::writable);
+    test.ok(!mode.others()::Access::readable);
     test.is(mode.special(), 0);
     let all = PermissionMode(4095); // 07777
-    test.ok(all.owner().executable());
-    test.ok(all.group().writable());
-    test.ok(all.others().executable());
+    test.ok(all.owner()::Access::executable);
+    test.ok(all.group()::Access::writable);
+    test.ok(all.others()::Access::executable);
     test.is(all.special(), 7);
     test.throws(InvalidPermissionMode) {
         PermissionMode(4096);

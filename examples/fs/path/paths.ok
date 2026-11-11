@@ -1,0 +1,34 @@
+module examples/fs/path/paths v1.0.0;
+
+import "fs/path" take Path, PathStyle;
+import "io/stdout" take Stdout;
+
+// Paths are text with a grammar: joining, parents and absolute checks never
+// touch the disk. A path tidies what it makes: `.` and doubled separators
+// go, `..` stays. A foreign grammar is named explicitly.
+
+main() is int {
+    let out = Stdout();
+    let posix = PathStyle.posix;
+
+    let log = Path("var", posix).child("log").child("app.log");
+    out.writeln(log.string());
+    out.writeln(log.parent().string());
+    out.writeln(log.parent().parent().parent().string());
+    out.writeln(Path("/", posix).parent().string());
+
+    out.writeln(Path("srv//data/./cache", posix).child("..").string());
+    out.writeln(Path("srv", posix).child("/etc/hosts").string());
+    out.writeln(Path("/srv", posix).absolute().string() + " " + Path("srv", posix).absolute().string());
+
+    let windows = PathStyle.windows;
+    let build = Path("C:\\build", windows).child("out/app.exe");
+    out.writeln(build.string());
+    out.writeln(build.parent().parent().parent().string());
+    out.writeln(Path("C:build", windows).absolute().string());
+
+    // The grammar is part of the value.
+    out.writeln((Path("a", posix) == Path("a", windows)).string());
+    out.writeln((build::Grammar::style == windows).string());
+    0;
+}

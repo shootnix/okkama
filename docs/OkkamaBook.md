@@ -3678,6 +3678,26 @@ file. Every fs failure is one `FileError` from `fs/error`; `FileEntry` (a
 path on disk) lives in `fs/entry`. `examples/fs/file/` shows each task as a
 program.
 
+The rest of `fs` names a path and acts on it. `Path` is lexical and never
+touches the disk: `Path("var").child("log")`, `parent()`, `absolute()`, and
+`Path("etc", "app", "config.toml")` to join parts. The host's grammar is
+part of its value (`path::Grammar::style`). A foreign one is named
+explicitly, as in `Path("C:\\x", PathStyle.windows)`. A root is its own
+parent, and the paths it makes are tidy: `.` and repeated separators go
+away, and `..` stays. `FileEntry(path:)` answers `existence()`, `stat()`,
+`move(to)` and `remove()`. A stat shows `stat::Shape::kind` and `::size`,
+and its `mode()` and `times()` answer objects. `Directory(path:)` creates,
+removes and moves one level. `DirectoryEntries(origin:)` walks one level
+sorted by name, `Descendants(origin:)` walks a tree in preorder, and
+`DirectoryTree(origin:).remove()` deletes one. A directory symlink is a
+leaf: it is listed but never entered. `MatchingPaths(root:, pattern:)`
+globs (`*`, `?`, classes, `**`). `SymbolicLink(path:)` and
+`HardLink(source:, destination:)` are commands. `TemporaryFile` and
+`TemporaryDirectory` delete themselves on `close()`. `FileWatch(path:)`
+answers `await watch.event()` with a `FileEvent`, whose kind is in
+`event::Change::kind`. `examples/fs/directory/` shows each task as a
+program.
+
 `http/client` sends requests with `HttpClient()`. By default it uses the system's DNS and trusted roots, reaches public endpoints only and speaks HTTP/1.1. Every other part is a named argument: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)` and `cookies: MemoryCookieJar()`. Every REST method has a shortcut: `get(url)`, `head`, `options`, `delete`, and `post(url:, body:)`, `put`, `patch` with a `Content` such as `JsonBody(json)`. Anything else is `client.response(Request(url:, method:, headers:, body:))`. A reply shows its head through the cap `Head` (`page::Head::status`, `::class`, `::headers`) and reads its body with `await page.text()`, `bytes()`, `json()` or `reading()`. `Status` and `Method` are enums: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` and `MethodName` turn them into wire numbers and tokens and back. `examples/http/client/` shows each task as a program.
 
 `strings/parse` reads text as the type asked for: `Number("42").int()`,
@@ -3780,8 +3800,6 @@ The stdlib is intentionally narrow while the language stabilizes:
 - `db/result` — non-row execution outcome (`affected()`, an optional
   `last_id()`) for `INSERT`/`UPDATE`/`DELETE`;
 - `db/row` — name/index access to one query-result row's `SqlValue`s;
-- `fs/dir` — directory creation/listing/removal, recursive
-  `DirectoryWalk`, and symlink-safe recursive `remove_all()`;
 - `socket/tcp` — real TCP `TcpSocket`/`TcpListener`, and
   `TcpConnection`'s DNS-driven ordered address attempts;
 - `socket/udp` — real UDP `UdpSocket` datagram send/receive with genuine
@@ -3815,9 +3833,6 @@ The stdlib is intentionally narrow while the language stabilizes:
   `ContextLogger`/`MemoryLogger` behind one `Logger` role; `MemoryLogger`
   round-trips events by serializing them into a `runtime/memory` cell, since
   Okkama has no mutable-cell primitive for arbitrary values, only bytes;
-- `fs/temp` — `TempFile`/`TempDir` remove their owned entry on destroy
-  unless `keep()` transfers ownership out; `TempRoot` generates collision-free
-  unique names via real exclusive creation, not a racy check-then-create;
 - `db/transaction` — the `Transaction` role and `InactiveTransaction`; every
   concrete implementer is a still-ahead database driver, since transaction
   framing is inherently database-specific — this, the sixth and final
@@ -3857,10 +3872,6 @@ The stdlib is intentionally narrow while the language stabilizes:
   `db-migration-22072026.md`;
 - `os` — typed host and explicit POSIX/Windows descriptions with closed
   platform, architecture, and path-style enums;
-- `fs/path` — host-selected and explicit POSIX/Windows immutable lexical paths
-  with exact UTF-8 projection and typed failures;
-- `fs/meta` — portable `FileKind`/`Permissions` metadata read through
-  `lstat`, so symlinks are never silently followed;
 - `test/fake_clock` — a `Clock` implementation tests can explicitly advance,
   rewind or set, so `sleep` never blocks;
 - `test/benchmark` — injectable-clock repeatable duration measurement over a
@@ -3923,82 +3934,6 @@ has the typed identity `Platform.unknown`, but asking it for path or line
 conventions throws `UnsupportedPlatform` instead of making a guess. `Posix`
 and `Windows` describe an explicit foreign or test target; their overloaded
 constructors only retain enum state.
-
-Paths are syntax values before they become filesystem arguments:
-
-```okkama
-import "fs/path" take PathValue, Path, PosixPath, WindowsPath;
-
-main() is int {
-    let log is PathValue = Path("var")
-        .joined("log")
-        .joined("okkama.log");
-    let archive = PosixPath("/srv//data/../archive").normalized();
-    let artifact = WindowsPath("C:/build/./out/app.exe").normalized();
-
-    log.bytes();
-    archive.string();  // "/srv/archive"
-    artifact.string(); // "C:\\build\\out\\app.exe"
-    return 0;
-}
-```
-
-`Path` uses `Host().path_style()` when an action is evaluated. It never chooses
-a syntax in its constructor, and an unknown host throws `UnsupportedPlatform`.
-`PosixPath` and `WindowsPath` are explicit foreign grammars and never inspect
-the host. All three constructors only retain their source; no path action
-checks existence, follows links, resolves a real path or changes cwd.
-
-`string()` preserves valid source spelling and `bytes()` is its exact UTF-8
-encoding. `normalized()` is the only canonicalizing action: it removes
-repeated separators and `.`, resolves `..` without crossing a root, removes a
-non-root trailing separator and maps an empty relative path to `.`. `parent()`
-uses that normalized structure. Roots, `.`, empty normalized values, bare
-drive contexts and UNC share roots throw `MissingPathParent`.
-
-`joined(part)` accepts a relative fragment and never discards its base; rooted,
-drive-qualified and UNC fragments throw `InvalidPath`. POSIX rejects NUL and
-treats backslash as an ordinary character. Windows accepts both separators,
-canonicalizes them to backslash, and distinguishes drive-rooted (`C:\\x`),
-drive-relative (`C:x`), root-relative (`\\x`) and UNC paths. Only drive-rooted
-and complete UNC paths are absolute. Raw non-UTF-8 directory entries from
-`runtime/fs` remain `@byte`; this text-originated API does not rewrite them.
-
-`fs/meta` normalizes `stat`/`lstat` into portable, typed metadata:
-
-```okkama
-import "fs/meta" take FileKind, Meta, Permissions, MissingPath;
-import "fs/path" take Path;
-
-main() is int {
-    try {
-        let meta is Meta = Meta(Path("README.md"));
-
-        if meta.kind() == FileKind.file {
-            meta.size();
-            meta.modified();               // Instant, ClockIdentity.system
-            meta.permissions().readable();
-        }
-    }
-    catch error is MissingPath {
-        error.text();
-    }
-    return 0;
-}
-```
-
-`Meta` reads through `lstat`, not `stat`: a followed symlink always resolves
-to what it points at, so only `lstat` can ever report `FileKind.link`.
-`FileKind` is deliberately narrow — file, directory, link, or other — so
-device files, fifos and sockets all fall under `other` rather than growing
-the enum. `Permissions` decodes only the owner's read/write/execute bits
-from the raw POSIX mode; the provider exposes no ownership or process
-identity, so "can the current process access this" cannot be computed
-portably, and owner bits are the closest consistently meaningful reading
-across POSIX and Windows. `Meta`'s path is caller-supplied, so a
-`not_found` failure is the catchable `MissingPath` above; any other native
-failure (permission denied, unexpected) is an invariant panic instead, since
-this module declares no broader error vocabulary for it.
 
 Code written against the `Clock` role can be tested without a real clock
 through `test/fake_clock`:
@@ -4597,53 +4532,6 @@ built on top (the kind of `UserRow(row).user()` wrapper this module
 deliberately leaves to callers) to throw once *it* checks a looked-up
 value's `sql_type()` against what it expected — the same "exported, not
 internally thrown" shape `crypto/digest.DigestMismatch` already uses.
-
-`fs/dir` rounds out Phase 6's filesystem work with creation, listing,
-recursive walking and removal:
-
-```okkama
-import "fs/dir" take Dir, DirEntry, DirectoryWalk;
-import "fs/file" take File;
-import "fs/path" take Path;
-
-main() is int {
-    let dir = Dir(Path("project/nested"));
-    dir.create_all();
-    File(Path("project/a.txt")).write_string("a");
-    File(Path("project/nested/b.txt")).write_string("b");
-
-    let walked is @DirEntry = DirectoryWalk(Path("project")).entries();
-    walked.size(); // 3 — the file, the nested directory, and its file
-
-    Dir(Path("project")).remove_all();
-    return 0;
-}
-```
-
-Both `remove_all()` and `DirectoryWalk` classify every entry through
-`Meta`'s `lstat`-backed `kind()`, never `stat` — a symlink pointing at a
-directory always reports `FileKind.link`, never `FileKind.directory`, so
-it is always treated as a leaf (deleted or listed, never descended into).
-Recursion happens once per directory *nesting level* (realistically single
-digits), never once per *entry* (which can be arbitrarily large) — breadth
-at each level is handled iteratively, not recursively.
-
-Building this module surfaced a genuine, previously unknown **quadratic
-performance bug in the interpreter itself**: any `let` statement executed
-while a large persistent structure (like a growing `List<T>`) is in scope
-pays a cost proportional to that structure's current size, because the
-interpreter's ownership-tracking machinery re-walks every live variable's
-entire reachable object graph on every single `let`, without pruning
-already-accounted-for subgraphs. Over a loop, that's O(n²). It reproduces
-for `int`, `string`, and `@byte` alike (composite types cost more per
-node, but the same shape) — it is not specific to generics or to
-`collections/list`. `fs/dir.ok` routes around it by keeping loop bodies
-free of intermediate `let`s while an accumulator is in scope (confirmed
-directly: 500/1000/2000-file directory listings now cost
-3.57s/7.67s/16.6s — genuinely linear). The bug itself was root-caused to
-specific lines in `Interpreter.pm` but deliberately left unfixed here —
-patching core ownership/lifetime semantics is a different kind of change
-than shipping a stdlib module.
 
 `socket/tcp` is the first module to touch real network I/O — a client
 socket, a listener, and a DNS-driven ordered-address-attempt helper, all

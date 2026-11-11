@@ -1,0 +1,47 @@
+module examples/fs/watch/changes v1.0.0;
+
+import "fs/directory" take Directory, DirectoryTree;
+import "fs/entry" take FileEntry;
+import "fs/file" take File, FileMode;
+import "fs/path" take Path;
+import "fs/watch" take FileEvent, FileEventKind, FileWatch;
+import "io/stdout" take Stdout;
+
+// Watch a directory and react to what happens to its children, one event at
+// a time. A rename carries the old path too. A watch covers one directory
+// level; watch each directory of a tree you care about.
+
+async main() is int {
+    let out = Stdout();
+    let inbox = Path("inbox");
+    Directory(path: inbox).create();
+    let watch = FileWatch(path: inbox);
+    let report = (event is FileEvent) is void {
+        let kind = event::Change::kind;
+        if kind == FileEventKind.created {
+            out.writeln("created  " + event.path().string());
+        }
+        else if kind == FileEventKind.modified {
+            out.writeln("modified " + event.path().string());
+        }
+        else if kind == FileEventKind.renamed {
+            out.writeln("renamed  " + event.previous_path().string() + " -> " + event.path().string());
+        }
+        else {
+            out.writeln("removed  " + event.path().string());
+        }
+    };
+
+    File(path: inbox.child("order.json"), mode: FileMode.writing).text().write("{}");
+    report(await watch.event());
+    File(path: inbox.child("order.json"), mode: FileMode.appending).text().write("\n");
+    report(await watch.event());
+    FileEntry(path: inbox.child("order.json")).move(inbox.child("order.done"));
+    report(await watch.event());
+    FileEntry(path: inbox.child("order.done")).remove();
+    report(await watch.event());
+
+    watch.close();
+    DirectoryTree(origin: Directory(path: inbox)).remove();
+    0;
+}

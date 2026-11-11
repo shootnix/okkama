@@ -1,0 +1,45 @@
+module examples/fs/link/links v1.0.0;
+
+import "fs/directory" take Directory, DirectoryTree;
+import "fs/entry" take FileEntry;
+import "fs/error" take FileError;
+import "fs/file" take File, FileMode;
+import "fs/link" take HardLink, SymbolicLink;
+import "fs/path" take Path;
+import "io/stdout" take Stdout;
+
+// A symbolic link stores a target as written; a release switch is one link.
+// A hard link is a second name for the same file. Both refuse to replace
+// what is already there, and removing a link never removes a real file.
+
+main() is int {
+    let out = Stdout();
+    for ["releases", "releases/v1", "releases/v2"] -> folder {
+        Directory(path: Path(folder)).create();
+    }
+    let current = SymbolicLink(path: Path("releases/current"));
+    current.create(Path("v1"));
+    out.writeln("current -> " + current.target().string());
+    current.remove();
+    current.create(Path("v2"));
+    out.writeln("current -> " + current.target().string());
+
+    let config = Path("releases/v2/config.toml");
+    File(path: config, mode: FileMode.writing).text().write("port = 80");
+    let backup = Path("releases/config.backup");
+    HardLink(source: FileEntry(path: config), destination: backup).create();
+    File(path: config, mode: FileMode.appending).text().write("\nhost = \"a\"");
+    out.writeln("backup sees: " + File(path: backup).text().lines().size().string() + " lines");
+
+    let refused = try {
+        SymbolicLink(path: config).remove();
+        "removed";
+    }
+    catch FileError.not_symbolic_link(path) {
+        "not a link: " + path;
+    };
+    out.writeln(refused);
+
+    DirectoryTree(origin: Directory(path: Path("releases"))).remove();
+    0;
+}

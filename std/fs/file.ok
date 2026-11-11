@@ -84,24 +84,24 @@ object File does Closing {
     }
 
     text() is FileText {
-        FileText(self, state, location);
+        FileText(owner: self, state: state, location: location);
     }
 
     binary() is FileBytes {
-        FileBytes(self, state, location);
+        FileBytes(owner: self, state: state, location: location);
     }
 
     // A lock on the whole file, or none when another lock is in the way.
     lock(mode is FileLockMode) is Maybe<FileLock> {
         try {
-            Maybe.some(FileLock(file_state_lock(state, NativeLockMode(mode).code(), 1), self));
+            Maybe.some(FileLock(state: file_state_lock(state, NativeLockMode(mode).code(), 1), owner: self));
         }
         catch failure is NativeFailure {
             if failure.code() == "would_block" {
                 Maybe.none;
             }
             else {
-                throw FileFailure(failure, location).error();
+                throw FileFailure(failure: failure, path: location).error();
             }
         }
     }
@@ -112,7 +112,7 @@ object File does Closing {
             file_state_locked(state, NativeLockMode(mode).code());
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, location).error();
+            throw FileFailure(failure: failure, path: location).error();
         }
     }
 
@@ -125,7 +125,7 @@ object File does Closing {
             file_state_close(state);
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, location).error();
+            throw FileFailure(failure: failure, path: location).error();
         }
     }
 }
@@ -151,7 +151,7 @@ object FileText does ReadingText, WritingText, Batching<string> {
                 throw EndOfInput.reached;
             }
             else {
-                throw FileFailure(failure, location).error();
+                throw FileFailure(failure: failure, path: location).error();
             }
         }
     }
@@ -167,7 +167,7 @@ object FileText does ReadingText, WritingText, Batching<string> {
             file_state_read_text(state);
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, location).error();
+            throw FileFailure(failure: failure, path: location).error();
         }
     }
 
@@ -177,7 +177,7 @@ object FileText does ReadingText, WritingText, Batching<string> {
             file_state_read_lines(state, 65536);
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, location).error();
+            throw FileFailure(failure: failure, path: location).error();
         }
     }
 
@@ -187,7 +187,7 @@ object FileText does ReadingText, WritingText, Batching<string> {
             file_state_write_text(state, text, false);
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, location).error();
+            throw FileFailure(failure: failure, path: location).error();
         }
     }
 
@@ -197,7 +197,7 @@ object FileText does ReadingText, WritingText, Batching<string> {
             file_state_write_text(state, text, true);
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, location).error();
+            throw FileFailure(failure: failure, path: location).error();
         }
     }
 
@@ -208,7 +208,7 @@ object FileText does ReadingText, WritingText, Batching<string> {
             file_state_rewrite_text(state, text);
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, location).error();
+            throw FileFailure(failure: failure, path: location).error();
         }
     }
 
@@ -217,7 +217,7 @@ object FileText does ReadingText, WritingText, Batching<string> {
             file_state_flush(state);
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, location).error();
+            throw FileFailure(failure: failure, path: location).error();
         }
     }
 }
@@ -248,7 +248,7 @@ object FileBytes does Reading, Writing, ByteSource, Batching<byte> {
             file_state_read(state, limit);
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, location).error();
+            throw FileFailure(failure: failure, path: location).error();
         }
     }
 
@@ -271,7 +271,7 @@ object FileBytes does Reading, Writing, ByteSource, Batching<byte> {
             confirm written == bytes.size() else throw IncompleteWrite.after(written);
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, location).error();
+            throw FileFailure(failure: failure, path: location).error();
         }
     }
 
@@ -280,7 +280,7 @@ object FileBytes does Reading, Writing, ByteSource, Batching<byte> {
             file_state_flush(state);
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, location).error();
+            throw FileFailure(failure: failure, path: location).error();
         }
     }
 
@@ -290,7 +290,7 @@ object FileBytes does Reading, Writing, ByteSource, Batching<byte> {
             file_state_position(state);
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, location).error();
+            throw FileFailure(failure: failure, path: location).error();
         }
     }
 
@@ -299,7 +299,7 @@ object FileBytes does Reading, Writing, ByteSource, Batching<byte> {
             file_state_seek(state, offset, NativeSeekOrigin(from).code());
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, location).error();
+            throw FileFailure(failure: failure, path: location).error();
         }
     }
 
@@ -308,7 +308,7 @@ object FileBytes does Reading, Writing, ByteSource, Batching<byte> {
             file_state_truncate(state, size);
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, location).error();
+            throw FileFailure(failure: failure, path: location).error();
         }
     }
 }
@@ -333,7 +333,7 @@ hidden object FileOpening {
             file_state_open(path_encode(path.string()), NativeFileMode(mode).code(), encoding);
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure, path.string()).error();
+            throw FileFailure(failure: failure, path: path.string()).error();
         }
     }
 }
