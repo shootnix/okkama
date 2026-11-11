@@ -106,6 +106,7 @@ helpers! {
     catch = crate::failures::rt_catch as (ctx, function: u64, pc: u64, failure: Word) -> u64; [Allocates];
     created = crate::failures::rt_created as (ctx, descriptor: u64, object: Word); [];
     region_add = crate::failures::rt_region_add as (ctx, region: Word, value: Word, own: u64); [];
+    region_leave = crate::failures::rt_region_leave as (ctx, region: Word, keep: *const Word, count: u64); [Allocates, Collects, Reenters, Fails];
     builder_push = crate::ops::rt_builder_push as (ctx, builder: Word, item: Word) -> Word; [];
     trie_get = crate::ops::rt_trie_get as (ctx, array: Word, position: u64) -> Word; [Allocates];
     int_text = crate::ops::rt_int_text as (ctx, word: Word) -> Word; [Allocates, Collects];
@@ -1896,8 +1897,12 @@ impl Emitter<'_, '_> {
                 let (close, done) = (self.builder.create_block(), self.builder.create_block());
                 self.builder.ins().brif(entries, close, &[], done, &[]);
                 self.builder.switch_to_block(close);
-                let instruction = instruction.clone();
-                self.failure_generic(pc, &instruction);
+                let I::RegionLeave { keep, .. } = instruction else { unreachable!() };
+                let keep: Vec<_> = keep.iter().cloned().collect();
+                let count = self.iconst(keep.len() as i64);
+                let address = self.spill(&keep);
+                self.helper(|h| h.region_leave, &[ctx, cell, address, count]);
+                self.check(pc);
                 self.builder.ins().jump(done, &[]);
                 self.builder.switch_to_block(done);
             }
@@ -2250,22 +2255,6 @@ impl Emitter<'_, '_> {
         }
     }
 
-    /// Run a failure or region instruction through `rt_failure_op`; its result.
-    fn failure_generic(&mut self, pc: usize, instruction: &I) -> Value {
-        let mut uses = Vec::new();
-        instruction.visit(&mut |access| {
-            if let okkama_sparrow::Access::Use(register) = access {
-                uses.push(register);
-            }
-        });
-        let ctx = self.ctx();
-        let address = self.spill(&uses);
-        let function = self.iconst(self.function as i64);
-        let at = self.iconst(pc as i64);
-        let result = self.helper(|h| h.failure_op, &[ctx, function, at, address]).expect("result");
-        self.check(pc);
-        result
-    }
 
     /// Compile `instruction` as a call of the shared slow path, defining its result.
     fn generic_instruction(&mut self, pc: usize, instruction: &I) {

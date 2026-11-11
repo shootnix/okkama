@@ -368,6 +368,22 @@ impl Runtime {
         }
     }
 
+    /// `value` if it is a free identity none of whose fields may reach a free
+    /// identity (`may_reach_free(value)` holds): the walk would find just it.
+    fn lone_free(&self, value: Word) -> Option<Word> {
+        let header = self.heap.header_of(value);
+        if heap::kind(header) != heap::OBJECT {
+            return None;
+        }
+        let layout = &self.heap.layouts.objects[heap::payload(header) as usize];
+        for (index, &field) in layout.iter().enumerate() {
+            if field.pointer(self.heap.field(value, index)).is_some_and(|pointer| self.may_reach_free(pointer)) {
+                return None;
+            }
+        }
+        Some(value)
+    }
+
     fn region_len(&self, region: Word) -> usize {
         let inline = (1..=REGION_SLOTS).take_while(|&i| self.heap.field(region, i) != UNBOUND).count();
         if inline < REGION_SLOTS {
@@ -459,6 +475,17 @@ impl Runtime {
 
     fn region_add(&mut self, region: Word, value: Word, own: bool) {
         if !self.may_reach_free(value) {
+            return;
+        }
+        // The common add, a cursor or a constructor's result, is one free
+        // identity whose fields reach no other: no walk.
+        if let Some(object) = self.lone_free(value) {
+            if own {
+                self.resources.identities.get_mut(&object).expect("identity").owner = Owner::Region(region);
+            } else if self.region_contains(region, object) {
+                return;
+            }
+            self.region_push(region, object);
             return;
         }
         // Tracking (not owning) skips what the region already holds; adopting
@@ -573,7 +600,24 @@ impl Runtime {
         mut primary: Option<Word>,
         awaits: bool,
     ) -> Closed {
-        if self.region_len(region) == 0 {
+        let length = self.region_len(region);
+        if length == 0 {
+            return Closed::Done(primary);
+        }
+        // The common close keeps all it holds: a constructor, or an action
+        // returning what it made. Nothing dies, so nothing is walked.
+        if length <= REGION_SLOTS && (0..length).all(|index| keep.contains(&self.region_get(region, index))) {
+            for index in 0..length {
+                let object = self.region_get(region, index);
+                if let Some(identity) = self.resources.identities.get_mut(&object)
+                    && identity.owner == Owner::Region(region)
+                {
+                    identity.owner = Owner::Free;
+                    let serial = identity.serial;
+                    self.freed(serial);
+                }
+            }
+            self.region_clear(region);
             return Closed::Done(primary);
         }
         let kept: HashSet<Word> =
@@ -815,6 +859,20 @@ pub extern "C" fn rt_region_add(ctx: *mut Ctx, region: Word, value: Word, own: u
     let (_, runtime) = unsafe { parts(ctx) };
     runtime.count(|_| "region add".into());
     runtime.region_add(region, value, own != 0);
+}
+
+/// `region.leave` of a region that holds something: close it, keeping what the
+/// `count` words at `keep` reach.
+#[inline(never)]
+pub extern "C" fn rt_region_leave(ctx_ptr: *mut Ctx, region: Word, keep: *const Word, count: u64) {
+    let (_, runtime) = unsafe { parts(ctx_ptr) };
+    runtime.count(|_| "region leave".into());
+    let keep = if count == 0 { &[][..] } else { unsafe { std::slice::from_raw_parts(keep, count as usize) } };
+    if let Some(failure) = runtime.region_close(ctx_ptr, region, keep, None) {
+        let ctx = unsafe { &mut *ctx_ptr };
+        ctx.failure = failure;
+        ctx.status = FAILED;
+    }
 }
 
 /// Resource identity of a new object with a destroy-reaching descriptor.

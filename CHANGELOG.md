@@ -230,6 +230,16 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     100 000 three-member objects), and the time is unchanged.
   - Conformance case `L09.json.large-objects` covers parsed, built and merged
     objects past the indexed size.
+- Tomato: ownership bookkeeping costs less (#473). A cursor that reaches a
+  `destroy` costs 236 ns per step instead of 418 (−43%), and 11-ownership
+  runs 9.5% faster. Plain cursors cost 9–14 ns per step and are unchanged.
+  - A region that keeps everything it holds, which is how a constructor or an
+    action returning what it made closes, releases its entries without
+    walking what they reach.
+  - Adding a lone free identity, such as a new cursor whose fields reach no
+    other free identity, skips the graph walk.
+  - `region.leave` has its own helper. Before, it went through the shared
+    failure path, which decoded the instruction on every close.
 
 ## [0.5.3] — 2026-11-11
 
