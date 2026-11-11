@@ -3634,6 +3634,72 @@ program.
 
 `http/client` sends requests with `HttpClient()`. By default it uses the system's DNS and trusted roots, reaches public endpoints only and speaks HTTP/1.1. Every other part is a named argument: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)` and `cookies: MemoryCookieJar()`. Every REST method has a shortcut: `get(url)`, `head`, `options`, `delete`, and `post(url:, body:)`, `put`, `patch` with a `Content` such as `JsonBody(json)`. Anything else is `client.response(Request(url:, method:, headers:, body:))`. A reply shows its head through the cap `Head` (`page::Head::status`, `::class`, `::headers`) and reads its body with `await page.text()`, `bytes()`, `json()` or `reading()`. `Status` and `Method` are enums: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` and `MethodName` turn them into wire numbers and tokens and back. `examples/http/client/` shows each task as a program.
 
+`strings/parse` reads text as the type asked for: `Number("42").int()`,
+`Number("ff").int(16)`, `Number("6/8").rat()`, `Number("3.0").float()`,
+`Number("255").byte()` and `Truth("true").bool()`. Nothing is trimmed and a
+leading `+` is refused; each failure (`InvalidInteger`, …) carries the exact
+text.
+
+`encoding` crosses between bytes and text explicitly.
+`Utf8Encoded(origin: text).bytes()` and `Utf8Decoded(origin: bytes).string()`
+convert UTF-8; UTF-16 and UTF-32 take a `ByteOrder`. Base64 (standard or
+URL-safe), Base32, Base85, hex, quoted-printable, ASCII and Latin-1 follow the
+same `…Encoded`/`…Decoded` shape. Decoders are strict and name the offset of
+the first error: `catch InvalidBase64.at(offset)`. `Binary(bytes:, order:)`
+reads `.int(signedness)` or `.float(width)`, and `IntegerBytes` and
+`FloatBytes` write; host byte order is never used.
+
+`collections` are persistent: a change returns a new value. A `Deque` reads
+and changes its own ends (`first()`, `last()`, `prefix(x)`, `suffix(x)`,
+`tail()`, `body()`), and a set answers `membership(x)`. `Sorted(xs)` and
+`SortedBy(origin:, key:)` order stably; `LowerBound`, `UpperBound` and
+`PositionOf` answer `index()`. Views (`Mapped`, `Filtered`, `Taken`,
+`Chunked`, `Pairwise`, `Reversed`, `Sliced`, …) are lazy and walked with
+`for`, and `Reduced(…).total()` folds.
+
+`math`, `numbers` and `checksum`: `PI`, `TAU` and `E` are module constants;
+`Extremes(xs).minimum()`, `Numbers(xs).sum()` and
+`Vectors(left:, right:).dot()` aggregate. A `BigRational` computes with
+`a.plus(b)`, `a.minus(b)`, `a.times(b)` and `a.divided(b)`, and
+`ShortestFloat(x).decimal()` is the shortest decimal that reads back as the
+same float. `Crc32(bytes).checksum()`, `Adler32` and `Crc16Ccitt` checksum.
+
+`time` keeps durations, instants, dates and zones apart. `Duration(value:,
+unit:)` is exact (`d.times(f)`); `date.shifted(days)`,
+`DaysBetween(left:, right:).count()` and `GregorianDay(date).number()` count
+days. Readers answer with what they read, and each formatter reads its own
+text back: `IsoText(t).date()`, `Rfc3339(t).instant()`,
+`FormattedDate(text:, pattern:).date()`. `Zone("Europe/Berlin")` uses the
+bundled tzdata, and `Zoned(local:, zone:, fold:).instant()` resolves a local
+time: a gap throws `MissingLocalTime`, and a repeated hour needs a `Fold`. The
+guide is `docs/time-guide.md` in okkama-docs.
+
+`async` composes futures: `await Within(origin:, limit:, clock:).outcome()`
+and `Before(…)` bound one by time and throw `TimedOut`;
+`AllFutures(origins:).results()`, `Raced(origins:).winner()`,
+`FirstSuccessful(origins:).outcome()` and `FutureCompletions` combine several;
+`FutureGroup` and `FutureScope(action:).outcome()` keep children inside one
+lifetime. Channels, events, locks, semaphores, barriers and cancellation are
+the other `async/*` modules.
+
+`random` has one capability, `Randomizing`: `SecureRandom()` reads the
+operating system's entropy, and `PcgRandom(seed)` is reproducible, with its
+PCG32 sequence part of the contract. Distributions take the source by name and
+answer `sample()`: `UniformIntegers(random:, start:, stop:)`,
+`NormalDistribution`, `Choices`, `Samples`, `PermutationSamples`, …
+Integer ranges are half-open.
+
+`regex` is a portable dialect without backreferences or lookaround:
+`FirstRegexMatch(text, Regex("\\d+")).text()`,
+`for RegexMatches(text, pattern) -> found`, `RegexParts` to split, and
+`RegexSubstitution` with `ExpandedRegexReplacement("${last}, ${first}")` to
+replace. Offsets count Unicode scalars.
+
+`io`, `text` and `unicode`: `Stdout().writeln(…)` and `Stdin().line()`;
+`Indented`, `Dedented`, `Wrapped` and `Shortened` lay out text;
+`Normalized(origin:, form:)` and `UnicodeCharacter(c).name()` follow
+Unicode 16.0.0.
+
 The historical inventory and examples below describe **legacy `stdlib/`**.
 They remain executable with that library, but are not API proposals or completion
 claims for `std/`. Select the library root explicitly; do not combine their modules.
@@ -3641,29 +3707,10 @@ claims for `std/`. Select the library root explicitly; do not combine their modu
 
 The stdlib is intentionally narrow while the language stabilizes:
 
-- `okkama` — `Dump`, the debug formatter (Chapter 28);
-- `math` — small generic examples such as `Max<T>`;
-- `strings/parse` — strict, pure-Okkama conversion from strings to `int`,
-  `float`, `bool`, and `byte`;
-- `collections/iteration`, `collections/list`, `collections/queue`, and
-  `collections/stack` — nominal immutable traversal plus persistent linked,
-  FIFO, and LIFO values;
-- `format` — positional and named immutable projections with typed pattern
-  and missing-value failures;
 - `template/plain` — pure named string templates with closed
   ERB/Mojolicious-style lexical tags and typed source/value failures;
 - `template/html` — HTML rendering over the same lexical tags, where a
   binding's `SafeHtml` type — not its tag — decides whether it is escaped;
-- `encoding/binary` — cursor-free endian-explicit reads and composed
-  fixed-width binary values;
-- `encoding/utf8` — explicit strict conversion between Unicode `string` and
-  raw `@byte`, with typed invalid-sequence offsets;
-- `encoding/base64` — canonical padded RFC 4648 conversion between raw
-  `@byte` and ASCII `string`, with strict typed decoding failures;
-- `encoding/hex` — lowercase canonical hexadecimal output and strict
-  case-insensitive ASCII decoding with typed source offsets;
-- `encoding/json` — nominal exact JSON values, strict recursive parsing,
-  deterministic compact encoding and located Unicode errors;
 - `encoding/csv` — RFC 4180-shaped streaming rows over `Input`/`Output`
   under an explicit dialect, with a located `InvalidCsv`;
 - `encoding/toml` — a practical single-line-document TOML v1.0.0 subset
@@ -3679,9 +3726,6 @@ The stdlib is intentionally narrow while the language stabilizes:
   timeout vocabulary ahead of concrete TCP/UDP/Unix socket resources;
 - `sql/value` — exact bindable SQL scalar wrappers, including an explicit
   `SqlNull`, ahead of SQL statement/query building;
-- `http/status` — a validated `Status(code, reason)` with status-class
-  queries, plus `Ok`/`Created`/`BadRequest`/`NotFoundStatus`/
-  `InternalServerError` projecting into it;
 - `http/headers` — immutable case-insensitive `Headers`, `ExtendedHeaders`/
   `FilteredHeaders` composition, and CRLF-injection-rejecting `Header`
   values;
@@ -3690,8 +3734,6 @@ The stdlib is intentionally narrow while the language stabilizes:
 - `db/result` — non-row execution outcome (`affected()`, an optional
   `last_id()`) for `INSERT`/`UPDATE`/`DELETE`;
 - `db/row` — name/index access to one query-result row's `SqlValue`s;
-- `fs/file` — whole-file `File` (`bytes()`/`string()`/`write()`/`append()`/
-  `remove()`) plus streaming `OpenedFile` (`Input`/`Output`/`Closeable`);
 - `fs/dir` — directory creation/listing/removal, recursive
   `DirectoryWalk`, and symlink-safe recursive `remove_all()`;
 - `socket/tcp` — real TCP `TcpSocket`/`TcpListener`, and
@@ -3709,10 +3751,6 @@ The stdlib is intentionally narrow while the language stabilizes:
   through any `Dialect`;
 - `sql/query` — `Select`/`RawQuery`, with explicit `EveryRow`/
   `UnlimitedRows`/`RowWindow` vocabulary;
-- `http/request` — immutable `HttpRequest` and the `Get`/`Post`/`Put`/
-  `Patch`/`Delete` convenience constructors;
-- `http/response` — streamed `HttpResponse` plus explicit
-  bytes/string/JSON materialization;
 - `http/handler` — the `Handler` role plus `HandlerChain`'s
   chain-of-responsibility dispatch, where declining is spelled by throwing
   `HandlerFailure` rather than returning;
@@ -3720,9 +3758,6 @@ The stdlib is intentionally narrow while the language stabilizes:
   `PathPattern`, with `:name` segments extracted as `@PathParameter` (not a
   native map — Okkama cannot build one with a runtime-determined entry
   count from pure code);
-- `http/client` — a hand-rolled HTTP/1.1 `Client` over `socket/tcp`/
-  `crypto/tls`, serializing requests and parsing responses byte-by-byte,
-  following `Location` redirects up to a configured limit;
 - `http/server` — a sequential `Server` accepting one connection at a time
   over plain TCP, parsing requests and writing responses the same
   byte-by-byte way as `http/client`, in reverse; `ServerPolicy.tls()` is
@@ -3774,20 +3809,12 @@ The stdlib is intentionally narrow while the language stabilizes:
   differently-typed-but-role-compatible elements), root-caused but not
   fixed, worked around with an explicit `let` — see
   `db-migration-22072026.md`;
-- `random` — secure ranges/fractions plus explicitly injectable deterministic
-  choices and immutable permutations;
 - `os` — typed host and explicit POSIX/Windows descriptions with closed
   platform, architecture, and path-style enums;
 - `fs/path` — host-selected and explicit POSIX/Windows immutable lexical paths
   with exact UTF-8 projection and typed failures;
 - `fs/meta` — portable `FileKind`/`Permissions` metadata read through
   `lstat`, so symlinks are never silently followed;
-- `time/duration` — signed checked nanosecond spans and exact named-unit
-  projections;
-- `time/instant`, `time/clock`, and `time/date` — clock-bound points,
-  injectable wall/monotonic clocks, Gregorian dates and UTC civil projection;
-- `time/timer` — explicitly acquired owned one-shot and fixed-rate periodic
-  timers;
 - `test/fake_clock` — a `Clock` implementation tests can explicitly advance,
   rewind or set, so `sleep` never blocks;
 - `test/benchmark` — injectable-clock repeatable duration measurement over a
@@ -3816,14 +3843,6 @@ The stdlib is intentionally narrow while the language stabilizes:
   host/port values without exposing native endpoint envelopes;
 - `test/more` — stateless reusable assertions over the contextual test
   capability, plus the `AssertionFailure` Error value;
-- `io/input`, `io/output`, and `io/closeable` — host-independent transport and
-  lifecycle capabilities with typed protocol errors;
-- `io/buffer` — explicitly acquired owned byte/string buffers and non-owning
-  input/output buffering decorators;
-- `io/stdin`, `io/stdout`, and `io/stderr` — concrete process standard-stream
-  objects over the native byte boundary;
-- `regex` — the immutable `Regex` object over the portable regex substrate
-  (Chapter 31.3);
 - `runtime/*` — declaration-only native substrate modules (Chapter 27):
   `runtime/time`, `runtime/fs`, `runtime/process`, `runtime/net`,
   `runtime/poll`, `runtime/environment`, `runtime/system`, `runtime/debug`,
@@ -3934,88 +3953,6 @@ across POSIX and Windows. `Meta`'s path is caller-supplied, so a
 `not_found` failure is the catchable `MissingPath` above; any other native
 failure (permission denied, unexpected) is an invariant panic instead, since
 this module declares no broader error vocabulary for it.
-
-Durations use one signed, exact nanosecond representation:
-
-```okkama
-import "time/duration" take
-    Duration, Milliseconds, Seconds, Minutes;
-
-main() is int {
-    let timeout is Duration = duration Seconds(30);
-    let retry = timeout.plus(duration Milliseconds(500));
-    let rewind = (duration Minutes(2)).times(-1);
-
-    retry.nanoseconds();        // 30500000000
-    rewind.less(Duration(0));   // true
-    return 0;
-}
-```
-
-`Duration`, `Nanoseconds`, `Milliseconds`, `Seconds`, `Minutes`, and `Hours`
-have state-only constructors. Validation, arithmetic, and unit scaling happen
-in actions. Negative spans are valid, but every result must fit signed 64-bit
-nanoseconds. Overflow throws `InvalidDuration` before arithmetic can wrap or
-cross a float boundary. The pure-Okkama module has no clock or sleep side
-effect; `time/clock` decides where a nonnegative relative span is
-required.
-
-Instants never lose the clock that gives their integer meaning:
-
-```okkama
-import "time/duration" take Duration, Milliseconds, Seconds;
-import "time/instant" take ClockIdentity, Instant;
-import "time/clock" take Clock, MonotonicClock, OffsetClock;
-import "time/date" take Date, TimeZone;
-import "time/timer" take
-    ScheduledTimer, Timer,
-    ScheduledPeriodicTimer, PeriodicTimer;
-
-main() is int {
-    let clock is Clock = MonotonicClock();
-    let started = clock.now();
-    let shifted = OffsetClock(clock, duration Seconds(1)).now();
-    let elapsed = shifted.since(started);
-
-    let leap = Date(2024, 2, 28).plus_days(1);
-    let epoch = TimeZone("UTC").at(
-        Instant(0, ClockIdentity.system)
-    );
-
-    let timeout is Timer = timer ScheduledTimer(duration Milliseconds(10));
-    timeout.wait();
-
-    let ticker is PeriodicTimer =
-        timer ScheduledPeriodicTimer(duration Seconds(1));
-    ticker.cancel();
-
-    leap.string();       // "2024-02-29"
-    epoch.string();      // "1970-01-01T00:00:00Z"
-    elapsed.nanoseconds();
-    ticker.cancelled();  // true
-    return 0;
-}
-```
-
-`Instant` stores signed-64 nanoseconds plus `ClockIdentity.system` or
-`ClockIdentity.monotonic`. Shifts preserve that identity; ordering or
-subtracting different identities throws `IncompatibleClocks`. `SystemClock`
-reads Unix time, `MonotonicClock` is for measurements/deadlines, and
-`OffsetClock` decorates either without changing its identity. Negative spans
-remain valid values, while `Clock.sleep` rejects an invalid relative sleep as
-`InvalidSleepDuration`.
-
-`Date` implements the proleptic Gregorian calendar for years `1..9999`.
-`DateTime` retains its exact source instant. The initial `TimeZone` policy is
-deliberately UTC-only; other names throw `UnknownTimeZone` until versioned
-time-zone data is bundled rather than inherited silently from the host.
-
-Timers are live resources, not immutable values. `ScheduledTimer` and
-`ScheduledPeriodicTimer` are state-only schedule values; their `timer()`
-action acquires an owned resource. `cancel()` is an idempotent command and
-`cancelled()` is its query. Waiting after cancellation throws
-`CancelledTimer`. Periodic timers use an anchored fixed-rate schedule and skip
-missed ticks; destruction closes their opaque runtime handle.
 
 Code written against the `Clock` role can be tested without a real clock
 through `test/fake_clock`:
@@ -4174,69 +4111,6 @@ or upper-bound indices. The source path used by the CLI is not included.
 `Args()` performs no native work in its constructor; the runtime provider
 already owns the defensive snapshot.
 
-Persistent queues and stacks start from explicitly typed empty values. Every
-derived value leaves the earlier version unchanged, and both work directly
-with `for`:
-
-```okkama
-import "collections/queue" take Queue, EmptyQueue;
-import "collections/stack" take Stack, EmptyStack;
-
-main() is int {
-    let empty_queue is Queue<int> = EmptyQueue();
-    let queue = empty_queue.enqueued(1).enqueued(2);
-    queue.head();             // 1: FIFO
-
-    let empty_stack is Stack<int> = EmptyStack();
-    let stack = empty_stack.pushed(1).pushed(2);
-    stack.top();              // 2: LIFO
-
-    for queue -> value { value; } // 1, then 2
-    for stack -> value { value; } // 2, then 1
-    return 0;
-}
-```
-
-Queue uses a private two-list representation and reverses its rear list only
-when the front is exhausted, giving amortized O(1) enqueue/tail. Stack is a
-semantic wrapper over `List<T>` and reuses its storage; its cursor traverses
-only the public Stack contract. Empty
-`head`/`tail` and `top`/`popped` throw typed contextual errors.
-
-Formatting is an immutable projection over direct positional values or an
-explicit named-value map:
-
-```okkama
-import "format" take
-    Formatted, NamedFormatted, PrintfFormatted,
-    InvalidFormat, MissingFormatValue, InvalidPrintf;
-
-main() is int {
-    let named is %string:any = ["name": "Ada", "count": 3];
-
-    string Formatted("{}: {}", "Ada", 3);            // "Ada: 3"
-    string NamedFormatted("{name}: {count}", named);  // "Ada: 3"
-    string PrintfFormatted("exact=%8r hex=%04x", rat(1, 3), 15);
-    // "exact=     1/3 hex=000f"
-    return 0;
-}
-```
-
-`Formatted` consumes only empty `{}` fields in order. `NamedFormatted` accepts
-ASCII identifier fields such as `{name}` and `{count_2}`; they may repeat.
-Both forms use `{{` and `}}` for literal braces and permit unused supplied
-values. The `Formatted` variadic constructor retains positional values as
-private `@any` state, so the caller creates no auxiliary array. Malformed syntax throws
-`InvalidFormat` with the first zero-based
-Unicode code-point offset. A missing value throws `MissingFormatValue` whose
-text retains the positional index or named key. Constructors only retain the
-pattern and collection; parsing and native rendering happen in `string()`.
-`PrintfFormatted` provides the portable sprintf-compatible subset
-`%s/%c/%d/%i/%u/%o/%x/%X/%b/%f/%e/%E/%g/%G`, `%%`, and exact `%r`.
-Numeric width/precision and ordinary flags are supported. Dynamic `*`,
-positional `$`, `%n`, `%p`, `%v`, and host length modifiers are rejected as
-`InvalidPrintf`; `%r` accepts width and `-` but never precision.
-
 Plain templates are reusable string objects, not embedded Okkama programs:
 
 ```okkama
@@ -4304,201 +4178,6 @@ HtmlTemplate("<section><%== body %></section>")
 lexer `template/plain` uses; `InvalidTemplate` becomes `InvalidHtmlTemplate`,
 while `MissingTemplateValue`/`DuplicateTemplateValue` are reused unchanged,
 since a missing or duplicate binding name is not an HTML-specific concept.
-
-Binary protocols remain ordinary immutable Okkama code. A reader always names
-its offset and endianness; output is composed from values whose types name the
-representation:
-
-```okkama
-import "encoding/binary" take
-    BinaryReader, BinaryPart, BinarySequence,
-    Unsigned16BigEndian, Signed32LittleEndian;
-
-main() is int {
-    let parts is @BinaryPart = [
-        Unsigned16BigEndian(258),
-        Signed32LittleEndian(-2),
-    ];
-    let packet is @byte = bytes BinarySequence(parts);
-
-    let reader = BinaryReader(bytes: packet);
-    reader.u16_be(0);               // 258
-    reader.i32_le(2);               // -2
-    reader.bytes(0, 2);             // [byte(1), byte(2)]
-    return 0;
-}
-```
-
-The `_be` and `_le` suffixes are mandatory; host byte order is never consulted.
-Unsigned parts reject values outside their width, signed values use exact
-two's-complement boundaries, and short reads throw `EndOfBinaryData`. Negative
-offsets, negative slice sizes, and out-of-range values throw
-`InvalidBinaryValue`. Constructors only retain their source values; checked
-encoding happens in `bytes()`. `BinarySequence` reduces immutable parts into
-persistent byte chunks and performs one linear `Iterable<byte>` identity map
-into `@byte`.
-
-Text and bytes cross through an explicit UTF-8 projection. No call silently
-chooses a character encoding:
-
-```okkama
-import "encoding/utf8" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
-
-main() is int {
-    let bytes is @byte = bytes Utf8Encoded("Hello, Привет, 猫, 😀");
-    let text is string = string Utf8Decoded(bytes);
-
-    try {
-        string Utf8Decoded([byte(65), byte(255)]);
-    }
-    catch error is InvalidUtf8 {
-        error.offset(); // 1: byte offset of the malformed sequence
-    }
-    return 0;
-}
-```
-
-Encoding emits canonical UTF-8 without a BOM or normalization. Decoding is
-strict: it never inserts replacement characters, and overlong forms,
-surrogates, values above `U+10FFFF`, invalid continuations and truncated tails
-all throw `InvalidUtf8`. The retained offset is the start of the first
-ill-formed byte sequence. Both projection objects are immutable, so repeated
-conversion is deterministic and does not cache hidden mutable state.
-
-Base64 is a byte encoding, not a character encoding and not encryption. Its
-two projections therefore compose explicitly with UTF-8 when text is
-involved:
-
-```okkama
-import "encoding/base64" take Base64Encoded, Base64Decoded, InvalidBase64;
-import "encoding/utf8" take Utf8Encoded, Utf8Decoded;
-
-main() is int {
-    let encoded is string = string Base64Encoded(bytes Utf8Encoded("Привет"));
-    let decoded is string = string Utf8Decoded(bytes Base64Decoded(encoded));
-
-    try {
-        bytes Base64Decoded("Zh==");
-    }
-    catch error is InvalidBase64 {
-        error.offset(); // 1: non-zero unused bits
-    }
-    return 0;
-}
-```
-
-The first codec version accepts exactly canonical padded RFC 4648 with the
-standard `+` and `/` alphabet. It does not ignore whitespace and does not
-accept URL-safe, unpadded or MIME forms. Padding shape and unused tail bits
-are validated, so two different accepted strings cannot represent the same
-byte sequence. Decoding composes immutable `BinaryBytes` parts into one
-`BinarySequence`; no mutable output buffer or hidden native Base64 codec is
-introduced.
-
-Hexadecimal uses the same explicit byte boundary with a smaller canonical
-surface:
-
-```okkama
-import "encoding/hex" take HexEncoded, HexDecoded, InvalidHex;
-
-main() is int {
-    let encoded is string = string HexEncoded([
-        byte(222), byte(173), byte(190), byte(239),
-    ]); // "deadbeef"
-    let decoded is @byte = bytes HexDecoded("DEADBEEF");
-
-    try {
-        bytes HexDecoded("0x");
-    }
-    catch error is InvalidHex {
-        error.offset(); // 1: prefixes are not part of the codec
-    }
-    return 0;
-}
-```
-
-The encoder always emits two lowercase characters per byte. The decoder also
-accepts uppercase `A-F`, but rejects odd lengths, whitespace, `0x` prefixes,
-separators and non-ASCII characters. Odd length reports the missing nibble
-position at `text.length()`; other failures identify the first invalid
-code-point offset. Both transformations are immutable, linear and written in
-Okkama without a native codec.
-
-JSON is represented by nominal objects instead of maps containing `any`:
-
-```okkama
-import "encoding/json" take
-    Json, JsonKind, JsonMember, JsonObject, JsonArray,
-    JsonString, JsonNumber, JsonBool, JsonNull, JsonSource, JsonReader,
-    InvalidJson, UnexpectedJsonKind;
-
-main() is int {
-    let values is @Json = [
-        JsonString("Ada"),
-        JsonNumber("1e400"),
-        JsonBool(true),
-        JsonNull(),
-    ];
-    let generated = JsonObject([
-        JsonMember("values", JsonArray(values)),
-    ]);
-    let parsed is Json = json JsonSource(
-        "{\"emoji\":\"\\uD83D\\uDE00\",\"count\":3}",
-    );
-    [generated.encoded(), parsed.encoded()];
-    return 0;
-}
-```
-
-`Json`, implemented by the six JSON value families, exposes `kind()` and
-`encoded()`. `kind()` returns the exact `JsonKind` without inspecting encoded
-text. `JsonMember`, `JsonObject` and `JsonArray` preserve order and
-nominal types. Duplicate member names are rejected rather than acquiring a
-silent first-wins or last-wins policy; missing members and array indexes also
-have distinct typed failures.
-
-A `JsonNumber` stores its exact RFC 8259 decimal spelling. It does not parse
-through an Okkama numeric primitive, so `1e400` remains valid JSON and
-re-encodes verbatim. `int()` and `float()` are explicit checked views;
-`InvalidJsonNumberConversion` means only that the requested bounded view is
-unavailable, not that the JSON number is invalid.
-
-The parser accepts all JSON escapes and valid UTF-16 surrogate pairs, rejects
-lone surrogates and unescaped controls, and encodes controls canonically.
-`InvalidJson` reports a zero-based code-point offset into the original source
-plus one-based line and column. CRLF is one line break while the offset still
-counts both original code points. Construction only retains state; parsing,
-number validation and encoding occur in queries, entirely in Okkama without a
-host JSON codec.
-
-For schema-oriented reading, `JsonReader` parses a source and acts as an
-immutable cursor:
-
-````okkama
-let reader = JsonReader(```
-{
-    "name": "Ada",
-    "address": {"city": "London"},
-    "users": [{"age": 37}],
-    "active": null
-}
-```);
-
-let name is string = reader.required_string("name");
-let city is string = reader.required("address").required_string("city");
-let age is int = reader.required("users").at(0).required_int("age");
-let active is bool = reader.optional_bool("active", false);
-````
-
-`required(name)` and `at(index)` return new readers; the original reader never
-changes. `string()`, `int()`, `float()` and `bool()` project the current node.
-`required_*` requires a present member of the requested kind.
-`optional_*(name, fallback)` returns its same-typed fallback only when the
-member is absent or JSON null. A present non-null wrong kind throws
-`UnexpectedJsonKind`, whose path identifies locations such as
-`$.users[0].age`. This facade reads JSON only. Encoding remains the explicit
-construction of `JsonObject`, `JsonMember`, `JsonArray` and scalar JSON
-values; private domain-object state is never reflected automatically.
 
 `encoding/csv` reads and writes RFC 4180-shaped rows over `Input`/`Output`
 under an explicit, injectable dialect:
@@ -4743,35 +4422,6 @@ matches on deliberately — never Okkama's own (nonexistent) implicit null.
 `SqlType`'s eighth member is named `null_value` rather than the draft's
 `null`, since `null` is a reserved keyword in this null-free language.
 
-`http/status` validates an HTTP status code/reason pair and classifies it
-by numeric range, with named shortcuts for the handful of statuses used
-everywhere:
-
-```okkama
-import "http/status" take Status, Ok, NotFoundStatus, InvalidHttpStatus;
-
-main() is int {
-    let found is Status = status Ok();
-    let missing is Status = status NotFoundStatus();
-
-    if found.successful() && missing.client_error() {
-        "both classified correctly";
-    }
-    else {
-        "unexpected";
-    }
-    return 0;
-}
-```
-
-`Ok`, `Created`, `BadRequest`, `NotFoundStatus` and `InternalServerError`
-are zero-argument objects, each projecting (`status Ok()`, `status NotFoundStatus()`,
-...) into a full `Status` — the same named-constructor projection `time/duration`
-uses for `duration Seconds(5)`/`duration Hours(5)`, just with no argument to carry. Any
-other status code is `Status(code, reason)` directly; the constructor
-rejects a code outside `100..599` or an empty reason with one
-`InvalidHttpStatus`.
-
 `http/headers` is an immutable, case-insensitive header collection that
 never loses a header's original spelling, plus a small add/remove
 composition pair:
@@ -4901,51 +4551,6 @@ built on top (the kind of `UserRow(row).user()` wrapper this module
 deliberately leaves to callers) to throw once *it* checks a looked-up
 value's `sql_type()` against what it expected — the same "exported, not
 internally thrown" shape `crypto/digest.DigestMismatch` already uses.
-
-`fs/file` is the first module to touch real file I/O rather than pure
-in-memory vocabulary — a whole-file convenience object plus a streaming
-handle:
-
-```okkama
-import "fs/file" take File, OpenedFile, MissingFile;
-import "fs/path" take Path;
-import "encoding/utf8" take Utf8Encoded, Utf8Decoded;
-
-main() is int {
-    let file = File(Path("notes.txt"));
-    file.write_string("Hello, Okkama!");
-    file.string();     // "Hello, Okkama!"
-    file.exists();     // true
-    file.remove();
-
-    let opened = OpenedFile(Path("stream.bin"));
-    opened.write(bytes Utf8Encoded("streamed"));
-    opened.seek(0);
-    string Utf8Decoded(opened.bytes(64));  // "streamed"
-    opened.close();
-    return 0;
-}
-```
-
-`File.bytes()` reads a whole file in one native call sized exactly by
-`Meta(path).size()`, rather than looping and concatenating chunks — arrays
-have no append, so merging several would need the same
-`List<T>`-building idiom used elsewhere, and doing that byte-by-byte for
-an entire file's contents would be far too slow. A real local read
-essentially always returns the full requested size or genuine EOF, never
-an arbitrary short read, so a mismatch panics as a provider-invariant
-violation instead of silently returning truncated content.
-`OpenedFile.bytes(limit)` needs none of this: `Input`'s own contract is
-already "at most `limit` bytes, EOF means empty," exactly what one native
-read call provides directly.
-
-`OpenedFile`'s `closed()` has no native counterpart to query — a
-`FileHandle` only knows how to open/read/write/seek/flush/close, never
-"am I closed?" — so it's backed by a `runtime/memory.ByteMemoryHandle`
-sentinel, the same technique `test/fake_clock` uses for mutable state
-outside a constructor. Both the real native `close()` and the sentinel's
-own close are already idempotent, so calling `OpenedFile.close()` twice is
-harmless.
 
 `fs/dir` rounds out Phase 6's filesystem work with creation, listing,
 recursive walking and removal:
@@ -5223,78 +4828,6 @@ and `RowWindow` share a small internal `Rows` role (`clause() is
 string`) so `Select` never has to branch on which one it was given — an
 `UnlimitedRows` renders no `LIMIT`/`OFFSET` suffix at all.
 
-`http/request` is an immutable HTTP request — method, URL, headers, and
-body — plus the five most common method shortcuts:
-
-```okkama
-import "http/request" take Method, Request, Get;
-import "http/headers" take Headers;
-import "net/url" take Url;
-import "io/buffer" take BufferAllocation;
-
-main() is int {
-    let request is Request = Get(
-        Url("https://example.test/search?q=ada"),
-        Headers([]),
-        buffer BufferAllocation([]),
-    );
-
-    request.method();       // Method.get
-    request.url().string(); // "https://example.test/search?q=ada"
-    return 0;
-}
-```
-
-`Get`/`Post`/`Put`/`Patch`/`Delete` each fix their own `Method` and
-delegate everything else to one internally held `HttpRequest` — the
-actual field-holding logic lives in exactly one place, not duplicated
-five times. `InvalidRequest` is exported vocabulary with no internal
-throw site in this module: neither `HttpRequest` nor any named
-constructor validates anything (any method/URL/headers/body combination
-is accepted) — it exists for a future `http/client`/`http/server` module
-to throw once it has enough context to judge a request malformed, the
-same "exported, not necessarily thrown here" shape used for
-`sql/dialect.UnsupportedSqlFeature` and `crypto/digest.DigestMismatch`.
-
-`http/response` is the other half: a streamed response plus explicit
-body materialization —
-
-```okkama
-import "http/response" take Response, HttpResponse, ResponseJson;
-import "http/status" take Ok;
-import "http/headers" take Headers;
-import "io/buffer" take BufferAllocation;
-import "encoding/utf8" take Utf8Encoded;
-import "encoding/json" take Json;
-
-main() is int {
-    let response is Response = HttpResponse(
-        status Ok(),
-        Headers([]),
-        buffer BufferAllocation(bytes Utf8Encoded("{\"ok\":true}")),
-    );
-
-    let parsed is Json = json ResponseJson(response);
-    return 0;
-}
-```
-
-Materialization is explicit (`ResponseBytes`/`ResponseString`/
-`ResponseJson`, each a `&`-projectable one-shot reader) because it may
-consume a stream and allocate a large value — draining an arbitrary
-`Input` can't reuse the same bounded-window-retry trick `fs/dir` used for
-directory listings, since a single `bytes(limit)` call can already return
-up to `limit` bytes (unlike one-entry-per-call `readdir()`) and a stream
-can't be rewound the way a directory can. `ResponseBytes` instead does
-exactly two reads — one bounded at 16 MiB (the same cap
-`runtime/tls`'s native provider already uses for `tls_read`), then one
-confirming the stream is now empty — throwing `InvalidResponseBody`
-rather than silently truncating if the body turns out to be larger.
-`ResponseString`/`ResponseJson` build on `ResponseBytes`/`ResponseString`
-by calling their marked actions as plain, ordinary methods internally
-(`&`-projection is sugar for exactly that call, never required to invoke
-it).
-
 `log/formatter` renders a `LogEvent` two ways — a human line, and a
 complete machine-readable JSON record:
 
@@ -5328,46 +4861,6 @@ object, empty rather than absent when there are none. Two fields sharing
 a name surface as `encoding/json.DuplicateJsonMember` when `JsonFormatter`
 encodes them — this module adds no duplicate check of its own, reusing
 the JSON encoder's existing one instead.
-
-The `random` modules build random values over one small capability,
-`Randomizing`:
-
-```okkama
-import "random/source" take Randomizing, PcgRandom, SecureRandom;
-import "random/distribution" take Choices, PermutationSamples;
-
-main() is int {
-    let secure is Randomizing = SecureRandom();
-    let repeatable is Randomizing = PcgRandom(42);
-
-    let roll is int = secure.integer(1, 7);   // 1 through 6: stop is excluded
-    let ratio is float = secure.float();      // 0.0 <= ratio < 1.0
-    let nonce is @byte = secure.bytes(24);
-    let color is string = Choices(random: repeatable,
-        values: ["red", "green", "blue"]).sample();
-    let order is @int = PermutationSamples(random: repeatable,
-        values: [1, 2, 3, 4]).sample();
-    return 0;
-}
-```
-
-`SecureRandom` reads fresh operating-system entropy for every call and has no
-seed. Integer ranges are half-open `[start, stop)` and never empty. A sample
-outside the unbiased range is drawn again, so the bounds never pass through
-`float`. `float()` forms 53 random bits in `[0.0, 1.0)`. A byte request is
-capped at 16 MiB.
-
-`PcgRandom(seed)` is PCG-XSH-RR 64/32: reproducible, not cryptographically
-secure. It owns a mutable stream, and copies of the object share it. The exact
-output sequence is part of the public contract, so a seed gives the same
-values on every engine.
-
-The distributions in `random/distribution` take the source by name and answer
-with `sample()`, which advances it: uniform integers and floats, normal,
-exponential, gamma, beta, log-normal, von Mises, Pareto and Weibull, and also
-`Choices`, `WeightedChoices`, `Samples` (without replacement) and
-`PermutationSamples`. Invalid parameters throw `InvalidDistribution`, and an
-empty range throws `InvalidRandomRange`.
 
 Network addresses are validated values before they reach DNS or sockets:
 
@@ -5439,130 +4932,6 @@ lookup and returns validated `SocketAddress` values carrying the requested
 port; it does not decide TCP versus UDP. `FixedDns` holds immutable maps for
 deterministic tests. Host resolver details are normalized to `UnresolvedHost`
 and `MissingReverseName`.
-
-`strings/parse` reads a number or a truth value written as text. The object
-names the text, and the action names the type asked for:
-
-```okkama
-module app v1.0.0;
-
-import "strings/parse" take Number, Truth, InvalidInteger;
-
-main() is int {
-    let count is int = Number("-42").int();
-    let mask is int = Number("ff").int(16);
-    let ratio is float = Number("3.0").float();
-    let share is rat = Number("6/8").rat();     // 3/4
-    let enabled is bool = Truth("true").bool();
-    let octet is byte = Number("255").byte();
-
-    try {
-        Number(" 42").int();
-    }
-    catch InvalidInteger.source(source) {
-        source; // the unchanged input: " 42"
-    }
-    return 0;
-}
-```
-
-The readings accept only ASCII spellings: `-?[0-9]+` for `int` in base 10,
-`-?[0-9]+\.[0-9]+` for `float`, an integer or `numerator/denominator` with a
-positive denominator for `rat`, exactly `true` or `false` for `bool`, and an
-unsigned value in `0..255` for `byte`. `int` and `byte` take an explicit base
-from 2 to 36, and base 0 reads the `0b`, `0o` and `0x` prefixes. The readings
-do not trim, recognize a leading `+`, use locale digits, or accept
-exponent/`NaN`/`Inf` float forms. Each failure is a typed `Error` carrying the
-original string.
-
-The I/O roles follow the Elegant Objects naming rule: a query names the value
-it returns, while a command uses a verb and exposes no infrastructure result.
-Lifecycle ownership is independent from transport:
-
-```okkama
-module app v1.0.0;
-
-import "io/input" take StringInput, EndOfInput;
-import "io/output" take StringOutput;
-
-object CopyOneLine {
-    has source is StringInput;
-    has target is StringOutput;
-
-    CopyOneLine(:source, :target);
-
-    copy() is void {
-        try {
-            target.writeln(source.line());
-            target.flush();
-        }
-        catch error is EndOfInput {
-            target.flush();
-        }
-    }
-}
-```
-
-`Input.bytes(limit)` requires a positive byte maximum; an empty result means
-EOF. `StringInput.line()` distinguishes EOF from an empty line by throwing
-`EndOfInput`. `Output.write(bytes)`, `StringOutput.write(values...)`,
-`writeln(values...)`, `writef(pattern, values...)`, and `flush()` are
-commands declared `is void`; invoke them separately. `writef` emits no implicit newline. They do not return
-native write counts. A partial failure is `IncompleteWrite`, whose noun
-`written()` reports the accepted prefix. Owned files, sockets and pipes may
-also implement `Closeable`; borrowed standard streams do not. Every role has
-a deterministic fake, and `Closeable.fake()` uses identity-local
-`fake.storage` for an idempotent lifecycle.
-
-Memory buffers are acquired explicitly from state-only descriptions:
-
-```okkama
-module app v1.0.0;
-
-import "io/buffer" take StringBuffer, StringBufferAllocation;
-
-main() is int {
-    let buffer is StringBuffer = buffer StringBufferAllocation("first\nsecond");
-    buffer.line();        // "first"
-    buffer.writeln("!", 3);
-    buffer.string();      // "second!3\n"
-    return 0;
-}
-```
-
-`Buffer` consumes unread bytes through `bytes(limit)` while its zero-argument
-`bytes()` is a snapshot. `StringBuffer.line()` returns the final unterminated
-tail once and then throws `EndOfInput`. `BufferedInput` prefetches only into an
-empty private cache; `BufferedOutput` drains at its capacity and on
-`flush()`/`close()`. Decorators own that cache, not the wrapped source or
-target. A partial output failure retains the exact unwritten suffix for retry.
-
-Concrete standard streams are ordinary objects:
-
-```okkama
-module app v1.0.0;
-
-import "io/input" take EndOfInput;
-import "io/stdin" take Stdin;
-import "io/stdout" take Stdout;
-import "io/stderr" take Stderr;
-
-main() is int {
-    Stdout().write("name: ");
-    try {
-        Stdout().writeln("hello, ", Stdin().line());
-    }
-    catch error is EndOfInput {
-        Stderr().writeln(error.text());
-    }
-    return 0;
-}
-```
-
-`Stdin.line()` strictly decodes UTF-8 and removes one LF, CRLF, or CR ending.
-`StdinBytes.bytes(limit)` exposes raw octets. `StdoutBytes` and `StderrBytes`
-write raw octets; formatted `Stdout` and `Stderr` concatenate display forms,
-encode UTF-8, and keep the native counters private to `runtime/stdio`.
 
 ### URL and cookie policy in the active v4 stdlib
 

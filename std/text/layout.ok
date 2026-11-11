@@ -5,12 +5,12 @@ import "runtime/layout" take indent, dedent, wrap, shorten;
 
 // Immutable text-layout values.
 //
-// Every object projects directly to string:
+// Every object answers string():
 //
-//     let block = string Indented(
+//     let block = Indented(
 //         origin: "first\nsecond",
 //         prefix: "  ",
-//     );
+//     ).string();
 //     // "  first\n  second"
 //
 // Indented prefixes every nonblank line and preserves line endings. Empty and
@@ -19,25 +19,25 @@ import "runtime/layout" take indent, dedent, wrap, shorten;
 // Dedented removes the longest exact spaces-and-tabs prefix shared by every
 // nonblank line. It also removes spaces and tabs from otherwise blank lines:
 //
-//     string Dedented(origin: "    first\n      second");
+//     Dedented(origin: "    first\n      second").string();
 //     // "first\n  second"
 //
 // Wrapped collapses whitespace between words, removes surrounding whitespace,
 // and packs whole words into lines no wider than width. A single word longer
 // than width remains intact on its own line; words are never split:
 //
-//     string Wrapped(origin: "one two three", width: 7);
+//     Wrapped(origin: "one two three", width: 7).string();
 //     // "one two\nthree"
 //
 // Shortened performs the same whitespace normalization. If the normalized
 // text does not fit, it keeps the longest whole-word prefix for which the
 // exact placeholder also fits:
 //
-//     string Shortened(
+//     Shortened(
 //         origin: "one two three",
 //         width: 10,
 //         placeholder: "...",
-//     );
+//     ).string();
 //     // "one two..."
 //
 // Wrapped requires a positive width. Shortened accepts a nonnegative width,

@@ -369,9 +369,13 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     `random/source` (the PCG32 sequence, checked against an independent
     implementation), `regex/replace` and `time/zone`. `Reduced.total()`
     folds with `reduce` instead of walking `Accumulated`.
-  - The Book's `random` and `strings/parse` passages describe the current
-    API, and §17.6 shows a plain call after a constructor instead of the
-    removed `#projected` (#367).
+  - Book §26.5 describes each wave-1 area in its "current std" part
+    (strings/parse, encoding, collections, math and numbers, time, async,
+    random, regex, io/text/unicode). The legacy-stdlib passages of those
+    areas are gone, and so are those of the finished exemplars (json,
+    fs/file, the http client side): 1 375 lines that described APIs no
+    longer in the tree. §17.6 shows a plain call after a constructor
+    instead of the removed `#projected` (#367).
 ### Fixed
 
 - Traversals own what they walk, and keep no record of what they walked

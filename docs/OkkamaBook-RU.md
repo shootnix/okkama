@@ -3806,6 +3806,72 @@ Path("notes.txt"))` открывает на чтение; `for file.text() -> li
 
 `http/client` отправляет запросы через `HttpClient()`. По умолчанию он берёт системные DNS и доверенные корни, ходит только на публичные адреса и говорит по HTTP/1.1. Всё остальное задаётся именованными аргументами: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)`, `cookies: MemoryCookieJar()`. Для каждого REST-метода есть шорткат: `get(url)`, `head`, `options`, `delete`, а также `post(url:, body:)`, `put`, `patch` с `Content`, например `JsonBody(json)`. Любой другой запрос пишется как `client.response(Request(url:, method:, headers:, body:))`. Ответ показывает голову через cap `Head` (`page::Head::status`, `::class`, `::headers`) и читает тело через `await page.text()`, `bytes()`, `json()` или `reading()`. `Status` и `Method` — enum'ы: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` и `MethodName` переводят их в числа и токены протокола и обратно. Каждая задача показана программой в `examples/http/client/`.
 
+`strings/parse` читает текст как тип, который у него просят: `Number("42").int()`,
+`Number("ff").int(16)`, `Number("6/8").rat()`, `Number("3.0").float()`,
+`Number("255").byte()` и `Truth("true").bool()`. Пробелы не обрезаются, ведущий
+`+` отвергается; каждый отказ (`InvalidInteger`, …) хранит исходный текст.
+
+`encoding` переводит байты в текст и обратно только явно.
+`Utf8Encoded(origin: text).bytes()` и `Utf8Decoded(origin: bytes).string()`
+работают с UTF-8; UTF-16 и UTF-32 требуют `ByteOrder`. Base64 (стандартный или
+URL-safe), Base32, Base85, hex, quoted-printable, ASCII и Latin-1 устроены так
+же: `…Encoded`/`…Decoded`. Декодеры строгие и называют смещение первой ошибки:
+`catch InvalidBase64.at(offset)`. `Binary(bytes:, order:)` читает
+`.int(signedness)` или `.float(width)`, а `IntegerBytes` и `FloatBytes` пишут;
+порядок байтов хоста не используется.
+
+`collections` персистентны: изменение возвращает новое значение. `Deque`
+читает и меняет свои концы (`first()`, `last()`, `prefix(x)`, `suffix(x)`,
+`tail()`, `body()`), множество отвечает `membership(x)`. `Sorted(xs)` и
+`SortedBy(origin:, key:)` сортируют стабильно; `LowerBound`, `UpperBound` и
+`PositionOf` отвечают `index()`. Представления (`Mapped`, `Filtered`, `Taken`,
+`Chunked`, `Pairwise`, `Reversed`, `Sliced`, …) ленивы и обходятся `for`, а
+`Reduced(…).total()` сворачивает.
+
+`math`, `numbers` и `checksum`: `PI`, `TAU` и `E` — константы модуля;
+`Extremes(xs).minimum()`, `Numbers(xs).sum()` и
+`Vectors(left:, right:).dot()` агрегируют. `BigRational` считает через
+`a.plus(b)`, `a.minus(b)`, `a.times(b)` и `a.divided(b)`, а
+`ShortestFloat(x).decimal()` — кратчайшая десятичная запись, которая читается
+обратно в тот же float. Контрольные суммы: `Crc32(bytes).checksum()`, `Adler32`
+и `Crc16Ccitt`.
+
+`time` разделяет длительности, моменты, даты и зоны. `Duration(value:, unit:)`
+точна (`d.times(f)`); `date.shifted(days)`, `DaysBetween(left:, right:).count()`
+и `GregorianDay(date).number()` считают дни. Чтения отвечают тем, что прочитали,
+а каждый форматтер читает свой текст обратно: `IsoText(t).date()`,
+`Rfc3339(t).instant()`, `FormattedDate(text:, pattern:).date()`.
+`Zone("Europe/Berlin")` использует встроенную tzdata, а
+`Zoned(local:, zone:, fold:).instant()` переводит локальное время в момент:
+пропуск бросает `MissingLocalTime`, а повторённый час требует `Fold`.
+Руководство — `docs/time-guide.md` в okkama-docs.
+
+`async` собирает futures: `await Within(origin:, limit:, clock:).outcome()` и
+`Before(…)` ограничивают одну временем и бросают `TimedOut`;
+`AllFutures(origins:).results()`, `Raced(origins:).winner()`,
+`FirstSuccessful(origins:).outcome()` и `FutureCompletions` комбинируют
+несколько; `FutureGroup` и `FutureScope(action:).outcome()` держат дочерние
+задачи внутри одного времени жизни. Каналы, события, блокировки, семафоры,
+барьеры и отмена — остальные модули `async/*`.
+
+У `random` одна способность, `Randomizing`: `SecureRandom()` берёт энтропию
+операционной системы, а `PcgRandom(seed)` воспроизводим, и его
+последовательность PCG32 входит в контракт. Распределения принимают источник
+по имени и отвечают `sample()`: `UniformIntegers(random:, start:, stop:)`,
+`NormalDistribution`, `Choices`, `Samples`, `PermutationSamples`, … Диапазоны
+целых полуоткрыты.
+
+`regex` — переносимый диалект без обратных ссылок и lookaround:
+`FirstRegexMatch(text, Regex("\\d+")).text()`,
+`for RegexMatches(text, pattern) -> found`, `RegexParts` для разбиения и
+`RegexSubstitution` с `ExpandedRegexReplacement("${last}, ${first}")` для
+замены. Смещения считают скалярные значения Unicode.
+
+`io`, `text` и `unicode`: `Stdout().writeln(…)` и `Stdin().line()`;
+`Indented`, `Dedented`, `Wrapped` и `Shortened` раскладывают текст;
+`Normalized(origin:, form:)` и `UnicodeCharacter(c).name()` следуют
+Unicode 16.0.0.
+
 Следующие исторический перечень и примеры относятся к **прежней `stdlib/`**.
 Они исполняются с этой библиотекой, но не определяют API и готовность `std/`.
 Корень библиотеки следует выбирать явно; смешивать их модули нельзя.
@@ -3813,29 +3879,10 @@ Path("notes.txt"))` открывает на чтение; `for file.text() -> li
 
 Stdlib намеренно узка, пока язык стабилизируется:
 
-- `okkama` — `Dump`, отладочный форматтер (глава 28);
-- `math` — небольшие обобщённые примеры вроде `Max<T>`;
-- `strings/parse` — строгие преобразования строк в `int`, `float`, `bool` и
-  `byte`, целиком написанные на Okkama;
-- `collections/iteration`, `collections/list`, `collections/queue` и
-  `collections/stack` — номинальный неизменяемый обход и persistent-значения
-  связного списка, FIFO и LIFO;
-- `format` — неизменяемые positional/named projections с типизированными
-  ошибками шаблона и отсутствующих значений;
 - `template/plain` — чистые именованные string-шаблоны с закрытыми
   ERB/Mojolicious-style тегами и типизированными ошибками source/value;
 - `template/html` — HTML-рендеринг над теми же тегами, где экранирование
   решает тип `SafeHtml` привязанного значения, а не сам тег;
-- `encoding/binary` — чтение без скрытого курсора с явным endian и композиция
-  бинарных значений фиксированной разрядности;
-- `encoding/utf8` — явное строгое преобразование между Unicode-`string` и
-  сырыми `@byte` с типизированным offset некорректной последовательности;
-- `encoding/base64` — каноническое padded RFC 4648-преобразование между
-  сырыми `@byte` и ASCII-`string` со строгими типизированными ошибками;
-- `encoding/hex` — канонический lowercase hex и строгое чтение ASCII обоих
-  регистров с типизированными offset исходной строки;
-- `encoding/json` — номинальные точные JSON-значения, строгий рекурсивный
-  разбор, детерминированное компактное кодирование и Unicode-координаты ошибок;
 - `encoding/csv` — RFC 4180-подобные streaming-строки над `Input`/`Output`
   под явным dialect, с located `InvalidCsv`;
 - `encoding/toml` — практический однострочно-документный subset TOML
@@ -3851,9 +3898,6 @@ Stdlib намеренно узка, пока язык стабилизирует
   словарь до конкретных TCP/UDP/Unix socket-ресурсов;
 - `sql/value` — точные bindable SQL-скаляры, включая явный `SqlNull`, до
   построения SQL statement/query;
-- `http/status` — валидированный `Status(code, reason)` с классификацией
-  по классу статуса, плюс `Ok`/`Created`/`BadRequest`/`NotFoundStatus`/
-  `InternalServerError`, проецирующиеся в него;
 - `http/headers` — неизменяемые case-insensitive `Headers`, композиция
   `ExtendedHeaders`/`FilteredHeaders`, значения `Header`, отвергающие
   CRLF-инъекцию;
@@ -3864,9 +3908,6 @@ Stdlib намеренно узка, пока язык стабилизирует
   опциональный `last_id()`) для `INSERT`/`UPDATE`/`DELETE`;
 - `db/row` — доступ по имени/индексу к `SqlValue` одной строки результата
   запроса;
-- `fs/file` — файл целиком `File` (`bytes()`/`string()`/`write()`/
-  `append()`/`remove()`) плюс потоковый `OpenedFile`
-  (`Input`/`Output`/`Closeable`);
 - `fs/dir` — создание/листинг/удаление директорий, рекурсивный
   `DirectoryWalk` и symlink-safe рекурсивный `remove_all()`;
 - `socket/tcp` — настоящие TCP `TcpSocket`/`TcpListener` и DNS-driven
@@ -3884,10 +3925,6 @@ Stdlib намеренно узка, пока язык стабилизирует
   рендерящиеся через любой `Dialect`;
 - `sql/query` — `Select`/`RawQuery` с явным словарём
   `EveryRow`/`UnlimitedRows`/`RowWindow`;
-- `http/request` — неизменяемый `HttpRequest` и конструкторы-сокращения
-  `Get`/`Post`/`Put`/`Patch`/`Delete`;
-- `http/response` — потоковый `HttpResponse` плюс явная материализация
-  bytes/string/JSON;
 - `http/handler` — роль `Handler` плюс диспетчеризация `HandlerChain` по
   принципу chain-of-responsibility, где отказ выражается через throw
   `HandlerFailure`, а не через возврат значения;
@@ -3895,9 +3932,6 @@ Stdlib намеренно узка, пока язык стабилизирует
   `PathPattern`, сегменты `:name` извлекаются как `@PathParameter` (не
   нативная map — Okkama не может построить map с количеством элементов,
   известным только во время выполнения, из чистого кода);
-- `http/client` — самописный HTTP/1.1 `Client` поверх `socket/tcp`/
-  `crypto/tls`, сериализующий запросы и разбирающий ответы побайтово,
-  следующий redirect-ам по `Location` до настроенного предела;
 - `http/server` — последовательный `Server`, принимающий по одному
   соединению за раз через обычный TCP, разбирающий запросы и пишущий
   ответы тем же побайтовым способом, что и `http/client`, только наоборот;
@@ -3952,18 +3986,12 @@ Stdlib намеренно узка, пока язык стабилизирует
   последующие элементы другого конкретного типа, но той же роли),
   найденный и объяснённый, но не исправленный, обойдённый через явный
   `let` — см. `db-migration-22072026.md`;
-- `random` — безопасные диапазоны/fraction и явно внедряемые
-  детерминированные выборки и неизменяемые перестановки;
 - `os` — типизированное описание хоста и явных POSIX/Windows-систем с закрытыми
   enum платформы, архитектуры и стиля путей;
 - `fs/path` — выбранные по хосту и явные POSIX/Windows неизменяемые лексические
   пути с точной UTF-8-проекцией и типизированными ошибками;
 - `fs/meta` — портируемые metadata `FileKind`/`Permissions`, читаемые через
   `lstat`, так что symlink никогда не следуется молча;
-- `time/duration` — знаковые проверяемые интервалы в наносекундах и точные
-  проекции именованных единиц;
-- `time/instant`, `time/clock` и `time/date` — точки на конкретных часах,
-  внедряемые wall/monotonic-часы, Gregorian-даты и UTC-проекция;
 - `test/fake_clock` — реализация `Clock`, которую тест явно продвигает,
   откатывает или устанавливает, так что `sleep` никогда не блокирует;
 - `test/benchmark` — repeatable измерение длительности через внедряемый
@@ -3979,8 +4007,6 @@ Stdlib намеренно узка, пока язык стабилизирует
   без блока `finally` — в грамматике языка его просто нет — за счёт того,
   что `try`/`catch` на каждый кейс полностью поглощает любую `Error` в
   `bool`, и идущий следом цикл `after()` достигается всегда;
-- `time/timer` — явно приобретаемые owned one-shot и fixed-rate periodic
-  таймеры;
 - `env/var` — номинальные переменные окружения, точные сырые байты, строгие
   UTF-8-проекции и изолированный role fake;
 - `env/cwd` — явная stateless capability для ambient рабочей директории, с
@@ -3994,14 +4020,6 @@ Stdlib намеренно узка, пока язык стабилизирует
   неразрешённые пары host/port без утечки native envelope;
 - `test/more` — stateless переиспользуемые утверждения поверх контекстной test
   capability и Error-значение `AssertionFailure`;
-- `io/input`, `io/output` и `io/closeable` — независимые от хоста роли
-  транспорта и жизненного цикла с типизированными ошибками;
-- `io/buffer` — явно приобретаемые owned byte/string-буферы и не владеющие
-  wrapped-потоками декораторы буферизации;
-- `io/stdin`, `io/stdout` и `io/stderr` — конкретные объекты стандартных
-  потоков процесса поверх нативной байтовой границы;
-- `regex` — неизменяемый объект `Regex` поверх портируемого regex-субстрата
-  (глава 31.3);
 - `runtime/*` — модули нативного субстрата, состоящие только из объявлений
   (глава 27): `runtime/time`, `runtime/fs`, `runtime/process`,
   `runtime/net`, `runtime/poll`, `runtime/environment`, `runtime/system`,
@@ -4116,89 +4134,6 @@ portable не вычислить, а owner-биты — ближайшее по�
 поэтому ошибка `not_found` — это catchable `MissingPath` выше; любая другая
 native-ошибка (permission denied, unexpected) — invariant panic, поскольку
 этот модуль не объявляет для неё более широкий словарь ошибок.
-
-Длительности используют одно знаковое точное представление в наносекундах:
-
-```okkama
-import "time/duration" take
-    Duration, Milliseconds, Seconds, Minutes;
-
-main() is int {
-    let timeout is Duration = duration Seconds(30);
-    let retry = timeout.plus(duration Milliseconds(500));
-    let rewind = (duration Minutes(2)).times(-1);
-
-    retry.nanoseconds();        // 30500000000
-    rewind.less(Duration(0));   // true
-    return 0;
-}
-```
-
-Конструкторы `Duration`, `Nanoseconds`, `Milliseconds`, `Seconds`, `Minutes` и
-`Hours` только сохраняют состояние. Проверка, арифметика и масштабирование
-единиц выполняются в экшенах. Отрицательные интервалы допустимы, но каждый
-результат обязан помещаться в signed 64-bit nanoseconds. Переполнение бросает
-`InvalidDuration` до wrap или перехода через float. Чистый Okkama-модуль не
-обращается к часам и не засыпает; `time/clock` отдельно определяет,
-где требуется неотрицательный относительный интервал.
-
-Instant никогда не теряет часы, которые придают смысл его целому значению:
-
-```okkama
-import "time/duration" take Duration, Milliseconds, Seconds;
-import "time/instant" take ClockIdentity, Instant;
-import "time/clock" take Clock, MonotonicClock, OffsetClock;
-import "time/date" take Date, TimeZone;
-import "time/timer" take
-    ScheduledTimer, Timer,
-    ScheduledPeriodicTimer, PeriodicTimer;
-
-main() is int {
-    let clock is Clock = MonotonicClock();
-    let started = clock.now();
-    let shifted = OffsetClock(clock, duration Seconds(1)).now();
-    let elapsed = shifted.since(started);
-
-    let leap = Date(2024, 2, 28).plus_days(1);
-    let epoch = TimeZone("UTC").at(
-        Instant(0, ClockIdentity.system)
-    );
-
-    let timeout is Timer = timer ScheduledTimer(duration Milliseconds(10));
-    timeout.wait();
-
-    let ticker is PeriodicTimer =
-        timer ScheduledPeriodicTimer(duration Seconds(1));
-    ticker.cancel();
-
-    leap.string();       // "2024-02-29"
-    epoch.string();      // "1970-01-01T00:00:00Z"
-    elapsed.nanoseconds();
-    ticker.cancelled();  // true
-    return 0;
-}
-```
-
-`Instant` хранит signed-64 наносекунды и `ClockIdentity.system` либо
-`ClockIdentity.monotonic`. Сдвиги сохраняют identity; сравнение или вычитание
-разных identity бросает `IncompatibleClocks`. `SystemClock` читает Unix-время,
-`MonotonicClock` предназначен для измерений/deadline, а `OffsetClock`
-декорирует источник, не меняя его identity. Отрицательный `Duration` остаётся
-корректным значением, но `Clock.sleep` отвергает некорректный относительный сон
-через `InvalidSleepDuration`.
-
-`Date` реализует proleptic Gregorian-календарь для годов `1..9999`.
-`DateTime` сохраняет точный исходный instant. Первая политика `TimeZone`
-намеренно поддерживает только UTC; остальные имена бросают `UnknownTimeZone`,
-пока stdlib не получит собственные versioned time-zone data вместо неявной
-зависимости от хоста.
-
-Таймеры — live resources, а не immutable values. `ScheduledTimer` и
-`ScheduledPeriodicTimer` — state-only описания расписания; обычный вызов `timer()`
-явно приобретает owned resource. `cancel()` — идемпотентная команда,
-`cancelled()` — её query. `wait()` после отмены бросает `CancelledTimer`.
-Периодика использует привязанный fixed-rate schedule и пропускает опоздавшие
-тики; destroy закрывает opaque runtime handle.
 
 Код, написанный против role `Clock`, можно тестировать без реальных часов
 через `test/fake_clock`:
@@ -4361,73 +4296,6 @@ main() is int {
 argv приложения не входит. Конструктор `Args()` ничего не вызывает: защитным
 snapshot уже владеет runtime provider.
 
-Persistent queue и stack начинаются с явно типизированных пустых значений.
-Каждое производное значение оставляет прежнюю версию без изменений, и обе
-структуры напрямую работают с `for`:
-
-```okkama
-import "collections/queue" take Queue, EmptyQueue;
-import "collections/stack" take Stack, EmptyStack;
-
-main() is int {
-    let empty_queue is Queue<int> = EmptyQueue();
-    let queue = empty_queue.enqueued(1).enqueued(2);
-    queue.head();             // 1: FIFO
-
-    let empty_stack is Stack<int> = EmptyStack();
-    let stack = empty_stack.pushed(1).pushed(2);
-    stack.top();              // 2: LIFO
-
-    for queue -> value { value; } // 1, затем 2
-    for stack -> value { value; } // 2, затем 1
-    return 0;
-}
-```
-
-Queue использует приватное представление из двух списков и разворачивает rear
-только при исчерпании front, поэтому enqueue/tail имеют amortized O(1). Stack —
-семантическая обёртка над `List<T>`, повторно использующая его хранение; cursor
-обходит только публичный контракт Stack. Пустые `head`/`tail` и
-`top`/`popped` бросают типизированные
-контекстные ошибки.
-
-Форматирование — неизменяемая проекция над непосредственно переданными
-позиционными значениями или явной map именованных значений:
-
-```okkama
-import "format" take
-    Formatted, NamedFormatted, PrintfFormatted,
-    InvalidFormat, MissingFormatValue, InvalidPrintf;
-
-main() is int {
-    let named is %string:any = ["name": "Ada", "count": 3];
-
-    string Formatted("{}: {}", "Ada", 3);            // "Ada: 3"
-    string NamedFormatted("{name}: {count}", named);  // "Ada: 3"
-    string PrintfFormatted("exact=%8r hex=%04x", rat(1, 3), 15);
-    // "exact=     1/3 hex=000f"
-    return 0;
-}
-```
-
-`Formatted` последовательно потребляет только пустые поля `{}`.
-`NamedFormatted` принимает ASCII identifiers вроде `{name}` и `{count_2}`;
-они могут повторяться. В обеих формах `{{` и `}}` обозначают литеральные
-скобки, а лишние переданные значения разрешены. Вариадический конструктор
-сохраняет позиционные значения в приватном состоянии `@any`, поэтому
-вызывающий код не создаёт вспомогательный массив. Некорректный шаблон бросает
-`InvalidFormat` с первым offset в zero-based Unicode code points. Отсутствующее
-значение бросает `MissingFormatValue`, чей текст сохраняет positional index
-или named key. Конструкторы только сохраняют шаблон и коллекцию; parsing и
-native rendering выполняются в `string()`.
-
-`PrintfFormatted` поддерживает переносимое sprintf-подмножество
-`%s/%c/%d/%i/%u/%o/%x/%X/%b/%f/%e/%E/%g/%G`, `%%` и точный `%r`.
-Числовые width/precision и обычные flags поддерживаются. Динамический `*`,
-позиционные `$`, `%n`, `%p`, `%v` и host length modifiers отвергаются как
-`InvalidPrintf`. Для `%r` разрешены width и `-`, но не precision: точная дробь
-никогда не обрезается молча.
-
 Plain-шаблоны — переиспользуемые строковые объекты, а не встроенные программы
 на Okkama:
 
@@ -4499,202 +4367,6 @@ HtmlTemplate("<section><%== body %></section>")
 `MissingTemplateValue`/`DuplicateTemplateValue` переиспользуются без
 изменений, поскольку отсутствующее или повторное имя — не HTML-специфичное
 понятие.
-
-Бинарные протоколы остаются обычным неизменяемым кодом Okkama. Reader всегда
-явно называет offset и endian, а output композируется из значений, чьи типы
-называют представление:
-
-```okkama
-import "encoding/binary" take
-    BinaryReader, BinaryPart, BinarySequence,
-    Unsigned16BigEndian, Signed32LittleEndian;
-
-main() is int {
-    let parts is @BinaryPart = [
-        Unsigned16BigEndian(258),
-        Signed32LittleEndian(-2),
-    ];
-    let packet is @byte = bytes BinarySequence(parts);
-
-    let reader = BinaryReader(bytes: packet);
-    reader.u16_be(0);               // 258
-    reader.i32_le(2);               // -2
-    reader.bytes(0, 2);             // [byte(1), byte(2)]
-    return 0;
-}
-```
-
-Суффиксы `_be` и `_le` обязательны; порядок байтов хоста не используется.
-Unsigned-parts отвергают выход за разрядность, signed-значения используют
-точные границы two's complement, а короткое чтение бросает
-`EndOfBinaryData`. Отрицательные offset/size и числовые значения вне диапазона
-бросают `InvalidBinaryValue`. Конструкторы только сохраняют исходные значения;
-проверяемое кодирование выполняется в `bytes()`. `BinarySequence` сводит
-неизменяемые parts в persistent byte-чанки и одним линейным identity map
-материализует `Iterable<byte>` в `@byte`.
-
-Текст и байты пересекают явную UTF-8-проекцию. Ни один вызов не выбирает
-кодировку символов неявно:
-
-```okkama
-import "encoding/utf8" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
-
-main() is int {
-    let bytes is @byte = bytes Utf8Encoded("Hello, Привет, 猫, 😀");
-    let text is string = string Utf8Decoded(bytes);
-
-    try {
-        string Utf8Decoded([byte(65), byte(255)]);
-    }
-    catch error is InvalidUtf8 {
-        error.offset(); // 1: byte-offset некорректной последовательности
-    }
-    return 0;
-}
-```
-
-Encoding выдаёт канонический UTF-8 без BOM и нормализации. Decoding строгий:
-он не вставляет replacement-символы, а overlong-формы, суррогаты, значения
-выше `U+10FFFF`, неверные continuation bytes и оборванные хвосты бросают
-`InvalidUtf8`. Сохранённый offset указывает на начало первой некорректной
-байтовой последовательности. Оба projection-объекта неизменяемы, поэтому
-повторное преобразование детерминировано и не использует скрытый изменяемый
-кеш.
-
-Base64 — это кодирование байтов, а не кодировка символов и не шифрование.
-Поэтому при работе с текстом его две проекции явно композируются с UTF-8:
-
-```okkama
-import "encoding/base64" take Base64Encoded, Base64Decoded, InvalidBase64;
-import "encoding/utf8" take Utf8Encoded, Utf8Decoded;
-
-main() is int {
-    let encoded is string = string Base64Encoded(bytes Utf8Encoded("Привет"));
-    let decoded is string = string Utf8Decoded(bytes Base64Decoded(encoded));
-
-    try {
-        bytes Base64Decoded("Zh==");
-    }
-    catch error is InvalidBase64 {
-        error.offset(); // 1: ненулевые неиспользуемые биты
-    }
-    return 0;
-}
-```
-
-Первая версия codec принимает ровно канонический padded RFC 4648 со
-стандартным алфавитом `+` и `/`. Она не игнорирует whitespace и не принимает
-URL-safe, unpadded или MIME-формы. Форма padding и неиспользуемые хвостовые
-биты проверяются, поэтому две разные принятые строки не могут обозначать одну
-байтовую последовательность. Decoder композирует неизменяемые `BinaryBytes`
-parts в один `BinarySequence`; изменяемого выходного буфера и скрытого native
-Base64-codec нет.
-
-Hexadecimal использует ту же явную байтовую границу, но с меньшей
-канонической поверхностью:
-
-```okkama
-import "encoding/hex" take HexEncoded, HexDecoded, InvalidHex;
-
-main() is int {
-    let encoded is string = string HexEncoded([
-        byte(222), byte(173), byte(190), byte(239),
-    ]); // "deadbeef"
-    let decoded is @byte = bytes HexDecoded("DEADBEEF");
-
-    try {
-        bytes HexDecoded("0x");
-    }
-    catch error is InvalidHex {
-        error.offset(); // 1: префиксы не входят в контракт codec
-    }
-    return 0;
-}
-```
-
-Encoder всегда выдаёт два lowercase-символа на байт. Decoder также принимает
-uppercase `A-F`, но отвергает нечётную длину, whitespace, префиксы `0x`,
-разделители и не-ASCII символы. При нечётной длине offset равен
-`text.length()` и указывает место недостающего nibble; остальные ошибки
-указывают первый некорректный code-point offset. Обе трансформации неизменяемы,
-линейны и написаны на Okkama без native-codec.
-
-JSON представлен номинальными объектами, а не map с `any`:
-
-```okkama
-import "encoding/json" take
-    Json, JsonKind, JsonMember, JsonObject, JsonArray,
-    JsonString, JsonNumber, JsonBool, JsonNull, JsonSource, JsonReader,
-    InvalidJson, UnexpectedJsonKind;
-
-main() is int {
-    let values is @Json = [
-        JsonString("Ада"),
-        JsonNumber("1e400"),
-        JsonBool(true),
-        JsonNull(),
-    ];
-    let generated = JsonObject([
-        JsonMember("values", JsonArray(values)),
-    ]);
-    let parsed is Json = json JsonSource(
-        "{\"emoji\":\"\\uD83D\\uDE00\",\"count\":3}",
-    );
-    [generated.encoded(), parsed.encoded()];
-    return 0;
-}
-```
-
-Роль `Json`, реализованная шестью семействами JSON-значений, открывает
-`kind()` и `encoded()`. `kind()` возвращает точный `JsonKind`, не анализируя
-закодированный текст. `JsonMember`, `JsonObject` и `JsonArray` сохраняют порядок и
-номинальные типы. Повторные имена полей отвергаются вместо неявной политики
-first-wins или last-wins; отсутствующие поля и индексы массива также имеют
-разные типизированные ошибки.
-
-`JsonNumber` хранит точное decimal-написание по RFC 8259. Оно не проходит
-через числовой примитив Okkama, поэтому `1e400` остаётся корректным JSON и
-кодируется обратно без изменений. `int()` и `float()` — явные проверяемые
-представления; `InvalidJsonNumberConversion` означает лишь недоступность
-запрошенного ограниченного представления, а не некорректность JSON-числа.
-
-Парсер принимает все JSON-экранирования и корректные UTF-16 surrogate pairs,
-отвергает одиночные суррогаты и неэкранированные control characters и
-канонически экранирует controls при выводе. `InvalidJson` сообщает zero-based
-code-point offset в исходном тексте и one-based line/column. CRLF считается
-одним переводом строки, хотя offset учитывает оба исходных code points.
-Конструирование только сохраняет состояние; parsing, проверка чисел и
-encoding выполняются в queries целиком на Okkama без host JSON-codec.
-
-Для schema-oriented чтения `JsonReader` сразу разбирает источник и служит
-неизменяемым cursor:
-
-````okkama
-let reader = JsonReader(```
-{
-    "name": "Ада",
-    "address": {"city": "Лондон"},
-    "users": [{"age": 37}],
-    "active": null
-}
-```);
-
-let name is string = reader.required_string("name");
-let city is string = reader.required("address").required_string("city");
-let age is int = reader.required("users").at(0).required_int("age");
-let active is bool = reader.optional_bool("active", false);
-````
-
-`required(name)` и `at(index)` возвращают новые readers; исходный reader не
-меняется. `string()`, `int()`, `float()` и `bool()` проецируют текущий узел.
-`required_*` требует существующий member нужного kind.
-`optional_*(name, fallback)` возвращает fallback того же типа только для
-отсутствующего member или JSON null. Существующий non-null узел неправильного
-kind выбрасывает `UnexpectedJsonKind`, чей path показывает место вроде
-`$.users[0].age`. Этот facade предназначен только для чтения. Encoding
-остаётся явным конструированием `JsonObject`, `JsonMember`, `JsonArray` и
-скалярных JSON-значений; приватное состояние domain objects автоматически не
-отражается.
 
 `encoding/csv` читает и пишет RFC 4180-подобные строки над `Input`/`Output`
 под явным, внедряемым dialect:
@@ -4942,34 +4614,6 @@ main() is int {
 из черновика API, поскольку `null` — зарезервированное слово в этом
 null-free языке.
 
-`http/status` валидирует пару HTTP-код/reason и классифицирует её по
-числовому диапазону, с именованными сокращениями для статусов, нужных
-почти везде:
-
-```okkama
-import "http/status" take Status, Ok, NotFoundStatus, InvalidHttpStatus;
-
-main() is int {
-    let found is Status = status Ok();
-    let missing is Status = status NotFoundStatus();
-
-    if found.successful() && missing.client_error() {
-        "both classified correctly";
-    }
-    else {
-        "unexpected";
-    }
-    return 0;
-}
-```
-
-`Ok`, `Created`, `BadRequest`, `NotFoundStatus` и `InternalServerError` —
-объекты без аргументов, каждый проецируется (`status Ok()`, `status NotFoundStatus()`,
-...) в полноценный `Status` — та же именованная проекция конструктора, что `time/duration`
-использует для `duration Seconds(5)`/`duration Hours(5)`, только без аргумента. Любой
-другой код статуса — это `Status(code, reason)` напрямую; конструктор
-отвергает код вне `100..599` или пустой reason одним `InvalidHttpStatus`.
-
 `http/headers` — неизменяемая, case-insensitive коллекция заголовков,
 никогда не теряющая оригинальное написание, плюс небольшая пара
 add/remove для композиции:
@@ -5103,50 +4747,6 @@ main() is int {
 вызывающему коду), чтобы бросить его, когда *адаптер* сверяет
 `sql_type()` найденного значения с ожидаемым — та же схема "экспортирован,
 но не бросается внутри", что уже использует `crypto/digest.DigestMismatch`.
-
-`fs/file` — первый модуль, работающий с реальным файловым I/O, а не с
-чистым словарём в памяти: объект для файла целиком плюс потоковый
-handle:
-
-```okkama
-import "fs/file" take File, OpenedFile, MissingFile;
-import "fs/path" take Path;
-import "encoding/utf8" take Utf8Encoded, Utf8Decoded;
-
-main() is int {
-    let file = File(Path("notes.txt"));
-    file.write_string("Hello, Okkama!");
-    file.string();     // "Hello, Okkama!"
-    file.exists();     // true
-    file.remove();
-
-    let opened = OpenedFile(Path("stream.bin"));
-    opened.write(bytes Utf8Encoded("streamed"));
-    opened.seek(0);
-    string Utf8Decoded(opened.bytes(64));  // "streamed"
-    opened.close();
-    return 0;
-}
-```
-
-`File.bytes()` читает файл целиком одним native-вызовом, размер которого
-берётся точно из `Meta(path).size()`, вместо цикла со склейкой чанков —
-у массивов нет append, так что склейка нескольких потребовала бы того же
-`List<T>`-подхода, что и в других местах, а делать это побайтово для
-содержимого целого файла было бы слишком медленно. Реальное локальное
-чтение практически всегда возвращает либо запрошенный размер целиком,
-либо настоящий EOF, никогда произвольный short read, так что
-несовпадение приводит к panic как нарушение provider invariant, а не к
-молчаливому возврату обрезанного содержимого. `OpenedFile.bytes(limit)`
-ничего из этого не требует: контракт `Input` уже звучит как "не более
-`limit` байт, EOF — это пусто", что один native read и даёт напрямую.
-
-У `OpenedFile.closed()` нет native-аналога для запроса — `FileHandle`
-умеет только open/read/write/seek/flush/close, но никогда "закрыт ли
-я?" — поэтому он опирается на sentinel `runtime/memory.ByteMemoryHandle`,
-ту же технику, что `test/fake_clock` использует для mutable-состояния
-вне конструктора. И реальный native `close()`, и close самого sentinel
-уже идемпотентны, так что вызвать `OpenedFile.close()` дважды безопасно.
 
 `fs/dir` завершает файловую работу Phase 6: создание, листинг,
 рекурсивный обход и удаление:
@@ -5431,78 +5031,6 @@ string`), так что `Select` никогда не ветвится по то�
 значений ему передали — `UnlimitedRows` рендерит вообще без суффикса
 `LIMIT`/`OFFSET`.
 
-`http/request` — неизменяемый HTTP-запрос: метод, URL, заголовки и тело,
-плюс пять сокращений для самых частых методов:
-
-```okkama
-import "http/request" take Method, Request, Get;
-import "http/headers" take Headers;
-import "net/url" take Url;
-import "io/buffer" take BufferAllocation;
-
-main() is int {
-    let request is Request = Get(
-        Url("https://example.test/search?q=ada"),
-        Headers([]),
-        buffer BufferAllocation([]),
-    );
-
-    request.method();       // Method.get
-    request.url().string(); // "https://example.test/search?q=ada"
-    return 0;
-}
-```
-
-`Get`/`Post`/`Put`/`Patch`/`Delete` каждый фиксирует свой `Method` и
-делегирует всё остальное одному внутренне хранимому `HttpRequest` —
-реальная логика хранения полей живёт ровно в одном месте, а не
-дублируется пять раз. `InvalidRequest` — экспортированный словарь без
-внутренней точки броска в этом модуле: ни `HttpRequest`, ни один из
-именованных конструкторов ничего не валидирует (принимается любая
-комбинация method/URL/headers/body) — он существует для будущего модуля
-`http/client`/`http/server`, чтобы бросить его, когда появится
-достаточно контекста счесть запрос некорректным — та же схема
-"экспортирован, но не обязательно бросается здесь", что уже используется
-для `sql/dialect.UnsupportedSqlFeature` и `crypto/digest.DigestMismatch`.
-
-`http/response` — вторая половина: потоковый response плюс явная
-материализация тела —
-
-```okkama
-import "http/response" take Response, HttpResponse, ResponseJson;
-import "http/status" take Ok;
-import "http/headers" take Headers;
-import "io/buffer" take BufferAllocation;
-import "encoding/utf8" take Utf8Encoded;
-import "encoding/json" take Json;
-
-main() is int {
-    let response is Response = HttpResponse(
-        status Ok(),
-        Headers([]),
-        buffer BufferAllocation(bytes Utf8Encoded("{\"ok\":true}")),
-    );
-
-    let parsed is Json = json ResponseJson(response);
-    return 0;
-}
-```
-
-Материализация явная (`ResponseBytes`/`ResponseString`/`ResponseJson`,
-каждый — `&`-проецируемый одноразовый reader), потому что она может
-потребить поток и выделить большое значение — вычитывание произвольного
-`Input` не может переиспользовать тот же bounded-window-retry трюк,
-который `fs/dir` использовал для листинга директорий, поскольку один
-вызов `bytes(limit)` уже может вернуть до `limit` байт (в отличие от
-одной записи за вызов у `readdir()`), а поток нельзя перемотать назад,
-как директорию. `ResponseBytes` вместо этого делает ровно два чтения —
-одно с границей 16 MiB (тот же cap, что native-провайдер `runtime/tls`
-уже использует для `tls_read`), затем ещё одно, подтверждающее, что
-поток теперь пуст — бросая `InvalidResponseBody`, а не молча обрезая,
-если тело оказалось больше. `ResponseString`/`ResponseJson` строятся
-поверх `ResponseBytes`/`ResponseString`, вызывая их действия
-как обычные методы. Префиксная `&`-проекция удалена.
-
 `log/formatter` рендерит `LogEvent` двумя способами — человекочитаемая
 строка и полная машиночитаемая JSON-запись:
 
@@ -5536,46 +5064,6 @@ destination'ов и так проставляют свой timestamp), а `JsonF
 именем всплывают как `encoding/json.DuplicateJsonMember`, когда
 `JsonFormatter` их кодирует — этот модуль не добавляет собственной
 проверки на дубликаты, переиспользуя уже существующую в JSON-энкодере.
-
-Модули `random` строят случайные значения поверх одной небольшой способности,
-`Randomizing`:
-
-```okkama
-import "random/source" take Randomizing, PcgRandom, SecureRandom;
-import "random/distribution" take Choices, PermutationSamples;
-
-main() is int {
-    let secure is Randomizing = SecureRandom();
-    let repeatable is Randomizing = PcgRandom(42);
-
-    let roll is int = secure.integer(1, 7);   // от 1 до 6: stop не входит
-    let ratio is float = secure.float();      // 0.0 <= ratio < 1.0
-    let nonce is @byte = secure.bytes(24);
-    let color is string = Choices(random: repeatable,
-        values: ["red", "green", "blue"]).sample();
-    let order is @int = PermutationSamples(random: repeatable,
-        values: [1, 2, 3, 4]).sample();
-    return 0;
-}
-```
-
-`SecureRandom` берёт свежую энтропию операционной системы на каждый вызов и не
-имеет seed. Диапазоны целых полуоткрыты, `[start, stop)`, и не бывают пустыми.
-Выборка вне несмещённого диапазона повторяется, поэтому границы никогда не
-проходят через `float`. `float()` собирает 53 случайных бита в `[0.0, 1.0)`.
-Запрос байтов ограничен 16 MiB.
-
-`PcgRandom(seed)` — это PCG-XSH-RR 64/32: воспроизводимый, но не
-криптографический. Он владеет изменяемым потоком, и копии объекта делят его.
-Точная последовательность выдачи входит в публичный контракт, поэтому один seed
-даёт одни и те же значения на всех движках.
-
-Распределения в `random/distribution` принимают источник по имени и отвечают
-`sample()`, который продвигает источник: равномерные целые и дробные, нормальное,
-экспоненциальное, гамма, бета, логнормальное, фон Мизеса, Парето и Вейбулла, а
-также `Choices`, `WeightedChoices`, `Samples` (без возвращения) и
-`PermutationSamples`. Неверные параметры бросают `InvalidDistribution`, пустой
-диапазон — `InvalidRandomRange`.
 
 Сетевые адреса становятся проверенными значениями до попадания в DNS или
 сокеты:
@@ -5648,106 +5136,6 @@ transport-neutral поиск и возвращает проверенные `Soc
 запроса, не выбирая TCP или UDP. `FixedDns` хранит неизменяемые maps для
 детерминированных тестов. Детали host resolver нормализуются в
 `UnresolvedHost` и `MissingReverseName`.
-
-`strings/parse` читает число или истинностное значение, записанное текстом.
-Объект называет текст, а действие — тип, который у него просят:
-
-```okkama
-module app v1.0.0;
-
-import "strings/parse" take Number, Truth, InvalidInteger;
-
-main() is int {
-    let count is int = Number("-42").int();
-    let mask is int = Number("ff").int(16);
-    let ratio is float = Number("3.0").float();
-    let share is rat = Number("6/8").rat();     // 3/4
-    let enabled is bool = Truth("true").bool();
-    let octet is byte = Number("255").byte();
-
-    try {
-        Number(" 42").int();
-    }
-    catch InvalidInteger.source(source) {
-        source; // исходная строка без изменений: " 42"
-    }
-    return 0;
-}
-```
-
-Чтения принимают только ASCII-запись: `-?[0-9]+` для `int` по основанию 10,
-`-?[0-9]+\.[0-9]+` для `float`, целое или `числитель/знаменатель` с
-положительным знаменателем для `rat`, ровно `true` или `false` для `bool` и
-беззнаковое значение `0..255` для `byte`. `int` и `byte` принимают явное
-основание от 2 до 36, а основание 0 читает префиксы `0b`, `0o` и `0x`. Чтения не
-убирают пробелы, не принимают ведущий `+`, локальные цифры, экспоненциальную
-запись, `NaN` или `Inf`. Каждый отказ — типизированный
-`Error`, сохраняющий исходную строку.
-
-I/O-роли следуют правилу Elegant Objects: запрос называется возвращаемым
-значением, а команда имеет глагольное имя и не выдаёт инфраструктурный
-результат. Владение жизненным циклом отделено от транспорта:
-
-```okkama
-module app v1.0.0;
-
-import "io/input" take StringInput, EndOfInput;
-import "io/output" take StringOutput;
-
-object CopyOneLine {
-    has source is StringInput;
-    has target is StringOutput;
-
-    CopyOneLine(:source, :target);
-
-    copy() is void {
-        try {
-            target.writeln(source.line());
-            target.flush();
-        }
-        catch error is EndOfInput {
-            target.flush();
-        }
-    }
-}
-```
-
-`Input.bytes(limit)` требует положительный максимальный размер в байтах;
-пустой результат означает EOF. `StringInput.line()` отличает EOF от пустой
-строки, выбрасывая `EndOfInput`. `Output.write(bytes)`,
-`StringOutput.write(values...)`, `writeln(values...)`,
-`writef(pattern, values...)` и `flush()` — команды `is void`, вызываемые
-отдельными инструкциями. `writef` не добавляет перевод строки. Они не возвращают нативные счётчики.
-Частичный отказ представлен `IncompleteWrite`, а существительное `written()`
-сообщает размер принятого префикса. Файлы, сокеты и каналы во владении объекта
-могут дополнительно реализовать `Closeable`; заимствованные стандартные потоки
-не реализуют его. У каждой роли есть детерминированный fake, а
-`Closeable.fake()` моделирует идемпотентный lifecycle через identity-local
-`fake.storage`.
-
-Буфер памяти приобретается явно из state-only описания:
-
-```okkama
-module app v1.0.0;
-
-import "io/buffer" take StringBuffer, StringBufferAllocation;
-
-main() is int {
-    let buffer is StringBuffer = buffer StringBufferAllocation("первая\nвторая");
-    buffer.line();        // "первая"
-    buffer.writeln("!", 3);
-    buffer.string();      // "вторая!3\n"
-    return 0;
-}
-```
-
-`Buffer.bytes(limit)` потребляет непрочитанные байты, а `bytes()` без аргумента
-возвращает snapshot. `StringBuffer.line()` один раз возвращает последний хвост
-без окончания строки, затем выбрасывает `EndOfInput`. `BufferedInput` делает
-prefetch только в пустой приватный cache; `BufferedOutput` опустошает cache при
-достижении capacity и на `flush()`/`close()`. Декоратор владеет cache, но не
-обёрнутым source/target. При частичной записи точный непринятый суффикс остаётся
-для повтора.
 
 ### URL и cookie policy в активной stdlib v4
 
