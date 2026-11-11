@@ -1143,10 +1143,10 @@
     },
     "invalid": {
      "cases": [
-      "L03.bound.private-action"
+      "L03.bound.hidden-action"
      ],
      "mandatory_cases": [
-      "L03.bound.private-action"
+      "L03.bound.hidden-action"
      ],
      "requirement": "required"
     },
@@ -1167,7 +1167,7 @@
     "docs/okkama-spec-11072026.md#8.10.1"
    ],
    "status": "mandatory",
-   "title": "`receiver.action` without parentheses is a bound action value; private actions cannot escape"
+   "title": "`receiver.action` without parentheses is a bound action value; hidden actions cannot escape"
   },
   {
    "aspects": {
@@ -4458,6 +4458,51 @@
     },
     "invalid": {
      "cases": [
+      "L01.gram.hidden.constructor-rejected",
+      "L01.gram.hidden.member-rejected"
+     ],
+     "mandatory_cases": [
+      "L01.gram.hidden.constructor-rejected",
+      "L01.gram.hidden.member-rejected"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L01.gram.hidden.action",
+      "L01.gram.hidden.test-among-actions"
+     ],
+     "mandatory_cases": [
+      "L01.gram.hidden.action",
+      "L01.gram.hidden.test-among-actions"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "GRAM.HIDDEN-ACTION",
+   "discrepancies": [],
+   "family": "Grammar",
+   "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf",
+    "docs/okkama-spec-11072026.md#11.7"
+   ],
+   "status": "mandatory",
+   "title": "`hidden` before an action marks that action hidden; nothing else in an object takes `hidden`"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: the contract defines no boundary values distinct from its normal behaviour"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+    },
+    "invalid": {
+     "cases": [
       "L01.gram.if.dangling-else",
       "L01.gram.if.else-expression",
       "L01.gram.if.no-braces"
@@ -4904,49 +4949,6 @@
     },
     "invalid": {
      "cases": [
-      "L01.gram.private.missing-colon"
-     ],
-     "mandatory_cases": [
-      "L01.gram.private.missing-colon"
-     ],
-     "requirement": "required"
-    },
-    "normal": {
-     "cases": [
-      "L01.gram.private.section",
-      "L01.gram.private.test-among-actions"
-     ],
-     "mandatory_cases": [
-      "L01.gram.private.section",
-      "L01.gram.private.test-among-actions"
-     ],
-     "requirement": "required"
-    }
-   },
-   "contract": "GRAM.PRIVATE-SECTION",
-   "discrepancies": [],
-   "family": "Grammar",
-   "spec_refs": [
-    "docs/okkama-grammar-1.0.ebnf",
-    "docs/okkama-spec-11072026.md#11.7"
-   ],
-   "status": "mandatory",
-   "title": "`private:` marks the following actions private"
-  },
-  {
-   "aspects": {
-    "boundary": {
-     "cases": [],
-     "mandatory_cases": [],
-     "requirement": "n/a: the contract defines no boundary values distinct from its normal behaviour"
-    },
-    "interaction": {
-     "cases": [],
-     "mandatory_cases": [],
-     "requirement": "n/a: no fragile cross-feature interaction is identified in the audited sources"
-    },
-    "invalid": {
-     "cases": [
       "L01.gram.projected.removed-ampersand",
       "L01.gram.projected.uppercase-alias"
      ],
@@ -5180,11 +5182,11 @@
     },
     "interaction": {
      "cases": [
-      "L01.gram.private.test-among-actions",
+      "L01.gram.hidden.test-among-actions",
       "L01.gram.test.inner-grammar-not-parsed"
      ],
      "mandatory_cases": [
-      "L01.gram.private.test-among-actions",
+      "L01.gram.hidden.test-among-actions",
       "L01.gram.test.inner-grammar-not-parsed"
      ],
      "requirement": "required"
@@ -7957,6 +7959,58 @@
   {
    "aspects": {
     "boundary": {
+     "cases": [
+      "L04.hidden-actions.overload"
+     ],
+     "mandatory_cases": [
+      "L04.hidden-actions.overload"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+    },
+    "invalid": {
+     "cases": [
+      "L03.bound.hidden-action",
+      "L04.hidden-actions.external-call",
+      "L04.hidden-actions.peer-call",
+      "L04.hidden-actions.successor-external-call"
+     ],
+     "mandatory_cases": [
+      "L03.bound.hidden-action",
+      "L04.hidden-actions.external-call",
+      "L04.hidden-actions.peer-call",
+      "L04.hidden-actions.successor-external-call"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L01.gram.hidden.action",
+      "L04.hidden-actions.successor"
+     ],
+     "mandatory_cases": [
+      "L01.gram.hidden.action",
+      "L04.hidden-actions.successor"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "OBJ.HIDDEN-ACTIONS",
+   "discrepancies": [],
+   "family": "Objects, roles, caps and successors",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.7"
+   ],
+   "status": "mandatory",
+   "title": "Hidden actions are callable only through self of the same object"
+  },
+  {
+   "aspects": {
+    "boundary": {
      "cases": [],
      "mandatory_cases": [],
      "requirement": "n/a: the contract defines no boundary values distinct from its normal behaviour"
@@ -8040,58 +8094,6 @@
    ],
    "status": "mandatory",
    "title": "Arithmetic and ordering operators on objects dispatch to the operator roles the type declares"
-  },
-  {
-   "aspects": {
-    "boundary": {
-     "cases": [
-      "L04.private-actions.overload"
-     ],
-     "mandatory_cases": [
-      "L04.private-actions.overload"
-     ],
-     "requirement": "required"
-    },
-    "interaction": {
-     "cases": [],
-     "mandatory_cases": [],
-     "requirement": "n/a: no fragile cross-feature interaction is identified in the audited sources"
-    },
-    "invalid": {
-     "cases": [
-      "L03.bound.private-action",
-      "L04.private-actions.external-call",
-      "L04.private-actions.peer-call",
-      "L04.private-actions.successor-external-call"
-     ],
-     "mandatory_cases": [
-      "L03.bound.private-action",
-      "L04.private-actions.external-call",
-      "L04.private-actions.peer-call",
-      "L04.private-actions.successor-external-call"
-     ],
-     "requirement": "required"
-    },
-    "normal": {
-     "cases": [
-      "L01.gram.private.section",
-      "L04.private-actions.successor"
-     ],
-     "mandatory_cases": [
-      "L01.gram.private.section",
-      "L04.private-actions.successor"
-     ],
-     "requirement": "required"
-    }
-   },
-   "contract": "OBJ.PRIVATE-ACTIONS",
-   "discrepancies": [],
-   "family": "Objects, roles, caps and successors",
-   "spec_refs": [
-    "docs/okkama-spec-11072026.md#11.7"
-   ],
-   "status": "mandatory",
-   "title": "Private actions are callable only through self of the same object"
   },
   {
    "aspects": {
@@ -10253,7 +10255,7 @@
     "std/config/ini.ok"
    ],
    "status": "mandatory",
-   "title": "std config/ini public contract (DuplicateIniEntry, DuplicateIniSection, IniContent, IniControls, IniDigit, IniDocument, IniEntry, IniFault, IniHex, IniLimitExceeded, IniLine, IniLineScan, IniNames, IniOutputLimitExceeded, IniParse, IniQuoted, IniRepeated, IniSection, IniString, IniTextEmission, IniToken, IniWriting, InvalidIni, InvalidIniEmission, InvalidIniLimit, InvalidIniSize, MissingIniEntry, MissingIniSection, ParsedIni)"
+   "title": "std config/ini public contract (DuplicateIniEntry, DuplicateIniSection, IniContent, IniDocument, IniEntry, IniLimitExceeded, IniOutputLimitExceeded, IniSection, IniString, IniTextEmission, IniWriting, InvalidIni, InvalidIniEmission, InvalidIniLimit, InvalidIniSize, MissingIniEntry, MissingIniSection, ParsedIni)"
   },
   {
    "aspects": {
@@ -11412,7 +11414,7 @@
     "std/db/postgres.ok"
    ],
    "status": "mandatory",
-   "title": "std db/postgres public contract (InvalidPostgresOptions, PgAuthentication, PgBegin, PgCancelRoute, PgCancelTcp, PgCommandTag, PgDescription, PgDisabledMethod, PgError, PgErrorField, PgExecute, PgFailureKind, PgFinishInterrupted, PgInterrupted, PgLost, PgMechanisms, PgNoCancelRoute, PgNonFinite, PgOutcome, PgParameter, PgPrepared, PgRequest, PgRows, PgScramRefused, PgSession, PgStartupMessage, PgTransaction, PgTransport, PgTranspo)"
+   "title": "std db/postgres public contract (InvalidPostgresOptions, PgAuthentication, PgBegin, PgCancelRoute, PgCancelTcp, PgCommandTag, PgDescription, PgDisabledMethod, PgError, PgErrorField, PgExecute, PgFailureKind, PgFinishInterrupted, PgInterrupted, PgLost, PgMechanisms, PgNonFinite, PgOutcome, PgParameter, PgPrepared, PgRequest, PgRows, PgScramRefused, PgSession, PgStartupMessage, PgTransaction, PgTransport, PgTransportUnpublished, Pg)"
   },
   {
    "aspects": {
@@ -11738,7 +11740,7 @@
     "std/db/sqlite.ok"
    ],
    "status": "mandatory",
-   "title": "std db/sqlite public contract (InvalidSqliteOptions, SqliteAcquiring, SqliteBackupCleanup, SqliteBeginCleanup, SqliteBindings, SqliteBlobHandle, SqliteBoundValue, SqliteConnection, SqliteConnector, SqliteDatabase, SqliteFailureKind, SqliteFinishCleanup, SqliteFrame, SqliteJournal, SqliteMemory, SqliteNativeError, SqliteOpening, SqliteOptions, SqliteOrigin, SqlitePrepared, SqliteRows, SqliteRowsCleanup, SqliteSession, SqliteShap)"
+   "title": "std db/sqlite public contract (InvalidSqliteOptions, SqliteAcquiring, SqliteBindings, SqliteBlobHandle, SqliteBoundValue, SqliteConnection, SqliteConnector, SqliteDatabase, SqliteFailureKind, SqliteFrame, SqliteJournal, SqliteMemory, SqliteNativeError, SqliteOpening, SqliteOptions, SqliteOrigin, SqlitePrepared, SqliteRows, SqliteSession, SqliteShape, SqliteTransaction, SqliteTransactionMode, SqliteTransactions, SqliteUnpublishe)"
   },
   {
    "aspects": {
@@ -13359,7 +13361,7 @@
     "std/http/body.ok"
    ],
    "status": "mandatory",
-   "title": "std http/body public contract (BodyAlreadyOpened, BodyClosed, BodyOpening, BodyReadCleanup, BodyReading, ByteBody, ByteBodyInput, EmptyBody, OneShotBody, StreamBodyReading, TrailersUnavailable, UnknownBodyLength)"
+   "title": "std http/body public contract (BodyAlreadyOpened, BodyClosed, BodyOpening, BodyReading, ByteBody, ByteBodyInput, EmptyBody, OneShotBody, StreamBodyReading, TrailersUnavailable, UnknownBodyLength)"
   },
   {
    "aspects": {
@@ -13394,7 +13396,7 @@
     "std/http/cache.ok"
    ],
    "status": "mandatory",
-   "title": "std http/cache public contract (CacheBodyReading, CacheReadSettlement, CacheReaderAnchor, CacheRequestSelection, CacheResponseSelection, CacheVerifiedPublication, Caching)"
+   "title": "std http/cache public contract (CacheBodyReading, CacheReaderAnchor, CacheRequestSelection, CacheResponseSelection, CacheVerifiedPublication, Caching)"
   },
   {
    "aspects": {
@@ -13604,7 +13606,7 @@
     "std/http/client.ok"
    ],
    "status": "mandatory",
-   "title": "std http/client public contract (ClientClosed, Exchanging, Http2ClientProtocols, Http2DirectRequest, HttpClient, HttpClientAcquired, HttpClientAcquisitionDisposal, HttpClientBody, HttpClientIdle, HttpClientKey, HttpClientOperation, HttpClientPermitDisposal, HttpClientReadCleanup, HttpClientReading, HttpClientSignal, HttpClientStartupCleanup, HttpClientState, HttpClientTransport, HttpClientTransportSettlement, HttpConversationUnav)"
+   "title": "std http/client public contract (ClientClosed, Exchanging, Http2ClientProtocols, Http2DirectRequest, HttpClient, HttpClientAcquired, HttpClientAcquisitionDisposal, HttpClientBody, HttpClientIdle, HttpClientKey, HttpClientOperation, HttpClientPermitDisposal, HttpClientReading, HttpClientSignal, HttpClientState, HttpClientTransport, HttpConversationUnavailable, HttpDeadline, HttpMixedDirectRequest, HttpSharedClientAcquired, HttpSha)"
   },
   {
    "aspects": {
@@ -14094,7 +14096,7 @@
     "std/http/digest.ok"
    ],
    "status": "mandatory",
-   "title": "std http/digest public contract (DigestAscii, DigestAuthorization, DigestBody, DigestChallenge, DigestCredentials, DigestExchanging, DigestFlag, DigestHash, DigestNonce, DigestNonces, DigestQuoted, DigestReading, DigestResponseCleanup, DigestSelection, DigestServerProof, DigestText, UnsupportedDigestChallenge)"
+   "title": "std http/digest public contract (DigestAscii, DigestAuthorization, DigestBody, DigestChallenge, DigestCredentials, DigestExchanging, DigestFlag, DigestHash, DigestNonce, DigestNonces, DigestQuoted, DigestReading, DigestSelection, DigestServerProof, DigestText, UnsupportedDigestChallenge)"
   },
   {
    "aspects": {
@@ -14234,7 +14236,7 @@
     "std/http/form.ok"
    ],
    "status": "mandatory",
-   "title": "std http/form public contract (FormBoundary, FormBoundarySearch, FormBoundarySpot, FormCharset, FormDisposition, FormDispositionRules, FormDispositionScan, FormDraining, FormFileSpooling, FormGroupDrain, FormHeaders, FormLimitExceeded, FormLimits, FormMetadata, FormMetadataText, FormOperationCleanup, FormParameter, FormPart, FormPartInput, FormRegistration, FormSettlement, FormSpoolCleanup, FormText, FormTextCharset, InvalidFor)"
+   "title": "std http/form public contract (FormBoundary, FormBoundarySearch, FormBoundarySpot, FormCharset, FormDisposition, FormDispositionRules, FormDispositionScan, FormDraining, FormFileSpooling, FormHeaders, FormLimitExceeded, FormLimits, FormMetadata, FormMetadataText, FormParameter, FormPart, FormPartInput, FormRegistration, FormText, FormTextCharset, InvalidFormLimits, InvalidMultipartForm, MissingFormFilename, MultipartFormClosed,)"
   },
   {
    "aspects": {
@@ -14339,7 +14341,7 @@
     "std/http/http1_body.ok"
    ],
    "status": "mandatory",
-   "title": "std http/http1_body public contract (Http1BodyInput, Http1BodyOperationCleanup, Http1BodyReading, Http1IncomingBody, Http1LineTail)"
+   "title": "std http/http1_body public contract (Http1BodyInput, Http1BodyReading, Http1IncomingBody, Http1LineTail)"
   },
   {
    "aspects": {
@@ -14409,7 +14411,7 @@
     "std/http/http1_body_writing.ok"
    ],
    "status": "mandatory",
-   "title": "std http/http1_body_writing public contract (Http1BodyWriteCleanup, Http1BodyWriteOperation, Http1BodyWriting, Http1ChunkWire, Http1HexDigits, Http1HexSize, Http1ReadSettlement, Http1TrailerWire, Http1WriteSettlement)"
+   "title": "std http/http1_body_writing public contract (Http1BodyWriteOperation, Http1BodyWriting, Http1ChunkWire, Http1HexDigits, Http1HexSize, Http1TrailerWire)"
   },
   {
    "aspects": {
@@ -14654,7 +14656,7 @@
     "std/http/http1_session.ok"
    ],
    "status": "mandatory",
-   "title": "std http/http1_session public contract (Http1Exchange, Http1FramerOwner, Http1HeadSettlement, Http1ReadSettlement, Http1Session, Http1SessionBody, Http1SessionCleanup, Http1SessionClosed, Http1SessionHeads, Http1SessionLease, Http1SessionReadCleanup, Http1SessionReadRelease, Http1SessionReading, Http1StartupRelease, Http1UnstartedTransport, Http1WritingSettlement)"
+   "title": "std http/http1_session public contract (Http1Exchange, Http1FramerOwner, Http1Session, Http1SessionBody, Http1SessionClosed, Http1SessionHeads, Http1SessionLease, Http1SessionReadRelease, Http1SessionReading, Http1StartupRelease, Http1UnstartedTransport)"
   },
   {
    "aspects": {
@@ -14759,7 +14761,7 @@
     "std/http/http2_server.ok"
    ],
    "status": "mandatory",
-   "title": "std http/http2_server public contract (Http2ServerBody, Http2ServerBodyReading, Http2ServerBodySending, Http2ServerCleanup, Http2ServerClosed, Http2ServerContinue, Http2ServerSession, Http2ServerSettlement, Http2ServerState, Http2ServerStream, Http2ServerWireInput)"
+   "title": "std http/http2_server public contract (Http2ServerBody, Http2ServerBodyReading, Http2ServerBodySending, Http2ServerClosed, Http2ServerContinue, Http2ServerSession, Http2ServerState, Http2ServerStream, Http2ServerWireInput)"
   },
   {
    "aspects": {
@@ -14794,7 +14796,7 @@
     "std/http/http2_session.ok"
    ],
    "status": "mandatory",
-   "title": "std http/http2_session public contract (Http2AdmissionCleanup, Http2Exchange, Http2ExchangeCleanup, Http2HoldingCleanup, Http2HoldingSignal, Http2RequestBodySending, Http2RequestHeaderStart, Http2Session, Http2SessionBody, Http2SessionClosed, Http2SessionExchange, Http2SessionReading, Http2SessionSettlement, Http2SessionState, Http2StreamEntry, Http2StreamHolding, Http2Unprocessed)"
+   "title": "std http/http2_session public contract (Http2Exchange, Http2HoldingSignal, Http2RequestBodySending, Http2RequestHeaderStart, Http2Session, Http2SessionBody, Http2SessionClosed, Http2SessionExchange, Http2SessionReading, Http2SessionState, Http2StreamEntry, Http2StreamHolding, Http2Unprocessed)"
   },
   {
    "aspects": {
@@ -15039,7 +15041,7 @@
     "std/http/internal/http2_body.ok"
    ],
    "status": "mandatory",
-   "title": "std http/internal/http2_body public contract (Http2BodyBuffer, Http2BodyEvents, Http2BodyLength, Http2BodyReadCleanup, Http2IncomingBody, Http2Trailers)"
+   "title": "std http/internal/http2_body public contract (Http2BodyBuffer, Http2BodyEvents, Http2BodyLength, Http2IncomingBody, Http2Trailers)"
   },
   {
    "aspects": {
@@ -15214,7 +15216,7 @@
     "std/http/internal/http2_headers.ok"
    ],
    "status": "mandatory",
-   "title": "std http/internal/http2_headers public contract (Http2EncodedHeaderFrames, Http2HeaderBlock, Http2HeaderBlockReading, Http2HeaderBlockWriting, Http2HeaderFragment, Http2HeaderInput, Http2HeaderOutput, Http2HeaderSettlement)"
+   "title": "std http/internal/http2_headers public contract (Http2EncodedHeaderFrames, Http2HeaderBlock, Http2HeaderBlockReading, Http2HeaderBlockWriting, Http2HeaderFragment, Http2HeaderInput, Http2HeaderOutput)"
   },
   {
    "aspects": {
@@ -15354,7 +15356,7 @@
     "std/http/internal/http2_preface.ok"
    ],
    "status": "mandatory",
-   "title": "std http/internal/http2_preface public contract (Http2ClientPreface, Http2PrefaceOperation, Http2PrefaceSettlement, Http2ServerPreface, Http2ServerPrefaceOperation)"
+   "title": "std http/internal/http2_preface public contract (Http2ClientPreface, Http2PrefaceOperation, Http2ServerPreface, Http2ServerPrefaceOperation)"
   },
   {
    "aspects": {
@@ -15389,7 +15391,7 @@
     "std/http/internal/http2_reading.ok"
    ],
    "status": "mandatory",
-   "title": "std http/internal/http2_reading public contract (EndOfHttp2Frames, Http2FrameInput, Http2FrameReading, Http2FrameSettlement)"
+   "title": "std http/internal/http2_reading public contract (EndOfHttp2Frames, Http2FrameInput, Http2FrameReading)"
   },
   {
    "aspects": {
@@ -15669,7 +15671,7 @@
     "std/http/internal/websocket_reading.ok"
    ],
    "status": "mandatory",
-   "title": "std http/internal/websocket_reading public contract (WebSocketFrameInput, WebSocketFrameReading, WebSocketFrameSettlement)"
+   "title": "std http/internal/websocket_reading public contract (WebSocketFrameInput, WebSocketFrameReading)"
   },
   {
    "aspects": {
@@ -16194,7 +16196,7 @@
     "std/http/robots.ok"
    ],
    "status": "mandatory",
-   "title": "std http/robots public contract (FetchedRobots, InvalidRobots, MissingCrawlDelay, RobotsAgent, RobotsAgentMatch, RobotsDelay, RobotsFetchFailed, RobotsLimitExceeded, RobotsPattern, RobotsPolicy, RobotsRecord, RobotsRule, RobotsSettlement, RobotsTrim)"
+   "title": "std http/robots public contract (FetchedRobots, InvalidRobots, MissingCrawlDelay, RobotsAgent, RobotsAgentMatch, RobotsDelay, RobotsFetchFailed, RobotsLimitExceeded, RobotsPattern, RobotsPolicy, RobotsRecord, RobotsRule, RobotsTrim)"
   },
   {
    "aspects": {
@@ -16299,7 +16301,7 @@
     "std/http/server.ok"
    ],
    "status": "mandatory",
-   "title": "std http/server public contract (BadRequest, HttpServer, HttpServerBodyLease, HttpServerBodyTimedOut, HttpServerCleanup, HttpServerContinueInput, HttpServerDeadline, HttpServerDrainCleanup, HttpServerObservedInput, HttpServerPeer, HttpServerState, HttpServerTimedInput, ServerDrain)"
+   "title": "std http/server public contract (BadRequest, HttpServer, HttpServerBodyLease, HttpServerBodyTimedOut, HttpServerContinueInput, HttpServerDeadline, HttpServerObservedInput, HttpServerPeer, HttpServerState, HttpServerTimedInput, ServerDrain)"
   },
   {
    "aspects": {
@@ -16369,7 +16371,7 @@
     "std/http/sse.ok"
    ],
    "status": "mandatory",
-   "title": "std http/sse public contract (EventBody, EventBodyCleanup, EventBodyInput, EventDraining, EventGroup, EventOperation, EventReadCleanup, EventRegistration, EventRetry, EventStreamBusy, EventStreamEnded, EventStreamHeaders, EventStreamLimit, EventUtf8, InvalidServerEvent, MissingEventRetry, ServerEvent, ServerEventData, ServerEventMetadata, ServerEventWire, ServerEvents)"
+   "title": "std http/sse public contract (EventBody, EventBodyInput, EventDraining, EventGroup, EventOperation, EventRegistration, EventRetry, EventStreamBusy, EventStreamEnded, EventStreamHeaders, EventStreamLimit, EventUtf8, InvalidServerEvent, MissingEventRetry, ServerEvent, ServerEventData, ServerEventMetadata, ServerEventWire, ServerEvents)"
   },
   {
    "aspects": {
@@ -16404,7 +16406,7 @@
     "std/http/static.ok"
    ],
    "status": "mandatory",
-   "title": "std http/static public contract (InvalidStaticPath, InvalidStaticPolicy, StaticBody, StaticBodyReading, StaticCoordinate, StaticEncoding, StaticFileChanged, StaticFiles, StaticIfRange, StaticIndexFile, StaticIndexes, StaticPath, StaticPiece, StaticPolicy, StaticPreconditions, StaticRanges, StaticReadCleanup, StaticRepresentation, StaticRepresentations, StaticSelection, StaticValidator)"
+   "title": "std http/static public contract (InvalidStaticPath, InvalidStaticPolicy, StaticBody, StaticBodyReading, StaticCoordinate, StaticEncoding, StaticFileChanged, StaticFiles, StaticIfRange, StaticIndexFile, StaticIndexes, StaticPath, StaticPiece, StaticPolicy, StaticPreconditions, StaticRanges, StaticRepresentation, StaticRepresentations, StaticSelection, StaticValidator)"
   },
   {
    "aspects": {
@@ -17069,7 +17071,7 @@
     "std/io/input.ok"
    ],
    "status": "mandatory",
-   "title": "std io/input public contract (ByteInput, ChunkReading, LineTooLong)"
+   "title": "std io/input public contract (ByteInput, LineTooLong)"
   },
   {
    "aspects": {
@@ -17299,7 +17301,7 @@
     "std/json.ok"
    ],
    "status": "mandatory",
-   "title": "std json public contract (DuplicateJsonMember, InvalidJson, InvalidJsonIndentation, InvalidJsonNumber, Json, JsonField, JsonInt, JsonInteger, JsonKind, JsonKindName, JsonLocation, JsonMaybeReader, JsonOptional, JsonPointerToken, JsonPresenceReader, MissingJsonLocation, MissingJsonValue, ParsedJson, WrongJsonKind)"
+   "title": "std json public contract (Json, JsonError, JsonField, JsonInt, JsonInteger, JsonKind, JsonKindName, JsonLocation, JsonMaybeReader, JsonPointerToken, JsonPresenceReader, ParsedJson)"
   },
   {
    "aspects": {
@@ -20799,7 +20801,7 @@
     "std/mail/imap_exchange.ok"
    ],
    "status": "mandatory",
-   "title": "std mail/imap_exchange public contract (ImapChannelClosed, ImapCommandChannel, ImapCommandExchange, ImapDoneWriting, ImapExchangeCleanup, ImapExchangeState, ImapIdleContinuation, ImapIdleWireInput, ImapLiteralWriting)"
+   "title": "std mail/imap_exchange public contract (ImapChannelClosed, ImapCommandChannel, ImapCommandExchange, ImapDoneWriting, ImapExchangeState, ImapIdleContinuation, ImapIdleWireInput, ImapLiteralWriting)"
   },
   {
    "aspects": {
@@ -21044,7 +21046,7 @@
     "std/mail/imap_session.ok"
    ],
    "status": "mandatory",
-   "title": "std mail/imap_session public contract (ChangedMailFlags, FetchedMail, ImapEventObservation, ImapFetching, ImapIdleEnding, ImapIdleSlot, ImapIdleTask, ImapSearching, ImapSelectedState, ImapSelectionToken, ImapSession, ImapSessionCleanup, ImapSessionReply, ImapSessionState, MailboxEvent, MailboxEventKind, MailboxEvents, MailboxEventsClosed, SearchedMail, SelectedMailbox)"
+   "title": "std mail/imap_session public contract (ChangedMailFlags, FetchedMail, ImapEventObservation, ImapFetching, ImapIdleEnding, ImapIdleSlot, ImapIdleTask, ImapSearching, ImapSelectedState, ImapSelectionToken, ImapSession, ImapSessionReply, ImapSessionState, MailboxEvent, MailboxEventKind, MailboxEvents, MailboxEventsClosed, SearchedMail, SelectedMailbox)"
   },
   {
    "aspects": {
@@ -21394,7 +21396,7 @@
     "std/mail/pop3_session.ok"
    ],
    "status": "mandatory",
-   "title": "std mail/pop3_session public contract (PopCommand, PopCommandRejected, PopDeleteReset, PopMailbox, PopMessageCommand, PopSession, PopSessionCleanup, PopSessionClosed, PopSimpleCommand, PopWire, PreviewedPopMail)"
+   "title": "std mail/pop3_session public contract (PopCommand, PopCommandRejected, PopDeleteReset, PopMailbox, PopMessageCommand, PopSession, PopSessionClosed, PopSimpleCommand, PopWire, PreviewedPopMail)"
   },
   {
    "aspects": {
@@ -22345,7 +22347,7 @@
     "std/net/tcp_racing.ok"
    ],
    "status": "mandatory",
-   "title": "std net/tcp_racing public contract (InvalidTcpRace, TcpRaceAttempt, TcpRaceAttemptCleanup, TcpRaceCleanup, TcpRaceDelay, TcpRaceEndpoints, TcpRaceSignal, TcpRaceWin, TcpRacing)"
+   "title": "std net/tcp_racing public contract (InvalidTcpRace, TcpRaceAttempt, TcpRaceDelay, TcpRaceEndpoints, TcpRaceSignal, TcpRaceWin, TcpRacing)"
   },
   {
    "aspects": {
@@ -26184,7 +26186,7 @@
     "std/terminal/prompt.ok"
    ],
    "status": "mandatory",
-   "title": "std terminal/prompt public contract (PromptedLine, PromptedSecret, SecretPromptCleanup)"
+   "title": "std terminal/prompt public contract (PromptedLine, PromptedSecret)"
   },
   {
    "aspects": {
@@ -27681,7 +27683,7 @@
     "std/web/request.ok"
    ],
    "status": "mandatory",
-   "title": "std web/request public contract (InvalidBodyLimit, JsonProblem, MissingRouteParameter, RequestJson, RequestJsonOptional, WebRequest)"
+   "title": "std web/request public contract (InvalidBodyLimit, MissingRouteParameter, RequestJson, RequestJsonOptional, WebRequest)"
   },
   {
    "aspects": {
@@ -27860,11 +27862,11 @@
     },
     "normal": {
      "cases": [
-      "L04.private-actions.successor",
+      "L04.hidden-actions.successor",
       "L04.successor.new-object"
      ],
      "mandatory_cases": [
-      "L04.private-actions.successor",
+      "L04.hidden-actions.successor",
       "L04.successor.new-object"
      ],
      "requirement": "required"
@@ -32438,5 +32440,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "623aed187799ed0d29a31d089ad6ff8d0d29f3ffe5b7a7b63ca1b38f620aa5b3"
+ "suite_tree_sha256": "ce27959a05160ba039b4a688eddf8e8a1e4635504275d9d1d994642c23618ffc"
 }
