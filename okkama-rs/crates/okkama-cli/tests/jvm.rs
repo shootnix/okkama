@@ -2292,7 +2292,7 @@ fn bound_role_actions_and_future_selectors_run_on_the_jvm() {
                  let r is Valued = Fixed(n: 4);\n\
                  let read is () is int = r.value;\n\
                  let selector is FirstSuccessful<int> = FirstSuccessful(origins: [Task(n: 1).run(), Task(n: 5).run()]);\n\
-                 let first = await selector.result();\n\
+                 let first = await selector.outcome();\n\
                  let stream is FutureCompletions<int> = FutureCompletions(origins: [Task(n: 2).run(), Task(n: 3).run()]);\n\
                  let total = (await await stream.completion()) + (await await stream.completion());\n\
                  read() + first + total + stream.remaining_count();\n\

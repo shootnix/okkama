@@ -22,7 +22,7 @@ async main() is int {
     let out = session.output();
     let resizes = await session.resizes();
     let timed = try {
-        await Within(Reader(input: session.input()).line(), Duration(1.rat() / 5.rat(), DurationUnit.second), SystemClock()).result();
+        await Within(Reader(input: session.input()).line(), Duration(1.rat() / 5.rat(), DurationUnit.second), SystemClock()).outcome();
         "read early";
     } catch TimedOut.elapsed { "timed out"; };
     out.writeln(timed);
