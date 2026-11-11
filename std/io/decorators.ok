@@ -3,6 +3,7 @@ module io/decorators v1.0.0;
 import "io/stream" take ByteSource, Reading, Writing, Closing, InvalidReadLimit;
 import "collections/sequence" take Sequencing;
 import "error" take InvalidArgument;
+import "io/buffer" take ByteBuffer;
 import "runtime/buffer" take BufferState, buffer_state_create, buffer_state_read,
     buffer_state_append, buffer_state_size, buffer_state_closed, buffer_state_close;
 import "runtime/io_decorators" take LimitedReadingState, ChainedReadingState,
@@ -197,3 +198,48 @@ object Discarding does Writing {
 enum ClosedReading is Error = (closed);
 
 enum InvalidReading is Error = (because(message is string));
+
+test "buffered and limited readings" {
+    let source = ByteBuffer(initial: [byte(1), byte(2), byte(3), byte(4), byte(5)]);
+    let buffered = BufferedReading(origin: source.reading(), capacity: 4);
+    test.is(buffered.bytes(1), [byte(1)]);
+    // Four bytes were read ahead; three are cached.
+    test.is(source.content().size(), 1);
+    test.is(buffered.bytes(10), [byte(2), byte(3), byte(4)]);
+    test.is(buffered.bytes(10), [byte(5)]);
+    test.is(buffered.bytes(10).size(), 0);
+    buffered.close();
+    test.ok(buffered.closed());
+    test.is(
+        try {
+            buffered.bytes(1).size();
+        }
+        catch error is ClosedReading {
+            -1;
+        },
+        -1
+    );
+    let limited = LimitedReading(origin: ByteBuffer(initial: [byte(9), byte(8), byte(7)]).reading(), limit: 2);
+    test.is(limited.bytes(1), [byte(9)]);
+    test.is(limited.bytes(5), [byte(8)]);
+    test.is(limited.bytes(5).size(), 0);
+}
+
+test "chained readings, snapshots, tees and discarding" {
+    let first = ByteBuffer(initial: [byte(1)]);
+    let empty = ByteBuffer();
+    let third = ByteBuffer(initial: [byte(2), byte(3)]);
+    let parts is @Reading = [first.reading(), empty.reading(), empty.reading(), third.reading()];
+    let chained = ChainedReading(origins: parts);
+    test.is(chained.bytes(10), [byte(1)]);
+    test.is(chained.bytes(10), [byte(2), byte(3)]);
+    test.is(chained.bytes(10).size(), 0);
+    test.is(ByteSnapshot([byte(4)]).bytes(), [byte(4)]);
+    let left = ByteBuffer();
+    let right = ByteBuffer();
+    let outputs is @Writing = [left.writing(), right.writing()];
+    TeeWriting(destinations: outputs).write(ByteSnapshot([byte(7), byte(8)]));
+    test.is(left.content().bytes(), [byte(7), byte(8)]);
+    test.is(right.content().bytes(), [byte(7), byte(8)]);
+    Discarding().write(ByteSnapshot([byte(1)]));
+}

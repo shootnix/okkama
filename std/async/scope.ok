@@ -1,5 +1,7 @@
 module async/scope v1.0.0;
 
+import "async/event" take Event;
+
 /*
 =head1 NAME
 
@@ -108,3 +110,34 @@ object FutureScope<T, R> {
 }
 
 enum FinishedFutureGroup is Error = (finished);
+
+async test "a group waits for its children and seals" {
+    let group is FutureGroup<Event> = FutureGroup();
+    let gate = Event();
+    let waiting = gate.wait();
+    group.start(waiting);
+    group.start(waiting);
+    test.is(group.active(), 1);
+    gate.set();
+    await group.wait();
+    test.is(group.active(), 0);
+    test.is(
+        try {
+            group.start(Event(ready: true).wait());
+            "started";
+        }
+        catch error is FinishedFutureGroup {
+            "finished";
+        },
+        "finished"
+    );
+}
+
+async test "a cancelled group cancels what is still running" {
+    let group is FutureGroup<Event> = FutureGroup();
+    let never = Event();
+    group.start(never.wait());
+    group.cancel();
+    await group.wait();
+    test.is(group.active(), 0);
+}

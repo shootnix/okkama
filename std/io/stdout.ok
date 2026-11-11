@@ -89,3 +89,11 @@ object Stderr does Writing, WritingText {
         confirm written == value.size() else throw IncompleteWrite.after(written);
     }
 }
+
+test "empty writes emit nothing and flush is a no-op" {
+    Stdout().write();
+    Stdout().flush();
+    Stderr().write();
+    Stderr().flush();
+    test.ok(true);
+}

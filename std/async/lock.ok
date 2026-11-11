@@ -61,3 +61,18 @@ object LockGuard does Closing {
         panic "LockGuard.close is a VM intrinsic";
     }
 }
+
+async test "a lock admits one guard at a time" {
+    let lock = Lock();
+    test.ok(!lock.locked());
+    let guard = await lock.guard();
+    test.ok(lock.locked());
+    let queued = lock.guard();
+    guard.close();
+    guard.close();
+    test.ok(guard.closed());
+    let second = await queued;
+    test.ok(lock.locked());
+    second.close();
+    test.ok(!lock.locked());
+}

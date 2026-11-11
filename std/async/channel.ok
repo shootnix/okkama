@@ -114,3 +114,34 @@ object Receiving<T> {
 enum ChannelClosed is Error = (closed);
 
 enum InvalidChannelCapacity is Error = (capacity(capacity is int));
+
+async test "a channel hands values over in order until closed" {
+    let channel is Channel<int> = Channel(capacity: 2);
+    let sending = channel.sending();
+    await sending.send(1);
+    await sending.send(2);
+    let receiving = channel.receiving();
+    test.is(await receiving.item(), 1);
+    test.is(await receiving.item(), 2);
+    sending.close();
+    test.is(
+        try {
+            await receiving.item();
+        }
+        catch error is ChannelClosed {
+            -1;
+        },
+        -1
+    );
+    test.is(
+        try {
+            let refused is Channel<int> = Channel(capacity: -1);
+            refused.sending();
+            "made";
+        }
+        catch InvalidChannelCapacity.capacity(capacity) {
+            capacity.string();
+        },
+        "-1"
+    );
+}

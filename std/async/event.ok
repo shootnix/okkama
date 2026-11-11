@@ -60,3 +60,13 @@ object Event {
         panic "Event.ready is a VM intrinsic";
     }
 }
+
+async test "an event releases its waiters once set" {
+    let event = Event();
+    test.ok(!event.ready());
+    let waiting = event.wait();
+    event.set();
+    event.set();
+    test.ok((await waiting).ready());
+    test.ok((await Event(ready: true).wait()).ready());
+}

@@ -85,3 +85,37 @@ object BarrierState {
 enum InvalidPartyCount is Error = (parties(parties is int));
 
 enum BrokenBarrier is Error = (broken);
+
+async test "a barrier releases every party with its arrival index" {
+    let barrier = Barrier(parties: 2);
+    let arrive is async () is int = barrier.wait;
+    let first = spawn arrive();
+    let second = await barrier.wait();
+    test.is(await first, 0);
+    test.is(second, 1);
+    test.is(barrier.state().parties(), 2);
+    test.is(barrier.state().waiters(), 0);
+    test.is(barrier.state().generation(), 1);
+    barrier.abort();
+    test.ok(barrier.state().broken());
+    test.is(
+        try {
+            await barrier.wait();
+        }
+        catch error is BrokenBarrier {
+            -1;
+        },
+        -1
+    );
+    barrier.reset();
+    test.ok(!barrier.state().broken());
+    test.is(
+        try {
+            Barrier(parties: 0).state().parties();
+        }
+        catch InvalidPartyCount.parties(parties) {
+            parties - 1;
+        },
+        -1
+    );
+}

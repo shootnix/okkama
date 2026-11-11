@@ -64,3 +64,25 @@ object Permit does Closing {
 }
 
 enum InvalidPermitCount is Error = (permits(permits is int));
+
+async test "permits are counted and given back" {
+    let semaphore = Semaphore(permits: 2);
+    let first = await semaphore.permit();
+    let second = await semaphore.permit();
+    test.is(semaphore.permits(), 0);
+    first.close();
+    first.close();
+    test.ok(first.closed());
+    test.is(semaphore.permits(), 1);
+    second.close();
+    test.is(semaphore.permits(), 2);
+    test.is(
+        try {
+            Semaphore(permits: -1).permits();
+        }
+        catch InvalidPermitCount.permits(permits) {
+            permits;
+        },
+        -1
+    );
+}

@@ -60,3 +60,25 @@ object Atomic<T> does Closing {
 }
 
 enum AtomicClosed is Error = (closed);
+
+test "an atomic replaces, compares and closes" {
+    let cell = Atomic(1);
+    test.is(cell.value(), 1);
+    cell.replace(2);
+    test.ok(cell.compare_and_replace(2, 3));
+    test.ok(!cell.compare_and_replace(2, 4));
+    test.is(cell.value(), 3);
+    test.ok(!cell.closed());
+    cell.close();
+    cell.close();
+    test.ok(cell.closed());
+    test.is(
+        try {
+            cell.value();
+        }
+        catch error is AtomicClosed {
+            -1;
+        },
+        -1
+    );
+}

@@ -3,6 +3,7 @@ module io/text v1.0.0;
 import "io/stream" take Writing, WritingText;
 import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Encoded;
+import "io/buffer" take ByteBuffer;
 
 // A borrowed UTF-8 output capability. No implicit flush or close.
 object Utf8Output does WritingText {
@@ -19,4 +20,13 @@ object Utf8Output does WritingText {
         let text is @string = values...;
         self.write(text.join("") + "\n");
     }
+}
+
+test "text is written as strict UTF-8 without separators" {
+    let buffer = ByteBuffer();
+    let output = Utf8Output(origin: buffer.writing());
+    output.write("a", "б");
+    output.writeln();
+    output.writeln("c", "d");
+    test.is(buffer.content().bytes(), [byte(97), byte(208), byte(177), byte(10), byte(99), byte(100), byte(10)]);
 }

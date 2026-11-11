@@ -1,8 +1,9 @@
 module async/timeout v1.0.0;
 
 import "error" take InvalidArgument;
-import "time/duration" take Duration;
-import "time/clock" take Timing, MonotonicInstant;
+import "time/duration" take Duration, DurationUnit;
+import "time/clock" take Timing, MonotonicInstant, SystemClock;
+import "async/event" take Event;
 
 /*
 =head1 NAME
@@ -74,3 +75,47 @@ object Before<T> {
 }
 
 enum TimedOut is Error = (elapsed);
+
+async test "time wins over a future that never settles" {
+    let clock = SystemClock();
+    let short = Duration(value: 20.rat(), unit: DurationUnit.millisecond);
+    let within is Within<Event> = Within(origin: Event().wait(), limit: short, clock: clock);
+    test.is(
+        try {
+            await within.outcome();
+            "settled";
+        }
+        catch error is TimedOut {
+            "timed out";
+        },
+        "timed out"
+    );
+    let before is Before<Event> = Before(origin: Event().wait(), deadline: clock.monotonic_instant() + short, clock: clock);
+    test.is(
+        try {
+            await before.outcome();
+            "settled";
+        }
+        catch error is TimedOut {
+            "timed out";
+        },
+        "timed out"
+    );
+}
+
+async test "a settled future wins and a negative limit is refused" {
+    let clock = SystemClock();
+    let long = Duration(value: 30.rat(), unit: DurationUnit.second);
+    test.ok((await Within(origin: Event(ready: true).wait(), limit: long, clock: clock).outcome()).ready());
+    test.is(
+        try {
+            let refused is Within<Event> = Within(origin: Event(ready: true).wait(),
+                limit: Duration(value: -1.rat(), unit: DurationUnit.second), clock: clock);
+            "accepted";
+        }
+        catch error is InvalidArgument {
+            "refused";
+        },
+        "refused"
+    );
+}

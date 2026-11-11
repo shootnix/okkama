@@ -95,3 +95,26 @@ object CancellationToken does Cancelling {
         self;
     }
 }
+
+async test "a request is seen by every token, once" {
+    let cancellation = Cancellation();
+    let token = cancellation.cancelling();
+    test.ok(!token.requested());
+    token.check();
+    let waiting = token.wait();
+    cancellation.cancel();
+    cancellation.cancel();
+    test.ok(token.requested());
+    test.ok((await waiting).requested());
+    test.ok((await cancellation.cancelling().wait()).requested());
+    test.is(
+        try {
+            token.check();
+            "continued";
+        }
+        catch error is Cancelled {
+            "cancelled";
+        },
+        "cancelled"
+    );
+}

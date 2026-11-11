@@ -364,6 +364,10 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     shapes, weights and distinct samples.
   - `regex/replace`: the substitution accumulator is hidden and answers
     `substitution()`.
+  - Every public object of the wave's modules has an inline test now
+    (`regex/match` through `regex/search`, which alone can make a match),
+    and the async selectors no case used (`FirstSuccessful`,
+    `FutureCompletions`, `FutureScope`) have L08 cases.
   - Characterization tests cover the changed modules that had none:
     `collections/ordering`, `views` and `combining`, `encoding/binary`,
     `random/source` (the PCG32 sequence, checked against an independent
@@ -450,6 +454,13 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   match Rat`. A Tomato rat is a payload around the origin's own `Rat`, so the
   bridge now clones it each way. No conformance case used a named zone; the
   new `L09.time.zones` and the `time/zone` inline tests do.
+
+- The gate skipped every `async test` and every test declared inside an
+  object (#490). `tools/gate/std-tests.py` took a module only when a line
+  began with `test "`, so 19 of the 306 std modules with tests never ran
+  there, among them the http client's loopback tests, `http1_session`,
+  `net/dns`, `io/input`, `strings/parse` and `collections/set`. A test
+  declaration is now `\s*(async\s+)?test "`. All 19 pass on IR and Sparrow.
 
 ### Performance
 

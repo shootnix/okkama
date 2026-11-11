@@ -1,6 +1,7 @@
 module async/collect v1.0.0;
 
 import "collections/sequence" take Sequencing;
+import "async/event" take Event;
 
 /*
 =head1 NAME
@@ -124,3 +125,24 @@ object FutureCompletions<T> {
 }
 
 enum NoFutures is Error = (none);
+
+async test "all futures, races and first successes" {
+    let events is @Future<Event> = [Event(ready: true).wait(), Event(ready: true).wait()];
+    let all = await AllFutures(origins: events).results();
+    test.is(all.size(), 2);
+    let never = Event();
+    let race is @Future<Event> = [never.wait(), Event(ready: true).wait()];
+    test.ok((await Raced(origins: race).winner()).ready());
+    let nothing is @Future<Event> = [];
+    test.is(
+        try {
+            await Raced(origins: nothing).winner();
+            "won";
+        }
+        catch error is NoFutures {
+            "none";
+        },
+        "none"
+    );
+    test.ok(!never.ready());
+}

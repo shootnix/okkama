@@ -120,3 +120,52 @@ object BufferContent does Sizing {
 }
 
 enum ClosedBuffer is Error = (closed);
+
+test "views share one store" {
+    let buffer = ByteBuffer(initial: [byte(1)]);
+    buffer.writing() <- "hi" <- [byte(255)];
+    test.is(buffer.content().size(), 4);
+    test.is(buffer.reading().bytes(2), [byte(1), byte(104)]);
+    test.is(buffer.content().bytes(), [byte(105), byte(255)]);
+    test.is(buffer.content().bytes(), [byte(105), byte(255)]);
+    test.is(buffer.reading().bytes(10), [byte(105), byte(255)]);
+    test.is(buffer.reading().bytes(10).size(), 0);
+    test.is(
+        try {
+            buffer.reading().bytes(0).size();
+        }
+        catch InvalidReadLimit.limit(value) {
+            value - 100;
+        },
+        -100
+    );
+}
+
+test "closing clears the store and every view" {
+    let buffer = ByteBuffer();
+    buffer.writing() <- "data";
+    let closing = buffer.closing();
+    test.ok(!closing.closed());
+    closing.close();
+    closing.close();
+    test.ok(closing.closed());
+    test.is(
+        try {
+            buffer.reading().bytes(1).size();
+        }
+        catch error is ClosedBuffer {
+            -1;
+        },
+        -1
+    );
+    test.is(
+        try {
+            buffer.writing() <- "more";
+            "written";
+        }
+        catch error is ClosedBuffer {
+            "closed";
+        },
+        "closed"
+    );
+}

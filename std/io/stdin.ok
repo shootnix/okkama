@@ -2,6 +2,7 @@ module io/stdin v1.0.0;
 
 import "io/stream" take Reading, ReadingText, Closing, InvalidReadLimit;
 import "encoding/utf" take Utf8Decoded;
+import "io/buffer" take ByteBuffer;
 import "runtime/stdio" take stdin_read;
 import "runtime/input_state" take Utf8InputState, input_state_create, input_state_append,
     input_state_size, input_state_line_offset, input_state_take, input_state_eof,
@@ -116,3 +117,60 @@ object Utf8Input does ReadingText, Closing {
 enum EndOfInput is Error = (reached);
 
 enum ClosedInput is Error = (closed);
+
+test "utf-8 input splits lines on LF and drops one CR" {
+    let source = ByteBuffer();
+    source.writing() <- "first\r\nsecond\n\nlast";
+    let input = Utf8Input(origin: source.reading());
+    test.is(input.line(), "first");
+    test.is(input.line(), "second");
+    test.is(input.line(), "");
+    test.is(input.line(), "last");
+    test.is(
+        try {
+            input.line();
+        }
+        catch error is EndOfInput {
+            "end";
+        },
+        "end"
+    );
+    input.close();
+    test.ok(input.closed());
+    test.is(
+        try {
+            input.content();
+        }
+        catch error is ClosedInput {
+            "closed";
+        },
+        "closed"
+    );
+}
+
+test "content returns the rest unchanged and refuses bad UTF-8" {
+    let source = ByteBuffer();
+    source.writing() <- "one\r\ntwo\r";
+    let input = Utf8Input(origin: source.reading());
+    test.is(input.line(), "one");
+    test.is(input.content(), "two\r");
+    let broken = ByteBuffer(initial: [byte(65), byte(255), byte(10)]);
+    test.is(
+        try {
+            Utf8Input(origin: broken.reading()).line();
+        }
+        catch error is Error {
+            "refused";
+        },
+        "refused"
+    );
+    test.is(
+        try {
+            Stdin().bytes(0).size();
+        }
+        catch InvalidReadLimit.limit(value) {
+            value - 1;
+        },
+        -1
+    );
+}

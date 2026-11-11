@@ -3,16 +3,19 @@
 
 usage: std-tests.py [--jobs N]
 
-Модуль с тестами — файл std/ со строкой, начинающейся с `test "`. Каждый
+Модуль с тестами — файл std/ с объявлением теста: `test "` или
+`async test "`, в начале строки или внутри объекта (#490). Каждый
 запускается `okkama run --engine E -t`; провал — ненулевой код выхода.
 Известные провалы перечислены в known-failures.txt рядом: они печатаются,
 но не роняют проверку; новый провал или исправленный известный — роняют.
 """
-import argparse, concurrent.futures, os, subprocess, sys
+import argparse, concurrent.futures, os, re, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 OKKAMA = os.path.join(ROOT, "okkama-rs", "target", "release", "okkama")
+# A test declaration: async or not, at module scope or inside an object.
+TEST = re.compile(r'\s*(async\s+)?test "')
 ENGINES = ("ir", "sparrow")
 
 
@@ -31,7 +34,7 @@ def modules():
     for directory, _, files in os.walk(os.path.join(ROOT, "std")):
         for name in files:
             path = os.path.join(directory, name)
-            if name.endswith(".ok") and any(line.startswith('test "') for line in open(path, encoding="utf-8")):
+            if name.endswith(".ok") and any(TEST.match(line) for line in open(path, encoding="utf-8")):
                 found.append(os.path.relpath(path, ROOT))
     return sorted(found)
 
