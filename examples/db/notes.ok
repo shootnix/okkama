@@ -1,0 +1,56 @@
+module examples/db/notes v1.0.0;
+
+import "db/sqlite" take SqliteMemory;
+import "db/statement" take Statement;
+import "db/param" take Param;
+import "db/query" take Query;
+import "db/row" take Row;
+import "db/transaction" take TransactionOptions;
+import "db/error" take DbFailure, DbFailureKind;
+import "io/stdout" take Stdout;
+
+// An in-memory SQLite database: create a table, insert with bound
+// parameters, read rows by column name, reuse a prepared statement, and keep
+// or undo changes with a transaction. Values are always bound, never pasted
+// into SQL, so a note may say anything.
+
+async main() is int {
+    let out = Stdout();
+    let db = await SqliteMemory().connection();
+    defer await db.settled();
+    defer db.close();
+
+    await db.execution(Statement("CREATE TABLE notes(id INTEGER PRIMARY KEY, title TEXT NOT NULL UNIQUE, body TEXT, pinned INTEGER NOT NULL DEFAULT 0)"));
+    let add = await db.prepared("INSERT INTO notes(title, body, pinned) VALUES (?, ?, ?)");
+    await add.execution([Param("groceries"), Param("tea, milk"), Param(1)]);
+    await add.execution([Param("ideas"), Param(Maybe<string>.none), Param(0)]);
+    await add.execution([Param("quotes"), Param("it's \"fine\"; DROP TABLE notes; --"), Param(0)]);
+    add.close();
+
+    let notes = await Query(db, Statement("SELECT id, title, body, pinned FROM notes ORDER BY id")).all(100);
+    for notes -> note {
+        let body = note.maybe("body").text() else "(empty)";
+        let mark = if note.flag("pinned") { "*"; } else { " "; };
+        out.writeln(mark + " " + note.int("id").string() + ". " + note.text("title") + ": " + body);
+    }
+
+    let found = await Query(db, Statement(text: "SELECT body FROM notes WHERE title = ?", values: [Param("quotes")])).one();
+    out.writeln("quotes: " + found.text("body"));
+    let missing = await Query(db, Statement(text: "SELECT id FROM notes WHERE title = ?", values: [Param("todo")])).maybe();
+    out.writeln("todo exists: " + (missing != Maybe<Row>.none).string());
+
+    // A failed step undoes the whole transaction.
+    let change = await db.transaction(TransactionOptions());
+    await change.execution(Statement(text: "UPDATE notes SET pinned = 1 WHERE title = ?", values: [Param("ideas")]));
+    try {
+        await change.execution(Statement(text: "INSERT INTO notes(title) VALUES (?)", values: [Param("ideas")]));
+        await change.commit();
+    }
+    catch DbFailure.detailed(kind, _, code, _) {
+        await change.rollback();
+        out.writeln("rolled back: " + (kind == DbFailureKind.constraint).string() + " constraint, code " + code);
+    }
+    let pinned = await Query(db, Statement("SELECT count(*) AS n FROM notes WHERE pinned = 1")).one();
+    out.writeln("pinned notes: " + pinned.int("n").string());
+    0;
+}

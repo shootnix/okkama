@@ -1,0 +1,42 @@
+module examples/template/pages v1.0.0;
+
+import "template/compile" take TextTemplate;
+import "template/model" take TemplateBinding, TemplateBindings;
+import "template/path" take TemplatePath;
+import "template/sections" take SectionTemplate;
+import "template/library" take TemplateLibrary, NamedTemplate;
+import "template/html" take HtmlTemplate, InvalidHtmlTemplate;
+import "json" take ParsedJson, Json;
+import "io/stdout" take Stdout;
+
+// Text templates fill {{names}} from bindings. Section templates walk JSON:
+// {{#list}}…{{/list}} repeats, {{^list}}…{{/list}} shows when it is empty,
+// {{>name}} includes a template from a library. HTML templates escape every
+// value for the place it lands, and refuse places where escaping is not
+// enough, such as event attributes.
+
+main() is int {
+    let out = Stdout();
+
+    let greeting = TextTemplate("Hello, {{user.name}}! You have {{user.unread}} new messages.");
+    let data = TemplateBindings([
+        TemplateBinding(path: TemplatePath(["user", "name"]), value: "Ada"),
+        TemplateBinding(path: TemplatePath(["user", "unread"]), value: "3"),
+    ]);
+    out.writeln(greeting.string(data));
+
+    let partials = TemplateLibrary([NamedTemplate(name: "item", value: TextTemplate("  - {{title}} ({{price}})\n"))]);
+    let order = SectionTemplate(source: "Order {{id}}:\n{{#items}}{{>item}}{{/items}}{{^items}}  (empty)\n{{/items}}", partials: partials);
+    out.write(order.string(ParsedJson("{\"id\":17,\"items\":[{\"title\":\"Tea\",\"price\":\"4.50\"},{\"title\":\"Cake\",\"price\":\"3.00\"}]}").root()));
+    out.write(order.string(ParsedJson("{\"id\":18,\"items\":[]}").root()));
+
+    let card = HtmlTemplate("<p title=\"{{.}}\">Hello, {{.}}</p>\n");
+    out.write(card.string(Json("Ada & \"friends\" <3")));
+    try {
+        HtmlTemplate("<p onclick=\"{{.}}\">x</p>").string(Json("alert(1)"));
+    }
+    catch error is InvalidHtmlTemplate {
+        out.writeln("refused: " + error.text());
+    }
+    0;
+}

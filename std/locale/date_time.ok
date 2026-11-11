@@ -764,20 +764,23 @@ object LocalizedDate {
     has origin is Date;
     has locale is Locale;
     has style is DateStyle;
-    has rendered is string;
 
     LocalizedDate(origin is Date, locale is Locale, style is DateStyle) {
         self.origin = origin;
         self.locale = locale;
         self.style = style;
-        let data = GregorianLocaleData(locale);
-        let times is @TimeOfDay = [];
-        let zones is @LocalizedZoneObservation = [];
-        rendered = GregorianPrinting(dates: [origin], times: times, zones: zones, data: data).string(data.date(style));
     }
 
     string() is string {
+        once let rendered is string = self.rendered();
         rendered;
+    }
+
+    hidden rendered() is string {
+        let data = GregorianLocaleData(locale);
+        let times is @TimeOfDay = [];
+        let zones is @LocalizedZoneObservation = [];
+        GregorianPrinting(dates: [origin], times: times, zones: zones, data: data).string(data.date(style));
     }
 }
 
@@ -785,20 +788,23 @@ object LocalizedTime {
     has origin is TimeOfDay;
     has locale is Locale;
     has style is TimeStyle;
-    has rendered is string;
 
     LocalizedTime(origin is TimeOfDay, locale is Locale, style is TimeStyle) {
         self.origin = origin;
         self.locale = locale;
         self.style = style;
-        let data = GregorianLocaleData(locale);
-        let dates is @Date = [];
-        let zones is @LocalizedZoneObservation = [];
-        rendered = GregorianPrinting(dates: dates, times: [origin], zones: zones, data: data).string(data.time(style, false));
     }
 
     string() is string {
+        once let rendered is string = self.rendered();
         rendered;
+    }
+
+    hidden rendered() is string {
+        let data = GregorianLocaleData(locale);
+        let dates is @Date = [];
+        let zones is @LocalizedZoneObservation = [];
+        GregorianPrinting(dates: dates, times: [origin], zones: zones, data: data).string(data.time(style, false));
     }
 }
 
@@ -806,24 +812,27 @@ object LocalizedLocalDateTime {
     has origin is LocalDateTime;
     has locale is Locale;
     has style is DateTimeStyle;
-    has rendered is string;
 
     LocalizedLocalDateTime(origin is LocalDateTime, locale is Locale, style is DateTimeStyle) {
         self.origin = origin;
         self.locale = locale;
         self.style = style;
+    }
+
+    string() is string {
+        once let rendered is string = self.rendered();
+        rendered;
+    }
+
+    hidden rendered() is string {
         let data = GregorianLocaleData(locale);
         let zones is @LocalizedZoneObservation = [];
         let printing = GregorianPrinting(dates: [origin.date()], times: [origin.time()], zones: zones, data: data);
-        rendered = GregorianCombined(
+        GregorianCombined(
             date: printing.string(data.date(style::Styles::date)),
             time: printing.string(data.time(style::Styles::time, false)),
             pattern: data.combination(style::Styles::date)
         ).string();
-    }
-
-    string() is string {
-        rendered;
     }
 }
 
