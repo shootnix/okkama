@@ -99,29 +99,31 @@ object ServerEvent {
         keep_alive = false;
     }
 
-    data() is string {
-        data;
-    }
-
-    event() is string {
-        event;
-    }
-
-    identifier() is string {
-        identifier;
-    }
-
-    identifier_supplied() is bool {
-        identifier_supplied;
-    }
-
-    keep_alive() is bool {
-        keep_alive;
-    }
-
     retry() is Duration {
         confirm milliseconds.size() == 1 else throw MissingEventRetry.missing;
         Duration(value: milliseconds[0].rat(), unit: DurationUnit.millisecond);
+    }
+
+    cap Event {
+        data is string {
+            data;
+        }
+
+        event is string {
+            event;
+        }
+
+        identifier is string {
+            identifier;
+        }
+
+        identifier_supplied is bool {
+            identifier_supplied;
+        }
+
+        keep_alive is bool {
+            keep_alive;
+        }
     }
 }
 
@@ -178,22 +180,22 @@ hidden object ServerEventWire {
     }
 
     bytes() is @byte {
-        if origin.keep_alive() {
-            return Utf8Encoded(": " + origin.data() + "\n\n").bytes();
+        if origin::Event::keep_alive {
+            return Utf8Encoded(": " + origin::Event::data + "\n\n").bytes();
         }
-        let lines = origin.data().replace("\r\n", "\n").replace("\r", "\n").split("\n");
+        let lines = origin::Event::data.replace("\r\n", "\n").replace("\r", "\n").split("\n");
         confirm lines.size() <= 65536 else throw EventStreamLimit.kind("data_lines");
         let data is @string = lines.map() -> line {
             "data: " + line + "\n";
         };
-        let type = if origin.event() == "message" {
+        let type = if origin::Event::event == "message" {
             "";
         }
         else {
-            "event: " + origin.event() + "\n";
+            "event: " + origin::Event::event + "\n";
         };
-        let id = if origin.identifier_supplied() {
-            "id: " + origin.identifier() + "\n";
+        let id = if origin::Event::identifier_supplied {
+            "id: " + origin::Event::identifier + "\n";
         }
         else {
             "";

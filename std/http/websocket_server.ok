@@ -145,7 +145,7 @@ hidden object WebSocketServerOpening {
             response::Head::headers,
             response::Head::version
         );
-        let pending = Http1ResponseHeadWriting(output, wire, request.method()).output();
+        let pending = Http1ResponseHeadWriting(output, wire, request::Head::method).output();
         await pending;
         let session = WebSocketSession(
             WebSocketPrefixedInput(input, head.remainder()),

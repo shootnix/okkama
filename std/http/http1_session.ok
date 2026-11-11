@@ -142,8 +142,8 @@ object Http1Session does Closing {
             let parsed = await pending;
             let head = parsed.head();
             let plan = Http1ResponseFraming(head, request::Head::method, limits).plan();
-            let status = head.status();
-            confirm plan.kind() != Http1BodyKind.tunnel && plan.kind() != Http1BodyKind.upgrade
+            let status = head::Head::status;
+            confirm plan::Plan::kind != Http1BodyKind.tunnel && plan::Plan::kind != Http1BodyKind.upgrade
                 else throw InvalidHttpMessage.because(
                     "upgraded response requires dedicated protocol ownership"
                 );
@@ -166,8 +166,8 @@ object Http1Session does Closing {
                 }
             }
             else {
-                let reusable = outgoing_plan.reuse_after_eof()
-                    && plan.reuse_after_eof()
+                let reusable = outgoing_plan::Plan::reuse_after_eof
+                    && plan::Plan::reuse_after_eof
                     && continuation.body_sent();
                 let framer = Http1BodyReading(
                     input,
@@ -181,8 +181,8 @@ object Http1Session does Closing {
                 let body = Http1SessionBody(reader, plan);
                 let response = head.response(body);
                 let result = Http1Exchange(request, response, accumulated.entries());
-                if plan.kind() == Http1BodyKind.empty
-                    || (plan.kind() == Http1BodyKind.fixed && plan.length().sign() == 0) {
+                if plan::Plan::kind == Http1BodyKind.empty
+                    || (plan::Plan::kind == Http1BodyKind.fixed && plan.length().sign() == 0) {
                         let group is FutureGroup<@byte> = FutureGroup();
                         lease.priming().replace([group]);
                         let prime = reader.bytes(1);

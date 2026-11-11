@@ -27,7 +27,7 @@ object Http1BodyCheck {
     }
 
     known() is @BigInt {
-        if !request && plan.kind() == Http1BodyKind.empty {
+        if !request && plan::Plan::kind == Http1BodyKind.empty {
             let empty is @BigInt = [];
             return empty;
         }
@@ -38,7 +38,7 @@ object Http1BodyCheck {
             let empty is @BigInt = [];
             empty;
         };
-        if plan.kind() == Http1BodyKind.empty {
+        if plan::Plan::kind == Http1BodyKind.empty {
             confirm known.size() == 1 && known[0].sign() == 0
                 else throw InvalidHttpMessage.because("unframed request requires known empty body");
         }
@@ -46,9 +46,9 @@ object Http1BodyCheck {
             if known.size() > 0 {
                 confirm known[0].sign() >= 0
                     else throw InvalidHttpMessage.because("negative body source length");
-                confirm known[0].order(BigInt(limits.body_bytes().string())) != Order.greater
+                confirm known[0].order(BigInt(limits::Limits::body_bytes.string())) != Order.greater
                     else throw Http1LimitExceeded.kind("body_bytes");
-                if plan.kind() == Http1BodyKind.fixed {
+                if plan::Plan::kind == Http1BodyKind.fixed {
                     confirm known[0].order(plan.length()) == Order.equal
                         else throw InvalidHttpMessage.because(
                             "body source length contradicts framing"

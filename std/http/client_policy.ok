@@ -173,5 +173,5 @@ enum InvalidClientPolicy is Error = (because(reason is string));
 test "default client policy is explicit and HTTP1-only" {
     let policy = ClientPolicy();
     test.ok(policy.protocols().membership(HttpVersion.http_1_1));
-    test.ok(policy.connections() == 8 && policy.limits().http1().body_bytes() == 1073741824);
+    test.ok(policy.connections() == 8 && policy.limits().http1()::Limits::body_bytes == 1073741824);
 }

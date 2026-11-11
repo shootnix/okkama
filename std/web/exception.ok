@@ -38,14 +38,6 @@ object Problem does HandlingResult {
         ^extra = extra.added(name, value);
     }
 
-    status() is int {
-        code;
-    }
-
-    detail() is string {
-        message;
-    }
-
     title() is string {
         let phrase = StatusCode(code).phrase();
         if phrase == "" {
@@ -81,6 +73,16 @@ object Problem does HandlingResult {
 
     application() is WebSocketHandling {
         throw WrongHandlingKind.mismatch;
+    }
+
+    cap Problem {
+        status is int {
+            code;
+        }
+
+        detail is string {
+            message;
+        }
     }
 }
 

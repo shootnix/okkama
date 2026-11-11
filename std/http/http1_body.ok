@@ -133,12 +133,12 @@ hidden object Http1BodyInput does AsyncReading {
         head is Headers,
         limits is Http1Limits
     ) {
-        let kind = plan.kind();
+        let kind = plan::Plan::kind;
         confirm kind != Http1BodyKind.tunnel && kind != Http1BodyKind.upgrade
             else throw InvalidHttpMessage.because(
                 "upgraded bytes require a dedicated protocol consumer"
             );
-        confirm prefix.size() <= limits.head_bytes() + 65536
+        confirm prefix.size() <= limits::Limits::head_bytes + 65536
             else throw Http1LimitExceeded.kind("prefix_bytes");
         let length = if kind == Http1BodyKind.fixed || kind == Http1BodyKind.empty {
             plan.length();
@@ -146,7 +146,7 @@ hidden object Http1BodyInput does AsyncReading {
         else {
             BigInt("0");
         };
-        confirm length.order(BigInt(limits.body_bytes().string())) != Order.greater
+        confirm length.order(BigInt(limits::Limits::body_bytes.string())) != Order.greater
             else throw Http1LimitExceeded.kind("body_bytes");
         self.origin = origin;
         self.kind = kind;
@@ -207,7 +207,7 @@ hidden object Http1BodyInput does AsyncReading {
             return chunk;
         }
         if kind == Http1BodyKind.close_delimited {
-            let budget = limits.body_bytes() - used.value();
+            let budget = limits::Limits::body_bytes - used.value();
             let requested = if limit <= budget {
                 limit;
             }
@@ -228,7 +228,7 @@ hidden object Http1BodyInput does AsyncReading {
                 let line = await self.line(group);
                 let size = ParsedHttp1ChunkLine(line, limits).size();
                 let count = Number(size.string()).int();
-                confirm count <= limits.body_bytes() - used.value()
+                confirm count <= limits::Limits::body_bytes - used.value()
                     else throw Http1LimitExceeded.kind("body_bytes");
                 remaining.replace(count);
                 phase.replace(if count == 0 {
@@ -273,7 +273,7 @@ hidden object Http1BodyInput does AsyncReading {
                             raw.writing().write(ByteSnapshot(Latin1Encoded(line + "\r\n").bytes()));
                             last if line == "";
                             rows.replace(rows.value() + 1);
-                            confirm rows.value() <= limits.fields()
+                            confirm rows.value() <= limits::Limits::fields
                                 else throw Http1LimitExceeded.kind("fields");
                         }
                         let fields = ParsedHttp1Trailers(
@@ -335,9 +335,9 @@ hidden object Http1BodyInput does AsyncReading {
             else {
                 current.size();
             };
-            confirm amount <= limits.line_bytes() + 2 - line.content().size()
+            confirm amount <= limits::Limits::line_bytes + 2 - line.content().size()
                 else throw Http1LimitExceeded.kind("line_bytes");
-            confirm amount <= limits.head_bytes() - metadata.value()
+            confirm amount <= limits::Limits::head_bytes - metadata.value()
                 else throw Http1LimitExceeded.kind("chunk_metadata_bytes");
             let accepted = cache.reading().bytes(amount);
             line.writing().write(ByteSnapshot(accepted));

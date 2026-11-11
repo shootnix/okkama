@@ -34,18 +34,20 @@ object Http1BodyPlan {
             && kind != Http1BodyKind.upgrade;
     }
 
-    kind() is Http1BodyKind {
-        kind;
-    }
-
     length() is BigInt {
         confirm kind == Http1BodyKind.empty || kind == Http1BodyKind.fixed
             else throw UnknownBodyLength.unknown;
         count;
     }
 
-    reuse_after_eof() is bool {
-        reusable;
+    cap Plan {
+        kind is Http1BodyKind {
+            kind;
+        }
+
+        reuse_after_eof is bool {
+            reusable;
+        }
     }
 }
 
@@ -64,7 +66,7 @@ object Http1RequestFraming {
     }
 
     plan() is Http1BodyPlan {
-        let fields = Http1FramingFields(head.headers(), head.version(), limits);
+        let fields = Http1FramingFields(head.headers(), head::Head::version, limits);
         let reuse = fields.reusable();
         let length = fields.length();
         let codings = fields.codings();
@@ -99,12 +101,12 @@ object Http1ResponseFraming {
     }
 
     plan() is Http1BodyPlan {
-        let status = head.status();
+        let status = head::Head::status;
         let class = StatusCode(status).class();
         if method == Method.connect && class == StatusClass.successful {
             return Http1BodyPlan(Http1BodyKind.tunnel, BigInt("0"), false);
         }
-        let fields = Http1FramingFields(head.headers(), head.version(), limits);
+        let fields = Http1FramingFields(head.headers(), head::Head::version, limits);
         let length = fields.length();
         let codings = fields.codings();
         confirm length.size() == 0 || codings.size() == 0
@@ -140,13 +142,13 @@ object Http1FramingFields {
         confirm version != HttpVersion.http_2
             else throw InvalidHttpMessage.because("HTTP1 body plan requires HTTP1 version");
         let entries = origin.entries();
-        confirm entries.size() <= limits.fields() else throw Http1LimitExceeded.kind("fields");
+        confirm entries.size() <= limits::Limits::fields else throw Http1LimitExceeded.kind("fields");
         let size = (0..entries.size()).reduce(0) -> used, index {
             let entry = entries.item(index);
             let width = entry.name().string().length() + entry.value().length() + 3;
-            confirm width - 2 <= limits.line_bytes()
+            confirm width - 2 <= limits::Limits::line_bytes
                 else throw Http1LimitExceeded.kind("line_bytes");
-            confirm width <= limits.head_bytes() - used
+            confirm width <= limits::Limits::head_bytes - used
                 else throw Http1LimitExceeded.kind("head_bytes");
             used + width;
         };
@@ -237,7 +239,7 @@ object Http1FramingFields {
     }
 
     fixed(length is BigInt, reuse is bool) is Http1BodyPlan {
-        confirm length.order(BigInt(limits.body_bytes().string())) != Order.greater
+        confirm length.order(BigInt(limits::Limits::body_bytes.string())) != Order.greater
             else throw Http1LimitExceeded.kind("body_bytes");
         Http1BodyPlan(Http1BodyKind.fixed, length, reuse);
     }
@@ -268,5 +270,5 @@ enum UnsupportedTransferCoding is Error = (unsupported);
 test "request body boundaries are decided before reading" {
     let head = ParsedHttp1RequestHead("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 0\r\n\r\n").head();
     let plan = Http1RequestFraming(head).plan();
-    test.ok(plan.kind() == Http1BodyKind.fixed && plan.length().string() == "0");
+    test.ok(plan::Plan::kind == Http1BodyKind.fixed && plan.length().string() == "0");
 }

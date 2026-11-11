@@ -163,8 +163,8 @@ test "first-party cookies use the current request site and method" {
     );
     let context = FirstPartyCookies().context(request);
     test.ok(
-        context.top_level()
-            && context.method() == Method.post
+        context::Context::top_level
+            && context::Context::method == Method.post
             && context.site().string() == "https://example.com/path"
     );
     test.ok(CookieRequestPairs([]).string() == "");

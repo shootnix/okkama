@@ -97,7 +97,7 @@ object CacheValidation {
             confirm !value.wildcard() && value.values().size() == 1 && tags.size() == 1
                 else throw InvalidCacheRevalidation.invalid;
             let tag = value.values().item(0);
-            confirm if tag.weak() {
+            confirm if tag::Tag::weak {
                 tag.weak_matches(tags[0]);
             }
             else {

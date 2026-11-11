@@ -51,14 +51,6 @@ object FormLimits {
         self.total_bytes = total_bytes;
     }
 
-    fields() is int {
-        fields;
-    }
-
-    files() is int {
-        files;
-    }
-
     field_bytes() is BigInt {
         field_bytes;
     }
@@ -69,6 +61,16 @@ object FormLimits {
 
     total_bytes() is BigInt {
         total_bytes;
+    }
+
+    cap Limits {
+        fields is int {
+            fields;
+        }
+
+        files is int {
+            files;
+        }
     }
 }
 
@@ -481,10 +483,10 @@ hidden object MultipartState {
             fields.value() + 1;
         };
         confirm count <= if file {
-            limits.files();
+            limits::Limits::files;
         }
         else {
-            limits.fields();
+            limits::Limits::fields;
         }
             else throw FormLimitExceeded.kind(if file {
                 "files";
@@ -1035,7 +1037,7 @@ hidden object FormTextCharset {
         declared = false;
         let selected = if types.size() == 1 {
             let type = MediaType(types.item(0));
-            confirm type.type() == "text" else throw UnsupportedFormCharset.unsupported;
+            confirm type::Type::type == "text" else throw UnsupportedFormCharset.unsupported;
             let charsets = type.parameters().values("charset");
             confirm charsets.size() <= 1 else throw UnsupportedFormCharset.unsupported;
             if charsets.size() == 1 {
@@ -1156,7 +1158,7 @@ hidden object ParsedUrlEncodedForm {
             text.replace(text.value() + Latin1Decoded(bytes).string());
         }
         let parameters = try {
-            ParsedForm(origin: Latin1Encoded(text.value()).bytes(), maximum_parameters: limits.fields(), maximum_bytes: cap).parameters();
+            ParsedForm(origin: Latin1Encoded(text.value()).bytes(), maximum_parameters: limits::Limits::fields, maximum_bytes: cap).parameters();
         }
         catch e is QueryLimitExceeded {
             throw FormLimitExceeded.kind("fields");

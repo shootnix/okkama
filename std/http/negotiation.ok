@@ -158,16 +158,18 @@ object NegotiationLimits {
         self.available = available;
     }
 
-    bytes() is int {
-        bytes;
-    }
+    cap Limits {
+        bytes is int {
+            bytes;
+        }
 
-    entries() is int {
-        entries;
-    }
+        entries is int {
+            entries;
+        }
 
-    available() is int {
-        available;
+        available is int {
+            available;
+        }
     }
 }
 
@@ -231,7 +233,7 @@ object AcceptedContentCodings {
         let count = available.size();
         confirm count >= 0
             else throw InvalidArgument.because("negative coding choice sequence size");
-        confirm count <= limits.available() else throw NegotiationLimitExceeded.kind("available");
+        confirm count <= limits::Limits::available else throw NegotiationLimitExceeded.kind("available");
         let choices is @ContentCoding = (0..count).map() -> index {
             available.item(index);
         };
@@ -357,7 +359,7 @@ hidden object CodingField {
     }
 
     values() is @CodingPreference {
-        confirm origin.length() <= limits.bytes() else throw NegotiationLimitExceeded.kind("bytes");
+        confirm origin.length() <= limits::Limits::bytes else throw NegotiationLimitExceeded.kind("bytes");
         let field = try {
             Header(HeaderName("Accept-Encoding"), origin).value();
         }
@@ -369,7 +371,7 @@ hidden object CodingField {
             return empty;
         }
         let parts = field.split(",");
-        confirm parts.size() <= limits.entries()
+        confirm parts.size() <= limits::Limits::entries
             else throw NegotiationLimitExceeded.kind("entries");
         let texts is @string = parts.map() -> part {
             Header(HeaderName("Accept-Encoding"), part).value();
@@ -534,7 +536,7 @@ object AcceptedCharsets {
         let count = available.size();
         confirm count >= 0
             else throw InvalidArgument.because("negative charset choice sequence size");
-        confirm count <= limits.available() else throw NegotiationLimitExceeded.kind("available");
+        confirm count <= limits::Limits::available else throw NegotiationLimitExceeded.kind("available");
         let choices is @CharsetName = (0..count).map() -> index {
             available.item(index);
         };
@@ -680,7 +682,7 @@ object AcceptedLanguages {
         let count = available.size();
         confirm count >= 0
             else throw InvalidArgument.because("negative language choice sequence size");
-        confirm count <= limits.available() else throw NegotiationLimitExceeded.kind("available");
+        confirm count <= limits::Limits::available else throw NegotiationLimitExceeded.kind("available");
         let choices is @Locale = (0..count).map() -> index {
             available.item(index);
         };
@@ -823,8 +825,8 @@ object MediaRange {
 
     MediaRange(origin is string) {
         let parsed = ParsedMediaRange(origin, HttpMediaLimits()).range();
-        major = parsed.type();
-        minor = parsed.subtype();
+        major = parsed::Range::type;
+        minor = parsed::Range::subtype;
         parameters = parsed.parameters();
         quality = parsed.quality();
         specificity = parsed.specificity();
@@ -832,8 +834,8 @@ object MediaRange {
 
     MediaRange(origin is string, limits is HttpMediaLimits) {
         let parsed = ParsedMediaRange(origin, limits).range();
-        major = parsed.type();
-        minor = parsed.subtype();
+        major = parsed::Range::type;
+        minor = parsed::Range::subtype;
         parameters = parsed.parameters();
         quality = parsed.quality();
         specificity = parsed.specificity();
@@ -879,14 +881,6 @@ object MediaRange {
         specificity = MediaSpecificity(kind, parameters.entries().size());
     }
 
-    type() is string {
-        major;
-    }
-
-    subtype() is string {
-        minor;
-    }
-
     parameters() is HttpMediaParameters {
         parameters;
     }
@@ -909,10 +903,10 @@ object MediaRange {
     }
 
     matches(origin is HttpMediaType) is bool {
-        if major != "*" && major != origin.type() {
+        if major != "*" && major != origin::Type::type {
             return false;
         }
-        if minor != "*" && minor != origin.subtype() {
+        if minor != "*" && minor != origin::Type::subtype {
             return false;
         }
         for parameters.entries() -> parameter {
@@ -923,6 +917,16 @@ object MediaRange {
                 }
         }
         true;
+    }
+
+    cap Range {
+        type is string {
+            major;
+        }
+
+        subtype is string {
+            minor;
+        }
     }
 }
 
@@ -980,7 +984,7 @@ hidden object ParsedMediaRange {
         MediaRange(
             fields.type(),
             fields.subtype(),
-            HttpMediaParameters(kept, limits.parameters()),
+            HttpMediaParameters(kept, limits::Limits::parameters),
             quality
         );
     }
@@ -1033,20 +1037,22 @@ object MediaNegotiationLimits {
         self.available = available;
     }
 
-    bytes() is int {
-        bytes;
-    }
+    cap Limits {
+        bytes is int {
+            bytes;
+        }
 
-    entries() is int {
-        entries;
-    }
+        entries is int {
+            entries;
+        }
 
-    parameters() is int {
-        parameters;
-    }
+        parameters is int {
+            parameters;
+        }
 
-    available() is int {
-        available;
+        available is int {
+            available;
+        }
     }
 }
 
@@ -1098,7 +1104,7 @@ object AcceptedMediaTypes {
         let count = available.size();
         confirm count >= 0
             else throw InvalidArgument.because("negative media choice sequence size");
-        confirm count <= limits.available() else throw NegotiationLimitExceeded.kind("available");
+        confirm count <= limits::Limits::available else throw NegotiationLimitExceeded.kind("available");
         let choices is @HttpMediaType = (0..count).map() -> index {
             available.item(index);
         };
@@ -1210,7 +1216,7 @@ hidden object MediaField {
     }
 
     values() is @MediaRange {
-        confirm origin.length() <= limits.bytes() else throw NegotiationLimitExceeded.kind("bytes");
+        confirm origin.length() <= limits::Limits::bytes else throw NegotiationLimitExceeded.kind("bytes");
         let field = try {
             Header(HeaderName("Accept"), origin).value();
         }
@@ -1221,7 +1227,7 @@ hidden object MediaField {
             let empty is @MediaRange = [];
             return empty;
         }
-        let parts = MediaMembers(field, limits.entries()).values();
+        let parts = MediaMembers(field, limits::Limits::entries).values();
         let texts is @string = parts.map() -> part {
             Header(HeaderName("Accept"), part).value();
         };
@@ -1229,7 +1235,7 @@ hidden object MediaField {
             part != "";
         };
         let values is @MediaRange = nonempty.map() -> part {
-            MediaRange(part, HttpMediaLimits(limits.bytes(), limits.parameters()));
+            MediaRange(part, HttpMediaLimits(limits::Limits::bytes, limits::Limits::parameters));
         };
         values;
     }

@@ -248,7 +248,7 @@ hidden object WebSocketOpening {
         loop {
             let pending = Http1ResponseHeadReading(input, prefix.value(), Http1Limits(), 4096).head();
             let received = await pending;
-            let status = received.head().status();
+            let status = received.head()::Head::status;
             if StatusCode(status).class() == StatusClass.informational
                 && status != Status.switching_protocols {
                     confirm count.value() < 16

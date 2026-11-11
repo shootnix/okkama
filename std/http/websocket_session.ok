@@ -124,7 +124,7 @@ hidden object WebSocketSessionState {
         self.owner = owner;
         self.client = client;
         self.limits = limits;
-        incoming = Channel(limits.queue());
+        incoming = Channel(limits::Limits::queue);
         let initial is Error = WebSocketClosed.detailed(1006, "");
         failure = Atomic(initial);
         loops = FutureGroup();
@@ -209,7 +209,7 @@ hidden object WebSocketSessionState {
         defer assembly.close();
         try {
             loop {
-                let pending = WebSocketFrameReading(input, !client, limits.frame_bytes()).frame();
+                let pending = WebSocketFrameReading(input, !client, limits::Limits::frame_bytes).frame();
                 let frame = await pending;
                 if frame.opcode() == 8 {
                     let received = ParsedWebSocketClose(frame.payload(), client).closure();
@@ -327,8 +327,8 @@ hidden object WebSocketSessionState {
             incoming.sending().close();
             let payload = HttpWireBytes(
                 [
-                    IntegerBytes(value: value.code(), size: 2, signedness: Signedness.unsigned, order: ByteOrder.big).bytes(),
-                    Utf8Encoded(value.reason()).bytes()
+                    IntegerBytes(value: value::Close::code, size: 2, signedness: Signedness.unsigned, order: ByteOrder.big).bytes(),
+                    Utf8Encoded(value::Close::reason).bytes()
                 ],
                 125
             ).bytes();

@@ -99,17 +99,17 @@ object SmtpDataValue {
         confirm MimeMetadata(origin.headers()).encoding() != TransferEncoding.binary
             else throw InvalidSmtpData.located(0, "binary MIME requires BDAT, not DATA");
         let original = origin.limits();
-        let maximum = if original.body_bytes() < limits.message_bytes() {
-            original.body_bytes();
+        let maximum = if original::Limits::body_bytes < limits.message_bytes() {
+            original::Limits::body_bytes;
         }
         else {
             limits.message_bytes();
         };
         let mime = MimeLimits(
-            original.header_bytes(),
-            original.line_bytes(),
-            original.parts(),
-            original.depth(),
+            original::Limits::header_bytes,
+            original::Limits::line_bytes,
+            original::Limits::parts,
+            original::Limits::depth,
             maximum
         );
         let rendered = try {
@@ -118,7 +118,7 @@ object SmtpDataValue {
         catch failure is MimeLimitFailure {
             match failure {
                 case MimeLimitFailure.kind(kind) {
-                    if kind == "body_bytes" && maximum < original.body_bytes() {
+                    if kind == "body_bytes" && maximum < original::Limits::body_bytes {
                         throw SmtpLimitExceeded.kind("message_bytes");
                     }
                 }
@@ -131,7 +131,7 @@ object SmtpDataValue {
         let content is @byte = if !terminated
             && MimeMetadata(origin.headers()).encoding() == TransferEncoding.base64 {
                 if rendered.size() > maximum - 2 {
-                    if maximum < original.body_bytes() {
+                    if maximum < original::Limits::body_bytes {
                         throw SmtpLimitExceeded.kind("message_bytes");
                     }
                     throw MimeLimitFailure.kind("body_bytes");
@@ -226,7 +226,7 @@ object SmtpDataMime {
         confirm encoding != TransferEncoding.binary
             else throw InvalidSmtpData.located(0, "binary MIME part requires BDAT");
         let type = metadata.type();
-        if type.type() != "multipart" {
+        if type::Type::type != "multipart" {
             return encoding == TransferEncoding.eight_bit;
         }
         let bytes = part.body().bytes();
@@ -237,8 +237,8 @@ object SmtpDataMime {
             type,
             limits,
             0,
-            limits.parts() - 1,
-            limits.body_bytes()
+            limits::Limits::parts - 1,
+            limits::Limits::body_bytes
         ).multipart();
         let nested = parsed.children().reduce(false) -> found, child {
             let required = self.requires_eight_bit(child);

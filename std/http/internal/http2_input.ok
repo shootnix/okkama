@@ -190,7 +190,7 @@ object Http2ConnectionInput {
     hidden async read_loop() is bool {
         loop {
             let eof = Event();
-            let pending = Http2FrameReading(origin, local.frame_size()).frame();
+            let pending = Http2FrameReading(origin, local::Settings::frame_size).frame();
             let available is @Http2Frame = try {
                 [await pending];
             }
@@ -249,7 +249,7 @@ object Http2ConnectionInput {
                 origin,
                 decoder.value(),
                 budget,
-                local.frame_size()
+                local::Settings::frame_size
             ).block();
             let block = await pending;
             decoder.replace(block.context());
@@ -293,7 +293,7 @@ object Http2ConnectionInput {
                         0,
                         "unexpected settings acknowledgment"
                     );
-                decoder.replace(decoder.value().allowed(local.header_table()));
+                decoder.replace(decoder.value().allowed(local::Settings::header_table));
                 receiver.local_settings(local);
                 acknowledged.set();
                 return true;

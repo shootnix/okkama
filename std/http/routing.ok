@@ -116,12 +116,14 @@ object RouteSegment {
         }
     }
 
-    kind() is RouteSegmentKind {
-        kind;
-    }
+    cap Segment {
+        kind is RouteSegmentKind {
+            kind;
+        }
 
-    text() is string {
-        value;
+        text is string {
+            value;
+        }
     }
 }
 
@@ -149,10 +151,10 @@ object RoutePattern {
         // Segment grammar is validated before name uniqueness, as before.
         // Capture names (including the final wildcard) share one namespace.
         let named = segments.filter() -> segment {
-            segment.kind() != RouteSegmentKind.literal;
+            segment::Segment::kind != RouteSegmentKind.literal;
         };
         let names is @string = named.map() -> segment {
-            segment.text();
+            segment::Segment::text;
         };
         let ordered = names.ordering();
         for (0..ordered.size()) -> index {
@@ -180,7 +182,7 @@ object RoutePattern {
     matches(path is @string) is bool {
         confirm path.size() <= 128 else throw InvalidRoute.because("decoded path segment budget");
         let wildcard = parts.size() > 0
-            && parts[parts.size() - 1].kind() == RouteSegmentKind.wildcard;
+            && parts[parts.size() - 1]::Segment::kind == RouteSegmentKind.wildcard;
         let fixed = parts.size() - (if wildcard {
             1;
         }
@@ -192,10 +194,10 @@ object RoutePattern {
         }
         for (0..fixed) -> index {
             let part = parts[index];
-            if part.kind() == RouteSegmentKind.literal && part.text() != path[index] {
+            if part::Segment::kind == RouteSegmentKind.literal && part::Segment::text != path[index] {
                 return false;
             }
-            if part.kind() == RouteSegmentKind.parameter && path[index] == "" {
+            if part::Segment::kind == RouteSegmentKind.parameter && path[index] == "" {
                 return false;
             }
         }
@@ -212,13 +214,13 @@ object RoutePattern {
             used + segment.length();
         };
         let positions is @int = (0..parts.size()).filter() -> index {
-            parts[index].kind() != RouteSegmentKind.literal;
+            parts[index]::Segment::kind != RouteSegmentKind.literal;
         };
         let keys is @string = positions.map() -> index {
-            parts[index].text();
+            parts[index]::Segment::text;
         };
         let values is @string = positions.map() -> index {
-            if parts[index].kind() == RouteSegmentKind.wildcard {
+            if parts[index]::Segment::kind == RouteSegmentKind.wildcard {
                 path.slice(index, path.size()).join("/");
             }
             else {
@@ -247,20 +249,20 @@ object RoutePattern {
         for (0..common) -> index {
             let left = parts[index];
             let peer = right[index];
-            if left.kind() == RouteSegmentKind.wildcard || peer.kind() == RouteSegmentKind.wildcard {
+            if left::Segment::kind == RouteSegmentKind.wildcard || peer::Segment::kind == RouteSegmentKind.wildcard {
                 return true;
             }
-            if left.kind() == RouteSegmentKind.literal
-                && peer.kind() == RouteSegmentKind.literal
-                && left.text() != peer.text() {
+            if left::Segment::kind == RouteSegmentKind.literal
+                && peer::Segment::kind == RouteSegmentKind.literal
+                && left::Segment::text != peer::Segment::text {
                     return false;
                 }
-            if (left.kind() == RouteSegmentKind.parameter
-                && peer.kind() == RouteSegmentKind.literal
-                && peer.text() == "")
-                || (peer.kind() == RouteSegmentKind.parameter
-                && left.kind() == RouteSegmentKind.literal
-                && left.text() == "") {
+            if (left::Segment::kind == RouteSegmentKind.parameter
+                && peer::Segment::kind == RouteSegmentKind.literal
+                && peer::Segment::text == "")
+                || (peer::Segment::kind == RouteSegmentKind.parameter
+                && left::Segment::kind == RouteSegmentKind.literal
+                && left::Segment::text == "") {
                     return false;
                 }
         }
@@ -273,7 +275,7 @@ object RoutePattern {
         else {
             right;
         };
-        longer[common].kind() == RouteSegmentKind.wildcard;
+        longer[common]::Segment::kind == RouteSegmentKind.wildcard;
     }
 }
 
@@ -366,13 +368,13 @@ hidden object RouteConflictEntry {
         method = verb;
         pattern = compiled;
         self.parts = parts;
-        let wide = parts.size() == 0 || parts[0].kind() != RouteSegmentKind.literal;
+        let wide = parts.size() == 0 || parts[0]::Segment::kind != RouteSegmentKind.literal;
         broad = wide;
         key = verb + "\t" + (if wide {
             "";
         }
         else {
-            parts[0].text();
+            parts[0]::Segment::text;
         });
     }
 
@@ -397,11 +399,11 @@ hidden object RouteConflictEntry {
     }
 
     kind(index is int) is RouteSegmentKind {
-        parts[index].kind();
+        parts[index]::Segment::kind;
     }
 
     literal(index is int) is string {
-        parts[index].text();
+        parts[index]::Segment::text;
     }
 }
 

@@ -46,12 +46,14 @@ object CookieLimits {
         self.per_domain = per_domain;
     }
 
-    total() is int {
-        total;
-    }
+    cap Limits {
+        total is int {
+            total;
+        }
 
-    per_domain() is int {
-        per_domain;
+        per_domain is int {
+            per_domain;
+        }
     }
 }
 
@@ -224,15 +226,15 @@ hidden object CookieRecord does Comparing<CookieRecord> {
         index is int
     ) {
         self.cookie = cookie;
-        host_only = cookie.attributes().domain() == "";
-        domain = if cookie.attributes().domain() == "" {
-            endpoint.domain();
+        host_only = cookie.attributes()::Attributes::domain == "";
+        domain = if cookie.attributes()::Attributes::domain == "" {
+            endpoint::Origin::domain;
         }
         else {
-            cookie.attributes().domain();
+            cookie.attributes()::Attributes::domain;
         };
         partition = if cookie.attributes().flags().membership(CookieFlag.partitioned) {
-            context.key();
+            context::Context::key;
         }
         else {
             "";
@@ -298,7 +300,7 @@ hidden object CookieRecord does Comparing<CookieRecord> {
         cookie.name() == other.cookie().name()
             && domain == other.domain()
             && host_only == other.host_only()
-            && cookie.attributes().path() == other.cookie().attributes().path()
+            && cookie.attributes()::Attributes::path == other.cookie().attributes()::Attributes::path
             && partition == other.partition();
     }
 
@@ -308,28 +310,28 @@ hidden object CookieRecord does Comparing<CookieRecord> {
     }
 
     sent(endpoint is CookieOrigin, context is CookieContext) is bool {
-        if self.secure() && !endpoint.secure() {
+        if self.secure() && !endpoint::Origin::secure {
             return false;
         }
-        if partition != "" && partition != context.key() {
+        if partition != "" && partition != context::Context::key {
             return false;
         }
         let domain_matches = if host_only {
-            domain == endpoint.domain();
+            domain == endpoint::Origin::domain;
         }
         else {
-            CookieDomainMatch(domain, endpoint.domain(), endpoint.address()).matches();
+            CookieDomainMatch(domain, endpoint::Origin::domain, endpoint::Origin::address).matches();
         };
         if !domain_matches
-            || !CookiePathMatch(cookie.attributes().path(), endpoint.path()).matches() {
+            || !CookiePathMatch(cookie.attributes()::Attributes::path, endpoint::Origin::path).matches() {
                 return false;
             }
-        let site = cookie.attributes().same_site();
-        endpoint.site() == context.key()
+        let site = cookie.attributes()::Attributes::same_site;
+        endpoint::Origin::site == context::Context::key
             || site == SameSite.cross_site
             || (site != SameSite.strict
-            && context.top_level()
-            && MethodSemantics(context.method()).safe());
+            && context::Context::top_level
+            && MethodSemantics(context::Context::method).safe());
     }
 
     overlays(other is CookieRecord) is bool {
@@ -338,7 +340,7 @@ hidden object CookieRecord does Comparing<CookieRecord> {
             && partition == other.partition()
             && (CookieDomainMatch(domain, other.domain(), false).matches()
             || CookieDomainMatch(other.domain(), domain, false).matches())
-            && CookiePathMatch(cookie.attributes().path(), other.cookie().attributes().path()).matches();
+            && CookiePathMatch(cookie.attributes()::Attributes::path, other.cookie().attributes()::Attributes::path).matches();
     }
 
     accessed(index is int) is CookieRecord {
@@ -358,8 +360,8 @@ hidden object CookieRecord does Comparing<CookieRecord> {
     }
 
     order(other is CookieRecord) is Order {
-        let a = cookie.attributes().path().length();
-        let b = other.cookie().attributes().path().length();
+        let a = cookie.attributes()::Attributes::path.length();
+        let b = other.cookie().attributes()::Attributes::path.length();
         if a != b {
             return if a > b {
                 Order.less;
@@ -388,15 +390,15 @@ hidden object CookieJarUpdate {
     }
 
     following(cookie is Cookie, endpoint is CookieOrigin, context is CookieContext, now is Instant) is ^CookieJarUpdate {
-        let policy = cookie.attributes().same_site();
+        let policy = cookie.attributes()::Attributes::same_site;
         let allowed = policy == SameSite.cross_site
-            || endpoint.site() == context.key()
-            || context.top_level();
+            || endpoint::Origin::site == context::Context::key
+            || context::Context::top_level;
         let index = counter + 1;
         confirm index <= 9007199254740991
             else throw InvalidCookie.because("jar revision limit exceeded");
         let proposed = CookieRecord(cookie, endpoint, context, now, index);
-        let overlaid = if endpoint.secure() {
+        let overlaid = if endpoint::Origin::secure {
             false;
         }
         else {
@@ -494,7 +496,7 @@ hidden object CookieJarBounded {
         let same is @CookieRecord = records.filter() -> record {
             record.domain() == domain;
         };
-        let domain_excess = same.size() - limits.per_domain();
+        let domain_excess = same.size() - limits::Limits::per_domain;
         let kept is @CookieRecord = if domain_excess <= 0 {
             records;
         }
@@ -513,7 +515,7 @@ hidden object CookieJarBounded {
             };
             remaining;
         };
-        let total_excess = kept.size() - limits.total();
+        let total_excess = kept.size() - limits::Limits::total;
         if total_excess <= 0 {
             return kept;
         }
@@ -613,8 +615,8 @@ hidden object CookieStoreText {
             "OKKAMA-COOKIE-JAR",
             "1",
             PublicSuffixList().version(),
-            limits.total().string(),
-            limits.per_domain().string(),
+            limits::Limits::total.string(),
+            limits::Limits::per_domain.string(),
             state.counter().string()
         ].join("\t");
         let rows is @string = state.records().map() -> record {
@@ -648,7 +650,7 @@ hidden object CookieStoreRow {
         let created = origin.created().unix_duration().nanoseconds().string();
         confirm expiry.length() <= 32 && created.length() <= 32
             else throw InvalidCookieStore.because("timestamp field width");
-        let site = match attrs.same_site() {
+        let site = match attrs::Attributes::same_site {
             case SameSite.strict {
                 "strict";
             }
@@ -672,7 +674,7 @@ hidden object CookieStoreRow {
             else {
                 "0";
             },
-            attrs.path(),
+            attrs::Attributes::path,
             origin.partition(),
             site,
             if flags.membership(CookieFlag.secure) {
@@ -742,7 +744,7 @@ hidden object ParsedCookieStore {
             CookieStoreNumber(header[4]).index()
         );
         let counter = CookieStoreNumber(header[5]).index();
-        confirm lines.size() - 2 <= limits.total()
+        confirm lines.size() - 2 <= limits::Limits::total
             else throw InvalidCookieStore.because("record limit exceeded");
         let records is @CookieRecord = (1..lines.size() - 1).map() -> index {
             ParsedCookieStoreRow(lines[index], counter).record();
@@ -777,7 +779,7 @@ hidden object ParsedCookieStore {
                 record.domain();
             }
         );
-        let count = CookieStoreDomainCount(limits.per_domain());
+        let count = CookieStoreDomainCount(limits::Limits::per_domain);
         for domains -> record {
             count = count.following(record.domain());
         }
@@ -802,7 +804,7 @@ hidden object CookieStoreIdentity {
             else {
                 "0";
             },
-            origin.cookie().attributes().path(),
+            origin.cookie().attributes()::Attributes::path,
             origin.partition()
         ];
         let encoded is @string = fields.map() -> field {
@@ -860,9 +862,9 @@ hidden object ParsedCookieStoreRow {
             domain;
         };
         let endpoint = CookieOrigin(ParsedUrl("https://" + literal + "/").parts());
-        confirm endpoint.domain() == domain
+        confirm endpoint::Origin::domain == domain
             else throw InvalidCookieStore.because("noncanonical record domain");
-        if !host_only && !endpoint.address() {
+        if !host_only && !endpoint::Origin::address {
             confirm !PublicSuffixList().public(HostName(domain))
                 else throw InvalidCookieStore.because("invalid domain-cookie scope");
         }
@@ -870,7 +872,7 @@ hidden object ParsedCookieStoreRow {
         confirm partitioned == (partition != "")
             else throw InvalidCookieStore.because("partition flag/key mismatch");
         if partition != "" {
-            confirm CookieOrigin(ParsedUrl(partition).parts()).site() == partition
+            confirm CookieOrigin(ParsedUrl(partition).parts())::Origin::site == partition
                 else throw InvalidCookieStore.because("noncanonical partition key");
         }
         let same_site = match fields[6] {

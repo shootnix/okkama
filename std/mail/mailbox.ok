@@ -535,7 +535,7 @@ object Maildir {
         for entries -> entry {
             let bytes = MaildirFileBytes(
                 entry.path(),
-                bounds.mime().body_bytes(),
+                bounds.mime()::Limits::body_bytes,
                 bounds.wire_bytes() - total.index()
             ).bytes();
             total = total.following(total.index() + bytes.size());
@@ -714,7 +714,7 @@ object ChangedMaildirFlags {
             if entry.name().identifier() == identifier {
                 let bytes = MaildirFileBytes(
                     entry.path(),
-                    limits.mime().body_bytes(),
+                    limits.mime()::Limits::body_bytes,
                     limits.wire_bytes()
                 ).bytes();
                 let result = StoredMail(

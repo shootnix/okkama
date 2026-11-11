@@ -44,14 +44,6 @@ object AuthenticationChallenge {
         token = token68;
     }
 
-    scheme() is string {
-        scheme;
-    }
-
-    token68() is string {
-        token;
-    }
-
     present(name is string) is bool {
         let key = HttpAsciiLowercase(name).string();
         parameters.reduce(false) -> found, parameter {
@@ -77,6 +69,16 @@ object AuthenticationChallenge {
             }
         }
         throw InvalidAuthenticationChallenge.because("missing parameter");
+    }
+
+    cap Challenge {
+        scheme is string {
+            scheme;
+        }
+
+        token68 is string {
+            token;
+        }
     }
 }
 

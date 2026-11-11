@@ -106,20 +106,8 @@ object CookieAttributes {
         partitioned = checked.partitioned();
     }
 
-    domain() is string {
-        domain;
-    }
-
-    path() is string {
-        path;
-    }
-
     expiry() is CookieExpiry {
         expiry;
-    }
-
-    same_site() is SameSite {
-        same_site;
     }
 
     flags() is Set<CookieFlag> {
@@ -198,6 +186,20 @@ object CookieAttributes {
                 "";
             });
     }
+
+    cap Attributes {
+        domain is string {
+            domain;
+        }
+
+        path is string {
+            path;
+        }
+
+        same_site is SameSite {
+            same_site;
+        }
+    }
 }
 
 object Cookie {
@@ -231,8 +233,8 @@ object Cookie {
         }
         if candidate.length() >= 7 && candidate.slice(0, 7) == "__host-" {
             confirm flags.membership(CookieFlag.secure)
-                && attributes.domain() == ""
-                && attributes.path() == "/"
+                && attributes::Attributes::domain == ""
+                && attributes::Attributes::path == "/"
                 else throw InvalidCookie.because(
                     "host cookie prefix requires Secure, omitted Domain and explicit Path=/"
                 );

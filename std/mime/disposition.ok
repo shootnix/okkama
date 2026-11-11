@@ -42,10 +42,6 @@ object ContentDisposition {
         entries = parsed.parameters();
     }
 
-    kind() is string {
-        token;
-    }
-
     parameters() is MimeParameters {
         entries;
     }
@@ -57,6 +53,12 @@ object ContentDisposition {
         else {
             "; " + entries.string();
         };
+    }
+
+    cap Disposition {
+        kind is string {
+            token;
+        }
     }
 }
 

@@ -198,12 +198,14 @@ object HeaderLimits {
         budget = bytes;
     }
 
-    entries() is int {
-        count;
-    }
+    cap Limits {
+        entries is int {
+            count;
+        }
 
-    bytes() is int {
-        budget;
+        bytes is int {
+            budget;
+        }
     }
 }
 
@@ -258,7 +260,7 @@ object Headers {
     }
 
     addition(entry is Header) is Headers {
-        confirm origin.size() < limits.entries() else throw HeaderLimitExceeded.kind("entries");
+        confirm origin.size() < limits::Limits::entries else throw HeaderLimitExceeded.kind("entries");
         let values is @Header = (0..origin.size() + 1).map() -> index {
             if index < origin.size() {
                 origin[index];
@@ -278,7 +280,7 @@ object HeadersWithout {
     HeadersWithout(origin is Headers, names is Sequencing<HeaderName>) {
         let count = names.size();
         confirm count >= 0 else throw InvalidArgument.because("negative header name sequence size");
-        confirm count <= origin.limits().entries() else throw HeaderLimitExceeded.kind("entries");
+        confirm count <= origin.limits()::Limits::entries else throw HeaderLimitExceeded.kind("entries");
         let keys is @string = (0..count).map() -> index {
             names.item(index).lowercase();
         };
@@ -387,13 +389,13 @@ hidden object HeaderSnapshot {
     HeaderSnapshot(entries is Sequencing<Header>, limits is HeaderLimits) {
         let count = entries.size();
         confirm count >= 0 else throw InvalidArgument.because("negative header sequence size");
-        confirm count <= limits.entries() else throw HeaderLimitExceeded.kind("entries");
+        confirm count <= limits::Limits::entries else throw HeaderLimitExceeded.kind("entries");
         let values is @Header = (0..count).map() -> index {
             entries.item(index);
         };
         let used = values.reduce(0) -> total, entry {
             let bytes = entry.name().string().length() + entry.value().length() + 4;
-            confirm bytes <= limits.bytes() - total else throw HeaderLimitExceeded.kind("bytes");
+            confirm bytes <= limits::Limits::bytes - total else throw HeaderLimitExceeded.kind("bytes");
             total + bytes;
         };
         origin = values;

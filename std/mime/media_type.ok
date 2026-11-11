@@ -120,7 +120,7 @@ object MediaType {
     }
 
     MediaType(origin is string, limits is MediaTypeLimits) {
-        let parsed = MimeScanning(origin, limits.parameters(), limits.bytes()).media_type();
+        let parsed = MimeScanning(origin, limits::Limits::parameters, limits::Limits::bytes).media_type();
         major = parsed.type();
         minor = parsed.subtype();
         entries = parsed.parameters();
@@ -134,14 +134,6 @@ object MediaType {
         entries = parameters;
     }
 
-    type() is string {
-        major;
-    }
-
-    subtype() is string {
-        minor;
-    }
-
     parameters() is MimeParameters {
         entries;
     }
@@ -153,6 +145,16 @@ object MediaType {
         else {
             "; " + entries.string();
         };
+    }
+
+    cap Type {
+        type is string {
+            major;
+        }
+
+        subtype is string {
+            minor;
+        }
     }
 }
 
@@ -172,12 +174,14 @@ object MediaTypeLimits {
         maximum_bytes = bytes;
     }
 
-    parameters() is int {
-        maximum_parameters;
-    }
+    cap Limits {
+        parameters is int {
+            maximum_parameters;
+        }
 
-    bytes() is int {
-        maximum_bytes;
+        bytes is int {
+            maximum_bytes;
+        }
     }
 }
 
@@ -722,6 +726,6 @@ hidden object MimeExtendedBytes {
 
 test "media type case and extended value are explicit" {
     let value = MediaType("Text/Plain; title*=UTF-8''caf%C3%A9");
-    test.is(value.type(), "text");
+    test.is(value::Type::type, "text");
     test.is(value.parameters().first("TITLE"), "café");
 }

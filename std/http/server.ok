@@ -545,7 +545,7 @@ hidden object HttpServerPeer {
             let bounded = deadline.outcome();
             let received = await bounded;
             let head = received.head();
-            confirm head.version() == HttpVersion.http_1_1
+            confirm head::Head::version == HttpVersion.http_1_1
                 else throw BadRequest.because("HTTP1.1 request required");
             confirm head.target().kind() == RequestTargetKind.origin
                 else throw BadRequest.because("direct server origin target required");
@@ -555,7 +555,7 @@ hidden object HttpServerPeer {
             if expected
                 && (expectations.size() != 1
                 || HttpAsciiLowercase(expectations.item(0)).string() != "100-continue"
-                || head.version() != HttpVersion.http_1_1) {
+                || head::Head::version != HttpVersion.http_1_1) {
                     let response = Response(
                         status: Status.expectation_failed,
                         headers: Headers([Header(HeaderName("Connection"), "close")])
@@ -563,7 +563,7 @@ hidden object HttpServerPeer {
                     let pending = Http1ResponseWriting(
                         connection.output(),
                         response,
-                        head.method(),
+                        head::Head::method,
                         policy.limits().http1()
                     ).output();
                     await pending;
@@ -584,7 +584,7 @@ hidden object HttpServerPeer {
                 policy.limits().http1()
             );
             let request = head.request(Http1IncomingBody(body));
-            let details = ExchangeDetails(connection.endpoints(), head.version());
+            let details = ExchangeDetails(connection.endpoints(), head::Head::version);
             let context = HttpRequestContext(details, cancelled.cancelling());
             phase.replace(1);
             let handlers is FutureGroup<HandlingResult> = FutureGroup();
@@ -624,8 +624,8 @@ hidden object HttpServerPeer {
                 );
             };
             if result.kind() == HandlingKind.websocket {
-                confirm plan.kind() == Http1BodyKind.empty
-                    || (plan.kind() == Http1BodyKind.fixed && plan.length().string() == "0")
+                confirm plan::Plan::kind == Http1BodyKind.empty
+                    || (plan::Plan::kind == Http1BodyKind.fixed && plan.length().string() == "0")
                     else throw BadRequest.because("WebSocket request body prohibited");
                 confirm destinations.size() == 1
                     else throw BadRequest.because("trusted WebSocket destination required");
@@ -665,7 +665,7 @@ hidden object HttpServerPeer {
             let sending = Http1ResponseWriting(
                 connection.output(),
                 response,
-                head.method(),
+                head::Head::method,
                 policy.limits().http1()
             ).output();
             sent.replace(true);
@@ -676,12 +676,12 @@ hidden object HttpServerPeer {
                     response::Head::headers,
                     response::Head::version
                 ),
-                head.method(),
+                head::Head::method,
                 policy.limits().http1()
             ).plan();
             if server.stopping_acceptance()
-                || !plan.reuse_after_eof()
-                || !outgoing.reuse_after_eof() {
+                || !plan::Plan::reuse_after_eof
+                || !outgoing::Plan::reuse_after_eof {
                     return true;
                 }
             loop {

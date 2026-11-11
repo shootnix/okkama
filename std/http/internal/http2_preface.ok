@@ -57,7 +57,7 @@ hidden object Http2PrefaceOperation {
         let prefix = HttpWireBytes([magic, frame], magic.size() + frame.size()).bytes();
         await self.emit(prefix);
         let peer = try {
-            await Http2FrameReading(input, settings.frame_size()).frame();
+            await Http2FrameReading(input, settings::Settings::frame_size).frame();
         }
         catch failure is EndOfHttp2Frames {
             throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "missing server preface");
@@ -162,7 +162,7 @@ hidden object Http2ServerPrefaceOperation {
             offset.replace(offset.value() + bytes.size());
         }
         let first = try {
-            await Http2FrameReading(input, settings.frame_size()).frame();
+            await Http2FrameReading(input, settings::Settings::frame_size).frame();
         }
         catch failure is EndOfHttp2Frames {
             throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "missing client SETTINGS");

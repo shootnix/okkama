@@ -433,7 +433,7 @@ object MboxDecodedRecord {
             else throw InvalidMbox.located(stop, "record requires an extra empty delimiter line");
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        let output = MboxOutput(buffer, limits.body_bytes(), "message_bytes");
+        let output = MboxOutput(buffer, limits::Limits::body_bytes, "message_bytes");
         let position = MimePosition(start);
         loop {
             let beginning = position.index();

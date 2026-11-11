@@ -39,12 +39,14 @@ object MediaTypeExtension {
         value = type;
     }
 
-    extension() is string {
-        suffix;
-    }
-
     type() is MediaType {
         value;
+    }
+
+    cap Extension {
+        extension is string {
+            suffix;
+        }
     }
 }
 
@@ -82,10 +84,10 @@ object MappedMediaTypes does MediaIdentifying {
     extensions(type is MediaType) is Sequencing<string> {
         let output = MediaAliases(maximum);
         for entries -> entry {
-            let index = MediaMatch(entries, "x." + entry.extension()).index();
+            let index = MediaMatch(entries, "x." + entry::Extension::extension).index();
             if MediaTypeKey(entries[index].type()).string() == MediaTypeKey(type).string()
-                && !output.membership(entry.extension()) {
-                    output = output.addition(entry.extension());
+                && !output.membership(entry::Extension::extension) {
+                    output = output.addition(entry::Extension::extension);
                 }
         }
         let other = fallback.extensions(type);
@@ -94,7 +96,7 @@ object MappedMediaTypes does MediaIdentifying {
             else throw InvalidArgument.because("media extension source size must be nonnegative");
         confirm size <= maximum else throw MediaTypeLimitExceeded.kind("entries");
         for (0..size) -> position {
-            let extension = MediaTypeExtension(other.item(position), type).extension();
+            let extension = MediaTypeExtension(other.item(position), type)::Extension::extension;
             let index = MediaMatch(entries, "x." + extension).index();
             let shadowed = index >= 0
                 && MediaTypeKey(entries[index].type()).string() != MediaTypeKey(type).string();
@@ -282,7 +284,7 @@ object MediaMatch {
         let selected = MimePosition(-1);
         let longest = MimePosition(0);
         for (0..entries.size()) -> index {
-            let suffix = "." + entries[index].extension();
+            let suffix = "." + entries[index]::Extension::extension;
             if name.length() > suffix.length()
                 && suffix.length() > longest.index()
                 && name.slice(name.length() - suffix.length(), name.length()) == suffix {
@@ -302,7 +304,7 @@ hidden object MediaTypeKey {
     }
 
     string() is string {
-        origin.type() + "/" + origin.subtype();
+        origin::Type::type + "/" + origin::Type::subtype;
     }
 }
 

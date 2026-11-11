@@ -87,7 +87,7 @@ hidden object Http1MessageOutput {
         limits is Http1Limits,
         request is bool
     ) is Future<AsyncWriting> {
-        confirm plan.kind() != Http1BodyKind.tunnel && plan.kind() != Http1BodyKind.upgrade
+        confirm plan::Plan::kind != Http1BodyKind.tunnel && plan::Plan::kind != Http1BodyKind.upgrade
             else throw InvalidHttpMessage.because(
                 "upgraded response requires dedicated protocol handling"
             );

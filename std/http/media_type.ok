@@ -211,14 +211,6 @@ object HttpMediaType {
         self.parameters = parameters;
     }
 
-    type() is string {
-        major;
-    }
-
-    subtype() is string {
-        minor;
-    }
-
     parameters() is HttpMediaParameters {
         parameters;
     }
@@ -230,6 +222,16 @@ object HttpMediaType {
         else {
             "; " + parameters.string();
         };
+    }
+
+    cap Type {
+        type is string {
+            major;
+        }
+
+        subtype is string {
+            minor;
+        }
     }
 }
 
@@ -248,12 +250,14 @@ object HttpMediaLimits {
         self.parameters = parameters;
     }
 
-    bytes() is int {
-        bytes;
-    }
+    cap Limits {
+        bytes is int {
+            bytes;
+        }
 
-    parameters() is int {
-        parameters;
+        parameters is int {
+            parameters;
+        }
     }
 }
 
@@ -266,7 +270,7 @@ object HttpMediaScanning {
     has limits is HttpMediaLimits;
 
     HttpMediaScanning(origin is string, limits is HttpMediaLimits) {
-        confirm origin.length() <= limits.bytes() else throw HttpMediaLimitExceeded.kind("bytes");
+        confirm origin.length() <= limits::Limits::bytes else throw HttpMediaLimitExceeded.kind("bytes");
         let wire = try {
             Latin1Encoded(origin).bytes();
         }
@@ -299,7 +303,7 @@ object HttpMediaScanning {
             last if at == width;
             confirm bytes[at].int() == 59
                 else throw InvalidHttpMediaType.located(at, "parameter separator required");
-            confirm position.slots() < limits.parameters()
+            confirm position.slots() < limits::Limits::parameters
                 else throw HttpMediaLimitExceeded.kind("parameters");
             position = position.separator(self.space(at + 1));
             let start = position.index();
@@ -336,7 +340,7 @@ object HttpMediaScanning {
             HttpAsciiLowercase(major.text()).string(),
             HttpAsciiLowercase(minor.text()).string(),
             parsed.values(),
-            limits.parameters()
+            limits::Limits::parameters
         );
     }
 

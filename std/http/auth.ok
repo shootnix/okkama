@@ -36,17 +36,13 @@ object BasicCredentials {
         self.password = password;
     }
 
-    username() is string {
-        username;
-    }
-
     authorization() is Header {
         let password = ExportedSecret(password).bytes();
         let valid is bool = password.reduce(true) -> valid, octet {
             valid && octet.int() >= 32 && octet.int() <= 126;
         };
         confirm valid else throw InvalidAuthentication.because("ASCII password required");
-        let prefix = AsciiEncoded(self.username() + ":").bytes();
+        let prefix = AsciiEncoded(self::Credentials::username + ":").bytes();
         let value is @byte = (0..prefix.size() + password.size()).map() -> index {
             if index < prefix.size() {
                 prefix[index];
@@ -56,6 +52,12 @@ object BasicCredentials {
             }
         };
         Header(HeaderName("Authorization"), "Basic " + Base64Encoded(value).string());
+    }
+
+    cap Credentials {
+        username is string {
+            username;
+        }
     }
 }
 

@@ -142,7 +142,7 @@ hidden object Http1HeadInput<T> {
     ) {
         confirm chunk_bytes > 0 && chunk_bytes <= 65536
             else throw InvalidHttpMessage.because("HTTP1 read chunk must be 1..65536");
-        confirm prefix.size() <= limits.head_bytes() + chunk_bytes
+        confirm prefix.size() <= limits::Limits::head_bytes + chunk_bytes
             else throw Http1LimitExceeded.kind("prefix_bytes");
         self.origin = origin;
         self.prefix = prefix;
@@ -172,7 +172,7 @@ hidden object Http1HeadInput<T> {
         else {
             prefix.slice(0, consumed);
         };
-        confirm piece.size() <= limits.head_bytes()
+        confirm piece.size() <= limits::Limits::head_bytes
             else throw Http1LimitExceeded.kind("head_bytes");
         writing.write(ByteSnapshot(piece));
         if consumed >= 0 {
@@ -186,7 +186,7 @@ hidden object Http1HeadInput<T> {
         state = state.following(first.tail());
         loop {
             let used = output.content().size();
-            let remaining = limits.head_bytes() - used;
+            let remaining = limits::Limits::head_bytes - used;
             confirm remaining > 0 else throw Http1LimitExceeded.kind("head_bytes");
             let requested = if chunk_bytes < remaining {
                 chunk_bytes;

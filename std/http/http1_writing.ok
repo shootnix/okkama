@@ -57,8 +57,8 @@ hidden object Http1HeadOutput {
 
     request(origin is AsyncWriting, head is Http1RequestHead, limits is Http1Limits) is Future<AsyncWriting> {
         Http1RequestFraming(head, limits).plan();
-        let start = MethodName(head.method()).string() + " " + head.target().string() + " " + Http1VersionText(
-            head.version()
+        let start = MethodName(head::Head::method).string() + " " + head.target().string() + " " + Http1VersionText(
+            head::Head::version
         ).string();
         let wire = Http1HeadWire(start, head.headers(), limits).bytes();
         ParsedHttp1RequestHead(Latin1Decoded(wire).string(), limits).head();
@@ -72,8 +72,8 @@ hidden object Http1HeadOutput {
         limits is Http1Limits
     ) is Future<AsyncWriting> {
         Http1ResponseFraming(head, method, limits).plan();
-        let start = Http1VersionText(head.version()).string() + " " + StatusCode(head.status()).number().string() + " " + StatusCode(
-            head.status()
+        let start = Http1VersionText(head::Head::version).string() + " " + StatusCode(head::Head::status).number().string() + " " + StatusCode(
+            head::Head::status
         ).phrase();
         let wire = Http1HeadWire(start, head.headers(), limits).bytes();
         ParsedHttp1ResponseHead(Latin1Decoded(wire).string(), limits).head();
@@ -117,17 +117,17 @@ hidden object Http1HeadWire {
     }
 
     bytes() is @byte {
-        confirm start.length() <= limits.line_bytes()
+        confirm start.length() <= limits::Limits::line_bytes
             else throw Http1LimitExceeded.kind("line_bytes");
-        confirm start.length() + 4 <= limits.head_bytes()
+        confirm start.length() + 4 <= limits::Limits::head_bytes
             else throw Http1LimitExceeded.kind("head_bytes");
         let entries = fields.entries();
-        confirm entries.size() <= limits.fields() else throw Http1LimitExceeded.kind("fields");
+        confirm entries.size() <= limits::Limits::fields else throw Http1LimitExceeded.kind("fields");
         let total = (0..entries.size()).reduce(start.length() + 4) -> used, index {
             let field = entries.item(index);
             let width = field.name().string().length() + field.value().length() + 2;
-            confirm width <= limits.line_bytes() else throw Http1LimitExceeded.kind("line_bytes");
-            confirm width + 2 <= limits.head_bytes() - used
+            confirm width <= limits::Limits::line_bytes else throw Http1LimitExceeded.kind("line_bytes");
+            confirm width + 2 <= limits::Limits::head_bytes - used
                 else throw Http1LimitExceeded.kind("head_bytes");
             used + width + 2;
         };

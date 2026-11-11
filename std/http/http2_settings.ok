@@ -31,20 +31,22 @@ object Http2Settings {
         self.streams = streams;
     }
 
-    header_table() is int {
-        header_table;
-    }
+    cap Settings {
+        header_table is int {
+            header_table;
+        }
 
-    initial_window() is int {
-        initial_window;
-    }
+        initial_window is int {
+            initial_window;
+        }
 
-    frame_size() is int {
-        frame_size;
-    }
+        frame_size is int {
+            frame_size;
+        }
 
-    streams() is int {
-        streams;
+        streams is int {
+            streams;
+        }
     }
 }
 
@@ -61,19 +63,19 @@ object Http2SettingsWire {
     bytes() is @byte {
         let rows is @Http2Setting = if client {
             [
-                Http2Setting(1, origin.header_table()),
+                Http2Setting(1, origin::Settings::header_table),
                 Http2Setting(2, 0),
-                Http2Setting(3, origin.streams()),
-                Http2Setting(4, origin.initial_window()),
-                Http2Setting(5, origin.frame_size())
+                Http2Setting(3, origin::Settings::streams),
+                Http2Setting(4, origin::Settings::initial_window),
+                Http2Setting(5, origin::Settings::frame_size)
             ];
         }
         else {
             [
-                Http2Setting(1, origin.header_table()),
-                Http2Setting(3, origin.streams()),
-                Http2Setting(4, origin.initial_window()),
-                Http2Setting(5, origin.frame_size())
+                Http2Setting(1, origin::Settings::header_table),
+                Http2Setting(3, origin::Settings::streams),
+                Http2Setting(4, origin::Settings::initial_window),
+                Http2Setting(5, origin::Settings::frame_size)
             ];
         };
         let chunks is @@byte = rows.map() -> row {
@@ -111,6 +113,6 @@ enum InvalidHttp2Settings is Error = (invalid);
 
 test "zero stream/window/table caps remain explicit" {
     let settings = Http2Settings(0, 0, 16384, 0);
-    test.ok(settings.streams() == 0 && settings.initial_window() == 0);
+    test.ok(settings::Settings::streams == 0 && settings::Settings::initial_window == 0);
     test.ok(Http2SettingsWire(settings, true).bytes().size() == 30);
 }

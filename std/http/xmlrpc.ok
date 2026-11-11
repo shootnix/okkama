@@ -354,12 +354,14 @@ object XmlRpcFault {
         self.message = message;
     }
 
-    code() is int {
-        code;
-    }
+    cap Fault {
+        code is int {
+            code;
+        }
 
-    text() is string {
-        message;
+        text is string {
+            message;
+        }
     }
 }
 
@@ -445,24 +447,12 @@ object XmlRpcLimits {
         self.nil_enabled = nil_enabled;
     }
 
-    depth() is int {
-        depth;
-    }
-
-    values() is int {
-        values;
-    }
-
     text_bytes() is BigInt {
         BigInt(text_bytes.string());
     }
 
     binary_bytes() is BigInt {
         BigInt(binary_bytes.string());
-    }
-
-    nil_enabled() is bool {
-        nil_enabled;
     }
 
     wire_bytes() is int {
@@ -472,6 +462,20 @@ object XmlRpcLimits {
         }
         else {
             16777216;
+        }
+    }
+
+    cap Limits {
+        depth is int {
+            depth;
+        }
+
+        values is int {
+            values;
+        }
+
+        nil_enabled is bool {
+            nil_enabled;
         }
     }
 }
@@ -499,8 +503,8 @@ hidden object XmlRpcUsage {
     }
 
     node(depth is int) is void {
-        confirm depth <= limits.depth() else throw XmlRpcLimitExceeded.kind("depth");
-        confirm values.value() < limits.values() else throw XmlRpcLimitExceeded.kind("values");
+        confirm depth <= limits::Limits::depth else throw XmlRpcLimitExceeded.kind("depth");
+        confirm values.value() < limits::Limits::values else throw XmlRpcLimitExceeded.kind("values");
         values.replace(values.value() + 1);
     }
 
@@ -664,7 +668,7 @@ hidden object XmlRpcNodeWriting does XmlRpcWriting {
 
     nil_value() is void {
         self.claim();
-        confirm wire.usage().limits().nil_enabled()
+        confirm wire.usage().limits()::Limits::nil_enabled
             else throw InvalidXmlRpc.because("nil extension disabled");
         wire.append("<nil/>");
     }
@@ -803,8 +807,8 @@ hidden object XmlRpcResultWire {
             wire.node(
                 XmlRpcStruct(
                     [
-                        XmlRpcMember("faultCode", XmlRpcInteger(fault.code())),
-                        XmlRpcMember("faultString", XmlRpcText(fault.text()))
+                        XmlRpcMember("faultCode", XmlRpcInteger(fault::Fault::code)),
+                        XmlRpcMember("faultString", XmlRpcText(fault::Fault::text))
                     ]
                 ),
                 1
@@ -1115,7 +1119,7 @@ hidden object XmlRpcParsing {
                     XmlRpcBinary(bytes);
                 }
                 case "nil" {
-                    confirm usage.limits().nil_enabled() && self.text_element("nil") == ""
+                    confirm usage.limits()::Limits::nil_enabled && self.text_element("nil") == ""
                         else throw InvalidXmlRpc.because("nil disabled or nonempty");
                     XmlRpcNil();
                 }
@@ -1543,8 +1547,8 @@ hidden object XmlRpcMedia {
         catch e is Error {
             throw InvalidXmlRpc.because("XML media type");
         };
-        confirm (media.type() == "text" || media.type() == "application")
-            && media.subtype() == "xml"
+        confirm (media::Type::type == "text" || media::Type::type == "application")
+            && media::Type::subtype == "xml"
             else throw InvalidXmlRpc.because("XML media type required");
         let charsets = media.parameters().values("charset");
         confirm charsets.size() <= 1 else throw InvalidXmlRpc.because("duplicate charset");

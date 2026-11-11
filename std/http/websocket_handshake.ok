@@ -260,8 +260,8 @@ object WebSocketServerHandshake {
     has offered is WebSocketProtocols;
 
     WebSocketServerHandshake(request is Http1RequestHead) {
-        confirm request.method() == Method.get
-            && request.version() == HttpVersion.http_1_1
+        confirm request::Head::method == Method.get
+            && request::Head::version == HttpVersion.http_1_1
             && request.target().kind() == RequestTargetKind.origin
             else throw WebSocketFailure.because("HTTP1.1 origin GET required");
         let fields = WebSocketHandshakeFields(request.headers());

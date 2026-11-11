@@ -66,13 +66,13 @@ hidden object Http1BodyWriteOperation {
     ) {
         confirm chunk_bytes >= 1 && chunk_bytes <= 65536
             else throw InvalidHttpMessage.because("HTTP1 write chunk must be 1..65536");
-        let kind = plan.kind();
+        let kind = plan::Plan::kind;
         confirm kind != Http1BodyKind.tunnel && kind != Http1BodyKind.upgrade
             else throw InvalidHttpMessage.because(
                 "upgraded bytes require a dedicated protocol writer"
             );
         if kind == Http1BodyKind.fixed {
-            confirm plan.length().order(BigInt(limits.body_bytes().string())) != Order.greater
+            confirm plan.length().order(BigInt(limits::Limits::body_bytes.string())) != Order.greater
                 else throw Http1LimitExceeded.kind("body_bytes");
         }
         self.body = body;
@@ -88,7 +88,7 @@ hidden object Http1BodyWriteOperation {
     }
 
     async write() is AsyncWriting {
-        let kind = plan.kind();
+        let kind = plan::Plan::kind;
         if kind == Http1BodyKind.empty {
             return destination.value();
         }
@@ -104,7 +104,7 @@ hidden object Http1BodyWriteOperation {
         if known.size() > 0 {
             confirm known[0].sign() >= 0
                 else throw InvalidHttpMessage.because("negative body source length");
-            confirm known[0].order(BigInt(limits.body_bytes().string())) != Order.greater
+            confirm known[0].order(BigInt(limits::Limits::body_bytes.string())) != Order.greater
                 else throw Http1LimitExceeded.kind("body_bytes");
             if kind == Http1BodyKind.fixed {
                 confirm known[0].order(plan.length()) == Order.equal
@@ -119,7 +119,7 @@ hidden object Http1BodyWriteOperation {
             Number(plan.length().string()).int();
         }
         else {
-            limits.body_bytes();
+            limits::Limits::body_bytes;
         };
         loop {
             let remaining = required - used.value();
@@ -149,7 +149,7 @@ hidden object Http1BodyWriteOperation {
                 let end = reader.trailers();
                 if kind == Http1BodyKind.chunked {
                     let wire = Http1TrailerWire(end, head, limits).bytes();
-                    confirm wire.size() <= limits.head_bytes() - metadata.value()
+                    confirm wire.size() <= limits::Limits::head_bytes - metadata.value()
                         else throw Http1LimitExceeded.kind("chunk_metadata_bytes");
                     let sent = await self.writing(ByteSnapshot(wire));
                     destination.replace(sent);
@@ -178,7 +178,7 @@ hidden object Http1BodyWriteOperation {
             };
             if kind == Http1BodyKind.chunked {
                 let overhead = wire.size() - chunk.size();
-                confirm overhead <= limits.head_bytes() - metadata.value()
+                confirm overhead <= limits::Limits::head_bytes - metadata.value()
                     else throw Http1LimitExceeded.kind("chunk_metadata_bytes");
                 metadata.replace(metadata.value() + overhead);
             }
@@ -280,7 +280,7 @@ hidden object Http1ChunkWire {
         defer buffer.closing().close();
         let writer = buffer.writing();
         let size = Http1HexSize(origin.size()).string();
-        confirm size.length() <= limits.line_bytes()
+        confirm size.length() <= limits::Limits::line_bytes
             else throw Http1LimitExceeded.kind("line_bytes");
         writer.write(ByteSnapshot(Latin1Encoded(size + "\r\n").bytes()));
         writer.write(ByteSnapshot(origin));
@@ -349,16 +349,16 @@ hidden object Http1TrailerWire {
 
     bytes() is @byte {
         let entries = origin.entries();
-        confirm entries.size() <= limits.fields() else throw Http1LimitExceeded.kind("fields");
+        confirm entries.size() <= limits::Limits::fields else throw Http1LimitExceeded.kind("fields");
         let total = (0..entries.size()).reduce(2) -> used, index {
             let field = entries.item(index);
             let width = field.name().string().length() + field.value().length() + 2;
-            confirm width <= limits.line_bytes() else throw Http1LimitExceeded.kind("line_bytes");
-            confirm width + 2 <= limits.head_bytes() - used
+            confirm width <= limits::Limits::line_bytes else throw Http1LimitExceeded.kind("line_bytes");
+            confirm width + 2 <= limits::Limits::head_bytes - used
                 else throw Http1LimitExceeded.kind("trailer_bytes");
             used + width + 2;
         };
-        confirm total <= limits.head_bytes() else throw Http1LimitExceeded.kind("trailer_bytes");
+        confirm total <= limits::Limits::head_bytes else throw Http1LimitExceeded.kind("trailer_bytes");
         let buffer = ByteBuffer();
         defer buffer.closing().close();
         let writer = buffer.writing();

@@ -51,7 +51,7 @@ object HttpProxyTunnel {
         loop {
             let pending = Http1ResponseHeadReading(input, [], limits, 1).head();
             let received = await pending;
-            let status = received.head().status();
+            let status = received.head()::Head::status;
             let class = StatusCode(status).class();
             if class == StatusClass.successful {
                 return true;

@@ -31,14 +31,6 @@ object EntityTag {
         self.weak = weak;
     }
 
-    opaque() is string {
-        opaque;
-    }
-
-    weak() is bool {
-        weak;
-    }
-
     string() is string {
         let prefix = if weak {
             "W/";
@@ -50,11 +42,21 @@ object EntityTag {
     }
 
     strong_matches(other is EntityTag) is bool {
-        !weak && !other.weak() && opaque == other.opaque();
+        !weak && !other::Tag::weak && opaque == other::Tag::opaque;
     }
 
     weak_matches(other is EntityTag) is bool {
-        opaque == other.opaque();
+        opaque == other::Tag::opaque;
+    }
+
+    cap Tag {
+        opaque is string {
+            opaque;
+        }
+
+        weak is bool {
+            weak;
+        }
     }
 }
 
@@ -73,12 +75,14 @@ object ConditionalLimits {
         self.entries = entries;
     }
 
-    bytes() is int {
-        bytes;
-    }
+    cap Limits {
+        bytes is int {
+            bytes;
+        }
 
-    entries() is int {
-        entries;
+        entries is int {
+            entries;
+        }
     }
 }
 
@@ -157,7 +161,7 @@ object ParsedEntityTags {
     }
 
     tags() is EntityTags {
-        confirm origin.length() <= limits.bytes() else throw ConditionalLimitExceeded.kind("bytes");
+        confirm origin.length() <= limits::Limits::bytes else throw ConditionalLimitExceeded.kind("bytes");
         try {
             Latin1Encoded(origin).bytes();
         }
@@ -175,10 +179,10 @@ object ParsedEntityTags {
                     position.index() + 1,
                     "wildcard must stand alone"
                 );
-            confirm limits.entries() >= 1 else throw ConditionalLimitExceeded.kind("entries");
+            confirm limits::Limits::entries >= 1 else throw ConditionalLimitExceeded.kind("entries");
             return EntityTags();
         }
-        confirm position.slots() <= limits.entries()
+        confirm position.slots() <= limits::Limits::entries
             else throw ConditionalLimitExceeded.kind("entries");
         let tags is ConditionalItems<EntityTag> = ConditionalItems();
         loop {
@@ -186,7 +190,7 @@ object ParsedEntityTags {
             last if at == origin.length();
             if origin.slice(at, at + 1) == "," {
                 position = position.separator(self.space(at + 1));
-                confirm position.slots() <= limits.entries()
+                confirm position.slots() <= limits::Limits::entries
                     else throw ConditionalLimitExceeded.kind("entries");
                 next;
             }
@@ -245,7 +249,7 @@ hidden object EntityTagSnapshot {
     EntityTagSnapshot(values is Sequencing<EntityTag>, limits is ConditionalLimits) {
         let count = values.size();
         confirm count >= 0 else throw InvalidArgument.because("negative entity tag sequence size");
-        confirm count <= limits.entries() else throw ConditionalLimitExceeded.kind("entries");
+        confirm count <= limits::Limits::entries else throw ConditionalLimitExceeded.kind("entries");
         let tags is @EntityTag = (0..count).map() -> index {
             values.item(index);
         };
@@ -256,7 +260,7 @@ hidden object EntityTagSnapshot {
             else {
                 2;
             };
-            confirm size <= limits.bytes() - total
+            confirm size <= limits::Limits::bytes - total
                 else throw ConditionalLimitExceeded.kind("bytes");
             total + size;
         };
@@ -489,7 +493,7 @@ hidden object ByteRangeParsing {
     }
 
     values() is @ByteRangeSpec {
-        confirm origin.length() <= limits.bytes() else throw ConditionalLimitExceeded.kind("bytes");
+        confirm origin.length() <= limits::Limits::bytes else throw ConditionalLimitExceeded.kind("bytes");
         try {
             Latin1Encoded(origin).bytes();
         }
@@ -501,7 +505,7 @@ hidden object ByteRangeParsing {
         confirm fields.size() == 2 && HttpAsciiLowercase(fields[0]).string() == "bytes"
             else throw InvalidRange.because("expected bytes range unit");
         let parts = fields[1].split(",");
-        confirm parts.size() <= limits.entries()
+        confirm parts.size() <= limits::Limits::entries
             else throw ConditionalLimitExceeded.kind("entries");
         let texts is @string = parts.map() -> part {
             ConditionalText(part).string();
@@ -516,7 +520,7 @@ hidden object ByteRangeParsing {
         let canonical is @string = values.map() -> part {
             part.string();
         };
-        confirm 6 + canonical.join(", ").length() <= limits.bytes()
+        confirm 6 + canonical.join(", ").length() <= limits::Limits::bytes
             else throw ConditionalLimitExceeded.kind("bytes");
         values;
     }

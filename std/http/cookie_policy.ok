@@ -26,23 +26,25 @@ object CookieContext {
         self.site = site;
         self.top_level = top_level;
         self.method = method;
-        key = checked.site();
+        key = checked::Origin::site;
     }
 
     site() is UrlParts {
         site;
     }
 
-    top_level() is bool {
-        top_level;
-    }
+    cap Context {
+        top_level is bool {
+            top_level;
+        }
 
-    method() is Method {
-        method;
-    }
+        method is Method {
+            method;
+        }
 
-    key() is string {
-        key;
+        key is string {
+            key;
+        }
     }
 }
 
@@ -102,24 +104,26 @@ object CookieOrigin {
         origin;
     }
 
-    domain() is string {
-        domain;
-    }
+    cap Origin {
+        domain is string {
+            domain;
+        }
 
-    site() is string {
-        site;
-    }
+        site is string {
+            site;
+        }
 
-    path() is string {
-        path;
-    }
+        path is string {
+            path;
+        }
 
-    address() is bool {
-        address;
-    }
+        address is bool {
+            address;
+        }
 
-    secure() is bool {
-        secure;
+        secure is bool {
+            secure;
+        }
     }
 }
 
@@ -354,17 +358,17 @@ hidden object CookieAttributeReading {
         // Validate prefixes against supplied Domain/Path before deriving defaults
         // or applying the PSL exact-origin exception; neither may grant __Host-.
         Cookie(name, value, CookieAttributes(domain, path, CookieExpiry(), same_site, flags));
-        confirm !secure || endpoint.secure()
+        confirm !secure || endpoint::Origin::secure
             else throw InvalidCookie.because("Secure cookie requires HTTPS origin");
-        let proposed = CookieAttributes(domain, path, CookieExpiry(), same_site, flags).domain();
+        let proposed = CookieAttributes(domain, path, CookieExpiry(), same_site, flags)::Attributes::domain;
         let target = if proposed == "" {
             "";
         }
         else {
-            confirm CookieDomainMatch(proposed, endpoint.domain(), endpoint.address()).matches()
+            confirm CookieDomainMatch(proposed, endpoint::Origin::domain, endpoint::Origin::address).matches()
                 else throw InvalidCookie.because("cookie Domain does not match origin");
-            if !endpoint.address() && PublicSuffixList().public(HostName(proposed)) {
-                confirm proposed == endpoint.domain()
+            if !endpoint::Origin::address && PublicSuffixList().public(HostName(proposed)) {
+                confirm proposed == endpoint::Origin::domain
                     else throw InvalidCookie.because("public suffix Domain rejected");
                 "";
             }
@@ -373,7 +377,7 @@ hidden object CookieAttributeReading {
             }
         };
         let actual_path = if path == "" {
-            CookieDefaultPath(endpoint.path()).string();
+            CookieDefaultPath(endpoint::Origin::path).string();
         }
         else {
             path;
@@ -500,6 +504,6 @@ test "Set-Cookie keeps explicit context and precedence" {
         url,
         Instant(Duration(value: 0.rat(), unit: DurationUnit.second))
     ).cookie();
-    test.ok(cookie.attributes().path() == "/a");
+    test.ok(cookie.attributes()::Attributes::path == "/a");
     test.ok(cookie.attributes().expiry().instant().unix_duration()::Span::seconds == 10.rat());
 }

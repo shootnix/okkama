@@ -77,20 +77,22 @@ object StaticPolicy {
         indexes;
     }
 
-    listing() is bool {
-        listing;
-    }
+    cap Settings {
+        listing is bool {
+            listing;
+        }
 
-    precompressed() is bool {
-        precompressed;
-    }
+        precompressed is bool {
+            precompressed;
+        }
 
-    ranges() is int {
-        ranges;
-    }
+        ranges is int {
+            ranges;
+        }
 
-    names() is int {
-        names;
+        names is int {
+            names;
+        }
     }
 }
 
@@ -326,7 +328,7 @@ object StaticFiles does Handling {
         let chosen = self.index(coordinates, metadata::Shape::kind == FileKind.directory);
         if metadata::Shape::kind == FileKind.directory {
             if chosen.size() == 0 {
-                if !policy.listing() {
+                if !policy::Settings::listing {
                     return Response(status: Status.forbidden);
                 }
                 return self.listing(opened, request);
@@ -358,11 +360,11 @@ object StaticFiles does Handling {
             owned.name(),
             metadata::Shape::kind == FileKind.directory,
             source_stat,
-            policy.precompressed()
+            policy::Settings::precompressed
         );
         let compression = StaticRepresentations(companions);
         defer compression.close();
-        if policy.precompressed() {
+        if policy::Settings::precompressed {
             let preferences = StaticEncoding(request::Head::headers).codings();
             let rows is @StaticRepresentation = (0..companions.size() + 1).map() -> index {
                 if index == 0 {
@@ -413,7 +415,7 @@ object StaticFiles does Handling {
                 ]
             )
         );
-        if policy.precompressed() {
+        if policy::Settings::precompressed {
             headers.replace(
                 ReplacedHeader(headers.value(), Header(HeaderName("Vary"), "Accept-Encoding")).headers()
             );
@@ -439,7 +441,7 @@ object StaticFiles does Handling {
         if request::Head::method == Method.head {
             return Response(status: Status.ok, headers: headers.value());
         }
-        let range = StaticRanges(request::Head::headers, size, policy.ranges());
+        let range = StaticRanges(request::Head::headers, size, policy::Settings::ranges);
         let ranges = range.values();
         let apply = range.present() && StaticIfRange(request::Head::headers, tag, date).allowed();
         if apply && ranges.size() == 0 {
@@ -620,7 +622,7 @@ object StaticFiles does Handling {
     }
 
     listing(directory is RootedEntry, request is Request) is Response {
-        let names = directory.names(policy.names());
+        let names = directory.names(policy::Settings::names);
         let text = Atomic("<!doctype html><meta charset=\"utf-8\"><title>Directory</title><ul>");
         let used = Atomic(text.value().length());
         for names -> name {
@@ -1088,9 +1090,9 @@ enum StaticFileChanged is Error = (changed);
 
 test "static policy defaults bound ranges and disable optional file modes" {
     let policy = StaticPolicy();
-    test.ok(!policy.listing() && !policy.precompressed());
-    test.is(policy.ranges(), 16);
-    test.is(policy.names(), 1024);
+    test.ok(!policy::Settings::listing && !policy::Settings::precompressed);
+    test.is(policy::Settings::ranges, 16);
+    test.is(policy::Settings::names, 1024);
     test.ok(try {
         StaticPolicy(["../outside"], false, false);
         false;
