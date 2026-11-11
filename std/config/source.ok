@@ -16,12 +16,14 @@ object SettingSource {
         label = name;
     }
 
-    kind() is SettingSourceKind {
-        category;
-    }
+    cap Source {
+        kind is SettingSourceKind {
+            category;
+        }
 
-    name() is string {
-        label;
+        name is string {
+            label;
+        }
     }
 }
 
@@ -104,7 +106,7 @@ object Settings does SettingReading {
 
 // The diagnostic key string is not identity: ["a.b"] and ["a","b"]
 // remain distinct. Stable ordering retains original positions inside each group.
-object SettingIndexSlot does Comparing<SettingIndexSlot> {
+hidden object SettingIndexSlot does Comparing<SettingIndexSlot> {
     has identity is SettingKey;
     has position is int;
 
@@ -133,7 +135,7 @@ object SettingKeyIndex {
     SettingKeyIndex(keys is @SettingKey) {
         confirm keys.size() <= 4096 else throw SettingLimitExceeded.exceeded;
         let slots is @SettingIndexSlot = (0..keys.size()).map() -> index {
-            SettingIndexSlot(keys[index], index);
+            SettingIndexSlot(identity: keys[index], position: index);
         };
         let sorted = slots.ordering();
         let values is @SettingKey = sorted.map() -> slot {
@@ -249,10 +251,10 @@ object SettingOverlay does SettingReading {
 
     replaced(entry is SettingEntry) is ^SettingOverlay {
         let key = entry.key();
-        let slot = SettingOverlaySlot(entry, key, count);
+        let slot = SettingOverlaySlot(entry: entry, identity: key, position: count);
         let update = if root.size() == 0 {
             confirm count < 4096 else throw SettingLimitExceeded.exceeded;
-            SettingOverlayUpdate(SettingOverlayNode(slot, [], []), true);
+            SettingOverlayUpdate(root: SettingOverlayNode(slot: slot, left: [], right: []), inserted: true);
         }
         else {
             root[0].updated(slot, count < 4096);
@@ -267,7 +269,7 @@ object SettingOverlay does SettingReading {
     }
 }
 
-object SettingOverlaySlot does Comparing<SettingOverlaySlot> {
+hidden object SettingOverlaySlot does Comparing<SettingOverlaySlot> {
     has entry is SettingEntry;
     has identity is SettingKey;
     has position is int;
@@ -295,7 +297,7 @@ object SettingOverlaySlot does Comparing<SettingOverlaySlot> {
     }
 }
 
-object SettingOverlayNode {
+hidden object SettingOverlayNode {
     has slot is SettingOverlaySlot;
     has left, right is @SettingOverlayNode;
     has height is int;
@@ -381,24 +383,24 @@ object SettingOverlayNode {
     replaced(value is SettingOverlaySlot) is SettingOverlayNode {
         let order = value.identity().order(slot.identity());
         if order == Order.equal {
-            return SettingOverlayNode(value, left, right);
+            return SettingOverlayNode(slot: value, left: left, right: right);
         }
         if order == Order.less {
             let following = if left.size() == 0 {
-                SettingOverlayNode(value, [], []);
+                SettingOverlayNode(slot: value, left: [], right: []);
             }
             else {
                 left[0].replaced(value);
             };
-            return SettingOverlayBalance(slot, [following], right).node();
+            return SettingOverlayBalance(slot: slot, left: [following], right: right).node();
         }
         let following = if right.size() == 0 {
-            SettingOverlayNode(value, [], []);
+            SettingOverlayNode(slot: value, left: [], right: []);
         }
         else {
             right[0].replaced(value);
         };
-        SettingOverlayBalance(slot, left, [following]).node();
+        SettingOverlayBalance(slot: slot, left: left, right: [following]).node();
     }
 
     // Preserve the existing replaced(slot) helper contract. Overlay updates
@@ -407,33 +409,33 @@ object SettingOverlayNode {
     updated(value is SettingOverlaySlot, can_add is bool) is SettingOverlayUpdate {
         let order = value.identity().order(slot.identity());
         if order == Order.equal {
-            let retained = SettingOverlaySlot(value.entry(), value.identity(), slot.position());
-            return SettingOverlayUpdate(SettingOverlayNode(retained, left, right), false);
+            let retained = SettingOverlaySlot(entry: value.entry(), identity: value.identity(), position: slot.position());
+            return SettingOverlayUpdate(root: SettingOverlayNode(slot: retained, left: left, right: right), inserted: false);
         }
         if order == Order.less {
             let update = if left.size() == 0 {
                 confirm can_add else throw SettingLimitExceeded.exceeded;
-                SettingOverlayUpdate(SettingOverlayNode(value, [], []), true);
+                SettingOverlayUpdate(root: SettingOverlayNode(slot: value, left: [], right: []), inserted: true);
             }
             else {
                 left[0].updated(value, can_add);
             };
             SettingOverlayUpdate(
-                SettingOverlayBalance(slot, [update.node()], right).node(),
-                update.added()
+                root: SettingOverlayBalance(slot: slot, left: [update.node()], right: right).node(),
+                inserted: update.added()
             );
         }
         else {
             let update = if right.size() == 0 {
                 confirm can_add else throw SettingLimitExceeded.exceeded;
-                SettingOverlayUpdate(SettingOverlayNode(value, [], []), true);
+                SettingOverlayUpdate(root: SettingOverlayNode(slot: value, left: [], right: []), inserted: true);
             }
             else {
                 right[0].updated(value, can_add);
             };
             SettingOverlayUpdate(
-                SettingOverlayBalance(slot, left, [update.node()]).node(),
-                update.added()
+                root: SettingOverlayBalance(slot: slot, left: left, right: [update.node()]).node(),
+                inserted: update.added()
             );
         }
     }
@@ -468,7 +470,7 @@ object SettingOverlayNode {
     }
 }
 
-object SettingOverlayUpdate {
+hidden object SettingOverlayUpdate {
     has root is SettingOverlayNode;
     has inserted is bool;
 
@@ -486,7 +488,7 @@ object SettingOverlayUpdate {
     }
 }
 
-object SettingOverlayBalance {
+hidden object SettingOverlayBalance {
     has slot is SettingOverlaySlot;
     has left, right is @SettingOverlayNode;
 
@@ -506,16 +508,16 @@ object SettingOverlayBalance {
             let pivot = left[0];
             if self.height(pivot.left()) >= self.height(pivot.right()) {
                 return SettingOverlayNode(
-                    pivot.slot(),
-                    pivot.left(),
-                    [SettingOverlayNode(slot, pivot.right(), right)]
+                    slot: pivot.slot(),
+                    left: pivot.left(),
+                    right: [SettingOverlayNode(slot: slot, left: pivot.right(), right: right)]
                 );
             }
             let middle = pivot.right()[0];
             SettingOverlayNode(
-                middle.slot(),
-                [SettingOverlayNode(pivot.slot(), pivot.left(), middle.left())],
-                [SettingOverlayNode(slot, middle.right(), right)]
+                slot: middle.slot(),
+                left: [SettingOverlayNode(slot: pivot.slot(), left: pivot.left(), right: middle.left())],
+                right: [SettingOverlayNode(slot: slot, left: middle.right(), right: right)]
             );
         }
         else {
@@ -523,20 +525,20 @@ object SettingOverlayBalance {
                 let pivot = right[0];
                 if self.height(pivot.right()) >= self.height(pivot.left()) {
                     return SettingOverlayNode(
-                        pivot.slot(),
-                        [SettingOverlayNode(slot, left, pivot.left())],
-                        pivot.right()
+                        slot: pivot.slot(),
+                        left: [SettingOverlayNode(slot: slot, left: left, right: pivot.left())],
+                        right: pivot.right()
                     );
                 }
                 let middle = pivot.left()[0];
                 SettingOverlayNode(
-                    middle.slot(),
-                    [SettingOverlayNode(slot, left, middle.left())],
-                    [SettingOverlayNode(pivot.slot(), middle.right(), pivot.right())]
+                    slot: middle.slot(),
+                    left: [SettingOverlayNode(slot: slot, left: left, right: middle.left())],
+                    right: [SettingOverlayNode(slot: pivot.slot(), left: middle.right(), right: pivot.right())]
                 );
             }
             else {
-                SettingOverlayNode(slot, left, right);
+                SettingOverlayNode(slot: slot, left: left, right: right);
             }
         }
     }
@@ -559,14 +561,14 @@ enum SettingLimitExceeded is Error = (exceeded);
 
 test "layers replace complete values and preserve the winning source" {
     let key = SettingKey(["name"]);
-    let defaults = SettingSource(SettingSourceKind.defaults, "defaults");
-    let cli = SettingSource(SettingSourceKind.command_line, "argv");
+    let defaults = SettingSource(kind: SettingSourceKind.defaults, name: "defaults");
+    let cli = SettingSource(kind: SettingSourceKind.command_line, name: "argv");
     let result = LayeredSettings(
         [
-            Settings([SettingEntry(key, ["world"], defaults)]),
-            Settings([SettingEntry(key, [""], cli)])
+            Settings([SettingEntry(key: key, values: ["world"], source: defaults)]),
+            Settings([SettingEntry(key: key, values: [""], source: cli)])
         ]
     );
     test.is(result.entry(key).values().first(), "");
-    test.is(result.entry(key).source().name(), "argv");
+    test.is(result.entry(key).source()::Source::name, "argv");
 }

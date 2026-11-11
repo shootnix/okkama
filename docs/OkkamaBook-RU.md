@@ -574,7 +574,7 @@ let packet is @byte = source.map() -> item { byte(item); };
 `object.string()` и не участвует в примитивном кастинге.
 `rat(numerator, denominator)` сохраняет свой двухаргументный контракт.
 
-Полная запускаемая программа: [primitive-casts.ok](../examples/primitive-casts.ok).
+Полная запускаемая программа: primitive-casts.ok (okkama-docs `examples/primitive-casts.ok`).
 
 ### 5.2 `rat` — точная рациональная дробь
 
@@ -1922,7 +1922,7 @@ reflection владельца не предоставляются. Диагно�
 Ограниченный интерфейс не обещает секретность или отзыв других полных ссылок.
 
 [Полный контракт](object-caps-0.0.1-ru.md) и
-[запускаемый пример Customer](../examples/object-caps.ok).
+запускаемый пример Customer (okkama-docs `examples/object-caps.ok`).
 Object views и `#projected` удалены; используйте роли и обычные вызовы действий.
 
 ## Глава 17. Конструкторы
@@ -2228,7 +2228,7 @@ Async-действия поддерживают `return await task;` и дожи
 до завершения Future. Отмена во время ожидания возвращаемого выражения тоже
 выполняет очистку. Запрос отмены во время отложенной очистки доставляется
 после её завершения, до передачи результата; Future до этого остаётся
-незавершённым. См. [запускаемый пример](../examples/return-defer.ok) и
+незавершённым. См. запускаемый пример (okkama-docs `examples/return-defer.ok`) и
 план реализации.
 
 ### 18.2 Скрытые действия
@@ -3464,9 +3464,9 @@ Enum с пометкой `is Error` (раздел 14.2) — вариантный
 `okkama lint` сообщает об этом как `non-exhaustive-match`. Если варианты
 моделируют состояния, которые нужно обработать, берите enum с данными.
 
-Рабочие программы: [choices.ok](../examples/choices.ok),
-[variants.ok](../examples/variants.ok) и
-[examples/showcase/](../examples/showcase/).
+Рабочие программы: choices.ok (okkama-docs `examples/choices.ok`),
+variants.ok (okkama-docs `examples/variants.ok`) и
+examples/showcase/ (okkama-docs `examples/showcase/`).
 
 ## Глава 25. Обобщённые параметры типов
 
@@ -4018,6 +4018,58 @@ message)`. `Invocation` отвечает по имени:
 TLS-соединения показывают согласованный `details()::Session::protocol`.
 В `examples/net/` есть обзор адресов и эхо через loopback.
 
+`logging` пропускает записи через писателей. `NamedLogging(name:
+LogName(["shop"]), destination:, clock:, fields:)` пишет через
+`log(LogLevel.info, "started")`, добавляет поля и причину и создаёт дочерние
+логгеры через `child("db")`. Запись показывает `record::Entry::level` и
+`::message`. Писатели составляются:
+- `AllowedLogs(origin:, allowing: LevelThresholds(fallback:, overrides:))`
+  фильтрует по уровню для каждого имени;
+- `RedactedLogs(origin:, names: ["card"], replacement:)` скрывает поля;
+- `TextStreamLogs`/`JsonStreamLogs` пишут строки, а `BroadcastLogs`,
+  `FallbackLogs` и `CollectedLogs` раздают, подстраховывают и хранят записи;
+- `QueuedLogs`, `LogFile`, `RotatingLogFile` и `SyslogLogs` ставят в очередь,
+  дописывают, ротируют и отправляют датаграммы RFC 5424.
+
+`config` складывает настройки слоями. `Settings`, `IniSettings`,
+`JsonSettings`, `TomlSettings`, `EnvironmentSettings` и `call.settings()` из
+`cli` — это слои. `LayeredSettings([defaults, file, environment, line])`
+даёт позднему слою победить по каждому ключу. `ScalarSetting(origin:,
+key:).text()` читает значение, `ScalarSettingOr(…, fallback:)` даёт значение
+по умолчанию, а `source()::Source::name` говорит, откуда оно пришло.
+
+`template` заполняет текст. `TextTemplate("Hello, {{user.name}}")` берёт
+привязки. `SectionTemplate(source:, partials:)` обходит JSON с `{{#list}}`,
+`{{^list}}` и `{{>partial}}`. `HtmlTemplate` экранирует каждое значение для
+места, куда оно попадает, и отказывает в атрибутах-событиях.
+
+`terminal` решает, сколько цветов покажет терминал, по тому, что он сообщает,
+по `NO_COLOR`, `TERM`, `COLORTERM` и `ColorPolicy`. Ответ виден как
+`capabilities::Support::colors`. `StyledText(origin:, style:)` рисует текст
+для этой глубины, а `DisplayWidth(text).columns()` меряет ширину.
+
+`db` работает с SQLite и PostgreSQL через одни и те же роли. `await
+SqliteMemory().connection()` открывает базу. `Statement(text:, values:
+[Param(…)])` всегда привязывает значения. `Query(origin: connection, statement:)`
+отвечает `one()`, `maybe()`, `all(limit)` или потоком `rows()`, а
+`row.int("id")` и `row.maybe("body").text()` читают по имени столбца.
+`prepared()`, `transaction()` с `TransactionOptions::Mode`, blob, скрипты и
+онлайн-копия (`SqliteBackup(…).report()`) дополняют это, а `DbPool`
+разделяет соединения.
+
+`locale` и `i18n` пишут значения так, как принято в языке, по данным CLDR.
+- `LookedUpLocale(requested:, available:, fallback:).locale()` выбирает
+  локаль.
+- `LocalizedDecimal`, `LocalizedCurrency`, `LocalizedDate` и `LocalizedList`
+  пишут числа, деньги, даты и списки, а `LocalizedDecimalFromString` читает
+  число обратно.
+- `PluralCategoryOf` выбирает категорию множественного числа.
+  `MessageCatalog` отвечает сообщениями по `MessageKey(context:, identity:)`,
+  с формами множественного числа, а `ParsedPo` читает файлы gettext.
+
+В `examples/logging/`, `config/`, `template/`, `terminal/`, `db/`, `locale/`
+и `i18n/` есть пример на каждую область.
+
 `http/client` отправляет запросы через `HttpClient()`. По умолчанию он берёт системные DNS и доверенные корни, ходит только на публичные адреса и говорит по HTTP/1.1. Всё остальное задаётся именованными аргументами: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)`, `cookies: MemoryCookieJar()`. Для каждого REST-метода есть шорткат: `get(url)`, `head`, `options`, `delete`, а также `post(url:, body:)`, `put`, `patch` с `Content`, например `JsonBody(json)`. Любой другой запрос пишется как `client.response(Request(url:, method:, headers:, body:))`. Ответ показывает голову через cap `Head` (`page::Head::status`, `::class`, `::headers`) и читает тело через `await page.text()`, `bytes()`, `json()` или `reading()`. `Status` и `Method` — enum'ы: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` и `MethodName` переводят их в числа и токены протокола и обратно. Каждая задача показана программой в `examples/http/client/`.
 
 `strings/parse` читает текст как тип, который у него просят: `Number("42").int()`,
@@ -4093,30 +4145,9 @@ Unicode 16.0.0.
 
 Stdlib намеренно узка, пока язык стабилизируется:
 
-- `template/plain` — чистые именованные string-шаблоны с закрытыми
-  ERB/Mojolicious-style тегами и типизированными ошибками source/value;
-- `template/html` — HTML-рендеринг над теми же тегами, где экранирование
-  решает тип `SafeHtml` привязанного значения, а не сам тег;
-- `encoding/toml` — практический однострочно-документный subset TOML
-  v1.0.0 с dotted-path lookup и детерминированным `[table]`-rendering;
-- `sql/value` — точные bindable SQL-скаляры, включая явный `SqlNull`, до
-  построения SQL statement/query;
 - `http/headers` — неизменяемые case-insensitive `Headers`, композиция
   `ExtendedHeaders`/`FilteredHeaders`, значения `Header`, отвергающие
   CRLF-инъекцию;
-- `log/event` — неизменяемое структурированное `LogEvent` (уровень,
-  сообщение, поля, момент времени) и шесть стандартных уровней
-  `LogLevel`;
-- `db/result` — результат исполнения без строк (`affected()`,
-  опциональный `last_id()`) для `INSERT`/`UPDATE`/`DELETE`;
-- `db/row` — доступ по имени/индексу к `SqlValue` одной строки результата
-  запроса;
-- `sql/dialect` — проверенные различия рендеринга placeholder,
-  идентификаторов и boolean между SQLite/Postgres/MySQL;
-- `sql/statement` — `Insert`/`Update`/`Delete`/`RawStatement`,
-  рендерящиеся через любой `Dialect`;
-- `sql/query` — `Select`/`RawQuery` с явным словарём
-  `EveryRow`/`UnlimitedRows`/`RowWindow`;
 - `http/handler` — роль `Handler` плюс диспетчеризация `HandlerChain` по
   принципу chain-of-responsibility, где отказ выражается через throw
   `HandlerFailure`, а не через возврат значения;
@@ -4129,289 +4160,11 @@ Stdlib намеренно узка, пока язык стабилизирует
   ответы тем же побайтовым способом, что и `http/client`, только наоборот;
   `ServerPolicy.tls()` хранится, но пока не подключён — у `crypto/tls`
   сегодня вообще нет server-side обёртки, только клиентская сторона;
-- `log/formatter` — детерминированный рендеринг `LogEvent` через
-  `LineFormatter`/`JsonFormatter`;
-- `log/logger` — `OutputLogger`/`FileLogger`/`SilentLogger`/
-  `ContextLogger`/`MemoryLogger` за одной ролью `Logger`; `MemoryLogger`
-  восстанавливает события точно, сериализуя их в ячейку `runtime/memory`,
-  поскольку у Okkama нет примитива изменяемой ячейки для произвольных
-  значений — только для байтов;
-- `db/transaction` — роль `Transaction` и `InactiveTransaction`; каждый
-  конкретный реализатор — это ещё предстоящий драйвер базы данных, поскольку
-  оформление транзакций неотделимо специфично для конкретной БД — этим
-  шестым и последним модулем Phase 7 завершаются "owned workflows";
-- `db/connection` — роль `Connection` и `ConnectionClosed`/`DbFailure`, той
-  же формы, что и `db/transaction`, по той же причине; этим третьим и
-  последним модулем Phase 8 завершаются "composition layers" вместе с
-  `http/router` и `http/server`;
-- `db/driver` — роль `Driver` в стиле DBI (`connect() is Connection`,
-  `dialect() is Dialect`) и `DriverFailure`, той же формы "только роль и
-  ошибки", что и `db/connection`/`db/transaction`, по той же причине;
-  открывает Phase 9 ("application-level batteries") перед ещё предстоящими
-  конкретными драйверами `db/sqlite`/`db/postgres`/`db/mysql`;
-- `db/database` — `Database`, тонкий прикладной фасад, конструируемый с
-  `Driver`; `connect()` делегирует вызов и преобразует любой `DriverFailure`
-  в единый стабильный `DatabaseUnavailable`, так что прикладной код никогда
-  не зависит от собственного типа ошибки конкретного драйвера;
-- `db/sqlite`/`db/postgres`/`db/mysql` — явно **отложены**: настоящий
-  файловый движок SQLite или проводной протокол Postgres/MySQL — это
-  самостоятельная многонедельная задача, и обойти разбор SQL-текста нечем —
-  `Statement.sql()`/`Query.sql()` всегда рендерятся в обычные SQL-строки.
-  См. `db-sqlite-22072026.md`;
-- `db/migration` — `Migrations`, настоящая (не только роль) реализация,
-  составляемая с любым `Connection`: отклоняет две миграции с одинаковой
-  версией уже при конструировании, применяет/откатывает каждую миграцию в
-  собственной транзакции (при откате — сначала самая недавно применённая);
-  собственная история применённых миграций хранится в собственной ячейке
-  `runtime/memory`, а не считывается обратно из базы данных, поскольку в
-  этой stdlib нет рантайм-даункаста от роли к конкретному типу для
-  запрошенного `Row`, а `sql/query`/`sql/statement` пока вообще не
-  поддерживают `WHERE` — известное, задокументированное ограничение, не
-  переживающее перезапуск процесса; при разработке также нашёлся реальный
-  баг интерпретатора (`.map()`, используемый как голое хвостовое выражение
-  тела действия, выводит тип элемента из *конкретного* типа первого
-  результата, а не из объявленного ролевого типа возврата, ошибочно отвергая
-  последующие элементы другого конкретного типа, но той же роли),
-  найденный и объяснённый, но не исправленный, обойдённый через явный
-  `let` — см. `db-migration-22072026.md`;
-- `test/fake_clock` — реализация `Clock`, которую тест явно продвигает,
-  откатывает или устанавливает, так что `sleep` никогда не блокирует;
-- `test/benchmark` — repeatable измерение длительности через внедряемый
-  `Clock` над `BenchmarkCase`, чтобы статистику можно было проверять точно
-  через `FakeClock`, а не мириться с шумом реального времени;
-- `test/suite` — `Suite`, конструируемый с явным списком `@TestCase`,
-  явным списком `@Fixture` и внедряемым `Clock`; успех/неудача определяются
-  чисто через исключения (любая брошенная `Error` проваливает кейс),
-  поскольку собственная контекстная возможность `test` языка, на которую
-  опирается `test/more.Assertions`, существует только внутри настоящего
-  блока `test { }`, а не в обычном рантайм-коде, который выполняет `Suite`;
-  `Fixture.after()` выполняется даже если кейс бросает исключение, причём
-  без блока `finally` — в грамматике языка его просто нет — за счёт того,
-  что `try`/`catch` на каждый кейс полностью поглощает любую `Error` в
-  `bool`, и идущий следом цикл `after()` достигается всегда;
-- `test/more` — stateless переиспользуемые утверждения поверх контекстной test
-  capability и Error-значение `AssertionFailure`;
 - `runtime/*` — модули нативного субстрата, состоящие только из объявлений
   (глава 27): `runtime/time`, `runtime/fs`, `runtime/process`,
   `runtime/net`, `runtime/poll`, `runtime/environment`, `runtime/system`,
   `runtime/debug`, `runtime/regex`, `runtime/stdio`, `runtime/memory`, `runtime/format`,
   `runtime/crypto`, `runtime/tls`, `runtime/utf8`.
-
-Код, написанный против role `Clock`, можно тестировать без реальных часов
-через `test/fake_clock`:
-
-```okkama
-import "test/fake_clock" take FakeClock;
-import "time/clock" take Clock;
-import "time/duration" take Duration;
-import "time/instant" take ClockIdentity, Instant;
-
-main() is int {
-    let clock is Clock = FakeClock(Instant(0, ClockIdentity.monotonic));
-
-    clock.sleep(duration Seconds(1));      // продвигает время мгновенно, не блокирует
-    clock.advance(Duration(-500)); // откат назад допустим — это test-tool
-    clock.set(Instant(1000000000, ClockIdentity.monotonic));
-
-    clock.now();
-    return 0;
-}
-```
-
-`FakeClock(start)` фиксирует свой симулируемый `ClockIdentity` на весь
-lifetime объекта. `sleep` — это `advance` под другим именем, поэтому он
-никогда не блокирует тест, но всё равно отвергает отрицательный `Duration`
-как `InvalidSleepDuration`, как и реальные часы; сам `advance` принимает
-signed `Duration`, поскольку это test-only управление, а не часть `Clock`.
-`set` бросает существующий `IncompatibleClocks`, если передан instant с
-другой identity. Поскольку поля Okkama нельзя переприсваивать вне
-конструктора, текущий instant не хранится как поле: он живёт в owned
-byte-ячейке `runtime/memory`, так же как `io/buffer` владеет своим byte
-содержимым, и кодируется через big-endian codec `encoding/binary`.
-
-`test/benchmark` замеряет `BenchmarkCase` через внедряемый `Clock` и
-суммирует samples:
-
-```okkama
-import "test/benchmark" take BenchmarkCase, Benchmark, BenchmarkResult;
-import "time/clock" take MonotonicClock;
-import "strings/parse" take Number;
-
-object ParseWorkload does BenchmarkCase {
-    ParseWorkload();
-    run() is void {
-        Number("12345").int();
-    }
-}
-
-main() is int {
-    let result is BenchmarkResult =
-        Benchmark(ParseWorkload(), MonotonicClock(), 1000).measure();
-
-    result.iterations();
-    result.average();
-    result.minimum();
-    result.maximum();
-    result.total();
-    return 0;
-}
-```
-
-`Clock` — это аргумент конструктора, а не жёстко зашитый `MonotonicClock`,
-поэтому `Benchmark` можно приводить в действие через `test/fake_clock` в
-тестах и проверять точную статистику вместо того, чтобы мириться с шумом
-реальных измерений времени. `BenchmarkResult` независимо конструируется из
-уже вычисленного `@Duration`, поэтому его статистика — включая `average()`,
-которая избегает риска потери точности plain integer division так же, как
-`encoding/hex`/`encoding/base64` — тестируется вообще без часов.
-`InvalidBenchmark` покрывает как неположительное количество итераций, так и
-запуск, после которого часы показывают более ранний instant, чем до
-запуска — это реальный, достижимый случай (а не просто defensive code),
-когда `BenchmarkCase` на основе `test/fake_clock` откатывает собственные
-часы назад.
-
-Plain-шаблоны — переиспользуемые строковые объекты, а не встроенные программы
-на Okkama:
-
-```okkama
-import "template/plain" take Template, TemplateBinding, TemplateValues;
-
-main() is int {
-    let values = TemplateValues(
-        TemplateBinding("name", "Ада"),
-        TemplateBinding("language", "Okkama"),
-    );
-    Template("Привет, <%= name %> из <%= language %>!").string(values);
-    return 0;
-}
-```
-
-`<%= name %>` использует политику экранирования шаблона, а `<%== name %>` —
-raw-канал. В `template/plain` эта политика identity, поэтому оба сохраняют
-точную строку; `template/html` (ниже) сохраняет оба тега, но решает
-экранирование по типу привязанного значения, поэтому там они тоже остаются
-лексически идентичными.
-`<%# ... %>` — невложенный комментарий до первого `%>`, а `<%%` выводит
-литеральное `<%`. Обычные фигурные скобки остаются текстом, поэтому JSON и
-исходный код не требуют brace escaping. Остальные формы `<% ... %>`
-зарезервированы и некорректны в v1: шаблон никогда не выполняет Okkama- или
-host-код.
-
-Имена placeholders являются точными ASCII identifiers с необязательными ASCII
-space/tab по краям. Весь source проверяется до поиска значений; синтаксическая ошибка несёт
-zero-based Unicode code-point offset. Отсутствующее и повторное имя — разные
-типизированные ошибки, лишние bindings разрешены, а вставленная строка никогда
-не интерпретируется повторно. Все конструкторы только сохраняют состояние;
-разбор и получение результата происходят в noun query `string(values)`.
-
-`template/html` рендерит ту же grammar тегов в HTML, экранируя по умолчанию:
-
-```okkama
-import "template/html" take
-    HtmlTemplate, HtmlBinding, HtmlValues, SafeHtml, EscapedHtml;
-
-main() is int {
-    let comment is string = "<script>alert('xss')</script>";
-    let values is HtmlValues = HtmlValues([
-        HtmlBinding("comment", safe EscapedHtml(comment)),
-    ]);
-    HtmlTemplate("<div><%= comment %></div>").render(values);
-    // "<div>&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;</div>"
-    return 0;
-}
-```
-
-`HtmlBinding` принимает значение `SafeHtml`, а не plain `string` — вообще
-нет code path для привязки неэкранированного текста. `safe EscapedHtml(text)`
-экранирует `&`, `<`, `>`, `"` и `'` (амперсанд первым, поэтому текст, уже
-содержащий `&amp;`, не удваивается в `&amp;amp;`); `SafeHtml(text)` — явное,
-видимое утверждение, что какой-то текст — обычно уже отрендеренный output
-вложенного `HtmlTemplate.render()` — безопасно вставить как есть:
-
-```okkama
-let partial is string = HtmlTemplate("<em><%= word %></em>")
-    .render(HtmlValues([HtmlBinding("word", safe EscapedHtml("safe & sound"))]));
-HtmlTemplate("<section><%== body %></section>")
-    .render(HtmlValues([HtmlBinding("body", SafeHtml(partial))]));
-// "<section><em>safe &amp; sound</em></section>"
-```
-
-`HtmlTemplate.render` прогоняет source через тот же `Template` lexer, что и
-`template/plain`; `InvalidTemplate` становится `InvalidHtmlTemplate`, а
-`MissingTemplateValue`/`DuplicateTemplateValue` переиспользуются без
-изменений, поскольку отсутствующее или повторное имя — не HTML-специфичное
-понятие.
-
-`encoding/toml` покрывает практический, однострочно-документный subset
-TOML v1.0.0 — форму, которую реально используют config-файлы, а не полную
-grammar:
-
-```okkama
-import "encoding/toml" take TomlDocument, TomlSource, TomlValue;
-
-main() is int {
-    let document is TomlDocument = document TomlSource(
-        "name = \"app\"\n"
-            + "\n"
-            + "[server]\n"
-            + "port = 8080\n"
-            + "tags = [\"a\", \"b\"]\n",
-    );
-    document.value("name");            // TomlString
-    document.value("server.port");     // TomlInteger, по dotted path
-    document.value("server.tags");     // TomlArray
-    document.string();                 // перерендерит с [server] заголовками
-    return 0;
-}
-```
-
-Multi-line строки/массивы, `[[array of tables]]` и dotted keys внутри
-`[table]`-блока, разворачивающиеся в дальнейшие вложенные таблицы
-(`[a]\nb.c = 1` остаётся одной записью буквально с именем `"b.c"`; только
-явный заголовок `[a.b]` создаёт вложенность) — всё это вне scope этой
-версии: каждое — осознанное сокращение, а не недосмотр, с обоснованием в
-`encoding-toml-21072026.md`. `TomlDateTime` оборачивает `time/date.Date` —
-только Local Date форму TOML; остальные три date/time формы пока не
-отображаются чисто на существующее Okkama-значение. Dotted-path lookup
-нельзя было построить как дерево вложенных `TomlTable`, спускаясь по
-сегментам: как только промежуточное значение возвращается как
-role-типизированный `TomlValue`, ничто не позволяет снова трактовать его
-как `TomlTable`, чтобы спускаться дальше, поскольку в Okkama нет runtime
-role-в-concrete downcast. Вместо этого parser выдаёт плоский список
-полностью развёрнутых записей `(header, key, value)` — используемый
-напрямую для `.value()` lookup через равенство путей — а `.string()`
-группирует тот же список по header, чтобы отрендерить `[table]`-секции, так
-что спускаться через opaque `TomlValue` никогда не требуется.
-
-`sql/value` — такой же чистый словарный модуль до `sql/statement`/
-`sql/query`: восемь тонких обёрток `SqlValue` (`SqlInt`, `SqlFloat`,
-`SqlString`, `SqlBytes`, `SqlBool`, `SqlDate`, `SqlDateTime`, `SqlNull`),
-каждая сообщает свой фиксированный `SqlType`, плюс `SqlValues` для
-смешанного, role-типизированного списка bind-параметров —
-
-```okkama
-import "sql/value" take SqlType, SqlValue, SqlInt, SqlString, SqlNull, SqlValues;
-
-main() is int {
-    let bound is @SqlValue = [SqlInt(42), SqlString("Ada"), SqlNull()];
-    let params = SqlValues(bound);
-
-    let final_value = params.values()[params.values().size() - 1];
-    if final_value.sql_type() == SqlType.null_value {
-        "last bound parameter is an explicit SQL NULL";
-    }
-    else {
-        "unexpected";
-    }
-    return 0;
-}
-```
-
-`SqlNull` — настоящее, явное значение базы данных, которое вызывающий код
-осознанно создаёт и распознаёт — никогда не (несуществующий) implicit null
-самого Okkama. Восьмой член `SqlType` называется `null_value`, а не `null`
-из черновика API, поскольку `null` — зарезервированное слово в этом
-null-free языке.
 
 `http/headers` — неизменяемая, case-insensitive коллекция заголовков,
 никогда не теряющая оригинальное написание, плюс небольшая пара
@@ -4450,225 +4203,6 @@ main() is int {
 `FilteredHeaders` удаляет все заголовки с данным именем — оба возвращают
 новый `Headers` и никогда не меняют исходный.
 
-`log/event` — самый простой модуль во всей этой стандартной библиотеке:
-неизменяемое структурированное событие лога без какой-либо валидации,
-кроме одного непустого имени поля:
-
-```okkama
-import "log/event" take LogLevel, LogField, LogEvent;
-import "time/instant" take Instant, ClockIdentity;
-
-main() is int {
-    let fields is @LogField = [LogField("user", "ada"), LogField("attempt", "3")];
-    let event = LogEvent(
-        LogLevel.warning,
-        "retrying request",
-        fields,
-        Instant(0, ClockIdentity.system),
-    );
-
-    event.level();    // LogLevel.warning
-    event.message();  // "retrying request"
-    return 0;
-}
-```
-
-Конструктор `LogEvent` сохраняет свои четыре значения как есть — пустое
-`message` или пустой массив `fields` являются полноценными событиями, а
-каждый `LogLevel` (`trace`/`debug`/`info`/`warning`/`error`/`fatal`) уже
-представляет собой исчерпывающий закрытый набор, так что на этом уровне
-проверять нечего. Единственное, что отвергает `LogField` — пустое `name`
-(с `InvalidLogField`) — поле без имени было бы бесполезно для
-структурированного поиска будущим `log/formatter`.
-
-`db/result` — результат исполнения statement, не возвращающего строк
-(`INSERT`/`UPDATE`/`DELETE`), и использует арность конструктора, чтобы
-закодировать, существует ли вообще last insert id, вместо nullable поля:
-
-```okkama
-import "db/result" take DbResult, MissingLastId;
-
-main() is int {
-    let inserted = DbResult(1, 42); // затронуто строк, last insert id
-    let updated = DbResult(3);      // только затронуто строк — id здесь нет
-
-    inserted.last_id();      // 42
-    updated.has_last_id();   // false
-
-    try {
-        updated.last_id();
-    }
-    catch error is MissingLastId {
-        error.text(); // "this statement did not produce a last insert id"
-    }
-    return 0;
-}
-```
-
-Конструктор с двумя аргументами — для statement, которые производят
-настоящий last id; с одним аргументом — для тех, что никогда его не
-производят (`UPDATE`, `DELETE`). `has_last_id()` сообщает, какая форма
-построила значение, а `last_id()` бросает `MissingLastId` вместо того,
-чтобы молча вернуть `0` для результата, у которого его никогда не было —
-тот же выбор explicit вместо implicit, что уже использован для `SqlNull`
-и `fs/meta.MissingPath`.
-
-`db/row` завершает эту фазу стандартной библиотеки: доступ по
-имени/индексу к `SqlValue` одной строки результата запроса —
-
-```okkama
-import "db/row" take Row, MissingColumn;
-import "sql/value" take SqlValue, SqlInt, SqlString, SqlType;
-
-main() is int {
-    let row = Row(["id", "name"], [SqlInt(1), SqlString("Ada")]);
-
-    row.value("id").sql_type();  // SqlType.integer
-    row.at(1).sql_type();        // SqlType.string
-
-    try {
-        row.value("missing");
-    }
-    catch error is MissingColumn {
-        error.text(); // "missing column: missing"
-    }
-    return 0;
-}
-```
-
-`Row.value()`/`at()` возвращают role `SqlValue`, а не конкретный
-`SqlInt`/`SqlString` — в Okkama нет runtime downcast от role обратно к
-конкретному типу, так что `Row` не может проверить ничего, кроме
-`sql_type()`. Именно поэтому модуль также экспортирует
-`InvalidColumnType`: не то, что `Row` когда-либо бросает сам, а готовый
-словарь для domain-адаптера поверх него (именно такой обёртки
-`UserRow(row).user()`, которую этот модуль намеренно оставляет
-вызывающему коду), чтобы бросить его, когда *адаптер* сверяет
-`sql_type()` найденного значения с ожидаемым — та же схема "экспортирован,
-но не бросается внутри", что уже использует `crypto/digest.DigestMismatch`.
-
-`sql/dialect` покрывает три места, где SQL-движки реально расходятся на
-уровне синтаксиса:
-
-```okkama
-import "sql/dialect" take Dialect, SqliteDialect, PostgresDialect, MysqlDialect;
-
-main() is int {
-    let sqlite is Dialect = SqliteDialect();
-    let postgres is Dialect = PostgresDialect();
-
-    sqlite.placeholder(1);              // "?"
-    postgres.placeholder(1);            // "$1"
-    sqlite.identifier("user name");     // "\"user name\""
-    postgres.boolean(true);             // "TRUE"
-    return 0;
-}
-```
-
-SQLite и MySQL оба используют простой `?` (позиция неявная); Postgres
-нумерует их (`$1`, `$2`, ...). SQLite и Postgres заключают идентификаторы
-в двойные кавычки; MySQL — в обратные кавычки — оба экранируют вложенную
-кавычку удвоением. У Postgres есть настоящий boolean-тип (`TRUE`/
-`FALSE`); у SQLite и MySQL нет, и они рендерят `1`/`0`. Все три бросают
-`UnsupportedSqlFeature` для неположительного индекса placeholder — единое
-универсальное SQL-правило, которое никто из них не ослабляет.
-
-`sql/statement` рендерит data-changing statements через любой `Dialect`:
-
-```okkama
-import "sql/statement" take Statement, Insert;
-import "sql/value" take SqlValues, SqlString, SqlInt;
-import "sql/dialect" take Dialect, SqliteDialect, PostgresDialect;
-
-main() is int {
-    let insert is Statement = Insert(
-        "users",
-        ["name", "age"],
-        SqlValues([SqlString("Ada"), SqlInt(36)]),
-    );
-
-    insert.sql(SqliteDialect());
-    // INSERT INTO "users" ("name", "age") VALUES (?, ?)
-    insert.sql(PostgresDialect());
-    // INSERT INTO "users" ("name", "age") VALUES ($1, $2)
-    return 0;
-}
-```
-
-`Insert`/`Update` проверяют, что `columns.size()` совпадает с количеством
-привязанных `SqlValues`, ПРИ КОНСТРУИРОВАНИИ, а не при рендеринге —
-вызывающий код с несовпадением сразу получает `InvalidStatement`.
-`Update`/`Delete` намеренно безусловны (без `WHERE`): нигде в этой stdlib
-пока нет абстракции predicate/condition (у `Select` из `sql/query`
-единственное конкретное значение predicate — `EveryRow`), так что
-построчная фильтрация для data-changing statements вне scope, пока такая
-абстракция не появится. `RawStatement` — это escape hatch: он возвращает
-свой сохранённый SQL как есть, независимо от переданного `Dialect`,
-проверено напрямую.
-
-`sql/query` завершает namespace `sql/*` строкообразующим `SELECT`:
-
-```okkama
-import "sql/query" take Query, Select, EveryRow, RowWindow, TableName, ColumnName;
-import "sql/dialect" take Dialect, SqliteDialect;
-
-main() is int {
-    let query is Query = Select(
-        [ColumnName("id"), ColumnName("name")],
-        TableName("users"),
-        EveryRow(),
-        RowWindow(10, 20),
-    );
-
-    query.sql(SqliteDialect());
-    // SELECT "id", "name" FROM "users" LIMIT 10 OFFSET 20
-    return 0;
-}
-```
-
-`EveryRow` — единственное конкретное значение predicate для `Select` во
-всей этой stdlib — нигде пока нет абстракции `WHERE`/condition, так что
-это простой конкретный тип, а не role, по той же причине, по которой
-`Update`/`Delete` из `sql/statement` безусловны. `UnlimitedRows` и
-`RowWindow` разделяют небольшой внутренний role `Rows` (`clause() is
-string`), так что `Select` никогда не ветвится по тому, какое из двух
-значений ему передали — `UnlimitedRows` рендерит вообще без суффикса
-`LIMIT`/`OFFSET`.
-
-`log/formatter` рендерит `LogEvent` двумя способами — человекочитаемая
-строка и полная машиночитаемая JSON-запись:
-
-```okkama
-import "log/formatter" take LogFormatter, LineFormatter, JsonFormatter;
-import "log/event" take LogLevel, LogField, LogEvent;
-import "time/instant" take Instant, ClockIdentity;
-
-main() is int {
-    let event = LogEvent(
-        LogLevel.warning,
-        "retrying request",
-        [LogField("attempt", "3")],
-        Instant(0, ClockIdentity.system),
-    );
-
-    LineFormatter().format(event);
-    // [warning] retrying request attempt=3
-
-    JsonFormatter().format(event);
-    // {"level":"warning","message":"retrying request","instant":0,"fields":{"attempt":"3"}}
-    return 0;
-}
-```
-
-`LineFormatter` намеренно опускает instant (строка — для людей; большинство
-destination'ов и так проставляют свой timestamp), а `JsonFormatter`
-включает всё, поскольку весь смысл JSON-записи — полные, машиночитаемые
-данные — `fields` всегда рендерится как собственный вложенный JSON-объект,
-пустой, а не отсутствующий, когда полей нет. Два поля с одинаковым
-именем всплывают как `encoding/json.DuplicateJsonMember`, когда
-`JsonFormatter` их кодирует — этот модуль не добавляет собственной
-проверки на дубликаты, переиспользуя уже существующую в JSON-энкодере.
-
 ### URL и cookie policy в активной stdlib v4
 
 Текущая std использует `url/value`, а не исторический `net/url` из
@@ -4681,7 +4215,7 @@ RFC 3986. `host_kind()`, `host_name()` и `host_address()` читают host к�
 DNS, IP или IPvFuture, а `ParsedQuery(text).parameters()` разбирает query.
 Никакого DNS или transport I/O здесь нет. HostName использует bounded UTS46/IDNA; PublicSuffixList — pinned ICANN+PRIVATE
 policy. Актуальный URL-контракт (okkama-docs `docs/std/url-value.md`) и
-[исполняемый пример](../examples/std-v4/url-resolution.ok).
+исполняемый пример (okkama-docs `examples/std-v4/url-resolution.ok`).
 
 Cookie values остаются immutable. CookieExpiry() — session, а не epoch sentinel;
 Cookie/Attributes проверяют grammar, prefix и Secure/SameSite/Partitioned.
@@ -4718,7 +4252,7 @@ partition keys и исключение session cookies. Файл — отдел�
 произвольные приватные поля объектов не сериализуются.
 
 Cookie-контракт (okkama-docs `docs/std/http-cookie.md`),
-[пример persistence](../examples/std-v4/http-cookie-persistence.ok).
+пример persistence (okkama-docs `examples/std-v4/http-cookie-persistence.ok`).
 Полный HTTP transport/client/server ещё требует следующих roadmap-срезов;
 эти примеры проверяют policy и storage, не делают сетевой запрос.
 
@@ -4726,7 +4260,7 @@ HTTP/1 заголовки уже можно читать асинхронно ч
 `Http1ResponseHeadReading(stream).result()`. Результат хранит типизированный
 head(), точный бинарный remainder() и число consumed(). Поток заимствован:
 закрывает его владелец сессии, а отмена чтения дожидается cleanup дочерних Future.
-См. контракт (okkama-docs `docs/std/http1-framing.md`) и [пример](../examples/std-v4/http1-reading.ok).
+См. контракт (okkama-docs `docs/std/http1-framing.md`) и пример (okkama-docs `examples/std-v4/http1-reading.ok`).
 
 
 `Http1BodyReading(source, owner, plan, prefix, headers)` читает тело по выбранному
@@ -4734,7 +4268,7 @@ framing и принимает явного владельца Closing. Fixed/chu
 ограничено; trailers доступны только после чистого EOF.
 `Http1IncomingBody(reader)` даёт одноразовую роль BodyOpening. Владелец закрывается
 при EOF или abort; для pool reuse нужен отдельный lease.
-Контракт (okkama-docs `docs/std/http1-body-reading.md`), [пример](../examples/std-v4/http1-body.ok).
+Контракт (okkama-docs `docs/std/http1-body-reading.md`), пример (okkama-docs `examples/std-v4/http1-body.ok`).
 
 
 `Http1RequestWriting(output, request).result()` и
@@ -4743,7 +4277,7 @@ framing и принимает явного владельца Closing. Fixed/chu
 заголовка. Конструктор не наблюдает роль body; запущенный Future владеет cleanup
 открытого reader и write. Соединение и pool предоставляются отдельно.
 Контракт (okkama-docs `docs/std/http1-message-writing.md`),
-[пример](../examples/std-v4/http1-message-writing.ok).
+пример (okkama-docs `examples/std-v4/http1-message-writing.ok`).
 
 `TcpListening(IpEndpoint(..., 0)).acceptance()` получает listener с фактическим
 портом ОС. `TcpConnecting(listener.local_endpoint()).connection()` получает
@@ -4751,7 +4285,7 @@ framing и принимает явного владельца Closing. Fixed/chu
 закрытие output дожидается запущенных записей и выключает только это направление.
 Чтение может быть коротким: логическое сообщение надо собирать из частей.
 Контракт владения (okkama-docs `docs/std/tcp-stream.md`),
-[loopback-пример](../examples/std-v4/tcp-stream.ok).
+loopback-пример (okkama-docs `examples/std-v4/tcp-stream.ok`).
 
 Роль `Resolving` отделяет поиск имени от соединения с числовым адресом.
 `FixedResolution` сохраняет typed-записи HostAddresses/AddressName,
@@ -4766,13 +4300,13 @@ framing и принимает явного владельца Closing. Fixed/chu
 или отмена закрывают соединение. Старый завершённый reader не закрывает новый
 обмен. Пустой ответ освобождает допуск до публикации.
 Контракт сессии (okkama-docs `docs/std/http1-session.md`),
-[два TCP-обмена](../examples/std-v4/http1-session.ok).
+два TCP-обмена (okkama-docs `examples/std-v4/http1-session.ok`).
 
 С `Expect: 100-continue` сессия отправляет заголовки до открытия тела.
 Ответ 100 разрешает upload; ранний финальный ответ оставляет источник неоткрытым
 и запрещает reuse. Единый deadline ожидания сохраняется между промежуточными
 ответами; таймаут и отмена дожидаются cleanup чтения.
-Контракт (okkama-docs `docs/std/http1-continue.md`), [TCP handshake](../examples/std-v4/http1-continue.ok).
+Контракт (okkama-docs `docs/std/http1-continue.md`), TCP handshake (okkama-docs `examples/std-v4/http1-continue.ok`).
 
 Метаданные сертификата сохраняют точный wall-clock период и отличают отсутствующий
 CA path depth от нуля. DistinguishedName сохраняет упорядоченные RDN-группы и
@@ -4786,26 +4320,26 @@ host provider декодирование сертификата и публич�
 PublicKey с полным SPKI. Повторный разбор сохраняет структурное равенство;
 host pointers освобождаются до возврата объекта. Неподдерживаемая кодировка имени
 даёт явную ошибку при наблюдении. Разбор не доказывает подпись, hostname или доверие
-цепочке. Контракт (okkama-docs `docs/std/x509-certificate.md`), [пример](../examples/std-v4/x509-certificate.ok).
+цепочке. Контракт (okkama-docs `docs/std/x509-certificate.md`), пример (okkama-docs `examples/std-v4/x509-certificate.ok`).
 
 CertificateNames раздельно возвращает SAN DNS strings и номинальные IP addresses,
 без CN fallback или matching. CertificateChain сохраняет входную untrusted chain;
 TrustedCertificates/PemTrustStore задают явный выбор корней. Пустой выбор означает
 отсутствие anchors и не включает defaults. PEM cursor successors разделяют source
 snapshot. Верификация и чтение системных корней остаются отдельными операциями.
-Контракт (okkama-docs `docs/std/certificate-observers.md`), [пример](../examples/std-v4/certificate-observers.ok).
+Контракт (okkama-docs `docs/std/certificate-observers.md`), пример (okkama-docs `examples/std-v4/certificate-observers.ok`).
 
 CertificateExtensions декодирует CA/depth, девять named key-usage bits и EKU OIDs.
 Неизвестное расширение сохраняет identifier, critical flag и точный payload;
 неизвестное purpose остаётся OID-объектом. Наблюдение metadata не даёт проверенных
 разрешений. Контракт (okkama-docs `docs/std/certificate-extensions.md`),
-[пример](../examples/std-v4/certificate-extensions.ok).
+пример (okkama-docs `examples/std-v4/certificate-extensions.ok`).
 
 SystemTrustStore() создаёт запрос; result() явно читает CA sources связанного
 OpenSSL и возвращает неизменяемый TrustStore. Снимок можно хранить на протяжении
 жизни клиентской политики. Каждый вызов заново читает источники и даёт типизированные
 ошибки; проверка peer остаётся отдельной операцией.
-Контракт (okkama-docs `docs/std/system-trust-store.md`), [пример](../examples/std-v4/system-trust-store.ok).
+Контракт (okkama-docs `docs/std/system-trust-store.md`), пример (okkama-docs `examples/std-v4/system-trust-store.ok`).
 
 VerifiedCertificateChain сохраняет явный выбор корней и принимает типизированную
 certificate identity, Instant и purpose. result() возвращает проверенный leaf; path() возвращает
@@ -4814,13 +4348,13 @@ certificate identity, Instant и purpose. result() возвращает пров
 границами; SAN, подписи и ограничения цепочки проверяются совместно. Поиск пути ограничен
 (1024 шага); неоднозначные издатели сверх него дают CertificateLimitExceeded. Политика anchor
 отделена от синтаксиса wire-сертификата. Контракт (okkama-docs `docs/std/certificate-verification.md`),
-[пример](../examples/std-v4/certificate-verification.ok).
+пример (okkama-docs `examples/std-v4/certificate-verification.ok`).
 
 TlsClientPolicy сохраняет явные корни, выбор TLS-версий и порядок ALPN.
 По умолчанию включены TLS 1.2/1.3, список ALPN пуст. Непрозрачные 8-битные
 имена протоколов сохраняются через Latin-1 strings. Политика не читает системные
 корни и не выполняет handshake. Контракт (okkama-docs `docs/std/tls-client-policy.md`),
-[пример](../examples/std-v4/tls-client-policy.ok).
+пример (okkama-docs `examples/std-v4/tls-client-policy.ok`).
 
 TlsClientHandshake забирает управляемый TCP при запуске Future и публикует
 TlsConnection только после проверки реального peer по явным корням, DNS/IP
@@ -4829,7 +4363,7 @@ identity и времени после handshake. Соединение владе
 закрывает его, поскольку часть байтов могла уйти. Пустое чтение требует
 close_notify. close() закрывает немедленно, async shutdown() выполняет штатный
 TLS shutdown и освобождает descriptor. Контракт (okkama-docs `docs/std/tls-client-transport.md`),
-[исполняемый HTTPS-пример](../examples/std-v4/https-session.ok).
+исполняемый HTTPS-пример (okkama-docs `examples/std-v4/https-session.ok`).
 
 Http1TlsSession принимает verified TLS только при точном http/1.1 или отсутствии
 ALPN. h2 и другие выбранные протоколы отклоняются до HTTP-записи; владельцем
@@ -5345,7 +4879,7 @@ match Payments().open("p-1").authorize(true) {
 валидным, поэтому «авторизовать дважды» — задача долговременного состояния и
 идемпотентности, а не системы типов. Внутри объявляющего модуля класс можно
 назвать; второй линией защиты остаётся `confirm` в каждом переходе. Полная
-программа — [examples/showcase/state-views.ok](../examples/showcase/state-views.ok),
+программа — examples/showcase/state-views.ok (okkama-docs `examples/showcase/state-views.ok`),
 разбор — [role-oriented typestate](research/role-oriented-typestate.md).
 
 ## Глава 31. Дорога вперёд: спроектированные и запланированные возможности
@@ -5953,15 +5487,15 @@ HttpLimits, ClientTimeouts и ClientPolicy задают проверенные �
 
 ### HTTP-клиент владеет жизнью ответа
 
-HttpClient отправляет Request с абсолютным HTTP(S) URL по проверенным числовым endpoints и возвращает ClientResponse после заголовков. HttpDirectRequest выводит origin-form и Host без обращения к телу. Подтвержденный EOF разрешает reuse; раннее закрытие или потеря непрочитанного тела закрывает транспорт. Пустой ответ освобождает admission сразу. Сессией пула владеет отдельная async-задача: Atomic хранит заимствования и не продлевает scope. При close сначала отменяются ожидающие запросы, затем освобождаются permits. Таймауты независимы, ноль отключает стадию. Контракт (okkama-docs `docs/std/http-client.md`), [исполняемый HTTPS-пример](../examples/std-v4/http-client.ok).
+HttpClient отправляет Request с абсолютным HTTP(S) URL по проверенным числовым endpoints и возвращает ClientResponse после заголовков. HttpDirectRequest выводит origin-form и Host без обращения к телу. Подтвержденный EOF разрешает reuse; раннее закрытие или потеря непрочитанного тела закрывает транспорт. Пустой ответ освобождает admission сразу. Сессией пула владеет отдельная async-задача: Atomic хранит заимствования и не продлевает scope. При close сначала отменяются ожидающие запросы, затем освобождаются permits. Таймауты независимы, ноль отключает стадию. Контракт (okkama-docs `docs/std/http-client.md`), исполняемый HTTPS-пример (okkama-docs `examples/std-v4/http-client.ok`).
 
 ### Redirect — явная роль обмена
 
-Redirecting(client,RedirectPolicy()) включает ограниченные переходы. 303 преобразует POST в GET, а 307/308 сохраняют метод и требуют повторяемого тела. Location разрешается относительно фактического URL ответа. При смене origin удаляются credentials; новый URL проверяется даже при reuse соединения. Промежуточные тела закрываются, их метаданные сохраняются в history. Финальное тело принадлежит вызывающему. Контракт (okkama-docs `docs/std/http-redirect.md`), [живой loopback-пример](../examples/std-v4/http-redirect.ok).
+Redirecting(client,RedirectPolicy()) включает ограниченные переходы. 303 преобразует POST в GET, а 307/308 сохраняют метод и требуют повторяемого тела. Location разрешается относительно фактического URL ответа. При смене origin удаляются credentials; новый URL проверяется даже при reuse соединения. Промежуточные тела закрываются, их метаданные сохраняются в history. Финальное тело принадлежит вызывающему. Контракт (okkama-docs `docs/std/http-redirect.md`), живой loopback-пример (okkama-docs `examples/std-v4/http-redirect.ok`).
 
 ### Cookie-политика — явный адаптер
 
-Для свежего выбора cookies на каждом переходе используйте Redirecting(CookieExchanging(client,jar,FirstPartyCookies()),policy). FirstPartyCookies явно выбирает top-level first-party контекст текущего метода. Cookie вызывающего по умолчанию запрещен; preserve/replace задаются явно, дубликаты не склеиваются. Контекст фиксируется один раз, каждый Set-Cookie хранится отдельно, заголовки jar не превращаются в caller override следующего hop. При ошибке сохранения тело полученного ответа закрывается; jar остается собственностью вызывающего. Контракт (okkama-docs `docs/std/http-cookie-client.md`), [живой пример](../examples/std-v4/http-cookie-client.ok).
+Для свежего выбора cookies на каждом переходе используйте Redirecting(CookieExchanging(client,jar,FirstPartyCookies()),policy). FirstPartyCookies явно выбирает top-level first-party контекст текущего метода. Cookie вызывающего по умолчанию запрещен; preserve/replace задаются явно, дубликаты не склеиваются. Контекст фиксируется один раз, каждый Set-Cookie хранится отдельно, заголовки jar не превращаются в caller override следующего hop. При ошибке сохранения тело полученного ответа закрывается; jar остается собственностью вызывающего. Контракт (okkama-docs `docs/std/http-cookie-client.md`), живой пример (okkama-docs `examples/std-v4/http-cookie-client.ok`).
 
 ### SecretBytes и HTTP-аутентификация
 
@@ -6236,13 +5770,13 @@ Connector передаётся на прикладной границе. Stateme
 
 ```okkama
 let transaction=await connection.transaction(TransactionOptions());
-await transaction.execution(Statement("INSERT INTO customers VALUES(?,?)",
-    [Param(7),Param("Ada")]));
+await transaction.execution(Statement(text: "INSERT INTO customers VALUES(?,?)",
+    values: [Param(7),Param("Ada")]));
 await transaction.commit();
 ```
 
 `Param` из `db/param` принимает скаляры и параметры `Maybe<T>`. `Query` из
-`db/query` принимает `(connection, Statement(...))` или `(prepared, parameters)`;
+`db/query` принимает `(origin: connection, statement: Statement(...))` или `(prepared:, values:)`;
 методы `one()`, `maybe()`, `all(limit)` и `rows()` используют один контракт результата.
 Колонки читаются прямо: `row.text(name)` или `row.maybe(name).text() else fallback`.
 `Execution.affected()` возвращает `Maybe<BigInt>`: неизвестное число отличается от нуля.
@@ -6256,7 +5790,7 @@ COMMIT сохраняет неопределённый исход и закры�
 неизменяемые Row; перед несовместимой операцией его нужно закрыть. Закрытие lease
 отзывает readers, откатывает активную транзакцию и освобождает FIFO slot после
 reset. close планирует освобождение ресурсов, settled дожидается его. Полный
-[пример](../examples/std-v4/database-stack.ok) также показывает prepared reuse,
+пример (okkama-docs `examples/std-v4/database-stack.ok`) также показывает prepared reuse,
 инкрементальный BLOB, script parsing и online backup ограниченными партиями страниц.
 
 ### Аргументы приложения, настройки и терминал
@@ -6266,7 +5800,7 @@ reset. close планирует освобождение ресурсов, settl
 разбиения, а `strings()` декодирует каждый аргумент отдельно.
 `command.invocation(arguments)` читает их по явно заданному дереву `CliCommand` и
 возвращает Invocation. Он не печатает help и не завершает процесс: CliFailure и
-явно объявленные help/version flags обрабатывает приложение. [Исполняемый пример](../examples/std-v4/application-cli.ok).
+явно объявленные help/version flags обрабатывает приложение. Исполняемый пример (okkama-docs `examples/std-v4/application-cli.ok`).
 
 Ключ настройки состоит из точных непустых сегментов. Поздний слой заменяет запись
 целиком вместе с источником, сохраняя первую позицию ключа. Scalar fallback работает
@@ -6275,10 +5809,10 @@ reset. close планирует освобождение ресурсов, settl
 
 ```okkama
 let key=SettingKey(["greeting","name"]);
-let defaults=Settings([SettingEntry(key,["world"],
-    SettingSource(SettingSourceKind.defaults,"application"))]);
+let defaults=Settings([SettingEntry(key: key,values: ["world"],
+    source: SettingSource(kind: SettingSourceKind.defaults,name: "application"))]);
 let settings=LayeredSettings([defaults,invocation.settings()]);
-let name=ScalarSetting(settings,key).value();
+let name=ScalarSetting(origin: settings,key: key).text();
 ```
 
 Settings сохраняет индекс реальных сегментных ключей для binary lookup;
@@ -6286,7 +5820,7 @@ keys() по-прежнему возвращает исходный порядо�
 повтор в исходном порядке. Дочерние CLI-команды проверяют имена отдельно,
 сохраняя порядок children. Layering копирует одну сбалансированную ветку на обновление,
 Поиск и копирование пути выполняются за один проход; исходный порядок собирается при публикации. CLI читает готовый overlay напрямую
-для value options. Максимальный cardinality budget не обещает задержку; CommandSyntax
+для value options. Максимальный cardinality budget не обещает задержку; CliCommand
 заранее индексирует точные aliases и сегментные ключи, сохраняя прежний порядок
 первой ошибки. Parser ищет aliases двоичным поиском; публичный порядок
 options/flags/operands остаётся исходным.
@@ -6299,7 +5833,7 @@ Controlling terminal открывается отдельно от redirection; s
 
 ```okkama
 let session=await OpenedStandardTerminal(
-    TerminalOutputKind.standard_output,ColorPolicy.automatic).session();
+    output: TerminalOutputKind.standard_output,policy: ColorPolicy.automatic).session();
 defer session.close();
 session.output().writeln("Hello, ",name,"!");
 ```
@@ -6323,8 +5857,8 @@ TruncatedDisplay используют определённый профиль г
 распространяются; BestEffort и Fallback явно задают потерю/резервную доставку.
 
 ```okkama
-let logger=NamedLogging(LogName(["service"]),JsonStreamLogs(Stdout()),
-    SystemClock(),EmptyLogFields().value());
+let logger=NamedLogging(name: LogName(["service"]),destination: JsonStreamLogs(Stdout()),
+    clock: SystemClock(),fields: EmptyLogFields().fields());
 logger.log(LogLevel.info,"started");
 ```
 
@@ -6333,7 +5867,7 @@ RedactedLogs ставится перед broadcast, очередью и сохр
 ColorPolicy. Файлы открываются лениво для append, владелец явно закрывает и
 переоткрывает их. Ротация не делит запись; одним путём управляет один процесс.
 Fallback после частичной записи может создать дубликат. См.
-контракт (okkama-docs `docs/std/logging.md`), [пример](../examples/std-v4/logging-stack.ok) и
+контракт (okkama-docs `docs/std/logging.md`), пример (okkama-docs `examples/std-v4/logging-stack.ok`) и
 разбор задержек.
 
 QueuedLogs хранит ограниченную FIFO-очередь и запускает один worker в переданном

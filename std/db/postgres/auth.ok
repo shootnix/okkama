@@ -48,9 +48,9 @@ object ScramExchange {
     }
 
     client_final(server_first is string) is string {
-        let parsed = ScramServerFirst(server_first, nonce);
+        let parsed = ScramServerFirst(origin: server_first, client: nonce);
         let without = "c=biws,r=" + parsed.nonce();
-        let keys = ScramKeys(password, parsed);
+        let keys = ScramKeys(password: password, first: parsed);
         let message = Utf8Encoded(self.bare() + "," + server_first + "," + without).bytes();
         let client_key = keys.client();
         let signature = Hmac(hash: HmacHash.sha256, key: SecretBytes(Sha256(client_key).bytes()), origin: message).bytes();
@@ -61,14 +61,14 @@ object ScramExchange {
     }
 
     server_verified(server_first is string, server_final is string) is bool {
-        let parsed = ScramServerFirst(server_first, nonce);
+        let parsed = ScramServerFirst(origin: server_first, client: nonce);
         confirm server_final.length() > 2 && server_final.slice(0, 2) == "v="
             else throw ScramFailure.because("server final message has no verifier");
         let without = "c=biws,r=" + parsed.nonce();
         let message = Utf8Encoded(self.bare() + "," + server_first + "," + without).bytes();
         let expected = Hmac(
             hash: HmacHash.sha256,
-            key: SecretBytes(ScramKeys(password, parsed).server()),
+            key: SecretBytes(ScramKeys(password: password, first: parsed).server()),
             origin: message
         ).bytes();
         ConstantTimeEqual(
@@ -79,7 +79,7 @@ object ScramExchange {
 }
 
 // Internal: r=, s=, i= attributes of server-first-message.
-object ScramServerFirst {
+hidden object ScramServerFirst {
     has origin is string;
     has client is string;
 
@@ -117,7 +117,7 @@ object ScramServerFirst {
 }
 
 // Internal: SaltedPassword-derived client and server keys.
-object ScramKeys {
+hidden object ScramKeys {
     has password is SecretBytes;
     has first is ScramServerFirst;
 
@@ -163,9 +163,9 @@ enum ScramFailure is Error = (because(reason is string));
 
 test "SCRAM-SHA-256 matches RFC 7677 section 3" {
     let exchange = ScramExchange(
-        "user",
-        SecretBytes(Utf8Encoded("pencil").bytes()),
-        "rOprNGfwEbeRWgbNEkqO"
+        user: "user",
+        password: SecretBytes(Utf8Encoded("pencil").bytes()),
+        nonce: "rOprNGfwEbeRWgbNEkqO"
     );
     test.is(exchange.client_first(), "n,,n=user,r=rOprNGfwEbeRWgbNEkqO");
     let server_first = "r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096";
@@ -189,9 +189,9 @@ test "SCRAM-SHA-256 matches RFC 7677 section 3" {
 
 test "MD5 password response matches the PostgreSQL formula" {
     let response = Md5Password(
-        "postgres",
-        SecretBytes(Utf8Encoded("secret").bytes()),
-        [1.byte(), 2.byte(), 3.byte(), 4.byte()]
+        user: "postgres",
+        password: SecretBytes(Utf8Encoded("secret").bytes()),
+        salt: [1.byte(), 2.byte(), 3.byte(), 4.byte()]
     ).string();
     test.is(response, "md5bb41a296aab6baccb36ff243a562abff");
 }

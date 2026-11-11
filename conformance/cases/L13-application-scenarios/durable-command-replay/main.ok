@@ -16,7 +16,7 @@ object Commands {
     Commands(:connection);
     async execute(key is string, payload is string) is string {
         let tx = await connection.transaction(TransactionOptions());
-        let rows = await tx.rows(Statement("SELECT payload, result FROM commands WHERE key = ?", [DbText(key)]));
+        let rows = await tx.rows(Statement(text: "SELECT payload, result FROM commands WHERE key = ?", values: [DbText(key)]));
         let previous = try {
             let row = await rows.row();
             [RowReader(origin: row).text("payload"), RowReader(origin: row).text("result")];
@@ -30,9 +30,9 @@ object Commands {
             confirm previous[0] == payload else throw IdempotencyConflict.idempotency_conflict;
             return "replayed " + previous[1];
         }
-        await tx.execution(Statement("INSERT INTO ledger(entry) VALUES(?)", [DbText(payload)]));
+        await tx.execution(Statement(text: "INSERT INTO ledger(entry) VALUES(?)", values: [DbText(payload)]));
         let result = "charged " + payload;
-        await tx.execution(Statement("INSERT INTO commands VALUES(?, ?, ?)", [DbText(key), DbText(payload), DbText(result)]));
+        await tx.execution(Statement(text: "INSERT INTO commands VALUES(?, ?, ?)", values: [DbText(key), DbText(payload), DbText(result)]));
         let committed = await tx.commit();
         result;
     }

@@ -111,7 +111,7 @@ object SectionTemplate {
         if !partials_enabled {
             self.validate(nodes);
         }
-        let output = TemplateSectionOutput(destination, maximum_output);
+        let output = TemplateSectionOutput(destination: destination, maximum: maximum_output);
         let iterations = TemplateIterationBudget(maximum_iterations);
         TemplateSectionRun(
             output: output,
@@ -136,7 +136,7 @@ object SectionTemplate {
 // Internal owned iteration ledger. A bounded byte per claim lets nested printing
 // commands share accounting without mutable language fields or new native APIs.
 // No iteration is spent on a skipped body. remaining() never copies the ledger.
-object TemplateIterationBudget {
+hidden object TemplateIterationBudget {
     has maximum is int;
     has marks is ByteBuffer;
 
@@ -162,7 +162,7 @@ object TemplateIterationBudget {
 
 // Internal command sharing a metered text destination and iteration ledger.
 // Nested sections/partials retain the same output meter; failures stop traversal.
-object TemplateSectionRun {
+hidden object TemplateSectionRun {
     has output is TemplateSectionOutput;
     has iterations is TemplateIterationBudget;
     has maximum_members is int;
@@ -204,7 +204,7 @@ object TemplateSectionRun {
                 else {
                     if node.kind() == TemplateTreeKind.variable {
                         output.append(
-                            JsonTemplateStrings(data, maximum_members, output.remaining()).string(
+                            JsonTemplateStrings(origin: data, maximum_members: maximum_members, maximum_output: output.remaining()).string(
                                 node.text()
                             )
                         );
@@ -214,7 +214,7 @@ object TemplateSectionRun {
                             [];
                         }
                         else {
-                            TemplatePathFromString(node.text()).value().segments().map() -> part {
+                            TemplatePathFromString(node.text()).path().segments().map() -> part {
                                 part;
                             };
                         };
@@ -222,7 +222,7 @@ object TemplateSectionRun {
                             origin: data,
                             path: path,
                             maximum_members: maximum_members
-                        ).value();
+                        ).json();
                         TemplateSection(
                             run: self,
                             node: node,
@@ -240,7 +240,7 @@ object TemplateSectionRun {
         confirm partial_depth < maximum_partial_depth
             else throw TemplatePartialDepthExceeded.exceeded;
         iterations.claim();
-        let nodes = TemplateTree(partials.value(name).source()).nodes();
+        let nodes = TemplateTree(partials.template(name).source()).nodes();
         TemplateSectionRun(
             output: output,
             iterations: iterations,
@@ -257,7 +257,7 @@ object TemplateSectionRun {
 // before its first sink call, using remaining subtraction to prevent overflow.
 // Binary adapters are existing std capabilities. No content proportional to the
 // rendered output is retained here; close releases only this private record.
-object TemplateOutputMeter {
+hidden object TemplateOutputMeter {
     has maximum is int;
     has count is ByteBuffer;
 
@@ -327,14 +327,14 @@ object TemplateSectionOutput {
 
 // Internal path lookup: a missing member, or a member below a non-object, is
 // JSON null; every object on the way is bounded by maximum_members.
-object TemplateSectionLookup {
+hidden object TemplateSectionLookup {
     has origin is Json;
     has path is @string;
     has maximum_members is int;
 
     TemplateSectionLookup(:origin, :path, :maximum_members);
 
-    value() is Json {
+    json() is Json {
         let start is @Json = [origin];
         let found = (0..path.size()).reduce(start) -> current, index {
             if current.size() == 0 {
@@ -371,7 +371,7 @@ object TemplateSectionLookup {
 // Internal section truth and iteration. Inverted collections inspect only
 // their truth (array size; objects always true). Positive object bodies receive
 // the bounded object; array bodies receive each item in source order.
-object TemplateSection {
+hidden object TemplateSection {
     has run is TemplateSectionRun;
     has node is TemplateTreeNode;
     has enclosing is Json;
@@ -475,21 +475,21 @@ test "zero iterations permit no executed body" {
 
 test "section configuration rejects negatives before parsing" {
     test.ok(try {
-        SectionTemplate("{{", -1, 0, 0);
+        SectionTemplate(source: "{{", maximum_iterations: -1, maximum_output: 0, maximum_members: 0);
         false;
     }
     catch e is Error {
         true;
     });
     test.ok(try {
-        SectionTemplate("{{", 0, -1, 0);
+        SectionTemplate(source: "{{", maximum_iterations: 0, maximum_output: -1, maximum_members: 0);
         false;
     }
     catch e is Error {
         true;
     });
     test.ok(try {
-        SectionTemplate("{{", 0, 0, -1);
+        SectionTemplate(source: "{{", maximum_iterations: 0, maximum_output: 0, maximum_members: -1);
         false;
     }
     catch e is Error {

@@ -34,9 +34,9 @@ async main() is int {
     let line = await Reader(input: session.input()).line();
     out.writeln("line: " + line);
     let initial = await resizes.size();
-    out.writeln("initial: " + initial.columns().string() + "x" + initial.rows().string());
+    out.writeln("initial: " + initial::Size::columns.string() + "x" + initial::Size::rows.string());
     out.writeln("waiting for a resize");
     let size = await resizes.size();
-    out.writeln("size: " + size.columns().string() + "x" + size.rows().string());
+    out.writeln("size: " + size::Size::columns.string() + "x" + size::Size::rows.string());
     0;
 }

@@ -5,6 +5,8 @@ import "numbers/bigint" take BigInt;
 import "time/clock" take Timing;
 import "time/duration" take Duration;
 import "compare" take Order;
+import "time/clock" take SystemClock;
+import "time/duration" take DurationUnit;
 
 role SqliteBackupMaking {
     async backup(target is Path, pages is int, clock is Timing, timeout is Duration) is BackupReport;
@@ -33,7 +35,7 @@ object SqliteBackup {
         self.timeout = timeout;
     }
 
-    async result() is BackupReport {
+    async report() is BackupReport {
         await origin.backup(target, pages, clock, timeout);
     }
 }
@@ -58,3 +60,38 @@ object BackupReport {
 }
 
 enum InvalidSqliteBackup is Error = (invalid);
+
+hidden object CountingBackup does SqliteBackupMaking {
+    CountingBackup();
+
+    async backup(target is Path, pages is int, clock is Timing, timeout is Duration) is BackupReport {
+        BackupReport(copies: BigInt(pages.string()), total: BigInt("16"));
+    }
+}
+
+test "a backup report counts copied pages within the total" {
+    let report = BackupReport(copies: BigInt("4"), total: BigInt("16"));
+    test.is(report.copies().string(), "4");
+    test.is(report.total().string(), "16");
+    test.throws(InvalidSqliteBackup) {
+        BackupReport(copies: BigInt("17"), total: BigInt("16"));
+    };
+    test.throws(InvalidSqliteBackup) {
+        BackupReport(copies: BigInt("-1"), total: BigInt("16"));
+    };
+}
+
+async test "a backup checks its step and timeout, then asks its source" {
+    let second = Duration(value: 1.rat(), unit: DurationUnit.second);
+    let report = await SqliteBackup(origin: CountingBackup(), target: Path("copy.db"), pages: 8, clock: SystemClock(), timeout: second).report();
+    test.is(report.copies().string(), "8");
+    test.throws(InvalidSqliteBackup) {
+        SqliteBackup(origin: CountingBackup(), target: Path("copy.db"), pages: 0, clock: SystemClock(), timeout: second);
+    };
+    test.throws(InvalidSqliteBackup) {
+        SqliteBackup(origin: CountingBackup(), target: Path("copy.db"), pages: 257, clock: SystemClock(), timeout: second);
+    };
+    test.throws(InvalidSqliteBackup) {
+        SqliteBackup(origin: CountingBackup(), target: Path("copy.db"), pages: 1, clock: SystemClock(), timeout: Duration(value: 0.rat(), unit: DurationUnit.second));
+    };
+}

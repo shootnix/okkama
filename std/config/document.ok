@@ -13,7 +13,7 @@ import "config/ini" take IniDocument;
 
 // Strings keep decoded text. Other scalars use canonical source-format text.
 // Native file access and decoding are explicitly outside these adapters.
-object SettingDocumentEntries {
+hidden object SettingDocumentEntries {
     has origin is Atomic<@SettingEntry>;
 
     SettingDocumentEntries() {
@@ -53,7 +53,7 @@ object JsonSettings does SettingReading {
         confirm document.kind() == JsonKind.object_value
             else throw InvalidSettingDocument.because("settings document must be a JSON object");
         let entries = SettingDocumentEntries();
-        JsonSettingTree([], source, entries, 64).add(document);
+        JsonSettingTree(path: [], source: source, entries: entries, depth: 64).add(document);
         origin = entries.settings();
     }
 
@@ -70,7 +70,7 @@ object JsonSettings does SettingReading {
     }
 }
 
-object JsonSettingTree {
+hidden object JsonSettingTree {
     has path is @string;
     has source is SettingSource;
     has entries is SettingDocumentEntries;
@@ -95,20 +95,20 @@ object JsonSettingTree {
                 confirm value.size() <= 4096 else throw SettingLimitExceeded.exceeded;
                 for value.names() -> name {
                     let child is @string = path + [name];
-                    JsonSettingTree(child, source, entries, depth - 1).add(value.get(name));
+                    JsonSettingTree(path: child, source: source, entries: entries, depth: depth - 1).add(value.get(name));
                 }
             }
             case JsonKind.array_value {
                 let items = value.items();
                 confirm items.size() <= 1024 else throw SettingLimitExceeded.exceeded;
                 let texts is @string = items.map() -> item {
-                    JsonSettingText(item).value();
+                    JsonSettingText(item).text();
                 };
-                entries.append(SettingEntry(SettingKey(path), texts, source));
+                entries.append(SettingEntry(key: SettingKey(path), values: texts, source: source));
             }
             else {
                 entries.append(
-                    SettingEntry(SettingKey(path), [JsonSettingText(value).value()], source)
+                    SettingEntry(key: SettingKey(path), values: [JsonSettingText(value).text()], source: source)
                 );
             }
         }
@@ -116,14 +116,14 @@ object JsonSettingTree {
 }
 
 // Canonical text of a scalar setting; arrays and objects inside arrays are not settings.
-object JsonSettingText {
+hidden object JsonSettingText {
     has origin is Json;
 
     JsonSettingText(origin is Json) {
         self.origin = origin;
     }
 
-    value() is string {
+    text() is string {
         match origin.kind() {
             case JsonKind.null_value {
                 "null";
@@ -157,7 +157,7 @@ object TomlSettings does SettingReading {
 
     TomlSettings(document is TomlTable, source is SettingSource) {
         let entries = SettingDocumentEntries();
-        let visitor = TomlSettingVisitor([], source, entries, 64);
+        let visitor = TomlSettingVisitor(path: [], source: source, entries: entries, depth: 64);
         document.accept(visitor);
         visitor.valid();
         origin = entries.settings();
@@ -176,7 +176,7 @@ object TomlSettings does SettingReading {
     }
 }
 
-object TomlSettingVisitor does TomlVisitor {
+hidden object TomlSettingVisitor does TomlVisitor {
     has path is @string;
     has source is SettingSource;
     has entries is SettingDocumentEntries;
@@ -255,9 +255,9 @@ object TomlSettingVisitor does TomlVisitor {
             let texts is @string = (0..size).map() -> index {
                 let scalar = TomlSettingScalar();
                 values.item(index).accept(scalar);
-                scalar.value();
+                scalar.text();
             };
-            entries.append(SettingEntry(SettingKey(path), texts, source));
+            entries.append(SettingEntry(key: SettingKey(path), values: texts, source: source));
         }
         catch e is Error {
             emission.poison();
@@ -280,7 +280,7 @@ object TomlSettingVisitor does TomlVisitor {
                         member.name();
                     }
                 };
-                let visitor = TomlSettingVisitor(child, source, entries, depth - 1);
+                let visitor = TomlSettingVisitor(path: child, source: source, entries: entries, depth: depth - 1);
                 member.value().accept(visitor);
                 visitor.valid();
             }
@@ -302,7 +302,7 @@ object TomlSettingVisitor does TomlVisitor {
     hidden scalar(text is string) is void {
         self.once();
         try {
-            entries.append(SettingEntry(SettingKey(path), [text], source));
+            entries.append(SettingEntry(key: SettingKey(path), values: [text], source: source));
         }
         catch e is Error {
             emission.poison();
@@ -311,7 +311,7 @@ object TomlSettingVisitor does TomlVisitor {
     }
 }
 
-object TomlSettingScalar does TomlVisitor {
+hidden object TomlSettingScalar does TomlVisitor {
     has origin is Atomic<string>;
     has emission is SettingEmission;
 
@@ -320,7 +320,7 @@ object TomlSettingScalar does TomlVisitor {
         emission = SettingEmission();
     }
 
-    value() is string {
+    text() is string {
         emission.valid();
         origin.value();
     }
@@ -400,9 +400,9 @@ object IniSettings does SettingReading {
             for section.entries() -> entry {
                 entries.append(
                     SettingEntry(
-                        SettingKey([section.name(), entry.name()]),
-                        [entry.value()],
-                        source
+                        key: SettingKey([section.name(), entry.name()]),
+                        values: [entry.value()],
+                        source: source
                     )
                 );
             }
@@ -427,7 +427,7 @@ enum InvalidSettingDocument is Error = (because(reason is string));
 
 // Seals a nominal printer observation, including errors the producer catches.
 // Returned Settings never remain writable through a retained visitor alias.
-object SettingEmission {
+hidden object SettingEmission {
     has called, failed, sealed is Atomic<bool>;
 
     SettingEmission() {
@@ -457,8 +457,8 @@ object SettingEmission {
 
 test "a JSON document becomes settings: nested members extend the key, arrays are values" {
     let settings = JsonSettings(
-        ParsedJson("{\"db\":{\"host\":\"h\",\"port\":5432},\"tags\":[\"a\",\"b\"],\"on\":true}").root(),
-        SettingSource(SettingSourceKind.document, "test.json")
+        document: ParsedJson("{\"db\":{\"host\":\"h\",\"port\":5432},\"tags\":[\"a\",\"b\"],\"on\":true}").root(),
+        source: SettingSource(kind: SettingSourceKind.document, name: "test.json")
     );
     test.is(settings.entry(SettingKey(["db", "host"])).values().item(0), "h");
     test.is(settings.entry(SettingKey(["db", "port"])).values().item(0), "5432");

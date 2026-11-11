@@ -19,22 +19,22 @@ object RecordedTestReport {
         let entries = document.get("results").items();
         confirm entries.size() <= 4096 else throw InvalidTestResult.because("runner case budget");
         let results is @TestResult = entries.map() -> entry {
-            RecordedTestResult(entry).value();
+            RecordedTestResult(entry).outcome();
         };
         report = TestReport(
-            Instant(Duration(value: Number(document.text("start_ns")).rat(), unit: DurationUnit.nanosecond)),
-            Duration(value: Number(document.text("duration_ns")).rat(), unit: DurationUnit.nanosecond),
-            document.int("seed"),
-            results
+            start: Instant(Duration(value: Number(document.text("start_ns")).rat(), unit: DurationUnit.nanosecond)),
+            duration: Duration(value: Number(document.text("duration_ns")).rat(), unit: DurationUnit.nanosecond),
+            seed: document.int("seed"),
+            results: results
         );
     }
 
-    value() is TestReport {
+    report() is TestReport {
         report;
     }
 }
 
-object RecordedTestResult {
+hidden object RecordedTestResult {
     has result is TestResult;
 
     RecordedTestResult(entry is Json) {
@@ -78,9 +78,9 @@ object RecordedTestResult {
                         && position.get("column").kind() == JsonKind.number_value {
                             [
                                 TestPosition(
-                                    position.text("source_name"),
-                                    position.int("line"),
-                                    position.int("column")
+                                    source: position.text("source_name"),
+                                    line: position.int("line"),
+                                    column: position.int("column")
                                 )
                             ];
                         }
@@ -92,24 +92,24 @@ object RecordedTestResult {
                     [];
                 };
             let causes is @TestFailure = if index < details.size() && details[index].has("cause") {
-                [RecordedTestCause(details[index].get("cause"), 0).value()];
+                [RecordedTestCause(origin: details[index].get("cause"), depth: 0).failure()];
             }
             else {
                 [];
             };
-            TestFailure(message, positions, causes);
+            TestFailure(message: message, positions: positions, causes: causes);
         };
         let output = Base64Decoded(entry.text("stdout_base64")).bytes();
         let errors = Base64Decoded(entry.text("stderr_base64")).bytes();
         confirm output.size() + errors.size() <= 1048576
             else throw InvalidTestResult.because("runner output budget");
         result = TestResult(
-            entry.text("name"),
-            status,
-            Duration(value: Number(entry.text("duration_ns")).rat(), unit: DurationUnit.nanosecond),
-            failures,
-            TestOutput(output, errors, entry.boolean("truncated")),
-            if entry.has("skip_reason") {
+            name: entry.text("name"),
+            status: status,
+            duration: Duration(value: Number(entry.text("duration_ns")).rat(), unit: DurationUnit.nanosecond),
+            failures: failures,
+            output: TestOutput(output: output, errors: errors, truncated: entry.boolean("truncated")),
+            skip_reason: if entry.has("skip_reason") {
                 entry.text("skip_reason");
             }
             else {
@@ -118,31 +118,61 @@ object RecordedTestResult {
         );
     }
 
-    value() is TestResult {
+    outcome() is TestResult {
         result;
     }
 }
 
-object RecordedTestCause {
+hidden object RecordedTestCause {
     has failure is TestFailure;
 
     RecordedTestCause(origin is Json, depth is int) {
         confirm depth >= 0 && depth < 31 else throw InvalidTestResult.because("runner cause depth");
         let positions is @TestPosition = [];
         let causes is @TestFailure = if origin.has("cause") {
-            [RecordedTestCause(origin.get("cause"), depth + 1).value()];
+            [RecordedTestCause(origin: origin.get("cause"), depth: depth + 1).failure()];
         }
         else {
             [];
         };
         failure = TestFailure(
-            origin.text("type") + ": " + origin.text("message"),
-            positions,
-            causes
+            message: origin.text("type") + ": " + origin.text("message"),
+            positions: positions,
+            causes: causes
         );
     }
 
-    value() is TestFailure {
+    failure() is TestFailure {
         failure;
     }
+}
+
+test "a runner report reads results, failures, positions, causes and output" {
+    let wire = "{\"start_ns\":\"1700000000000000000\",\"duration_ns\":\"2500000\",\"seed\":42,\"results\":["
+        + "{\"name\":\"adds\",\"status\":\"passed\",\"duration_ns\":\"1000\",\"failures\":[],\"stdout_base64\":\"aGk=\",\"stderr_base64\":\"\",\"truncated\":false},"
+        + "{\"name\":\"divides\",\"status\":\"failed\",\"duration_ns\":\"2000\",\"failures\":[\"expected 2, got 3\"],"
+        + "\"failure_details\":[{\"position\":{\"source_name\":\"math.ok\",\"line\":12,\"column\":5},\"cause\":{\"type\":\"DivisionByZero\",\"message\":\"zero\"}}],"
+        + "\"stdout_base64\":\"\",\"stderr_base64\":\"\",\"truncated\":true},"
+        + "{\"name\":\"later\",\"status\":\"skipped\",\"duration_ns\":\"0\",\"failures\":[],\"skip_reason\":\"slow\",\"stdout_base64\":\"\",\"stderr_base64\":\"\",\"truncated\":false}"
+        + "]}";
+    let report = RecordedTestReport(wire).report();
+    test.is(report.seed(), 42);
+    test.is(report.counts()::Counts::passes, 1);
+    test.is(report.counts()::Counts::failures, 1);
+    test.is(report.counts()::Counts::skips, 1);
+    let passed = report.results().first();
+    test.is(passed::Outcome::name, "adds");
+    test.is(passed.output()::Captured::output, [104.byte(), 105.byte()]);
+    let failed = report.results().item(1);
+    test.is(failed::Outcome::status == TestStatus.failed, true);
+    test.is(failed.output()::Captured::truncated, true);
+    let failure = failed.failures().first();
+    test.is(failure::Failure::message, "expected 2, got 3");
+    test.is(failure.located(), true);
+    test.is(failure.position()::Position::line, 12);
+    test.is(failure.causes().first()::Failure::message, "DivisionByZero: zero");
+    test.is(report.results().last()::Outcome::skip_reason, "slow");
+    test.throws(InvalidTestResult) {
+        RecordedTestReport("{\"start_ns\":\"0\",\"duration_ns\":\"0\",\"seed\":1,\"results\":[{\"name\":\"x\",\"status\":\"lost\",\"duration_ns\":\"0\",\"failures\":[],\"stdout_base64\":\"\",\"stderr_base64\":\"\",\"truncated\":false}]}");
+    };
 }

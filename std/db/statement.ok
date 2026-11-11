@@ -30,16 +30,18 @@ object DbLimits {
         self.sql_bytes = sql_bytes;
     }
 
-    values() is int {
-        values;
-    }
+    cap Limits {
+        values is int {
+            values;
+        }
 
-    bytes() is int {
-        bytes;
-    }
+        bytes is int {
+            bytes;
+        }
 
-    sql_bytes() is int {
-        sql_bytes;
+        sql_bytes is int {
+            sql_bytes;
+        }
     }
 }
 
@@ -49,19 +51,19 @@ object DbValueSnapshot {
 
     DbValueSnapshot(values is Sequencing<DbValue>, limits is DbLimits) {
         let count = values.size();
-        confirm count >= 0 && count <= limits.values()
+        confirm count >= 0 && count <= limits::Limits::values
             else throw DbBoundaryLimit.kind("value count");
         let used = Atomic(0);
         let snapshot is @ObservedDbValue = (0..count).map() -> index {
             let value = ObservedDbValue(values.item(index));
             let width = value.width();
-            confirm width <= limits.bytes() - used.value()
+            confirm width <= limits::Limits::bytes - used.value()
                 else throw DbBoundaryLimit.kind("value bytes");
             used.replace(used.value() + width);
             value;
         };
         origin = snapshot.map() -> value {
-            value.value();
+            value.cell();
         };
         cells = snapshot.map() -> value {
             value.state();
@@ -83,22 +85,22 @@ object Statement {
     has cells is @native_db.DbCellState;
 
     Statement(text is string) {
-        self.text = DbSqlText(text, DbLimits()).string();
+        self.text = DbSqlText(origin: text, limits: DbLimits()).string();
         values = [];
         cells = [];
     }
 
     Statement(text is string, values is Sequencing<DbValue>) {
         let limits = DbLimits();
-        self.text = DbSqlText(text, limits).string();
-        let snapshot = DbValueSnapshot(values, limits);
+        self.text = DbSqlText(origin: text, limits: limits).string();
+        let snapshot = DbValueSnapshot(values: values, limits: limits);
         self.values = snapshot.values();
         cells = snapshot.cells();
     }
 
     Statement(text is string, values is Sequencing<DbValue>, limits is DbLimits) {
-        self.text = DbSqlText(text, limits).string();
-        let snapshot = DbValueSnapshot(values, limits);
+        self.text = DbSqlText(origin: text, limits: limits).string();
+        let snapshot = DbValueSnapshot(values: values, limits: limits);
         self.values = snapshot.values();
         cells = snapshot.cells();
     }
@@ -116,12 +118,12 @@ object Statement {
     }
 }
 
-object DbSqlText {
+hidden object DbSqlText {
     has origin is string;
 
     DbSqlText(origin is string, limits is DbLimits) {
-        confirm origin.length() <= limits.sql_bytes()
-            && Utf8Encoded(origin).bytes().size() <= limits.sql_bytes()
+        confirm origin.length() <= limits::Limits::sql_bytes
+            && Utf8Encoded(origin).bytes().size() <= limits::Limits::sql_bytes
             else throw DbBoundaryLimit.kind("SQL bytes");
         let stripped = origin.replace(" ", "").replace("\t", "").replace("\r", "").replace("\n", "");
         confirm stripped != "" && origin.split(Utf8Decoded([0.byte()]).string()).size() == 1

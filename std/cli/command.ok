@@ -945,7 +945,7 @@ hidden object CliParsing {
         operands = Atomic(empty);
         entries = Atomic(SettingOverlay());
         self.arguments = arguments;
-        source = SettingSource(SettingSourceKind.command_line, "argv");
+        source = SettingSource(kind: SettingSourceKind.command_line, name: "argv");
     }
 
     invocation() is Invocation {
@@ -1076,16 +1076,16 @@ hidden object CliParsing {
                     text;
                 }
             };
-            entries.replace(entries.value().replaced(SettingEntry(option.key(), revised, source)));
+            entries.replace(entries.value().replaced(SettingEntry(key: option.key(), values: revised, source: source)));
         }
         else {
-            entries.replace(entries.value().replaced(SettingEntry(option.key(), [text], source)));
+            entries.replace(entries.value().replaced(SettingEntry(key: option.key(), values: [text], source: source)));
         }
     }
 
     hidden flag(flag is Flag) is void {
         entries.replace(
-            entries.value().replaced(SettingEntry(flag.key(), ["true"], source))
+            entries.value().replaced(SettingEntry(key: flag.key(), values: ["true"], source: source))
         );
     }
 
@@ -1150,7 +1150,7 @@ hidden object CliParsing {
                 let texts is @string = (0..size).map() -> index {
                     values[at + index].token();
                 };
-                entries.replace(entries.value().replaced(SettingEntry(spec.key(), texts, source)));
+                entries.replace(entries.value().replaced(SettingEntry(key: spec.key(), values: texts, source: source)));
             }
             consumed.replace(at + size);
         }
@@ -1182,7 +1182,7 @@ hidden object Usage {
 
     string() is string {
         confirm width >= 8 else throw InvalidHelpWidth.invalid;
-        DisplayWidth(program).value();
+        DisplayWidth(program).columns();
         let options = if origin.options().size() + origin.flags().size() > 0 {
             " [OPTIONS]";
         }
@@ -1262,7 +1262,7 @@ hidden object Usage {
             else {
                 "";
             };
-        WrappedDisplay(text, width).string();
+        WrappedDisplay(origin: text, width: width).string();
     }
 }
 
@@ -1280,7 +1280,7 @@ hidden object ShellCompletion {
     }
 
     string() is string {
-        DisplayWidth(program).value();
+        DisplayWidth(program).columns();
         let codes is @string = Utf8Encoded(program).bytes().map() -> octet {
             octet.int().string();
         };

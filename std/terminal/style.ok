@@ -32,7 +32,7 @@ object NamedColor does TerminalColor {
         self.value = value;
     }
 
-    value() is BasicColor {
+    color() is BasicColor {
         value;
     }
 
@@ -80,7 +80,7 @@ object IndexedColor does TerminalColor {
         self.value = value;
     }
 
-    value() is int {
+    index() is int {
         value;
     }
 
@@ -115,20 +115,8 @@ object RgbColor does TerminalColor {
         self.blue = blue;
     }
 
-    red() is byte {
-        red;
-    }
-
-    green() is byte {
-        green;
-    }
-
-    blue() is byte {
-        blue;
-    }
-
     code(depth is TerminalColorDepth, background is bool) is string {
-        let color = ColorRgb(red.int(), green.int(), blue.int());
+        let color = ColorRgb(red: red.int(), green: green.int(), blue: blue.int());
         if depth == TerminalColorDepth.true_color {
             let prefix = if background {
                 "48;2;";
@@ -152,9 +140,23 @@ object RgbColor does TerminalColor {
             }
         }
     }
+
+    cap Channels {
+        red is byte {
+            red;
+        }
+
+        green is byte {
+            green;
+        }
+
+        blue is byte {
+            blue;
+        }
+    }
 }
 
-object IndexedRgb {
+hidden object IndexedRgb {
     has origin is ColorRgb;
 
     IndexedRgb(index is int) {
@@ -178,20 +180,20 @@ object IndexedRgb {
                 [0, 255, 255],
                 [255, 255, 255]
             ];
-            origin = ColorRgb(palette[index][0], palette[index][1], palette[index][2]);
+            origin = ColorRgb(red: palette[index][0], green: palette[index][1], blue: palette[index][2]);
         }
         else {
             if index < 232 {
                 let at = index - 16;
                 origin = ColorRgb(
-                    levels[(at / 36).int()],
-                    levels[((at % 36) / 6).int()],
-                    levels[at % 6]
+                    red: levels[(at / 36).int()],
+                    green: levels[((at % 36) / 6).int()],
+                    blue: levels[at % 6]
                 );
             }
             else {
                 let component = 8 + 10 * (index - 232);
-                origin = ColorRgb(component, component, component);
+                origin = ColorRgb(red: component, green: component, blue: component);
             }
         }
     }
@@ -201,7 +203,7 @@ object IndexedRgb {
     }
 }
 
-object ColorRgb {
+hidden object ColorRgb {
     has red, green, blue is int;
 
     ColorRgb(red is int, green is int, blue is int) {
@@ -221,7 +223,7 @@ object ColorRgb {
             [0, 128, 128],
             [192, 192, 192]
         ];
-        let best = (0..8).reduce(ColorDistance(0, 195076)) -> old, index {
+        let best = (0..8).reduce(ColorDistance(index: 0, distance: 195076)) -> old, index {
             old.closer(
                 index,
                 self.distance(palette[index][0], palette[index][1], palette[index][2])
@@ -231,9 +233,9 @@ object ColorRgb {
     }
 
     indexed() is int {
-        let r = ColorCubeIndex(red).value();
-        let g = ColorCubeIndex(green).value();
-        let b = ColorCubeIndex(blue).value();
+        let r = ColorCubeIndex(red).index();
+        let g = ColorCubeIndex(green).index();
+        let b = ColorCubeIndex(blue).index();
         let levels = [0, 95, 135, 175, 215, 255];
         let cube = 16 + 36 * r + 6 * g + b;
         let avg = ((red + green + blue) / 3).int();
@@ -267,7 +269,7 @@ object ColorRgb {
     }
 }
 
-object ColorCubeIndex {
+hidden object ColorCubeIndex {
     has index is int;
 
     ColorCubeIndex(component is int) {
@@ -299,12 +301,12 @@ object ColorCubeIndex {
         };
     }
 
-    value() is int {
+    index() is int {
         index;
     }
 }
 
-object ColorDistance {
+hidden object ColorDistance {
     has at, distance is int;
 
     ColorDistance(index is int, distance is int) {
@@ -423,3 +425,36 @@ object StyledText {
 }
 
 enum InvalidTerminalStyle is Error = (invalid);
+
+test "colors answer SGR codes for each depth" {
+    test.is(DefaultColor().code(TerminalColorDepth.basic, false), "39");
+    test.is(DefaultColor().code(TerminalColorDepth.basic, true), "49");
+    test.is(NamedColor(BasicColor.red).code(TerminalColorDepth.basic, false), "31");
+    test.is(NamedColor(BasicColor.white).code(TerminalColorDepth.true_color, true), "47");
+    test.is(NamedColor(BasicColor.cyan).color() == BasicColor.cyan, true);
+    test.is(IndexedColor(196).code(TerminalColorDepth.indexed, false), "38;5;196");
+    test.is(IndexedColor(196).code(TerminalColorDepth.basic, true), "41");
+    test.is(IndexedColor(196).index(), 196);
+    let red = RgbColor(red: 255.byte(), green: 0.byte(), blue: 0.byte());
+    test.is(red.code(TerminalColorDepth.true_color, false), "38;2;255;0;0");
+    test.is(red.code(TerminalColorDepth.indexed, true), "48;5;196");
+    test.is(red.code(TerminalColorDepth.basic, false), "31");
+    test.is(red::Channels::red.int(), 255);
+    test.throws(InvalidTerminalStyle) {
+        IndexedColor(256);
+    };
+}
+
+test "a style joins attributes and colors; styled text resets after itself" {
+    let style = TextStyle(foreground: NamedColor(BasicColor.red), background: DefaultColor(), attributes: [TextAttribute.bold, TextAttribute.underline]);
+    test.is(style.code(TerminalColorDepth.basic), "1;4;31;49");
+    test.is(style.attributes().size(), 2);
+    let text = StyledText(origin: "hi", style: style);
+    test.is(text.rendered(TerminalColorDepth.disabled), "hi");
+    let esc = Utf8Decoded([27.byte()]).string();
+    test.is(text.rendered(TerminalColorDepth.basic), esc + "[1;4;31;49mhi" + esc + "[0m");
+    test.is(text.text(), "hi");
+    test.throws(InvalidTerminalStyle) {
+        TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: [TextAttribute.bold, TextAttribute.bold]);
+    };
+}

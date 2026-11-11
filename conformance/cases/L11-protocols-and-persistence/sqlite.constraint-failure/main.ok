@@ -18,9 +18,9 @@ async main() is int {
     defer await connection.settled();
     defer connection.close();
     await connection.execution(Statement("CREATE TABLE users(email TEXT UNIQUE)"));
-    await connection.execution(Statement("INSERT INTO users VALUES(?)", [DbText("a@example.test")]));
+    await connection.execution(Statement(text: "INSERT INTO users VALUES(?)", values: [DbText("a@example.test")]));
     let outcome = try {
-        await connection.execution(Statement("INSERT INTO users VALUES(?)", [DbText("a@example.test")]));
+        await connection.execution(Statement(text: "INSERT INTO users VALUES(?)", values: [DbText("a@example.test")]));
         "inserted twice";
     } catch e is DbFailure {
         "constraint rejected";

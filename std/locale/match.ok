@@ -80,7 +80,7 @@ object LanguagePrefixes {
     }
 }
 
-object BasicRangeSubtag {
+hidden object BasicRangeSubtag {
     has origin is string;
 
     BasicRangeSubtag(origin is string) {
@@ -110,7 +110,7 @@ enum InvalidLanguageRange is Error = (located(offset is int, reason is string));
 // Snapshot once, then observe pure values. Filtering orders preferences before
 // available positions; duplicate complete tags keep their first occurrence.
 // Limits deliberately bound the interpreted range/candidate cross product.
-object LocaleSelectionInputs {
+hidden object LocaleSelectionInputs {
     has requested is @BasicLanguageRange;
     has available is @Locale;
 
@@ -155,7 +155,7 @@ object LocaleSelectionInputs {
 // Ranges already have exact lowercase spellings. Stable sorting keeps the
 // earliest preference for repeated keys; candidate prefixes include only whole
 // subtags, so en does not accidentally match eng.
-object LocaleRangeIndex {
+hidden object LocaleRangeIndex {
     has names is @string;
     has priorities is @int;
 
@@ -238,10 +238,38 @@ object LocaleRangeIndex {
 }
 
 object FilteredLocales does Sequencing<Locale> {
-    has origin is @Locale;
+    has inputs is LocaleSelectionInputs;
 
     FilteredLocales(requested is Sequencing<BasicLanguageRange>, available is Sequencing<Locale>) {
-        let inputs = LocaleSelectionInputs(requested, available);
+        inputs = LocaleSelectionInputs(requested: requested, available: available);
+    }
+
+    size() is int {
+        self.selected().size();
+    }
+
+    item(index is int) is Locale {
+        self.selected().item(index);
+    }
+
+    first() is Locale {
+        self.selected().first();
+    }
+
+    last() is Locale {
+        self.selected().last();
+    }
+
+    cursor() is Cursor<Locale> {
+        self.selected().cursor();
+    }
+
+    hidden selected() is @Locale {
+        once let chosen is @Locale = self.chosen();
+        chosen;
+    }
+
+    hidden chosen() is @Locale {
         let choices = inputs.available();
         let ranking = LocaleRangeIndex(inputs.requested());
         let names is @string = choices.map() -> choice {
@@ -261,7 +289,7 @@ object FilteredLocales does Sequencing<Locale> {
         };
         let ranked is @LocalePreference = unique.map() -> index {
             let position = lexical.item(index);
-            LocalePreference(choices[position], ranking.rank(choices[position]), position);
+            LocalePreference(locale: choices[position], priority: ranking.rank(choices[position]), position: position);
         };
         let accepted is @LocalePreference = ranked.filter() -> candidate {
             candidate.priority() >= 0;
@@ -275,27 +303,7 @@ object FilteredLocales does Sequencing<Locale> {
         let selected is @Locale = (0..sorted.size()).map() -> index {
             sorted.item(index).locale();
         };
-        origin = selected;
-    }
-
-    size() is int {
-        origin.size();
-    }
-
-    item(index is int) is Locale {
-        origin.item(index);
-    }
-
-    first() is Locale {
-        origin.first();
-    }
-
-    last() is Locale {
-        origin.last();
-    }
-
-    cursor() is Cursor<Locale> {
-        origin.cursor();
+        selected;
     }
 }
 
@@ -336,7 +344,7 @@ object LookedUpLocale {
         available is Sequencing<Locale>,
         fallback is Locale
     ) {
-        let captured = LocaleSelectionInputs(requested, available);
+        let captured = LocaleSelectionInputs(requested: requested, available: available);
         let choices = captured.available();
         inputs = captured;
         let fallback_position = (0..choices.size()).reduce(-1) -> found, index {
@@ -358,7 +366,7 @@ object LookedUpLocale {
         lookup = LocaleAvailableIndex(choices);
     }
 
-    value() is Locale {
+    locale() is Locale {
         let choices = inputs.available();
         for inputs.requested() -> range {
             if range.string() != "*" {
@@ -385,7 +393,7 @@ object LookedUpLocale {
 // Complete Locale spellings contain only ASCII letters/digits/hyphens.
 // The lexical interval [prefix, prefix+".") contains its exact key and every
 // whole-subtag descendant ("-" precedes "."), excluding e.g. eng for en.
-object LocaleAvailableIndex {
+hidden object LocaleAvailableIndex {
     has names, original is @string;
     has positions is @LocalePositionRange;
 
@@ -410,7 +418,7 @@ object LocaleAvailableIndex {
                 slot.item();
             };
             names = keys;
-            positions = [LocalePositionRange(indices, 0, indices.size())];
+            positions = [LocalePositionRange(positions: indices, start: 0, stop: indices.size())];
         }
     }
 
@@ -436,7 +444,7 @@ object LocaleAvailableIndex {
 
 // Immutable range-minimum tree returns the first original candidate in a
 // lexical prefix interval without scanning all of its descendants.
-object LocalePositionRange {
+hidden object LocalePositionRange {
     has beginning, ending, best is int;
     has children is @LocalePositionRange;
 
@@ -456,8 +464,8 @@ object LocalePositionRange {
         }
         else {
             let middle = start + ((stop - start) / 2).int();
-            let left = LocalePositionRange(positions, start, middle);
-            let right = LocalePositionRange(positions, middle, stop);
+            let left = LocalePositionRange(positions: positions, start: start, stop: middle);
+            let right = LocalePositionRange(positions: positions, start: middle, stop: stop);
             children = [left, right];
             best = if left.minimum() < right.minimum() {
                 left.minimum();
@@ -498,9 +506,9 @@ object LocalePositionRange {
 enum InvalidLocaleSelection is Error = (because(reason is string));
 
 test "basic filtering respects hyphen boundaries and case" {
-    test.ok(BasicLanguageRange("EN").matches(Locale("en", "US")));
-    test.ok(!BasicLanguageRange("en-US").matches(Locale("en", "GB")));
-    test.is(LanguagePrefixes(Locale("en", "US")).values().item(0).string(), "en-us");
+    test.ok(BasicLanguageRange("EN").matches(Locale(language: "en", region: "US")));
+    test.ok(!BasicLanguageRange("en-US").matches(Locale(language: "en", region: "GB")));
+    test.is(LanguagePrefixes(Locale(language: "en", region: "US")).values().item(0).string(), "en-us");
 }
 
 test "basic range grammar rejects extended wildcard and POSIX syntax" {

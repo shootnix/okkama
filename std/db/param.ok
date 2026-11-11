@@ -4,6 +4,7 @@ import "db/value" take DbValue, DbValueKind, DbValueWriting, DbNull, DbBoolean, 
     DbFloating, DbDecimal, DbText, DbBytes;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
+import "db/value" take ObservedDbValue;
 
 // A bound data value, never SQL text. Maybe.none explicitly binds SQL NULL.
 object Param does DbValue {
@@ -125,4 +126,19 @@ object Param does DbValue {
     print(output is DbValueWriting) is void {
         origin.print(output);
     }
+}
+
+test "a parameter binds every portable value and NULL" {
+    test.is(Param().kind() == DbValueKind.null_value, true);
+    test.is(ObservedDbValue(Param(7)).integer().string(), "7");
+    test.is(ObservedDbValue(Param(BigInt("9223372036854775808"))).integer().string(), "9223372036854775808");
+    test.is(ObservedDbValue(Param(Decimal("1.25"))).decimal().string(), "1.25");
+    test.is(ObservedDbValue(Param(1.5)).floating(), 1.5);
+    test.is(ObservedDbValue(Param(true)).boolean(), true);
+    test.is(ObservedDbValue(Param("it's")).text(), "it's");
+    test.is(ObservedDbValue(Param([0.byte(), 255.byte()])).bytes(), [0.byte(), 255.byte()]);
+    test.is(Param(Maybe<int>.some(3)).kind() == DbValueKind.integer, true);
+    test.is(Param(Maybe<int>.none).kind() == DbValueKind.null_value, true);
+    test.is(Param(Maybe<string>.none).kind() == DbValueKind.null_value, true);
+    test.is(Param(Maybe<@byte>.some([1.byte()])).kind() == DbValueKind.bytes, true);
 }

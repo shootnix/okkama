@@ -1,0 +1,65 @@
+module examples/i18n/messages v1.0.0;
+
+import "i18n/catalog" take MessageKey, MessageCatalog, SingularMessage, PluralMessage, PluralForm, Translating;
+import "i18n/plural" take PluralNumber, PluralCategory;
+import "i18n/gettext" take ParsedPo, PoString;
+import "locale/tag" take Locale;
+import "io/stdout" take Stdout;
+
+// A program asks a catalog for a message by key. The same English text can
+// mean different things, so a key may carry a context ("menu" Open versus
+// "door" Open). A plural message has one form per CLDR category: Russian
+// needs one, few, many and other; English only one and other. Translators
+// work in gettext PO files, which parse into entries and print back.
+
+object Inbox {
+    has messages is Translating;
+
+    Inbox(messages is Translating) {
+        self.messages = messages;
+    }
+
+    line(count is string) is string {
+        let unread = MessageKey(context: "", identity: "unread");
+        count + " " + messages.plural(unread, PluralNumber(count));
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let open_menu = MessageKey(context: "menu", identity: "Open");
+    let open_door = MessageKey(context: "door", identity: "Open");
+    let unread = MessageKey(context: "", identity: "unread");
+
+    let russian = MessageCatalog(locale: Locale("ru"), entries: [
+        SingularMessage(key: open_menu, text: "Открыть"),
+        SingularMessage(key: open_door, text: "Отпереть"),
+        PluralMessage(key: unread, forms: [
+            PluralForm(category: PluralCategory.one, text: "непрочитанное письмо"),
+            PluralForm(category: PluralCategory.few, text: "непрочитанных письма"),
+            PluralForm(category: PluralCategory.many, text: "непрочитанных писем"),
+            PluralForm(category: PluralCategory.other, text: "непрочитанного письма"),
+        ]),
+    ]);
+    let english = MessageCatalog(locale: Locale("en"), entries: [
+        PluralMessage(key: unread, forms: [
+            PluralForm(category: PluralCategory.one, text: "unread message"),
+            PluralForm(category: PluralCategory.other, text: "unread messages"),
+        ]),
+    ]);
+
+    out.writeln(russian.text(open_menu) + " / " + russian.text(open_door));
+    out.writeln("has \"Save\": " + russian.membership(MessageKey(context: "menu", identity: "Save")).string());
+    for ["1", "3", "5", "21", "1.5"] -> count {
+        out.writeln(Inbox(english).line(count) + " | " + Inbox(russian).line(count));
+    }
+
+    let po = "# Menu items\nmsgctxt \"menu\"\nmsgid \"Open\"\nmsgstr \"Открыть\"\n\n"
+        + "#: src/inbox.ok:12\nmsgid \"unread\"\nmsgid_plural \"unread\"\nmsgstr[0] \"непрочитанное письмо\"\nmsgstr[1] \"непрочитанных письма\"\nmsgstr[2] \"непрочитанных писем\"\n";
+    let document = ParsedPo(po).document();
+    for document.entries() -> entry {
+        out.writeln("po: " + entry::Entry::identity + " [" + entry::Entry::context + "] -> " + entry::Entry::translations.join(" / "));
+    }
+    out.write(PoString(document).string());
+    0;
+}

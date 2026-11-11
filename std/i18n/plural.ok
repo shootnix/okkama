@@ -130,14 +130,14 @@ object PluralNumber does PluralOperands {
     }
 }
 
-object CanonicalPluralNumber {
+hidden object CanonicalPluralNumber {
     has origin is Decimal;
 
     CanonicalPluralNumber(origin is Decimal) {
         self.origin = origin;
     }
 
-    value() is PluralNumber {
+    number() is PluralNumber {
         let coefficient = origin.coefficient().string();
         let negative = coefficient.slice(0, 1) == "-";
         let digits = if negative {
@@ -187,7 +187,7 @@ object PluralCategoryOf {
         self.kind = kind;
     }
 
-    value() is PluralCategory {
+    category() is PluralCategory {
         let index = CldrPlurals().category(origin, locale.string(), kind == PluralKind.ordinal);
         match index {
             case 0 {
@@ -216,11 +216,11 @@ enum InvalidPluralNumber is Error = (because(reason is string));
 
 test "visible decimal precision affects English cardinal category" {
     test.is(
-        PluralCategoryOf(PluralNumber("1"), Locale("en"), PluralKind.cardinal).value(),
+        PluralCategoryOf(origin: PluralNumber("1"), locale: Locale("en"), kind: PluralKind.cardinal).category(),
         PluralCategory.one
     );
     test.is(
-        PluralCategoryOf(PluralNumber("1.0"), Locale("en"), PluralKind.cardinal).value(),
+        PluralCategoryOf(origin: PluralNumber("1.0"), locale: Locale("en"), kind: PluralKind.cardinal).category(),
         PluralCategory.other
     );
 }

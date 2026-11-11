@@ -541,7 +541,7 @@ Bare primitive calls take precedence over same-named locals; native declarations
 cannot reuse these four names. Member methods retain ordinary action dispatch.
 The two-argument `rat(numerator, denominator)` constructor is unchanged.
 
-Run [primitive-casts.ok](../examples/primitive-casts.ok) for a complete example.
+Run primitive-casts.ok (okkama-docs `examples/primitive-casts.ok`) for a complete example.
 The [specification](okkama-spec-11072026.md#661-primitive-cast-calls-and-array-casts)
 contains the normative conversion table.
 
@@ -1841,7 +1841,7 @@ promise. Other full references retain their capabilities.
 
 Object views and `#projected` have been removed. Roles keep their
 separate contracts. OIR Profile 0 remains int-only and explicitly refuses
-objects and caps. See the [working example](../examples/object-caps.ok) and
+objects and caps. See the working example (okkama-docs `examples/object-caps.ok`) and
 [full guide](object-caps-0.0.1-ru.md).
 
 ## Chapter 17. Constructors
@@ -2130,7 +2130,7 @@ Async actions support `return await task;` and await deferred cleanup before
 settling their Future. Cancellation while awaiting a return expression also
 unwinds cleanup. Cancellation requested during deferred cleanup is delivered
 after that cleanup completes, before any result escapes; the Future stays
-pending meanwhile. See [runnable example](../examples/return-defer.ok) and the
+pending meanwhile. See runnable example (okkama-docs `examples/return-defer.ok`) and the
 implementation checklist.
 
 ### 18.2 Hidden actions
@@ -2285,7 +2285,7 @@ source makes no writes. Failure stops subsequent elements and chain sources;
 completed writes are not rolled back. Use parentheses for an awaited array:
 `out <- (await source.words())...;`. Postfix `...` already binds above `<-`.
 The same expansion rules hold across `await`. See the
-[array spread guide](array-spread.md) and [runnable example](../examples/array-spread.ok).
+[array spread guide](array-spread.md) and runnable example (okkama-docs `examples/array-spread.ok`).
 
 ### 18.5 Anonymous actions and action-value types
 
@@ -3293,9 +3293,9 @@ payloads, so every `match` over it is exhaustive. A payload-free enum without
 `okkama lint` reports that as `non-exhaustive-match`. Prefer a payload enum
 whenever the cases model states you must handle.
 
-Runnable programs: [choices.ok](../examples/choices.ok),
-[variants.ok](../examples/variants.ok) and
-[examples/showcase/](../examples/showcase/).
+Runnable programs: choices.ok (okkama-docs `examples/choices.ok`),
+variants.ok (okkama-docs `examples/variants.ok`) and
+examples/showcase/ (okkama-docs `examples/showcase/`).
 
 ## Chapter 25. Generic Type Parameters
 
@@ -3839,6 +3839,56 @@ async:
 TLS connections show the agreed `details()::Session::protocol`.
 `examples/net/` has an address tour and a loopback echo.
 
+`logging` sends records through writers. `NamedLogging(name: LogName(["shop"]),
+destination:, clock:, fields:)` logs with `log(LogLevel.info, "started")`,
+adds fields and a cause, and makes children with `child("db")`. A record
+shows `record::Entry::level` and `::message`. Writers compose:
+- `AllowedLogs(origin:, allowing: LevelThresholds(fallback:, overrides:))`
+  filters by level per name;
+- `RedactedLogs(origin:, names: ["card"], replacement:)` hides fields;
+- `TextStreamLogs`/`JsonStreamLogs` write lines, and `BroadcastLogs`,
+  `FallbackLogs`, `CollectedLogs` fan out, fall back and keep records;
+- `QueuedLogs`, `LogFile`, `RotatingLogFile` and `SyslogLogs` queue, append,
+  rotate and send RFC 5424 datagrams.
+
+`config` layers settings. `Settings`, `IniSettings`, `JsonSettings`,
+`TomlSettings`, `EnvironmentSettings` and `call.settings()` from `cli` are
+layers. `LayeredSettings([defaults, file, environment, line])` lets a later
+layer win key by key. `ScalarSetting(origin:, key:).text()` reads a value,
+`ScalarSettingOr(…, fallback:)` gives a fallback, and `source()::Source::name`
+tells where the value came from.
+
+`template` fills text. `TextTemplate("Hello, {{user.name}}")` takes bindings.
+`SectionTemplate(source:, partials:)` walks JSON with `{{#list}}`, `{{^list}}`
+and `{{>partial}}`. `HtmlTemplate` escapes each value for where it lands and
+refuses event attributes.
+
+`terminal` decides how many colors a terminal shows, from what it reports,
+`NO_COLOR`, `TERM`, `COLORTERM` and a `ColorPolicy`. It shows the answer as
+`capabilities::Support::colors`. `StyledText(origin:, style:)` renders for
+that depth, and `DisplayWidth(text).columns()` measures text.
+
+`db` talks to SQLite and PostgreSQL through one set of roles. `await
+SqliteMemory().connection()` opens a database. `Statement(text:, values:
+[Param(…)])` always binds its values. `Query(origin: connection, statement:)` answers
+`one()`, `maybe()`, `all(limit)` or a `rows()` stream, and `row.int("id")`,
+`row.maybe("body").text()` read by column name. `prepared()`, `transaction()`
+with `TransactionOptions::Mode`, blobs, scripts and an online backup
+(`SqliteBackup(…).report()`) complete it, and `DbPool` shares connections.
+
+`locale` and `i18n` write values the way a language expects, from CLDR data.
+- `LookedUpLocale(requested:, available:, fallback:).locale()` picks the
+  locale.
+- `LocalizedDecimal`, `LocalizedCurrency`, `LocalizedDate` and
+  `LocalizedList` write numbers, money, dates and lists, and
+  `LocalizedDecimalFromString` reads a number back.
+- `PluralCategoryOf` picks the plural category. `MessageCatalog` answers
+  messages by `MessageKey(context:, identity:)`, with plural forms, and
+  `ParsedPo` reads gettext files.
+
+`examples/logging/`, `config/`, `template/`, `terminal/`, `db/`, `locale/` and
+`i18n/` show each area.
+
 `http/client` sends requests with `HttpClient()`. By default it uses the system's DNS and trusted roots, reaches public endpoints only and speaks HTTP/1.1. Every other part is a named argument: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)` and `cookies: MemoryCookieJar()`. Every REST method has a shortcut: `get(url)`, `head`, `options`, `delete`, and `post(url:, body:)`, `put`, `patch` with a `Content` such as `JsonBody(json)`. Anything else is `client.response(Request(url:, method:, headers:, body:))`. A reply shows its head through the cap `Head` (`page::Head::status`, `::class`, `::headers`) and reads its body with `await page.text()`, `bytes()`, `json()` or `reading()`. `Status` and `Method` are enums: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` and `MethodName` turn them into wire numbers and tokens and back. `examples/http/client/` shows each task as a program.
 
 `strings/parse` reads text as the type asked for: `Number("42").int()`,
@@ -3914,28 +3964,9 @@ claims for `std/`. Select the library root explicitly; do not combine their modu
 
 The stdlib is intentionally narrow while the language stabilizes:
 
-- `template/plain` — pure named string templates with closed
-  ERB/Mojolicious-style lexical tags and typed source/value failures;
-- `template/html` — HTML rendering over the same lexical tags, where a
-  binding's `SafeHtml` type — not its tag — decides whether it is escaped;
-- `encoding/toml` — a practical single-line-document TOML v1.0.0 subset
-  with dotted-path lookup and deterministic `[table]`-sectioned rendering;
-- `sql/value` — exact bindable SQL scalar wrappers, including an explicit
-  `SqlNull`, ahead of SQL statement/query building;
 - `http/headers` — immutable case-insensitive `Headers`, `ExtendedHeaders`/
   `FilteredHeaders` composition, and CRLF-injection-rejecting `Header`
   values;
-- `log/event` — immutable structured `LogEvent` (level, message, fields,
-  instant) and the six standard `LogLevel` severities;
-- `db/result` — non-row execution outcome (`affected()`, an optional
-  `last_id()`) for `INSERT`/`UPDATE`/`DELETE`;
-- `db/row` — name/index access to one query-result row's `SqlValue`s;
-- `sql/dialect` — reviewed SQLite/Postgres/MySQL placeholder, identifier
-  and boolean rendering differences;
-- `sql/statement` — `Insert`/`Update`/`Delete`/`RawStatement`, rendered
-  through any `Dialect`;
-- `sql/query` — `Select`/`RawQuery`, with explicit `EveryRow`/
-  `UnlimitedRows`/`RowWindow` vocabulary;
 - `http/handler` — the `Handler` role plus `HandlerChain`'s
   chain-of-responsibility dispatch, where declining is spelled by throwing
   `HandlerFailure` rather than returning;
@@ -3948,278 +3979,11 @@ The stdlib is intentionally narrow while the language stabilizes:
   byte-by-byte way as `http/client`, in reverse; `ServerPolicy.tls()` is
   stored but not yet wired up, since `crypto/tls` has no server-side
   wrapper at all today, only the client side;
-- `log/formatter` — deterministic `LineFormatter`/`JsonFormatter`
-  rendering of a `LogEvent`;
-- `log/logger` — `OutputLogger`/`FileLogger`/`SilentLogger`/
-  `ContextLogger`/`MemoryLogger` behind one `Logger` role; `MemoryLogger`
-  round-trips events by serializing them into a `runtime/memory` cell, since
-  Okkama has no mutable-cell primitive for arbitrary values, only bytes;
-- `db/transaction` — the `Transaction` role and `InactiveTransaction`; every
-  concrete implementer is a still-ahead database driver, since transaction
-  framing is inherently database-specific — this, the sixth and final
-  Phase 7 module, closes "owned workflows";
-- `db/connection` — the `Connection` role and `ConnectionClosed`/
-  `DbFailure`, the same shape as `db/transaction` for the same reason; this,
-  the third and final Phase 8 module, closes "composition layers" alongside
-  `http/router` and `http/server`;
-- `db/driver` — the DBI-style `Driver` role (`connect() is Connection`,
-  `dialect() is Dialect`) and `DriverFailure`, the same role-and-errors-only
-  shape as `db/connection`/`db/transaction` for the same reason; opens Phase 9
-  ("application-level batteries") ahead of the concrete `db/sqlite`/
-  `db/postgres`/`db/mysql` drivers;
-- `db/database` — `Database`, a thin application-facing facade constructed
-  with a `Driver`; `connect()` delegates and translates any `DriverFailure`
-  into one stable `DatabaseUnavailable`, so application code never depends
-  on a specific driver's own failure type;
-- `db/sqlite`/`db/postgres`/`db/mysql` — explicitly **deferred**: a real
-  SQLite file-format engine or Postgres/MySQL wire-protocol driver is a
-  multi-week undertaking on its own, and there is no structured-AST
-  shortcut around parsing SQL text — `Statement.sql()`/`Query.sql()` always
-  render to plain SQL strings. See `db-sqlite-22072026.md`;
-- `db/migration` — `Migrations`, a real (not role-only) implementation
-  composed against any `Connection`: rejects duplicate migration versions
-  at construction, applies/rolls back each migration in its own
-  transaction (most-recently-applied first on rollback); its own applied-
-  migration history lives in an owned `runtime/memory` cell rather than
-  being read back from the database, since this stdlib has no runtime
-  role-to-concrete downcast from a queried `Row` and `sql/query`/
-  `sql/statement` have no `WHERE`-clause support at all yet — a known,
-  documented limitation, not durable across a process restart; building it
-  also surfaced a real interpreter bug (`.map()` used as a bare action-body
-  tail expression infers its element type from the first result's *concrete*
-  type rather than the declared role return type, wrongly rejecting later,
-  differently-typed-but-role-compatible elements), root-caused but not
-  fixed, worked around with an explicit `let` — see
-  `db-migration-22072026.md`;
-- `test/fake_clock` — a `Clock` implementation tests can explicitly advance,
-  rewind or set, so `sleep` never blocks;
-- `test/benchmark` — injectable-clock repeatable duration measurement over a
-  `BenchmarkCase`, so statistics are asserted exactly against `FakeClock`
-  instead of tolerated against real timing noise;
-- `test/suite` — `Suite`, constructed with an explicit `@TestCase` list, an
-  explicit `@Fixture` list and an injected `Clock`; pass/fail is purely
-  exception-based (any thrown `Error` fails a case), since the language's
-  own contextual `test` capability that `test/more.Assertions` delegates to
-  only exists inside a real `test { }` block, never in ordinary runtime
-  code a `Suite` executes; every `Fixture.after()` runs even when a case
-  throws, without a `finally` clause — this language's grammar has none —
-  by structuring the per-case `try`/`catch` to fully absorb any `Error`
-  into a `bool` first, so the `after()` loop that follows it is always
-  reached;
-- `test/more` — stateless reusable assertions over the contextual test
-  capability, plus the `AssertionFailure` Error value;
 - `runtime/*` — declaration-only native substrate modules (Chapter 27):
   `runtime/time`, `runtime/fs`, `runtime/process`, `runtime/net`,
   `runtime/poll`, `runtime/environment`, `runtime/system`, `runtime/debug`,
   `runtime/regex`, `runtime/stdio`, `runtime/memory`, `runtime/format`, `runtime/crypto`,
   `runtime/tls`, `runtime/utf8`.
-
-Code written against the `Clock` role can be tested without a real clock
-through `test/fake_clock`:
-
-```okkama
-import "test/fake_clock" take FakeClock;
-import "time/clock" take Clock;
-import "time/duration" take Duration;
-import "time/instant" take ClockIdentity, Instant;
-
-main() is int {
-    let clock is Clock = FakeClock(Instant(0, ClockIdentity.monotonic));
-
-    clock.sleep(duration Seconds(1));      // advances instantly, never blocks
-    clock.advance(Duration(-500)); // rewinding is allowed; it is a test tool
-    clock.set(Instant(1000000000, ClockIdentity.monotonic));
-
-    clock.now();
-    return 0;
-}
-```
-
-`FakeClock(start)` fixes its simulated `ClockIdentity` for its lifetime.
-`sleep` is `advance` by another name, so it never blocks a test, but it still
-rejects a negative duration as `InvalidSleepDuration` like a real clock
-would; `advance` itself accepts a signed `Duration` since it is a test-only
-control, not part of `Clock`. `set` throws the existing `IncompatibleClocks`
-if given an instant with a different identity. Since Okkama fields cannot be
-reassigned outside a constructor, the current instant is not stored as one:
-it lives in an owned `runtime/memory` byte cell, the same way `io/buffer`
-owns its byte content, encoded through `encoding/binary`'s big-endian codec.
-
-`test/benchmark` times a `BenchmarkCase` against an injected `Clock` and
-summarizes the samples:
-
-```okkama
-import "test/benchmark" take BenchmarkCase, Benchmark, BenchmarkResult;
-import "time/clock" take MonotonicClock;
-import "strings/parse" take Number;
-
-object ParseWorkload does BenchmarkCase {
-    ParseWorkload();
-    run() is void {
-        Number("12345").int();
-    }
-}
-
-main() is int {
-    let result is BenchmarkResult =
-        Benchmark(ParseWorkload(), MonotonicClock(), 1000).measure();
-
-    result.iterations();
-    result.average();
-    result.minimum();
-    result.maximum();
-    result.total();
-    return 0;
-}
-```
-
-The clock is a constructor argument rather than fixed to `MonotonicClock` so
-`Benchmark` can be driven by `test/fake_clock` in tests and asserted against
-exact statistics instead of tolerating real timing noise. `BenchmarkResult`
-is independently constructible from an already-computed `@Duration`, so its
-statistics — including `average()`, which avoids the float-precision risk of
-plain integer division the same way `encoding/hex`/`encoding/base64` do —
-are unit-tested without any clock at all. `InvalidBenchmark` covers a
-non-positive iteration count and a run whose clock reports an earlier
-instant afterward than before, which is a real, reachable case (not just
-defensive code) when a `test/fake_clock`-backed case rewinds its own clock.
-
-Plain templates are reusable string objects, not embedded Okkama programs:
-
-```okkama
-import "template/plain" take Template, TemplateBinding, TemplateValues;
-
-main() is int {
-    let values = TemplateValues(
-        TemplateBinding("name", "Ada"),
-        TemplateBinding("language", "Okkama"),
-    );
-    Template("Hello, <%= name %> from <%= language %>!").string(values);
-    return 0;
-}
-```
-
-`<%= name %>` uses the template escaping policy and `<%== name %>` is the raw
-channel. For `template/plain` that policy is identity, so both preserve exact
-strings; `template/html` (below) keeps both tags but decides escaping by the
-bound value's type instead, so they stay lexically identical there too.
-`<%# ... %>` is a non-nesting comment ending at the first `%>`, and `<%%`
-emits literal `<%`. Ordinary braces remain literal, making JSON and source-code
-templates usable without brace escaping. Other `<% ... %>` forms are reserved
-and invalid in v1—templates never evaluate Okkama or host code.
-
-Placeholder names are exact ASCII identifiers with optional ASCII space/tab around them.
-The whole source is validated before lookup; invalid syntax reports a
-zero-based Unicode code-point offset. Missing and duplicate bindings are
-separate typed errors, surplus bindings are allowed, and inserted strings are
-never interpreted recursively. All constructors only retain state; parsing
-and production happen in the noun query `string(values)`.
-
-`template/html` renders the same tag grammar into HTML, escaping by default:
-
-```okkama
-import "template/html" take
-    HtmlTemplate, HtmlBinding, HtmlValues, SafeHtml, EscapedHtml;
-
-main() is int {
-    let comment is string = "<script>alert('xss')</script>";
-    let values is HtmlValues = HtmlValues([
-        HtmlBinding("comment", safe EscapedHtml(comment)),
-    ]);
-    HtmlTemplate("<div><%= comment %></div>").render(values);
-    // "<div>&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;</div>"
-    return 0;
-}
-```
-
-`HtmlBinding` takes a `SafeHtml` value, not a plain `string` — there is no
-code path for binding unescaped text at all. `safe EscapedHtml(text)` escapes
-`&`, `<`, `>`, `"` and `'` (ampersand first, so text that already contains
-`&amp;` is not doubled into `&amp;amp;`); `SafeHtml(text)` is the explicit,
-visible assertion that some text — typically the already-rendered output of
-a nested `HtmlTemplate.render()` — is safe to insert as-is:
-
-```okkama
-let partial is string = HtmlTemplate("<em><%= word %></em>")
-    .render(HtmlValues([HtmlBinding("word", safe EscapedHtml("safe & sound"))]));
-HtmlTemplate("<section><%== body %></section>")
-    .render(HtmlValues([HtmlBinding("body", SafeHtml(partial))]));
-// "<section><em>safe &amp; sound</em></section>"
-```
-
-`HtmlTemplate.render` runs the source through the exact same `Template`
-lexer `template/plain` uses; `InvalidTemplate` becomes `InvalidHtmlTemplate`,
-while `MissingTemplateValue`/`DuplicateTemplateValue` are reused unchanged,
-since a missing or duplicate binding name is not an HTML-specific concept.
-
-`encoding/toml` covers a practical, single-line-document subset of TOML
-v1.0.0 — the shape real configuration files actually use, not the complete
-grammar:
-
-```okkama
-import "encoding/toml" take TomlDocument, TomlSource, TomlValue;
-
-main() is int {
-    let document is TomlDocument = document TomlSource(
-        "name = \"app\"\n"
-            + "\n"
-            + "[server]\n"
-            + "port = 8080\n"
-            + "tags = [\"a\", \"b\"]\n",
-    );
-    document.value("name");            // TomlString
-    document.value("server.port");     // TomlInteger, by dotted path
-    document.value("server.tags");     // TomlArray
-    document.string();                 // re-renders with [server] headers
-    return 0;
-}
-```
-
-Multi-line strings/arrays, `[[array of tables]]`, and dotted keys inside a
-`[table]` block exploding into further nested tables (`[a]\nb.c = 1` stays
-one entry literally named `"b.c"`; only an explicit `[a.b]` header nests)
-are all out of scope for this version — each is a deliberate reduction, not
-an oversight, recorded with its reasoning in `encoding-toml-21072026.md`.
-`TomlDateTime` wraps `time/date.Date` — TOML's Local Date form only; the
-other three date/time forms don't map cleanly onto an existing Okkama value
-yet. Dotted-path lookup could not be built as a tree of nested `TomlTable`
-values descended one segment at a time: once an intermediate value comes
-back as the role-typed `TomlValue`, nothing lets it be treated as a
-`TomlTable` again to keep descending, since Okkama has no runtime
-role-to-concrete downcast. The parser instead emits a flat list of
-fully-expanded `(header, key, value)` records — used directly for `.value()`
-lookup by path equality — while `.string()` groups that same list by header
-to render `[table]` sections, so descending through an opaque `TomlValue`
-is never needed.
-
-`sql/value` is the same kind of pure vocabulary module ahead of
-`sql/statement`/`sql/query`: eight thin `SqlValue` wrappers (`SqlInt`,
-`SqlFloat`, `SqlString`, `SqlBytes`, `SqlBool`, `SqlDate`, `SqlDateTime`,
-`SqlNull`), each reporting its own fixed `SqlType`, plus `SqlValues` to
-hold a mixed, role-typed bound-parameter list —
-
-```okkama
-import "sql/value" take SqlType, SqlValue, SqlInt, SqlString, SqlNull, SqlValues;
-
-main() is int {
-    let bound is @SqlValue = [SqlInt(42), SqlString("Ada"), SqlNull()];
-    let params = SqlValues(bound);
-
-    let final_value = params.values()[params.values().size() - 1];
-    if final_value.sql_type() == SqlType.null_value {
-        "last bound parameter is an explicit SQL NULL";
-    }
-    else {
-        "unexpected";
-    }
-    return 0;
-}
-```
-
-`SqlNull` is a real, explicit database value a caller constructs and
-matches on deliberately — never Okkama's own (nonexistent) implicit null.
-`SqlType`'s eighth member is named `null_value` rather than the draft's
-`null`, since `null` is a reserved keyword in this null-free language.
 
 `http/headers` is an immutable, case-insensitive header collection that
 never loses a header's original spelling, plus a small add/remove
@@ -4257,220 +4021,6 @@ classic HTTP header/response-splitting injection. `ExtendedHeaders` adds
 one header to the end; `FilteredHeaders` removes every header matching a
 given name — both return a fresh `Headers` and never modify their source.
 
-`log/event` is the simplest module in this whole stdlib: an immutable
-structured log event with no validation beyond one non-empty field name:
-
-```okkama
-import "log/event" take LogLevel, LogField, LogEvent;
-import "time/instant" take Instant, ClockIdentity;
-
-main() is int {
-    let fields is @LogField = [LogField("user", "ada"), LogField("attempt", "3")];
-    let event = LogEvent(
-        LogLevel.warning,
-        "retrying request",
-        fields,
-        Instant(0, ClockIdentity.system),
-    );
-
-    event.level();    // LogLevel.warning
-    event.message();  // "retrying request"
-    return 0;
-}
-```
-
-`LogEvent`'s constructor stores its four values verbatim — an empty
-`message` or an empty `fields` array are both legitimate events, and every
-`LogLevel` (`trace`/`debug`/`info`/`warning`/`error`/`fatal`) is already an
-exhaustive, closed set, so there is nothing left to validate at this
-layer. Only `LogField` rejects anything, and only an empty `name` (with
-`InvalidLogField`) — a nameless field would be useless for structured
-lookup by the `log/formatter` this module is designed to feed.
-
-`db/result` is the outcome of a non-row-producing statement
-(`INSERT`/`UPDATE`/`DELETE`), and uses arity to encode whether a last
-insert id even exists rather than a nullable field:
-
-```okkama
-import "db/result" take DbResult, MissingLastId;
-
-main() is int {
-    let inserted = DbResult(1, 42); // affected rows, last insert id
-    let updated = DbResult(3);      // affected rows only — no last id here
-
-    inserted.last_id();      // 42
-    updated.has_last_id();   // false
-
-    try {
-        updated.last_id();
-    }
-    catch error is MissingLastId {
-        error.text(); // "this statement did not produce a last insert id"
-    }
-    return 0;
-}
-```
-
-The two-argument constructor is for statements that produce a real last
-id; the one-argument constructor is for the ones that never do (`UPDATE`,
-`DELETE`). `has_last_id()` reports which shape built the value, and
-`last_id()` throws `MissingLastId` rather than silently returning `0` when
-called on a result that never had one — the same explicit-over-implicit
-choice already used for `SqlNull` and `fs/meta.MissingPath`.
-
-`db/row` closes out this phase of the stdlib: name/index access to one
-query-result row's `SqlValue`s —
-
-```okkama
-import "db/row" take Row, MissingColumn;
-import "sql/value" take SqlValue, SqlInt, SqlString, SqlType;
-
-main() is int {
-    let row = Row(["id", "name"], [SqlInt(1), SqlString("Ada")]);
-
-    row.value("id").sql_type();  // SqlType.integer
-    row.at(1).sql_type();        // SqlType.string
-
-    try {
-        row.value("missing");
-    }
-    catch error is MissingColumn {
-        error.text(); // "missing column: missing"
-    }
-    return 0;
-}
-```
-
-`Row.value()`/`at()` return the `SqlValue` role, not a concrete
-`SqlInt`/`SqlString` — Okkama has no runtime downcast from a role back to
-a concrete type, so `Row` can inspect no more than `sql_type()`. This is
-exactly why the module also exports `InvalidColumnType`: not something
-`Row` ever throws itself, but ready-made vocabulary for a domain adapter
-built on top (the kind of `UserRow(row).user()` wrapper this module
-deliberately leaves to callers) to throw once *it* checks a looked-up
-value's `sql_type()` against what it expected — the same "exported, not
-internally thrown" shape `crypto/digest.DigestMismatch` already uses.
-
-`sql/dialect` covers the three points where SQL engines actually differ
-at the syntax level:
-
-```okkama
-import "sql/dialect" take Dialect, SqliteDialect, PostgresDialect, MysqlDialect;
-
-main() is int {
-    let sqlite is Dialect = SqliteDialect();
-    let postgres is Dialect = PostgresDialect();
-
-    sqlite.placeholder(1);              // "?"
-    postgres.placeholder(1);            // "$1"
-    sqlite.identifier("user name");     // "\"user name\""
-    postgres.boolean(true);             // "TRUE"
-    return 0;
-}
-```
-
-SQLite and MySQL both use a plain `?` placeholder (position is implicit);
-Postgres numbers them (`$1`, `$2`, ...). SQLite and Postgres double-quote
-identifiers; MySQL backtick-quotes them — both escape an embedded quote
-by doubling it. Postgres has a real boolean type (`TRUE`/`FALSE`); SQLite
-and MySQL don't, and render `1`/`0`. All three throw `UnsupportedSqlFeature`
-for a non-positive placeholder index — the one real, universal SQL rule
-none of them relax.
-
-`sql/statement` renders data-changing statements through any `Dialect`:
-
-```okkama
-import "sql/statement" take Statement, Insert;
-import "sql/value" take SqlValues, SqlString, SqlInt;
-import "sql/dialect" take Dialect, SqliteDialect, PostgresDialect;
-
-main() is int {
-    let insert is Statement = Insert(
-        "users",
-        ["name", "age"],
-        SqlValues([SqlString("Ada"), SqlInt(36)]),
-    );
-
-    insert.sql(SqliteDialect());
-    // INSERT INTO "users" ("name", "age") VALUES (?, ?)
-    insert.sql(PostgresDialect());
-    // INSERT INTO "users" ("name", "age") VALUES ($1, $2)
-    return 0;
-}
-```
-
-`Insert`/`Update` validate that `columns.size()` matches the bound
-`SqlValues`' count *at construction*, not at render time — a caller who
-mismatches gets `InvalidStatement` immediately. `Update`/`Delete` are
-deliberately unconditional (no `WHERE` clause): no predicate/condition
-abstraction exists anywhere in this stdlib yet (`sql/query`'s `Select`
-only ever takes the single `EveryRow` predicate value), so row-level
-filtering for data-changing statements is out of scope until one does.
-`RawStatement` is the escape hatch — it returns its stored SQL verbatim
-regardless of which `Dialect` is passed, confirmed directly.
-
-`sql/query` completes the `sql/*` namespace with row-producing `SELECT`:
-
-```okkama
-import "sql/query" take Query, Select, EveryRow, RowWindow, TableName, ColumnName;
-import "sql/dialect" take Dialect, SqliteDialect;
-
-main() is int {
-    let query is Query = Select(
-        [ColumnName("id"), ColumnName("name")],
-        TableName("users"),
-        EveryRow(),
-        RowWindow(10, 20),
-    );
-
-    query.sql(SqliteDialect());
-    // SELECT "id", "name" FROM "users" LIMIT 10 OFFSET 20
-    return 0;
-}
-```
-
-`EveryRow` is `Select`'s only concrete predicate value in this whole
-stdlib — there's no `WHERE`/condition abstraction defined anywhere yet,
-so it's a plain concrete type, not a role, matching `sql/statement`'s
-`Update`/`Delete` being unconditional for the same reason. `UnlimitedRows`
-and `RowWindow` share a small internal `Rows` role (`clause() is
-string`) so `Select` never has to branch on which one it was given — an
-`UnlimitedRows` renders no `LIMIT`/`OFFSET` suffix at all.
-
-`log/formatter` renders a `LogEvent` two ways — a human line, and a
-complete machine-readable JSON record:
-
-```okkama
-import "log/formatter" take LogFormatter, LineFormatter, JsonFormatter;
-import "log/event" take LogLevel, LogField, LogEvent;
-import "time/instant" take Instant, ClockIdentity;
-
-main() is int {
-    let event = LogEvent(
-        LogLevel.warning,
-        "retrying request",
-        [LogField("attempt", "3")],
-        Instant(0, ClockIdentity.system),
-    );
-
-    LineFormatter().format(event);
-    // [warning] retrying request attempt=3
-
-    JsonFormatter().format(event);
-    // {"level":"warning","message":"retrying request","instant":0,"fields":{"attempt":"3"}}
-    return 0;
-}
-```
-
-`LineFormatter` deliberately omits the instant (a line is for humans; most
-destinations already timestamp on their own) while `JsonFormatter`
-includes everything, since a JSON record's whole point is complete,
-machine-readable data — `fields` always renders as its own nested JSON
-object, empty rather than absent when there are none. Two fields sharing
-a name surface as `encoding/json.DuplicateJsonMember` when `JsonFormatter`
-encodes them — this module adds no duplicate check of its own, reusing
-the JSON encoder's existing one instead.
-
 ### URL and cookie policy in the active v4 stdlib
 
 The current std uses `url/value`, superseding the historical `net/url`
@@ -4484,7 +4034,7 @@ IPvFuture, and `ParsedQuery(text).parameters()` reads a query. There is no
 DNS or transport I/O.
 HostName uses bounded UTS46/IDNA; PublicSuffixList represents pinned ICANN+PRIVATE
 policy. Current URL contract (okkama-docs `docs/std/url-value.md`),
-[executable example](../examples/std-v4/url-resolution.ok).
+executable example (okkama-docs `examples/std-v4/url-resolution.ok`).
 
 Cookie values remain immutable. CookieExpiry() means session, never an epoch
 sentinel. Cookie/Attributes validate grammar, prefixes and Secure/SameSite/
@@ -4521,7 +4071,7 @@ versioned private snapshot, exact deadlines/partition keys and session exclusion
 The file is a distinct protocol boundary, without arbitrary private-field reflection.
 
 Cookie contract (okkama-docs `docs/std/http-cookie.md`),
-[persistence example](../examples/std-v4/http-cookie-persistence.ok).
+persistence example (okkama-docs `examples/std-v4/http-cookie-persistence.ok`).
 Full HTTP transport/client/server remains subsequent roadmap work; these examples
 verify policy/storage and do not perform a network request.
 
@@ -4529,7 +4079,7 @@ HTTP/1 heads can now be read asynchronously with
 `Http1ResponseHeadReading(stream).result()`. The result retains typed head(),
 exact binary remainder() and consumed() count. The session owns the borrowed
 stream; cancellation drains child Future cleanup. See the
-contract (okkama-docs `docs/std/http1-framing.md`) and [example](../examples/std-v4/http1-reading.ok).
+contract (okkama-docs `docs/std/http1-framing.md`) and example (okkama-docs `examples/std-v4/http1-reading.ok`).
 
 
 `Http1BodyReading(source, owner, plan, prefix, headers)` consumes the typed framing
@@ -4537,7 +4087,7 @@ plan and adopts an explicit Closing owner. Fixed/chunked/close-delimited payload
 is bounded; trailers require clean EOF. `Http1IncomingBody(reader)` supplies the
 one-shot BodyOpening role. The owner closes on EOF or abort; pool reuse requires
 a separate lease. See contract (okkama-docs `docs/std/http1-body-reading.md`) and
-[stream example](../examples/std-v4/http1-body.ok).
+stream example (okkama-docs `examples/std-v4/http1-body.ok`).
 
 
 `Http1RequestWriting(output, request).result()` and
@@ -4546,7 +4096,7 @@ messages. Known body contradictions fail before any head byte. Constructors
 leave body roles unobserved; started futures own opened-reader/sink cleanup.
 These operate on supplied streams; network connection and pooling are separate.
 Contract (okkama-docs `docs/std/http1-message-writing.md`),
-[example](../examples/std-v4/http1-message-writing.ok).
+example (okkama-docs `examples/std-v4/http1-message-writing.ok`).
 
 
 `TcpListening(IpEndpoint(..., 0)).acceptance()` acquires a listener with an actual
@@ -4555,7 +4105,7 @@ a numeric connection without DNS. The Closing owner exposes async input/output;
 closing output drains started writes and shuts down only that direction. Reads
 may be short: accumulate the logical payload rather than expecting packet-sized
 reads. Ownership contract (okkama-docs `docs/std/tcp-stream.md`),
-[loopback example](../examples/std-v4/tcp-stream.ok).
+loopback example (okkama-docs `examples/std-v4/tcp-stream.ok`).
 
 `Resolving` separates name lookup from numeric connection. `FixedResolution`
 snapshots typed HostAddresses/AddressName records; `SystemResolution` uses async
@@ -4570,13 +4120,13 @@ Its one-shot response body holds admission until verified EOF; early close or
 cancellation discards the connection. An old completed reader cannot close a
 later exchange. Empty responses release admission before publication.
 Session contract (okkama-docs `docs/std/http1-session.md`),
-[two TCP exchanges](../examples/std-v4/http1-session.ok).
+two TCP exchanges (okkama-docs `examples/std-v4/http1-session.ok`).
 
 With `Expect: 100-continue`, the session writes headers before opening the body.
 A 100 reply permits upload; an early final reply leaves the source unopened and
 discards reuse. One absolute waiting deadline spans intermediate replies;
 timeout/cancellation drains reading. Contract (okkama-docs `docs/std/http1-continue.md`),
-[TCP handshake](../examples/std-v4/http1-continue.ok).
+TCP handshake (okkama-docs `examples/std-v4/http1-continue.ok`).
 
 Certificate metadata keeps exact wall-clock validity and distinguishes absent CA
 path depth from present zero. Distinguished names keep ordered RDN groups and
@@ -4590,26 +4140,26 @@ DER and exposes grouped subject/issuer names, wall-clock validity and PublicKey
 as complete SPKI bytes. Repeated parsing preserves structural identity; host
 pointers are freed before publication. Unsupported name encodings fail explicitly
 when observed. Parsing establishes no signature, hostname or chain trust.
-Contract (okkama-docs `docs/std/x509-certificate.md`), [example](../examples/std-v4/x509-certificate.ok).
+Contract (okkama-docs `docs/std/x509-certificate.md`), example (okkama-docs `examples/std-v4/x509-certificate.ok`).
 
 CertificateNames projects SAN DNS strings and nominal IP addresses separately,
 without CN fallback or matching. CertificateChain snapshots supplied untrusted
 certificates; TrustedCertificates/PemTrustStore select explicit roots. Empty roots
 mean no anchors and never select defaults. PEM cursor successors share a source
 snapshot. Verification and system-root acquisition remain separate operations.
-Contract (okkama-docs `docs/std/certificate-observers.md`), [example](../examples/std-v4/certificate-observers.ok).
+Contract (okkama-docs `docs/std/certificate-observers.md`), example (okkama-docs `examples/std-v4/certificate-observers.ok`).
 
 CertificateExtensions decodes CA/depth, the nine named key-usage bits and EKU
 purpose OIDs. Unknown extensions retain their identifier, critical flag and exact
 payload; unknown purposes remain OID objects. Metadata observation grants no
 verified permission. Contract (okkama-docs `docs/std/certificate-extensions.md`),
-[example](../examples/std-v4/certificate-extensions.ok).
+example (okkama-docs `examples/std-v4/certificate-extensions.ok`).
 
 SystemTrustStore() creates a request; result() explicitly reads linked OpenSSL CA
 sources and returns an immutable TrustStore. Keep that snapshot for the lifetime
 of a client policy. Each acquisition reads actual sources again and reports typed
 failures; it does not verify a peer. Contract (okkama-docs `docs/std/system-trust-store.md`),
-[example](../examples/std-v4/system-trust-store.ok).
+example (okkama-docs `examples/std-v4/system-trust-store.ok`).
 
 VerifiedCertificateChain snapshots explicit roots and takes a nominal certificate
 identity, Instant and purpose. result() returns the verified leaf; path() returns the
@@ -4618,13 +4168,13 @@ uses IpCertificateIdentity(IpAddress). Time is exact and inclusive; SAN matching
 signatures and path constraints are verified together. Path search is bounded
 (1024 steps); ambiguous issuers past it raise CertificateLimitExceeded. Trust-anchor payload policy
 stays separate from wire-certificate syntax. Contract (okkama-docs `docs/std/certificate-verification.md`),
-[example](../examples/std-v4/certificate-verification.ok).
+example (okkama-docs `examples/std-v4/certificate-verification.ok`).
 
 TlsClientPolicy keeps explicit root, TLS-version and ALPN preference snapshots.
 Defaults enable TLS 1.2/1.3 and advertise nothing. Protocol names preserve opaque
 8-bit values through Latin-1 strings; the policy never acquires roots or performs
 a handshake. Contract (okkama-docs `docs/std/tls-client-policy.md`),
-[example](../examples/std-v4/tls-client-policy.ok).
+example (okkama-docs `examples/std-v4/tls-client-policy.ok`).
 
 TlsClientHandshake consumes supplied managed TCP when its Future starts and
 publishes a TlsConnection only after verifying the actual peer against explicit
@@ -4633,7 +4183,7 @@ AsyncReading/AsyncWriting halves and immutable TLS metadata. Read cancellation
 preserves the owner; cancelled partial output aborts it. Empty input requires
 close_notify. close() aborts immediately; async shutdown() performs orderly TLS
 closure and disposes the descriptor. Contract (okkama-docs `docs/std/tls-client-transport.md`),
-[actual HTTPS example](../examples/std-v4/https-session.ok).
+actual HTTPS example (okkama-docs `examples/std-v4/https-session.ok`).
 
 Http1TlsSession adopts verified TLS only for exact http/1.1 or absent ALPN.
 h2 and other selections fail before HTTP bytes and retain caller ownership.
@@ -5026,7 +4576,7 @@ What it deliberately does not do: an old immutable state stays valid, so
 "authorize twice" is a job for durable state and idempotency, not for the type
 system. Inside the defining module the class can still be named; the runtime
 `confirm` in each transition is the second line of defence. The full program
-is [examples/showcase/state-views.ok](../examples/showcase/state-views.ok); the
+is examples/showcase/state-views.ok (okkama-docs `examples/showcase/state-views.ok`); the
 analysis behind it is in
 [role-oriented typestate](research/role-oriented-typestate.md).
 
@@ -5604,15 +5154,15 @@ HttpLimits, ClientTimeouts and ClientPolicy collect bounded reusable inputs with
 
 ### A direct HTTP client owns response lifetimes
 
-HttpClient sends an absolute HTTP(S) Request through checked numeric endpoints and returns ClientResponse at final headers. HttpDirectRequest derives origin-form and Host without observing the body. Read a nonempty body to verified EOF to enable reuse; closing or dropping it discards transport. Empty responses release admission immediately. An explicit async owner retains idle sessions across caller scopes: borrowed Atomic storage alone cannot do this. Client close cancels queued requests before releasing permits. Independent deadlines cover connection acquisition, exchange through headers, and each body read; zero disables a stage. Contract and executable HTTPS example (okkama-docs `docs/std/http-client.md`), [example](../examples/std-v4/http-client.ok).
+HttpClient sends an absolute HTTP(S) Request through checked numeric endpoints and returns ClientResponse at final headers. HttpDirectRequest derives origin-form and Host without observing the body. Read a nonempty body to verified EOF to enable reuse; closing or dropping it discards transport. Empty responses release admission immediately. An explicit async owner retains idle sessions across caller scopes: borrowed Atomic storage alone cannot do this. Client close cancels queued requests before releasing permits. Independent deadlines cover connection acquisition, exchange through headers, and each body read; zero disables a stage. Contract and executable HTTPS example (okkama-docs `docs/std/http-client.md`), example (okkama-docs `examples/std-v4/http-client.ok`).
 
 ### Redirects are an explicit exchange capability
 
-Wrap HttpClient with Redirecting(client,RedirectPolicy()) to enable bounded follows. 303 changes POST to GET; 307/308 require a replayable preserved body. Each Location resolves against the effective URL; cross-origin credentials are removed and every new route is checked, even on an idle connection. Intermediate bodies are closed and their metadata appears in history; the final body remains owned by the caller. Contract (okkama-docs `docs/std/http-redirect.md`), [real loopback example](../examples/std-v4/http-redirect.ok).
+Wrap HttpClient with Redirecting(client,RedirectPolicy()) to enable bounded follows. 303 changes POST to GET; 307/308 require a replayable preserved body. Each Location resolves against the effective URL; cross-origin credentials are removed and every new route is checked, even on an idle connection. Intermediate bodies are closed and their metadata appears in history; the final body remains owned by the caller. Contract (okkama-docs `docs/std/http-redirect.md`), real loopback example (okkama-docs `examples/std-v4/http-redirect.ok`).
 
 ### Cookie policy is an explicit adapter
 
-Use Redirecting(CookieExchanging(client,jar,FirstPartyCookies()),policy) for fresh cookies on each redirect hop. FirstPartyCookies deliberately chooses top-level first-party context for the current method. A caller Cookie is rejected by default; preserve/replace are explicit policies, and duplicates never merge. Capture context once, store each Set-Cookie separately, and keep generated jar headers internal to the hop. On storage failure, dispose the acquired response body. The jar remains caller-owned. Contract (okkama-docs `docs/std/http-cookie-client.md`), [real loopback example](../examples/std-v4/http-cookie-client.ok).
+Use Redirecting(CookieExchanging(client,jar,FirstPartyCookies()),policy) for fresh cookies on each redirect hop. FirstPartyCookies deliberately chooses top-level first-party context for the current method. A caller Cookie is rejected by default; preserve/replace are explicit policies, and duplicates never merge. Capture context once, store each Set-Cookie separately, and keep generated jar headers internal to the hop. On storage failure, dispose the acquired response body. The jar remains caller-owned. Contract (okkama-docs `docs/std/http-cookie-client.md`), real loopback example (okkama-docs `examples/std-v4/http-cookie-client.ok`).
 
 ### Secret capabilities and scoped HTTP auth
 
@@ -5824,13 +5374,13 @@ are separate capabilities available on concrete acquisitions.
 
 ```okkama
 let transaction=await connection.transaction(TransactionOptions());
-await transaction.execution(Statement("INSERT INTO customers VALUES(?,?)",
-    [Param(7),Param("Ada")]));
+await transaction.execution(Statement(text: "INSERT INTO customers VALUES(?,?)",
+    values: [Param(7),Param("Ada")]));
 await transaction.commit();
 ```
 
 Use `Param` from `db/param` for scalars and `Maybe<T>` parameters. `Query` from
-`db/query` accepts either `(connection, Statement(...))` or `(prepared, parameters)`;
+`db/query` accepts either `(origin: connection, statement: Statement(...))` or `(prepared:, values:)`;
 `one()`, `maybe()`, `all(limit)` and `rows()` share the same result contract.
 Read columns directly with `row.text(name)` or `row.maybe(name).text() else fallback`.
 `Execution.affected()` returns `Maybe<BigInt>`: unknown is distinct from zero.
@@ -5844,7 +5394,7 @@ own a bounded live cursor and return immutable Row copies; close them before
 another incompatible operation. For pooled work, lease close revokes readers,
 rolls back an active transaction and releases its FIFO slot after reset. Explicit
 close schedules cleanup; settled joins it. The complete
-[database example](../examples/std-v4/database-stack.ok) also demonstrates native
+database example (okkama-docs `examples/std-v4/database-stack.ok`) also demonstrates native
 prepared reuse, incremental BLOB, script parsing and a bounded online backup.
 
 ### Application arguments, settings and terminals
@@ -5855,14 +5405,14 @@ and `strings()` decodes each argument separately, without interpreting shell
 text. `command.invocation(arguments)` reads them against an explicit
 `CliCommand` tree and returns an `Invocation`. It never prints help or exits:
 the application handles `CliFailure` and its declared help/version flags
-itself. [Executable example](../examples/std-v4/application-cli.ok).
+itself. Executable example (okkama-docs `examples/std-v4/application-cli.ok`).
 
 Settings retains an index of actual segment keys for binary lookup. keys() keeps
 source order and DuplicateSetting keeps the earliest original repeated key.
 Child command validation sorts auxiliary names while retaining children order.
 Layering finds and copies one balanced index path in a single traversal per update and publishes original
 insertion order once. CLI reads this validated overlay directly for value
-options. Maximum cardinality is not a latency guarantee; CommandSyntax prepares exact alias and segment-key indexes while retaining
+options. Maximum cardinality is not a latency guarantee; CliCommand prepares exact alias and segment-key indexes while retaining
 first-error priority. Parser alias queries use binary lookup and return original
 positions; options, flags and operands keep declaration order.
 
@@ -5873,10 +5423,10 @@ These objects represent configuration entities; they do not inspect domain field
 
 ```okkama
 let key=SettingKey(["greeting","name"]);
-let defaults=Settings([SettingEntry(key,["world"],
-    SettingSource(SettingSourceKind.defaults,"application"))]);
+let defaults=Settings([SettingEntry(key: key,values: ["world"],
+    source: SettingSource(kind: SettingSourceKind.defaults,name: "application"))]);
 let settings=LayeredSettings([defaults,invocation.settings()]);
-let name=ScalarSetting(settings,key).value();
+let name=ScalarSetting(origin: settings,key: key).text();
 ```
 
 An async terminal acquisition returns one owned session. Its child input/output,
@@ -5887,7 +5437,7 @@ terminal is opened independently of redirection, and secret prompts require it.
 
 ```okkama
 let session=await OpenedStandardTerminal(
-    TerminalOutputKind.standard_output,ColorPolicy.automatic).session();
+    output: TerminalOutputKind.standard_output,policy: ColorPolicy.automatic).session();
 defer session.close();
 session.output().writeln("Hello, ",name,"!");
 ```
@@ -5911,8 +5461,8 @@ is installed. A destination receives one LogRecord and propagates failures;
 BestEffort and Fallback make loss/alternate delivery explicit.
 
 ```okkama
-let logger=NamedLogging(LogName(["service"]),JsonStreamLogs(Stdout()),
-    SystemClock(),EmptyLogFields().value());
+let logger=NamedLogging(name: LogName(["service"]),destination: JsonStreamLogs(Stdout()),
+    clock: SystemClock(),fields: EmptyLogFields().fields());
 logger.log(LogLevel.info,"started");
 ```
 
@@ -5922,7 +5472,7 @@ uses explicit LogStyle entries and ColorPolicy. Files append lazily and have
 explicit close/reopen; one record is never divided by rotation. Only one process
 may own rotation of a path. Fallback can duplicate a partially delivered record.
 See the complete contract (okkama-docs `docs/std/logging.md`),
-[example](../examples/std-v4/logging-stack.ok) and
+example (okkama-docs `examples/std-v4/logging-stack.ok`) and
 measured limitations.
 
 QueuedLogs keeps a bounded persistent FIFO and starts one worker in a supplied

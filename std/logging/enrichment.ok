@@ -3,6 +3,12 @@ module logging/enrichment v1.0.0;
 import "logging/named" take Logging, NamedLogging;
 import "logging/level" take LogLevel;
 import "logging/field" take LogFields, CombinedLogFields;
+import "logging/write" take CollectedLogs;
+import "logging/name" take LogName;
+import "json" take JsonField;
+import "testing/time" take ManualClock;
+import "time/clock" take Instant;
+import "time/duration" take Duration, DurationUnit;
 
 object FieldLogging does Logging {
     has origin is Logging;
@@ -18,11 +24,11 @@ object FieldLogging does Logging {
     }
 
     log(level is LogLevel, message is string, fields is LogFields) is void {
-        origin.log(level, message, CombinedLogFields(self.fields, fields).value());
+        origin.log(level, message, CombinedLogFields(base: self.fields, added: fields).fields());
     }
 
     log(level is LogLevel, message is string, fields is LogFields, cause is Error) is void {
-        origin.log(level, message, CombinedLogFields(self.fields, fields).value(), cause);
+        origin.log(level, message, CombinedLogFields(base: self.fields, added: fields).fields(), cause);
     }
 }
 
@@ -35,7 +41,18 @@ object ChildLogging {
         self.segment = segment;
     }
 
-    value() is NamedLogging {
+    logging() is NamedLogging {
         origin.child(segment);
     }
+}
+
+test "field logging adds its fields; a child logger extends the name" {
+    let collected = CollectedLogs();
+    let base = NamedLogging(name: LogName(["app"]), destination: collected, clock: ManualClock(Instant(Duration(value: 0.rat(), unit: DurationUnit.second))), fields: LogFields([]));
+    let request = FieldLogging(origin: base, fields: LogFields([JsonField("request", "r-1")]));
+    request.log(LogLevel.info, "handled", LogFields([JsonField("ms", 3)]));
+    test.is(collected.records().item(0).context().fields().values().string(), "{\"request\":\"r-1\",\"ms\":3}");
+    let child = ChildLogging(origin: base, segment: "http").logging();
+    child.log(LogLevel.info, "up");
+    test.is(collected.records().item(1).context().name().string(), "app.http");
 }

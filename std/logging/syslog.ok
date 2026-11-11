@@ -1,7 +1,10 @@
 module logging/syslog v1.0.0;
 
 import "logging/level" take LogLevel;
-import "logging/record" take LogRecord;
+import "logging/record" take LogRecord, LogContext;
+import "logging/name" take LogName;
+import "logging/field" take LogFields;
+import "time/clock" take Instant;
 import "logging/line" take JsonLogLine;
 import "logging/write" take LogWriting;
 import "logging/queue" take QueuedLogs, LogQueueOptions, LogOverflow, LogDelivering, LogDraining;
@@ -15,14 +18,14 @@ import "time/rfc3339" take Rfc3339;
 
 enum SyslogFacility = (kernel, user, mail, daemon, authorization, syslog, printer, news, uucp, clock, private_authorization, ftp, ntp, audit, alert, clock2, local0, local1, local2, local3, local4, local5, local6, local7);
 
-object SyslogFacilityCode {
+hidden object SyslogFacilityCode {
     has origin is SyslogFacility;
 
     SyslogFacilityCode(origin is SyslogFacility) {
         self.origin = origin;
     }
 
-    value() is int {
+    code() is int {
         match origin {
             case SyslogFacility.kernel {
                 0;
@@ -107,7 +110,7 @@ object SyslogSeverity {
         self.origin = origin;
     }
 
-    value() is int {
+    code() is int {
         match origin {
             case LogLevel.debug {
                 7;
@@ -128,7 +131,7 @@ object SyslogSeverity {
     }
 }
 
-object SyslogHeaderName {
+hidden object SyslogHeaderName {
     has origin is string;
 
     SyslogHeaderName(origin is string, maximum is int) {
@@ -165,38 +168,51 @@ object SyslogOptions {
         confirm maximum_payload > 0 && maximum_payload <= 65507
             else throw InvalidSyslogOptions.invalid;
         self.facility = facility;
-        self.host = SyslogHeaderName(host, 255).string();
-        self.application = SyslogHeaderName(application, 48).string();
+        self.host = SyslogHeaderName(origin: host, maximum: 255).string();
+        self.application = SyslogHeaderName(origin: application, maximum: 48).string();
         maximum = maximum_payload;
     }
 
-    facility() is SyslogFacility {
-        facility;
-    }
+    cap Settings {
+        facility is SyslogFacility {
+            facility;
+        }
 
-    host() is string {
-        host;
-    }
+        host is string {
+            host;
+        }
 
-    application() is string {
-        application;
-    }
+        application is string {
+            application;
+        }
 
-    maximum_payload() is int {
-        maximum;
+        maximum_payload is int {
+            maximum;
+        }
     }
 }
 
 // RFC5424 UTC header, microseconds without rounding. The complete structured
 // record is the BOM-marked UTF8 MSG; no newline, truncation or resend is added.
 object SyslogMessage does ByteSource {
-    has origin is @byte;
+    has record is LogRecord;
+    has options is SyslogOptions;
 
     SyslogMessage(record is LogRecord, options is SyslogOptions) {
-        let priority = SyslogFacilityCode(options.facility()).value() * 8 + SyslogSeverity(
-            record.level()
-        ).value();
-        let time = Rfc3339(origin: record.time(), offset: Duration(0.rat(), DurationUnit.second)).string();
+        self.record = record;
+        self.options = options;
+    }
+
+    bytes() is @byte {
+        once let encoded is @byte = self.encoded();
+        encoded;
+    }
+
+    hidden encoded() is @byte {
+        let priority = SyslogFacilityCode(options::Settings::facility).code() * 8 + SyslogSeverity(
+            record::Entry::level
+        ).code();
+        let time = Rfc3339(origin: record.time(), offset: Duration(value: 0.rat(), unit: DurationUnit.second)).string();
         let parts = time.split(".");
         let timestamp = if parts.size() == 1 {
             time;
@@ -218,13 +234,13 @@ object SyslogMessage does ByteSource {
             record.context().process().string();
         };
         let header = Utf8Encoded(
-            "<" + priority.string() + ">1 " + timestamp + " " + options.host() + " " + options.application() + " " + process + " - - "
+            "<" + priority.string() + ">1 " + timestamp + " " + options::Settings::host + " " + options::Settings::application + " " + process + " - - "
         ).bytes();
         let message = Utf8Encoded(JsonLogLine(record).string()).bytes();
         let bom is @byte = [239.byte(), 187.byte(), 191.byte()];
         let size = header.size() + bom.size() + message.size();
-        confirm size <= options.maximum_payload() else throw DatagramTooLarge.size(size);
-        origin = (0..size).map() -> index {
+        confirm size <= options::Settings::maximum_payload else throw DatagramTooLarge.size(size);
+        (0..size).map() -> index {
             if index < header.size() {
                 header[index];
             }
@@ -235,10 +251,6 @@ object SyslogMessage does ByteSource {
                 message[index - header.size() - 3];
             }
         };
-    }
-
-    bytes() is @byte {
-        origin;
     }
 }
 
@@ -252,7 +264,7 @@ object UdpSyslogDelivery does LogDelivering {
     }
 
     async deliver(record is LogRecord) is int {
-        let packet = SyslogMessage(record, options);
+        let packet = SyslogMessage(record: record, options: options);
         let count = await origin.send(packet);
         confirm count == packet.bytes().size() else throw IncompleteWrite.after(count);
         count;
@@ -268,7 +280,7 @@ object SyslogLogs does LogWriting, LogDraining, Closing {
         queue_options is LogQueueOptions,
         scope is Supervising<int>
     ) {
-        queue = QueuedLogs(UdpSyslogDelivery(origin, options), queue_options, scope);
+        queue = QueuedLogs(origin: UdpSyslogDelivery(origin: origin, options: options), options: queue_options, scope: scope);
     }
 
     SyslogLogs(
@@ -281,9 +293,9 @@ object SyslogLogs does LogWriting, LogDraining, Closing {
         scope is Supervising<int>
     ) {
         queue = QueuedLogs(
-            UdpSyslogDelivery(origin, SyslogOptions(facility, host, application, 2048)),
-            LogQueueOptions(capacity, overflow),
-            scope
+            origin: UdpSyslogDelivery(origin: origin, options: SyslogOptions(facility, host, application, 2048)),
+            options: LogQueueOptions(capacity: capacity, overflow: overflow),
+            scope: scope
         );
     }
 
@@ -313,3 +325,66 @@ object SyslogLogs does LogWriting, LogDraining, Closing {
 }
 
 enum InvalidSyslogOptions is Error = (invalid);
+
+hidden object SyslogTestRecord {
+    has seconds is rat;
+    has level is LogLevel;
+    has process is int;
+
+    SyslogTestRecord(seconds is rat, level is LogLevel, process is int) {
+        self.seconds = seconds;
+        self.level = level;
+        self.process = process;
+    }
+
+    record() is LogRecord {
+        LogRecord(
+            occurred: Instant(Duration(value: seconds, unit: DurationUnit.second)),
+            level: level,
+            message: "up",
+            context: LogContext(name: LogName(["web"]), fields: LogFields([]), process: process),
+        );
+    }
+}
+
+test "syslog severities follow RFC 5424" {
+    test.is(SyslogSeverity(LogLevel.debug).code(), 7);
+    test.is(SyslogSeverity(LogLevel.info).code(), 6);
+    test.is(SyslogSeverity(LogLevel.warning).code(), 4);
+    test.is(SyslogSeverity(LogLevel.error).code(), 3);
+    test.is(SyslogSeverity(LogLevel.critical).code(), 2);
+}
+
+test "syslog options check header names and the payload size" {
+    let options = SyslogOptions(facility: SyslogFacility.local0, host: "", application: "api", maximum_payload: 1024);
+    test.is(options::Settings::host, "-");
+    test.is(options::Settings::application, "api");
+    test.is(options::Settings::maximum_payload, 1024);
+    test.throws(InvalidSyslogOptions) {
+        SyslogOptions(facility: SyslogFacility.user, host: "my host", application: "api", maximum_payload: 1024);
+    };
+    test.throws(InvalidSyslogOptions) {
+        SyslogOptions(facility: SyslogFacility.user, host: "h", application: "a".repeat(49), maximum_payload: 1024);
+    };
+    test.throws(InvalidSyslogOptions) {
+        SyslogOptions(facility: SyslogFacility.user, host: "h", application: "a", maximum_payload: 65508);
+    };
+}
+
+test "a syslog message is an RFC 5424 header, a BOM and the JSON line" {
+    let options = SyslogOptions(facility: SyslogFacility.local0, host: "web1", application: "api", maximum_payload: 1024);
+    let record = SyslogTestRecord(seconds: 1700000000.rat(), level: LogLevel.info, process: 7).record();
+    let bytes = SyslogMessage(record: record, options: options).bytes();
+    let header = "<134>1 2023-11-14T22:13:20Z web1 api 7 - - ";
+    test.is(Utf8Encoded(header).bytes(), bytes.slice(0, header.length()));
+    test.is(bytes.slice(header.length(), header.length() + 3), [239.byte(), 187.byte(), 191.byte()]);
+    test.is(Utf8Encoded(JsonLogLine(record).string()).bytes(), bytes.slice(header.length() + 3, bytes.size()));
+    let precise = SyslogTestRecord(seconds: 17000000001234567.rat() / 10000000.rat(), level: LogLevel.critical, process: 0).record();
+    let kernel = SyslogOptions(facility: SyslogFacility.kernel, host: "h", application: "a", maximum_payload: 1024);
+    let prefix = "<2>1 2023-11-14T22:13:20.123456Z h a - - - ";
+    test.is(Utf8Encoded(prefix).bytes(), SyslogMessage(record: precise, options: kernel).bytes().slice(0, prefix.length()));
+    let tight = SyslogOptions(facility: SyslogFacility.user, host: "h", application: "a", maximum_payload: 20);
+    test.throws(DatagramTooLarge) {
+        SyslogMessage(record: record, options: tight).bytes();
+    };
+}

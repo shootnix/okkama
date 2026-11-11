@@ -43,7 +43,7 @@ object RecordedCalls<T> {
         let old = cell.value();
         confirm old.size() < 65536 else throw InvalidTestDouble.because("recorder capacity");
         let index = backend.test_state_next(state);
-        cell.replace(old.prefix(Recorded(BigInt(index.string()), value)));
+        cell.replace(old.prefix(Recorded(index: BigInt(index.string()), value: value)));
     }
 
     size() is int {

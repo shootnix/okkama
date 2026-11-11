@@ -38,7 +38,7 @@ object ChildLogName {
         self.segment = segment;
     }
 
-    value() is LogName {
+    name() is LogName {
         let base = origin.segments();
         let parts is @string = (0..base.size() + 1).map() -> index {
             if index < base.size() {
@@ -53,3 +53,18 @@ object ChildLogName {
 }
 
 enum InvalidLogName is Error = (because(reason is string));
+
+test "a name is dotted segments; a child adds one" {
+    let name = LogName(["app", "db"]);
+    test.is(name.string(), "app.db");
+    test.is(name.segments().size(), 2);
+    test.is(ChildLogName(origin: name, segment: "pool").name().string(), "app.db.pool");
+    test.ok(LogName(["a"]).order(LogName(["b"])) == Order.less);
+    test.ok(LogName(["app"]) == LogName(["app"]));
+    test.throws(InvalidLogName) {
+        LogName([]);
+    };
+    test.throws(InvalidLogName) {
+        LogName(["app", ""]);
+    };
+}

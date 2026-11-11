@@ -14,7 +14,7 @@ async main() is int {
     defer await connection.settled();
     defer connection.close();
     await connection.execution(Statement("CREATE TABLE ledger(amount TEXT)"));
-    await connection.execution(Statement("INSERT INTO ledger VALUES(?)", [DbDecimal(amount)]));
+    await connection.execution(Statement(text: "INSERT INTO ledger VALUES(?)", values: [DbDecimal(amount)]));
     let rows = await connection.rows(Statement("SELECT amount FROM ledger"));
     let row = await rows.row();
     rows.close();

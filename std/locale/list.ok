@@ -59,7 +59,7 @@ object LocalizedList {
             [];
         }
         else {
-            LocalizedListPattern(locale, selected).values();
+            LocalizedListPattern(locale: locale, style: selected).values();
         };
     }
 
@@ -103,7 +103,7 @@ object LocalizedList {
     }
 }
 
-object LocalizedListPattern {
+hidden object LocalizedListPattern {
     has locale is Locale;
     has style is int;
 
@@ -130,7 +130,7 @@ enum InvalidLocalizedList is Error = (because(reason is string));
 
 test "list item placeholders remain literal" {
     test.is(
-        LocalizedList(["{1}", "{0}"], Locale("en"), ListKind.conjunction, ListStyle.long).string(),
+        LocalizedList(values: ["{1}", "{0}"], locale: Locale("en"), kind: ListKind.conjunction, style: ListStyle.long).string(),
         "{1} and {0}"
     );
 }

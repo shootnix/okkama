@@ -12,7 +12,7 @@ object LikelyLocale {
         self.origin = origin;
     }
 
-    value() is Locale {
+    locale() is Locale {
         let language = try {
             origin.language();
         }
@@ -88,31 +88,31 @@ object LikelyLocale {
         for requests -> key {
             let found = table.lookup(key);
             if found != "" {
-                let inferred = LocaleFromLanguageTag(found).value();
+                let inferred = LocaleFromLanguageTag(found).locale();
                 let extlangs = origin.extlangs();
                 let extended is @string = (0..extlangs.size()).map() -> index {
                     extlangs.item(index);
                 };
                 let expanded = Locale(
-                    if language == "und" {
+                    language: if language == "und" {
                         inferred.language();
                     }
                     else {
                         language;
                     },
-                    if script == "" {
+                    script: if script == "" {
                         inferred.script();
                     }
                     else {
                         script;
                     },
-                    if region == "" {
+                    region: if region == "" {
                         inferred.region();
                     }
                     else {
                         region;
                     },
-                    origin.variants()
+                    variants: origin.variants()
                 );
                 let base = expanded.string();
                 let primary = expanded.language();
@@ -122,7 +122,7 @@ object LikelyLocale {
                 else {
                     "-" + extended.join("-");
                 }) + base.slice(primary.length(), base.length());
-                return LocaleFromLanguageTag(retained + origin.suffix()).value();
+                return LocaleFromLanguageTag(retained + origin.suffix()).locale();
             }
         }
         origin;
@@ -130,5 +130,5 @@ object LikelyLocale {
 }
 
 test "likely expansion is explicit and keeps supplied region" {
-    test.is(LikelyLocale(Locale("zh", "TW")).value().string(), "zh-Hant-TW");
+    test.is(LikelyLocale(Locale(language: "zh", region: "TW")).locale().string(), "zh-Hant-TW");
 }

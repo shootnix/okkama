@@ -19,7 +19,7 @@ object ProbeRows does RowReading {
         self.count=count;self.fail_at=fail_at;
         reads=Atomic(0);closes=Atomic(0);
     }
-    columns() is Sequencing<Column> { [Column(0,"id","")]; }
+    columns() is Sequencing<Column> { [Column(index: 0,name: "id",declaration: "")]; }
     closed() is bool { closes.value()>0; }
     close() is void { closes.replace(closes.value()+1); }
     read_count() is int { reads.value(); }
@@ -28,7 +28,7 @@ object ProbeRows does RowReading {
         let index=reads.value();reads.replace(index+1);
         if index==fail_at { throw FetchFailed.fetch_failed; }
         confirm index<count else throw RowsEnded.ended;
-        Row([Column(0,"id","")],[DbInteger(BigInt("7"))]);
+        Row(columns: [Column(0,"id","")],values: [DbInteger(BigInt("7"))]);
     }
 }
 object ProbeDb does DbExecuting {

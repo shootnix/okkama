@@ -22,11 +22,11 @@ object LogFields {
         catch JsonError.duplicate_member(_) {
             throw InvalidLogField.because("duplicate field name");
         };
-        origin = LogFieldLimits(fields).value();
+        origin = LogFieldLimits(fields).json();
     }
 
     LogFields(values is Json) {
-        origin = LogFieldLimits(values).value();
+        origin = LogFieldLimits(values).json();
     }
 
     membership(name is string) is bool {
@@ -56,7 +56,7 @@ hidden object LogFieldLimits {
         self.fields = fields;
     }
 
-    value() is Json {
+    json() is Json {
         confirm fields.kind() == JsonKind.object_value
             else throw InvalidLogField.because("fields are not an object");
         let names = fields.names();
@@ -79,7 +79,7 @@ hidden object LogFieldLimits {
 object EmptyLogFields {
     EmptyLogFields();
 
-    value() is LogFields {
+    fields() is LogFields {
         LogFields([]);
     }
 }
@@ -92,7 +92,7 @@ object CombinedLogFields {
         self.added = added;
     }
 
-    value() is LogFields {
+    fields() is LogFields {
         if added.values().size() == 0 {
             return base;
         }
@@ -121,7 +121,7 @@ test "log fields keep member order, reject bad names and merge by name" {
         },
         "MissingLogField.name(\"nope\")"
     );
-    test.is(EmptyLogFields().value().values().string(), "{}");
+    test.is(EmptyLogFields().fields().values().string(), "{}");
     test.is(
         try {
             LogFields([JsonField("a", 1), JsonField("a", 2)]).values().string();
@@ -163,19 +163,19 @@ test "log fields keep member order, reject bad names and merge by name" {
     );
     let added = LogFields([JsonField("id", 8), JsonField("trace", "t1")]);
     test.is(
-        CombinedLogFields(fields, added).value().values().string(),
+        CombinedLogFields(base: fields, added: added).fields().values().string(),
         "{\"user\":\"ann\",\"id\":8,\"pass\":\"x\",\"trace\":\"t1\"}"
     );
     test.is(
-        CombinedLogFields(added, fields).value().values().string(),
+        CombinedLogFields(base: added, added: fields).fields().values().string(),
         "{\"id\":7,\"trace\":\"t1\",\"user\":\"ann\",\"pass\":\"x\"}"
     );
     test.is(
-        CombinedLogFields(EmptyLogFields().value(), added).value().values().string(),
+        CombinedLogFields(base: EmptyLogFields().fields(), added: added).fields().values().string(),
         "{\"id\":8,\"trace\":\"t1\"}"
     );
     test.is(
-        CombinedLogFields(fields, EmptyLogFields().value()).value().values().string(),
+        CombinedLogFields(base: fields, added: EmptyLogFields().fields()).fields().values().string(),
         fields.values().string()
     );
     test.is(LogFields(fields.members()).values().string(), fields.values().string());

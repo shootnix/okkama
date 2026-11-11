@@ -9,7 +9,7 @@ object DisplayWidth {
         self.origin = origin;
     }
 
-    value() is int {
+    columns() is int {
         let invalid = display_invalid_index(origin);
         confirm invalid < 0
             else throw InvalidDisplayText.detailed(invalid, "control character in display text");
@@ -31,9 +31,9 @@ object TruncatedDisplay {
 
     string() is string {
         confirm width >= 0 else throw InvalidDisplayWidth.invalid;
-        let ending = DisplayWidth(ellipsis).value();
+        let ending = DisplayWidth(ellipsis).columns();
         confirm ending <= width else throw InvalidDisplayWidth.invalid;
-        let actual = DisplayWidth(origin).value();
+        let actual = DisplayWidth(origin).columns();
         if actual <= width {
             origin;
         }
@@ -89,7 +89,7 @@ object WrappedDisplay {
     string() is string {
         confirm width > 0 else throw InvalidDisplayWidth.invalid;
         origin.split("\n").map() -> line {
-            DisplayWidth(line).value();
+            DisplayWidth(line).columns();
             let clusters = display_clusters(line);
             let sizes = display_widths(line);
             let wrapped = (0..clusters.size()).reduce(DisplayLines(width)) -> old, index {
@@ -132,6 +132,6 @@ object DisplayLines {
 }
 
 test "display coordinates preserve joined emoji and combining clusters" {
-    test.is(DisplayWidth("é界👩‍💻").value(), 5);
-    test.is(TruncatedDisplay("👩‍💻a", 2, "").string(), "👩‍💻");
+    test.is(DisplayWidth("é界👩‍💻").columns(), 5);
+    test.is(TruncatedDisplay(origin: "👩‍💻a", width: 2, ellipsis: "").string(), "👩‍💻");
 }

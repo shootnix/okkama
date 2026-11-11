@@ -48,7 +48,7 @@ object DbBoolean does DbValue {
         DbValueKind.boolean;
     }
 
-    value() is bool {
+    bool() is bool {
         origin;
     }
 
@@ -69,7 +69,7 @@ object DbInteger does DbValue {
         DbValueKind.integer;
     }
 
-    value() is BigInt {
+    integer() is BigInt {
         origin;
     }
 
@@ -97,7 +97,7 @@ object DbFloating does DbValue {
         DbValueKind.floating;
     }
 
-    value() is float {
+    float() is float {
         origin;
     }
 
@@ -118,7 +118,7 @@ object DbDecimal does DbValue {
         DbValueKind.decimal;
     }
 
-    value() is Decimal {
+    decimal() is Decimal {
         origin;
     }
 
@@ -147,7 +147,7 @@ object DbText does DbValue {
         DbValueKind.text;
     }
 
-    value() is string {
+    string() is string {
         origin;
     }
 
@@ -168,7 +168,7 @@ object DbBytes does DbValue {
         DbValueKind.bytes;
     }
 
-    value() is @byte {
+    bytes() is @byte {
         origin;
     }
 
@@ -201,7 +201,7 @@ object ObservedDbValue {
         kind;
     }
 
-    value() is DbValue {
+    cell() is DbValue {
         origin;
     }
 
@@ -311,7 +311,7 @@ object DbValueCapture does DbValueWriting {
 
     boolean(value is bool) is void {
         self.emit(DbValueKind.boolean);
-        self.published(native_db.db_boolean(DbBoolean(value).value()));
+        self.published(native_db.db_boolean(DbBoolean(value).bool()));
     }
 
     boolean_value() is bool {
@@ -321,7 +321,7 @@ object DbValueCapture does DbValueWriting {
 
     integer(value is BigInt) is void {
         self.emit(DbValueKind.integer);
-        self.published(native_db.db_integer(DbInteger(value).value().string()));
+        self.published(native_db.db_integer(DbInteger(value).integer().string()));
     }
 
     integer_value() is BigInt {
@@ -331,7 +331,7 @@ object DbValueCapture does DbValueWriting {
 
     floating(value is float) is void {
         self.emit(DbValueKind.floating);
-        self.published(native_db.db_floating(DbFloating(value).value()));
+        self.published(native_db.db_floating(DbFloating(value).float()));
     }
 
     floating_value() is float {
@@ -341,7 +341,7 @@ object DbValueCapture does DbValueWriting {
 
     decimal(value is Decimal) is void {
         self.emit(DbValueKind.decimal);
-        self.published(native_db.db_decimal(DbDecimal(value).value().string()));
+        self.published(native_db.db_decimal(DbDecimal(value).decimal().string()));
     }
 
     decimal_value() is Decimal {
@@ -351,7 +351,7 @@ object DbValueCapture does DbValueWriting {
 
     text(value is string) is void {
         self.emit(DbValueKind.text);
-        self.published(native_db.db_text(DbText(value).value()));
+        self.published(native_db.db_text(DbText(value).string()));
     }
 
     text_value() is string {
@@ -361,7 +361,7 @@ object DbValueCapture does DbValueWriting {
 
     bytes(value is @byte) is void {
         self.emit(DbValueKind.bytes);
-        self.published(native_db.db_bytes(DbBytes(value).value()));
+        self.published(native_db.db_bytes(DbBytes(value).bytes()));
     }
 
     bytes_value() is @byte {
@@ -369,7 +369,7 @@ object DbValueCapture does DbValueWriting {
         native_db.db_bytes_value(self.state());
     }
 
-    value() is DbValue {
+    cell() is DbValue {
         DbNativeValue(self.state());
     }
 
@@ -378,14 +378,14 @@ object DbValueCapture does DbValueWriting {
     }
 }
 
-object DbKindCode {
+hidden object DbKindCode {
     has kind is DbValueKind;
 
     DbKindCode(kind is DbValueKind) {
         self.kind = kind;
     }
 
-    value() is int {
+    code() is int {
         match kind {
             case DbValueKind.null_value {
                 0;
@@ -432,7 +432,7 @@ object DbNativeValue does DbValue {
     }
 
     kind() is DbValueKind {
-        DbNativeKind(native_db.db_kind(state)).value();
+        DbNativeKind(native_db.db_kind(state)).kind();
     }
 
     print(output is DbValueWriting) is void {
@@ -469,7 +469,7 @@ object DbNativeKind {
         self.code = code;
     }
 
-    value() is DbValueKind {
+    kind() is DbValueKind {
         match code {
             case 0 {
                 DbValueKind.null_value;

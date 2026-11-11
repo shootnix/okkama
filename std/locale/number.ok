@@ -51,20 +51,22 @@ object NumberPrecision {
         self.rounding = rounding;
     }
 
-    minimum_integer() is int {
-        minimum_integer;
-    }
+    cap Digits {
+        minimum_integer is int {
+            minimum_integer;
+        }
 
-    minimum_fraction() is int {
-        minimum_fraction;
-    }
+        minimum_fraction is int {
+            minimum_fraction;
+        }
 
-    maximum_fraction() is int {
-        maximum_fraction;
-    }
+        maximum_fraction is int {
+            maximum_fraction;
+        }
 
-    rounding() is Rounding {
-        rounding;
+        rounding is Rounding {
+            rounding;
+        }
     }
 }
 
@@ -86,20 +88,22 @@ object NumberFormat {
         self.precision = precision;
     }
 
-    notation() is NumberNotation {
-        notation;
-    }
-
-    grouping() is NumberGrouping {
-        grouping;
-    }
-
-    sign() is NumberSign {
-        sign;
-    }
-
     precision() is NumberPrecision {
         precision;
+    }
+
+    cap Style {
+        notation is NumberNotation {
+            notation;
+        }
+
+        grouping is NumberGrouping {
+            grouping;
+        }
+
+        sign is NumberSign {
+            sign;
+        }
     }
 }
 
@@ -107,7 +111,7 @@ enum InvalidNumberFormat is Error = (because(reason is string));
 
 enum InvalidLocalizedNumber is Error = (because(reason is string));
 
-object NumberDataRow {
+hidden object NumberDataRow {
     has values, names, ids is @string;
 
     NumberDataRow(values is @string) {
@@ -223,7 +227,7 @@ role NumberCompactData {
     value(key is string) is string;
 }
 
-object NumberCompacts does NumberCompactData {
+hidden object NumberCompacts does NumberCompactData {
     has origin is %string:string;
 
     NumberCompacts(origin is %string:string) {
@@ -422,7 +426,7 @@ object NumberMagnitude {
     }
 
     scaled(power is rat) is NumberMagnitude {
-        NumberMagnitude(coefficient, exponent - power, negative);
+        NumberMagnitude(coefficient: coefficient, exponent: exponent - power, negative: negative);
     }
 }
 
@@ -438,13 +442,13 @@ object DecimalNumberMagnitude {
             coefficient;
         };
         value = NumberMagnitude(
-            absolute,
-            origin.exponent().rat() + shift.rat(),
-            coefficient.sign() < 0 || negative_zero
+            coefficient: absolute,
+            exponent: origin.exponent().rat() + shift.rat(),
+            negative: coefficient.sign() < 0 || negative_zero
         );
     }
 
-    value() is NumberMagnitude {
+    magnitude() is NumberMagnitude {
         value;
     }
 }
@@ -458,7 +462,7 @@ object NumberQuantized {
 
     NumberQuantized(origin is NumberMagnitude, precision is NumberPrecision) {
         let absolute = origin.coefficient();
-        let shift = origin.exponent() + precision.maximum_fraction().rat();
+        let shift = origin.exponent() + precision::Digits::maximum_fraction.rat();
         let coefficient = if absolute.sign() == 0 {
             BigInt("0");
         }
@@ -471,7 +475,7 @@ object NumberQuantized {
             }
             else {
                 if shift < (-1025).rat() {
-                    let direction = precision.rounding();
+                    let direction = precision::Digits::rounding;
                     let up = direction == Rounding.away_from_zero
                         || (direction == Rounding.floor && origin.negative())
                         || (direction == Rounding.ceiling && !origin.negative());
@@ -487,11 +491,11 @@ object NumberQuantized {
                     let quotient = (absolute / divisor);
                     let remainder = (absolute % divisor);
                     let increment = NumberRounding(
-                        quotient,
-                        remainder,
-                        divisor,
-                        origin.negative(),
-                        precision.rounding()
+                        quotient: quotient,
+                        remainder: remainder,
+                        divisor: divisor,
+                        negative: origin.negative(),
+                        direction: precision::Digits::rounding
                     ).increment();
                     if increment {
                         (quotient + BigInt("1"));
@@ -502,10 +506,10 @@ object NumberQuantized {
                 }
             }
         };
-        confirm coefficient.string().length() - precision.maximum_fraction() <= 1024
+        confirm coefficient.string().length() - precision::Digits::maximum_fraction <= 1024
             else throw InvalidLocalizedNumber.because("integer exceeds 1024 digits");
         self.coefficient = coefficient;
-        scale = precision.maximum_fraction();
+        scale = precision::Digits::maximum_fraction;
         negative = origin.negative();
     }
 
@@ -561,7 +565,7 @@ object NumberQuantized {
     }
 
     magnitude() is NumberMagnitude {
-        DecimalNumberMagnitude(Decimal(coefficient.string() + "e" + (-scale).string()), 0, negative).value();
+        DecimalNumberMagnitude(origin: Decimal(coefficient.string() + "e" + (-scale).string()), shift: 0, negative_zero: negative).magnitude();
     }
 }
 
@@ -582,7 +586,7 @@ object NumberZeroes {
     }
 }
 
-object NumberRounding {
+hidden object NumberRounding {
     has quotient, remainder, divisor is BigInt;
     has negative is bool;
     has direction is Rounding;
@@ -646,7 +650,7 @@ object NumberRounding {
     }
 }
 
-object NumberMantissa {
+hidden object NumberMantissa {
     has origin is NumberQuantized;
     has data is NumberRenderingData;
     has format is NumberFormat;
@@ -669,14 +673,14 @@ object NumberMantissa {
 
     string() is string {
         let raw = origin.whole();
-        let minimum = format.precision().minimum_integer();
+        let minimum = format.precision()::Digits::minimum_integer;
         let whole = (if raw.length() < minimum {
             NumberZeroes(minimum - raw.length()).string();
         }
         else {
             "";
         }) + raw;
-        let grouping = format.grouping();
+        let grouping = format::Style::grouping;
         let primary = pattern.primary();
         let secondary = pattern.secondary();
         let threshold = if grouping == NumberGrouping.minimum_two {
@@ -704,7 +708,7 @@ object NumberMantissa {
                 "";
             }) + data.localized(whole.slice(index, index + 1));
         };
-        let fraction = origin.fraction(format.precision().minimum_fraction());
+        let fraction = origin.fraction(format.precision()::Digits::minimum_fraction);
         parts.join("") + (if fraction == "" {
             "";
         }
@@ -750,7 +754,7 @@ object NumberRendered {
     }
 }
 
-object NumberExponent {
+hidden object NumberExponent {
     has origin is rat;
     has data is NumberRenderingData;
     has minimum is int;
@@ -827,7 +831,7 @@ object NumberPrinting {
     }
 
     rendering() is NumberRendered {
-        let notation = format.notation();
+        let notation = format::Style::notation;
         let scientific = notation == NumberNotation.scientific
             || notation == NumberNotation.engineering;
         let fallback = data.pattern(if percent {
@@ -857,7 +861,7 @@ object NumberPrinting {
         };
         let pattern = rendered.frame(fallback);
         let value = rendered.number();
-        let sign = format.sign();
+        let sign = format::Style::sign;
         let nonzero = !value.zero();
         let minus = value.negative()
             && sign != NumberSign.never
@@ -882,12 +886,12 @@ object NumberPrinting {
         );
         confirm text.length() <= 8192
             else throw InvalidLocalizedNumber.because("output exceeds 8192 scalars");
-        NumberRendered(text, value);
+        NumberRendered(text: text, number: value);
     }
 
     hidden standard(value is NumberMagnitude, pattern is NumberPattern) is NumberRendered {
-        let rounded = NumberQuantized(value, format.precision());
-        NumberRendered(NumberMantissa(rounded, data, format, pattern, true).string(), rounded);
+        let rounded = NumberQuantized(origin: value, precision: format.precision());
+        NumberRendered(text: NumberMantissa(origin: rounded, data: data, format: format, pattern: pattern, grouped: true).string(), number: rounded);
     }
 
     hidden exponential(engineering is bool) is NumberRendered {
@@ -905,7 +909,7 @@ object NumberPrinting {
             0;
         };
         let power = magnitude - remainder.rat();
-        let rounded = NumberQuantized(origin.scaled(power), format.precision());
+        let rounded = NumberQuantized(origin: origin.scaled(power), precision: format.precision());
         let limit = if engineering {
             3;
         }
@@ -920,7 +924,7 @@ object NumberPrinting {
             0.rat();
         });
         let number = if carried {
-            NumberQuantized(origin.scaled(exponent), format.precision());
+            NumberQuantized(origin: origin.scaled(exponent), precision: format.precision());
         }
         else {
             rounded;
@@ -932,10 +936,10 @@ object NumberPrinting {
         else {
             1;
         };
-        let body = NumberMantissa(number, data, format, pattern, false).string() + NumberExponent(
-            exponent,
-            data,
-            minimum
+        let body = NumberMantissa(origin: number, data: data, format: format, pattern: pattern, grouped: false).string() + NumberExponent(
+            origin: exponent,
+            data: data,
+            minimum: minimum
         ).string();
         let text = if percent {
             data.template(pattern.prefix(false), false, per_mille) + body + data.template(
@@ -947,7 +951,7 @@ object NumberPrinting {
         else {
             body;
         };
-        NumberRendered(text, number);
+        NumberRendered(text: text, number: number);
     }
 
     hidden compacted(long is bool) is NumberRendered {
@@ -956,7 +960,7 @@ object NumberPrinting {
         // Ordinary rounding may cross the first compact threshold, or a CLDR
         // bucket whose literal "0" means ordinary notation (e.g. Chinese 1000).
         let selected = if initial < 0 || entries.value(initial.string() + ":other") == "" {
-            let ordinary = NumberQuantized(origin, format.precision());
+            let ordinary = NumberQuantized(origin: origin, precision: format.precision());
             let raised = self.bucket(entries, ordinary.magnitude().magnitude());
             if raised > initial {
                 raised;
@@ -978,7 +982,7 @@ object NumberPrinting {
         }
         let pattern = NumberPattern(encoded.split("|"));
         let scale = selected - pattern.zeros() + 1;
-        let rounded = NumberQuantized(origin.scaled(scale.rat()), format.precision());
+        let rounded = NumberQuantized(origin: origin.scaled(scale.rat()), precision: format.precision());
         let raised = self.bucket(entries, rounded.magnitude().magnitude() + scale.rat());
         let bucket = if raised > selected {
             raised;
@@ -992,8 +996,8 @@ object NumberPrinting {
         }
         let base = NumberPattern(base_text.split("|"));
         let power = bucket - base.zeros() + 1;
-        let number = NumberQuantized(origin.scaled(power.rat()), format.precision());
-        let spelling = number.ascii(format.precision().minimum_fraction());
+        let number = NumberQuantized(origin: origin.scaled(power.rat()), precision: format.precision());
+        let spelling = number.ascii(format.precision()::Digits::minimum_fraction);
         confirm spelling.length() <= 1024
             else throw InvalidLocalizedNumber.because("compact plural operand exceeds 1024 scalars");
         let exact = number.magnitude();
@@ -1003,7 +1007,7 @@ object NumberPrinting {
                 "1";
             }
             else {
-                match PluralCategoryOf(PluralNumber(spelling), locale, PluralKind.cardinal).value() {
+                match PluralCategoryOf(origin: PluralNumber(spelling), locale: locale, kind: PluralKind.cardinal).category() {
                     case PluralCategory.zero {
                         "zero";
                     }
@@ -1039,20 +1043,20 @@ object NumberPrinting {
             "";
         }
         else {
-            NumberMantissa(number, data, format, data.pattern(0), true).string();
+            NumberMantissa(origin: number, data: data, format: format, pattern: data.pattern(0), grouped: true).string();
         };
         if percent {
             NumberRendered(
-                data.template(selected_pattern.prefix(false), false, per_mille) + numeric + data.template(
+                text: data.template(selected_pattern.prefix(false), false, per_mille) + numeric + data.template(
                     selected_pattern.suffix(false),
                     false,
                     per_mille
                 ),
-                number
+                number: number
             );
         }
         else {
-            NumberRendered(numeric, number, selected_pattern);
+            NumberRendered(text: numeric, number: number, frame: selected_pattern);
         }
     }
 
@@ -1083,11 +1087,11 @@ object LocalizedDecimal {
 
     string() is string {
         NumberPrinting(
-            DecimalNumberMagnitude(origin, 0, false).value(),
-            locale,
-            format,
-            false,
-            false
+            origin: DecimalNumberMagnitude(origin: origin, shift: 0, negative_zero: false).magnitude(),
+            locale: locale,
+            format: format,
+            percent: false,
+            per_mille: false
         ).string();
     }
 }
@@ -1104,7 +1108,7 @@ object LocalizedInteger {
     }
 
     string() is string {
-        LocalizedDecimal(Decimal(origin.string()), locale, format).string();
+        LocalizedDecimal(origin: Decimal(origin.string()), locale: locale, format: format).string();
     }
 }
 
@@ -1122,7 +1126,7 @@ object LocalizedBigInteger {
     string() is string {
         confirm origin.string().length() <= 1025
             else throw InvalidLocalizedNumber.because("integer input limit");
-        LocalizedDecimal(Decimal(origin.string()), locale, format).string();
+        LocalizedDecimal(origin: Decimal(origin.string()), locale: locale, format: format).string();
     }
 }
 
@@ -1140,11 +1144,11 @@ object LocalizedFloat {
     string() is string {
         let source = ShortestFloat(origin);
         NumberPrinting(
-            DecimalNumberMagnitude(source.decimal(), 0, source.negative() && origin == 0.0).value(),
-            locale,
-            format,
-            false,
-            false
+            origin: DecimalNumberMagnitude(origin: source.decimal(), shift: 0, negative_zero: source.negative() && origin == 0.0).magnitude(),
+            locale: locale,
+            format: format,
+            percent: false,
+            per_mille: false
         ).string();
     }
 }
@@ -1170,20 +1174,20 @@ object LocalizedPercent {
     string() is string {
         let per_mille = scale == PercentScale.per_mille;
         NumberPrinting(
-            DecimalNumberMagnitude(
-                origin,
-                if per_mille {
+            origin: DecimalNumberMagnitude(
+                origin: origin,
+                shift: if per_mille {
                     3;
                 }
                 else {
                     2;
                 },
-                false
-            ).value(),
-            locale,
-            format,
-            true,
-            per_mille
+                negative_zero: false
+            ).magnitude(),
+            locale: locale,
+            format: format,
+            percent: true,
+            per_mille: per_mille
         ).string();
     }
 }
@@ -1219,7 +1223,7 @@ object LocalizedSpecialNumber {
     }
 }
 
-object NumberSignedText {
+hidden object NumberSignedText {
     has text is string;
     has negative is bool;
 
@@ -1237,7 +1241,7 @@ object NumberSignedText {
     }
 }
 
-object NumberAffixReading {
+hidden object NumberAffixReading {
     has origin is string;
     has data is NumberRenderingData;
     has pattern is NumberPattern;
@@ -1255,14 +1259,14 @@ object NumberAffixReading {
         self.sign = sign;
     }
 
-    value() is NumberSignedText {
+    text() is NumberSignedText {
         if sign != NumberSign.never {
             let negative = self.middle(
                 data.template(pattern.prefix(true), false, false),
                 data.template(pattern.suffix(true), false, false)
             );
             if negative.size() != 0 {
-                return NumberSignedText(negative[0], true);
+                return NumberSignedText(text: negative[0], negative: true);
             }
             if sign != NumberSign.negative_only {
                 let positive = self.middle(
@@ -1270,7 +1274,7 @@ object NumberAffixReading {
                     data.template(pattern.suffix(true), true, false)
                 );
                 if positive.size() != 0 {
-                    return NumberSignedText(positive[0], false);
+                    return NumberSignedText(text: positive[0], negative: false);
                 }
             }
         }
@@ -1280,7 +1284,7 @@ object NumberAffixReading {
         );
         confirm ordinary.size() != 0
             else throw InvalidLocalizedNumber.because("number affixes/sign do not match locale");
-        NumberSignedText(ordinary[0], false);
+        NumberSignedText(text: ordinary[0], negative: false);
     }
 
     hidden middle(prefix is string, suffix is string) is @string {
@@ -1297,7 +1301,7 @@ object NumberAffixReading {
     }
 }
 
-object NumberDigitReading {
+hidden object NumberDigitReading {
     has origin is string;
     has data is NumberRenderingData;
 
@@ -1321,7 +1325,7 @@ object NumberDigitReading {
     }
 }
 
-object NumberIntegerReading {
+hidden object NumberIntegerReading {
     has origin is string;
     has data is NumberRenderingData;
     has grouping is NumberGrouping;
@@ -1336,7 +1340,7 @@ object NumberIntegerReading {
         let parts = origin.split(data.symbol(1));
         confirm parts.size() <= 1024 else throw InvalidLocalizedNumber.because("group count");
         let groups is @string = parts.map() -> part {
-            NumberDigitReading(part, data).string();
+            NumberDigitReading(origin: part, data: data).string();
         };
         let count = groups.reduce(0) -> count, part {
             count + part.length();
@@ -1374,7 +1378,7 @@ object NumberIntegerReading {
 
 // Strict, bounded grammar: no trimming, mixed digits or compact inverse.
 // Grouping is optional; when present its widths and minimum threshold must match.
-object NumberReading {
+hidden object NumberReading {
     has origin is string;
     has locale is Locale;
     has format is NumberFormat;
@@ -1385,26 +1389,26 @@ object NumberReading {
         self.format = format;
     }
 
-    value() is Decimal {
+    decimal() is Decimal {
         confirm origin.length() > 0 && origin.length() <= 4096
             else throw InvalidLocalizedNumber.because("input must be 1..4096 scalars");
-        let notation = format.notation();
+        let notation = format::Style::notation;
         confirm notation != NumberNotation.compact_short && notation != NumberNotation.compact_long
             else throw InvalidLocalizedNumber.because("compact notation has no unambiguous inverse");
         let data = NumberLocaleData(locale);
         let scientific = notation == NumberNotation.scientific
             || notation == NumberNotation.engineering;
         let signed = NumberAffixReading(
-            origin,
-            data,
-            data.pattern(if scientific {
+            origin: origin,
+            data: data,
+            pattern: data.pattern(if scientific {
                 1;
             }
             else {
                 0;
             }),
-            format.sign()
-        ).value();
+            sign: format::Style::sign
+        ).text();
         let source = signed.text();
         let exponent_parts = if scientific {
             source.split(data.symbol(6));
@@ -1422,31 +1426,31 @@ object NumberReading {
         let decimal_parts = exponent_parts[0].split(data.symbol(0));
         confirm decimal_parts.size() <= 2
             else throw InvalidLocalizedNumber.because("duplicate decimal separator");
-        let whole = NumberIntegerReading(decimal_parts[0], data, if scientific {
+        let whole = NumberIntegerReading(origin: decimal_parts[0], data: data, grouping: if scientific {
             NumberGrouping.never;
         }
         else {
-            format.grouping();
+            format::Style::grouping;
         }).string();
         let fraction = if decimal_parts.size() == 2 {
-            NumberDigitReading(decimal_parts[1], data).string();
+            NumberDigitReading(origin: decimal_parts[1], data: data).string();
         }
         else {
             "";
         };
         let precision = format.precision();
-        confirm whole.length() >= precision.minimum_integer()
-            && fraction.length() >= precision.minimum_fraction()
-            && fraction.length() <= precision.maximum_fraction()
+        confirm whole.length() >= precision::Digits::minimum_integer
+            && fraction.length() >= precision::Digits::minimum_fraction
+            && fraction.length() <= precision::Digits::maximum_fraction
             else throw InvalidLocalizedNumber.because("input precision does not match format");
         let exponent = if scientific {
             let frame = NumberAffixReading(
-                exponent_parts[1],
-                data,
-                NumberPattern(["", "", "{minus}", "", "0", "0", "0", "0"]),
-                NumberSign.automatic
-            ).value();
-            let digits = NumberDigitReading(frame.text(), data).string();
+                origin: exponent_parts[1],
+                data: data,
+                pattern: NumberPattern(["", "", "{minus}", "", "0", "0", "0", "0"]),
+                sign: NumberSign.automatic
+            ).text();
+            let digits = NumberDigitReading(origin: frame.text(), data: data).string();
             let exponent = BigInt((if frame.negative() {
                 "-";
             }
@@ -1495,8 +1499,8 @@ object LocalizedDecimalFromString {
         self.format = format;
     }
 
-    value() is Decimal {
-        NumberReading(origin, locale, format).value();
+    decimal() is Decimal {
+        NumberReading(origin: origin, locale: locale, format: format).decimal();
     }
 }
 
@@ -1511,14 +1515,14 @@ object LocalizedIntegerFromString {
         self.grouping = grouping;
     }
 
-    value() is BigInt {
+    integer() is BigInt {
         let format = NumberFormat(
-            NumberNotation.standard,
-            grouping,
-            NumberSign.automatic,
-            NumberPrecision(1, 0, 0, Rounding.toward_zero)
+            notation: NumberNotation.standard,
+            grouping: grouping,
+            sign: NumberSign.automatic,
+            precision: NumberPrecision(minimum_integer: 1, minimum_fraction: 0, maximum_fraction: 0, rounding: Rounding.toward_zero)
         );
-        let value = NumberReading(origin, locale, format).value();
+        let value = NumberReading(origin: origin, locale: locale, format: format).decimal();
         (value.coefficient() * BigInt("10").power(value.exponent(), 8192));
     }
 }
@@ -1526,13 +1530,13 @@ object LocalizedIntegerFromString {
 test "exact decimal number rounds before its text is localized" {
     test.is(
         LocalizedDecimal(
-            Decimal("1234.567"),
-            Locale("en"),
-            NumberFormat(
-                NumberNotation.standard,
-                NumberGrouping.automatic,
-                NumberSign.automatic,
-                NumberPrecision(1, 2, 2, Rounding.half_even)
+            origin: Decimal("1234.567"),
+            locale: Locale("en"),
+            format: NumberFormat(
+                notation: NumberNotation.standard,
+                grouping: NumberGrouping.automatic,
+                sign: NumberSign.automatic,
+                precision: NumberPrecision(1, 2, 2, Rounding.half_even)
             )
         ).string(),
         "1,234.57"

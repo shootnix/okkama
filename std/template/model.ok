@@ -57,11 +57,11 @@ object TemplateBindings does TemplateStrings {
     has origin is @TemplateBinding;
 
     TemplateBindings(values is Sequencing<TemplateBinding>) {
-        origin = TemplateBindingSnapshot(values, 1024).items();
+        origin = TemplateBindingSnapshot(source: values, maximum: 1024).items();
     }
 
     TemplateBindings(values is Sequencing<TemplateBinding>, maximum_bindings is int) {
-        origin = TemplateBindingSnapshot(values, maximum_bindings).items();
+        origin = TemplateBindingSnapshot(source: values, maximum: maximum_bindings).items();
     }
 
     string(path is TemplatePath) is string {
@@ -80,7 +80,7 @@ object TemplateBindings does TemplateStrings {
 
 // Internal bounded snapshot collaborator; importable because module declarations
 // have no private visibility. No item is reread during duplicate validation.
-object TemplateBindingSnapshot {
+hidden object TemplateBindingSnapshot {
     has origin is @TemplateBinding;
 
     TemplateBindingSnapshot(source is Sequencing<TemplateBinding>, maximum is int) {
@@ -117,8 +117,8 @@ enum TemplateBindingLimitExceeded is Error = (exceeded);
 
 test "explicit template strings have exact nominal paths" {
     let data is TemplateStrings = TemplateBindings([
-        TemplateBinding(TemplatePath(["user.name"]), "literal"),
-        TemplateBinding(TemplatePath(["user", "name"]), "nested")
+        TemplateBinding(path: TemplatePath(["user.name"]), value: "literal"),
+        TemplateBinding(path: TemplatePath(["user", "name"]), value: "nested")
     ]);
     test.is(data.string(TemplatePath(["user.name"])), "literal");
     test.is(data.string(TemplatePath(["user", "name"])), "nested");
@@ -128,7 +128,7 @@ test "explicit template strings have exact nominal paths" {
 test "template binding errors retain path and budget contracts" {
     test.is(
         try {
-            TemplateBindings([], 0).string(TemplatePath(["missing"]));
+            TemplateBindings(values: [], maximum_bindings: 0).string(TemplatePath(["missing"]));
             "";
         }
         catch MissingTemplateValue.path(path) {
@@ -137,14 +137,14 @@ test "template binding errors retain path and budget contracts" {
         "missing"
     );
     test.ok(try {
-        TemplateBindings([], -1);
+        TemplateBindings(values: [], maximum_bindings: -1);
         false;
     }
     catch error is InvalidTemplateBindingLimit {
         true;
     });
     test.ok(try {
-        TemplateBindings([TemplateBinding(TemplatePath(["a"]), "")], 0);
+        TemplateBindings(values: [TemplateBinding(path: TemplatePath(["a"]), value: "")], maximum_bindings: 0);
         false;
     }
     catch error is TemplateBindingLimitExceeded {
@@ -153,8 +153,8 @@ test "template binding errors retain path and budget contracts" {
     test.is(
         try {
             TemplateBindings([
-                TemplateBinding(TemplatePath(["x"]), "1"),
-                TemplateBinding(TemplatePath(["x"]), "2")
+                TemplateBinding(path: TemplatePath(["x"]), value: "1"),
+                TemplateBinding(path: TemplatePath(["x"]), value: "2")
             ]);
             "";
         }

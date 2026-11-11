@@ -49,7 +49,7 @@ hidden object LocalServer {
     }
 
     url(path is string) is string {
-        "http://127.0.0.1:" + listener.local_endpoint().port().string() + path;
+        "http://127.0.0.1:" + listener.local_endpoint()::Parts::port.string() + path;
     }
 
     async answer(reply is string) is bool {

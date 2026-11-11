@@ -1,0 +1,74 @@
+module examples/locale/formats v1.0.0;
+
+import "locale/tag" take Locale;
+import "locale/match" take LookedUpLocale, BasicLanguageRange;
+import "locale/number" take LocalizedDecimal, LocalizedDecimalFromString, NumberFormat, NumberNotation, NumberGrouping, NumberSign, NumberPrecision;
+import "locale/currency" take Currency, CurrencyFormat, CurrencyDisplay, LocalizedCurrency;
+import "locale/date_time" take LocalizedDate, DateStyle;
+import "locale/list" take LocalizedList, ListKind, ListStyle;
+import "i18n/plural" take PluralCategoryOf, PluralNumber, PluralKind, PluralCategory;
+import "math/decimal" take Decimal;
+import "math/rounding" take Rounding;
+import "time/date" take Date;
+import "io/stdout" take Stdout;
+
+// One value, written the way each language expects: numbers, money, dates,
+// lists and plural categories come from CLDR data shipped with the standard
+// library. The locale is chosen from what the user asked for and what the
+// program supports (RFC 4647 lookup), with an explicit fallback.
+
+object CategoryName {
+    has category is PluralCategory;
+
+    CategoryName(category is PluralCategory) {
+        self.category = category;
+    }
+
+    string() is string {
+        match category {
+            case PluralCategory.zero { "zero"; }
+            case PluralCategory.one { "one"; }
+            case PluralCategory.two { "two"; }
+            case PluralCategory.few { "few"; }
+            case PluralCategory.many { "many"; }
+            case PluralCategory.other { "other"; }
+        }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let supported = [Locale("en"), Locale("de"), Locale("fr"), Locale("ru")];
+    let asked = [BasicLanguageRange("de-CH"), BasicLanguageRange("en")];
+    out.writeln("chosen: " + LookedUpLocale(requested: asked, available: supported, fallback: Locale("en")).locale().string());
+
+    let number = NumberFormat(
+        notation: NumberNotation.standard,
+        grouping: NumberGrouping.automatic,
+        sign: NumberSign.automatic,
+        precision: NumberPrecision(minimum_integer: 1, minimum_fraction: 2, maximum_fraction: 2, rounding: Rounding.half_even),
+    );
+    let money = CurrencyFormat(numbers: number, display: CurrencyDisplay.symbol, accounting: false, currency_digits: true);
+    let amount = Decimal("1234567.891");
+    let day = Date(year: 2026, month: 11, day: 12);
+    for supported -> locale {
+        out.writeln(locale.string() + ": "
+            + LocalizedDecimal(origin: amount, locale: locale, format: number).string() + " | "
+            + LocalizedCurrency(amount: Decimal("-1234.5"), currency: Currency("EUR"), locale: locale, format: money).string() + " | "
+            + LocalizedDate(origin: day, locale: locale, style: DateStyle.long).string() + " | "
+            + LocalizedList(values: ["tea", "milk", "bread"], locale: locale, kind: ListKind.conjunction, style: ListStyle.long).string());
+    }
+
+    // Reading a localized number back gives the same decimal.
+    let german = LocalizedDecimal(origin: amount, locale: Locale("de"), format: number).string();
+    let parsed = LocalizedDecimalFromString(origin: german, locale: Locale("de"), format: number).decimal();
+    out.writeln("read back " + german + ": " + (parsed == Decimal("1234567.89")).string());
+
+    // Plural categories decide which message form to use.
+    for [1, 2, 5, 21] -> count {
+        let russian = PluralCategoryOf(origin: PluralNumber(count.string()), locale: Locale("ru"), kind: PluralKind.cardinal).category();
+        let english = PluralCategoryOf(origin: PluralNumber(count.string()), locale: Locale("en"), kind: PluralKind.cardinal).category();
+        out.writeln(count.string() + ": en " + CategoryName(english).string() + ", ru " + CategoryName(russian).string());
+    }
+    0;
+}

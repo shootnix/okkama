@@ -740,9 +740,82 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     `examples/net/addresses.ok` and `examples/net/echo.ok`.
   - The Book drops the legacy `crypto/*`, `socket/*` and `net/address`
     passages (371 lines) and describes digest, crypto and net in §26.5.
+- **std review, wave 4: platform, the part without a decision (#352).** The
+  areas are config, db, i18n, locale, template, terminal, testing and
+  logging. The card is `okkama-docs/std-review/cards/wave-4-platform.md`.
+  Its public questions wait for the owner.
+  - **Hidden machinery.** 183 objects that no caller names are hidden,
+    among them `LogArchive`, `TerminalFallback`, `RecordedTestResult` and
+    `RecordedTestCause`.
+  - **Answers with nouns** (82), for example:
+    - db values answer `bool()`, `integer()`, `float()`, `decimal()`,
+      `string()` and `bytes()`, and readers answer `cell()`;
+    - `ParsedIni(…).document()`, `ParsedPo(…).document()` and
+      `ScalarSetting(…).text()`;
+    - `LookedUpLocale(…).locale()`, `PluralCategoryOf(…).category()` and
+      `DisplayWidth(…).columns()`;
+    - `SqliteBackup(…).report()`, and `TemplateLibrary.template(name)` and
+      `HtmlTemplateLibrary.template(name)` for a lookup by name.
+
+    Name/value pairs (`IniEntry`, `GettextHeader`) keep `value()`.
+  - **Caps for ready scalar fields**, while actions that answer objects stay
+    actions:
+    - db: `TransactionOptions::Mode`, `SqliteOptions::Settings`,
+      `DbLimits::Limits`, `Column::Parts`, `PoolOptions::Size`,
+      `PoolSnapshot::Counts`, `PostgresOptions::Settings` and
+      `PostgresCredentials::Credentials`;
+    - logging: `LogRecord::Entry` (`level`, `message`),
+      `LogQueueOptions::Limits`, `SyslogOptions::Settings` and
+      `FileLogOptions::Writes`;
+    - config: `SettingSource::Source` and `EnvironmentBinding::Binding`;
+    - terminal: `TerminalSize::Size`, `TerminalCapabilities::Support` and
+      `RgbColor::Channels`;
+    - i18n and locale: `MessageKey::Key`, `PluralForm::Form`,
+      `PoEntry::Entry`, `PoComment::Comment`, `NumberPrecision::Digits`,
+      `NumberFormat::Style`, `CurrencyFormat::Settings`,
+      `CollationOptions::Settings` and `DateTimeStyle::Styles`;
+    - testing: `TestResult::Outcome`, `TestCounts::Counts`,
+      `TestFailure::Failure`, `TestPosition::Position` and
+      `TestOutput::Captured`.
+  - **Constructors bind.** `SyslogMessage` encodes in `bytes()`.
+    `FilteredLocales` selects on first use. `LocalizedDate`, `LocalizedTime`
+    and `LocalizedLocalDateTime` render in `string()`. Each keeps its result
+    with `once let`. `PreferredLocales` and `SystemLanguagePreferences` still
+    read the system when made, as `Environment()` does, because `once let`
+    refuses an effect.
+  - **Named arguments** in about 600 constructor calls.
+  - **Tests** for every module that had none:
+    - logging: name, record, write, named, enrichment, filter, line,
+      stream, queue (async), file, rotation and syslog;
+    - db: param, row, read, error, transaction, backup, blob and script, and
+      SQLite queries, prepared statements, transactions, blobs, scripts and an
+      online backup;
+    - config: key, value and environment;
+    - terminal: capability, style and screen;
+    - `testing/runner`.
+
+    `db/acquisition`, `prepared` and `query` are tested through
+    `db/sqlite`, because an inline test there would import sqlite and make a
+    cycle. Terminal sessions, modes and prompts need a real terminal, and the
+    CLI's PTY tests cover them.
+  - **Examples:** `examples/logging/app.ok`, `config/layers.ok`,
+    `template/pages.ok`, `terminal/colors.ok`, `db/notes.ok`,
+    `locale/formats.ok` and `i18n/messages.ok`. They agree on IR, Sparrow and
+    the JVM.
+  - The Book drops the legacy log, sql, db, template and test passages (480
+    lines) and describes the wave-4 areas in §26.5.
 
 ### Fixed
 
+- **template: a JSON number is written as JSON writes it (#494).**
+  `SectionTemplate("Order {{id}}")` with `{"id": 17}` gave `Order 1.7e1`,
+  and `12.5` gave `1.25e1`. `JsonTemplateStrings` printed numbers through
+  the canonical form of `Decimal`, while `HtmlTemplate` printed `17`. Both
+  now print `17`, `4.5`, `1000` and `-0.25`, as `config/document` does
+  since #366.
+- **Book: links to example programs (#495).** 57 links in the two Books
+  pointed at `../examples/…` programs that live in okkama-docs, not in this
+  repository. They are now okkama-docs references.
 - **crypto/nonce: `CounterNonce` with a counter of 8 bytes or more (#493).**
   The usual AEAD nonce, a 4-byte prefix and an 8-byte counter in 12 bytes,
   failed with "Shift count must be in 0..63". A counter field of 8 bytes or

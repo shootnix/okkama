@@ -117,6 +117,23 @@ and compares the output.
 On the JVM, the digest and crypto examples need the host crypto library. An
 installed Okkama finds it; a development build takes `OKKAMA_NATIVE_LIB`.
 
+## logging, config, template
+
+| Program | Task |
+|---|---|
+| `logging/app.ok` | log through a named logger: filter by level per name, hide a secret field, write text lines and keep records, log a failure with its cause |
+| `config/layers.ok` | layer defaults, an INI file, environment variables and the command line; read a value with its source, a list, a fallback; report a broken file's line |
+| `template/pages.ok` | fill a text template from bindings, walk JSON with sections and a partial, escape values in HTML and refuse an event attribute |
+
+## terminal, db, locale, i18n
+
+| Program | Task |
+|---|---|
+| `terminal/colors.ok` | decide the color depth from the terminal and the environment, render styled text for each depth, measure display width |
+| `db/notes.ok` | an in-memory SQLite table: bound parameters, rows by column name, a prepared insert, a transaction undone by a constraint |
+| `locale/formats.ok` | choose a locale from the user's ranges; write numbers, money, dates and lists four ways; read a number back; plural categories |
+| `i18n/messages.ok` | messages by key and context, plural forms for English and Russian, a gettext PO file parsed and printed |
+
 ## strings/parse
 
 | Program | Task |

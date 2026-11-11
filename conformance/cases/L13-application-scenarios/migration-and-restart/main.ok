@@ -37,19 +37,19 @@ object Migrator {
 object Start {
     Start();
     async run(path is Path) is int {
-        let connection = await SqliteDatabase(path, SqliteOptions()).connection();
+        let connection = await SqliteDatabase(path: path, options: SqliteOptions()).connection();
         defer await connection.settled();
         defer connection.close();
         await Migrator(connection: connection).migrate();
     }
     async insert(path is Path) is void {
-        let connection = await SqliteDatabase(path, SqliteOptions()).connection();
+        let connection = await SqliteDatabase(path: path, options: SqliteOptions()).connection();
         defer await connection.settled();
         defer connection.close();
-        await connection.execution(Statement("INSERT INTO invoices(id, cents) VALUES(?, ?)", [DbText("inv-1"), DbInteger(BigInt("2970"))]));
+        await connection.execution(Statement(text: "INSERT INTO invoices(id, cents) VALUES(?, ?)", values: [DbText("inv-1"), DbInteger(BigInt("2970"))]));
     }
     async read(path is Path) is string {
-        let connection = await SqliteDatabase(path, SqliteOptions()).connection();
+        let connection = await SqliteDatabase(path: path, options: SqliteOptions()).connection();
         defer await connection.settled();
         defer connection.close();
         let rows = await connection.rows(Statement("SELECT id, cents, currency FROM invoices"));

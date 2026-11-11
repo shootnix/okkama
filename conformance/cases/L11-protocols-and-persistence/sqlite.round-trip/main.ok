@@ -18,8 +18,8 @@ async main() is int {
     defer await connection.settled();
     defer connection.close();
     await connection.execution(Statement("CREATE TABLE customers(id INTEGER, name TEXT)"));
-    await connection.execution(Statement("INSERT INTO customers VALUES(?, ?)", [DbInteger(BigInt("7")), DbText("Ada; DROP TABLE customers")]));
-    let rows = await connection.rows(Statement("SELECT id, name FROM customers WHERE id = ?", [DbInteger(BigInt("7"))]));
+    await connection.execution(Statement(text: "INSERT INTO customers VALUES(?, ?)", values: [DbInteger(BigInt("7")), DbText("Ada; DROP TABLE customers")]));
+    let rows = await connection.rows(Statement(text: "SELECT id, name FROM customers WHERE id = ?", values: [DbInteger(BigInt("7"))]));
     let row = await rows.row();
     let reader = RowReader(origin: row);
     out.writeln(reader.int("id").string() + " " + reader.text("name"));

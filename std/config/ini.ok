@@ -251,12 +251,12 @@ object ParsedIni does IniContent {
         self.maximum_entries = maximum_entries;
     }
 
-    value() is IniDocument {
-        IniParse(origin, maximum_input, maximum_sections, maximum_entries).document();
+    document() is IniDocument {
+        IniParse(origin: origin, maximum_input: maximum_input, maximum_sections: maximum_sections, maximum_entries: maximum_entries).document();
     }
 
     print(to is IniWriting) is void {
-        self.value().print(to);
+        self.document().print(to);
     }
 }
 
@@ -293,7 +293,7 @@ object IniString {
 // Unicode scalars, the names seen so far, and the first failure, which is
 // sticky. Status: 0 valid, 1 entry before section, 2 duplicate section,
 // 3 duplicate entry, 4 output limit.
-object IniTextEmission does IniWriting {
+hidden object IniTextEmission does IniWriting {
     has maximum is int;
     has pieces is Atomic<List<string>>;
     has length, status, entries is Atomic<int>;
@@ -449,10 +449,10 @@ hidden object IniNames {
     added(quoted is string) is IniNames {
         let joined = recent + quoted + char(0).string();
         if count < 15 {
-            IniNames(settled, joined, count + 1);
+            IniNames(settled: settled, recent: joined, count: count + 1);
         }
         else {
-            IniNames(settled + joined.slice(1, joined.length()), char(0).string(), 0);
+            IniNames(settled: settled + joined.slice(1, joined.length()), recent: char(0).string(), count: 0);
         }
     }
 }
@@ -780,11 +780,11 @@ hidden object IniLineScan {
             let first = at + 1;
             confirm first + width <= points.size()
                 && (first..first + width).filter() -> index {
-                    IniDigit(points[index]).value() < 0;
+                    IniDigit(points[index]).digit() < 0;
                 }.size() == 0
                 else throw IniFault.at(first, "invalid Unicode escape");
             let code = (first..first + width).reduce(0) -> sum, index {
-                sum * 16 + IniDigit(points[index]).value();
+                sum * 16 + IniDigit(points[index]).digit();
             };
             confirm code <= 1114111 && (code < 55296 || code > 57343)
                 else throw IniFault.at(first, "escape is not a Unicode scalar");
@@ -838,7 +838,7 @@ hidden object IniDigit {
         self.point = point;
     }
 
-    value() is int {
+    digit() is int {
         let code = point.code();
         if code >= 48 && code <= 57 {
             code - 48;
@@ -922,16 +922,16 @@ hidden object IniParse {
             }.map() -> at {
                 match lines[at] {
                     case IniLine.binding(name, value, column) {
-                        IniEntry(name, value);
+                        IniEntry(name: name, value: value);
                     }
                     else {
-                        IniEntry("", "");
+                        IniEntry(name: "", value: "");
                     }
                 }
             };
-            IniSection(self.name(lines[headers[section]]), entries);
+            IniSection(name: self.name(lines[headers[section]]), entries: entries);
         };
-        IniDocument(sections, sections.size());
+        IniDocument(sections: sections, maximum_sections: sections.size());
     }
 
     // LF-separated lines; CRLF loses its CR; no line after a final LF.
@@ -1049,7 +1049,7 @@ hidden object IniParse {
 }
 
 test "a document reads back in order" {
-    let document = ParsedIni("[s]\nx=y\n[t]\n  \"a b\" = \"c\\td\"  \n").value();
+    let document = ParsedIni("[s]\nx=y\n[t]\n  \"a b\" = \"c\\td\"  \n").document();
     test.is(document.section("s").value("x"), "y");
     test.is(document.section("t").value("a b"), "c\td");
     test.is(IniString(document).string(), "[\"s\"]\n\"x\"=\"y\"\n[\"t\"]\n\"a b\"=\"c\\td\"\n");
@@ -1057,19 +1057,19 @@ test "a document reads back in order" {
 
 test "a failure names the first problem" {
     let unterminated = test.throws(InvalidIni) {
-        ParsedIni("[s]\r\nx=\"").value();
+        ParsedIni("[s]\r\nx=\"").document();
     };
     test.is(unterminated, InvalidIni.located(2, 4, "unterminated quoted string"));
     let orphan = test.throws(InvalidIni) {
-        ParsedIni("x=y").value();
+        ParsedIni("x=y").document();
     };
     test.is(orphan, InvalidIni.located(1, 1, "entry requires a section"));
     let repeated = test.throws(InvalidIni) {
-        ParsedIni("[s]\n[t]\n[s]").value();
+        ParsedIni("[s]\n[t]\n[s]").document();
     };
     test.is(repeated, InvalidIni.located(3, 1, "duplicate INI section"));
     let twice = test.throws(InvalidIni) {
-        ParsedIni("[s]\na=1\n b = 2\nb=3").value();
+        ParsedIni("[s]\na=1\n b = 2\nb=3").document();
     };
     test.is(twice, InvalidIni.located(4, 1, "duplicate INI entry"));
 }

@@ -9,6 +9,8 @@ import "encoding/utf" take Utf8Encoded;
 import "db/read" take RowValues, RowReader, DbColumnReader, DbMaybeReader, DbPresenceReader, DbPage;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
+import "db/param" take Param;
+import "db/read" take RowValueFailure;
 
 object Column {
     has index is int;
@@ -25,16 +27,18 @@ object Column {
         self.declaration = declaration;
     }
 
-    index() is int {
-        index;
-    }
+    cap Parts {
+        index is int {
+            index;
+        }
 
-    name() is string {
-        name;
-    }
+        name is string {
+            name;
+        }
 
-    declaration() is string {
-        declaration;
+        declaration is string {
+            declaration;
+        }
     }
 }
 
@@ -44,11 +48,11 @@ object DbColumns {
 
     DbColumns(values is Sequencing<Column>, limits is DbLimits) {
         let count = values.size();
-        confirm count >= 0 && count <= limits.values()
+        confirm count >= 0 && count <= limits::Limits::values
             else throw DbBoundaryLimit.kind("column count");
         let columns is @Column = (0..count).map() -> index {
             let column = values.item(index);
-            confirm column.index() == index else throw InvalidRow.invalid;
+            confirm column::Parts::index == index else throw InvalidRow.invalid;
             column;
         };
         origin = columns;
@@ -65,9 +69,9 @@ object DbRowSchema {
     has state is native_db.DbSchemaState;
 
     DbRowSchema(columns is Sequencing<Column>, limits is DbLimits) {
-        self.columns = DbColumns(columns, limits).values();
+        self.columns = DbColumns(values: columns, limits: limits).values();
         let names is @string = self.columns.map() -> column {
-            column.name();
+            column::Parts::name;
         };
         state = native_db.db_schema(names);
     }
@@ -85,18 +89,18 @@ object DbRowSchema {
     }
 }
 
-object DbRowCells {
+hidden object DbRowCells {
     has values is @native_db.DbCellState;
 
     DbRowCells(origin is Sequencing<DbValue>, limits is DbLimits) {
         let count = origin.size();
-        confirm count >= 0 && count <= limits.values()
+        confirm count >= 0 && count <= limits::Limits::values
             else throw DbBoundaryLimit.kind("value count");
         let used = Atomic(0);
         let values is @native_db.DbCellState = (0..count).map() -> index {
             let value = ObservedDbValue(origin.item(index));
             let width = value.width();
-            confirm width <= limits.bytes() - used.value()
+            confirm width <= limits::Limits::bytes - used.value()
                 else throw DbBoundaryLimit.kind("value bytes");
             used.replace(used.value() + width);
             value.state();
@@ -119,7 +123,7 @@ object DbRowData {
 
     DbRowData(schema is DbRowSchema, cells is @native_db.DbCellState) {
         confirm schema.size() == cells.size() else throw InvalidRow.invalid;
-        confirm native_db.db_cells_bytes(cells) <= DbLimits().bytes()
+        confirm native_db.db_cells_bytes(cells) <= DbLimits()::Limits::bytes
             else throw DbBoundaryLimit.kind("value bytes");
         self.schema = schema;
         self.cells = cells;
@@ -163,16 +167,16 @@ object Row does RowValues {
     Row(columns is Sequencing<Column>, values is Sequencing<DbValue>) {
         confirm columns.size() == values.size() else throw InvalidRow.invalid;
         let limits = DbLimits();
-        schema = DbRowSchema(columns, limits);
-        self.values = DbRowCells(values, limits).values();
+        schema = DbRowSchema(columns: columns, limits: limits);
+        self.values = DbRowCells(origin: values, limits: limits).values();
         page = DbPage();
         base = 0;
     }
 
     Row(columns is Sequencing<Column>, values is Sequencing<DbValue>, limits is DbLimits) {
         confirm columns.size() == values.size() else throw InvalidRow.invalid;
-        schema = DbRowSchema(columns, limits);
-        self.values = DbRowCells(values, limits).values();
+        schema = DbRowSchema(columns: columns, limits: limits);
+        self.values = DbRowCells(origin: values, limits: limits).values();
         page = DbPage();
         base = 0;
     }
@@ -214,7 +218,7 @@ object Row does RowValues {
                 page.integer(i);
             }
             else {
-                DbColumnReader(name, page, i).int();
+                DbColumnReader(name: name, page: page, at: i).int();
             }
         }
         else {
@@ -224,7 +228,7 @@ object Row does RowValues {
                 native_db.db_int_value(cell);
             }
             else {
-                DbColumnReader(name, cell).int();
+                DbColumnReader(name: name, state: cell).int();
             }
         }
     }
@@ -257,7 +261,7 @@ object Row does RowValues {
                 page.text(i);
             }
             else {
-                DbColumnReader(name, page, i).text();
+                DbColumnReader(name: name, page: page, at: i).text();
             }
         }
         else {
@@ -266,7 +270,7 @@ object Row does RowValues {
                 native_db.db_text_value(cell);
             }
             else {
-                DbColumnReader(name, cell).text();
+                DbColumnReader(name: name, state: cell).text();
             }
         }
     }
@@ -309,10 +313,10 @@ object Row does RowValues {
     hidden reader(name is string) is DbColumnReader {
         let at = self.index(name);
         if page.width() > 0 {
-            DbColumnReader(name, page, base + at);
+            DbColumnReader(name: name, page: page, at: base + at);
         }
         else {
-            DbColumnReader(name, values[at]);
+            DbColumnReader(name: name, state: values[at]);
         }
     }
 
@@ -322,7 +326,7 @@ object Row does RowValues {
                 Presence.none;
             }
             else {
-                Presence.some(DbColumnReader(name, page, base + at));
+                Presence.some(DbColumnReader(name: name, page: page, at: base + at));
             }
         }
         else {
@@ -330,7 +334,7 @@ object Row does RowValues {
                 Presence.none;
             }
             else {
-                Presence.some(DbColumnReader(name, values[at]));
+                Presence.some(DbColumnReader(name: name, state: values[at]));
             }
         };
         DbPresenceReader(found);
@@ -353,3 +357,77 @@ enum AmbiguousColumn is Error = (name(name is string));
 enum InvalidRow is Error = (invalid);
 
 enum InvalidRowIndex is Error = (index(index is int));
+
+test "a row reads its cells by name: strict, Maybe and Presence" {
+    let columns = [
+        Column(index: 0, name: "id", declaration: "INTEGER"),
+        Column(index: 1, name: "name", declaration: "TEXT"),
+        Column(index: 2, name: "nick", declaration: "TEXT"),
+        Column(index: 3, name: "data", declaration: "BLOB"),
+        Column(index: 4, name: "on", declaration: "BOOLEAN"),
+    ];
+    let row = Row(columns: columns, values: [Param(7), Param("Ada"), Param(Maybe<string>.none), Param([1.byte()]), Param(true)]);
+    test.is(row.size(), 5);
+    test.is(row.int("id"), 7);
+    test.is(row.integer("id").string(), "7");
+    test.is(row.text("name"), "Ada");
+    test.is(row.bytes("data"), [1.byte()]);
+    test.is(row.boolean("on"), true);
+    test.throws(RowValueFailure) {
+        row.flag("on");
+    };
+    test.throws(RowValueFailure) {
+        row.flag("id");
+    };
+    test.is(Row(columns: [Column(index: 0, name: "f", declaration: "")], values: [Param(1)]).flag("f"), true);
+    test.is(row.item(1).kind() == DbValueKind.text, true);
+    test.is(row.columns().first()::Parts::name, "id");
+    test.is(row.columns().last()::Parts::declaration, "BOOLEAN");
+    test.is(row.maybe("nick").text() == Maybe<string>.none, true);
+    test.is(row.maybe("name").text() else "", "Ada");
+    let absent = match row.presence("alias").text() {
+        case Presence.missing {
+            true;
+        }
+        else {
+            false;
+        }
+    };
+    test.is(absent, true);
+    let empty = match row.presence("nick").text() {
+        case Presence.none {
+            true;
+        }
+        else {
+            false;
+        }
+    };
+    test.is(empty, true);
+    test.throws(MissingColumn) {
+        row.int("alias");
+    };
+    test.throws(RowValueFailure) {
+        row.int("name");
+    };
+    test.throws(InvalidRowIndex) {
+        row.item(9);
+    };
+}
+
+test "a row refuses ambiguous names and mismatched widths" {
+    let twice = Row(
+        columns: [Column(index: 0, name: "id", declaration: ""), Column(index: 1, name: "id", declaration: "")],
+        values: [Param(1), Param(2)],
+    );
+    test.is(twice.item(1).kind() == DbValueKind.integer, true);
+    test.throws(AmbiguousColumn) {
+        twice.int("id");
+    };
+    test.throws(InvalidRow) {
+        Row(columns: [Column(index: 0, name: "id", declaration: "")], values: [Param(1), Param(2)]);
+    };
+    let schema = DbRowSchema(columns: [Column(index: 0, name: "a", declaration: ""), Column(index: 1, name: "b", declaration: "")], limits: DbLimits());
+    test.is(schema.size(), 2);
+    test.is(schema.position("b"), 1);
+    test.is(schema.position("c"), -1);
+}

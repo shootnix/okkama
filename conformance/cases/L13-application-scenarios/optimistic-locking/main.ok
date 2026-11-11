@@ -15,20 +15,20 @@ object Accounts {
     has connection is SqliteConnection;
     Accounts(:connection);
     async version(id is int) is int {
-        let rows = await connection.rows(Statement("SELECT version FROM accounts WHERE id = ?", [DbInteger(BigInt(id.string()))]));
+        let rows = await connection.rows(Statement(text: "SELECT version FROM accounts WHERE id = ?", values: [DbInteger(BigInt(id.string()))]));
         let row = await rows.row();
         rows.close();
         RowReader(origin: row).int("version");
     }
     async credit(id is int, amount is int, expected_version is int) is int {
         let done = await connection.execution(Statement(
-            "UPDATE accounts SET balance = balance + ?, version = version + 1 WHERE id = ? AND version = ?",
-            [DbInteger(BigInt(amount.string())), DbInteger(BigInt(id.string())), DbInteger(BigInt(expected_version.string()))]));
+            text: "UPDATE accounts SET balance = balance + ?, version = version + 1 WHERE id = ? AND version = ?",
+            values: [DbInteger(BigInt(amount.string())), DbInteger(BigInt(id.string())), DbInteger(BigInt(expected_version.string()))]));
         confirm done.affected_rows().string() == "1" else throw StaleVersion.stale_version;
         expected_version + 1;
     }
     async balance(id is int) is int {
-        let rows = await connection.rows(Statement("SELECT balance FROM accounts WHERE id = ?", [DbInteger(BigInt(id.string()))]));
+        let rows = await connection.rows(Statement(text: "SELECT balance FROM accounts WHERE id = ?", values: [DbInteger(BigInt(id.string()))]));
         let row = await rows.row();
         rows.close();
         RowReader(origin: row).int("balance");

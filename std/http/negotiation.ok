@@ -1373,6 +1373,6 @@ test "charset exact refusal overrides wildcard without an implicit legacy defaul
 
 test "language matching uses most-specific basic range before wildcard quality" {
     let accepted = AcceptedLanguages("en;q=0,*;q=0.5");
-    test.is(accepted.quality(Locale("en", "US")).string(), "0");
-    test.is(accepted.preference([Locale("en", "US"), Locale("fr")]).string(), "fr");
+    test.is(accepted.quality(Locale(language: "en", region: "US")).string(), "0");
+    test.is(accepted.preference([Locale(language: "en", region: "US"), Locale("fr")]).string(), "fr");
 }

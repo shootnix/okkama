@@ -5,6 +5,7 @@ import "db/value" take DbValue, ObservedDbValue, DbValueKind, InvalidDbValue, Db
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
 import "runtime/db" as native_db;
+import "db/value" take DbInteger, DbDecimal, DbFloating, DbText;
 
 // Narrow input protocol keeps readers independent of the Row implementation.
 role RowValues {
@@ -20,35 +21,35 @@ object RowReader {
     }
 
     int(name is string) is int {
-        DbColumnReader(name, origin.value(name)).int();
+        DbColumnReader(name: name, origin: origin.value(name)).int();
     }
 
     integer(name is string) is BigInt {
-        DbColumnReader(name, origin.value(name)).integer();
+        DbColumnReader(name: name, origin: origin.value(name)).integer();
     }
 
     decimal(name is string) is Decimal {
-        DbColumnReader(name, origin.value(name)).decimal();
+        DbColumnReader(name: name, origin: origin.value(name)).decimal();
     }
 
     floating(name is string) is float {
-        DbColumnReader(name, origin.value(name)).floating();
+        DbColumnReader(name: name, origin: origin.value(name)).floating();
     }
 
     boolean(name is string) is bool {
-        DbColumnReader(name, origin.value(name)).boolean();
+        DbColumnReader(name: name, origin: origin.value(name)).boolean();
     }
 
     flag(name is string) is bool {
-        DbColumnReader(name, origin.value(name)).flag();
+        DbColumnReader(name: name, origin: origin.value(name)).flag();
     }
 
     text(name is string) is string {
-        DbColumnReader(name, origin.value(name)).text();
+        DbColumnReader(name: name, origin: origin.value(name)).text();
     }
 
     bytes(name is string) is @byte {
-        DbColumnReader(name, origin.value(name)).bytes();
+        DbColumnReader(name: name, origin: origin.value(name)).bytes();
     }
 }
 
@@ -168,7 +169,7 @@ object DbColumnReader {
         source = DbReaderSource.page(page, at);
     }
 
-    value() is DbValue {
+    cell() is DbValue {
         match source {
             case DbReaderSource.protocol(origin) {
                 origin;
@@ -200,7 +201,7 @@ object DbColumnReader {
 
     checked_int() is int {
         try {
-            let state = self.cell();
+            let state = self.native_cell();
             self.require(DbValueKind.integer);
             confirm native_db.db_int_valid(state)
                 else throw InvalidDbValue.because("integer outside int range");
@@ -213,7 +214,7 @@ object DbColumnReader {
 
     integer() is BigInt {
         try {
-            let state = self.cell();
+            let state = self.native_cell();
             self.require(DbValueKind.integer);
             BigInt(native_db.db_integer_value(state));
         }
@@ -224,7 +225,7 @@ object DbColumnReader {
 
     decimal() is Decimal {
         try {
-            let state = self.cell();
+            let state = self.native_cell();
             self.require(DbValueKind.decimal);
             Decimal(native_db.db_decimal_value(state));
         }
@@ -235,7 +236,7 @@ object DbColumnReader {
 
     floating() is float {
         try {
-            let state = self.cell();
+            let state = self.native_cell();
             self.require(DbValueKind.floating);
             native_db.db_floating_value(state);
         }
@@ -246,7 +247,7 @@ object DbColumnReader {
 
     boolean() is bool {
         try {
-            let state = self.cell();
+            let state = self.native_cell();
             self.require(DbValueKind.boolean);
             native_db.db_boolean_value(state);
         }
@@ -257,7 +258,7 @@ object DbColumnReader {
 
     flag() is bool {
         try {
-            let state = self.cell();
+            let state = self.native_cell();
             self.require(DbValueKind.integer);
             let exact = native_db.db_integer_value(state);
             confirm exact == "0" || exact == "1"
@@ -287,7 +288,7 @@ object DbColumnReader {
 
     checked_text() is string {
         try {
-            let state = self.cell();
+            let state = self.native_cell();
             self.require(DbValueKind.text);
             native_db.db_text_value(state);
         }
@@ -298,7 +299,7 @@ object DbColumnReader {
 
     bytes() is @byte {
         try {
-            let state = self.cell();
+            let state = self.native_cell();
             self.require(DbValueKind.bytes);
             native_db.db_bytes_value(state);
         }
@@ -307,7 +308,7 @@ object DbColumnReader {
         }
     }
 
-    hidden cell() is native_db.DbCellState {
+    hidden native_cell() is native_db.DbCellState {
         match source {
             case DbReaderSource.cell(state) {
                 state;
@@ -324,13 +325,13 @@ object DbColumnReader {
     hidden kind() is DbValueKind {
         match source {
             case DbReaderSource.cell(state) {
-                DbNativeKind(native_db.db_kind(state)).value();
+                DbNativeKind(native_db.db_kind(state)).kind();
             }
             case DbReaderSource.protocol(origin) {
                 origin.kind();
             }
             case DbReaderSource.page(page, at) {
-                DbNativeKind(page.kind(at)).value();
+                DbNativeKind(page.kind(at)).kind();
             }
         }
     }
@@ -347,10 +348,10 @@ object DbPresenceReader {
         self.origin = origin;
     }
 
-    value() is Presence<DbValue> {
+    cell() is Presence<DbValue> {
         match origin {
             case Presence.some(column) {
-                Presence.some(column.value());
+                Presence.some(column.cell());
             }
             case Presence.none {
                 Presence.none;
@@ -481,8 +482,8 @@ object DbMaybeReader {
         self.origin = origin;
     }
 
-    value() is Maybe<DbValue> {
-        origin.value().fold();
+    cell() is Maybe<DbValue> {
+        origin.cell().fold();
     }
 
     int() is Maybe<int> {
@@ -524,3 +525,49 @@ enum RowValueFailure is Error = (located(
     actual_kind is DbValueKind,
     cause is string
 ));
+
+hidden object ReadTestRow does RowValues {
+    ReadTestRow();
+
+    value(name is string) is DbValue {
+        if name == "n" {
+            DbInteger(BigInt("42"));
+        }
+        else if name == "price" {
+            DbDecimal(Decimal("9.50"));
+        }
+        else if name == "ratio" {
+            DbFloating(0.25);
+        }
+        else if name == "flag" {
+            DbInteger(BigInt("1"));
+        }
+        else {
+            DbText(name);
+        }
+    }
+}
+
+test "a column reader converts one cell strictly and names the column on failure" {
+    let reader = RowReader(ReadTestRow());
+    test.is(reader.int("n"), 42);
+    test.is(reader.integer("n").string(), "42");
+    test.is(reader.decimal("price").string(), "9.5");
+    test.is(reader.floating("ratio"), 0.25);
+    test.is(reader.flag("flag"), true);
+    test.is(reader.text("hello"), "hello");
+    let column = try {
+        reader.int("hello");
+        "";
+    }
+    catch RowValueFailure.located(name, expected, kind, _) {
+        if kind == DbValueKind.text {
+            name + ":" + expected;
+        }
+        else {
+            "?";
+        }
+    };
+    test.is(column, "hello:int");
+    test.is(DbColumnReader(name: "n", origin: DbInteger(BigInt("5"))).cell().kind() == DbValueKind.integer, true);
+}

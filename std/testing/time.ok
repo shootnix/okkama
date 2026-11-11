@@ -19,7 +19,7 @@ object ManualClock does Timing {
         CheckContext().verify();
         domain = clock_domain(true);
         cell = Atomic(
-            ManualClockFrame(start, Duration(value: 0.rat(), unit: DurationUnit.second), [], 0, false, false)
+            ManualClockFrame(wall: start, elapsed: Duration(value: 0.rat(), unit: DurationUnit.second), waiters: [], serial: 0, closed: false, dispatching: false)
         );
     }
 
@@ -38,12 +38,12 @@ object ManualClock does Timing {
         let old = self.open();
         cell.replace(
             ManualClockFrame(
-                value,
-                old.elapsed(),
-                old.waiters(),
-                old.serial(),
-                false,
-                old.dispatching()
+                wall: value,
+                elapsed: old.elapsed(),
+                waiters: old.waiters(),
+                serial: old.serial(),
+                closed: false,
+                dispatching: old.dispatching()
             )
         );
     }
@@ -81,12 +81,12 @@ object ManualClock does Timing {
         );
         cell.replace(
             ManualClockFrame(
-                old.wall().plus(duration),
-                elapsed,
-                remaining,
-                old.serial(),
-                false,
-                true
+                wall: old.wall().plus(duration),
+                elapsed: elapsed,
+                waiters: remaining,
+                serial: old.serial(),
+                closed: false,
+                dispatching: true
             )
         );
         defer self.finish_dispatch();
@@ -113,11 +113,11 @@ object ManualClock does Timing {
                 waiting[index];
             }
             else {
-                ManualClockWaiter(id, old.elapsed().plus(duration), signal);
+                ManualClockWaiter(id: id, deadline: old.elapsed().plus(duration), signal: signal);
             }
         };
         cell.replace(
-            ManualClockFrame(old.wall(), old.elapsed(), added, id, false, old.dispatching())
+            ManualClockFrame(wall: old.wall(), elapsed: old.elapsed(), waiters: added, serial: id, closed: false, dispatching: old.dispatching())
         );
         defer self.remove(id);
         await signal.wait();
@@ -131,7 +131,7 @@ object ManualClock does Timing {
             return;
         }
         cell.replace(
-            ManualClockFrame(old.wall(), old.elapsed(), [], old.serial(), true, old.dispatching())
+            ManualClockFrame(wall: old.wall(), elapsed: old.elapsed(), waiters: [], serial: old.serial(), closed: true, dispatching: old.dispatching())
         );
         for old.waiters() -> entry {
             entry.signal().set();
@@ -155,12 +155,12 @@ object ManualClock does Timing {
         };
         cell.replace(
             ManualClockFrame(
-                old.wall(),
-                old.elapsed(),
-                remaining,
-                old.serial(),
-                old.closed(),
-                old.dispatching()
+                wall: old.wall(),
+                elapsed: old.elapsed(),
+                waiters: remaining,
+                serial: old.serial(),
+                closed: old.closed(),
+                dispatching: old.dispatching()
             )
         );
     }
@@ -169,18 +169,18 @@ object ManualClock does Timing {
         let old = cell.value();
         cell.replace(
             ManualClockFrame(
-                old.wall(),
-                old.elapsed(),
-                old.waiters(),
-                old.serial(),
-                old.closed(),
-                false
+                wall: old.wall(),
+                elapsed: old.elapsed(),
+                waiters: old.waiters(),
+                serial: old.serial(),
+                closed: old.closed(),
+                dispatching: false
             )
         );
     }
 }
 
-object ManualClockWaiter {
+hidden object ManualClockWaiter {
     has id is int;
     has deadline is Duration;
     has signal is Event;
@@ -204,7 +204,7 @@ object ManualClockWaiter {
     }
 }
 
-object ManualClockFrame {
+hidden object ManualClockFrame {
     has wall is Instant;
     has elapsed is Duration;
     has waiters is @ManualClockWaiter;

@@ -1,0 +1,60 @@
+module examples/config/layers v1.0.0;
+
+import "config/key" take SettingKey, SettingKeyFromString;
+import "config/source" take Settings, SettingEntry, SettingSource, SettingSourceKind, LayeredSettings;
+import "config/document" take IniSettings;
+import "config/ini" take ParsedIni, InvalidIni;
+import "config/environment" take EnvironmentSettings, EnvironmentBinding;
+import "config/value" take ScalarSetting, ScalarSettingOr, Setting;
+import "cli/command" take CliCommand, Option;
+import "os/environment" take Environment;
+import "io/stdout" take Stdout;
+
+// Settings come in layers: built-in defaults, then a file, then environment
+// variables, then the command line. A later layer wins key by key, and every
+// value remembers where it came from. A real program reads Environment() and
+// ProcessArguments().strings(); this one fixes both.
+
+main() is int {
+    let out = Stdout();
+    let host = SettingKey(["server", "host"]);
+    let port = SettingKey(["server", "port"]);
+    let workers = SettingKey(["server", "workers"]);
+    let origins = SettingKey(["cors", "origins"]);
+
+    let defaults = Settings([
+        SettingEntry(key: host, values: ["127.0.0.1"], source: SettingSource(kind: SettingSourceKind.defaults, name: "built-in")),
+        SettingEntry(key: port, values: ["8080"], source: SettingSource(kind: SettingSourceKind.defaults, name: "built-in")),
+    ]);
+    let file = IniSettings(
+        document: ParsedIni("[server]\nhost = 0.0.0.0\nworkers = 4\n\n[cors]\norigins = https://example.com\n").document(),
+        source: SettingSource(kind: SettingSourceKind.document, name: "app.ini"),
+    );
+    let environment = EnvironmentSettings(
+        environment: Environment(values: ["APP_PORT": "9090", "HOME": "/home/ada"]),
+        names: [EnvironmentBinding(name: "APP_PORT", key: port), EnvironmentBinding(name: "APP_WORKERS", key: workers)],
+        source: SettingSource(kind: SettingSourceKind.environment, name: "environment"),
+    );
+    let command = CliCommand(name: "serve", options: [Option(name: "workers", value: "N", help: "Worker count", key: workers)]);
+    let line = command.invocation(["--workers", "8"]).settings();
+
+    let settings = LayeredSettings([defaults, file, environment, line]);
+    for [host, port, workers] -> key {
+        let value = ScalarSetting(origin: settings, key: key);
+        out.writeln(key.string() + " = " + value.text() + "  (" + value.source()::Source::name + ")");
+    }
+    let allowed is @string = Setting(origin: settings, key: origins).values().map() -> origin {
+        origin;
+    };
+    out.writeln("cors.origins = " + allowed.join(", "));
+    out.writeln("server.timeout = " + ScalarSettingOr(origin: settings, key: SettingKeyFromString(origin: "server.timeout", separator: ".").key(), fallback: "30s").text());
+
+    // A broken file names its line and column.
+    try {
+        ParsedIni("[server\nhost = x\n").document();
+    }
+    catch InvalidIni.located(row, column, message) {
+        out.writeln("app.ini:" + row.string() + ":" + column.string() + ": " + message);
+    }
+    0;
+}

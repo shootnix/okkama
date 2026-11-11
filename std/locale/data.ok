@@ -47,7 +47,7 @@ object LocaleDataKey {
             "root";
         }
         else {
-            LocaleFromLanguageTag(tag).value().string();
+            LocaleFromLanguageTag(tag).locale().string();
         };
     }
 
@@ -57,7 +57,7 @@ object LocaleDataKey {
 
     locale() is Locale {
         confirm origin != "root" else throw MissingDataLocale.missing;
-        LocaleFromLanguageTag(origin).value();
+        LocaleFromLanguageTag(origin).locale();
     }
 }
 
@@ -93,7 +93,7 @@ object LocaleFallbacks does Sequencing<LocaleDataKey> {
     }
 }
 
-object LocaleDataChain {
+hidden object LocaleDataChain {
     has parents is CldrParents;
 
     LocaleDataChain(parents is CldrParents) {
@@ -139,7 +139,7 @@ enum MissingDataLocale is Error = (missing);
 enum InvalidLocaleData is Error = (because(reason is string));
 
 test "data fallback finishes at its own root coordinate" {
-    let chain = LocaleFallbacks(Locale("en", "AU"));
+    let chain = LocaleFallbacks(Locale(language: "en", region: "AU"));
     test.is(chain.item(1).string(), "en-001");
     test.is(chain.last().string(), "root");
 }

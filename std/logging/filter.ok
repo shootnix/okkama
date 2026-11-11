@@ -2,10 +2,13 @@ module logging/filter v1.0.0;
 
 import "logging/name" take LogName;
 import "logging/level" take LogLevel, LogLevelOrder;
-import "logging/record" take LogRecord;
-import "logging/write" take LogWriting;
+import "logging/record" take LogRecord, LogContext;
+import "logging/write" take LogWriting, CollectedLogs;
 import "collections/sequence" take Sequencing;
 import "compare" take Order;
+import "logging/field" take LogFields;
+import "time/clock" take Instant;
+import "time/duration" take Duration, DurationUnit;
 
 role LogAllowing {
     allowed(name is LogName, level is LogLevel) is bool;
@@ -50,7 +53,7 @@ object LevelThresholds does LogAllowing {
     }
 
     allowed(name is LogName, level is LogLevel) is bool {
-        let choice = overrides.reduce(LogThresholdChoice(fallback, 0)) -> old, override {
+        let choice = overrides.reduce(LogThresholdChoice(level: fallback, size: 0)) -> old, override {
             let prefix = override.name().segments();
             let actual = name.segments();
             let matches = if prefix.size() > actual.size() {
@@ -62,17 +65,17 @@ object LevelThresholds does LogAllowing {
                 };
             };
             if matches && prefix.size() > old.size() {
-                LogThresholdChoice(override.level(), prefix.size());
+                LogThresholdChoice(level: override.level(), size: prefix.size());
             }
             else {
                 old;
             }
         };
-        LogLevelOrder(level, choice.level()).value() != Order.less;
+        LogLevelOrder(left: level, right: choice.level()).order() != Order.less;
     }
 }
 
-object LogThresholdChoice {
+hidden object LogThresholdChoice {
     has level is LogLevel;
     has size is int;
 
@@ -100,13 +103,13 @@ object AllowedLogs does LogWriting {
     }
 
     write(record is LogRecord) is void {
-        if allowing.allowed(record.context().name(), record.level()) {
+        if allowing.allowed(record.context().name(), record::Entry::level) {
             origin.write(record);
         }
     }
 }
 
-object EnabledLog {
+hidden object EnabledLog {
     has origin is LogAllowing;
     has name is LogName;
     has level is LogLevel;
@@ -117,9 +120,35 @@ object EnabledLog {
         self.level = level;
     }
 
-    value() is bool {
+    enabled() is bool {
         origin.allowed(name, level);
     }
 }
 
 enum InvalidLogThreshold is Error = (invalid);
+
+test "thresholds: the most specific override wins; allowed logs drop the rest" {
+    let thresholds = LevelThresholds(
+        fallback: LogLevel.warning,
+        overrides: [LevelOverride(name: LogName(["app", "db"]), level: LogLevel.debug)],
+    );
+    test.ok(!thresholds.allowed(LogName(["app"]), LogLevel.info));
+    test.ok(thresholds.allowed(LogName(["app"]), LogLevel.error));
+    test.ok(thresholds.allowed(LogName(["app", "db"]), LogLevel.debug));
+    test.ok(thresholds.allowed(LogName(["app", "db", "pool"]), LogLevel.debug));
+    test.ok(!thresholds.allowed(LogName(["app", "http"]), LogLevel.debug));
+    let collected = CollectedLogs();
+    let allowed = AllowedLogs(origin: collected, allowing: thresholds);
+    for [[LogLevel.info, LogLevel.error]] -> pair {
+        for pair -> level {
+            let name = LogName(["app"]);
+            allowed.write(LogRecord(
+        occurred: Instant(Duration(value: 0.rat(), unit: DurationUnit.second)),
+        level: level,
+        message: "m",
+        context: LogContext(name: name, fields: LogFields([]), process: 1),
+    ));
+        }
+    }
+    test.is(collected.size(), 1);
+}

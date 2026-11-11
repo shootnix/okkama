@@ -18,7 +18,7 @@ async main() is int {
     defer await connection.settled();
     defer connection.close();
     await connection.execution(Statement("CREATE TABLE amounts(big INTEGER, money TEXT, empty TEXT)"));
-    await connection.execution(Statement("INSERT INTO amounts VALUES(?, ?, ?)", [DbInteger(BigInt("9223372036854775807")), DbDecimal(Decimal("12345678901234567890.01")), DbNull()]));
+    await connection.execution(Statement(text: "INSERT INTO amounts VALUES(?, ?, ?)", values: [DbInteger(BigInt("9223372036854775807")), DbDecimal(Decimal("12345678901234567890.01")), DbNull()]));
     let rows = await connection.rows(Statement("SELECT big, money, empty FROM amounts"));
     let row = await rows.row();
     rows.close();

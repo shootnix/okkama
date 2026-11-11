@@ -44,8 +44,8 @@ object TemplateTree {
     }
 
     nodes() is @TemplateTreeNode {
-        let tokens = TemplateProgram(source, maximum_input, maximum_tokens, true).instructions();
-        let tree = TemplateTreeBuilder(source, maximum_depth);
+        let tokens = TemplateProgram(source: source, maximum_input: maximum_input, maximum_nodes: maximum_tokens, structured: true).instructions();
+        let tree = TemplateTreeBuilder(source: source, maximum_depth: maximum_depth);
         for tokens -> token {
             tree = tree.following(token);
         }
@@ -89,7 +89,7 @@ enum InvalidTemplateTreeNode is Error = (invalid);
 
 // Internal parser stack. The root frame represents the program, not an emitted
 // section; all subsequent frames correspond to unmatched opening tags.
-object TemplateTreeFrame {
+hidden object TemplateTreeFrame {
     has name is string;
     has category is TemplateTreeKind;
     has at is int;
@@ -130,7 +130,7 @@ object TemplateTreeFrame {
     }
 }
 
-object TemplateTreeBuilder {
+hidden object TemplateTreeBuilder {
     has source is string;
     has maximum_depth is int;
     has stack is List<TemplateTreeFrame>;
@@ -139,7 +139,7 @@ object TemplateTreeBuilder {
         self.source = source;
         self.maximum_depth = maximum_depth;
         let empty is List<TemplateTreeFrame> = EmptyList();
-        stack = empty.prefix(TemplateTreeFrame("", TemplateTreeKind.section, 0));
+        stack = empty.prefix(TemplateTreeFrame(name: "", kind: TemplateTreeKind.section, offset: 0));
     }
 
     following(token is TemplateInstruction) is ^TemplateTreeBuilder {
@@ -153,7 +153,7 @@ object TemplateTreeBuilder {
             else {
                 TemplateTreeKind.inverted;
             };
-            ^stack = stack.prefix(TemplateTreeFrame(token.text(), kind, token.offset()));
+            ^stack = stack.prefix(TemplateTreeFrame(name: token.text(), kind: kind, offset: token.offset()));
             return;
         }
         if tag == "/" {
@@ -162,7 +162,7 @@ object TemplateTreeBuilder {
             let closed = stack.first();
             confirm closed.text() == token.text()
                 else throw self.failure(token.offset(), "mismatched closing template section");
-            let node = TemplateTreeNode(closed.kind(), closed.text(), closed.nodes());
+            let node = TemplateTreeNode(kind: closed.kind(), text: closed.text(), children: closed.nodes());
             let parent = stack.tail().first().following(node);
             ^stack = stack.tail().tail().prefix(parent);
             return;
@@ -178,7 +178,7 @@ object TemplateTreeBuilder {
                 TemplateTreeKind.literal;
             }
         };
-        let parent = stack.first().following(TemplateTreeNode(kind, token.text(), []));
+        let parent = stack.first().following(TemplateTreeNode(kind: kind, text: token.text(), children: []));
         ^stack = stack.tail().prefix(parent);
     }
 
@@ -269,32 +269,32 @@ test "structured syntax errors keep original source positions" {
 }
 
 test "tree input token and depth limits are explicit" {
-    test.is(TemplateTree("", 0, 0, 0).nodes().size(), 0);
-    test.is(TemplateTree("x", 1, 1, 0).nodes()[0].text(), "x");
-    test.is(TemplateTree("{{#x}}{{/x}}", 12, 2, 1).nodes().size(), 1);
+    test.is(TemplateTree(source: "", maximum_input: 0, maximum_tokens: 0, maximum_depth: 0).nodes().size(), 0);
+    test.is(TemplateTree(source: "x", maximum_input: 1, maximum_tokens: 1, maximum_depth: 0).nodes()[0].text(), "x");
+    test.is(TemplateTree(source: "{{#x}}{{/x}}", maximum_input: 12, maximum_tokens: 2, maximum_depth: 1).nodes().size(), 1);
     test.ok(try {
-        TemplateTree("{{#x}}{{/x}}", 12, 1, 1).nodes();
+        TemplateTree(source: "{{#x}}{{/x}}", maximum_input: 12, maximum_tokens: 1, maximum_depth: 1).nodes();
         false;
     }
     catch e is Error {
         true;
     });
     test.ok(try {
-        TemplateTree("{{#x}}{{/x}}", 12, 2, 0).nodes();
+        TemplateTree(source: "{{#x}}{{/x}}", maximum_input: 12, maximum_tokens: 2, maximum_depth: 0).nodes();
         false;
     }
     catch e is Error {
         true;
     });
     test.ok(try {
-        TemplateTree("xx", 1, 2, 0).nodes();
+        TemplateTree(source: "xx", maximum_input: 1, maximum_tokens: 2, maximum_depth: 0).nodes();
         false;
     }
     catch e is Error {
         true;
     });
     test.ok(try {
-        TemplateTree("", 0, -1, 0);
+        TemplateTree(source: "", maximum_input: 0, maximum_tokens: -1, maximum_depth: 0);
         false;
     }
     catch e is Error {
