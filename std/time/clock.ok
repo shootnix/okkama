@@ -9,7 +9,7 @@ import "runtime/time" take wall_clock, monotonic_clock, clock_domain, sleep_nano
 //
 //     let clock = SystemClock();
 //     let before = clock.monotonic_instant();
-//     await clock.wait(Duration(value: 5.rat(), unit: DurationUnit.millisecond));
+//     await clock.wait(Duration(milliseconds: 5));
 //     let elapsed = clock.monotonic_instant().minus(before);
 //
 // Instant is a duration from the Unix epoch and may later be interpreted by
@@ -129,8 +129,8 @@ enum IncompatibleClock is Error = (incompatible);
 enum InvalidWait is Error = (because(message is string));
 
 test "instants are durations from the epoch" {
-    let second = Duration(value: 1.rat(), unit: DurationUnit.second);
-    let epoch = Instant(origin: Duration(value: 0.rat(), unit: DurationUnit.second));
+    let second = Duration(seconds: 1);
+    let epoch = Instant(origin: Duration(seconds: 0));
     let later = epoch + second;
     test.is(later.unix_duration()::Span::seconds, 1.rat());
     test.is((later - epoch)::Span::seconds, 1.rat());
@@ -139,11 +139,11 @@ test "instants are durations from the epoch" {
 }
 
 test "monotonic readings never mix domains" {
-    let tick = Duration(value: 5.rat(), unit: DurationUnit.millisecond);
-    let start = MonotonicInstant(origin: Duration(value: 10.rat(), unit: DurationUnit.second));
+    let tick = Duration(milliseconds: 5);
+    let start = MonotonicInstant(origin: Duration(seconds: 10));
     test.is(start.domain(), "explicit");
     test.is((start + tick - start)::Span::seconds, 1.rat() / 200.rat());
-    let other = MonotonicInstant(origin: Duration(value: 10.rat(), unit: DurationUnit.second), domain: "elsewhere");
+    let other = MonotonicInstant(origin: Duration(seconds: 10), domain: "elsewhere");
     test.is(
         try {
             (start - other)::Span::seconds.string();

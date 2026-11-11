@@ -34,7 +34,7 @@ object Shouting does Handling, WebSocketHandling {
                 protocols: [],
                 limits: WebSocketLimits(),
                 access: SameOriginWebSockets(),
-                deadline: Duration(value: 5.rat(), unit: DurationUnit.second),
+                deadline: Duration(seconds: 5),
             ),
             application: self,
         );
@@ -69,8 +69,8 @@ async main() is int {
         resolver: FixedResolution([]),
         policy: WebSocketPolicy(
             limits: WebSocketLimits(),
-            opening: Duration(value: 5.rat(), unit: DurationUnit.second),
-            closing: Duration(value: 2.rat(), unit: DurationUnit.second),
+            opening: Duration(seconds: 5),
+            closing: Duration(seconds: 2),
             access: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)]),
         ),
     ).connection();
@@ -81,7 +81,7 @@ async main() is int {
     await connection.close(1000, "bye");
     out.writeln("closed: " + connection.closed().string());
 
-    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
+    await server.drain(limit: Duration(seconds: 5));
     await serving.wait();
     0;
 }

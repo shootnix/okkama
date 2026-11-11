@@ -13,7 +13,7 @@ main() is int {
     let out = Stdout();
     let stamp = Rfc3339("2026-08-11T12:30:45.125+05:00");
     out.writeln("as read: " + stamp.string());
-    let utc = Duration(value: 0.rat(), unit: DurationUnit.second);
+    let utc = Duration(seconds: 0);
     out.writeln("in UTC:  " + Rfc3339(origin: stamp.instant(), offset: utc).string());
 
     let date = IsoText("2026-08-11").date();

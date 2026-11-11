@@ -319,8 +319,8 @@ object RotatingLogFile does Writing, Closing {
 enum InvalidLogRotation is Error = (because(reason is string));
 
 test "size and interval rotation decide and name the archive" {
-    let start = Instant(Duration(value: 1700000000.rat(), unit: DurationUnit.second));
-    let later = Instant(Duration(value: 1700003600.rat(), unit: DurationUnit.second));
+    let start = Instant(Duration(seconds: 1700000000));
+    let later = Instant(Duration(seconds: 1700003600));
     let size = SizeRotating(BigInt("10"));
     test.is(size.needed(BigInt("9"), start, start), false);
     test.is(size.needed(BigInt("10"), start, start), true);
@@ -328,20 +328,20 @@ test "size and interval rotation decide and name the archive" {
     test.throws(InvalidLogRotation) {
         SizeRotating(BigInt("0"));
     };
-    let utc = FixedZone(name: "UTC", offset: Duration(value: 0.rat(), unit: DurationUnit.second));
-    let hourly = IntervalRotating(interval: Duration(value: 3600.rat(), unit: DurationUnit.second), zone: utc);
-    test.is(hourly.needed(BigInt("1"), start, Instant(Duration(value: 1700003599.rat(), unit: DurationUnit.second))), false);
+    let utc = FixedZone(name: "UTC", offset: Duration(seconds: 0));
+    let hourly = IntervalRotating(interval: Duration(seconds: 3600), zone: utc);
+    test.is(hourly.needed(BigInt("1"), start, Instant(Duration(seconds: 1700003599))), false);
     test.is(hourly.needed(BigInt("1"), start, later), true);
     test.is(hourly.suffix(start, 2), "2023-11-14T22-13-20Z-2");
     test.throws(InvalidLogRotation) {
-        IntervalRotating(interval: Duration(value: 0.rat(), unit: DurationUnit.second), zone: utc);
+        IntervalRotating(interval: Duration(seconds: 0), zone: utc);
     };
 }
 
 test "a rotating file archives by generation and keeps the newest backups" {
     let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "logging-rotation-test-");
     let path = scratch.path().child("app.log");
-    let clock = ManualClock(Instant(Duration(value: 1700000000.rat(), unit: DurationUnit.second)));
+    let clock = ManualClock(Instant(Duration(seconds: 1700000000)));
     let options = FileLogOptions(permissions: PermissionMode(416), flush_each: true, sync_each: false);
     let logs = RotatingLogFile(path: path, options: options, rotation: SizeRotating(BigInt("10")), backups: 2, clock: clock);
     for ["a", "b", "c", "d", "e", "f", "g"] -> letter {
@@ -367,19 +367,19 @@ test "a rotating file archives by generation and keeps the newest backups" {
 test "an interval rotation names the archive by time" {
     let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "logging-rotation-test-");
     let path = scratch.path().child("app.log");
-    let clock = ManualClock(Instant(Duration(value: 1700000000.rat(), unit: DurationUnit.second)));
-    let utc = FixedZone(name: "UTC", offset: Duration(value: 0.rat(), unit: DurationUnit.second));
+    let clock = ManualClock(Instant(Duration(seconds: 1700000000)));
+    let utc = FixedZone(name: "UTC", offset: Duration(seconds: 0));
     let logs = RotatingLogFile(
         path: path,
         options: FileLogOptions(permissions: PermissionMode(416), flush_each: true, sync_each: false),
-        rotation: IntervalRotating(interval: Duration(value: 60.rat(), unit: DurationUnit.second), zone: utc),
+        rotation: IntervalRotating(interval: Duration(seconds: 60), zone: utc),
         backups: 1,
         clock: clock,
     );
     logs.write(ByteSnapshot(Utf8Encoded("one\n").bytes()));
-    clock.advance(Duration(value: 30.rat(), unit: DurationUnit.second));
+    clock.advance(Duration(seconds: 30));
     logs.write(ByteSnapshot(Utf8Encoded("two\n").bytes()));
-    clock.advance(Duration(value: 30.rat(), unit: DurationUnit.second));
+    clock.advance(Duration(seconds: 30));
     logs.write(ByteSnapshot(Utf8Encoded("three\n").bytes()));
     logs.close();
     let archive = Path(path.string() + ".archive.1.2023-11-14T22-14-20Z-1");

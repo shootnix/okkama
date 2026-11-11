@@ -127,13 +127,13 @@ object JsonTerminalLogs does LogWriting {
 
 test "stream writers put one line per record on their output" {
     let record = LogRecord(
-        occurred: Instant(Duration(value: 1700000000.rat(), unit: DurationUnit.second)),
+        occurred: Instant(Duration(seconds: 1700000000)),
         level: LogLevel.info,
         message: "up",
         context: LogContext(name: LogName(["app"]), fields: LogFields([]), process: 1),
     );
     let text = ByteBuffer();
-    let zone = FixedZone(name: "UTC", offset: Duration(value: 0.rat(), unit: DurationUnit.second));
+    let zone = FixedZone(name: "UTC", offset: Duration(seconds: 0));
     TextStreamLogs(origin: text.writing(), zone: zone).write(record);
     test.is(Utf8Decoded(text.content().bytes()).string(), "2023-11-14T22:13:20Z level=INFO name=\"app\" process=1 message=\"up\" fields={}\n");
     let json = ByteBuffer();

@@ -116,7 +116,7 @@ object NamedLogging does Logging {
 }
 
 test "a named logger stamps time, name and process, and merges its fields" {
-    let start = Instant(Duration(value: 1700000000.rat(), unit: DurationUnit.second));
+    let start = Instant(Duration(seconds: 1700000000));
     let collected = CollectedLogs();
     let logging = NamedLogging(
         name: LogName(["app"]),

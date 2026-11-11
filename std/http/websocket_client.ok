@@ -44,8 +44,8 @@ object WebSocketPolicy {
 
     WebSocketPolicy() {
         limits = WebSocketLimits();
-        opening = Duration(value: 30.rat(), unit: DurationUnit.second);
-        closing = Duration(value: 5.rat(), unit: DurationUnit.second);
+        opening = Duration(seconds: 30);
+        closing = Duration(seconds: 5);
         access = PublicEndpoints();
     }
 
@@ -227,7 +227,7 @@ object WebSocketOpening {
         let waiting = TcpRacing(
             origins: endpoints,
             options: TcpOptions(),
-            delay: Duration(value: 250.rat(), unit: DurationUnit.millisecond),
+            delay: Duration(milliseconds: 250),
             clock: clock
         ).connection();
         pending.replace([waiting]);
@@ -334,7 +334,7 @@ hidden object ShoutingEcho does Handling, WebSocketHandling {
             protocols: [],
             limits: WebSocketLimits(),
             access: AnyWebSocketOrigin(),
-            deadline: Duration(value: 5.rat(), unit: DurationUnit.second),
+            deadline: Duration(seconds: 5),
         );
         WebSocketHandlingResult(origin: upgrade, application: self);
     }
@@ -369,8 +369,8 @@ async test "a WebSocket client talks to a server over loopback and closes cleanl
     let url = ParsedUrl("ws://127.0.0.1:" + server.local_endpoint()::Parts::port.string() + "/echo").parts();
     let policy = WebSocketPolicy(
         limits: WebSocketLimits(),
-        opening: Duration(value: 5.rat(), unit: DurationUnit.second),
-        closing: Duration(value: 2.rat(), unit: DurationUnit.second),
+        opening: Duration(seconds: 5),
+        closing: Duration(seconds: 2),
         access: AllEndpoints(),
     );
     let connection = await WebSocketConnecting(url: url, resolver: FixedResolution([]), policy: policy).connection();
@@ -380,6 +380,6 @@ async test "a WebSocket client talks to a server over loopback and closes cleanl
     test.is((await connection.message()).bytes(), [1.byte(), 2.byte(), 1.byte(), 2.byte()]);
     await connection.close(1000, "done");
     test.is(connection.closed(), true);
-    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
+    await server.drain(limit: Duration(seconds: 5));
     await workers.wait();
 }

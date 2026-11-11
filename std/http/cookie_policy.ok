@@ -382,7 +382,7 @@ hidden object CookieAttributeReading {
         else {
             path;
         };
-        let cap = reference.plus(Duration(value: 400.rat(), unit: DurationUnit.day));
+        let cap = reference.plus(Duration(days: 400));
         let expires = if age.size() == 1 {
             CookieExpiry(if age[0] <= 0 {
                 Instant(Duration(value: (-11644473600).rat(), unit: DurationUnit.second));
@@ -502,7 +502,7 @@ test "Set-Cookie keeps explicit context and precedence" {
     let cookie = ParsedSetCookie(
         origin: "id=v; Max-Age=10; Expires=01 Jan 70 0:0:0",
         url: url,
-        reference: Instant(Duration(value: 0.rat(), unit: DurationUnit.second))
+        reference: Instant(Duration(seconds: 0))
     ).cookie();
     test.ok(cookie.attributes()::Attributes::path == "/a");
     test.ok(cookie.attributes().expiry().instant().unix_duration()::Span::seconds == 10.rat());

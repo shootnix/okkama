@@ -91,7 +91,7 @@ async main() is int {
     }
 
     client.close();
-    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
+    await server.drain(limit: Duration(seconds: 5));
     await serving.wait();
     out.writeln("drained");
     0;

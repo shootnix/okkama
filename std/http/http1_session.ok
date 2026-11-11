@@ -48,7 +48,7 @@ object Http1Session does Closing {
         let empty is @Http1SessionLease = [];
         current = Atomic(empty);
         clock = SystemClock();
-        continue_wait = Duration(value: 1.rat(), unit: DurationUnit.second);
+        continue_wait = Duration(seconds: 1);
     }
 
     Http1Session(
@@ -67,7 +67,7 @@ object Http1Session does Closing {
         let empty is @Http1SessionLease = [];
         current = Atomic(empty);
         clock = SystemClock();
-        continue_wait = Duration(value: 1.rat(), unit: DurationUnit.second);
+        continue_wait = Duration(seconds: 1);
     }
 
     Http1Session(

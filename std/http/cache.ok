@@ -565,6 +565,6 @@ async test "a fresh response is served from memory without reaching the origin" 
     test.is(origin.served(), 2);
     memory.close();
     client.close();
-    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
+    await server.drain(limit: Duration(seconds: 5));
     await workers.wait();
 }

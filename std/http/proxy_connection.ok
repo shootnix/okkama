@@ -111,7 +111,7 @@ hidden object HttpProxyConnecting does HttpConversationConnecting {
         let opening = TcpRacing(
             origins: endpoints,
             options: TcpOptions(),
-            delay: Duration(value: 250.rat(), unit: DurationUnit.millisecond),
+            delay: Duration(milliseconds: 250),
             clock: clock
         ).connection();
         pending.replace([opening]);

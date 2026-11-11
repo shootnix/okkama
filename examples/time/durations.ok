@@ -7,12 +7,12 @@ import "io/stdout" take Stdout;
 
 main() is int {
     let out = Stdout();
-    let lap = Duration(value: 90.rat(), unit: DurationUnit.second);
-    let pause = Duration(value: 250.rat(), unit: DurationUnit.millisecond);
+    let lap = Duration(seconds: 90);
+    let pause = Duration(milliseconds: 250);
     let total = lap + lap + pause;
     out.writeln("total: " + DurationString(origin: total).string());
     out.writeln("seconds: " + total::Span::seconds.string());
     out.writeln("tripled: " + DurationString(origin: total.times(3.rat())).string());
-    out.writeln("longer than three minutes: " + (total > Duration(value: 3.rat(), unit: DurationUnit.minute)).string());
+    out.writeln("longer than three minutes: " + (total > Duration(minutes: 3)).string());
     0;
 }

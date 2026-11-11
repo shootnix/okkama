@@ -133,7 +133,7 @@ object Http1ContinueState {
 }
 
 test "ordinary request entry has no outstanding continue permission" {
-    let state = Http1ContinueState(active: false, clock: SystemClock(), limit: Duration(value: 1.rat(), unit: DurationUnit.second));
+    let state = Http1ContinueState(active: false, clock: SystemClock(), limit: Duration(seconds: 1));
     state = state.begun();
     test.ok(state.body_sent());
 }

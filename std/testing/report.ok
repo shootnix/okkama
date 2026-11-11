@@ -484,7 +484,7 @@ hidden object JUnitSeconds {
 }
 
 test "empty TAP report carries an explicit skipped plan" {
-    let duration = Duration(value: 0.rat(), unit: DurationUnit.second);
+    let duration = Duration(seconds: 0);
     test.is(
         TapTestReport(TestReport(start: Instant(duration), duration: duration, seed: 0, results: [])).string(),
         "TAP version 13\n1..0 # SKIP empty report\n# seed=0\n"

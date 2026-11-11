@@ -97,6 +97,6 @@ async test "a web application routes requests over loopback and drains" {
     test.is(lost::Head::status, Status.not_found);
     test.is(await lost.text(), "no GET here");
     client.close();
-    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
+    await server.drain(limit: Duration(seconds: 5));
     await workers.wait();
 }

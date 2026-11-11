@@ -60,7 +60,7 @@ async main() is int {
     Stdout().writeln("order " + created.int("id").string() + " is " + created.text("state"));
 
     client.close();
-    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
+    await server.drain(limit: Duration(seconds: 5));
     await serving.wait();
     0;
 }

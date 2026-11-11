@@ -23,7 +23,7 @@ object Lookup {
 async main() is int {
     let out = Stdout();
     let clock = SystemClock();
-    let limit = Duration(value: 50.rat(), unit: DurationUnit.millisecond);
+    let limit = Duration(milliseconds: 50);
 
     let fast = await Within(origin: Lookup(name: "cache", delay: 1, clock: clock).answer(), limit: limit, clock: clock).outcome();
     out.writeln("within the limit: " + fast);

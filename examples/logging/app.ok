@@ -24,11 +24,11 @@ object FixedClock does Timing {
     FixedClock();
 
     instant() is Instant {
-        Instant(Duration(value: 1700000000.rat(), unit: DurationUnit.second));
+        Instant(Duration(seconds: 1700000000));
     }
 
     monotonic_instant() is MonotonicInstant {
-        MonotonicInstant(Duration(value: 0.rat(), unit: DurationUnit.second));
+        MonotonicInstant(Duration(seconds: 0));
     }
 
     async wait(duration is Duration) is void {}
@@ -43,7 +43,7 @@ object FixedProcess does LogProcessReading {
 }
 
 main() is int {
-    let utc = FixedZone(name: "UTC", offset: Duration(value: 0.rat(), unit: DurationUnit.second));
+    let utc = FixedZone(name: "UTC", offset: Duration(seconds: 0));
     let kept = CollectedLogs();
     // Debug is shown for "shop.db" only; everything else starts at info.
     let levels = LevelThresholds(fallback: LogLevel.info, overrides: [LevelOverride(name: LogName(["shop", "db"]), level: LogLevel.debug)]);

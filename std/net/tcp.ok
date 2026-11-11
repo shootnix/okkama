@@ -181,7 +181,7 @@ object TcpConnecting {
         await TcpEndpointRace(
             origins: endpoints,
             options: options,
-            delay: Duration(value: 250.rat(), unit: DurationUnit.millisecond),
+            delay: Duration(milliseconds: 250),
             clock: SystemClock()
         ).connection();
     }
@@ -505,7 +505,7 @@ object TcpEndpointRace {
     TcpEndpointRace(origins is Sequencing<IpEndpoint>) {
         endpoints = TcpRaceEndpoints(origins).items();
         options = TcpOptions();
-        delay = Duration(value: 250.rat(), unit: DurationUnit.millisecond);
+        delay = Duration(milliseconds: 250);
         clock = SystemClock();
     }
 

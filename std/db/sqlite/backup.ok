@@ -82,7 +82,7 @@ test "a backup report counts copied pages within the total" {
 }
 
 async test "a backup checks its step and timeout, then asks its source" {
-    let second = Duration(value: 1.rat(), unit: DurationUnit.second);
+    let second = Duration(seconds: 1);
     let report = await SqliteBackup(origin: CountingBackup(), target: Path("copy.db"), pages: 8, clock: SystemClock(), timeout: second).report();
     test.is(report.copies().string(), "8");
     test.throws(InvalidSqliteBackup) {
@@ -92,6 +92,6 @@ async test "a backup checks its step and timeout, then asks its source" {
         SqliteBackup(origin: CountingBackup(), target: Path("copy.db"), pages: 257, clock: SystemClock(), timeout: second);
     };
     test.throws(InvalidSqliteBackup) {
-        SqliteBackup(origin: CountingBackup(), target: Path("copy.db"), pages: 1, clock: SystemClock(), timeout: Duration(value: 0.rat(), unit: DurationUnit.second));
+        SqliteBackup(origin: CountingBackup(), target: Path("copy.db"), pages: 1, clock: SystemClock(), timeout: Duration(seconds: 0));
     };
 }

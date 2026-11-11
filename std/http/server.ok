@@ -973,7 +973,7 @@ async test "a server answers over loopback, reads bodies, and drains" {
     test.ok(answer.value().starts_with("HTTP/1.1 200 OK\r\n"));
     test.ok(answer.value().ends_with("GET /absolute?y=2 "));
     client.close();
-    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
+    await server.drain(limit: Duration(seconds: 5));
     await workers.wait();
     test.is(server.closed(), true);
 }
@@ -1004,7 +1004,7 @@ async test "a server speaks HTTP/2 over cleartext and multiplexes one connection
     test.is(await posted.text(), "POST /notes h2 body");
     test.is((await client.get(base + "/missing"))::Head::status, Status.not_found);
     client.close();
-    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
+    await server.drain(limit: Duration(seconds: 5));
     await workers.wait();
     test.is(server.closed(), true);
 }

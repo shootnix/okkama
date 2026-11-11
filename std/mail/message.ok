@@ -75,7 +75,7 @@ object MailMessage does ByteSource {
         else {
             EncodedWord(subject).string();
         };
-        let utc = FixedZone(name: "UTC", offset: Duration(value: 0.rat(), unit: DurationUnit.second));
+        let utc = FixedZone(name: "UTC", offset: Duration(seconds: 0));
         let headers = MessageHeaders([
             MessageHeader(name: MessageHeaderName("From"), value: from),
             MessageHeader(name: MessageHeaderName("To"), value: addresses.join(", ")),
@@ -718,7 +718,7 @@ test "mail dates preserve unknown zero offsets" {
 }
 
 test "a message from its fields sets its date, identifier and content type" {
-    let clock = ManualClock(Instant(Duration(value: 1700000000.rat(), unit: DurationUnit.second)));
+    let clock = ManualClock(Instant(Duration(seconds: 1700000000)));
     let message = MailMessage(
         from: "Ada <ada@example.test>",
         to: ["grace@example.test", "alan@example.test"],
