@@ -124,7 +124,7 @@ object StandardMediaTypes does MediaIdentifying {
     }
 }
 
-hidden object SystemMediaTypes does MediaIdentifying {
+object SystemMediaTypes does MediaIdentifying {
     has table is MappedMediaTypes;
 
     SystemMediaTypes(fallback is MediaIdentifying) {
@@ -168,7 +168,7 @@ hidden object SystemMediaTypes does MediaIdentifying {
     }
 }
 
-hidden object MediaTypeFileLimits {
+object MediaTypeFileLimits {
     has maximum_files, maximum_bytes, maximum_entries is int;
 
     MediaTypeFileLimits() {
@@ -206,7 +206,7 @@ enum InvalidMediaTypeDatabase is Error = (located(line is int, reason is string)
 
 enum MediaTypeLimitExceeded is Error = (kind(kind is string));
 
-hidden object EmptyMediaTypes does MediaIdentifying {
+object EmptyMediaTypes does MediaIdentifying {
     EmptyMediaTypes() {}
 
     type(path is Path) is MediaType {

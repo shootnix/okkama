@@ -81,7 +81,7 @@ object XmlRpcInteger does XmlRpcValue {
     }
 }
 
-hidden object XmlRpcBoolean does XmlRpcValue {
+object XmlRpcBoolean does XmlRpcValue {
     has origin is bool;
 
     XmlRpcBoolean(value is bool) {
@@ -121,7 +121,7 @@ object XmlRpcText does XmlRpcValue {
     }
 }
 
-hidden object XmlRpcFloat does XmlRpcValue {
+object XmlRpcFloat does XmlRpcValue {
     has origin is float;
 
     XmlRpcFloat(value is float) {
@@ -142,7 +142,7 @@ hidden object XmlRpcFloat does XmlRpcValue {
 }
 
 // Decoding preserves exact decimal wire text rather than silently rounding it.
-hidden object XmlRpcDouble does XmlRpcValue {
+object XmlRpcDouble does XmlRpcValue {
     has origin is Decimal;
 
     XmlRpcDouble(value is Decimal) {
@@ -165,7 +165,7 @@ hidden object XmlRpcDouble does XmlRpcValue {
     }
 }
 
-hidden object XmlRpcDateTime does XmlRpcValue {
+object XmlRpcDateTime does XmlRpcValue {
     has origin is LocalDateTime;
 
     XmlRpcDateTime(value is LocalDateTime) {
@@ -187,7 +187,7 @@ hidden object XmlRpcDateTime does XmlRpcValue {
     }
 }
 
-hidden object XmlRpcBinary does XmlRpcValue {
+object XmlRpcBinary does XmlRpcValue {
     has origin is @byte;
 
     XmlRpcBinary(value is @byte) {
@@ -207,7 +207,7 @@ hidden object XmlRpcBinary does XmlRpcValue {
     }
 }
 
-hidden object XmlRpcArray does XmlRpcValue {
+object XmlRpcArray does XmlRpcValue {
     has origin is @XmlRpcValue;
 
     XmlRpcArray(values is Sequencing<XmlRpcValue>) {
@@ -250,7 +250,7 @@ object XmlRpcMember {
     }
 }
 
-hidden object XmlRpcStruct does XmlRpcValue {
+object XmlRpcStruct does XmlRpcValue {
     has origin is @XmlRpcMember;
 
     XmlRpcStruct(values is Sequencing<XmlRpcMember>) {
@@ -290,7 +290,7 @@ hidden object XmlRpcStruct does XmlRpcValue {
     }
 }
 
-hidden object XmlRpcNil does XmlRpcValue {
+object XmlRpcNil does XmlRpcValue {
     XmlRpcNil();
 
     kind() is XmlRpcKind {
@@ -1459,7 +1459,7 @@ role XmlRpcCalling {
     async result(call is XmlRpcCall) is XmlRpcResult;
 }
 
-hidden object XmlRpcClient does XmlRpcCalling {
+object XmlRpcClient does XmlRpcCalling {
     has origin is Exchanging;
     has endpoint is UrlParts;
     has limits is XmlRpcLimits;
@@ -1559,7 +1559,7 @@ hidden object XmlRpcMedia {
     }
 }
 
-hidden object XmlRpcHandling does Handling {
+object XmlRpcHandling does Handling {
     has path is string;
     has calling is XmlRpcCalling;
     has limits is XmlRpcLimits;

@@ -1096,7 +1096,7 @@ hidden object FormCharset {
 
 // This field-only format deliberately materializes at most 1 MiB of wire data.
 // Its single lazy Future owns the body and returns immutable ordered parameters.
-hidden object ParsedUrlEncodedForm {
+object ParsedUrlEncodedForm {
     has origin is BodyReading;
     has limits is FormLimits;
     has pending is Atomic<@Future<QueryParameters>>;

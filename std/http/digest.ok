@@ -267,7 +267,7 @@ hidden object DigestFlag {
     }
 }
 
-hidden object DigestAuthorization does HttpAuthorizing {
+object DigestAuthorization does HttpAuthorizing {
     has credentials is DigestCredentials;
     has challenge is DigestChallenge;
     has uri, method, cnonce, count is string;
@@ -707,7 +707,7 @@ hidden object DigestResponseCleanup {
     }
 }
 
-hidden object DigestServerProof {
+object DigestServerProof {
     has expected, cnonce, count is string;
 
     DigestServerProof(expected is string, cnonce is string, count is string) {

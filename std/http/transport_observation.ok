@@ -128,3 +128,16 @@ hidden object HttpObservedWriting does AsyncWriting {
         }
     }
 }
+
+test "an observation arms, then records the first response byte" {
+    let observation = HttpResponseObservation();
+    test.is(observation.active(), false);
+    test.is(observation.received(), false);
+    observation.begin();
+    test.is(observation.active(), true);
+    test.is(observation.received(), false);
+    observation.receive();
+    test.is(observation.received(), true);
+    observation.begin();
+    test.is(observation.received(), false);
+}
