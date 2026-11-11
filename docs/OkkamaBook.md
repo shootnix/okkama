@@ -3840,9 +3840,10 @@ async:
 TLS connections show the agreed `details()::Session::protocol`.
 `examples/net/` has an address tour and a loopback echo.
 
-`logging` sends records through writers. `NamedLogging(name: LogName(["shop"]),
-destination:, clock:, fields:)` logs with `log(LogLevel.info, "started")`,
-adds fields and a cause, and makes children with `child("db")`. A record
+`logging` sends records through writers. `NamedLogging(name: "shop",
+destination: logs)` logs with `log(LogLevel.info, "started")`. Its clock is
+the system's unless `clock:` is given, and `fields:` adds fields to every
+record. A call adds fields and a cause, and `child("db")` makes a child. A record
 shows `record::Entry::level` and `::message`. Writers compose:
 - `AllowedLogs(origin:, allowing: LevelThresholds(fallback:, overrides:))`
   filters by level per name;
@@ -5422,8 +5423,7 @@ is installed. A destination receives one LogRecord and propagates failures;
 BestEffort and Fallback make loss/alternate delivery explicit.
 
 ```okkama
-let logger=NamedLogging(name: LogName(["service"]),destination: JsonStreamLogs(Stdout()),
-    clock: SystemClock(),fields: EmptyLogFields().fields());
+let logger=NamedLogging(name: "service",destination: JsonStreamLogs(Stdout()));
 logger.log(LogLevel.info,"started");
 ```
 

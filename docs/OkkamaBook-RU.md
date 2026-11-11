@@ -4019,8 +4019,8 @@ message)`. `Invocation` отвечает по имени:
 TLS-соединения показывают согласованный `details()::Session::protocol`.
 В `examples/net/` есть обзор адресов и эхо через loopback.
 
-`logging` пропускает записи через писателей. `NamedLogging(name:
-LogName(["shop"]), destination:, clock:, fields:)` пишет через
+`logging` пропускает записи через писателей. `NamedLogging(name: "shop",
+destination: logs)` пишет через
 `log(LogLevel.info, "started")`, добавляет поля и причину и создаёт дочерние
 логгеры через `child("db")`. Запись показывает `record::Entry::level` и
 `::message`. Писатели составляются:
@@ -5818,8 +5818,7 @@ TruncatedDisplay используют определённый профиль г
 распространяются; BestEffort и Fallback явно задают потерю/резервную доставку.
 
 ```okkama
-let logger=NamedLogging(name: LogName(["service"]),destination: JsonStreamLogs(Stdout()),
-    clock: SystemClock(),fields: EmptyLogFields().fields());
+let logger=NamedLogging(name: "service",destination: JsonStreamLogs(Stdout()));
 logger.log(LogLevel.info,"started");
 ```
 
