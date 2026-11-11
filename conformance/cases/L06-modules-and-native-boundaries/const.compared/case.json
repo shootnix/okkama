@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.const.compared",
+  "title": "A constant before < is compared, not read as type arguments",
+  "purpose": "Verify that comparisons start with a constant (PI < 3.2, E < PI, LIMIT <= size) while a type name with a lower-case letter keeps its type arguments.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "MOD.CONST",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "true true true\ntrue true\n10\n"
+    }
+  },
+  "spec_refs": [
+    "docs/OkkamaBook.md#2632-module-constants"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #487",
+    "expected_basis": "3.14 < 3.2, 2.71 < 3.14, 10 <= 12; 10 < 12 < 20 and 3.14 > 2.71; an empty Maybe falls back to LIMIT."
+  },
+  "status": "mandatory"
+}

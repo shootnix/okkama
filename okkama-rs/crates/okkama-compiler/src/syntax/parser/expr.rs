@@ -760,10 +760,14 @@ impl Parser<'_> {
             TokenKind::Async if self.starts_anonymous_action(self.pos + 1) => Err(self.error_here(
                 "Anonymous actions cannot be async; declare a named async action instead.",
             )),
-            _ if (self.check_type_name() && self.check_next(TokenKind::Less))
+            // `Name<…>` is a type with arguments; a constant (`LIMIT < x`) is
+            // a comparison.
+            _ if (self.check_type_name()
+                && is_generic_type_name(self.lexeme(self.peek()))
+                && self.check_next(TokenKind::Less))
                 || (self.check_name()
                     && self.check_next(TokenKind::Dot)
-                    && is_type_word(self.lexeme(self.nth(2)))
+                    && is_generic_type_name(self.lexeme(self.nth(2)))
                     && self.nth(3).kind == TokenKind::Less) =>
             {
                 let ty = self.type_expr()?;
@@ -1140,6 +1144,12 @@ const LEVELS: &[Level] = {
 /// A name the removed `Type:(args)` projection could have started with: a
 /// type name (`ParsedInt`), not a constant (`LIMIT`).
 fn is_projected_type_name(text: &str) -> bool {
+    is_generic_type_name(text)
+}
+
+/// A type name that `<` may follow with type arguments (`List<int>`): it has a
+/// lower-case letter, so a constant (`PI`, `LIMIT`, `E`) is not one (#487).
+fn is_generic_type_name(text: &str) -> bool {
     is_type_word(text) && text.contains(|c: char| c.is_ascii_lowercase())
 }
 

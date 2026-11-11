@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+// Constants are spelled in capitals; `<` after one compares (#487), while a
+// type name with a lower-case letter still takes type arguments.
+const PI = 3.14;
+const E = 2.71;
+const LIMIT = 10;
+
+main() is int {
+    let out = Stdout();
+    let size = 12;
+    out.writeln((PI < 3.2).string() + " " + (E < PI).string() + " " + (LIMIT <= size).string());
+    out.writeln((LIMIT < size && size < LIMIT * 2).string() + " " + (PI > E).string());
+    let nothing = Maybe<int>.none;
+    out.writeln((nothing else LIMIT).string());
+    0;
+}

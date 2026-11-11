@@ -333,6 +333,12 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   (240 runs, 12 at a time) passes before and after, so the race was found by
   reading the code, not reproduced.
 
+- A constant before `<` parsed as a generic type, so `PI < 3.2` and
+  `LIMIT <= size` were syntax errors (#487). In expressions, `<` after a type
+  name now starts type arguments only when the name has a lower-case letter
+  (`List<int>`, `Maybe<int>.none`). A name in capitals is a constant and is
+  compared. Conformance case `L06.const.compared`.
+
 ### Performance
 
 - A JSON object of 16 members or more finds a member by name through an

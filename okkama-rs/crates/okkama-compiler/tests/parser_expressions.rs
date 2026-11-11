@@ -59,6 +59,15 @@ fn comparison_equality_and_logic_levels() {
 }
 
 #[test]
+fn constants_compare_with_less_than() {
+    // A name in capitals is a constant: `<` after it compares (#487).
+    assert_eq!(expr_sexpr("PI < 3.2"), "(< PI 3.2)");
+    assert_eq!(expr_sexpr("E < x"), "(< E x)");
+    assert_eq!(expr_sexpr("LIMIT <= size"), "(<= LIMIT size)");
+    assert_eq!(expr_sexpr("math.PI < x"), "(< (. math PI) x)");
+}
+
+#[test]
 fn ranges_sit_between_equality_and_comparison() {
     assert_eq!(expr_sexpr("1..10"), "(.. 1 10)");
     assert_eq!(expr_sexpr("1..=10"), "(..= 1 10)");
