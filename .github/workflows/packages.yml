@@ -43,11 +43,13 @@ jobs:
             platform: macos-x86_64
             smoke: true
             emulate: arch -x86_64
-          # glibc 2.35: пакет ставится на Ubuntu 22.04+, Debian 12+ и новее.
+          # Built in manylinux2014 against glibc 2.17 (#485): the packages
+          # install on every glibc distribution since 2014.
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             platform: linux-x86_64
             smoke: true
+            manylinux: quay.io/pypa/manylinux2014_x86_64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -82,10 +84,26 @@ jobs:
       - name: RPM tools
         if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm
+      # Linux binaries are compiled in manylinux2014 (glibc 2.17, #485) and
+      # packaged on the runner, which has dpkg-deb and rpmbuild.
+      - name: Build against glibc 2.17
+        if: matrix.manylinux
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w -v "$HOME/.cargo/registry:/root/.cargo/registry" \
+            ${{ matrix.manylinux }} bash -euc '
+              curl -sSf https://sh.rustup.rs | sh -s -- -y -q --profile minimal \
+                --default-toolchain "$(cat tools/release-toolchain.txt)"
+              . "$HOME/.cargo/env"
+              cd okkama-rs
+              cargo build --release --locked -p okkama-cli -p okkama-native -p sparrow-cli -p blade-cli
+              objdump -T target/release/okkama target/release/libokkama_native.so \
+                | grep -o "GLIBC_[0-9.]*" | sort -t. -k2,2n -k3,3n -u | tail -n 1'
+          sudo chown -R "$(id -u):$(id -g)" okkama-rs/target "$HOME/.cargo/registry"
       - name: Package
         run: >
-          tools/package.sh --target ${{ matrix.target }} --installer
-          --version ${{ steps.version.outputs.version }} --out dist
+          tools/package.sh
+          ${{ matrix.manylinux && '--no-build' || format('--target {0}', matrix.target) }}
+          --installer --version ${{ steps.version.outputs.version }} --out dist
       - name: Rosetta
         if: matrix.smoke && matrix.emulate
         run: softwareupdate --install-rosetta --agree-to-license
@@ -105,19 +123,30 @@ jobs:
           run "$bin/okkama" run --engine sparrow --max-steps 1000000000 okkama-rs/tools/pgo/workloads/02-calls/main.ok
           run "$bin/sparrow" --version
           run "$bin/blade" --version
-      # Install the .rpm on Fedora (glibc 2.40) and run from /usr.
-      - name: RPM smoke test
+      # Install the packages where v0.5.3's did not (glibc 2.26-2.34, #485)
+      # and where they did, and run from /usr.
+      - name: Install test
         if: runner.os == 'Linux'
         run: |
-          ls dist/okkama-*-${{ matrix.platform }}.rpm
-          docker run --rm -v "$PWD:/w" -w /w fedora:41 bash -euc '
-            dnf install -y -q dist/okkama-*.rpm
-            rpm -q okkama
-            okkama env
+          check='okkama env >/dev/null
             okkama okkama-rs/examples/hello.ok
             okkama run --engine sparrow okkama-rs/tools/pgo/workloads/02-calls/main.ok
             sparrow --version
             blade --version'
+          for image in rockylinux:8 rockylinux:9 amazonlinux:2 amazonlinux:2023 fedora:41; do
+            echo "== $image"
+            docker run --rm -v "$PWD:/w" -w /w "$image" bash -euc "
+              rpm -i dist/okkama-*-${{ matrix.platform }}.rpm
+              rpm -q okkama
+              $check"
+          done
+          for image in debian:11 debian:12 ubuntu:20.04 ubuntu:24.04; do
+            echo "== $image"
+            docker run --rm -v "$PWD:/w" -w /w "$image" bash -euc "
+              dpkg -i dist/okkama-*-${{ matrix.platform }}.deb
+              dpkg -s okkama | grep -m1 Version
+              $check"
+          done
       - uses: actions/upload-artifact@v5
         with:
           name: okkama-${{ matrix.platform }}

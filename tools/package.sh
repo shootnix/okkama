@@ -163,7 +163,7 @@ Architecture: $DEB_ARCH
 Maintainer: Alexander Ponomarev <shootnix@users.noreply.github.com>
 Section: devel
 Priority: optional
-Depends: libc6 (>= 2.35)
+Depends: libc6 (>= 2.17)
 Suggests: libsqlite3-0 (>= 3.41), openjdk-21-jdk-headless
 Homepage: https://github.com/shootnix/okkama
 Description: Okkama programming language
@@ -173,8 +173,9 @@ Description: Okkama programming language
 CONTROL
             dpkg-deb --root-owner-group --build "$ROOTFS" "$OUT/$NAME.deb" >/dev/null
             echo "$OUT/$NAME.deb"
-            # RPM from the same tree (#313). The binaries need glibc 2.35 (they
-            # are built on Ubuntu 22.04): Fedora 36+, RHEL 10, openSUSE Tumbleweed.
+            # RPM from the same tree (#313). Release binaries are built against
+            # glibc 2.17 (manylinux2014, #485): every glibc distribution since
+            # 2014 installs them — CentOS 7, Amazon Linux 2, RHEL 8 and newer.
             if command -v rpmbuild >/dev/null 2>&1; then
                 case "$PLATFORM" in
                     linux-x86_64) RPM_ARCH=x86_64 ;;
@@ -192,7 +193,7 @@ Summary: Okkama programming language
 License: GPL-3.0-only
 URL: https://github.com/shootnix/okkama
 BuildArch: $RPM_ARCH
-Requires: glibc >= 2.35
+Requires: glibc >= 2.17
 Recommends: sqlite-libs
 Suggests: java-21-openjdk-headless
 AutoReqProv: no

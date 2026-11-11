@@ -182,6 +182,20 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   of `Decimal`, so `"port": 5432` became `"5.432e3"` while INI and the
   environment gave `5432` (#366). Numbers are now written as JSON writes
   them: `5432`, `0.5`, `1200`.
+- The Linux `.deb` and `.rpm` did not install on distributions older than
+  glibc 2.35: Rocky/RHEL 8 and 9, Amazon Linux 2 and 2023, Debian 11 and 12,
+  Ubuntu 20.04 (#485). The binaries were built on Ubuntu 22.04. They are now
+  built in manylinux2014 against glibc 2.17, and the packages require
+  `glibc >= 2.17` (`libc6 (>= 2.17)`). glibc stays the system's own: the
+  packages do not ship it.
+  - The build step prints the newest glibc symbol the binaries need. It is
+    `GLIBC_2.17` for `okkama`, `sparrow`, `blade` and `libokkama_native.so`.
+  - CI installs the `.rpm` on Rocky Linux 8 and 9, Amazon Linux 2 and 2023
+    and Fedora 41, and the `.deb` on Debian 11 and 12 and Ubuntu 20.04 and
+    24.04. On each it runs `okkama env`, a program on the default engine and
+    on Sparrow, `sparrow --version` and `blade --version`.
+  - Checked locally with an arm64 build: CentOS 7 (glibc 2.17), Rocky
+    Linux 8, Amazon Linux 2, Ubuntu 18.04 and 20.04, Debian 11.
 
 ## [0.5.3] — 2026-11-11
 
