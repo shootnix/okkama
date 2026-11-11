@@ -2,7 +2,7 @@
 
 **Read this before any work on `std/`**, whether review, rewrite, a new
 module or a fix. It records the owner's rules for the std review that starts
-after 0.5.1 (2026-11-10), the plan, and the tools. Changing std's public API
+after 0.5.3 (2026-11-11), the plan, and the tools. Changing std's public API
 still needs the owner's permission (`docs/LLM-GUIDE.md` §1); this document
 says what a good proposal looks like, not that it is approved.
 
@@ -124,10 +124,13 @@ As in Chapter 21 of the Bible:
   - `http`: 102 modules, 543 accessors;
   - `mail`: 236 accessors;
   - `mime`, `i18n`, `cli/spec`, `testing`.
-- **Package candidates.** Once Blade has Git packages (v0.5.3, #347–#351),
-  the long tail can leave std. The candidates are `mail`, `plist`,
-  `http/xmlrpc`, `archive`, `xml`, `html`, `i18n`, `template`, `diff`,
-  `statistics` and `calendar`. **The owner decides** which go.
+- **Nothing leaves std.** The owner, 2026-11-11, at the start of the review:
+  «сразу договариваемся, что мы ничего выбрасывать не будем, это все наша
+  стандартная библиотека». No module is deleted or moved into a Blade
+  package; the long tail (`mail`, `plist`, `http/xmlrpc`, `archive`, `xml`,
+  `html`, `i18n`, `template`, `diff`, `statistics`, `calendar`) is improved
+  in place like the rest. Two modules that do the same thing are merged,
+  and the capability of each is kept.
 
 ## 9. How the work goes
 
@@ -144,7 +147,8 @@ As in Chapter 21 of the Bible:
    - public surface, accessors and records, nesting depth, the common use in
      lines;
    - tests, benchmarks, natives, fan-in;
-   - the decision: keep / simplify / rewrite / move to a package / delete.
+   - the decision: keep / simplify / rewrite (merge into another module only
+    when both do the same thing; nothing is deleted, §8).
 5. **Performance**, as its own profile-driven track, on hot paths only.
 6. **Tickets.** An epic per area with a checklist, not a ticket per module.
    The existing "stdlib new api" milestone (132 open issues) is triaged into
@@ -173,7 +177,7 @@ As in Chapter 21 of the Bible:
 
 ## Open decisions (the owner's)
 
-- Which modules form the foundation and which leave for packages.
+- Which modules form the foundation (none leave std, §8).
 - This guide's rules, once the exemplars have tested them.
 - Compatibility: std is pre-1.0. A changed API comes with a migration note in
   the CHANGELOG, not a deprecation period, unless the owner says otherwise.

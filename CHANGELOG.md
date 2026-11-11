@@ -6,6 +6,10 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+0.5.4 starts the review of the standard library (#352), module by module and
+in place: nothing leaves std (the owner, 2026-11-11), every module is kept,
+simplified or rewritten to the principles of `docs/std-principles.md`.
+
 ## [0.5.3] — 2026-11-11
 
 0.5.3 brings the persistent collections Tomato has had since 0.4.3 to the IR
