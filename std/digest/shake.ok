@@ -15,12 +15,12 @@ object Shake128 does Digesting {
 
     Shake128(length is int) {
         confirm length >= 1 && length <= 1048576 else throw InvalidShakeLength.length(length);
-        digest = HostDigest("shake128", [], length);
+        digest = HostDigest(algorithm: "shake128", key: [], width: length);
     }
 
     Shake128(length is int, origin is @byte) {
         confirm length >= 1 && length <= 1048576 else throw InvalidShakeLength.length(length);
-        digest = HostDigest("shake128", [], length).appended(origin);
+        digest = HostDigest(algorithm: "shake128", key: [], width: length).appended(origin);
     }
 
     bytes() is @byte {
@@ -38,12 +38,12 @@ object Shake256 does Digesting {
 
     Shake256(length is int) {
         confirm length >= 1 && length <= 1048576 else throw InvalidShakeLength.length(length);
-        digest = HostDigest("shake256", [], length);
+        digest = HostDigest(algorithm: "shake256", key: [], width: length);
     }
 
     Shake256(length is int, origin is @byte) {
         confirm length >= 1 && length <= 1048576 else throw InvalidShakeLength.length(length);
-        digest = HostDigest("shake256", [], length).appended(origin);
+        digest = HostDigest(algorithm: "shake256", key: [], width: length).appended(origin);
     }
 
     bytes() is @byte {
@@ -67,7 +67,7 @@ test "SHAKE matches FIPS 202 empty-message outputs" {
         HexEncoded(Shake256(32).bytes()).string(),
         "46b9dd2b0ba88d13233b3feb743eeb243fcd52ea62b81b82b50c27646ed5762f"
     );
-    test.is(Shake128(64, [1.byte()]).bytes().slice(0, 32), Shake128(32, [1.byte()]).bytes());
+    test.is(Shake128(length: 64, origin: [1.byte()]).bytes().slice(0, 32), Shake128(length: 32, origin: [1.byte()]).bytes());
     test.ok(try {
         Shake256(0);
         false;

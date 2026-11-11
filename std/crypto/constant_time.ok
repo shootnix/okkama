@@ -17,13 +17,13 @@ object ConstantTimeEqual {
     }
 
     value() is bool {
-        HostOperation("ct-equal", [left, right]).truth();
+        HostOperation(operation: "ct-equal", arguments: [left, right]).truth();
     }
 }
 
 test "constant-time equality compares whole byte strings" {
-    test.ok(ConstantTimeEqual([1.byte(), 2.byte()], [1.byte(), 2.byte()]).value());
-    test.ok(!ConstantTimeEqual([1.byte(), 2.byte()], [1.byte(), 3.byte()]).value());
-    test.ok(!ConstantTimeEqual([1.byte()], [1.byte(), 0.byte()]).value());
-    test.ok(ConstantTimeEqual([], []).value());
+    test.ok(ConstantTimeEqual(left: [1.byte(), 2.byte()], right: [1.byte(), 2.byte()]).value());
+    test.ok(!ConstantTimeEqual(left: [1.byte(), 2.byte()], right: [1.byte(), 3.byte()]).value());
+    test.ok(!ConstantTimeEqual(left: [1.byte()], right: [1.byte(), 0.byte()]).value());
+    test.ok(ConstantTimeEqual(left: [], right: []).value());
 }

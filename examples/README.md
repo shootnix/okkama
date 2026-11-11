@@ -105,6 +105,18 @@ and compares the output.
 |---|---|
 | `cli/todo.ok` | a tool with subcommands: declare it, read arguments, act on the selected command, report a bad argument, print usage |
 
+## digest, crypto, net
+
+| Program | Task |
+|---|---|
+| `digest/hash.ok` | SHA-2, SHA-3 and BLAKE2 of text; streaming and branching states |
+| `crypto/secrets.ok` | sign with HMAC and verify, store and check a password, encrypt a record and detect a change |
+| `net/addresses.ok` | parse and classify IP addresses, networks, endpoints; resolve through a fixed DNS table |
+| `net/echo.ok` | a TCP echo over loopback (run it in a container, like the async tests) |
+
+On the JVM, the digest and crypto examples need the host crypto library. An
+installed Okkama finds it; a development build takes `OKKAMA_NATIVE_LIB`.
+
 ## strings/parse
 
 | Program | Task |

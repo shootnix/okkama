@@ -27,9 +27,9 @@ object Reader {
 async main() is int {
     let out = Stdout();
     let port = Number(ProcessArguments().strings()[0]).int();
-    let tcp = await TcpConnecting(IpEndpoint(IpAddress("127.0.0.1"), port)).connection();
+    let tcp = await TcpConnecting(IpEndpoint(address: IpAddress("127.0.0.1"), port: port)).connection();
     let policy = TlsClientPolicy(PemTrustStore(TEST_CERTIFICATE));
-    let connection = await TlsClientHandshake(tcp, IpCertificateIdentity(IpAddress("127.0.0.1")), policy).connection();
+    let connection = await TlsClientHandshake(origin: tcp, server: IpCertificateIdentity(IpAddress("127.0.0.1")), policy: policy).connection();
     defer connection.close();
     let timed = try {
         await Within(origin: Reader(connection: connection).bytes(), limit: Duration(1.rat() / 10.rat(), DurationUnit.second), clock: SystemClock()).outcome();

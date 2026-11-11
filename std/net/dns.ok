@@ -57,13 +57,13 @@ object FixedResolution does Resolving {
 
     FixedResolution(hosts is Sequencing<HostAddresses>) {
         let empty is @AddressName = [];
-        let records = DnsConfiguration(hosts, empty);
+        let records = DnsConfiguration(hosts: hosts, names: empty);
         self.hosts = records.hosts();
         names = records.names();
     }
 
     FixedResolution(hosts is Sequencing<HostAddresses>, names is Sequencing<AddressName>) {
-        let records = DnsConfiguration(hosts, names);
+        let records = DnsConfiguration(hosts: hosts, names: names);
         self.hosts = records.hosts();
         self.names = records.names();
     }
@@ -73,7 +73,7 @@ object FixedResolution does Resolving {
             if record.host().order(origin.host()) == Order.equal {
                 let source = record.addresses();
                 let endpoints is @IpEndpoint = (0..source.size()).map() -> index {
-                    IpEndpoint(source.item(index), origin.port());
+                    IpEndpoint(address: source.item(index), port: origin::Parts::port);
                 };
                 return endpoints;
             }
@@ -96,10 +96,10 @@ object SystemResolution does Resolving {
 
     async addresses(origin is HostEndpoint) is Sequencing<IpEndpoint> {
         try {
-            let pending = network.dns_addresses(origin.host().ascii(), origin.port());
+            let pending = network.dns_addresses(origin.host().ascii(), origin::Parts::port);
             let records = await pending;
             let result is @IpEndpoint = records.map() -> record {
-                IpEndpoint(IpAddress(record[0]), origin.port(), record[2]);
+                IpEndpoint(address: IpAddress(record[0]), port: origin::Parts::port, zone: record[2]);
             };
             result;
         }
@@ -142,7 +142,7 @@ object SystemResolution does Resolving {
 
 enum DnsFailure is Error = (because(message is string));
 
-object DnsConfiguration {
+hidden object DnsConfiguration {
     has hosts is @HostAddresses;
     has names is @AddressName;
 
@@ -191,7 +191,7 @@ object DnsConfiguration {
     }
 }
 
-object DnsAddressSnapshot {
+hidden object DnsAddressSnapshot {
     has origin is @IpAddress;
 
     DnsAddressSnapshot(source is Sequencing<IpAddress>) {
@@ -199,7 +199,7 @@ object DnsAddressSnapshot {
         confirm count > 0 else throw InvalidArgument.because("DNS answer must contain addresses");
         confirm count <= 256 else throw ResolutionLimitExceeded.kind("addresses");
         let indexed is @DnsIndexedAddress = (0..count).map() -> index {
-            DnsIndexedAddress(source.item(index), index);
+            DnsIndexedAddress(address: source.item(index), position: index);
         };
         let ordered = Sorted(indexed);
         let positions is @int = (0..count).filter() -> index {
@@ -226,7 +226,7 @@ object DnsAddressSnapshot {
     }
 }
 
-object DnsIndexedAddress does Comparing<DnsIndexedAddress> {
+hidden object DnsIndexedAddress does Comparing<DnsIndexedAddress> {
     has address is IpAddress;
     has position is int;
 
@@ -256,16 +256,16 @@ enum ResolutionLimitExceeded is Error = (kind(kind is string));
 
 async test "fixed lookup preserves requested port without a system resolver" {
     let resolver = FixedResolution(
-        [HostAddresses(HostName("example.com"), [IpAddress("192.0.2.1")])]
+        [HostAddresses(host: HostName("example.com"), addresses: [IpAddress("192.0.2.1")])]
     );
     test.is(
-        (await resolver.addresses(HostEndpoint(HostName("EXAMPLE.com"), 443))).item(0).port(),
+        (await resolver.addresses(HostEndpoint(host: HostName("EXAMPLE.com"), port: 443))).item(0)::Parts::port,
         443
     );
 }
 
 async test "system lookup cancellation before start launches no worker" {
-    let pending = SystemResolution().addresses(HostEndpoint(HostName("unused.invalid"), 80));
+    let pending = SystemResolution().addresses(HostEndpoint(host: HostName("unused.invalid"), port: 80));
     pending.cancel();
     test.ok(try {
         await pending;

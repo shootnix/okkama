@@ -24,7 +24,7 @@ object PublicEndpoints does EndpointAllowing {
     PublicEndpoints();
 
     allowed(url is UrlParts, endpoint is IpEndpoint) is bool {
-        if endpoint.zone() != "" {
+        if endpoint::Parts::zone != "" {
             return false;
         }
         let properties = endpoint.address().properties();
@@ -95,18 +95,18 @@ object HttpEndpointSelection {
 
     async endpoints() is Sequencing<IpEndpoint> {
         let source is Sequencing<IpEndpoint> = if url.host_kind() == UrlHostKind.address {
-            let direct is @IpEndpoint = [IpEndpoint(url.host_address(), port)];
+            let direct is @IpEndpoint = [IpEndpoint(address: url.host_address(), port: port)];
             direct;
         }
         else {
-            let pending = resolver.addresses(HostEndpoint(url.host_name(), port));
+            let pending = resolver.addresses(HostEndpoint(host: url.host_name(), port: port));
             await pending;
         };
         let count = source.size();
         confirm count >= 0 && count <= 256 else throw EndpointSelectionLimit.stage("addresses");
         let snapshot is @IpEndpoint = (0..count).map() -> index {
             let endpoint = source.item(index);
-            confirm endpoint.port() == port else throw InvalidHttpEndpoint.because("resolver port");
+            confirm endpoint::Parts::port == port else throw InvalidHttpEndpoint.because("resolver port");
             endpoint;
         };
         let allowed is @IpEndpoint = snapshot.filter() -> endpoint {
@@ -125,7 +125,7 @@ enum EndpointSelectionLimit is Error = (stage(stage is string));
 
 test "explicit empty network selection grants no endpoint" {
     let url = ParsedUrl("https://example.test/").parts();
-    let endpoint = IpEndpoint(IpAddress("127.0.0.1"), 443);
+    let endpoint = IpEndpoint(address: IpAddress("127.0.0.1"), port: 443);
     test.ok(AllEndpoints().allowed(url, endpoint));
     test.ok(!ListedNetworks([]).allowed(url, endpoint));
     test.ok(!PublicEndpoints().allowed(url, endpoint));

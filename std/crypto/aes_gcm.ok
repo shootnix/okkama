@@ -35,11 +35,11 @@ object AesGcm does Sealing {
     }
 
     sealed(nonce is @byte, aad is @byte, plaintext is @byte) is @byte {
-        HostOperation("aead-seal:" + self.algorithm(), [key.export_bytes(), nonce, aad, plaintext]).bytes();
+        HostOperation(operation: "aead-seal:" + self.algorithm(), arguments: [key.export_bytes(), nonce, aad, plaintext]).bytes();
     }
 
     opened(nonce is @byte, aad is @byte, sealed is @byte) is @byte {
-        HostOperation("aead-open:" + self.algorithm(), [key.export_bytes(), nonce, aad, sealed]).bytes();
+        HostOperation(operation: "aead-open:" + self.algorithm(), arguments: [key.export_bytes(), nonce, aad, sealed]).bytes();
     }
 }
 

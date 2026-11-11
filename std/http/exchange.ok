@@ -249,8 +249,8 @@ enum UnsupportedBodyCharset is Error = (named(name is string));
 
 async test "a client response reads its head through caps and its body whole" {
     let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(
-        IpEndpoint(IpAddress("127.0.0.1"), 40000),
-        IpEndpoint(IpAddress("127.0.0.1"), 80)
+        local: IpEndpoint(IpAddress("127.0.0.1"), 40000),
+        remote: IpEndpoint(IpAddress("127.0.0.1"), 80)
     );
     let details = ExchangeDetails(ends, HttpVersion.http_1_1);
     let request = Request(url: "http://example.test/");
@@ -273,8 +273,8 @@ async test "a client response reads its head through caps and its body whole" {
 
 async test "text follows the charset, json parses, an unknown charset is refused" {
     let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(
-        IpEndpoint(IpAddress("127.0.0.1"), 40000),
-        IpEndpoint(IpAddress("127.0.0.1"), 80)
+        local: IpEndpoint(IpAddress("127.0.0.1"), 40000),
+        remote: IpEndpoint(IpAddress("127.0.0.1"), 80)
     );
     let details = ExchangeDetails(ends, HttpVersion.http_1_1);
     let request = Request(url: "http://example.test/");

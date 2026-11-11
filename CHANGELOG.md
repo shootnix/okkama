@@ -713,8 +713,40 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
       declaration checks, usage and completion. There is an example,
       `examples/cli/`.
 
+- **std review, wave 3: security and network, the part without a decision
+  (#352).** The card is `okkama-docs/std-review/cards/wave-3-network.md`.
+  Its public shapes (B1–B4) wait for the owner.
+  - **Hidden machinery.** 33 objects that no caller names are hidden:
+    - net: tickets, wire encoders, unpublished handles, racing internals,
+      cursors, DNS snapshots;
+    - digest: padding and compression;
+    - crypto: name and identifier helpers.
+  - **Answers with nouns:**
+    - `ParsedCertificate(der).certificate()`;
+    - `VerifiedCertificateChain(…).leaf()`;
+    - `CertificateFailureCode(…).failure()`;
+    - `ReadDigest(…).digest()`;
+    - `NetworkError(…).error()`, `StreamFailure(…).error()` and
+      `UnixError(…).error()`;
+    - and the hidden helpers.
+  - **Caps for ready fields:**
+    - `IpEndpoint::Parts` holds `port` and `zone`;
+    - `HostEndpoint::Parts` holds `port`;
+    - `IpNetwork::Mask` holds `prefix`;
+    - `Datagram::Received` holds `truncated`;
+    - `TlsDetails::Session` holds `version`, `cipher` and `protocol`.
+  - **Named arguments** in 371 constructor calls.
+  - **Examples:** `examples/digest/hash.ok`, `examples/crypto/secrets.ok`,
+    `examples/net/addresses.ok` and `examples/net/echo.ok`.
+  - The Book drops the legacy `crypto/*`, `socket/*` and `net/address`
+    passages (371 lines) and describes digest, crypto and net in §26.5.
+
 ### Fixed
 
+- **crypto/nonce: `CounterNonce` with a counter of 8 bytes or more (#493).**
+  The usual AEAD nonce, a 4-byte prefix and an 8-byte counter in 12 bytes,
+  failed with "Shift count must be in 0..63". A counter field of 8 bytes or
+  more now holds any non-negative `int`, and wider fields are zero-padded.
 - **fs/path: a Windows root is its own parent (#492).**
   `Path("C:\\", PathStyle.windows).parent()` gave `C:`, which is the
   current directory of drive C, not its root. All three engines had the bug,

@@ -43,8 +43,11 @@ object Datagram does ByteSource {
         payload;
     }
 
-    truncated() is bool {
-        incomplete;
+    // Whether the datagram was cut to the read limit.
+    cap Received {
+        truncated is bool {
+            incomplete;
+        }
     }
 }
 
@@ -120,10 +123,10 @@ object UdpBinding {
             2;
         };
         try {
-            let address = ip_parse(family, local.address().string(), local.port());
+            let address = ip_parse(family, local.address().string(), local::Parts::port);
             let state = network.udp_bound(
                 address,
-                local.zone(),
+                local::Parts::zone,
                 options.address_reuse(),
                 options.broadcast(),
                 options.dual_stack()
@@ -131,9 +134,9 @@ object UdpBinding {
             UdpSocket(state);
         }
         catch failure is NativeFailure {
-            let translated = NetworkError(NetworkOperation.binding, failure);
+            let translated = NetworkError(operation: NetworkOperation.binding, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -169,7 +172,7 @@ object UdpSocket {
         self.state = state;
         endpoint = try {
             let fields = network.local_endpoint(state);
-            IpEndpoint(IpAddress(fields[0]), Number(fields[1]).int(), fields[2]);
+            IpEndpoint(address: IpAddress(fields[0]), port: Number(fields[1]).int(), zone: fields[2]);
         }
         catch failure is NativeFailure {
             network.close(state);
@@ -190,7 +193,7 @@ object UdpSocket {
     }
 
     async send(target is IpEndpoint, source is ByteSource) is int {
-        confirm target.port() > 0
+        confirm target::Parts::port > 0
             else throw InvalidArgument.because("UDP destination port must be positive");
         confirm !self.closed() else throw NetworkClosed.closed;
         let payload = source.bytes();
@@ -201,8 +204,8 @@ object UdpSocket {
             2;
         };
         try {
-            let address = ip_parse(family, target.address().string(), target.port());
-            await network.udp_send(state, address, target.zone(), payload);
+            let address = ip_parse(family, target.address().string(), target::Parts::port);
+            await network.udp_send(state, address, target::Parts::zone, payload);
         }
         catch failure is NativeFailure {
             if failure.domain() == "core.net" && failure.code() == "message_too_large" {
@@ -211,9 +214,9 @@ object UdpSocket {
             if failure.domain() == "core.net" && failure.code() == "already_closed" {
                 throw NetworkClosed.closed;
             }
-            let translated = NetworkError(NetworkOperation.writing, failure);
+            let translated = NetworkError(operation: NetworkOperation.writing, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -225,18 +228,18 @@ object UdpSocket {
             let packet = await network.udp_receive(state, limit);
             let peer = network.packet_source(packet);
             Datagram(
-                IpEndpoint(IpAddress(peer[0]), Number(peer[1]).int(), peer[2]),
-                network.packet_bytes(packet),
-                network.packet_truncated(packet)
+                source: IpEndpoint(IpAddress(peer[0]), Number(peer[1]).int(), peer[2]),
+                bytes: network.packet_bytes(packet),
+                truncated: network.packet_truncated(packet)
             );
         }
         catch failure is NativeFailure {
             if failure.domain() == "core.net" && failure.code() == "already_closed" {
                 throw NetworkClosed.closed;
             }
-            let translated = NetworkError(NetworkOperation.reading, failure);
+            let translated = NetworkError(operation: NetworkOperation.reading, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -247,9 +250,9 @@ object UdpSocket {
             network.close(state);
         }
         catch failure is NativeFailure {
-            let translated = NetworkError(NetworkOperation.closing, failure);
+            let translated = NetworkError(operation: NetworkOperation.closing, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -272,7 +275,7 @@ object UdpSocket {
             2;
         };
         UdpMembershipLease(
-            network.multicast_join(
+            state: network.multicast_join(
                 state,
                 ip_parse(family, group.string(), 0),
                 interface.name(),
@@ -280,7 +283,7 @@ object UdpSocket {
                 hop_limit,
                 loopback
             ),
-            self
+            owner: self
         );
     }
 }
@@ -309,7 +312,7 @@ object UdpConnecting {
     }
 
     async connection() is UdpConnection {
-        confirm remote.port() > 0
+        confirm remote::Parts::port > 0
             else throw InvalidArgument.because("UDP destination port must be positive");
         let local_family = if local.address().version() == IpVersion.v4 {
             1;
@@ -325,17 +328,17 @@ object UdpConnecting {
         };
         let state = try {
             network.udp_bound(
-                ip_parse(local_family, local.address().string(), local.port()),
-                local.zone(),
+                ip_parse(local_family, local.address().string(), local::Parts::port),
+                local::Parts::zone,
                 options.address_reuse(),
                 options.broadcast(),
                 options.dual_stack()
             );
         }
         catch failure is NativeFailure {
-            let translated = NetworkError(NetworkOperation.binding, failure);
+            let translated = NetworkError(operation: NetworkOperation.binding, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         };
@@ -343,15 +346,15 @@ object UdpConnecting {
         try {
             await network.udp_connect(
                 state,
-                ip_parse(remote_family, remote.address().string(), remote.port()),
-                remote.zone()
+                ip_parse(remote_family, remote.address().string(), remote::Parts::port),
+                remote::Parts::zone
             );
-            UdpConnection(state, owner);
+            UdpConnection(state: state, owner: owner);
         }
         catch failure is NativeFailure {
-            let translated = NetworkError(NetworkOperation.connecting, failure);
+            let translated = NetworkError(operation: NetworkOperation.connecting, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -375,8 +378,8 @@ object UdpConnection {
             let local = network.local_endpoint(state);
             let remote = network.peer_endpoint(state);
             ConnectionEndpoints(
-                IpEndpoint(IpAddress(local[0]), Number(local[1]).int(), local[2]),
-                IpEndpoint(IpAddress(remote[0]), Number(remote[1]).int(), remote[2])
+                local: IpEndpoint(IpAddress(local[0]), Number(local[1]).int(), local[2]),
+                remote: IpEndpoint(IpAddress(remote[0]), Number(remote[1]).int(), remote[2])
             );
         }
         catch failure is NativeFailure {
@@ -414,9 +417,9 @@ object UdpConnection {
             if failure.domain() == "core.net" && failure.code() == "already_closed" {
                 throw NetworkClosed.closed;
             }
-            let translated = NetworkError(NetworkOperation.writing, failure);
+            let translated = NetworkError(operation: NetworkOperation.writing, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -428,18 +431,18 @@ object UdpConnection {
             let packet = await network.udp_connected_receive(state, limit);
             let peer = network.packet_source(packet);
             Datagram(
-                IpEndpoint(IpAddress(peer[0]), Number(peer[1]).int(), peer[2]),
-                network.packet_bytes(packet),
-                network.packet_truncated(packet)
+                source: IpEndpoint(IpAddress(peer[0]), Number(peer[1]).int(), peer[2]),
+                bytes: network.packet_bytes(packet),
+                truncated: network.packet_truncated(packet)
             );
         }
         catch failure is NativeFailure {
             if failure.domain() == "core.net" && failure.code() == "already_closed" {
                 throw NetworkClosed.closed;
             }
-            let translated = NetworkError(NetworkOperation.reading, failure);
+            let translated = NetworkError(operation: NetworkOperation.reading, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -451,31 +454,31 @@ object UdpConnection {
 }
 
 test "datagram retains binary payload and sender" {
-    let packet = Datagram(IpEndpoint(IpAddress("192.0.2.7"), 5353), [byte(0), byte(255)], false);
+    let packet = Datagram(source: IpEndpoint(IpAddress("192.0.2.7"), 5353), bytes: [byte(0), byte(255)], truncated: false);
     test.is(packet.source().string(), "192.0.2.7:5353");
     test.is(packet.bytes(), [byte(0), byte(255)]);
-    test.ok(!packet.truncated());
+    test.ok(!packet::Received::truncated);
 }
 
 test "empty retained datagram can still be truncated" {
     let empty is @byte = [];
-    let packet = Datagram(IpEndpoint(IpAddress("::1"), 80), empty, true);
+    let packet = Datagram(source: IpEndpoint(IpAddress("::1"), 80), bytes: empty, truncated: true);
     test.is(packet.bytes().size(), 0);
-    test.ok(packet.truncated());
+    test.ok(packet::Received::truncated);
 }
 
 test "UDP option defaults and independent explicit requests" {
-    test.ok(UdpOptions() == UdpOptions(false, false, false));
-    let options = UdpOptions(true, false, true);
+    test.ok(UdpOptions() == UdpOptions(address_reuse: false, broadcast: false, dual_stack: false));
+    let options = UdpOptions(address_reuse: true, broadcast: false, dual_stack: true);
     test.ok(options.address_reuse());
     test.ok(!options.broadcast());
     test.ok(options.dual_stack());
 }
 
 test "UDP binding construction accepts requests without acquiring sockets" {
-    let endpoint = IpEndpoint(IpAddress("127.0.0.1"), 0);
-    let request = UdpBinding(endpoint, UdpOptions(false, false, true));
-    test.ok(request == UdpBinding(endpoint, UdpOptions(false, false, true)));
+    let endpoint = IpEndpoint(address: IpAddress("127.0.0.1"), port: 0);
+    let request = UdpBinding(local: endpoint, options: UdpOptions(false, false, true));
+    test.ok(request == UdpBinding(local: endpoint, options: UdpOptions(false, false, true)));
 }
 
 test "receive creation is lazy and cancellation leaves its owner open" {
@@ -490,8 +493,8 @@ test "receive creation is lazy and cancellation leaves its owner open" {
 test "send creation does not validate or submit until awaited" {
     let socket = UdpSocket(network.socket(1, 2, 2));
     let empty is @byte = [];
-    let target = IpEndpoint(IpAddress("127.0.0.1"), 0);
-    let pending = socket.send(target, Datagram(target, empty, false));
+    let target = IpEndpoint(address: IpAddress("127.0.0.1"), port: 0);
+    let pending = socket.send(target, Datagram(source: target, bytes: empty, truncated: false));
     pending.cancel();
     test.ok(!socket.closed());
     socket.close();
@@ -499,15 +502,15 @@ test "send creation does not validate or submit until awaited" {
 }
 
 test "connected request and unstarted cancellation do not acquire a socket" {
-    let endpoint = IpEndpoint(IpAddress("127.0.0.1"), 0);
-    let request = UdpConnecting(endpoint, endpoint, UdpOptions());
-    test.ok(request == UdpConnecting(endpoint, endpoint, UdpOptions()));
+    let endpoint = IpEndpoint(address: IpAddress("127.0.0.1"), port: 0);
+    let request = UdpConnecting(local: endpoint, remote: endpoint, options: UdpOptions());
+    test.ok(request == UdpConnecting(local: endpoint, remote: endpoint, options: UdpOptions()));
     let pending = request.connection();
     pending.cancel();
     test.ok(true);
 }
 
-object UdpMembershipLease does UdpMembership {
+hidden object UdpMembershipLease does UdpMembership {
     has state is network.MembershipState;
     has owner is UdpSocket;
 
@@ -525,9 +528,9 @@ object UdpMembershipLease does UdpMembership {
             network.multicast_close(state);
         }
         catch failure is NativeFailure {
-            let translated = NetworkError(NetworkOperation.closing, failure);
+            let translated = NetworkError(operation: NetworkOperation.closing, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }

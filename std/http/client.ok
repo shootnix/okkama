@@ -170,7 +170,7 @@ hidden object ClientTls {
             ["http/1.1"];
         };
         let versions is Set<TlsVersion> = OrderedSet([TlsVersion.tls1_2, TlsVersion.tls1_3]);
-        TlsClientPolicy(trust, versions, advertised);
+        TlsClientPolicy(trust: trust, versions: versions, protocols: advertised);
     }
 }
 
@@ -2070,12 +2070,12 @@ hidden object LoopbackRequest {
 }
 
 async test "a client gets text and posts JSON through its shortcuts" {
-    let listener is TcpAcceptance = await TcpListening(IpEndpoint(IpAddress("127.0.0.1"), 0)).acceptance();
+    let listener is TcpAcceptance = await TcpListening(IpEndpoint(address: IpAddress("127.0.0.1"), port: 0)).acceptance();
     defer listener.close();
-    let base = "http://127.0.0.1:" + listener.local_endpoint().port().string();
+    let base = "http://127.0.0.1:" + listener.local_endpoint()::Parts::port.string();
     let client = HttpClient(
         resolver: FixedResolution([]),
-        endpoints: ListedNetworks([IpNetwork(IpAddress("127.0.0.0"), 8)])
+        endpoints: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)])
     );
     defer client.close();
     let accepting is async () is TcpConnection = listener.connection;
@@ -2126,15 +2126,15 @@ async test "a default client reaches public endpoints only" {
 }
 
 async test "a client follows redirects and carries its cookies when told" {
-    let listener is TcpAcceptance = await TcpListening(IpEndpoint(IpAddress("127.0.0.1"), 0)).acceptance();
+    let listener is TcpAcceptance = await TcpListening(IpEndpoint(address: IpAddress("127.0.0.1"), port: 0)).acceptance();
     defer listener.close();
-    let base = "http://127.0.0.1:" + listener.local_endpoint().port().string();
+    let base = "http://127.0.0.1:" + listener.local_endpoint()::Parts::port.string();
     let jar = MemoryCookieJar();
     defer jar.close();
     let client = HttpClient(
         cookies: jar,
         resolver: FixedResolution([]),
-        endpoints: ListedNetworks([IpNetwork(IpAddress("127.0.0.0"), 8)]),
+        endpoints: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)]),
         redirects: Redirects(limit: 3)
     );
     defer client.close();

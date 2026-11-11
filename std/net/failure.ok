@@ -60,7 +60,7 @@ object NetworkError {
         failure.domain() == "core.net" && code != "would_block" && code != "interrupted";
     }
 
-    value() is Error {
+    error() is Error {
         confirm self.applicable()
             else throw InvalidArgument.because("native failure is not a terminal core.net failure");
         if failure.code() == "timed_out" {

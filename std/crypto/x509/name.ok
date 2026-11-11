@@ -92,7 +92,7 @@ enum InvalidDistinguishedName is Error = (because(reason is string));
 
 test "two attributes in one RDN retain their membership" {
     let name = DistinguishedName(
-        [RelativeDistinguishedName([NameAttribute("2.5.4.3", "a"), NameAttribute("2.5.4.10", "b")])]
+        [RelativeDistinguishedName([NameAttribute(identifier: "2.5.4.3", value: "a"), NameAttribute(identifier: "2.5.4.10", value: "b")])]
     );
     test.is(name.relative_names().size(), 1);
     test.is(name.relative_names().item(0).attributes().size(), 2);

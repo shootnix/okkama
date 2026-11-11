@@ -170,10 +170,10 @@ object WebSocketOpening {
         let cleanup = HttpAcquisitionCleanup(group, pending, taken, HttpTcpDisposal().release);
         defer await cleanup.close();
         let waiting = TcpRacing(
-            endpoints,
-            TcpOptions(),
-            Duration(value: 250.rat(), unit: DurationUnit.millisecond),
-            clock
+            origins: endpoints,
+            options: TcpOptions(),
+            delay: Duration(value: 250.rat(), unit: DurationUnit.millisecond),
+            clock: clock
         ).connection();
         pending.replace([waiting]);
         group.start(waiting);
@@ -196,14 +196,14 @@ object WebSocketOpening {
             let taken = Event();
             let cleanup = HttpAcquisitionCleanup(group, pending, taken, HttpTlsDisposal().release);
             defer await cleanup.close();
-            let waiting = TlsClientHandshake(tcp, identity, tls, clock).connection();
+            let waiting = TlsClientHandshake(origin: tcp, server: identity, policy: tls, clock: clock).connection();
             pending.replace([waiting]);
             group.start(waiting);
             let secure = await waiting;
             taken.set();
             let anchor = HttpUnpublishedTls(secure, published);
             defer anchor.close();
-            let protocol = secure.details().protocol();
+            let protocol = secure.details()::Session::protocol;
             confirm protocol == "" || protocol == "http/1.1"
                 else throw WebSocketFailure.because("negotiated ALPN is not HTTP1");
             let prefix = await self.upgrade(secure.input(), secure.output(), handshake);

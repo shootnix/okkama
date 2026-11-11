@@ -69,10 +69,10 @@ object HttpSelectedConnecting does HttpConversationConnecting {
         let cleanup = HttpAcquisitionCleanup(group, pending, taken, HttpTcpDisposal().release);
         defer await cleanup.close();
         let waiting = TcpRacing(
-            endpoints,
-            TcpOptions(),
-            Duration(value: 250.rat(), unit: DurationUnit.millisecond),
-            clock
+            origins: endpoints,
+            options: TcpOptions(),
+            delay: Duration(value: 250.rat(), unit: DurationUnit.millisecond),
+            clock: clock
         ).connection();
         pending.replace([waiting]);
         group.start(waiting);
@@ -150,14 +150,14 @@ object HttpConversationAdopting does HttpConversationConnecting {
                 HttpTlsDisposal().release
             );
             defer await tls_cleanup.close();
-            let upgrading = TlsClientHandshake(tcp, identity, policy, clock).connection();
+            let upgrading = TlsClientHandshake(origin: tcp, server: identity, policy: policy, clock: clock).connection();
             tls_pending.replace([upgrading]);
             tls_group.start(upgrading);
             let tls = await upgrading;
             tls_taken.set();
             let tls_anchor = HttpUnpublishedTls(tls, published);
             defer tls_anchor.close();
-            let version = protocols.selected(tls.details().protocol());
+            let version = protocols.selected(tls.details()::Session::protocol);
             if version == HttpVersion.http_1_1 {
                 let observation = HttpResponseObservation();
                 let session = Http1Conversation(

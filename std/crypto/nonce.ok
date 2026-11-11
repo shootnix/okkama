@@ -38,7 +38,7 @@ object SystemEntropy does Entropy {
             [];
         }
         else {
-            HostOperation("random", [DecimalArgument(size).bytes()]).bytes();
+            HostOperation(operation: "random", arguments: [DecimalArgument(size).bytes()]).bytes();
         }
     }
 }
@@ -67,7 +67,9 @@ object CounterNonce {
     CounterNonce(prefix is @byte, counter is int, size is int) {
         confirm size >= 1 && size <= 1024 && prefix.size() < size
             else throw InvalidCryptoInput.because("nonce prefix must be shorter than the nonce");
-        confirm counter >= 0 && counter < (1 << (8 * (size - prefix.size())))
+        // A counter field of eight bytes or more holds any non-negative int.
+        let width = size - prefix.size();
+        confirm counter >= 0 && (width >= 8 || counter < (1 << (8 * width)))
             else throw InvalidCryptoInput.because("nonce counter does not fit");
         self.prefix = prefix;
         self.counter = counter;
@@ -81,7 +83,13 @@ object CounterNonce {
                 prefix[index];
             }
             else {
-                ((counter >> (8 * (size - 1 - index))) & 255).byte();
+                let shift = 8 * (size - 1 - index);
+                if shift >= 64 {
+                    0.byte();
+                }
+                else {
+                    ((counter >> shift) & 255).byte();
+                }
             }
         };
     }
@@ -98,9 +106,19 @@ test "system entropy is fresh and sized" {
 }
 
 test "counter nonces are prefix and big-endian counter" {
-    test.is(CounterNonce([1.byte()], 258, 4).bytes(), [1.byte(), 0.byte(), 1.byte(), 2.byte()]);
+    test.is(CounterNonce(prefix: [1.byte()], counter: 258, size: 4).bytes(), [1.byte(), 0.byte(), 1.byte(), 2.byte()]);
     test.throws(InvalidCryptoInput) {
-        CounterNonce([1.byte()], 256, 2);
+        CounterNonce(prefix: [1.byte()], counter: 256, size: 2);
     };
-    test.is(RandomNonce(Entropy.fake(), 12).bytes().size(), 12);
+    // The usual AEAD shape: a 4-byte prefix and an 8-byte counter in 12 bytes.
+    let twelve = CounterNonce(prefix: [9.byte(), 9.byte(), 9.byte(), 9.byte()], counter: 1, size: 12).bytes();
+    test.is(twelve.size(), 12);
+    test.is(twelve.slice(4, 12), [0.byte(), 0.byte(), 0.byte(), 0.byte(), 0.byte(), 0.byte(), 0.byte(), 1.byte()]);
+    let wide = CounterNonce(prefix: [], counter: 258, size: 24).bytes();
+    test.is(wide.slice(0, 22), (0..22).map() -> index { 0.byte(); });
+    test.is(wide.slice(22, 24), [1.byte(), 2.byte()]);
+    test.throws(InvalidCryptoInput) {
+        CounterNonce(prefix: [], counter: -1, size: 12);
+    };
+    test.is(RandomNonce(entropy: Entropy.fake(), size: 12).bytes().size(), 12);
 }

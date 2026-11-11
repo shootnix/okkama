@@ -69,7 +69,7 @@ object MulticastJoining {
     }
 
     membership() is MulticastMembership {
-        MulticastMembership(socket, group, interface, options);
+        MulticastMembership(socket: socket, group: group, interface: interface, options: options);
     }
 }
 
@@ -103,9 +103,9 @@ object MulticastMembership does UdpMembership {
             if failure.domain() == "core.net" && failure.code() == "invalid_input" {
                 throw InvalidArgument.because(failure.message());
             }
-            let translated = NetworkError(NetworkOperation.binding, failure);
+            let translated = NetworkError(operation: NetworkOperation.binding, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         };
@@ -136,11 +136,11 @@ object MulticastMembership does UdpMembership {
 }
 
 test "multicast defaults agree with explicit requests" {
-    test.ok(MulticastOptions() == MulticastOptions(1, true));
+    test.ok(MulticastOptions() == MulticastOptions(hop_limit: 1, loopback: true));
 }
 
 test "multicast hop boundaries and loopback are independent" {
-    let local = MulticastOptions(0, false);
+    let local = MulticastOptions(hop_limit: 0, loopback: false);
     let widest = MulticastOptions(loopback: true, hop_limit: 255);
     test.is(local.hop_limit(), 0);
     test.ok(!local.loopback());
@@ -150,14 +150,14 @@ test "multicast hop boundaries and loopback are independent" {
 
 test "multicast hop limit rejects host default and overflow" {
     let negative = try {
-        MulticastOptions(-1, true);
+        MulticastOptions(hop_limit: -1, loopback: true);
         false;
     }
     catch failure is InvalidArgument {
         true;
     };
     let overflow = try {
-        MulticastOptions(256, false);
+        MulticastOptions(hop_limit: 256, loopback: false);
         false;
     }
     catch failure is InvalidArgument {

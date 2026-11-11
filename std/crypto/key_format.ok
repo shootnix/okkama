@@ -29,7 +29,7 @@ object KeyAlgorithmName {
         origin = oid;
     }
 
-    value() is KeyAlgorithm {
+    algorithm() is KeyAlgorithm {
         if origin == "1.3.101.112" {
             return KeyAlgorithm.ed25519;
         }
@@ -86,8 +86,8 @@ object ParsedPrivateKey {
 
     algorithm() is KeyAlgorithm {
         KeyAlgorithmName(
-            Utf8Decoded(HostOperation("pkcs8-algorithm", [self.pkcs8().export_bytes()]).bytes()).string()
-        ).value();
+            Utf8Decoded(HostOperation(operation: "pkcs8-algorithm", arguments: [self.pkcs8().export_bytes()]).bytes()).string()
+        ).algorithm();
     }
 
     signing_key() is SigningKey {
@@ -96,7 +96,7 @@ object ParsedPrivateKey {
             case KeyAlgorithm.ed25519 {
                 Ed25519PrivateKey(
                     seed: SecretBytes(
-                        HostOperation("ed25519-from-pkcs8", [key.export_bytes()]).bytes()
+                        HostOperation(operation: "ed25519-from-pkcs8", arguments: [key.export_bytes()]).bytes()
                     )
                 );
             }
@@ -132,21 +132,21 @@ object ParsedPublicKey {
 
     algorithm() is KeyAlgorithm {
         KeyAlgorithmName(
-            Utf8Decoded(HostOperation("spki-algorithm", [self.spki()]).bytes()).string()
-        ).value();
+            Utf8Decoded(HostOperation(operation: "spki-algorithm", arguments: [self.spki()]).bytes()).string()
+        ).algorithm();
     }
 
     verifying_key() is VerifyingKey {
         let spki = self.spki();
         match self.algorithm() {
             case KeyAlgorithm.ed25519 {
-                Ed25519PublicKey(HostOperation("ed25519-from-spki", [spki]).bytes());
+                Ed25519PublicKey(HostOperation(operation: "ed25519-from-spki", arguments: [spki]).bytes());
             }
             case KeyAlgorithm.ecdsa_p256 {
-                EcdsaPublicKey(EcdsaCurve.p256, spki);
+                EcdsaPublicKey(curve: EcdsaCurve.p256, spki: spki);
             }
             case KeyAlgorithm.ecdsa_p384 {
-                EcdsaPublicKey(EcdsaCurve.p384, spki);
+                EcdsaPublicKey(curve: EcdsaCurve.p384, spki: spki);
             }
             case KeyAlgorithm.rsa {
                 throw InvalidCryptoInput.because("RSA keys need an explicit signature scheme");

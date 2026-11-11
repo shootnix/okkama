@@ -178,7 +178,7 @@ object NoProxyCoordinates {
                     value * 10 + code - 48;
                 };
                 let subnet = try {
-                    IpNetwork(address, prefix);
+                    IpNetwork(address: address, prefix: prefix);
                 }
                 catch e is Error {
                     throw InvalidProxy.because("no_proxy CIDR prefix");

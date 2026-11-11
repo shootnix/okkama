@@ -35,7 +35,7 @@ object HostDigest {
             self;
         }
         else {
-            HostDigest(digest_update(handle, origin), width);
+            HostDigest(handle: digest_update(handle, origin), width: width);
         }
     }
 
@@ -53,10 +53,10 @@ object HostDigest {
 }
 
 test "host digest states branch and reject unknown algorithms" {
-    let origin = HostDigest("sha256", [], 0).appended([1.byte()]);
+    let origin = HostDigest(algorithm: "sha256", key: [], width: 0).appended([1.byte()]);
     test.ok(origin.appended([2.byte()]).bytes() != origin.bytes());
     test.is(origin.appended([]).bytes(), origin.bytes());
     test.throws(CryptoUnavailable) {
-        HostDigest("md4", [], 0);
+        HostDigest(algorithm: "md4", key: [], width: 0);
     };
 }

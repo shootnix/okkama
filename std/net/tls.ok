@@ -163,7 +163,7 @@ object TlsClientHandshake {
             throw TlsFailure.detailed(TlsPhase.handshaking, e.code());
         };
         let published = Event();
-        let anchor = TlsUnpublished(state, published);
+        let anchor = TlsUnpublished(state: state, published: published);
         defer anchor.close();
         try {
             let pending = tls.handshake(state);
@@ -187,18 +187,18 @@ object TlsClientHandshake {
         catch e is NativeFailure {
             if e.domain() == "core.x509.verify" && e.code() == "permission_denied" {
                 throw CertificateVerificationFailed.because(
-                    CertificateFailureCode(e.message()).value()
+                    CertificateFailureCode(e.message()).failure()
                 );
             }
             throw TlsFailure.detailed(TlsPhase.verifying, e.code());
         }
-        let connection = TlsConnection(state, ends);
+        let connection = TlsConnection(state: state, ends: ends);
         published.set();
         connection;
     }
 }
 
-object TlsUnpublished {
+hidden object TlsUnpublished {
     has state is tls.TlsState;
     has published is Event;
 
@@ -234,11 +234,11 @@ object TlsConnection does Closing {
             TlsVersion.tls1_2;
         };
         info = TlsDetails(
-            ends,
-            CertificateChain(certificates),
-            version,
-            tls.cipher(state),
-            tls.protocol(state)
+            ends: ends,
+            peer: CertificateChain(certificates),
+            version: version,
+            cipher: tls.cipher(state),
+            protocol: tls.protocol(state)
         );
     }
 
@@ -297,7 +297,7 @@ object TlsConnection does Closing {
         let empty is @Future<LockGuard> = [];
         let pending_guard = Atomic(empty);
         let taken = Event();
-        let cleanup = StreamWriteCleanup(guards, writing, pending_guard, taken);
+        let cleanup = StreamWriteCleanup(guards: guards, writing: writing, pending: pending_guard, taken: taken);
         defer await cleanup.close();
         let waiting = lock.guard();
         pending_guard.replace([waiting]);
@@ -347,16 +347,19 @@ object TlsDetails {
         certificates;
     }
 
-    version() is TlsVersion {
-        version;
-    }
+    // What the handshake agreed on.
+    cap Session {
+        version is TlsVersion {
+            version;
+        }
 
-    cipher() is string {
-        cipher;
-    }
+        cipher is string {
+            cipher;
+        }
 
-    protocol() is string {
-        protocol;
+        protocol is string {
+            protocol;
+        }
     }
 }
 
@@ -380,7 +383,7 @@ object TlsReading does AsyncReading, Closing {
     }
 }
 
-object TlsReadTicket {
+hidden object TlsReadTicket {
     has busy is Atomic<bool>;
 
     TlsReadTicket(busy is Atomic<bool>) {

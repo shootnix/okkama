@@ -13,7 +13,7 @@ import "time/duration" take Duration, DurationUnit;
 
 // Snapshot bounded checked numeric candidates and interleave families while
 // retaining the caller's first family and relative order within each family.
-object TcpRaceEndpoints {
+hidden object TcpRaceEndpoints {
     has ordered is @IpEndpoint;
 
     TcpRaceEndpoints(origins is Sequencing<IpEndpoint>) {
@@ -21,7 +21,7 @@ object TcpRaceEndpoints {
         confirm count >= 1 && count <= 256 else throw InvalidTcpRace.because("candidate count");
         let source is @IpEndpoint = (0..count).map() -> index {
             let endpoint = origins.item(index);
-            confirm endpoint.port() > 0 else throw InvalidTcpRace.because("destination port");
+            confirm endpoint::Parts::port > 0 else throw InvalidTcpRace.because("destination port");
             endpoint;
         };
         let family = source[0].address().version();
@@ -110,22 +110,22 @@ object TcpRacing {
                 failed[index - 1];
             };
             TcpRaceAttempt(
-                index,
-                endpoints.item(index),
-                options,
-                delay,
-                clock,
-                prior_started,
-                prior_failed,
-                started[index],
-                failed[index]
+                position: index,
+                endpoint: endpoints.item(index),
+                options: options,
+                delay: delay,
+                clock: clock,
+                prior_started: prior_started,
+                prior_failed: prior_failed,
+                started: started[index],
+                failed: failed[index]
             );
         };
         let group is FutureGroup<TcpRaceWin> = FutureGroup();
         let keep is @int = [];
         let keeper = Atomic(keep);
         let published = Event();
-        let cleanup = TcpRaceCleanup(group, attempts, keeper, published);
+        let cleanup = TcpRaceCleanup(group: group, attempts: attempts, keeper: keeper, published: published);
         defer await cleanup.close();
         let futures is @Future<TcpRaceWin> = attempts.map() -> attempt {
             let future = attempt.result();
@@ -145,7 +145,7 @@ object TcpRacing {
     }
 }
 
-object TcpRaceWin {
+hidden object TcpRaceWin {
     has position is int;
     has connection is TcpConnection;
 
@@ -163,7 +163,7 @@ object TcpRaceWin {
     }
 }
 
-object TcpRaceAttempt {
+hidden object TcpRaceAttempt {
     has position is int;
     has endpoint is IpEndpoint;
     has options is TcpOptions;
@@ -203,7 +203,7 @@ object TcpRaceAttempt {
     }
 
     async result() is TcpRaceWin {
-        let cleanup = TcpRaceAttemptCleanup(waiting, connecting);
+        let cleanup = TcpRaceAttemptCleanup(waiting: waiting, connecting: connecting);
         defer await cleanup.close();
         try {
             if position > 0 {
@@ -215,7 +215,7 @@ object TcpRaceAttempt {
             }
             if position > 0 && delay::Span::seconds > 0.rat() && !prior_failed.ready() {
                 let origins is @Future<bool> = [
-                    TcpRaceDelay(clock, delay).ready(),
+                    TcpRaceDelay(clock: clock, delay: delay).ready(),
                     TcpRaceSignal(prior_failed).ready()
                 ];
                 let pending = Raced(origins: origins).winner();
@@ -223,10 +223,10 @@ object TcpRaceAttempt {
                 await pending;
             }
             started.set();
-            let pending = TcpConnecting(endpoint, options).connection();
+            let pending = TcpConnecting(remote: endpoint, options: options).connection();
             raw.replace([pending]);
             connecting.start(pending);
-            TcpRaceWin(position, await pending);
+            TcpRaceWin(position: position, connection: await pending);
         }
         catch e is Cancelled {
             throw;
@@ -269,7 +269,7 @@ object TcpRaceAttempt {
     }
 }
 
-object TcpRaceDelay {
+hidden object TcpRaceDelay {
     has clock is Timing;
     has delay is Duration;
 
@@ -284,7 +284,7 @@ object TcpRaceDelay {
     }
 }
 
-object TcpRaceSignal {
+hidden object TcpRaceSignal {
     has gate is Event;
 
     TcpRaceSignal(gate is Event) {
@@ -357,7 +357,7 @@ hidden object TcpRaceCleanup {
 enum InvalidTcpRace is Error = (because(reason is string));
 
 test "TCP racing preserves one family and rejects empty candidates" {
-    let endpoint = IpEndpoint(IpAddress("127.0.0.1"), 80);
+    let endpoint = IpEndpoint(address: IpAddress("127.0.0.1"), port: 80);
     test.is(TcpRaceEndpoints([endpoint]).items().size(), 1);
     test.ok(try {
         TcpRacing([]);

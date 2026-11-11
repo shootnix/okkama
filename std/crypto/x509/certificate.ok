@@ -28,7 +28,7 @@ object ParsedCertificate {
         self.origin = origin;
     }
 
-    value() is Certificate {
+    certificate() is Certificate {
         Certificate(origin);
     }
 }
@@ -63,18 +63,18 @@ object Certificate {
     }
 
     subject() is DistinguishedName {
-        CertificateName(facts, false).value();
+        CertificateName(facts: facts, issuer: false).name();
     }
 
     issuer() is DistinguishedName {
-        CertificateName(facts, true).value();
+        CertificateName(facts: facts, issuer: true).name();
     }
 
     validity() is CertificateValidity {
         let times = x509.certificate_times(facts);
         CertificateValidity(
-            Instant(Duration(value: Number(times[0]).int().rat(), unit: DurationUnit.second)),
-            Instant(Duration(value: Number(times[1]).int().rat(), unit: DurationUnit.second))
+            starts: Instant(Duration(value: Number(times[0]).int().rat(), unit: DurationUnit.second)),
+            ends: Instant(Duration(value: Number(times[1]).int().rat(), unit: DurationUnit.second))
         );
     }
 
@@ -97,7 +97,7 @@ object Certificate {
             let ip_values is @IpAddress = ip_entries.map() -> entry {
                 IpAddress(entry[1]);
             };
-            CertificateNames(dns_values, ip_values);
+            CertificateNames(dns: dns_values, ips: ip_values);
         }
         catch e is NativeFailure {
             if e.domain() == "core.x509" {
@@ -115,20 +115,20 @@ object Certificate {
     extensions_items() is Sequencing<CertificateExtension> {
         let records = x509.certificate_extensions(facts);
         let values is @CertificateExtension = records.map() -> record {
-            CertificateExtension(record[0], record[1] == "1", HexDecoded(record[2]).bytes());
+            CertificateExtension(identifier: record[0], critical: record[1] == "1", origin: HexDecoded(record[2]).bytes());
         };
         values;
     }
 
     extensions_extension(identifier is string) is CertificateExtension {
-        let wanted = CertificateObjectIdentifier(identifier).value();
+        let wanted = CertificateObjectIdentifier(identifier).identifier();
         let records = x509.certificate_extensions(facts);
         for records -> record {
             if record[0] == wanted {
                 return CertificateExtension(
-                    record[0],
-                    record[1] == "1",
-                    HexDecoded(record[2]).bytes()
+                    identifier: record[0],
+                    critical: record[1] == "1",
+                    origin: HexDecoded(record[2]).bytes()
                 );
             }
         }
@@ -154,7 +154,7 @@ object Certificate {
                 CertificateConstraints(authority);
             }
             else {
-                CertificateConstraints(authority, Number(value[1]).int());
+                CertificateConstraints(authority: authority, maximum_depth: Number(value[1]).int());
             }
         }
         catch e is NativeFailure {
@@ -224,7 +224,7 @@ object Certificate {
     }
 }
 
-object CertificateName {
+hidden object CertificateName {
     has facts is string;
     has issuer is bool;
 
@@ -233,12 +233,12 @@ object CertificateName {
         self.issuer = issuer;
     }
 
-    value() is DistinguishedName {
+    name() is DistinguishedName {
         try {
             let groups = x509.certificate_names(facts, issuer);
             let result is @RelativeDistinguishedName = groups.map() -> group {
                 let attributes is @NameAttribute = group.map() -> attribute {
-                    NameAttribute(attribute[0], attribute[1]);
+                    NameAttribute(identifier: attribute[0], value: attribute[1]);
                 };
                 RelativeDistinguishedName(attributes);
             };
@@ -261,7 +261,7 @@ object CertificateName {
     }
 }
 
-object CertificatePublicKey does PublicKey {
+hidden object CertificatePublicKey does PublicKey {
     has origin is @byte;
 
     CertificatePublicKey(origin is @byte) {
@@ -339,7 +339,7 @@ object CertificatePurpose {
     has identifier is string;
 
     CertificatePurpose(identifier is string) {
-        self.identifier = CertificateObjectIdentifier(identifier).value();
+        self.identifier = CertificateObjectIdentifier(identifier).identifier();
     }
 
     identifier() is string {
@@ -353,7 +353,7 @@ object CertificateExtension {
     has origin is @byte;
 
     CertificateExtension(identifier is string, critical is bool, origin is @byte) {
-        self.identifier = CertificateObjectIdentifier(identifier).value();
+        self.identifier = CertificateObjectIdentifier(identifier).identifier();
         self.critical = critical;
         self.origin = origin;
     }
@@ -403,16 +403,16 @@ object CertificateExtensions {
     }
 }
 
-object CertificateObjectIdentifier {
+hidden object CertificateObjectIdentifier {
     has origin is string;
 
     CertificateObjectIdentifier(origin is string) {
         self.origin = origin;
     }
 
-    value() is string {
+    identifier() is string {
         try {
-            NameAttribute(origin, "").identifier();
+            NameAttribute(identifier: origin, value: "").identifier();
         }
         catch e is InvalidDistinguishedName {
             throw InvalidCertificate.because("invalid certificate object identifier");
@@ -441,7 +441,7 @@ enum UnsupportedCertificateName is Error = (unsupported);
 
 test "empty DER is rejected before certificate publication" {
     test.ok(try {
-        ParsedCertificate([]).value();
+        ParsedCertificate([]).certificate();
         false;
     }
     catch e is InvalidCertificate {

@@ -32,7 +32,7 @@ object ReadDigest {
         self.chunk = chunk;
     }
 
-    result() is Digesting {
+    digest() is Digesting {
         self.continued(digest);
     }
 
@@ -85,9 +85,9 @@ test "stream digests equal digests of the whole input" {
         (i % 256).byte();
     };
     let whole = Digesting.fake().state(input).bytes();
-    test.is(ReadDigest(ByteBuffer(input).reading(), Digesting.fake(), 7).result().bytes(), whole);
-    test.is(ReadDigest(ByteBuffer().reading(), Digesting.fake()).result().bytes().size(), 0);
+    test.is(ReadDigest(origin: ByteBuffer(input).reading(), digest: Digesting.fake(), chunk: 7).digest().bytes(), whole);
+    test.is(ReadDigest(origin: ByteBuffer().reading(), digest: Digesting.fake()).digest().bytes().size(), 0);
     test.throws(InvalidArgument) {
-        ReadDigest(ByteBuffer().reading(), Digesting.fake(), 0);
+        ReadDigest(origin: ByteBuffer().reading(), digest: Digesting.fake(), chunk: 0);
     };
 }

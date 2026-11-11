@@ -79,10 +79,10 @@ object UnixError {
     }
 
     applicable() is bool {
-        NetworkError(operation, failure).applicable();
+        NetworkError(operation: operation, failure: failure).applicable();
     }
 
-    value() is Error {
+    error() is Error {
         confirm self.applicable() else throw InvalidArgument.because("not a terminal Unix failure");
         if failure.code() == "unsupported" {
             return UnixSocketsUnsupported.unsupported;
@@ -93,11 +93,11 @@ object UnixError {
         if failure.code() == "invalid_input" {
             return InvalidArgument.because(failure.message());
         }
-        NetworkError(operation, failure).value();
+        NetworkError(operation: operation, failure: failure).error();
     }
 }
 
-object UnixEndpointBytes {
+hidden object UnixEndpointBytes {
     has bytes is @byte;
 
     UnixEndpointBytes(bytes is @byte) {
@@ -124,8 +124,8 @@ object UnixConnection {
         self.state = state;
         ends = try {
             ConnectionEndpoints(
-                UnixEndpointBytes(network.unix_endpoint(state, false)).endpoint(),
-                UnixEndpointBytes(network.unix_endpoint(state, true)).endpoint()
+                local: UnixEndpointBytes(network.unix_endpoint(state, false)).endpoint(),
+                remote: UnixEndpointBytes(network.unix_endpoint(state, true)).endpoint()
             );
         }
         catch failure is NativeFailure {
@@ -159,9 +159,9 @@ object UnixConnection {
             network.close(state);
         }
         catch failure is NativeFailure {
-            let translated = UnixError(NetworkOperation.closing, failure);
+            let translated = UnixError(operation: NetworkOperation.closing, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -177,9 +177,9 @@ object UnixConnection {
             await network.stream_read(state, limit);
         }
         catch failure is NativeFailure {
-            let translated = UnixError(NetworkOperation.reading, failure);
+            let translated = UnixError(operation: NetworkOperation.reading, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -192,9 +192,9 @@ object UnixConnection {
             await network.stream_write(state, payload);
         }
         catch failure is NativeFailure {
-            let translated = UnixError(NetworkOperation.writing, failure);
+            let translated = UnixError(operation: NetworkOperation.writing, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -253,8 +253,8 @@ object UnixPaired {
             let states = network.unix_pair();
             try {
                 let pair = UnixPair(
-                    UnixConnection(network.unix_pair_socket(states, false)),
-                    UnixConnection(network.unix_pair_socket(states, true))
+                    first: UnixConnection(network.unix_pair_socket(states, false)),
+                    second: UnixConnection(network.unix_pair_socket(states, true))
                 );
                 network.unix_pair_release(states);
                 pair;
@@ -269,9 +269,9 @@ object UnixPaired {
             }
         }
         catch failure is NativeFailure {
-            let translated = UnixError(NetworkOperation.connecting, failure);
+            let translated = UnixError(operation: NetworkOperation.connecting, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -290,9 +290,9 @@ object UnixConnecting {
             UnixConnection(await network.unix_connect(Utf8Encoded(remote.string()).bytes()));
         }
         catch failure is NativeFailure {
-            let translated = UnixError(NetworkOperation.connecting, failure);
+            let translated = UnixError(operation: NetworkOperation.connecting, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -313,9 +313,9 @@ object UnixListening {
             UnixAcceptance(network.unix_listen(Utf8Encoded(local.string()).bytes(), backlog));
         }
         catch failure is NativeFailure {
-            let translated = UnixError(NetworkOperation.listening, failure);
+            let translated = UnixError(operation: NetworkOperation.listening, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -354,9 +354,9 @@ object UnixAcceptance {
             network.unix_listener_close(state);
         }
         catch failure is NativeFailure {
-            let translated = UnixError(NetworkOperation.closing, failure);
+            let translated = UnixError(operation: NetworkOperation.closing, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -367,9 +367,9 @@ object UnixAcceptance {
             UnixConnection(await network.unix_accept(state));
         }
         catch failure is NativeFailure {
-            let translated = UnixError(NetworkOperation.accepting, failure);
+            let translated = UnixError(operation: NetworkOperation.accepting, failure: failure);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }

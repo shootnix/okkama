@@ -1,0 +1,48 @@
+module examples/net/addresses v1.0.0;
+
+import "io/stdout" take Stdout;
+import "net/dns" take FixedResolution, HostAddresses, UnknownHost;
+import "net/endpoint" take HostEndpoint, HostName, IpEndpoint;
+import "net/ip" take InvalidIpAddress, IpAddress, IpNetwork, IpProperty, IpVersion;
+
+// Addresses are checked values before they reach DNS or a socket: parse and
+// classify IP addresses, test network membership, write endpoints, and
+// resolve names through a fixed table, as tests do instead of real DNS.
+
+async main() is int {
+    let out = Stdout();
+    let v6 = IpAddress("2001:0DB8:0:0::1");
+    out.writeln(v6.string() + " is IPv6: " + (v6.version() == IpVersion.v6).string());
+    out.writeln("10.1.2.3 private: " + IpAddress("10.1.2.3").properties().membership(IpProperty.private_network).string());
+    out.writeln("127.0.0.1 loopback: " + IpAddress("127.0.0.1").properties().membership(IpProperty.loopback).string());
+
+    let office = IpNetwork(address: IpAddress("192.168.10.0"), prefix: 24);
+    out.writeln("office /" + office::Mask::prefix.string() + " has " + office.size().string() + " addresses, broadcast "
+        + office.broadcast().string());
+    out.writeln("192.168.10.77 inside: " + office.membership(IpAddress("192.168.10.77")).string());
+
+    let endpoint = IpEndpoint(address: IpAddress("fe80::1"), port: 443, zone: "eth0");
+    out.writeln(endpoint.string() + " port " + endpoint::Parts::port.string());
+
+    let refused = try {
+        IpAddress("10.1.2").string();
+    }
+    catch failure is InvalidIpAddress {
+        "refused 10.1.2";
+    };
+    out.writeln(refused);
+
+    let dns = FixedResolution([HostAddresses(host: HostName("api.example.test"), addresses: [IpAddress("192.0.2.10"), IpAddress("2001:db8::10")])]);
+    let found = await dns.addresses(HostEndpoint(host: HostName("API.example.test"), port: 443));
+    for found -> address {
+        out.writeln("api.example.test -> " + address.string());
+    }
+    let missing = try {
+        (await dns.addresses(HostEndpoint(host: HostName("other.test"), port: 80))).size().string();
+    }
+    catch UnknownHost.host(name) {
+        "unknown " + name;
+    };
+    out.writeln(missing);
+    0;
+}

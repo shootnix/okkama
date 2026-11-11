@@ -15,7 +15,7 @@ import "encoding/utf" take Utf8Decoded;
 // Keys of another curve or algorithm are InvalidCryptoInput.
 enum EcdsaCurve = (p256, p384);
 
-object EcdsaCurveName {
+hidden object EcdsaCurveName {
     has curve is EcdsaCurve;
 
     EcdsaCurveName(curve is EcdsaCurve) {
@@ -61,7 +61,7 @@ object EcdsaPrivateKey does SigningKey {
     has key is SecretBytes;
 
     EcdsaPrivateKey(curve is EcdsaCurve, pkcs8 is SecretBytes) {
-        let algorithm = HostOperation("pkcs8-algorithm", [pkcs8.export_bytes()]).bytes();
+        let algorithm = HostOperation(operation: "pkcs8-algorithm", arguments: [pkcs8.export_bytes()]).bytes();
         confirm EcdsaCurveName(curve).algorithm() == Utf8Decoded(algorithm).string()
             else throw InvalidCryptoInput.because("PKCS#8 key is not an ECDSA key of this curve");
         self.curve = curve;
@@ -70,7 +70,7 @@ object EcdsaPrivateKey does SigningKey {
 
     EcdsaPrivateKey(curve is EcdsaCurve, entropy is Entropy) {
         self.curve = curve;
-        key = EcdsaScalar(curve, entropy).pkcs8();
+        key = EcdsaScalar(curve: curve, entropy: entropy).pkcs8();
     }
 
     pkcs8() is SecretBytes {
@@ -79,15 +79,15 @@ object EcdsaPrivateKey does SigningKey {
 
     public_key() is VerifyingKey {
         EcdsaPublicKey(
-            curve,
-            HostOperation("ecdsa-" + EcdsaCurveName(curve).name() + "-public", [key.export_bytes()]).bytes()
+            curve: curve,
+            spki: HostOperation("ecdsa-" + EcdsaCurveName(curve).name() + "-public", [key.export_bytes()]).bytes()
         );
     }
 
     signature(message is @byte) is @byte {
         HostOperation(
-            "ecdsa-" + EcdsaCurveName(curve).name() + "-sign",
-            [key.export_bytes(), message]
+            operation: "ecdsa-" + EcdsaCurveName(curve).name() + "-sign",
+            arguments: [key.export_bytes(), message]
         ).bytes();
     }
 }
@@ -97,7 +97,7 @@ object EcdsaPublicKey does PublicKey, VerifyingKey {
     has origin is @byte;
 
     EcdsaPublicKey(curve is EcdsaCurve, spki is @byte) {
-        let algorithm = HostOperation("spki-algorithm", [spki]).bytes();
+        let algorithm = HostOperation(operation: "spki-algorithm", arguments: [spki]).bytes();
         confirm EcdsaCurveName(curve).algorithm() == Utf8Decoded(algorithm).string()
             else throw InvalidCryptoInput.because(
                 "SubjectPublicKeyInfo is not an ECDSA key of this curve"
@@ -112,14 +112,14 @@ object EcdsaPublicKey does PublicKey, VerifyingKey {
 
     verified(message is @byte, signature is @byte) is bool {
         HostOperation(
-            "ecdsa-" + EcdsaCurveName(curve).name() + "-verify",
-            [origin, message, signature]
+            operation: "ecdsa-" + EcdsaCurveName(curve).name() + "-verify",
+            arguments: [origin, message, signature]
         ).truth();
     }
 }
 
 // Internal: rejection sampling of a nonzero scalar below the group order.
-object EcdsaScalar {
+hidden object EcdsaScalar {
     has curve is EcdsaCurve;
     has entropy is Entropy;
 
@@ -132,7 +132,7 @@ object EcdsaScalar {
         let candidate = entropy.bytes(EcdsaCurveName(curve).width());
         try {
             SecretBytes(
-                HostOperation("ecdsa-" + EcdsaCurveName(curve).name() + "-from-scalar", [candidate]).bytes()
+                HostOperation(operation: "ecdsa-" + EcdsaCurveName(curve).name() + "-from-scalar", arguments: [candidate]).bytes()
             );
         }
         catch e is InvalidCryptoInput {
@@ -162,6 +162,6 @@ test "ECDSA rejects keys of another curve" {
         EcdsaPrivateKey(curve: EcdsaCurve.p256, pkcs8: p384.pkcs8());
     };
     test.throws(InvalidCryptoInput) {
-        EcdsaPublicKey(EcdsaCurve.p256, p384.public_key().bytes());
+        EcdsaPublicKey(curve: EcdsaCurve.p256, spki: p384.public_key().bytes());
     };
 }

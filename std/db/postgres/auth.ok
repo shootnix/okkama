@@ -53,7 +53,7 @@ object ScramExchange {
         let keys = ScramKeys(password, parsed);
         let message = Utf8Encoded(self.bare() + "," + server_first + "," + without).bytes();
         let client_key = keys.client();
-        let signature = Hmac(HmacHash.sha256, SecretBytes(Sha256(client_key).bytes()), message).bytes();
+        let signature = Hmac(hash: HmacHash.sha256, key: SecretBytes(Sha256(client_key).bytes()), origin: message).bytes();
         let proof is @byte = (0..32).map() -> index {
             client_key[index] ^ signature[index];
         };
@@ -67,13 +67,13 @@ object ScramExchange {
         let without = "c=biws,r=" + parsed.nonce();
         let message = Utf8Encoded(self.bare() + "," + server_first + "," + without).bytes();
         let expected = Hmac(
-            HmacHash.sha256,
-            SecretBytes(ScramKeys(password, parsed).server()),
-            message
+            hash: HmacHash.sha256,
+            key: SecretBytes(ScramKeys(password, parsed).server()),
+            origin: message
         ).bytes();
         ConstantTimeEqual(
-            expected,
-            Base64Decoded(server_final.slice(2, server_final.length())).bytes()
+            left: expected,
+            right: Base64Decoded(server_final.slice(2, server_final.length())).bytes()
         ).value();
     }
 }
@@ -127,15 +127,15 @@ object ScramKeys {
     }
 
     salted() is SecretBytes {
-        Pbkdf2Secret(KdfHash.sha256, password, first.salt(), first.iterations(), 32).secret();
+        Pbkdf2Secret(hash: KdfHash.sha256, password: password, salt: first.salt(), iterations: first.iterations(), length: 32).secret();
     }
 
     client() is @byte {
-        Hmac(HmacHash.sha256, self.salted(), Utf8Encoded("Client Key").bytes()).bytes();
+        Hmac(hash: HmacHash.sha256, key: self.salted(), origin: Utf8Encoded("Client Key").bytes()).bytes();
     }
 
     server() is @byte {
-        Hmac(HmacHash.sha256, self.salted(), Utf8Encoded("Server Key").bytes()).bytes();
+        Hmac(hash: HmacHash.sha256, key: self.salted(), origin: Utf8Encoded("Server Key").bytes()).bytes();
     }
 }
 

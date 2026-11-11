@@ -151,7 +151,7 @@ object IpNetwork {
         let width = address.bytes().size() * 8;
         confirm prefix >= 0 && prefix <= width
             else throw InvalidIpPrefix.detailed(prefix, address.version());
-        let masked = IpNetworkBytes(address.bytes(), prefix, false).bytes();
+        let masked = IpNetworkBytes(origin: address.bytes(), prefix: prefix, upper: false).bytes();
         base = IpAddress(PackedIpText(masked).string());
         length = prefix;
     }
@@ -161,11 +161,7 @@ object IpNetwork {
     }
 
     broadcast() is IpAddress {
-        IpAddress(PackedIpText(IpNetworkBytes(base.bytes(), length, true).bytes()).string());
-    }
-
-    prefix() is int {
-        length;
+        IpAddress(PackedIpText(IpNetworkBytes(origin: base.bytes(), prefix: length, upper: true).bytes()).string());
     }
 
     membership(address is IpAddress) is bool {
@@ -173,12 +169,19 @@ object IpNetwork {
             false;
         }
         else {
-            IpNetworkBytes(address.bytes(), length, false).bytes() == base.bytes();
+            IpNetworkBytes(origin: address.bytes(), prefix: length, upper: false).bytes() == base.bytes();
         }
     }
 
     size() is BigInt {
         BigInt("2").power(base.bytes().size() * 8 - length, 129);
+    }
+
+    // The prefix length in bits.
+    cap Mask {
+        prefix is int {
+            length;
+        }
     }
 }
 
@@ -191,7 +194,7 @@ object IpInterface {
 
     IpInterface(address is IpAddress, prefix is int) {
         host = address;
-        subnet = IpNetwork(address, prefix);
+        subnet = IpNetwork(address: address, prefix: prefix);
     }
 
     address() is IpAddress {
@@ -203,7 +206,7 @@ object IpInterface {
     }
 
     string() is string {
-        host.string() + "/" + subnet.prefix().string();
+        host.string() + "/" + subnet::Mask::prefix.string();
     }
 }
 
@@ -225,7 +228,7 @@ object IpAddresses does Iterating<IpAddress> {
     }
 }
 
-object IpAddressCursor does Cursor<IpAddress> {
+hidden object IpAddressCursor does Cursor<IpAddress> {
     has current, limit is IpAddress;
 
     IpAddressCursor(current is IpAddress, limit is IpAddress) {
@@ -265,7 +268,7 @@ object IpAddressCursor does Cursor<IpAddress> {
     }
 }
 
-object ExhaustedIpAddressCursor does Cursor<IpAddress> {
+hidden object ExhaustedIpAddressCursor does Cursor<IpAddress> {
     ExhaustedIpAddressCursor();
 
     available() is bool {
@@ -282,7 +285,7 @@ object ExhaustedIpAddressCursor does Cursor<IpAddress> {
 }
 
 // Implementation representation of the lower/upper packed CIDR endpoint.
-object IpNetworkBytes {
+hidden object IpNetworkBytes {
     has origin is @byte;
     has prefix is int;
     has upper is bool;
@@ -328,7 +331,7 @@ object IpNetworkBytes {
 }
 
 // Canonical text of packed address bytes. The provider envelope remains private.
-object PackedIpText {
+hidden object PackedIpText {
     has origin is @byte;
 
     PackedIpText(origin is @byte) {
@@ -376,7 +379,7 @@ test "address rejects endpoint decorations" {
 }
 
 test "CIDR masks host bits and keeps inclusive endpoints" {
-    let network = IpNetwork(IpAddress("192.0.2.7"), 30);
+    let network = IpNetwork(address: IpAddress("192.0.2.7"), prefix: 30);
     test.is(network.network().string(), "192.0.2.4");
     test.is(network.broadcast().string(), "192.0.2.7");
     test.is(network.size().string(), "4");
@@ -385,7 +388,7 @@ test "CIDR masks host bits and keeps inclusive endpoints" {
 }
 
 test "single-address network cursor ends without wrapping" {
-    let cursor = IpAddresses(IpNetwork(IpAddress("255.255.255.255"), 32)).cursor();
+    let cursor = IpAddresses(IpNetwork(address: IpAddress("255.255.255.255"), prefix: 32)).cursor();
     test.ok(cursor.available());
     test.is(cursor.item().string(), "255.255.255.255");
     test.ok(!cursor.successor().available());
@@ -393,7 +396,7 @@ test "single-address network cursor ends without wrapping" {
 }
 
 test "interface preserves host bits alongside its normalized network" {
-    let interface = IpInterface(IpAddress("2001:0DB8::7"), 64);
+    let interface = IpInterface(address: IpAddress("2001:0DB8::7"), prefix: 64);
     test.is(interface.string(), "2001:db8::7/64");
     test.is(interface.address().string(), "2001:db8::7");
     test.is(interface.network().network().string(), "2001:db8::");

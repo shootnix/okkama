@@ -26,11 +26,11 @@ object ChaCha20Poly1305 does Sealing {
     }
 
     sealed(nonce is @byte, aad is @byte, plaintext is @byte) is @byte {
-        HostOperation("aead-seal:chacha20-poly1305", [key.export_bytes(), nonce, aad, plaintext]).bytes();
+        HostOperation(operation: "aead-seal:chacha20-poly1305", arguments: [key.export_bytes(), nonce, aad, plaintext]).bytes();
     }
 
     opened(nonce is @byte, aad is @byte, sealed is @byte) is @byte {
-        HostOperation("aead-open:chacha20-poly1305", [key.export_bytes(), nonce, aad, sealed]).bytes();
+        HostOperation(operation: "aead-open:chacha20-poly1305", arguments: [key.export_bytes(), nonce, aad, sealed]).bytes();
     }
 }
 
@@ -52,11 +52,11 @@ object XChaCha20Poly1305 does Sealing {
     }
 
     sealed(nonce is @byte, aad is @byte, plaintext is @byte) is @byte {
-        HostOperation("aead-seal:xchacha20-poly1305", [key.export_bytes(), nonce, aad, plaintext]).bytes();
+        HostOperation(operation: "aead-seal:xchacha20-poly1305", arguments: [key.export_bytes(), nonce, aad, plaintext]).bytes();
     }
 
     opened(nonce is @byte, aad is @byte, sealed is @byte) is @byte {
-        HostOperation("aead-open:xchacha20-poly1305", [key.export_bytes(), nonce, aad, sealed]).bytes();
+        HostOperation(operation: "aead-open:xchacha20-poly1305", arguments: [key.export_bytes(), nonce, aad, sealed]).bytes();
     }
 }
 

@@ -63,7 +63,7 @@ object DigestBlocks64 {
     }
 
     bytes() is @byte {
-        let padding = DigestPadding64(self.remainder(), length, little_endian).bytes();
+        let padding = DigestPadding64(tail: self.remainder(), length: length, little_endian: little_endian).bytes();
         let completed = self.completed();
         let final = (0..(padding.size() / 64).int()).reduce(completed) -> current, index {
             let block is @byte = (0..64).map() -> i {
@@ -107,7 +107,7 @@ object DigestBlocks64 {
 // Final one/two blocks: tail, 0x80, zeros, then 64-bit message length in bits.
 // tail must have length % 64 bytes and be shorter than 64. Invalid coordinates
 // fail at construction. For example, the empty message is 0x80 plus 63 zeros.
-object DigestPadding64 {
+hidden object DigestPadding64 {
     has tail is @byte;
     has length is int;
     has little_endian is bool;
@@ -159,14 +159,14 @@ enum InvalidDigestPadding is Error = (invalid);
 enum InvalidDigestBlock is Error = (invalid);
 
 test "digest padding has exact one and two block boundaries" {
-    let empty = DigestPadding64([], 0, true).bytes();
+    let empty = DigestPadding64(tail: [], length: 0, little_endian: true).bytes();
     test.is(empty.size(), 64);
     test.is(empty[0].int(), 128);
     test.is(empty[63].int(), 0);
     let tail is @byte = (0..56).map() -> i {
         byte(0);
     };
-    let padded = DigestPadding64(tail, 56, false).bytes();
+    let padded = DigestPadding64(tail: tail, length: 56, little_endian: false).bytes();
     test.is(padded.size(), 128);
     test.is(padded[56].int(), 128);
     test.is(padded[126].int(), 1);
@@ -174,13 +174,13 @@ test "digest padding has exact one and two block boundaries" {
 }
 
 test "digest block fake counts final padding without changing history" {
-    let empty = DigestBlocks64(DigestCompression64.fake(), [], false);
+    let empty = DigestBlocks64(compression: DigestCompression64.fake(), origin: [], little_endian: false);
     test.is(empty.bytes(), [byte(1)]);
     test.is(empty.state([]).bytes(), [byte(1)]);
     let input is @byte = (0..65).map() -> i {
         byte(i);
     };
-    let origin = DigestBlocks64(DigestCompression64.fake(), input, false);
+    let origin = DigestBlocks64(compression: DigestCompression64.fake(), origin: input, little_endian: false);
     let child = origin.state([byte(7)]);
     test.is(origin.bytes(), [byte(2)]);
     test.is(child.bytes(), [byte(2)]);
@@ -190,14 +190,14 @@ test "digest block fake counts final padding without changing history" {
 
 test "digest padding and block failures are typed" {
     test.ok(try {
-        DigestPadding64([], -1, true);
+        DigestPadding64(tail: [], length: -1, little_endian: true);
         false;
     }
     catch e is DigestInputTooLong {
         true;
     });
     test.ok(try {
-        DigestPadding64([], 1, true);
+        DigestPadding64(tail: [], length: 1, little_endian: true);
         false;
     }
     catch e is InvalidDigestPadding {

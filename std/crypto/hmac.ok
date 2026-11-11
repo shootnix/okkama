@@ -16,7 +16,7 @@ import "encoding/hex" take HexEncoded;
 //     Hmac(HmacHash.sha256, key, message).matches(tag); // true
 enum HmacHash = (sha224, sha256, sha384, sha512, sha3_256, sha3_512);
 
-object HmacAlgorithm {
+hidden object HmacAlgorithm {
     has hash is HmacHash;
 
     HmacAlgorithm(hash is HmacHash) {
@@ -51,11 +51,11 @@ object Hmac does Digesting {
     has digest is HostDigest;
 
     Hmac(hash is HmacHash, key is SecretBytes) {
-        digest = HostDigest(HmacAlgorithm(hash).name(), key.export_bytes(), 0);
+        digest = HostDigest(algorithm: HmacAlgorithm(hash).name(), key: key.export_bytes(), width: 0);
     }
 
     Hmac(hash is HmacHash, key is SecretBytes, origin is @byte) {
-        digest = HostDigest(HmacAlgorithm(hash).name(), key.export_bytes(), 0).appended(origin);
+        digest = HostDigest(algorithm: HmacAlgorithm(hash).name(), key: key.export_bytes(), width: 0).appended(origin);
     }
 
     bytes() is @byte {
@@ -68,7 +68,7 @@ object Hmac does Digesting {
     }
 
     matches(tag is @byte) is bool {
-        ConstantTimeEqual(digest.bytes(), tag).value();
+        ConstantTimeEqual(left: digest.bytes(), right: tag).value();
     }
 }
 
@@ -107,23 +107,23 @@ test "HMAC matches RFC 4231 test case 2" {
         value.byte();
     };
     test.is(
-        HexEncoded(Hmac(HmacHash.sha256, key, message).bytes()).string(),
+        HexEncoded(Hmac(hash: HmacHash.sha256, key: key, origin: message).bytes()).string(),
         "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
     );
     test.is(
-        HexEncoded(Hmac(HmacHash.sha512, key, message).bytes()).string(),
+        HexEncoded(Hmac(hash: HmacHash.sha512, key: key, origin: message).bytes()).string(),
         "164b7a7bfcf819e2e395fbe73b56e0a387bd64222e831fd610270cd7ea2505549758bf75c05a994a6d034f65f8f0e6fdcaeab1a34d4a6b4b636e070a38bce737"
     );
 }
 
 test "HMAC successors and constant-time matching" {
     let key = SecretBytes([1.byte(), 2.byte(), 3.byte()]);
-    let whole = Hmac(HmacHash.sha3_256, key, [1.byte(), 2.byte()]);
-    test.is(Hmac(HmacHash.sha3_256, key).state([1.byte()]).state([2.byte()]).bytes(), whole.bytes());
+    let whole = Hmac(hash: HmacHash.sha3_256, key: key, origin: [1.byte(), 2.byte()]);
+    test.is(Hmac(hash: HmacHash.sha3_256, key: key).state([1.byte()]).state([2.byte()]).bytes(), whole.bytes());
     test.ok(whole.matches(whole.bytes()));
     test.ok(
         !whole.matches(
-            Hmac(HmacHash.sha3_256, SecretBytes([9.byte()]), [1.byte(), 2.byte()]).bytes()
+            Hmac(hash: HmacHash.sha3_256, key: SecretBytes([9.byte()]), origin: [1.byte(), 2.byte()]).bytes()
         )
     );
     test.ok(!whole.matches([]));

@@ -65,14 +65,14 @@ object DecimalArgument {
 
 test "host failures become typed errors" {
     test.ok(try {
-        HostOperation("aead-open:aes-256-gcm", [[1.byte()], [], [], []]).bytes();
+        HostOperation(operation: "aead-open:aes-256-gcm", arguments: [[1.byte()], [], [], []]).bytes();
         false;
     }
     catch InvalidCryptoInput.because(reason) {
         reason == "aes-256-gcm key must be 32 bytes";
     });
     test.throws(CryptoUnavailable) {
-        HostOperation("no-such-operation", []).bytes();
+        HostOperation(operation: "no-such-operation", arguments: []).bytes();
     };
     test.is(DecimalArgument(42).bytes(), [52.byte(), 50.byte()]);
 }

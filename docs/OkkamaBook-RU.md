@@ -3987,6 +3987,37 @@ message)`. `Invocation` отвечает по имени:
 командную строку поверх конфигурации. `examples/cli/` показывает утилиту с
 подкомандами.
 
+`digest` и `crypto` работают с байтами через проверенные реализации хоста.
+- Дайджест — это бегущее состояние: `Sha256(bytes).bytes()` или
+  `Sha256().state(part).state(part)`, который продолжает, не меняя
+  исходного. Есть SHA-2, SHA-3, SHAKE, BLAKE2, MD5 и SHA-1.
+- Ключи хранятся в `SecretBytes`. Энтропия, nonce и доверие — явные
+  значения.
+- `Hmac(hash:, key:, origin:)` отвечает на `bytes()` и `matches(signature)`
+  за постоянное время.
+- `PasswordHash(password:, policy: Argon2Policy(), entropy:)` сохраняет
+  пароль, а `PasswordCheck(stored:, password:).matches()` проверяет его.
+- AEAD вроде `ChaCha20Poly1305(key)` отвечает на `sealed(nonce, header,
+  text)` и `opened(…)`. Второй бросает `AuthenticationFailed` при любом
+  изменении.
+- `ParsedCertificate(der).certificate()` читает X.509, а модуль доверия
+  проверяет цепочки.
+
+`examples/digest/` и `examples/crypto/` показывают каждую задачу.
+
+`net` разделяет адреса, имена и транспорт. `IpAddress(text)` строго
+разбирает адрес и классифицирует его (`properties()`).
+`IpNetwork(address:, prefix:)` проверяет принадлежность.
+`IpEndpoint(address:, port:)` показывает `::Parts::port`.
+`FixedResolution`/`SystemResolution` разрешают имена. Сокеты TCP и UDP
+асинхронные:
+- `await TcpListening(local:).acceptance()` слушает;
+- `await TcpConnecting(remote:, options:).connection()` подключается;
+- `input()`/`output()` передают байты.
+
+TLS-соединения показывают согласованный `details()::Session::protocol`.
+В `examples/net/` есть обзор адресов и эхо через loopback.
+
 `http/client` отправляет запросы через `HttpClient()`. По умолчанию он берёт системные DNS и доверенные корни, ходит только на публичные адреса и говорит по HTTP/1.1. Всё остальное задаётся именованными аргументами: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)`, `cookies: MemoryCookieJar()`. Для каждого REST-метода есть шорткат: `get(url)`, `head`, `options`, `delete`, а также `post(url:, body:)`, `put`, `patch` с `Content`, например `JsonBody(json)`. Любой другой запрос пишется как `client.response(Request(url:, method:, headers:, body:))`. Ответ показывает голову через cap `Head` (`page::Head::status`, `::class`, `::headers`) и читает тело через `await page.text()`, `bytes()`, `json()` или `reading()`. `Status` и `Method` — enum'ы: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` и `MethodName` переводят их в числа и токены протокола и обратно. Каждая задача показана программой в `examples/http/client/`.
 
 `strings/parse` читает текст как тип, который у него просят: `Number("42").int()`,
@@ -4068,15 +4099,6 @@ Stdlib намеренно узка, пока язык стабилизирует
   решает тип `SafeHtml` привязанного значения, а не сам тег;
 - `encoding/toml` — практический однострочно-документный subset TOML
   v1.0.0 с dotted-path lookup и детерминированным `[table]`-rendering;
-- `crypto/random` — stateless OS-CSPRNG capability с детерминированным fake и
-  типизированными ошибками размера/недоступности;
-- `crypto/digest` — reviewed SHA-256/384/512 digests над байтами или полным
-  потоком `Input`, с hex/base64-проекциями и санированными ошибками
-  provider;
-- `crypto/hmac` — keyed HMAC-SHA256/384/512 с constant-time `matches()`
-  верификацией через reviewed `secure_equal`;
-- `socket/socket` — общий role `Socket`, явные option-enum и timeout
-  словарь до конкретных TCP/UDP/Unix socket-ресурсов;
 - `sql/value` — точные bindable SQL-скаляры, включая явный `SqlNull`, до
   построения SQL statement/query;
 - `http/headers` — неизменяемые case-insensitive `Headers`, композиция
@@ -4089,15 +4111,6 @@ Stdlib намеренно узка, пока язык стабилизирует
   опциональный `last_id()`) для `INSERT`/`UPDATE`/`DELETE`;
 - `db/row` — доступ по имени/индексу к `SqlValue` одной строки результата
   запроса;
-- `socket/tcp` — настоящие TCP `TcpSocket`/`TcpListener` и DNS-driven
-  упорядоченные попытки подключения `TcpConnection`;
-- `socket/udp` — настоящий `UdpSocket` для отправки/приёма датаграмм с
-  реальной идентичностью отправителя;
-- `socket/unix` — `UnixSocket`/`UnixListener`, честно сообщающие
-  `UnsupportedUnixSocket`, поскольку у native-провайдера пока вообще нет
-  поддержки `AF_UNIX`;
-- `crypto/tls` — `TlsPolicy`, зашифрованный `TlsSocket` и проверка
-  `Certificate` пира;
 - `sql/dialect` — проверенные различия рендеринга placeholder,
   идентификаторов и boolean между SQLite/Postgres/MySQL;
 - `sql/statement` — `Insert`/`Update`/`Delete`/`RawStatement`,
@@ -4176,8 +4189,6 @@ Stdlib намеренно узка, пока язык стабилизирует
   без блока `finally` — в грамматике языка его просто нет — за счёт того,
   что `try`/`catch` на каждый кейс полностью поглощает любую `Error` в
   `bool`, и идущий следом цикл `after()` достигается всегда;
-- `net/address` — неизменяемые проверенные IPv4/IPv6, socket endpoint и
-  неразрешённые пары host/port без утечки native envelope;
 - `test/more` — stateless переиспользуемые утверждения поверх контекстной test
   capability и Error-значение `AssertionFailure`;
 - `runtime/*` — модули нативного субстрата, состоящие только из объявлений
@@ -4372,144 +4383,6 @@ role-в-concrete downcast. Вместо этого parser выдаёт плос�
 группирует тот же список по header, чтобы отрендерить `[table]`-секции, так
 что спускаться через opaque `TomlValue` никогда не требуется.
 
-Криптографическая случайность представлена внедряемой capability, а не
-объектом, который хранит размер одного запроса:
-
-```okkama
-import "crypto/random" take
-    SecureByteSource, SecureRandom,
-    InvalidSecureRandomSize, UnavailableSecureRandom;
-
-main() is int {
-    let source is SecureByteSource = SecureRandom();
-
-    try {
-        source.bytes(32); // точные байты OS CSPRNG
-    }
-    catch error is InvalidSecureRandomSize {
-        error.requested();
-    }
-    catch error is UnavailableSecureRandom {
-        error.text();
-    }
-    return 0;
-}
-```
-
-Каждый вызов `bytes(size)` независим. Портируемый диапазон — от нуля до
-16 MiB; для нуля устройство entropy не нужно, а неверный размер отклоняется
-до native-вызова. Ошибки provider санируются в один объект
-`UnavailableSecureRandom`, и language PRNG не используется как fallback. В
-test mode `SecureByteSource.fake()` возвращает точную предсказуемую
-последовательность нулевых байтов: dependency injection остаётся явным, а fake
-не выдаётся за безопасный источник.
-
-`crypto/digest` хеширует байты или полный поток `Input` через reviewed
-SHA-2-примитив:
-
-```okkama
-import "crypto/digest" take
-    Digest, Sha256, Sha384, Sha512, DigestMismatch, UnsupportedDigest;
-
-main() is int {
-    let digest is Digest = Sha256([byte(1), byte(2), byte(3)]);
-    digest.bytes();  // точные 32 байта SHA-256
-    digest.hex();    // канонический lowercase hex
-    digest.base64(); // padded base64 по RFC 4648
-
-    let expected is @byte = [];
-    try {
-        confirm digest.bytes() == expected else throw DigestMismatch();
-    }
-    catch error is DigestMismatch {
-        error.text();
-    }
-    return 0;
-}
-```
-
-`Sha256`, `Sha384` и `Sha512` вычисляют результат один раз при
-конструировании и одинаково реализуют `Digest` дальше; `hex()` и `base64()`
-композируют существующие codec-модули `encoding/hex`/`encoding/base64`,
-вместо повторной реализации алфавита. У каждого есть и streaming-конструктор,
-`Sha256(source is Input, chunk_size is int)`, который дочитывает input до
-конца порциями по `chunk_size` перед хешированием — reviewed ABI
-`runtime/crypto` одноразовый (one-shot), поэтому инкрементального
-digest-handle для обновления по мере поступления байт нет. Явный chunk size
-— ещё и причина, по которой streaming-конструктор вообще может сосуществовать
-с bytes-конструктором: разрешение перегрузки конструкторов в Okkama основано
-на arity, а не на типе, поэтому два конструктора одной arity с разными
-типами параметров всегда неоднозначны.
-
-Любая ошибка native digest-provider транслируется в один объект
-`UnsupportedDigest()` без утечки native-кода или сообщения — так же, как
-`crypto/random` санирует ошибки provider. `DigestMismatch` — это
-экспортируемый словарь для верификации, а не то, что бросает сам модуль:
-сравнение digest-байтов не требует отдельного действия, поскольку `@byte ==
-@byte` уже является структурным равенством, поэтому вызывающий код
-использует `confirm ... else throw DigestMismatch();` напрямую, как показано
-выше.
-
-`crypto/hmac` добавляет keyed-вариант с constant-time верификацией:
-
-```okkama
-import "crypto/hmac" take HmacSha256, InvalidMacKey;
-
-main() is int {
-    let mac is HmacSha256 = HmacSha256(
-        [byte(1), byte(2), byte(3)], // ключ
-        [byte(4), byte(5), byte(6)], // сообщение
-    );
-    mac.bytes();
-    mac.hex();
-    mac.matches(mac.bytes()); // true
-
-    try {
-        HmacSha256([], [byte(1)]);
-    }
-    catch error is InvalidMacKey {
-        error.text(); // пустые ключи отклоняются до native-вызова
-    }
-    return 0;
-}
-```
-
-`matches` вызывает `runtime/crypto.secure_equal`, а не `==`: в отличие от
-обычного digest, MAC верифицируется против значения, которое может
-контролировать атакующий, и сравнение с утечкой длины/времени могло бы
-помочь подделать его побайтово. `HmacSha256`/`384`/`512` переиспользуют
-`UnsupportedDigest` из `crypto/digest` для трансляции native-ошибок, вместо
-объявления дубликата — они вызывают `runtime/crypto.hmac` с одной из своих
-трёх фиксированных algorithm-строк точно так же, как объекты
-`crypto/digest`, поэтому применимо то же рассуждение "любая native-ошибка
-здесь — provider invariant, а не ошибка вызывающего кода".
-
-`socket/socket` — чистый общий словарь до конкретных socket-ресурсов
-(`socket/tcp`/`udp`/`unix`), которые будут от него зависеть: role `Socket`
-(`local() is SocketAddress`), три явных option-enum вместо boolean toggles —
-
-```okkama
-import "socket/socket" take
-    AddressReuse, KeepAlivePolicy, PacketDelay, SocketOptions, SocketTimeout;
-import "time/duration" take Seconds;
-
-main() is int {
-    let options is SocketOptions = SocketOptions(
-        AddressReuse.enabled,
-        KeepAlivePolicy.enabled,
-        PacketDelay.disabled, // TCP_NODELAY
-    );
-    let timeout is SocketTimeout = SocketTimeout(
-        duration Seconds(5), duration Seconds(30), duration Seconds(30),
-    );
-    return 0;
-}
-```
-
-— плюс `SocketClosed` (фиксированный текст) и `SocketFailure(reason)` для
-`socket/tcp`/`udp`/`unix`, которые будут его бросать, когда появятся. У
-модуля нет собственной native-границы.
-
 `sql/value` — такой же чистый словарный модуль до `sql/statement`/
 `sql/query`: восемь тонких обёрток `SqlValue` (`SqlInt`, `SqlFloat`,
 `SqlString`, `SqlBytes`, `SqlBool`, `SqlDate`, `SqlDateTime`, `SqlNull`),
@@ -4674,152 +4547,6 @@ main() is int {
 `sql_type()` найденного значения с ожидаемым — та же схема "экспортирован,
 но не бросается внутри", что уже использует `crypto/digest.DigestMismatch`.
 
-`socket/tcp` — первый модуль, работающий с настоящим сетевым I/O: клиентский
-socket, listener и DNS-driven помощник с упорядоченными попытками
-подключения, всё проверено в тестах этой сессии через реальные loopback
-TCP-соединения:
-
-```okkama
-import "socket/tcp" take TcpSocket, TcpListener;
-import "net/address" take AddressFamily, IpAddress, SocketAddress;
-
-main() is int {
-    let listener = TcpListener(SocketAddress(IpAddress(AddressFamily.ipv4, "127.0.0.1"), 0));
-    let bound is SocketAddress = listener.address(); // реальный OS-assigned порт
-
-    let client = TcpSocket(SocketAddress(IpAddress(AddressFamily.ipv4, "127.0.0.1"), bound.port()));
-    client.connect();
-    let server_side = listener.socket(); // блокируется до accept()
-
-    server_side.write([byte(72), byte(105)]);
-    client.bytes(2); // [byte(72), byte(105)]
-
-    client.close();
-    server_side.close();
-    listener.close();
-    return 0;
-}
-```
-
-Запрос порта `0` означает "OS, выбери свободный порт" — `TcpListener.address()`
-запрашивает реальный bound-адрес один раз при конструировании, а не
-эхом возвращает запрос конструктора, так что вызывающий код всегда может
-узнать, какой порт был реально назначен. `TcpConnection(resolver, host)`
-резолвит `host` через любой `Resolver` (настоящий `Dns` или injectable
-`FixedDns`) и пробует каждый кандидат-адрес по порядку, переходя дальше
-после отказа — проверено напрямую с двумя loopback-адресами, один
-отказывает, другой доступен. Он намеренно НЕ принимает connection
-timeout: у native-поверхности нет способа сделать socket non-blocking
-перед `connect()`, так что нет способа ограничить отдельную блокирующую
-попытку из Okkama-кода — реальный пробел субстрата, задокументированный,
-а не молча неисполняемый.
-
-`socket/udp` повторяет форму `socket/tcp` для датаграмм — отправка на явный
-target, приём с настоящей идентичностью отправителя:
-
-```okkama
-import "socket/udp" take UdpSocket, Datagram;
-import "net/address" take AddressFamily, IpAddress, SocketAddress;
-
-main() is int {
-    let receiver = UdpSocket(SocketAddress(IpAddress(AddressFamily.ipv4, "127.0.0.1"), 0));
-    let receiver_address is SocketAddress = receiver.local();
-
-    let sender = UdpSocket(SocketAddress(IpAddress(AddressFamily.ipv4, "127.0.0.1"), 0));
-    sender.send(receiver_address, [byte(72), byte(105)]);
-
-    let received is Datagram = receiver.datagram(64);
-    received.bytes();          // [byte(72), byte(105)]
-    received.source().port();  // реальный bound-порт сокета отправителя
-
-    sender.close();
-    receiver.close();
-    return 0;
-}
-```
-
-`connect(peer)` устанавливает OS-level default peer сокета, но это
-отдельная, независимая возможность от `send()` — проверено напрямую
-(raw native-level probe, минуя этот модуль), что вызов `connect()` и
-затем explicit-target `send()` к тому же уже connected peer падает с
-реальным, platform-specific errno. Вызывающий код использует что-то одно
-на данном сокете, не оба сразу.
-
-`socket/unix` оказался целиком про честный отказ: у текущего
-native-провайдера НЕТ вообще никакой поддержки `AF_UNIX` — проверено
-напрямую чтением `Okkama::Runtime::Native::Core::Net` и реальным пробным
-вызовом (`socket(3, 1, 0)` чисто возвращает `unsupported`, а не падает):
-
-```okkama
-import "socket/unix" take UnixSocket, UnsupportedUnixSocket;
-import "fs/path" take Path;
-
-main() is int {
-    try {
-        UnixSocket(Path("/tmp/app.sock"));
-    }
-    catch error is UnsupportedUnixSocket {
-        error.text(); // "Unix-domain sockets are not supported by this native provider"
-    }
-    return 0;
-}
-```
-
-Оба конструктора пытаются выполнить реальный native-вызов, а не
-отказывают заранее, так что будущее обновление native-провайдера с
-поддержкой `AF_UNIX`, вероятно, заставит этот модуль заработать без
-изменений вообще. Поскольку оба конструктора всегда бросают исключение,
-ни один instance никогда не может существовать — каждое другое действие
-(`connect()`, `bytes()`, `write()`, `socket()`, `path()`) всё же имеет
-типобезопасное тело для соответствия своему role, но каждое из них —
-подтверждённо недостижимый dead code, а не непроверенное предположение:
-Okkama позволяет конструктору всегда бросать исключение, ни разу не
-присвоив свои объявленные поля — проверено напрямую перед тем, как
-полагаться на эту форму.
-
-`crypto/tls` завершает Phase 6: политика TLS, зашифрованный клиентский
-socket и проверка сертификата пира.
-
-```okkama
-import "crypto/tls" take
-    CertificateAuthority, ServerIdentity, TlsPolicy, PeerVerification,
-    TlsSocket, TlsFailure;
-import "net/address" take AddressFamily, IpAddress, SocketAddress;
-import "fs/path" take Path;
-
-main() is int {
-    let policy = TlsPolicy(
-        CertificateAuthority(Path("/etc/ssl/cert.pem")),
-        ServerIdentity("example.test"),
-        PeerVerification.required,
-    );
-
-    let socket = TlsSocket(
-        SocketAddress(IpAddress(AddressFamily.ipv4, "203.0.113.1"), 443),
-        policy,
-    );
-    socket.handshake();
-    socket.peer_certificate().subject();
-    socket.close();
-    return 0;
-}
-```
-
-`TlsSocket` подключает собственный raw TCP socket напрямую (через
-`runtime/net`), а не оборачивает существующий `socket/tcp.TcpSocket` —
-у того объекта underlying handle намеренно никогда не публикуется,
-следуя тому же правилу "никакой raw native handle не утекает наружу",
-что и везде в этой stdlib. `CertificateAuthority.path()` передаётся
-напрямую как byte-encoded ПУТЬ К ФАЙЛУ в native TLS-слой (проверено
-прямым чтением native-обработчика), а не как inline-содержимое
-сертификата; пустой путь откатывается к системному default CA bundle.
-`peer_certificate()` бросает типизированный `CertificateFailure`, если
-вызван до завершения `handshake()`. Текущий native TLS-слой требует
-`IO::Socket::SSL`, которого нет в этом окружении разработки — любая
-реальная попытка TLS чисто сообщает `TlsFailure`, а не падает
-(проверено напрямую) — тот же самый пре-существующий, только
-environment-specific пробел, с которым уже живёт native TLS test suite.
-
 `sql/dialect` покрывает три места, где SQL-движки реально расходятся на
 уровне синтаксиса:
 
@@ -4942,78 +4669,6 @@ destination'ов и так проставляют свой timestamp), а `JsonF
 `JsonFormatter` их кодирует — этот модуль не добавляет собственной
 проверки на дубликаты, переиспользуя уже существующую в JSON-энкодере.
 
-Сетевые адреса становятся проверенными значениями до попадания в DNS или
-сокеты:
-
-```okkama
-import "net/address" take
-    AddressFamily, IpAddress, SocketAddress, HostPort,
-    InvalidAddress, InvalidPort;
-
-main() is int {
-    let ip = IpAddress(AddressFamily.ipv6, "0:0:0:0:0:0:0:1");
-    let local = SocketAddress(ip, 8080);
-    let upstream = HostPort("api.example.test", 443);
-
-    local.string();  // "[::1]:8080"
-    ip.bytes();      // ровно шестнадцать октетов адреса
-    upstream.host(); // DNS-запроса ещё не было
-    return 0;
-}
-```
-
-Эти конструкторы только сохраняют аргументы: в них нет парсинга,
-нормализации, валидации и native-вызовов. Всю работу выполняют actions.
-`IpAddress.string()` каноничен, а `bytes()` не содержит native magic, version,
-family и port. Порты лежат в диапазоне от нуля до 65535; для IPv6
-`SocketAddress` ставит адрес в квадратные скобки, чтобы граница порта была
-однозначной. `HostPort` намеренно хранит неразрешённый host: политика поиска
-остаётся в `net/dns`. Неверные значения дают `InvalidAddress` или
-`InvalidPort`, а не сырой native failure. `AddressFamily.unix` зарезервирован
-для будущего объекта Unix-domain address и не подходит для `IpAddress`.
-
-URL и DNS разделяют синтаксис, поиск имени и транспортную политику:
-
-```okkama
-import "net/address" take HostPort;
-import "net/dns" take Resolver, Dns;
-import "net/url" take Url, UrlReference, QueryParameter, QueryParameters;
-
-main() is int {
-    let url = Url("HTTPS://Example.COM:443/a/b?q=one&q=two");
-    let target = url.resolved(UrlReference("../report#latest"));
-    let resolver is Resolver = Dns();
-    let endpoints = resolver.addresses(
-        HostPort(url.authority().host(), url.authority().port())
-    );
-    let query = QueryParameters([
-        QueryParameter("name", "Ada Lovelace"),
-        QueryParameter("tag", "one"),
-        QueryParameter("tag", "two"),
-    ]);
-
-    target.string();     // "https://example.com:443/report#latest"
-    query.all("tag");    // ["one", "two"]
-    query.string();      // "name=Ada%20Lovelace&tag=one&tag=two"
-    endpoints[0].port(); // 443
-}
-```
-
-Конструкторы `Url`, `UrlReference`, `Authority`, `QueryParameter` и
-`QueryParameters` только сохраняют исходное состояние. Их actions выполняют
-строгий разбор, UTF-8 percent conversion и каноническое представление. `Url`
-описывает абсолютный сетевой URL с `scheme://authority`, а `UrlReference` —
-относительный ввод. Разрешение следует правилам dot segments из RFC 3986.
-Параметры query сохраняют порядок и повторы. Плюс остаётся плюсом, а не
-пробелом form encoding; программный пробел выводится как `%20`. Отсутствующий
-явный порт даёт `MissingUrlPort`, а не sentinel integer.
-
-Роль `Resolver` делает службу имён заменяемой. `Dns` выполняет
-transport-neutral поиск и возвращает проверенные `SocketAddress` с портом из
-запроса, не выбирая TCP или UDP. `FixedDns` хранит неизменяемые maps для
-детерминированных тестов. Детали host resolver нормализуются в
-`UnresolvedHost` и `MissingReverseName`.
-
 ### URL и cookie policy в активной stdlib v4
 
 Текущая std использует `url/value`, а не исторический `net/url` из
@@ -5125,7 +4780,7 @@ CA path depth от нуля. DistinguishedName сохраняет упорядо
 Такие значения не доказывают доверие. Значения (okkama-docs `docs/std/x509-values.md`),
 RDN-группы (okkama-docs `docs/std/x509-name.md`).
 
-`ParsedCertificate(bytes).value()` разбирает ограниченный DER envelope и поручает
+`ParsedCertificate(bytes).certificate()` разбирает ограниченный DER envelope и поручает
 host provider декодирование сертификата и публичного ключа. Certificate сохраняет
 точный DER, возвращает группированные subject/issuer, wall-clock validity и
 PublicKey с полным SPKI. Повторный разбор сохраняет структурное равенство;

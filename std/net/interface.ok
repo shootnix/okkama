@@ -70,7 +70,7 @@ object NetworkInterface {
 
 test "empty interface snapshot retains independent flags" {
     let addresses is @IpInterface = [];
-    let interface = NetworkInterface("lo", 1, addresses, false, true);
+    let interface = NetworkInterface(name: "lo", index: 1, addresses: addresses, up: false, loopback: true);
     test.is(interface.name(), "lo");
     test.is(interface.index(), 1);
     test.is(interface.addresses().size(), 0);

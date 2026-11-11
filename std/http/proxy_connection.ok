@@ -109,10 +109,10 @@ object HttpProxyConnecting does HttpConversationConnecting {
         let cleanup = HttpAcquisitionCleanup(raw, pending, taken, HttpTcpDisposal().release);
         defer await cleanup.close();
         let opening = TcpRacing(
-            endpoints,
-            TcpOptions(),
-            Duration(value: 250.rat(), unit: DurationUnit.millisecond),
-            clock
+            origins: endpoints,
+            options: TcpOptions(),
+            delay: Duration(value: 250.rat(), unit: DurationUnit.millisecond),
+            clock: clock
         ).connection();
         pending.replace([opening]);
         raw.start(opening);

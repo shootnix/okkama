@@ -23,7 +23,7 @@ object Blake2b does Digesting {
             || length == 48
             || length == 64
             else throw InvalidBlake2Length.length(length);
-        digest = HostDigest("blake2b", [], length);
+        digest = HostDigest(algorithm: "blake2b", key: [], width: length);
     }
 
     Blake2b(length is int, origin is @byte) {
@@ -34,7 +34,7 @@ object Blake2b does Digesting {
             || length == 48
             || length == 64
             else throw InvalidBlake2Length.length(length);
-        digest = HostDigest("blake2b", [], length).appended(origin);
+        digest = HostDigest(algorithm: "blake2b", key: [], width: length).appended(origin);
     }
 
     bytes() is @byte {
@@ -53,13 +53,13 @@ object Blake2s does Digesting {
     Blake2s(length is int) {
         confirm length == 16 || length == 20 || length == 28 || length == 32
             else throw InvalidBlake2Length.length(length);
-        digest = HostDigest("blake2s", [], length);
+        digest = HostDigest(algorithm: "blake2s", key: [], width: length);
     }
 
     Blake2s(length is int, origin is @byte) {
         confirm length == 16 || length == 20 || length == 28 || length == 32
             else throw InvalidBlake2Length.length(length);
-        digest = HostDigest("blake2s", [], length).appended(origin);
+        digest = HostDigest(algorithm: "blake2s", key: [], width: length).appended(origin);
     }
 
     bytes() is @byte {
@@ -76,11 +76,11 @@ object Blake2bMac does Digesting {
     has digest is HostDigest;
 
     Blake2bMac(key is SecretBytes) {
-        digest = HostDigest("blake2b-mac", key.export_bytes(), 0);
+        digest = HostDigest(algorithm: "blake2b-mac", key: key.export_bytes(), width: 0);
     }
 
     Blake2bMac(key is SecretBytes, origin is @byte) {
-        digest = HostDigest("blake2b-mac", key.export_bytes(), 0).appended(origin);
+        digest = HostDigest(algorithm: "blake2b-mac", key: key.export_bytes(), width: 0).appended(origin);
     }
 
     bytes() is @byte {
@@ -97,11 +97,11 @@ object Blake2sMac does Digesting {
     has digest is HostDigest;
 
     Blake2sMac(key is SecretBytes) {
-        digest = HostDigest("blake2s-mac", key.export_bytes(), 0);
+        digest = HostDigest(algorithm: "blake2s-mac", key: key.export_bytes(), width: 0);
     }
 
     Blake2sMac(key is SecretBytes, origin is @byte) {
-        digest = HostDigest("blake2s-mac", key.export_bytes(), 0).appended(origin);
+        digest = HostDigest(algorithm: "blake2s-mac", key: key.export_bytes(), width: 0).appended(origin);
     }
 
     bytes() is @byte {
@@ -119,14 +119,14 @@ enum InvalidBlake2Length is Error = (length(length is int));
 test "BLAKE2 matches RFC 7693 abc examples" {
     let abc = [97.byte(), 98.byte(), 99.byte()];
     test.is(
-        HexEncoded(Blake2b(64, abc).bytes()).string(),
+        HexEncoded(Blake2b(length: 64, origin: abc).bytes()).string(),
         "ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923"
     );
     test.is(
-        HexEncoded(Blake2s(32, abc).bytes()).string(),
+        HexEncoded(Blake2s(length: 32, origin: abc).bytes()).string(),
         "508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982"
     );
-    test.ok(Blake2b(32, abc).bytes() != Blake2b(64, abc).bytes().slice(0, 32));
+    test.ok(Blake2b(length: 32, origin: abc).bytes() != Blake2b(length: 64, origin: abc).bytes().slice(0, 32));
     test.ok(try {
         Blake2s(64);
         false;
@@ -138,11 +138,11 @@ test "BLAKE2 matches RFC 7693 abc examples" {
 
 test "keyed BLAKE2 depends on the key" {
     let message = [1.byte(), 2.byte()];
-    let first = Blake2bMac(SecretBytes([7.byte()]), message).bytes();
+    let first = Blake2bMac(key: SecretBytes([7.byte()]), origin: message).bytes();
     test.is(first.size(), 64);
-    test.ok(first != Blake2bMac(SecretBytes([8.byte()]), message).bytes());
+    test.ok(first != Blake2bMac(key: SecretBytes([8.byte()]), origin: message).bytes());
     test.is(
         Blake2sMac(SecretBytes([7.byte()])).state(message).bytes(),
-        Blake2sMac(SecretBytes([7.byte()]), message).bytes()
+        Blake2sMac(key: SecretBytes([7.byte()]), origin: message).bytes()
     );
 }

@@ -110,7 +110,7 @@ object VerifiedCertificateChain {
         catch e is NativeFailure {
             if e.domain() == "core.x509.verify" && e.code() == "permission_denied" {
                 throw CertificateVerificationFailed.because(
-                    CertificateFailureCode(e.message()).value()
+                    CertificateFailureCode(e.message()).failure()
                 );
             }
             if e.domain() == "core.x509.verify" || e.domain() == "core.x509" {
@@ -132,7 +132,7 @@ object VerifiedCertificateChain {
         CertificateChain(certificates);
     }
 
-    result() is Certificate {
+    leaf() is Certificate {
         self.path().certificates().first();
     }
 }
@@ -148,7 +148,7 @@ object CertificateFailureCode {
         self.origin = origin;
     }
 
-    value() is CertificateFailure {
+    failure() is CertificateFailure {
         if origin == "untrusted" {
             return CertificateFailure.untrusted;
         }

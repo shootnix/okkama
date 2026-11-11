@@ -25,11 +25,11 @@ object Md5 does Digesting {
     has origin is DigestBlocks64;
 
     Md5() {
-        origin = DigestBlocks64(Md5Compression(), [], true);
+        origin = DigestBlocks64(compression: Md5Compression(), origin: [], little_endian: true);
     }
 
     Md5(origin is @byte) {
-        self.origin = DigestBlocks64(Md5Compression(), origin, true);
+        self.origin = DigestBlocks64(compression: Md5Compression(), origin: origin, little_endian: true);
     }
 
     bytes() is @byte {
@@ -46,11 +46,11 @@ object Sha1 does Digesting {
     has origin is DigestBlocks64;
 
     Sha1() {
-        origin = DigestBlocks64(Sha1Compression(), [], false);
+        origin = DigestBlocks64(compression: Sha1Compression(), origin: [], little_endian: false);
     }
 
     Sha1(origin is @byte) {
-        self.origin = DigestBlocks64(Sha1Compression(), origin, false);
+        self.origin = DigestBlocks64(compression: Sha1Compression(), origin: origin, little_endian: false);
     }
 
     bytes() is @byte {
@@ -66,7 +66,7 @@ object Sha1 does Digesting {
 // Internal immutable MD5 chaining state. Application code uses Md5, not these
 // raw chaining bytes. Each block is exactly 64 bytes or InvalidDigestBlock.
 // Arithmetic uses non-negative 32-bit words in int with explicit modulo masks.
-object Md5Compression does DigestCompression64 {
+hidden object Md5Compression does DigestCompression64 {
     has hash is @int;
 
     Md5Compression() {
@@ -199,7 +199,7 @@ object Md5Compression does DigestCompression64 {
 
 // Internal SHA-1 chaining state. An immutable 16-word rolling schedule avoids
 // retaining per-block history. Serialization is big-endian, unlike MD5.
-object Sha1Compression does DigestCompression64 {
+hidden object Sha1Compression does DigestCompression64 {
     has hash is @int;
 
     Sha1Compression() {

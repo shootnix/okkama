@@ -64,7 +64,7 @@ enum InvalidCertificate is Error = (because(reason is string));
 
 test "path depth absence differs from present zero" {
     let absent = CertificateConstraints(true);
-    let zero = CertificateConstraints(true, 0);
+    let zero = CertificateConstraints(authority: true, maximum_depth: 0);
     test.ok(!absent.limited() && zero.limited() && zero.maximum_depth() == 0);
     test.ok(try {
         absent.maximum_depth();

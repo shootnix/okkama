@@ -250,7 +250,7 @@ object PgCancelTcp does PgCancelRoute {
     }
 
     async cancel(process is int, secret is @byte) is void {
-        let tcp = await TcpConnecting(endpoint, TcpOptions(true, true)).connection();
+        let tcp = await TcpConnecting(remote: endpoint, options: TcpOptions(true, true)).connection();
         defer tcp.close();
         await PgOutput(tcp.output()).send(
             PgUntypedFrame(
@@ -277,7 +277,7 @@ object PostgresTcp does PostgresTransporting {
     }
 
     async transport() is PgTransport {
-        let tcp = await TcpConnecting(endpoint, TcpOptions(true, true)).connection();
+        let tcp = await TcpConnecting(remote: endpoint, options: TcpOptions(true, true)).connection();
         PgTransport(tcp.input(), tcp.output(), tcp, PgCancelTcp(endpoint));
     }
 }
@@ -296,7 +296,7 @@ object PostgresTls does PostgresTransporting {
     }
 
     async transport() is PgTransport {
-        let tcp = await TcpConnecting(endpoint, TcpOptions(true, true)).connection();
+        let tcp = await TcpConnecting(remote: endpoint, options: TcpOptions(true, true)).connection();
         let published = Event();
         let anchor = PgTransportUnpublished(tcp, published);
         defer anchor.close();
@@ -309,7 +309,7 @@ object PostgresTls does PostgresTransporting {
                 "PG_TLS_REFUSED",
                 "PostgreSQL server refused TLS"
             );
-        let tls = await TlsClientHandshake(tcp, server, policy).connection();
+        let tls = await TlsClientHandshake(origin: tcp, server: server, policy: policy).connection();
         published.set();
         PgTransport(tls.input(), tls.output(), tls, PgCancelTcp(endpoint));
     }
@@ -551,7 +551,7 @@ object PgAuthentication {
                 "PG_AUTH_METHOD",
                 "server offers no SCRAM-SHA-256"
             );
-        let nonce = Base64Encoded(RandomNonce(entropy, 18).bytes()).string();
+        let nonce = Base64Encoded(RandomNonce(entropy: entropy, size: 18).bytes()).string();
         let exchange = try {
             ScramExchange("", credentials.password(), nonce);
         }

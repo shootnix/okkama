@@ -16,13 +16,13 @@ import "strings/parse" take Number;
 // Read a status: compare it with a case, match on it, take its class.
 
 async main() is int {
-    let listener = await TcpListening(IpEndpoint(IpAddress("127.0.0.1"), 0)).acceptance();
+    let listener = await TcpListening(IpEndpoint(address: IpAddress("127.0.0.1"), port: 0)).acceptance();
     defer listener.close();
     let server = LocalServer(listener);
     // A real program writes HttpClient(); this one reaches its own local server.
     let client = HttpClient(
         resolver: FixedResolution([]),
-        endpoints: ListedNetworks([IpNetwork(IpAddress("127.0.0.0"), 8)])
+        endpoints: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)])
     );
     defer client.close();
     let answer is async (string) is bool = server.answer;

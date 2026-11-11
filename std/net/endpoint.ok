@@ -50,12 +50,15 @@ object HostEndpoint {
         host;
     }
 
-    port() is int {
-        port;
-    }
-
     string() is string {
         host.ascii() + ":" + port.string();
+    }
+
+    // The port.
+    cap Parts {
+        port is int {
+            port;
+        }
     }
 }
 
@@ -105,14 +108,6 @@ object IpEndpoint {
         origin;
     }
 
-    port() is int {
-        number;
-    }
-
-    zone() is string {
-        scope;
-    }
-
     string() is string {
         let host = origin.string();
         let scoped = if scope == "" {
@@ -129,6 +124,17 @@ object IpEndpoint {
         };
         formatted + ":" + number.string();
     }
+
+    // The port and the IPv6 zone ("" when absent).
+    cap Parts {
+        port is int {
+            number;
+        }
+
+        zone is string {
+            scope;
+        }
+    }
 }
 
 // Invalid numeric port, preserving the attempted value for structured handling.
@@ -142,12 +148,12 @@ test "zone diagnostic preserves exact spelling" {
 }
 
 test "IPv6 endpoint formatting keeps scope outside the bare address" {
-    let endpoint = IpEndpoint(IpAddress("fe80::1"), 443, "eth0");
+    let endpoint = IpEndpoint(address: IpAddress("fe80::1"), port: 443, zone: "eth0");
     test.is(endpoint.string(), "[fe80::1%eth0]:443");
     test.is(endpoint.address().string(), "fe80::1");
 }
 
 test "hostnames canonicalize through nontransitional IDNA before endpoint formatting" {
-    test.is(HostEndpoint(HostName("BÜCHER.example"), 443).string(), "xn--bcher-kva.example:443");
+    test.is(HostEndpoint(host: HostName("BÜCHER.example"), port: 443).string(), "xn--bcher-kva.example:443");
     test.is(HostName("faß.de").unicode(), "faß.de");
 }

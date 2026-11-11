@@ -112,14 +112,14 @@ object TcpConnecting {
     has options is TcpOptions;
 
     TcpConnecting(remote is IpEndpoint) {
-        confirm remote.port() > 0
+        confirm remote::Parts::port > 0
             else throw InvalidArgument.because("TCP destination port must be positive");
         self.remote = remote;
         options = TcpOptions();
     }
 
     TcpConnecting(remote is IpEndpoint, options is TcpOptions) {
-        confirm remote.port() > 0
+        confirm remote::Parts::port > 0
             else throw InvalidArgument.because("TCP destination port must be positive");
         self.remote = remote;
         self.options = options;
@@ -129,22 +129,22 @@ object TcpConnecting {
         try {
             let pending = network.tcp_connect(
                 TcpEndpointWire(remote).bytes(),
-                remote.zone(),
+                remote::Parts::zone,
                 options.keep_alive(),
                 options.no_delay()
             );
             let state = await pending;
             let ready = Event();
-            let anchor = TcpUnpublished(state, ready);
+            let anchor = TcpUnpublished(state: state, ready: ready);
             defer anchor.close();
             let connection = TcpConnection(state);
             ready.set();
             connection;
         }
         catch e is NativeFailure {
-            let translated = StreamFailure(NetworkOperation.connecting, e);
+            let translated = StreamFailure(operation: NetworkOperation.connecting, failure: e);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -178,31 +178,31 @@ object TcpListening {
         let state = try {
             network.tcp_bound(
                 TcpEndpointWire(local).bytes(),
-                local.zone(),
+                local::Parts::zone,
                 options.address_reuse(),
                 options.dual_stack()
             );
         }
         catch e is NativeFailure {
-            let translated = StreamFailure(NetworkOperation.binding, e);
+            let translated = StreamFailure(operation: NetworkOperation.binding, failure: e);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         };
         let ready = Event();
-        let anchor = TcpListenerUnpublished(state, ready);
+        let anchor = TcpListenerUnpublished(state: state, ready: ready);
         defer anchor.close();
         try {
             network.tcp_start_listening(state, options.backlog());
-            let listener = TcpAcceptance(state, accepted);
+            let listener = TcpAcceptance(state: state, accepted: accepted);
             ready.set();
             listener;
         }
         catch e is NativeFailure {
-            let translated = StreamFailure(NetworkOperation.listening, e);
+            let translated = StreamFailure(operation: NetworkOperation.listening, failure: e);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -217,7 +217,7 @@ object TcpAcceptance does Closing {
     TcpAcceptance(state is network.TcpListenerState, accepted is TcpOptions) {
         let endpoint = try {
             let fields = network.tcp_listener_endpoint(state);
-            IpEndpoint(IpAddress(fields[0]), Number(fields[1]).int(), fields[2]);
+            IpEndpoint(address: IpAddress(fields[0]), port: Number(fields[1]).int(), zone: fields[2]);
         }
         catch e is NativeFailure {
             network.tcp_listener_close(state);
@@ -245,9 +245,9 @@ object TcpAcceptance does Closing {
             network.tcp_listener_close(state);
         }
         catch e is NativeFailure {
-            let translated = StreamFailure(NetworkOperation.closing, e);
+            let translated = StreamFailure(operation: NetworkOperation.closing, failure: e);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -259,16 +259,16 @@ object TcpAcceptance does Closing {
             let pending = network.tcp_accept(state, accepted.keep_alive(), accepted.no_delay());
             let peer = await pending;
             let ready = Event();
-            let anchor = TcpUnpublished(peer, ready);
+            let anchor = TcpUnpublished(state: peer, ready: ready);
             defer anchor.close();
             let connection = TcpConnection(peer);
             ready.set();
             connection;
         }
         catch e is NativeFailure {
-            let translated = StreamFailure(NetworkOperation.accepting, e);
+            let translated = StreamFailure(operation: NetworkOperation.accepting, failure: e);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -279,7 +279,7 @@ object TcpAcceptance does Closing {
     }
 }
 
-object TcpEndpointWire {
+hidden object TcpEndpointWire {
     has origin is IpEndpoint;
 
     TcpEndpointWire(origin is IpEndpoint) {
@@ -295,12 +295,12 @@ object TcpEndpointWire {
                 2;
             },
             origin.address().string(),
-            origin.port()
+            origin::Parts::port
         );
     }
 }
 
-object TcpUnpublished {
+hidden object TcpUnpublished {
     has state is network.SocketState;
     has ready is Event;
 
@@ -316,7 +316,7 @@ object TcpUnpublished {
     }
 }
 
-object TcpListenerUnpublished {
+hidden object TcpListenerUnpublished {
     has state is network.TcpListenerState;
     has ready is Event;
 
@@ -333,20 +333,20 @@ object TcpListenerUnpublished {
 }
 
 test "TCP defaults agree with explicit settings" {
-    test.ok(TcpOptions() == TcpOptions(false, false));
-    test.ok(TcpListeningOptions() == TcpListeningOptions(false, false, 128));
+    test.ok(TcpOptions() == TcpOptions(keep_alive: false, no_delay: false));
+    test.ok(TcpListeningOptions() == TcpListeningOptions(address_reuse: false, dual_stack: false, backlog: 128));
 }
 
 test "TCP options preserve independent choices" {
-    let options = TcpListeningOptions(true, false, 0);
+    let options = TcpListeningOptions(address_reuse: true, dual_stack: false, backlog: 0);
     test.ok(options.address_reuse());
     test.ok(!options.dual_stack());
     test.is(options.backlog(), 0);
-    test.ok(TcpOptions(false, true).no_delay());
+    test.ok(TcpOptions(keep_alive: false, no_delay: true).no_delay());
 }
 
 async test "numeric TCP reports actual OS-selected endpoints" {
-    let listener is TcpAcceptance = await TcpListening(IpEndpoint(IpAddress("127.0.0.1"), 0)).acceptance();
+    let listener is TcpAcceptance = await TcpListening(IpEndpoint(address: IpAddress("127.0.0.1"), port: 0)).acceptance();
     defer listener.close();
     let accepting is async () is TcpConnection = listener.connection;
     let pending = spawn accepting();

@@ -25,7 +25,7 @@ object Reader {
 async main() is int {
     let out = Stdout();
     let port = Number(ProcessArguments().strings()[0]).int();
-    let connection = await TcpConnecting(IpEndpoint(IpAddress("127.0.0.1"), port)).connection();
+    let connection = await TcpConnecting(IpEndpoint(address: IpAddress("127.0.0.1"), port: port)).connection();
     defer connection.close();
     // The peer answers only after a whole line, so both reads find nothing.
     let timed = try {

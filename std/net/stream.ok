@@ -53,8 +53,8 @@ object StreamConnection does Closing {
             let local = network.tcp_endpoint(state, false);
             let remote = network.tcp_endpoint(state, true);
             ConnectionEndpoints(
-                IpEndpoint(IpAddress(local[0]), Number(local[1]).int(), local[2]),
-                IpEndpoint(IpAddress(remote[0]), Number(remote[1]).int(), remote[2])
+                local: IpEndpoint(IpAddress(local[0]), Number(local[1]).int(), local[2]),
+                remote: IpEndpoint(IpAddress(remote[0]), Number(remote[1]).int(), remote[2])
             );
         }
         catch e is NativeFailure {
@@ -94,9 +94,9 @@ object StreamConnection does Closing {
             network.close(state);
         }
         catch e is NativeFailure {
-            let translated = StreamFailure(NetworkOperation.closing, e);
+            let translated = StreamFailure(operation: NetworkOperation.closing, failure: e);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -115,9 +115,9 @@ object StreamConnection does Closing {
             network.stream_shutdown(state, false);
         }
         catch e is NativeFailure {
-            let translated = StreamFailure(NetworkOperation.shutting_down, e);
+            let translated = StreamFailure(operation: NetworkOperation.shutting_down, failure: e);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -135,9 +135,9 @@ object StreamConnection does Closing {
             await pending;
         }
         catch e is NativeFailure {
-            let translated = StreamFailure(NetworkOperation.reading, e);
+            let translated = StreamFailure(operation: NetworkOperation.reading, failure: e);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -159,9 +159,9 @@ object StreamConnection does Closing {
             network.stream_shutdown(state, true);
         }
         catch e is NativeFailure {
-            let translated = StreamFailure(NetworkOperation.shutting_down, e);
+            let translated = StreamFailure(operation: NetworkOperation.shutting_down, failure: e);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -194,7 +194,7 @@ object StreamConnection does Closing {
         let empty is @Future<LockGuard> = [];
         let pending_guard = Atomic(empty);
         let taken = Event();
-        let cleanup = StreamWriteCleanup(guards, writing, pending_guard, taken);
+        let cleanup = StreamWriteCleanup(guards: guards, writing: writing, pending: pending_guard, taken: taken);
         defer await cleanup.close();
         let waiting = writer_lock.guard();
         pending_guard.replace([waiting]);
@@ -211,9 +211,9 @@ object StreamConnection does Closing {
             await pending;
         }
         catch e is NativeFailure {
-            let translated = StreamFailure(NetworkOperation.writing, e);
+            let translated = StreamFailure(operation: NetworkOperation.writing, failure: e);
             if translated.applicable() {
-                throw translated.value();
+                throw translated.error();
             }
             throw;
         }
@@ -299,7 +299,7 @@ object StreamWriting does AsyncWriting, Closing {
     }
 }
 
-object StreamWriteTicket {
+hidden object StreamWriteTicket {
     has owner is StreamWriting;
 
     StreamWriteTicket(owner is StreamWriting) {
@@ -311,7 +311,7 @@ object StreamWriteTicket {
     }
 }
 
-object StreamReadTicket {
+hidden object StreamReadTicket {
     has busy is Atomic<bool>;
 
     StreamReadTicket(busy is Atomic<bool>) {
@@ -379,10 +379,10 @@ object StreamFailure {
     }
 
     applicable() is bool {
-        NetworkError(operation, failure).applicable();
+        NetworkError(operation: operation, failure: failure).applicable();
     }
 
-    value() is Error {
+    error() is Error {
         confirm self.applicable()
             else throw InvalidArgument.because(
                 "native failure is not a terminal managed stream failure"
@@ -390,12 +390,12 @@ object StreamFailure {
         if failure.domain() == "core.net" && failure.code() == "already_closed" {
             return NetworkClosed.closed;
         }
-        NetworkError(operation, failure).value();
+        NetworkError(operation: operation, failure: failure).error();
     }
 }
 
 test "connection endpoint observations preserve direction" {
-    let endpoints is ConnectionEndpoints<string> = ConnectionEndpoints("local", "remote");
+    let endpoints is ConnectionEndpoints<string> = ConnectionEndpoints(local: "local", remote: "remote");
     test.is(endpoints.local_endpoint(), "local");
     test.is(endpoints.remote_endpoint(), "remote");
 }

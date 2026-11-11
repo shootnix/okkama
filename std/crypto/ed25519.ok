@@ -29,15 +29,15 @@ object Ed25519PrivateKey does SigningKey {
     }
 
     pkcs8() is SecretBytes {
-        SecretBytes(HostOperation("ed25519-pkcs8", [seed.export_bytes()]).bytes());
+        SecretBytes(HostOperation(operation: "ed25519-pkcs8", arguments: [seed.export_bytes()]).bytes());
     }
 
     public_key() is VerifyingKey {
-        Ed25519PublicKey(HostOperation("ed25519-public", [seed.export_bytes()]).bytes());
+        Ed25519PublicKey(HostOperation(operation: "ed25519-public", arguments: [seed.export_bytes()]).bytes());
     }
 
     signature(message is @byte) is @byte {
-        HostOperation("ed25519-sign", [seed.export_bytes(), message]).bytes();
+        HostOperation(operation: "ed25519-sign", arguments: [seed.export_bytes(), message]).bytes();
     }
 }
 
@@ -55,11 +55,11 @@ object Ed25519PublicKey does PublicKey, VerifyingKey {
     }
 
     bytes() is @byte {
-        HostOperation("ed25519-spki", [raw]).bytes();
+        HostOperation(operation: "ed25519-spki", arguments: [raw]).bytes();
     }
 
     verified(message is @byte, signature is @byte) is bool {
-        signature.size() == 64 && HostOperation("ed25519-verify", [raw, message, signature]).truth();
+        signature.size() == 64 && HostOperation(operation: "ed25519-verify", arguments: [raw, message, signature]).truth();
     }
 }
 
