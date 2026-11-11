@@ -195,9 +195,20 @@ object SyslogOptions {
 // RFC5424 UTC header, microseconds without rounding. The complete structured
 // record is the BOM-marked UTF8 MSG; no newline, truncation or resend is added.
 object SyslogMessage does ByteSource {
-    has origin is @byte;
+    has record is LogRecord;
+    has options is SyslogOptions;
 
     SyslogMessage(record is LogRecord, options is SyslogOptions) {
+        self.record = record;
+        self.options = options;
+    }
+
+    bytes() is @byte {
+        once let encoded is @byte = self.encoded();
+        encoded;
+    }
+
+    hidden encoded() is @byte {
         let priority = SyslogFacilityCode(options::Settings::facility).code() * 8 + SyslogSeverity(
             record::Entry::level
         ).code();
@@ -229,7 +240,7 @@ object SyslogMessage does ByteSource {
         let bom is @byte = [239.byte(), 187.byte(), 191.byte()];
         let size = header.size() + bom.size() + message.size();
         confirm size <= options::Settings::maximum_payload else throw DatagramTooLarge.size(size);
-        origin = (0..size).map() -> index {
+        (0..size).map() -> index {
             if index < header.size() {
                 header[index];
             }
@@ -240,10 +251,6 @@ object SyslogMessage does ByteSource {
                 message[index - header.size() - 3];
             }
         };
-    }
-
-    bytes() is @byte {
-        origin;
     }
 }
 
@@ -378,6 +385,6 @@ test "a syslog message is an RFC 5424 header, a BOM and the JSON line" {
     test.is(Utf8Encoded(prefix).bytes(), SyslogMessage(record: precise, options: kernel).bytes().slice(0, prefix.length()));
     let tight = SyslogOptions(facility: SyslogFacility.user, host: "h", application: "a", maximum_payload: 20);
     test.throws(DatagramTooLarge) {
-        SyslogMessage(record: record, options: tight);
+        SyslogMessage(record: record, options: tight).bytes();
     };
 }

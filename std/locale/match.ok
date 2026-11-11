@@ -238,10 +238,38 @@ hidden object LocaleRangeIndex {
 }
 
 object FilteredLocales does Sequencing<Locale> {
-    has origin is @Locale;
+    has inputs is LocaleSelectionInputs;
 
     FilteredLocales(requested is Sequencing<BasicLanguageRange>, available is Sequencing<Locale>) {
-        let inputs = LocaleSelectionInputs(requested: requested, available: available);
+        inputs = LocaleSelectionInputs(requested: requested, available: available);
+    }
+
+    size() is int {
+        self.selected().size();
+    }
+
+    item(index is int) is Locale {
+        self.selected().item(index);
+    }
+
+    first() is Locale {
+        self.selected().first();
+    }
+
+    last() is Locale {
+        self.selected().last();
+    }
+
+    cursor() is Cursor<Locale> {
+        self.selected().cursor();
+    }
+
+    hidden selected() is @Locale {
+        once let chosen is @Locale = self.chosen();
+        chosen;
+    }
+
+    hidden chosen() is @Locale {
         let choices = inputs.available();
         let ranking = LocaleRangeIndex(inputs.requested());
         let names is @string = choices.map() -> choice {
@@ -275,27 +303,7 @@ object FilteredLocales does Sequencing<Locale> {
         let selected is @Locale = (0..sorted.size()).map() -> index {
             sorted.item(index).locale();
         };
-        origin = selected;
-    }
-
-    size() is int {
-        origin.size();
-    }
-
-    item(index is int) is Locale {
-        origin.item(index);
-    }
-
-    first() is Locale {
-        origin.first();
-    }
-
-    last() is Locale {
-        origin.last();
-    }
-
-    cursor() is Cursor<Locale> {
-        origin.cursor();
+        selected;
     }
 }
 
