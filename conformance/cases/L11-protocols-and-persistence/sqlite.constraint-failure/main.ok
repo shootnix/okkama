@@ -6,7 +6,6 @@ import "db/transaction" take TransactionOptions;
 import "db/statement" take Statement;
 import "db/value" take DbInteger, DbText, DbDecimal, DbNull, ObservedDbValue;
 import "db/row" take RowsEnded;
-import "db/read" take RowReader;
 import "db/error" take DbFailure;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
@@ -29,6 +28,6 @@ async main() is int {
     let rows = await connection.rows(Statement("SELECT COUNT(*) AS c FROM users"));
     let row = await rows.row();
     rows.close();
-    out.writeln(RowReader(origin: row).int("c").string());
+    out.writeln(row.int("c").string());
     0;
 }

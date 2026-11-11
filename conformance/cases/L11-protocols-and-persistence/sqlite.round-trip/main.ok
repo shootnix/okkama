@@ -6,7 +6,6 @@ import "db/transaction" take TransactionOptions;
 import "db/statement" take Statement;
 import "db/value" take DbInteger, DbText, DbDecimal, DbNull, ObservedDbValue;
 import "db/row" take RowsEnded;
-import "db/read" take RowReader;
 import "db/error" take DbFailure;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
@@ -21,7 +20,7 @@ async main() is int {
     await connection.execution(Statement(text: "INSERT INTO customers VALUES(?, ?)", values: [DbInteger(BigInt("7")), DbText("Ada; DROP TABLE customers")]));
     let rows = await connection.rows(Statement(text: "SELECT id, name FROM customers WHERE id = ?", values: [DbInteger(BigInt("7"))]));
     let row = await rows.row();
-    let reader = RowReader(origin: row);
+    let reader = row;
     out.writeln(reader.int("id").string() + " " + reader.text("name"));
     let ended = try { await rows.row(); "more"; } catch e is RowsEnded { "ended"; };
     rows.close();
