@@ -19,7 +19,7 @@ import "net/tcp_racing" take TcpRacing;
 import "net/dns" take Resolving;
 import "net/tls" take TlsClientPolicy, TlsClientHandshake, TlsConnection;
 import "crypto/x509/trust" take CertificateIdentity, DnsCertificateIdentity, IpCertificateIdentity;
-import "url/value" take Url, UrlParts, UrlFragment, UrlHostKind;
+import "url/value" take UrlParts, UrlHostKind;
 import "random/source" take SecureRandom;
 import "time/clock" take Timing;
 import "time/duration" take Duration, DurationUnit;
@@ -78,7 +78,7 @@ object WebSocketConnecting {
     has waiting is Future<WebSocketSession>;
 
     WebSocketConnecting(
-        url is Url,
+        url is UrlParts,
         protocols is @string,
         headers is Headers,
         resolver is Resolving,
@@ -94,19 +94,21 @@ object WebSocketConnecting {
             confirm protocol == "http/1.1"
                 else throw WebSocketFailure.because("HTTP1 Upgrade ALPN policy required");
         }
-        let parts = url.parts();
-        let transport = Url(UrlParts(
-            if parts.scheme() == "wss" {
+        let parts = url;
+        let transport = UrlParts(
+            scheme: if parts::Parts::scheme == "wss" {
                 "https";
             }
             else {
                 "http";
             },
-            parts.authority(),
-            parts.path(),
-            parts.query(),
-            UrlFragment()
-        ));
+            userinfo: parts::Parts::userinfo,
+            host: parts::Parts::host,
+            port: parts::Parts::port,
+            path: parts::Parts::path,
+            query: parts::Parts::query,
+            fragment: Maybe<string>.none,
+        );
         let route = HttpEndpointSelection(transport, resolver, policy.access());
         let operation = WebSocketOpening(url, protocols, headers, route, tls, policy, clock);
         let bounded is Within<WebSocketSession> = Within(
@@ -131,7 +133,7 @@ object WebSocketConnecting {
 }
 
 object WebSocketOpening {
-    has url is Url;
+    has url is UrlParts;
     has protocols is @string;
     has headers is Headers;
     has route is HttpEndpointSelection;
@@ -140,7 +142,7 @@ object WebSocketOpening {
     has clock is Timing;
 
     WebSocketOpening(
-        url is Url,
+        url is UrlParts,
         protocols is @string,
         headers is Headers,
         route is HttpEndpointSelection,
@@ -180,13 +182,13 @@ object WebSocketOpening {
         let published = Event();
         let anchor = HttpUnpublishedTcp(tcp, published);
         defer anchor.close();
-        if url.parts().scheme() == "wss" {
-            let host = url.parts().authority().host();
-            let identity is CertificateIdentity = if host.kind() == UrlHostKind.name {
-                DnsCertificateIdentity(host.name());
+        if url::Parts::scheme == "wss" {
+            let host = url;
+            let identity is CertificateIdentity = if host.host_kind() == UrlHostKind.name {
+                DnsCertificateIdentity(host.host_name());
             }
             else {
-                IpCertificateIdentity(host.address());
+                IpCertificateIdentity(host.host_address());
             };
             let group is FutureGroup<TlsConnection> = FutureGroup();
             let empty is @Future<TlsConnection> = [];

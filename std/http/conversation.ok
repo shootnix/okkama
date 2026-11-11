@@ -7,7 +7,7 @@ import "http/body" take EmptyBody;
 import "http/client_request" take HttpDirectRequest;
 import "http/proxy_request" take HttpForwardRequest;
 import "http/header" take Header;
-import "url/value" take Url;
+import "url/value" take UrlParts;
 import "http/endpoint" take EndpointAllowing;
 import "http/http1_session" take Http1Session, Http1Exchange;
 import "http/http2_session" take Http2Session, Http2Exchange;
@@ -34,8 +34,8 @@ role HttpConversationConnecting {
 }
 
 role HttpConversationRouting {
-    connecting(url is Url) is HttpConversationConnecting;
-    allowed(url is Url, details is ExchangeDetails, access is EndpointAllowing) is bool;
+    connecting(url is UrlParts) is HttpConversationConnecting;
+    allowed(url is UrlParts, details is ExchangeDetails, access is EndpointAllowing) is bool;
 }
 
 object HttpConversationAcquisition {

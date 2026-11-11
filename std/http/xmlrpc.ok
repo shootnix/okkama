@@ -26,7 +26,7 @@ import "http/method" take Method;
 import "http/status" take Status, StatusCode, StatusClass;
 import "mime/media_type" take MediaType;
 import "http/target" take AbsoluteTarget, RequestTargetKind;
-import "url/value" take Url;
+import "url/value" take UrlParts;
 import "io/decorators" take InvalidReading;
 
 enum XmlRpcKind = (integer, boolean, text, floating, datetime, binary, array, structure, nil_value);
@@ -1457,14 +1457,14 @@ role XmlRpcCalling {
 
 object XmlRpcClient does XmlRpcCalling {
     has origin is Exchanging;
-    has endpoint is Url;
+    has endpoint is UrlParts;
     has limits is XmlRpcLimits;
 
-    XmlRpcClient(origin is Exchanging, endpoint is Url, limits is XmlRpcLimits) {
-        let parts = endpoint.parts();
-        confirm (parts.scheme() == "http" || parts.scheme() == "https")
-            && parts.authority().present()
-            && !parts.fragment().present()
+    XmlRpcClient(origin is Exchanging, endpoint is UrlParts, limits is XmlRpcLimits) {
+        let parts = endpoint;
+        confirm (parts::Parts::scheme == "http" || parts::Parts::scheme == "https")
+            && parts::Parts::host != Maybe<string>.none
+            && parts::Parts::fragment == Maybe<string>.none
             else throw InvalidXmlRpc.because("HTTP endpoint required");
         self.origin = origin;
         self.endpoint = endpoint;
@@ -1578,7 +1578,8 @@ object XmlRpcHandling does Handling {
         }
         else {
             if kind == RequestTargetKind.absolute {
-                request::Head::target.url().parts().path();
+                let url = request::Head::target.url();
+                url::Parts::path;
             }
             else {
                 "";

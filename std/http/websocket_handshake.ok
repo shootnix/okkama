@@ -9,7 +9,7 @@ import "http/status" take Status, StatusCode;
 import "http/target" take OriginTarget, RequestTargetKind;
 import "http/version" take HttpVersion;
 import "http/http1_head" take Http1RequestHead;
-import "url/value" take Url, UrlHostKind;
+import "url/value" take UrlParts, UrlHostKind;
 import "encoding/base64" take Base64Encoded, Base64Decoded, InvalidBase64;
 import "encoding/single_byte" take AsciiEncoded;
 import "digest/legacy" take Sha1;
@@ -156,20 +156,17 @@ object WebSocketClientHandshake {
     has accept is WebSocketAccept;
     has offered is WebSocketProtocols;
 
-    WebSocketClientHandshake(url is Url, protocols is @string, headers is Headers, nonce is @byte) {
-        let parts = url.parts();
-        confirm parts.scheme() == "ws" || parts.scheme() == "wss"
+    WebSocketClientHandshake(url is UrlParts, protocols is @string, headers is Headers, nonce is @byte) {
+        let parts = url;
+        confirm parts::Parts::scheme == "ws" || parts::Parts::scheme == "wss"
             else throw WebSocketFailure.because("WebSocket URL required");
-        let authority = parts.authority();
-        confirm authority.present()
-            && authority.host().kind() != UrlHostKind.empty
-            && authority.host().kind() != UrlHostKind.future
+        confirm parts::Parts::host != Maybe<string>.none
+            && parts.host_kind() != UrlHostKind.empty
+            && parts.host_kind() != UrlHostKind.future
             else throw WebSocketFailure.because("WebSocket authority required");
-        confirm !authority.userinfo().present() && !parts.fragment().present()
+        confirm parts::Parts::userinfo == Maybe<string>.none && parts::Parts::fragment == Maybe<string>.none
             else throw WebSocketFailure.because("WebSocket URL userinfo or fragment");
-        if authority.port_marker().present() {
-            confirm authority.port() > 0 else throw WebSocketFailure.because("WebSocket port");
-        }
+        confirm (parts::Parts::port else 1) > 0 else throw WebSocketFailure.because("WebSocket port");
         confirm url.string().length() <= 8192
             else throw WebSocketFailure.because("WebSocket URL budget");
         WebSocketHandshakeFields(headers);
@@ -198,7 +195,7 @@ object WebSocketClientHandshake {
         confirm nonce.size() == 16 else throw WebSocketFailure.because("nonce width");
         let key = Base64Encoded(nonce).string();
         let checked = WebSocketProtocols(protocols);
-        let fields = headers.addition(Header(HeaderName("Host"), authority.string())).addition(
+        let fields = headers.addition(Header(HeaderName("Host"), parts.authority())).addition(
             Header(HeaderName("Upgrade"), "websocket")
         ).addition(Header(HeaderName("Connection"), "Upgrade")).addition(
             Header(HeaderName("Sec-WebSocket-Key"), key)
@@ -213,13 +210,13 @@ object WebSocketClientHandshake {
         request = Request(
             method: Method.get,
             target: OriginTarget(
-                if parts.path() == "" {
+                if parts::Parts::path == "" {
                     "/";
                 }
                 else {
-                    parts.path();
+                    parts::Parts::path;
                 },
-                parts.query()
+                parts::Parts::query
             ),
             headers: complete
         );

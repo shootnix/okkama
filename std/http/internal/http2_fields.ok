@@ -11,8 +11,7 @@ import "http/target" take RequestTarget, RequestTargetKind, AbsoluteTarget, Pars
     InvalidRequestTarget;
 import "http/header" take Headers, Header, HeaderName, HeaderLimits, Http2Headers,
     HttpAsciiLowercase, InvalidHeader;
-import "url/value" take Url, UrlAuthority, ParsedUrl, ParsedUrlAuthority, MissingUrlPort,
-    UrlHostKind, InvalidUrl;
+import "url/value" take UrlParts, ParsedUrl, MissingUrlPort, UrlHostKind, InvalidUrl;
 import "encoding/single_byte" take Latin1Encoded;
 import "async/atomic" take Atomic;
 
@@ -31,10 +30,10 @@ object Http2RequestFields {
                     stream,
                     "authority target requires CONNECT"
                 );
-            Http2HostAgreement(request::Head::headers, "", target.authority().string(), stream);
+            Http2HostAgreement(request::Head::headers, "", target.string(), stream);
             [
                 HpackField(":method", "CONNECT"),
-                HpackField(":authority", target.authority().string())
+                HpackField(":authority", target.string())
             ];
         }
         else {
@@ -53,7 +52,7 @@ object Http2RequestFields {
         ).fields();
     }
 
-    Http2RequestFields(request is Request, stream is int, route is Url) {
+    Http2RequestFields(request is Request, stream is int, route is UrlParts) {
         Http2StreamCoordinate(stream);
         AbsoluteTarget(route);
         if request::Head::target.kind() == RequestTargetKind.absolute {
@@ -86,11 +85,11 @@ object Http2RequestFields {
 object Http2RequestControl {
     has fields is @HpackField;
 
-    Http2RequestControl(request is Request, url is Url, stream is int) {
+    Http2RequestControl(request is Request, url is UrlParts, stream is int) {
         AbsoluteTarget(url);
-        let parts = url.parts();
-        let authority = parts.authority().string();
-        Http2HostAgreement(request::Head::headers, parts.scheme(), authority, stream);
+        let parts = url;
+        let authority = parts.authority();
+        Http2HostAgreement(request::Head::headers, parts::Parts::scheme, authority, stream);
         let target = request::Head::target;
         let path = match target.kind() {
             case RequestTargetKind.asterisk {
@@ -100,17 +99,19 @@ object Http2RequestControl {
                 target.string();
             }
             case RequestTargetKind.absolute {
-                (if parts.path() == "" {
+                (if parts::Parts::path == "" {
                     "/";
                 }
                 else {
-                    parts.path();
-                }) + (if parts.query().present() {
-                    "?" + parts.query().string();
-                }
-                else {
-                    "";
-                });
+                    parts::Parts::path;
+                }) + match parts::Parts::query {
+                    case Maybe.some(query) {
+                        "?" + query;
+                    }
+                    else {
+                        "";
+                    }
+                };
             }
             else {
                 throw Http2Fault.detailed(
@@ -123,7 +124,7 @@ object Http2RequestControl {
         };
         fields = [
             HpackField(":method", MethodName(request::Head::method).string()),
-            HpackField(":scheme", parts.scheme()),
+            HpackField(":scheme", parts::Parts::scheme),
             HpackField(":authority", authority),
             HpackField(":path", path)
         ];
@@ -157,24 +158,26 @@ object Http2AuthorityKey {
 
     Http2AuthorityKey(scheme is string, origin is string, stream is int) {
         let authority = try {
-            ParsedUrlAuthority(origin).value();
+            ParsedUrl("//" + origin).parts();
         }
         catch failure is InvalidUrl {
             throw Http2Fault.detailed(Http2FaultScope.stream, 1, stream, "invalid authority");
         };
-        confirm authority.present()
-            && authority.host().kind() != UrlHostKind.empty
-            && !authority.userinfo().present()
+        confirm authority::Parts::path == ""
+            && authority::Parts::query == Maybe<string>.none
+            && (authority::Parts::host else "") != ""
+            && authority::Parts::userinfo == Maybe<string>.none
             else throw Http2Fault.detailed(
                 Http2FaultScope.stream,
                 1,
                 stream,
                 "authority without host or with userinfo"
             );
-        let port = try {
-            authority.port();
-        }
-        catch failure is MissingUrlPort {
+        let port = match authority::Parts::port {
+            case Maybe.some(number) {
+                number;
+            }
+            else {
             if scheme == "https" {
                 443;
             }
@@ -191,8 +194,9 @@ object Http2AuthorityKey {
                     );
                 }
             }
+            }
         };
-        key = authority.host().string() + ":" + port.string();
+        key = (authority::Parts::host else "") + ":" + port.string();
     }
 
     string() is string {
@@ -331,7 +335,7 @@ object ParsedHttp2Request {
     has target is RequestTarget;
     has headers is Headers;
     has scheme is string;
-    has authority is UrlAuthority;
+    has authority is UrlParts;
 
     ParsedHttp2Request(origin is @HpackField, stream is int) {
         let section = Http2FieldSection(
@@ -377,11 +381,13 @@ object ParsedHttp2Request {
         };
         Http2HostAgreement(section.headers(), scheme, raw, stream);
         let authority = try {
-            ParsedUrlAuthority(raw).value();
+            ParsedUrl("//" + raw).parts();
         }
         catch failure is InvalidUrl {
             throw Http2Fault.detailed(Http2FaultScope.stream, 1, stream, "invalid authority");
         };
+        confirm authority::Parts::path == "" && authority::Parts::query == Maybe<string>.none
+            else throw Http2Fault.detailed(Http2FaultScope.stream, 1, stream, "invalid authority");
         let target is RequestTarget = if connect {
             confirm !known.contains(":scheme") && !known.contains(":path")
                 else throw Http2Fault.detailed(
@@ -423,7 +429,7 @@ object ParsedHttp2Request {
             }
             else {
                 try {
-                    AbsoluteTarget(ParsedUrl(scheme + "://" + authority.string() + path).value());
+                    AbsoluteTarget(ParsedUrl(scheme + "://" + authority.authority() + path).parts());
                 }
                 catch failure is InvalidUrl {
                     throw Http2Fault.detailed(
@@ -458,7 +464,8 @@ object ParsedHttp2Request {
         scheme;
     }
 
-    authority() is UrlAuthority {
+    // The :authority pseudo-field as authority-only parts.
+    authority() is UrlParts {
         authority;
     }
 

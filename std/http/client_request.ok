@@ -4,7 +4,7 @@ import "http/message" take Request;
 import "http/target" take RequestTargetKind, OriginTarget;
 import "http/version" take HttpVersion;
 import "http/header" take Header, HeaderName;
-import "url/value" take Url;
+import "url/value" take UrlParts;
 import "url/value" take ParsedUrl;
 import "http/target" take AbsoluteTarget;
 import "http/method" take Method;
@@ -13,7 +13,7 @@ import "http/header" take Headers;
 // Prepare an ordinary direct request before DNS or socket effects. CONNECT and
 // OPTIONS * require separate explicitly routed consumers.
 object HttpDirectRequest {
-    has url is Url;
+    has url is UrlParts;
     has request is Request;
 
     HttpDirectRequest(origin is Request) {
@@ -22,8 +22,8 @@ object HttpDirectRequest {
         confirm origin::Head::version == HttpVersion.http_1_1
             else throw InvalidClientRequest.because("HTTP1.1 request required");
         let destination = origin::Head::target.url();
-        let parts = destination.parts();
-        let authority = parts.authority().string();
+        let parts = destination;
+        let authority = parts.authority();
         let supplied = origin::Head::headers.values(HeaderName("Host"));
         confirm supplied.size() <= 1 else throw InvalidClientRequest.because("duplicate Host");
         if supplied.size() == 1 {
@@ -36,13 +36,13 @@ object HttpDirectRequest {
         else {
             origin::Head::headers.addition(Header(HeaderName("Host"), authority));
         };
-        let path = if parts.path() == "" {
+        let path = if parts::Parts::path == "" {
             "/";
         }
         else {
-            parts.path();
+            parts::Parts::path;
         };
-        let target = OriginTarget(path, parts.query());
+        let target = OriginTarget(path, parts::Parts::query);
         request = Request(
             method: origin::Head::method,
             target: target,
@@ -53,7 +53,7 @@ object HttpDirectRequest {
         url = destination;
     }
 
-    url() is Url {
+    url() is UrlParts {
         url;
     }
 
@@ -67,7 +67,7 @@ enum InvalidClientRequest is Error = (because(reason is string));
 test "direct route adds Host and a slash without adding optional client features" {
     let request = Request(
         method: Method.get,
-        target: AbsoluteTarget(ParsedUrl("http://example.test").value())
+        target: AbsoluteTarget(ParsedUrl("http://example.test").parts())
     );
     let wire = HttpDirectRequest(request).request();
     test.ok(

@@ -93,6 +93,12 @@ and compares the output.
 |---|---|
 | `calendar/month.ok` | print a month as a wall calendar, Monday first; leap years; an ISO week's dates |
 
+## url
+
+| Program | Task |
+|---|---|
+| `url/parts.ok` | parse a URL into parts, resolve links against it, read its query, build one from parts |
+
 ## strings/parse
 
 | Program | Task |

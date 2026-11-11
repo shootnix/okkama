@@ -45,7 +45,7 @@ import "async/event" take Event;
 import "async/scope" take FutureGroup;
 import "io/stream" take Closing, InvalidReadLimit, AsyncReading;
 import "numbers/bigint" take BigInt;
-import "url/value" take Url, MissingUrlPort;
+import "url/value" take UrlParts, MissingUrlPort;
 import "net/dns" take FixedResolution;
 import "crypto/x509/trust" take TrustedCertificates, TrustStore, SystemTrustStore;
 import "time/clock" take SystemClock;
@@ -1264,7 +1264,7 @@ async test "unstarted client response cancellation acquires no route or connecti
     );
     let request = Request(
         method: Method.get,
-        target: AbsoluteTarget(ParsedUrl("http://example.test/").value())
+        target: AbsoluteTarget(ParsedUrl("http://example.test/").parts())
     );
     let waiting = client.response(request);
     waiting.cancel();
@@ -1294,7 +1294,7 @@ object Http2ClientProtocols {
 }
 
 object Http2DirectRequest {
-    has url is Url;
+    has url is UrlParts;
     has request is Request;
 
     Http2DirectRequest(origin is Request) {
@@ -1317,7 +1317,7 @@ object Http2DirectRequest {
         url = destination;
     }
 
-    url() is Url {
+    url() is UrlParts {
         url;
     }
 
@@ -1999,7 +1999,7 @@ hidden object HttpSharedClientReadCleanup {
 }
 
 object HttpMixedDirectRequest {
-    has url is Url;
+    has url is UrlParts;
     has request is Request;
 
     HttpMixedDirectRequest(origin is Request) {
@@ -2020,7 +2020,7 @@ object HttpMixedDirectRequest {
         url = target.url();
     }
 
-    url() is Url {
+    url() is UrlParts {
         url;
     }
 

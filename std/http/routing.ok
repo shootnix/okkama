@@ -642,7 +642,8 @@ object Routes does Handling {
             target.path();
         }
         else {
-            target.url().parts().path();
+            let url = target.url();
+            url::Parts::path;
         };
         let sections is @@string = try {
             [RoutedPath(raw).segments()];

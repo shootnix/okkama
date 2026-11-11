@@ -6,14 +6,16 @@ import "http/method" take Method;
 import "http/target" take AuthorityTarget, RequestTargetKind;
 import "http/client_request" take HttpDirectRequest;
 import "http/version" take HttpVersion;
-import "url/value" take Url, UrlAuthority, MissingUrlPort;
+import "url/value" take ParsedUrl, UrlParts;
 
 object HttpForwardRequest {
     has request is Request;
 
     HttpForwardRequest(origin is Request, proxy_fields is @Header) {
         confirm origin::Head::target.kind() == RequestTargetKind.absolute
-            && origin::Head::target.url().parts().scheme() == "http"
+            else throw InvalidProxyRequest.because("absolute HTTP target required");
+        let target = origin::Head::target.url();
+        confirm target::Parts::scheme == "http"
             else throw InvalidProxyRequest.because("absolute HTTP target required");
         let source = Request(
             method: origin::Head::method,
@@ -40,19 +42,14 @@ object HttpForwardRequest {
 object HttpConnectRequest {
     has request is Request;
 
-    HttpConnectRequest(origin is Url, proxy_fields is @Header) {
-        let parts = origin.parts();
-        confirm parts.scheme() == "https" && !parts.authority().userinfo().present()
+    HttpConnectRequest(origin is UrlParts, proxy_fields is @Header) {
+        let parts = origin;
+        confirm parts::Parts::scheme == "https" && parts::Parts::userinfo == Maybe<string>.none
             else throw InvalidProxyRequest.because("HTTPS tunnel target required");
-        let port = try {
-            parts.authority().port();
-        }
-        catch e is MissingUrlPort {
-            443;
-        };
-        let authority = UrlAuthority(parts.authority().host(), port);
+        let port = parts::Parts::port else 443;
+        let authority = ParsedUrl("//" + (parts::Parts::host else "") + ":" + port.string()).parts();
         let fields = ProxyRequestFields(
-            Headers([Header(HeaderName("Host"), authority.string())]),
+            Headers([Header(HeaderName("Host"), authority.authority())]),
             proxy_fields
         ).headers();
         request = Request(

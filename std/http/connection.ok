@@ -99,13 +99,14 @@ object Http1Connecting {
         let published = Event();
         let anchor = HttpUnpublishedTcp(tcp, published);
         defer anchor.close();
-        if route.url().parts().scheme() == "https" {
-            let host = route.url().parts().authority().host();
-            let identity is CertificateIdentity = if host.kind() == UrlHostKind.name {
-                DnsCertificateIdentity(host.name());
+        let route_url = route.url();
+        if route_url::Parts::scheme == "https" {
+            let host = route.url();
+            let identity is CertificateIdentity = if host.host_kind() == UrlHostKind.name {
+                DnsCertificateIdentity(host.host_name());
             }
             else {
-                IpCertificateIdentity(host.address());
+                IpCertificateIdentity(host.host_address());
             };
             let tls_group is FutureGroup<TlsConnection> = FutureGroup();
             let empty_tls is @Future<TlsConnection> = [];
@@ -302,7 +303,7 @@ object HttpUnpublishedTls {
 
 test "HTTP1 opener rejects incompatible ALPN before acquisition" {
     let route = HttpEndpointSelection(
-        ParsedUrl("https://example.test/").value(),
+        ParsedUrl("https://example.test/").parts(),
         FixedResolution([]),
         AllEndpoints()
     );

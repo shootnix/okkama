@@ -4823,12 +4823,15 @@ and `MissingReverseName`.
 
 ### URL and cookie policy in the active v4 stdlib
 
-Active v4 uses `url/value`, superseding historical `net/url` examples above.
-ParsedUrl(source).value() and ParsedUrlReference(source).value() defer parsing;
-Url(parts)/UrlReference(parts) accept validated coordinates. base.url(reference)
-resolves RFC 3986 references. Typed authority distinguishes DNS/IP/IPvFuture,
-empty hosts and absent/empty ports and userinfo. Query and fragment preserve
-absence separately from explicit emptiness. There is no DNS or transport I/O.
+The current std uses `url/value`, superseding the historical `net/url`
+examples above. `ParsedUrl(source).parts()` parses a URL or a relative
+reference into one `UrlParts`, whose cap `Parts` holds `scheme`, `userinfo`,
+`host`, `port`, `path`, `query` and `fragment`. Optional parts are `Maybe`,
+so an absent query is told apart from an empty one. `parts.absolute()` tells
+whether it has a scheme, and `base.resolved(reference)` resolves by RFC 3986.
+`host_kind()`, `host_name()` and `host_address()` read the host as DNS, IP or
+IPvFuture, and `ParsedQuery(text).parameters()` reads a query. There is no
+DNS or transport I/O.
 HostName uses bounded UTS46/IDNA; PublicSuffixList represents pinned ICANN+PRIVATE
 policy. Current URL contract (okkama-docs `docs/std/url-value.md`),
 [executable example](../examples/std-v4/url-resolution.ok).
@@ -4849,7 +4852,7 @@ import "time/clock" take SystemClock;
 import "io/stdout" take Stdout;
 main() is int {
     let jar=MemoryCookieJar(SystemClock());defer jar.close();
-    let origin=ParsedUrl("https://example.com/a/b").value();
+    let origin=ParsedUrl("https://example.com/a/b").parts();
     let context=CookieContext(origin,true,Method("GET"));
     jar.store(origin,Headers([Header(HeaderName("Set-Cookie"),"session=opaque; Secure; HttpOnly; SameSite=Lax; Path=/")]),context);
     let cookies=jar.cookies(origin,context);confirm cookies.size()==1;

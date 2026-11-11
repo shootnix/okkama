@@ -128,7 +128,7 @@ object PercentDecoded {
 enum InvalidPercentEncoding is Error = (at(offset is int));
 
 test "query data does not inject separators" {
-    test.is(PercentEncoded("a&b=c+d", UrlComponent.data).string(), "a%26b%3Dc%2Bd");
+    test.is(PercentEncoded(origin: "a&b=c+d", component: UrlComponent.data).string(), "a%26b%3Dc%2Bd");
     test.is(PercentDecoded("a%26b%3Dc%2Bd").string(), "a&b=c+d");
 }
 

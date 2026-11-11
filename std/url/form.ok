@@ -27,7 +27,7 @@ object FormUrlEncoded {
     }
 
     hidden field(text is string) is string {
-        PercentEncoded(text, UrlComponent.data).string().replace("%20", "+").replace("%2A", "*").replace(
+        PercentEncoded(origin: text, component: UrlComponent.data).string().replace("%20", "+").replace("%2A", "*").replace(
             "~",
             "%7E"
         );
@@ -55,7 +55,7 @@ object ParsedForm {
 
     parameters() is QueryParameters {
         try {
-            ParameterParsing(origin, true, maximum_parameters, maximum_bytes).parameters();
+            ParameterParsing(origin: origin, form: true, maximum_parameters: maximum_parameters, maximum_bytes: maximum_bytes).parameters();
         }
         catch InvalidQueryEncoding.located(offset, _) {
             throw InvalidFormEncoding.at(offset);

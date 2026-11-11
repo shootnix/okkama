@@ -5,7 +5,7 @@ import "http/cookie" take Cookie, CookieAttributes, CookieExpiry, CookieFlag, Sa
 import "http/cookie_date" take ParsedCookieDate, InvalidCookieDate;
 import "http/header" take HttpAsciiLowercase;
 import "http/method" take Method;
-import "url/value" take Url, UrlHostKind, ParsedUrl;
+import "url/value" take UrlParts, UrlHostKind, ParsedUrl;
 import "net/endpoint" take HostName;
 import "net/public_suffix" take PublicSuffixList, MissingRegistrableDomain;
 import "time/clock" take Instant;
@@ -16,12 +16,12 @@ import "encoding/utf" take Utf8Encoded;
 // Context is supplied by the caller. This HTTP-only profile never guesses a
 // browser frame tree or document site from a redirect/transport/session object.
 object CookieContext {
-    has site is Url;
+    has site is UrlParts;
     has top_level is bool;
     has method is Method;
     has key is string;
 
-    CookieContext(site is Url, top_level is bool, method is Method) {
+    CookieContext(site is UrlParts, top_level is bool, method is Method) {
         let checked = CookieOrigin(site);
         self.site = site;
         self.top_level = top_level;
@@ -29,7 +29,7 @@ object CookieContext {
         key = checked.site();
     }
 
-    site() is Url {
+    site() is UrlParts {
         site;
     }
 
@@ -47,27 +47,26 @@ object CookieContext {
 }
 
 object CookieOrigin {
-    has origin is Url;
+    has origin is UrlParts;
     has domain, site, path is string;
     has address, secure is bool;
 
-    CookieOrigin(origin is Url) {
-        let parts = origin.parts();
-        let scheme = parts.scheme();
+    CookieOrigin(origin is UrlParts) {
+        let parts = origin;
+        let scheme = parts::Parts::scheme;
         confirm scheme == "http" || scheme == "https"
             else throw InvalidCookie.because("HTTP origin required");
-        confirm parts.authority().present()
+        confirm parts::Parts::host != Maybe<string>.none
             else throw InvalidCookie.because("origin authority required");
-        let host = parts.authority().host();
-        let kind = host.kind();
+        let kind = parts.host_kind();
         confirm kind == UrlHostKind.name || kind == UrlHostKind.address
             else throw InvalidCookie.because("DNS or IP origin required");
         let dns = kind == UrlHostKind.name;
         let raw = if dns {
-            host.name().ascii();
+            parts.host_name().ascii();
         }
         else {
-            host.address().string();
+            parts.host_address().string();
         };
         let canonical = if dns && raw.slice(raw.length() - 1, raw.length()) == "." {
             raw.slice(0, raw.length() - 1);
@@ -84,22 +83,22 @@ object CookieOrigin {
             }
         }
         else {
-            host.string();
+            parts::Parts::host else "";
         };
         self.origin = origin;
         domain = canonical;
         site = scheme + "://" + registrable;
         address = !dns;
         secure = scheme == "https";
-        path = if parts.path() == "" {
+        path = if parts::Parts::path == "" {
             "/";
         }
         else {
-            parts.path();
+            parts::Parts::path;
         };
     }
 
-    url() is Url {
+    url() is UrlParts {
         origin;
     }
 
@@ -197,10 +196,10 @@ object CookieDomainMatch {
 
 object ParsedSetCookie {
     has origin is string;
-    has url is Url;
+    has url is UrlParts;
     has reference is Instant;
 
-    ParsedSetCookie(origin is string, url is Url, reference is Instant) {
+    ParsedSetCookie(origin is string, url is UrlParts, reference is Instant) {
         self.origin = origin;
         self.url = url;
         self.reference = reference;
@@ -495,7 +494,7 @@ object CookieWsp {
 }
 
 test "Set-Cookie keeps explicit context and precedence" {
-    let url = ParsedUrl("https://example.com/a/b").value();
+    let url = ParsedUrl("https://example.com/a/b").parts();
     let cookie = ParsedSetCookie(
         "id=v; Max-Age=10; Expires=01 Jan 70 0:0:0",
         url,

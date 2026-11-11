@@ -25,7 +25,7 @@ import "net/tcp" take TcpAcceptance, TcpConnection;
 import "net/endpoint" take IpEndpoint;
 import "net/failure" take NetworkClosed;
 import "io/stream" take AsyncReading, AsyncWriting, Closing;
-import "url/value" take Url;
+import "url/value" take UrlParts;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
 import "async/scope" take FutureGroup;
@@ -57,17 +57,17 @@ object HttpServer does Closing {
         handling is Handling,
         policy is ServerPolicy,
         clock is Timing,
-        destination is Url
+        destination is UrlParts
     ) {
         confirm policy.protocols().size() == 1
             && (policy.protocols().membership(HttpVersion.http_1_1)
             || policy.protocols().membership(HttpVersion.http_2))
             else throw UnsupportedHttpVersion.unsupported;
-        let parts = destination.parts();
-        confirm parts.scheme() == "http"
-            && parts.authority().present()
-            && !parts.authority().userinfo().present()
-            && !parts.fragment().present()
+        let parts = destination;
+        confirm parts::Parts::scheme == "http"
+            && parts::Parts::host != Maybe<string>.none
+            && parts::Parts::userinfo == Maybe<string>.none
+            && parts::Parts::fragment == Maybe<string>.none
             else throw BadRequest.because("trusted plaintext server URL required");
         state = HttpServerState(origin, handling, policy, clock, [destination]);
     }
@@ -111,7 +111,7 @@ object HttpServerState {
     has handling is Handling;
     has policy is ServerPolicy;
     has clock is Timing;
-    has destinations is @Url;
+    has destinations is @UrlParts;
     has peers, retired is Atomic<@HttpServerPeer>;
     has changed is Atomic<Event>;
     has stopped, started, draining is Event;
@@ -122,7 +122,7 @@ object HttpServerState {
         handling is Handling,
         policy is ServerPolicy,
         clock is Timing,
-        destinations is @Url
+        destinations is @UrlParts
     ) {
         self.destinations = destinations;
         self.origin = origin;
@@ -320,7 +320,7 @@ object HttpServerPeer {
     has clock is Timing;
     has group is FutureGroup<bool>;
     has cancelled is Cancellation;
-    has destinations is @Url;
+    has destinations is @UrlParts;
     has sent is Atomic<bool>;
     has phase, seen is Atomic<int>;
 
@@ -331,7 +331,7 @@ object HttpServerPeer {
         handling is Handling,
         policy is ServerPolicy,
         clock is Timing,
-        destinations is @Url
+        destinations is @UrlParts
     ) {
         self.destinations = destinations;
         self.server = server;

@@ -21,7 +21,7 @@ import "net/dns" take Resolving;
 import "net/tls" take TlsClientPolicy;
 import "time/clock" take Timing;
 import "time/duration" take Duration, DurationUnit;
-import "url/value" take Url;
+import "url/value" take UrlParts;
 import "async/scope" take FutureGroup;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
@@ -50,18 +50,18 @@ object HttpProxyRouting does HttpConversationRouting {
         HttpClientProtocols(client, tls);
     }
 
-    connecting(url is Url) is HttpConversationConnecting {
+    connecting(url is UrlParts) is HttpConversationConnecting {
         HttpProxyConnecting(proxy, url, resolver, tls, client, clock);
     }
 
-    allowed(url is Url, details is ExchangeDetails, access is EndpointAllowing) is bool {
+    allowed(url is UrlParts, details is ExchangeDetails, access is EndpointAllowing) is bool {
         access.allowed(proxy.url(), details.endpoints().remote_endpoint());
     }
 }
 
 object HttpProxyConnecting does HttpConversationConnecting {
     has proxy is ProxyPolicy;
-    has target is Url;
+    has target is UrlParts;
     has route is HttpEndpointSelection;
     has tls is TlsClientPolicy;
     has client is ClientPolicy;
@@ -69,14 +69,14 @@ object HttpProxyConnecting does HttpConversationConnecting {
 
     HttpProxyConnecting(
         proxy is ProxyPolicy,
-        target is Url,
+        target is UrlParts,
         resolver is Resolving,
         tls is TlsClientPolicy,
         client is ClientPolicy,
         clock is Timing
     ) {
         HttpClientProtocols(client, tls);
-        if target.parts().scheme() == "http" {
+        if target::Parts::scheme == "http" {
             confirm client.protocols().membership(HttpVersion.http_1_1)
                 else throw UnsupportedHttpVersion.unsupported;
         }
@@ -121,7 +121,7 @@ object HttpProxyConnecting does HttpConversationConnecting {
         let published = Event();
         let anchor = HttpUnpublishedTcp(tcp, published);
         defer anchor.close();
-        if target.parts().scheme() == "http" {
+        if target::Parts::scheme == "http" {
             let observation = HttpResponseObservation();
             let session = Http1Conversation(
                 Http1Session(

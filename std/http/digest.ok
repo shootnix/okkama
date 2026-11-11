@@ -23,7 +23,7 @@ import "async/atomic" take Atomic;
 import "http/exchange" take ClientResponse, Exchanging;
 import "random/source" take SecureRandom;
 import "async/event" take Event;
-import "url/value" take Url;
+import "url/value" take UrlParts;
 import "http/version" take HttpVersion;
 import "http/body" take BodyOpening, BodyReading;
 import "numbers/bigint" take BigInt;
@@ -324,7 +324,7 @@ object DigestAuthorization does HttpAuthorizing {
                 "username=" + DigestQuoted(name).string();
             }
             else {
-                "username*=UTF-8''" + PercentEncoded(name, UrlComponent.data).string();
+                "username*=UTF-8''" + PercentEncoded(origin: name, component: UrlComponent.data).string();
             }
         };
         let value = "Digest " + user + ", realm=" + DigestQuoted(challenge.realm()).string() + ", nonce=" + DigestQuoted(
@@ -536,7 +536,7 @@ object DigestExchanging does Exchanging {
 
     DigestExchanging(
         origin is Exchanging,
-        scope is Url,
+        scope is UrlParts,
         credentials is DigestCredentials,
         random is SecureRandom
     ) {

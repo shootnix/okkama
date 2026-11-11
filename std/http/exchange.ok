@@ -1,6 +1,6 @@
 module http/exchange v1.0.0;
 
-import "url/value" take Url, MissingUrlPort;
+import "url/value" take UrlParts, MissingUrlPort;
 import "net/ip" take IpAddress;
 import "http/method" take Method;
 import "http/message" take Request, Response;
@@ -71,21 +71,14 @@ role Exchanging {
 object HttpClientKey {
     has key is string;
 
-    HttpClientKey(url is Url) {
-        let parts = url.parts();
-        let authority = parts.authority();
-        let port = try {
-            authority.port();
+    HttpClientKey(url is UrlParts) {
+        let port = url::Parts::port else if url::Parts::scheme == "https" {
+            443;
         }
-        catch e is MissingUrlPort {
-            if parts.scheme() == "https" {
-                443;
-            }
-            else {
-                80;
-            }
+        else {
+            80;
         };
-        key = parts.scheme() + "://" + authority.host().string() + ":" + port.string();
+        key = url::Parts::scheme + "://" + (url::Parts::host else "") + ":" + port.string();
     }
 
     string() is string {

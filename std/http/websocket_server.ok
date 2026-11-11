@@ -11,7 +11,7 @@ import "http/http1_head" take Http1RequestHead, Http1ResponseHead;
 import "http/http1_writing" take Http1ResponseHeadWriting;
 import "http/body" take EmptyBody;
 import "io/stream" take AsyncReading, AsyncWriting, Closing;
-import "url/value" take Url;
+import "url/value" take UrlParts;
 import "time/duration" take Duration;
 import "time/clock" take Timing;
 import "random/source" take SecureRandom;
@@ -69,7 +69,7 @@ object WebSocketAccepting {
         output is AsyncWriting,
         owner is Closing,
         head is Http1HeadRead<Http1RequestHead>,
-        destination is Url,
+        destination is UrlParts,
         upgrade is WebSocketUpgrade,
         clock is Timing
     ) {
@@ -108,7 +108,7 @@ object WebSocketServerOpening {
     has output is AsyncWriting;
     has owner is Closing;
     has head is Http1HeadRead<Http1RequestHead>;
-    has destination is Url;
+    has destination is UrlParts;
     has upgrade is WebSocketUpgrade;
     has clock is Timing;
 
@@ -117,7 +117,7 @@ object WebSocketServerOpening {
         output is AsyncWriting,
         owner is Closing,
         head is Http1HeadRead<Http1RequestHead>,
-        destination is Url,
+        destination is UrlParts,
         upgrade is WebSocketUpgrade,
         clock is Timing
     ) {

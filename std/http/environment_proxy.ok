@@ -2,8 +2,7 @@ module http/environment_proxy v1.0.0;
 
 import "http/proxy_policy" take ProxyPolicy, InvalidProxy;
 import "os/environment" take Environment;
-import "url/value" take Url, ParsedUrl, ParsedUrlAuthority, UrlHost, UrlHostKind, EmptyUrlHost,
-    MissingUrlPort;
+import "url/value" take UrlParts, ParsedUrl, UrlHostKind, MissingUrlPort;
 import "net/ip" take IpAddress, IpNetwork, InvalidIpAddress;
 import "encoding/single_byte" take AsciiEncoded;
 import "encoding/utf" take Utf8Encoded;
@@ -41,15 +40,15 @@ object EnvironmentProxy {
         bypass = rules.values();
     }
 
-    proxy(origin is Url) is ProxyPolicy {
-        confirm origin.parts().scheme() == "http" || origin.parts().scheme() == "https"
+    proxy(origin is UrlParts) is ProxyPolicy {
+        confirm origin::Parts::scheme == "http" || origin::Parts::scheme == "https"
             else throw MissingProxy.missing;
         for bypass -> rule {
             if rule.matches(origin) {
                 throw MissingProxy.missing;
             }
         }
-        let specific = if origin.parts().scheme() == "http" {
+        let specific = if origin::Parts::scheme == "http" {
             self.variable("http_proxy", "");
         }
         else {
@@ -65,7 +64,7 @@ object EnvironmentProxy {
         confirm selected[0].length() <= 8192
             else throw InvalidProxy.because("proxy URI byte limit");
         let parsed = try {
-            ParsedUrl(selected[0]).value();
+            ParsedUrl(selected[0]).parts();
         }
         catch e is Error {
             throw InvalidProxy.because("environment proxy URI");
@@ -88,7 +87,7 @@ enum NoProxyKind = (all, host, network);
 
 object NoProxyRule {
     has kind is NoProxyKind;
-    has host is UrlHost;
+    has host is @UrlParts;
     has port is @int;
     has network is @IpNetwork;
 
@@ -101,40 +100,35 @@ object NoProxyRule {
         network = parsed.network();
     }
 
-    matches(origin is Url) is bool {
+    matches(origin is UrlParts) is bool {
         if kind == NoProxyKind.all {
             return true;
         }
-        let host = origin.parts().authority().host();
+        let actual_kind = origin.host_kind();
         if kind == NoProxyKind.network {
-            return host.kind() == UrlHostKind.address && network[0].membership(host.address());
+            return actual_kind == UrlHostKind.address && network[0].membership(origin.host_address());
         }
         if port.size() == 1 {
-            let actual = try {
-                origin.parts().authority().port();
+            let actual = origin::Parts::port else if origin::Parts::scheme == "https" {
+                443;
             }
-            catch e is MissingUrlPort {
-                if origin.parts().scheme() == "https" {
-                    443;
-                }
-                else {
-                    80;
-                }
+            else {
+                80;
             };
             if actual != port[0] {
                 return false;
             }
         }
-        let expected = self.host;
-        if expected.kind() == UrlHostKind.address {
-            return host.kind() == UrlHostKind.address
-                && host.address().order(expected.address()) == Order.equal;
+        let expected = self.host[0];
+        if expected.host_kind() == UrlHostKind.address {
+            return actual_kind == UrlHostKind.address
+                && origin.host_address().order(expected.host_address()) == Order.equal;
         }
-        if host.kind() != UrlHostKind.name || expected.kind() != UrlHostKind.name {
+        if actual_kind != UrlHostKind.name || expected.host_kind() != UrlHostKind.name {
             return false;
         }
-        let candidate = host.name().ascii();
-        let suffix = expected.name().ascii();
+        let candidate = origin.host_name().ascii();
+        let suffix = expected.host_name().ascii();
         if candidate == suffix {
             return true;
         }
@@ -149,7 +143,7 @@ object NoProxyRule {
 
 object NoProxyCoordinates {
     has kind is NoProxyKind;
-    has host is UrlHost;
+    has host is @UrlParts;
     has port is @int;
     has network is @IpNetwork;
 
@@ -157,7 +151,7 @@ object NoProxyCoordinates {
         let parts = origin.split("/");
         if origin == "*" {
             kind = NoProxyKind.all;
-            host = EmptyUrlHost();
+            host = [];
             port = [];
             network = [];
         }
@@ -190,7 +184,7 @@ object NoProxyCoordinates {
                     throw InvalidProxy.because("no_proxy CIDR prefix");
                 };
                 kind = NoProxyKind.network;
-                host = EmptyUrlHost();
+                host = [];
                 port = [];
                 network = [subnet];
             }
@@ -217,28 +211,31 @@ object NoProxyCoordinates {
                     text;
                 };
                 let authority = try {
-                    ParsedUrlAuthority(wire).value();
+                    ParsedUrl("//" + wire).parts();
                 }
                 catch e is Error {
                     throw InvalidProxy.because("no_proxy host");
                 };
-                confirm authority.present()
-                    && !authority.userinfo().present()
-                    && (authority.host().kind() == UrlHostKind.name
-                    || authority.host().kind() == UrlHostKind.address)
+                confirm authority::Parts::path == ""
+                    && authority::Parts::query == Maybe<string>.none
+                    && authority::Parts::userinfo == Maybe<string>.none
+                    && (authority.host_kind() == UrlHostKind.name
+                    || authority.host_kind() == UrlHostKind.address)
                     else throw InvalidProxy.because("no_proxy host");
-                let ports is @int = try {
-                    [authority.port()];
-                }
-                catch e is MissingUrlPort {
-                    let empty is @int = [];
-                    empty;
+                let ports is @int = match authority::Parts::port {
+                    case Maybe.some(number) {
+                        [number];
+                    }
+                    else {
+                        let empty is @int = [];
+                        empty;
+                    }
                 };
                 for ports -> number {
                     confirm number > 0 else throw InvalidProxy.because("no_proxy port");
                 }
                 kind = NoProxyKind.host;
-                host = authority.host();
+                host = [authority];
                 port = ports;
                 network = [];
             }
@@ -249,7 +246,8 @@ object NoProxyCoordinates {
         kind;
     }
 
-    host() is UrlHost {
+    // The host of a host rule, as authority-only parts; none otherwise.
+    host() is @UrlParts {
         host;
     }
 
@@ -269,7 +267,7 @@ test "environment proxies are selected only from the supplied snapshot" {
         Environment(["https_proxy": "http://proxy.test/", "no_proxy": "example.test"])
     );
     test.ok(try {
-        choosing.proxy(ParsedUrl("https://example.test/").value());
+        choosing.proxy(ParsedUrl("https://example.test/").parts());
         false;
     }
     catch e is MissingProxy {

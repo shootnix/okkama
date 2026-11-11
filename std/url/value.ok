@@ -12,7 +12,7 @@ import "runtime/url_text" take url_dot_segments;
 
 // Presence is separate from text. Inputs are URI/IRI component text, with
 // existing escapes; plain field data must first be encoded explicitly.
-object UrlQuery {
+hidden object UrlQuery {
     has supplied is bool;
     has text is string;
 
@@ -23,7 +23,7 @@ object UrlQuery {
 
     UrlQuery(origin is string) {
         supplied = true;
-        text = UrlComponentText(origin, UrlComponent.query).string();
+        text = UrlComponentText(origin: origin, component: UrlComponent.query).string();
     }
 
     present() is bool {
@@ -35,7 +35,7 @@ object UrlQuery {
     }
 }
 
-object UrlFragment {
+hidden object UrlFragment {
     has supplied is bool;
     has text is string;
 
@@ -46,7 +46,7 @@ object UrlFragment {
 
     UrlFragment(origin is string) {
         supplied = true;
-        text = UrlComponentText(origin, UrlComponent.fragment).string();
+        text = UrlComponentText(origin: origin, component: UrlComponent.fragment).string();
     }
 
     present() is bool {
@@ -115,7 +115,7 @@ object UrlComponentText {
                 }
                 else {
                     let bytes = Utf8Encoded(scalar).bytes();
-                    let encoded = PercentEncoded(scalar, component).string();
+                    let encoded = PercentEncoded(origin: scalar, component: component).string();
                     if bytes.size() == 1 {
                         confirm encoded == scalar
                             else throw InvalidUrl.located(
@@ -162,14 +162,14 @@ object UrlComponentText {
 
 enum UrlHostKind = (empty, name, address, future);
 
-role UrlHost {
+hidden role UrlHost {
     kind() is UrlHostKind;
     name() is HostName;
     address() is IpAddress;
     string() is string;
 }
 
-object NamedUrlHost does UrlHost {
+hidden object NamedUrlHost does UrlHost {
     has origin is HostName;
 
     NamedUrlHost(origin is HostName) {
@@ -193,7 +193,7 @@ object NamedUrlHost does UrlHost {
     }
 }
 
-object AddressUrlHost does UrlHost {
+hidden object AddressUrlHost does UrlHost {
     has origin is IpAddress;
 
     AddressUrlHost(origin is IpAddress) {
@@ -222,7 +222,7 @@ object AddressUrlHost does UrlHost {
     }
 }
 
-object EmptyUrlHost does UrlHost {
+hidden object EmptyUrlHost does UrlHost {
     EmptyUrlHost();
 
     kind() is UrlHostKind {
@@ -242,7 +242,7 @@ object EmptyUrlHost does UrlHost {
     }
 }
 
-object FutureUrlHost does UrlHost {
+hidden object FutureUrlHost does UrlHost {
     has origin is string;
 
     FutureUrlHost(origin is string) {
@@ -284,7 +284,7 @@ object FutureUrlHost does UrlHost {
     }
 }
 
-object UrlUserInfo {
+hidden object UrlUserInfo {
     has supplied is bool;
     has origin is string;
 
@@ -295,7 +295,7 @@ object UrlUserInfo {
 
     UrlUserInfo(origin is string) {
         supplied = true;
-        self.origin = UrlComponentText(origin, UrlComponent.userinfo).string();
+        self.origin = UrlComponentText(origin: origin, component: UrlComponent.userinfo).string();
     }
 
     present() is bool {
@@ -309,7 +309,7 @@ object UrlUserInfo {
 
 // Delimiter presence is distinct from an assigned numeric value: host: is
 // legal generic URI text, yet port() cannot invent a scheme-default integer.
-object UrlPort {
+hidden object UrlPort {
     has supplied is bool;
     has values is @int;
 
@@ -357,7 +357,7 @@ object UrlPort {
     }
 }
 
-object UrlAuthority {
+hidden object UrlAuthority {
     has hosts is @UrlHost;
     has userinfo is UrlUserInfo;
     has port is UrlPort;
@@ -433,7 +433,7 @@ object UrlAuthority {
 
 // A nominal role can be implemented by callers. Snapshot its documented
 // coordinates and enforce their canonical wire agreement at composition.
-object UrlHostSnapshot {
+hidden object UrlHostSnapshot {
     has origin is UrlHost;
 
     UrlHostSnapshot(origin is UrlHost) {
@@ -472,7 +472,7 @@ object UrlHostSnapshot {
     }
 }
 
-object ParsedUrlAuthority {
+hidden object ParsedUrlAuthority {
     has origin is string;
 
     ParsedUrlAuthority(origin is string) {
@@ -492,7 +492,7 @@ object ParsedUrlAuthority {
         };
         let host_port = parts[parts.size() - 1];
         if host_port == "" {
-            return UrlAuthority(EmptyUrlHost(), userinfo, UrlPort());
+            return UrlAuthority(host: EmptyUrlHost(), userinfo: userinfo, port: UrlPort());
         }
         if host_port.slice(0, 1) == "[" {
             let brackets = host_port.split("]");
@@ -523,7 +523,7 @@ object ParsedUrlAuthority {
                         else throw InvalidUrl.located(1, "bracketed literal must be IPv6");
                     AddressUrlHost(address);
                 };
-            return UrlAuthority(host, userinfo, port);
+            return UrlAuthority(host: host, userinfo: userinfo, port: port);
         }
         let fields = host_port.split(":");
         confirm fields.size() <= 2
@@ -560,11 +560,11 @@ object ParsedUrlAuthority {
                 NamedUrlHost(name);
             }
         };
-        UrlAuthority(host, userinfo, port);
+        UrlAuthority(host: host, userinfo: userinfo, port: port);
     }
 }
 
-object UrlAsciiText {
+hidden object UrlAsciiText {
     has origin is string;
 
     UrlAsciiText(origin is string) {
@@ -602,13 +602,13 @@ enum UrlHostIsNotName is Error = (not_name);
 
 enum UrlHostIsNotAddress is Error = (not_address);
 
-object UrlParts {
+hidden object UrlPieces {
     has scheme, path is string;
     has authority is UrlAuthority;
     has query is UrlQuery;
     has fragment is UrlFragment;
 
-    UrlParts(
+    UrlPieces(
         scheme is string,
         authority is UrlAuthority,
         path is string,
@@ -618,7 +618,7 @@ object UrlParts {
         confirm path.length() <= 8192
             else throw InvalidUrl.located(8192, "path source limit exceeded");
         let protocol = UrlSchemeText(scheme).string();
-        let canonical = UrlComponentText(path, UrlComponent.path).string();
+        let canonical = UrlComponentText(origin: path, component: UrlComponent.path).string();
         confirm canonical.split("/").size() <= 1024
             else throw InvalidUrl.located(0, "path segment limit exceeded");
         if authority.present() {
@@ -710,68 +710,14 @@ object UrlParts {
     }
 }
 
-object Url {
-    has origin is UrlParts;
-
-    Url(origin is UrlParts) {
-        confirm origin.scheme() != ""
-            else throw InvalidUrl.located(0, "absolute URL requires scheme");
-        self.origin = origin;
-    }
-
-    parts() is UrlParts {
-        origin;
-    }
-
-    string() is string {
-        origin.string();
-    }
-
-    url(reference is UrlReference) is Url {
-        UrlResolution(self, reference).value();
-    }
-}
-
-object UrlReference {
-    has origin is UrlParts;
-
-    UrlReference(origin is UrlParts) {
-        self.origin = origin;
-    }
-
-    absolute() is bool {
-        origin.scheme() != "";
-    }
-
-    parts() is UrlParts {
-        origin;
-    }
-
-    string() is string {
-        origin.string();
-    }
-}
-
-object ParsedUrl {
+hidden object UrlReading {
     has origin is string;
 
-    ParsedUrl(origin is string) {
+    UrlReading(origin is string) {
         self.origin = origin;
     }
 
-    value() is Url {
-        Url(ParsedUrlReference(origin).value().parts());
-    }
-}
-
-object ParsedUrlReference {
-    has origin is string;
-
-    ParsedUrlReference(origin is string) {
-        self.origin = origin;
-    }
-
-    value() is UrlReference {
+    pieces() is UrlPieces {
         confirm origin.length() <= 8192
             else throw InvalidUrl.located(8192, "URL source limit exceeded");
         let fragments = origin.split("#");
@@ -834,7 +780,7 @@ object ParsedUrlReference {
             };
             let path = after.slice(segments[0].length(), after.length());
             let parts = try {
-                UrlParts(scheme, authority, path, query, fragment);
+                UrlPieces(scheme: scheme, authority: authority, path: path, query: query, fragment: fragment);
             }
             catch InvalidUrl.located(offset, reason) {
                 let offset = prefix + 2 + segments[0].length() + offset;
@@ -848,19 +794,18 @@ object ParsedUrlReference {
                     reason
                 );
             };
-            return UrlReference(parts);
+            return parts;
         }
-        let parts = try {
-            UrlParts(scheme, UrlAuthority(), path_authority, query, fragment);
+        try {
+            UrlPieces(scheme: scheme, authority: UrlAuthority(), path: path_authority, query: query, fragment: fragment);
         }
         catch InvalidUrl.located(offset, reason) {
             throw InvalidUrl.located(prefix + offset, reason);
-        };
-        UrlReference(parts);
+        }
     }
 }
 
-object UrlSchemeText {
+hidden object UrlSchemeText {
     has origin is string;
 
     UrlSchemeText(origin is string) {
@@ -885,7 +830,7 @@ object UrlSchemeText {
 
 // Resolution, rather than reference construction, removes dot segments. The
 // profiled bulk operation avoids VM ownership walks over a persistent stack.
-object UrlDotSegments {
+hidden object UrlDotSegments {
     has origin is string;
 
     UrlDotSegments(origin is string) {
@@ -908,39 +853,35 @@ object UrlDotSegments {
     }
 }
 
-object UrlResolution {
-    has base is Url;
-    has reference is UrlReference;
+hidden object UrlResolution {
+    has base is UrlPieces;
+    has reference is UrlPieces;
 
-    UrlResolution(base is Url, reference is UrlReference) {
+    UrlResolution(base is UrlPieces, reference is UrlPieces) {
         self.base = base;
         self.reference = reference;
     }
 
-    value() is Url {
-        let original = base.parts();
-        let relative = reference.parts();
+    pieces() is UrlPieces {
+        let original = base;
+        let relative = reference;
         if relative.scheme() != "" {
-            return Url(
-                UrlParts(
-                    relative.scheme(),
-                    relative.authority(),
-                    UrlDotSegments(relative.path()).value(),
-                    relative.query(),
-                    relative.fragment()
-                )
-            );
+            return UrlPieces(
+                    scheme: relative.scheme(),
+                    authority: relative.authority(),
+                    path: UrlDotSegments(relative.path()).value(),
+                    query: relative.query(),
+                    fragment: relative.fragment()
+                );
         }
         if relative.authority().present() {
-            return Url(
-                UrlParts(
-                    original.scheme(),
-                    relative.authority(),
-                    UrlDotSegments(relative.path()).value(),
-                    relative.query(),
-                    relative.fragment()
-                )
-            );
+            return UrlPieces(
+                    scheme: original.scheme(),
+                    authority: relative.authority(),
+                    path: UrlDotSegments(relative.path()).value(),
+                    query: relative.query(),
+                    fragment: relative.fragment()
+                );
         }
         if relative.path() == "" {
             let query = if relative.query().present() {
@@ -949,15 +890,13 @@ object UrlResolution {
             else {
                 original.query();
             };
-            return Url(
-                UrlParts(
-                    original.scheme(),
-                    original.authority(),
-                    original.path(),
-                    query,
-                    relative.fragment()
-                )
-            );
+            return UrlPieces(
+                    scheme: original.scheme(),
+                    authority: original.authority(),
+                    path: original.path(),
+                    query: query,
+                    fragment: relative.fragment()
+                );
         }
         let merged = if relative.path().slice(0, 1) == "/" {
             relative.path();
@@ -979,14 +918,383 @@ object UrlResolution {
                 }) + relative.path();
             }
         };
-        Url(
-            UrlParts(
-                original.scheme(),
-                original.authority(),
-                UrlDotSegments(merged).value(),
-                relative.query(),
-                relative.fragment()
-            )
+        UrlPieces(
+                scheme: original.scheme(),
+                authority: original.authority(),
+                path: UrlDotSegments(merged).value(),
+                query: relative.query(),
+                fragment: relative.fragment()
+            );
+    }
+}
+
+// A URL or a relative reference, parsed once into ready parts.
+//
+//     let page = ParsedUrl("https://user@Example.com:8443/a/b?q=1#top").parts();
+//     page::Parts::scheme;     // "https"
+//     page::Parts::host;       // Maybe.some("example.com")
+//     page::Parts::port;       // Maybe.some(8443)
+//     page::Parts::path;       // "/a/b"
+//     page::Parts::query;      // Maybe.some("q=1"); "?" alone is some("")
+//     page.absolute();         // true: it has a scheme
+//     page.resolved(ParsedUrl("../c").parts()).string();  // https://…/c
+//
+// Optional parts are Maybe: a URL without "?" has no query, one ending in
+// "?" has an empty one. A part is kept in its canonical spelling (scheme and
+// host lowercased, escapes normalized), so two spellings of one URL are ==.
+// The host is text; host_kind(), host_name() and host_address() read it as a
+// registered name or an IP address. An empty port delimiter ("host:") is
+// dropped, as RFC 3986 normalization allows.
+object UrlParts {
+    has scheme_text is string;
+    has userinfo_text is Maybe<string>;
+    has host_text is Maybe<string>;
+    has port_number is Maybe<int>;
+    has path_text is string;
+    has query_text is Maybe<string>;
+    has fragment_text is Maybe<string>;
+
+    // Every part is checked and brought to its canonical spelling, which `==`
+    // depends on.
+    UrlParts(
+        scheme is string,
+        userinfo is Maybe<string>,
+        host is Maybe<string>,
+        port is Maybe<int>,
+        path is string,
+        query is Maybe<string>,
+        fragment is Maybe<string>,
+    ) {
+        let canonical = UrlCanonical(pieces: UrlPiecesFrom(
+            scheme: scheme,
+            userinfo: userinfo,
+            host: host,
+            port: port,
+            path: path,
+            query: query,
+            fragment: fragment,
+        ).pieces());
+        scheme_text = canonical.scheme();
+        userinfo_text = canonical.userinfo();
+        host_text = canonical.host();
+        port_number = canonical.port();
+        path_text = canonical.path();
+        query_text = canonical.query();
+        fragment_text = canonical.fragment();
+    }
+
+    // The parts as parsed: ready, canonical scalars.
+    cap Parts {
+        scheme is string {
+            scheme_text;
+        }
+
+        userinfo is Maybe<string> {
+            userinfo_text;
+        }
+
+        host is Maybe<string> {
+            host_text;
+        }
+
+        port is Maybe<int> {
+            port_number;
+        }
+
+        path is string {
+            path_text;
+        }
+
+        query is Maybe<string> {
+            query_text;
+        }
+
+        fragment is Maybe<string> {
+            fragment_text;
+        }
+    }
+
+    // A URL has a scheme; a relative reference does not.
+    absolute() is bool {
+        scheme_text != "";
+    }
+
+    // userinfo@host:port, or "" without a host.
+    authority() is string {
+        match host_text {
+            case Maybe.some(host) {
+                (match userinfo_text {
+                    case Maybe.some(userinfo) {
+                        userinfo + "@";
+                    }
+                    else {
+                        "";
+                    }
+                }) + host + match port_number {
+                    case Maybe.some(port) {
+                        ":" + port.string();
+                    }
+                    else {
+                        "";
+                    }
+                };
+            }
+            else {
+                "";
+            }
+        }
+    }
+
+    string() is string {
+        (if scheme_text == "" {
+            "";
+        }
+        else {
+            scheme_text + ":";
+        }) + (if host_text != Maybe<string>.none {
+            "//" + self.authority();
+        }
+        else {
+            "";
+        }) + path_text + (match query_text {
+            case Maybe.some(query) {
+                "?" + query;
+            }
+            else {
+                "";
+            }
+        }) + match fragment_text {
+            case Maybe.some(fragment) {
+                "#" + fragment;
+            }
+            else {
+                "";
+            }
+        };
+    }
+
+    // The reference resolved against this URL (RFC 3986 §5.2); dot segments
+    // are removed. This URL must be absolute.
+    resolved(reference is UrlParts) is UrlParts {
+        confirm self.absolute()
+            else throw InvalidUrl.located(0, "a base URL requires a scheme");
+        UrlCanonical(pieces: UrlResolution(
+            base: UrlPiecesOf(parts: self).pieces(),
+            reference: UrlPiecesOf(parts: reference).pieces(),
+        ).pieces()).parts();
+    }
+
+    // The same URL with "." and ".." segments removed from its path.
+    normalized() is UrlParts {
+        UrlParts(
+            scheme: scheme_text,
+            userinfo: userinfo_text,
+            host: host_text,
+            port: port_number,
+            path: UrlDotSegments(path_text).value(),
+            query: query_text,
+            fragment: fragment_text,
+        );
+    }
+
+    host_kind() is UrlHostKind {
+        self.host_value().kind();
+    }
+
+    // The host as a registered name; an address host throws UrlHostIsNotName.
+    host_name() is HostName {
+        self.host_value().name();
+    }
+
+    // The host as an IP address; a named host throws UrlHostIsNotAddress.
+    host_address() is IpAddress {
+        self.host_value().address();
+    }
+
+    hidden host_value() is UrlHost {
+        match host_text {
+            case Maybe.some(host) {
+                ParsedUrlAuthority(host).value().host();
+            }
+            else {
+                throw MissingUrlAuthority.missing;
+            }
+        }
+    }
+}
+
+// Parses any URL or relative reference; check absolute() where a URL must
+// have a scheme.
+object ParsedUrl {
+    has origin is string;
+
+    ParsedUrl(origin is string) {
+        self.origin = origin;
+    }
+
+    parts() is UrlParts {
+        UrlCanonical(pieces: UrlReading(origin).pieces()).parts();
+    }
+}
+
+// The structured pieces of parsed parts.
+hidden object UrlPiecesOf {
+    has parts is UrlParts;
+
+    UrlPiecesOf(:parts);
+
+    pieces() is UrlPieces {
+        UrlPiecesFrom(
+            scheme: parts::Parts::scheme,
+            userinfo: parts::Parts::userinfo,
+            host: parts::Parts::host,
+            port: parts::Parts::port,
+            path: parts::Parts::path,
+            query: parts::Parts::query,
+            fragment: parts::Parts::fragment,
+        ).pieces();
+    }
+}
+
+// Structured pieces from the scalars of UrlParts.
+hidden object UrlPiecesFrom {
+    has scheme is string;
+    has userinfo is Maybe<string>;
+    has host is Maybe<string>;
+    has port is Maybe<int>;
+    has path is string;
+    has query is Maybe<string>;
+    has fragment is Maybe<string>;
+
+    UrlPiecesFrom(:scheme, :userinfo, :host, :port, :path, :query, :fragment);
+
+    pieces() is UrlPieces {
+        let authority = match host {
+            case Maybe.some(text) {
+                let parsed = ParsedUrlAuthority(text).value();
+                confirm !parsed.userinfo().present() && !parsed.port_marker().present()
+                    else throw InvalidUrl.located(0, "a host carries neither userinfo nor port");
+                let info = match userinfo {
+                    case Maybe.some(given) {
+                        UrlUserInfo(given);
+                    }
+                    else {
+                        UrlUserInfo();
+                    }
+                };
+                let marker = match port {
+                    case Maybe.some(number) {
+                        confirm number >= 0 && number <= 65535
+                            else throw InvalidUrl.located(0, "port outside 0..65535");
+                        UrlPort(number.string());
+                    }
+                    else {
+                        UrlPort();
+                    }
+                };
+                UrlAuthority(host: parsed.host(), userinfo: info, port: marker);
+            }
+            else {
+                confirm userinfo == Maybe<string>.none && port == Maybe<int>.none
+                    else throw InvalidUrl.located(0, "userinfo and port require a host");
+                UrlAuthority();
+            }
+        };
+        UrlPieces(
+            scheme: UrlSchemeText(scheme).string(),
+            authority: authority,
+            path: path,
+            query: match query {
+                case Maybe.some(text) {
+                    UrlQuery(text);
+                }
+                else {
+                    UrlQuery();
+                }
+            },
+            fragment: match fragment {
+                case Maybe.some(text) {
+                    UrlFragment(text);
+                }
+                else {
+                    UrlFragment();
+                }
+            },
+        );
+    }
+}
+
+// The canonical scalars of structured pieces.
+hidden object UrlCanonical {
+    has pieces is UrlPieces;
+
+    UrlCanonical(:pieces);
+
+    scheme() is string {
+        pieces.scheme();
+    }
+
+    userinfo() is Maybe<string> {
+        let authority = pieces.authority();
+        if authority.present() && authority.userinfo().present() {
+            Maybe.some(authority.userinfo().string());
+        }
+        else {
+            Maybe<string>.none;
+        }
+    }
+
+    host() is Maybe<string> {
+        let authority = pieces.authority();
+        if authority.present() {
+            Maybe.some(authority.host().string());
+        }
+        else {
+            Maybe<string>.none;
+        }
+    }
+
+    port() is Maybe<int> {
+        let authority = pieces.authority();
+        if authority.present() && authority.port_marker().string() != "" {
+            Maybe.some(authority.port());
+        }
+        else {
+            Maybe<int>.none;
+        }
+    }
+
+    path() is string {
+        pieces.path();
+    }
+
+    query() is Maybe<string> {
+        if pieces.query().present() {
+            Maybe.some(pieces.query().string());
+        }
+        else {
+            Maybe<string>.none;
+        }
+    }
+
+    fragment() is Maybe<string> {
+        if pieces.fragment().present() {
+            Maybe.some(pieces.fragment().string());
+        }
+        else {
+            Maybe<string>.none;
+        }
+    }
+
+    parts() is UrlParts {
+        UrlParts(
+            scheme: self.scheme(),
+            userinfo: self.userinfo(),
+            host: self.host(),
+            port: self.port(),
+            path: self.path(),
+            query: self.query(),
+            fragment: self.fragment(),
         );
     }
 }
@@ -1003,7 +1311,7 @@ test "authority presence includes empty userinfo and unassigned port" {
 }
 
 test "explicit URL reference resolution preserves empty query and trailing slash" {
-    let base = ParsedUrl("http://a/b/c?q#old").value();
-    test.is(base.url(ParsedUrlReference("../g/").value()).string(), "http://a/g/");
-    test.is(base.url(ParsedUrlReference("?").value()).string(), "http://a/b/c?");
+    let base = ParsedUrl("http://a/b/c?q#old").parts();
+    test.is(base.resolved(ParsedUrl("../g/").parts()).string(), "http://a/g/");
+    test.is(base.resolved(ParsedUrl("?").parts()).string(), "http://a/b/c?");
 }

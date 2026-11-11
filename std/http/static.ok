@@ -145,7 +145,8 @@ object StaticPath {
         }
         else {
             if target.kind() == RequestTargetKind.absolute {
-                target.url().parts().path();
+                let url = target.url();
+                url::Parts::path;
             }
             else {
                 throw InvalidStaticPath.invalid;
@@ -160,14 +161,15 @@ object StaticPath {
         confirm raw.length() <= 8192 && raw.slice(0, 1) == "/" else throw InvalidStaticPath.invalid;
         slash = raw.slice(raw.length() - 1, raw.length()) == "/";
         wire = raw;
-        let q = if target.kind() == RequestTargetKind.origin {
+        let q is Maybe<string> = if target.kind() == RequestTargetKind.origin {
             target.query();
         }
         else {
-            target.url().parts().query();
+            let url = target.url();
+            url::Parts::query;
         };
-        query = if q.present() {
-            "?" + q.string();
+        query = if q != Maybe<string>.none {
+            "?" + (q else "");
         }
         else {
             "";
@@ -622,7 +624,7 @@ object StaticFiles does Handling {
         let text = Atomic("<!doctype html><meta charset=\"utf-8\"><title>Directory</title><ul>");
         let used = Atomic(text.value().length());
         for names -> name {
-            let href = PercentEncoded(name, UrlComponent.data).string();
+            let href = PercentEncoded(origin: name, component: UrlComponent.data).string();
             let row = "<li><a href=\"./" + EscapedHtml(origin: href, quotes: true).string() + "\">" + EscapedHtml(
                 name
             ).string() + "</a></li>";

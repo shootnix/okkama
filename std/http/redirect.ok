@@ -7,8 +7,7 @@ import "http/header" take HeaderName, HeadersWithout;
 import "http/target" take AbsoluteTarget, RequestTargetKind;
 import "http/method" take Method, MethodName;
 import "http/body" take BodyOpening, EmptyBody;
-import "url/value" take Url, UrlParts, UrlFragment, UrlResolution, ParsedUrlReference,
-    UrlDotSegments, InvalidUrl;
+import "url/value" take ParsedUrl, UrlParts, InvalidUrl;
 import "async/event" take Event;
 import "error" take InvalidArgument;
 
@@ -174,30 +173,36 @@ object RedirectHistory {
 }
 
 object RedirectDestination {
-    has url is Url;
+    has url is UrlParts;
 
-    RedirectDestination(base is Url, location is string, policy is Redirects) {
+    RedirectDestination(base is UrlParts, location is string, policy is Redirects) {
         let resolved = try {
-            UrlResolution(base, ParsedUrlReference(location).value()).value();
+            base.resolved(ParsedUrl(location).parts());
         }
         catch e is InvalidUrl {
             throw UnsafeRedirect.because("invalid Location");
         };
-        let parts = resolved.parts();
-        confirm parts.scheme() == "http" || parts.scheme() == "https"
+        let parts = resolved;
+        confirm parts::Parts::scheme == "http" || parts::Parts::scheme == "https"
             else throw UnsafeRedirect.because("non-HTTP Location");
-        confirm parts.authority().present() && !parts.authority().userinfo().present()
+        confirm parts::Parts::host != Maybe<string>.none && parts::Parts::userinfo == Maybe<string>.none
             else throw UnsafeRedirect.because("invalid Location authority");
         confirm policy::Rules::https_downgrade
-            || base.parts().scheme() != "https"
-            || parts.scheme() != "http"
+            || base::Parts::scheme != "https"
+            || parts::Parts::scheme != "http"
             else throw UnsafeRedirect.because("HTTPS downgrade");
-        url = Url(
-            UrlParts(parts.scheme(), parts.authority(), parts.path(), parts.query(), UrlFragment())
+        url = UrlParts(
+            scheme: parts::Parts::scheme,
+            userinfo: parts::Parts::userinfo,
+            host: parts::Parts::host,
+            port: parts::Parts::port,
+            path: parts::Parts::path,
+            query: parts::Parts::query,
+            fragment: Maybe<string>.none,
         );
     }
 
-    url() is Url {
+    url() is UrlParts {
         url;
     }
 }
@@ -205,7 +210,7 @@ object RedirectDestination {
 object RedirectRequest {
     has request is Request;
 
-    RedirectRequest(origin is Request, destination is Url, status is Status) {
+    RedirectRequest(origin is Request, destination is UrlParts, status is Status) {
         let method = origin::Head::method;
         let rewritten = (status == Status.see_other && method != Method.head)
             || ((status == Status.moved_permanently || status == Status.found)
@@ -273,18 +278,21 @@ object RedirectKey {
 
     RedirectKey(request is Request) {
         let url = request::Head::target.url();
-        let parts = url.parts();
-        let path = if parts.path() == "" {
+        let parts = url;
+        let normalized = parts.normalized();
+        let path = if parts::Parts::path == "" {
             "/";
         }
         else {
-            UrlDotSegments(parts.path()).value();
+            normalized::Parts::path;
         };
-        key = MethodName(request::Head::method).string() + " " + HttpClientKey(url).string() + path + if parts.query().present() {
-            "?" + parts.query().string();
-        }
-        else {
-            "";
+        key = MethodName(request::Head::method).string() + " " + HttpClientKey(url).string() + path + match parts::Parts::query {
+            case Maybe.some(query) {
+                "?" + query;
+            }
+            else {
+                "";
+            }
         };
     }
 

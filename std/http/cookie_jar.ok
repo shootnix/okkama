@@ -6,7 +6,7 @@ import "http/cookie_policy" take ParsedSetCookie, CookieContext, CookieOrigin, C
     CookieDomainMatch;
 import "http/header" take Headers, HeaderName;
 import "http/method" take MethodSemantics;
-import "url/value" take Url, ParsedUrl, InvalidUrl;
+import "url/value" take UrlParts, ParsedUrl, InvalidUrl;
 import "time/clock" take Timing, Instant, SystemClock;
 import "collections/sequence" take Sequencing;
 import "collections/ordering" take Sorted, SortedBy;
@@ -26,8 +26,8 @@ import "net/public_suffix" take PublicSuffixList;
 import "time/duration" take Duration, DurationUnit;
 
 role CookieStoring {
-    cookies(origin is Url, context is CookieContext) is Sequencing<Cookie>;
-    store(origin is Url, headers is Headers, context is CookieContext) is void;
+    cookies(origin is UrlParts, context is CookieContext) is Sequencing<Cookie>;
+    store(origin is UrlParts, headers is Headers, context is CookieContext) is void;
     clear() is void;
 }
 
@@ -73,7 +73,7 @@ object MemoryCookieJar does CookieStoring, Closing {
         limits;
     }
 
-    cookies(origin is Url, context is CookieContext) is Sequencing<Cookie> {
+    cookies(origin is UrlParts, context is CookieContext) is Sequencing<Cookie> {
         confirm !cell.closed() else throw CookieJarClosed.closed;
         let endpoint = CookieOrigin(origin);
         let now = clock.instant();
@@ -104,7 +104,7 @@ object MemoryCookieJar does CookieStoring, Closing {
         values;
     }
 
-    store(origin is Url, headers is Headers, context is CookieContext) is void {
+    store(origin is UrlParts, headers is Headers, context is CookieContext) is void {
         confirm !cell.closed() else throw CookieJarClosed.closed;
         let endpoint = CookieOrigin(origin);
         let now = clock.instant();
@@ -859,7 +859,7 @@ object ParsedCookieStoreRow {
         else {
             domain;
         };
-        let endpoint = CookieOrigin(ParsedUrl("https://" + literal + "/").value());
+        let endpoint = CookieOrigin(ParsedUrl("https://" + literal + "/").parts());
         confirm endpoint.domain() == domain
             else throw InvalidCookieStore.because("noncanonical record domain");
         if !host_only && !endpoint.address() {
@@ -870,7 +870,7 @@ object ParsedCookieStoreRow {
         confirm partitioned == (partition != "")
             else throw InvalidCookieStore.because("partition flag/key mismatch");
         if partition != "" {
-            confirm CookieOrigin(ParsedUrl(partition).value()).site() == partition
+            confirm CookieOrigin(ParsedUrl(partition).parts()).site() == partition
                 else throw InvalidCookieStore.because("noncanonical partition key");
         }
         let same_site = match fields[6] {

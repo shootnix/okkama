@@ -1,6 +1,6 @@
 module http/endpoint v1.0.0;
 
-import "url/value" take ParsedUrl, Url, UrlHost, UrlHostKind, MissingUrlPort;
+import "url/value" take ParsedUrl, UrlParts, UrlHostKind, MissingUrlPort;
 import "net/ip" take IpAddress, IpNetwork, IpProperty;
 import "net/endpoint" take IpEndpoint, HostEndpoint;
 import "net/dns" take Resolving;
@@ -9,13 +9,13 @@ import "collections/sequence" take Sequencing;
 // The caller can inspect both the effective URL and the exact numeric candidate.
 // This capability grants no DNS lookup, socket mutation or implicit redirect.
 role EndpointAllowing {
-    allowed(url is Url, endpoint is IpEndpoint) is bool;
+    allowed(url is UrlParts, endpoint is IpEndpoint) is bool;
 }
 
 object AllEndpoints does EndpointAllowing {
     AllEndpoints();
 
-    allowed(url is Url, endpoint is IpEndpoint) is bool {
+    allowed(url is UrlParts, endpoint is IpEndpoint) is bool {
         true;
     }
 }
@@ -23,7 +23,7 @@ object AllEndpoints does EndpointAllowing {
 object PublicEndpoints does EndpointAllowing {
     PublicEndpoints();
 
-    allowed(url is Url, endpoint is IpEndpoint) is bool {
+    allowed(url is UrlParts, endpoint is IpEndpoint) is bool {
         if endpoint.zone() != "" {
             return false;
         }
@@ -51,7 +51,7 @@ object ListedNetworks does EndpointAllowing {
         networks = snapshot;
     }
 
-    allowed(url is Url, endpoint is IpEndpoint) is bool {
+    allowed(url is UrlParts, endpoint is IpEndpoint) is bool {
         networks.reduce(false) -> permitted, network {
             permitted || network.membership(endpoint.address());
         };
@@ -62,59 +62,44 @@ object ListedNetworks does EndpointAllowing {
 // addresses. It validates route coordinates eagerly and filters every candidate
 // at lazy startup, retaining exact numeric endpoints for the eventual connector.
 object HttpEndpointSelection {
-    has url is Url;
-    has host is UrlHost;
+    has url is UrlParts;
     has port is int;
     has resolver is Resolving;
     has access is EndpointAllowing;
 
-    HttpEndpointSelection(url is Url, resolver is Resolving, access is EndpointAllowing) {
-        let parts = url.parts();
-        let scheme = parts.scheme();
+    HttpEndpointSelection(url is UrlParts, resolver is Resolving, access is EndpointAllowing) {
+        let scheme = url::Parts::scheme;
         confirm scheme == "http" || scheme == "https"
             else throw InvalidHttpEndpoint.because("scheme");
-        let authority = parts.authority();
-        confirm authority.present() else throw InvalidHttpEndpoint.because("authority");
-        confirm !authority.userinfo().present() else throw InvalidHttpEndpoint.because("userinfo");
-        let host = authority.host();
-        confirm host.kind() == UrlHostKind.name || host.kind() == UrlHostKind.address
+        confirm url::Parts::host != Maybe<string>.none else throw InvalidHttpEndpoint.because("authority");
+        confirm url::Parts::userinfo == Maybe<string>.none else throw InvalidHttpEndpoint.because("userinfo");
+        let kind = url.host_kind();
+        confirm kind == UrlHostKind.name || kind == UrlHostKind.address
             else throw InvalidHttpEndpoint.because("host");
-        let marker = authority.port_marker();
-        let number = if marker.present() {
-            try {
-                marker.value();
-            }
-            catch e is MissingUrlPort {
-                throw InvalidHttpEndpoint.because("explicit port");
-            }
+        let number = url::Parts::port else if scheme == "https" {
+            443;
         }
         else {
-            if scheme == "https" {
-                443;
-            }
-            else {
-                80;
-            }
+            80;
         };
         confirm number > 0 else throw InvalidHttpEndpoint.because("destination port");
         self.url = url;
-        self.host = host;
         port = number;
         self.resolver = resolver;
         self.access = access;
     }
 
-    url() is Url {
+    url() is UrlParts {
         url;
     }
 
     async endpoints() is Sequencing<IpEndpoint> {
-        let source is Sequencing<IpEndpoint> = if host.kind() == UrlHostKind.address {
-            let direct is @IpEndpoint = [IpEndpoint(host.address(), port)];
+        let source is Sequencing<IpEndpoint> = if url.host_kind() == UrlHostKind.address {
+            let direct is @IpEndpoint = [IpEndpoint(url.host_address(), port)];
             direct;
         }
         else {
-            let pending = resolver.addresses(HostEndpoint(host.name(), port));
+            let pending = resolver.addresses(HostEndpoint(url.host_name(), port));
             await pending;
         };
         let count = source.size();
@@ -139,7 +124,7 @@ enum EndpointDenied is Error = (denied);
 enum EndpointSelectionLimit is Error = (stage(stage is string));
 
 test "explicit empty network selection grants no endpoint" {
-    let url = ParsedUrl("https://example.test/").value();
+    let url = ParsedUrl("https://example.test/").parts();
     let endpoint = IpEndpoint(IpAddress("127.0.0.1"), 443);
     test.ok(AllEndpoints().allowed(url, endpoint));
     test.ok(!ListedNetworks([]).allowed(url, endpoint));

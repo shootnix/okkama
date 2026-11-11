@@ -654,6 +654,34 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     - `ParallelMapped(origins:, action:)` reads the processor count when a
       run starts, not when made. Its run and progress objects are hidden.
     - `parallel/map` has inline tests now; they need no worker process.
+  - `url` (variant B, the owner: «вариант B, мне нравится»). One parser
+    and one value:
+
+    | before | now |
+    |---|---|
+    | `ParsedUrl(t).value()` (a `Url`), `ParsedUrlReference(t).value()` | `ParsedUrl(t).parts()`, one `UrlParts` for both; `parts.absolute()` tells a URL from a reference |
+    | `url.parts().scheme()`, `.authority().host()`, `.query()` | `parts::Parts::scheme`, `::host`, `::port`, `::path`, `::query`, `::fragment`, `::userinfo` |
+    | `base.url(reference)`, `UrlResolution(...).value()` | `base.resolved(reference)` |
+    | `UrlDotSegments(path).value()` | `parts.normalized()` |
+    | `authority.host().kind()`, `.name()`, `.address()` | `parts.host_kind()`, `.host_name()`, `.host_address()` |
+    | `ParsedQueryParameters(UrlQuery(t)).value()` | `ParsedQuery(t).parameters()` |
+    | `Url(UrlParts(scheme, authority, …))` | `UrlParts(scheme:, userinfo:, host:, port:, path:, query:, fragment:)` |
+
+    - The cap holds ready, canonical scalars:
+      - optional parts are `Maybe`, so `?` alone is `Maybe.some("")`;
+      - scheme and host are lowercase, and escapes are normalized;
+      - an empty port delimiter is dropped, as RFC 3986 allows.
+    - `Url`, `UrlReference` and `ParsedUrlReference` are gone. The authority,
+      host, query, fragment, port and userinfo objects, the resolution and
+      the dot-segment helper are hidden. `UrlComponentText` stays public: it
+      canonicalizes one component, which origin-form `//a/b` needs.
+    - http follows. Request targets answer `url()` and `authority()` as
+      `UrlParts`, and `query()` as `Maybe<string>`. An authority (`Host`,
+      `:authority`, CONNECT, `no_proxy`) is parsed as `ParsedUrl("//" +
+      text)`.
+    - The url, http and web inline tests pass in a container (73 modules on
+      IR and Sparrow). The two url conformance cases use the new names.
+      There is an example, `examples/url/`.
 
 ### Fixed
 

@@ -7,7 +7,7 @@ import "http/header" take Header, HeaderName;
 import "http/target" take RequestTargetKind;
 import "http/endpoint" take HttpEndpointSelection, AllEndpoints;
 import "net/dns" take FixedResolution;
-import "url/value" take Url, UrlDotSegments;
+import "url/value" take UrlParts;
 import "url/value" take ParsedUrl;
 import "http/target" take AbsoluteTarget;
 import "http/header" take Headers;
@@ -122,7 +122,7 @@ object BearerAuthorization does HttpAuthorizing {
 object BasicExchanging does Exchanging {
     has scoped is ScopedAuthorization;
 
-    BasicExchanging(origin is Exchanging, scope is Url, credentials is BasicCredentials) {
+    BasicExchanging(origin is Exchanging, scope is UrlParts, credentials is BasicCredentials) {
         scoped = ScopedAuthorization(origin, scope, BasicAuthorization(credentials));
     }
 
@@ -134,7 +134,7 @@ object BasicExchanging does Exchanging {
 object BearerExchanging does Exchanging {
     has scoped is ScopedAuthorization;
 
-    BearerExchanging(origin is Exchanging, scope is Url, authorization is BearerAuthorization) {
+    BearerExchanging(origin is Exchanging, scope is UrlParts, authorization is BearerAuthorization) {
         scoped = ScopedAuthorization(origin, scope, authorization);
     }
 
@@ -146,16 +146,17 @@ object BearerExchanging does Exchanging {
 object AuthenticationScope {
     has key, path is string;
 
-    AuthenticationScope(origin is Url) {
-        confirm origin.parts().scheme() == "https"
-            && !origin.parts().query().present()
-            && !origin.parts().fragment().present()
+    AuthenticationScope(origin is UrlParts) {
+        confirm origin::Parts::scheme == "https"
+            && origin::Parts::query == Maybe<string>.none
+            && origin::Parts::fragment == Maybe<string>.none
             else throw InvalidAuthentication.because(
                 "HTTPS scope without query or fragment required"
             );
         HttpEndpointSelection(origin, FixedResolution([]), AllEndpoints());
         key = HttpClientKey(origin).string();
-        let canonical = UrlDotSegments(origin.parts().path()).value();
+        let normalized = origin.normalized();
+        let canonical = normalized::Parts::path;
         path = if canonical == "" {
             "/";
         }
@@ -173,11 +174,12 @@ object AuthenticationScope {
         }
         // Avoid credential emission for encoded path separators with differing
         // application routing interpretations.
-        let raw = url.parts().path();
+        let raw = url::Parts::path;
         if raw.split("%2F").size() > 1 || raw.split("%5C").size() > 1 {
             return false;
         }
-        let candidate = UrlDotSegments(raw).value();
+        let normalized = url.normalized();
+        let candidate = normalized::Parts::path;
         let checked = if candidate == "" {
             "/";
         }
@@ -200,7 +202,7 @@ object ScopedAuthorization does Exchanging {
     has scope is AuthenticationScope;
     has authorization is HttpAuthorizing;
 
-    ScopedAuthorization(origin is Exchanging, scope is Url, authorization is HttpAuthorizing) {
+    ScopedAuthorization(origin is Exchanging, scope is UrlParts, authorization is HttpAuthorizing) {
         self.origin = origin;
         self.scope = AuthenticationScope(scope);
         self.authorization = authorization;
@@ -237,12 +239,12 @@ enum InvalidAuthentication is Error = (because(reason is string));
 enum AuthenticationConflict is Error = (conflict);
 
 test "authentication scope uses canonical origin and path boundaries" {
-    let scope = AuthenticationScope(ParsedUrl("https://example.test/private/").value());
+    let scope = AuthenticationScope(ParsedUrl("https://example.test/private/").parts());
     test.ok(
         scope.matches(
             Request(
                 method: Method.get,
-                target: AbsoluteTarget(ParsedUrl("https://example.test:443/private/a").value())
+                target: AbsoluteTarget(ParsedUrl("https://example.test:443/private/a").parts())
             )
         )
     );
@@ -250,7 +252,7 @@ test "authentication scope uses canonical origin and path boundaries" {
         !scope.matches(
             Request(
                 method: Method.get,
-                target: AbsoluteTarget(ParsedUrl("https://example.test/private/../public").value())
+                target: AbsoluteTarget(ParsedUrl("https://example.test/private/../public").parts())
             )
         )
     );

@@ -18,7 +18,7 @@ import "http/exchange" take ExchangeDetails;
 import "net/tcp" take TcpConnection, TcpOptions;
 import "net/tcp_racing" take TcpRacing;
 import "net/tls" take TlsClientPolicy, TlsClientHandshake, TlsConnection;
-import "url/value" take UrlHostKind, Url;
+import "url/value" take UrlHostKind, UrlParts;
 import "crypto/x509/trust" take CertificateIdentity, DnsCertificateIdentity, IpCertificateIdentity;
 import "time/clock" take Timing, SystemClock;
 import "time/duration" take Duration, DurationUnit;
@@ -104,7 +104,7 @@ object HttpSelectedConnecting does HttpConversationConnecting {
 
 object HttpConversationAdopting does HttpConversationConnecting {
     has tcp is TcpConnection;
-    has target is Url;
+    has target is UrlParts;
     has policy is TlsClientPolicy;
     has limits is HttpLimits;
     has clock is Timing;
@@ -113,7 +113,7 @@ object HttpConversationAdopting does HttpConversationConnecting {
 
     HttpConversationAdopting(
         tcp is TcpConnection,
-        target is Url,
+        target is UrlParts,
         policy is TlsClientPolicy,
         client is ClientPolicy,
         clock is Timing
@@ -131,13 +131,13 @@ object HttpConversationAdopting does HttpConversationConnecting {
         let published = Event();
         let anchor = HttpUnpublishedTcp(tcp, published);
         defer anchor.close();
-        if target.parts().scheme() == "https" {
-            let host = target.parts().authority().host();
-            let identity is CertificateIdentity = if host.kind() == UrlHostKind.name {
-                DnsCertificateIdentity(host.name());
+        if target::Parts::scheme == "https" {
+            let host = target;
+            let identity is CertificateIdentity = if host.host_kind() == UrlHostKind.name {
+                DnsCertificateIdentity(host.host_name());
             }
             else {
-                IpCertificateIdentity(host.address());
+                IpCertificateIdentity(host.host_address());
             };
             let tls_group is FutureGroup<TlsConnection> = FutureGroup();
             let empty_tls is @Future<TlsConnection> = [];

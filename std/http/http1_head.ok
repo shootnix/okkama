@@ -7,7 +7,7 @@ import "http/status" take Status, InvalidStatus, StatusCode;
 import "http/version" take HttpVersion, ParsedHttp1Version, UnsupportedHttpVersion;
 import "http/header" take Headers, Header, HeaderName, HeaderLimits, InvalidHeader;
 import "http/body" take BodyOpening;
-import "url/value" take UrlAuthority, ParsedUrlAuthority, InvalidUrl, UrlHostKind;
+import "url/value" take InvalidUrl, ParsedUrl, UrlParts;
 import "encoding/single_byte" take Latin1Encoded;
 import "runtime/single_byte" take latin1_representable_prefix, ascii_representable_prefix;
 
@@ -207,7 +207,7 @@ object Http1RequestHead {
     has target is RequestTarget;
     has headers is Headers;
     has version is HttpVersion;
-    has host is @UrlAuthority;
+    has host is @UrlParts;
 
     Http1RequestHead(
         method is Method,
@@ -221,8 +221,8 @@ object Http1RequestHead {
         let fields = headers.values(HeaderName("Host"));
         confirm fields.size() <= 1 && (version != HttpVersion.http_1_1 || fields.size() == 1)
             else throw InvalidHttpMessage.because("exactly one HTTP1.1 Host required");
-        let authorities is @UrlAuthority = if fields.size() == 0 {
-            let empty is @UrlAuthority = [];
+        let authorities is @UrlParts = if fields.size() == 0 {
+            let empty is @UrlParts = [];
             empty;
         }
         else {
@@ -230,14 +230,15 @@ object Http1RequestHead {
             confirm ascii_representable_prefix(value) == value.length()
                 else throw InvalidHttpMessage.because("ASCII Host required");
             let checked = try {
-                ParsedUrlAuthority(value).value();
+                ParsedUrl("//" + value).parts();
             }
             catch e is InvalidUrl {
                 throw InvalidHttpMessage.because("invalid Host authority");
             };
-            confirm checked.present()
-                && checked.host().kind() != UrlHostKind.empty
-                && !checked.userinfo().present()
+            confirm checked::Parts::path == "" && checked::Parts::query == Maybe<string>.none
+                else throw InvalidHttpMessage.because("invalid Host authority");
+            confirm (checked::Parts::host else "") != ""
+                && checked::Parts::userinfo == Maybe<string>.none
                 else throw InvalidHttpMessage.because("nonempty Host without userinfo required");
             [checked];
         };
@@ -264,7 +265,8 @@ object Http1RequestHead {
         version;
     }
 
-    host() is UrlAuthority {
+    // The Host field as the authority-only parts of ParsedUrl("//" + host).
+    host() is UrlParts {
         confirm host.size() == 1 else throw MissingHttp1Host.missing;
         host[0];
     }

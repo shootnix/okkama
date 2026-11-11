@@ -6,7 +6,7 @@ import "http/request_context" take HttpRequestContext;
 import "http/header" take HeaderName, MissingHeader;
 import "http/target" take RequestTargetKind;
 import "http/media_type" take HttpMediaType, InvalidHttpMediaType;
-import "url/value" take UrlQuery;
+
 import "url/query" take QueryParameters, QueryLimitExceeded;
 import "url/form" take ParsedForm, InvalidFormEncoding;
 import "json" take Json, JsonKind, JsonKindName, JsonLocation, JsonField, JsonMaybeReader,
@@ -77,19 +77,20 @@ object WebRequest {
     // query stays available through request().target().query().
     parameters() is QueryParameters {
         let kind = origin::Head::target.kind();
-        let raw = if kind == RequestTargetKind.origin {
+        let raw is Maybe<string> = if kind == RequestTargetKind.origin {
             origin::Head::target.query();
         }
         else {
             if kind == RequestTargetKind.absolute {
-                origin::Head::target.url().parts().query();
+                let url = origin::Head::target.url();
+                url::Parts::query;
             }
             else {
-                UrlQuery();
+                Maybe<string>.none;
             }
         };
         try {
-            ParsedForm(Utf8Encoded(raw.string()).bytes()).parameters();
+            ParsedForm(Utf8Encoded(raw else "").bytes()).parameters();
         }
         catch failure is InvalidFormEncoding {
             throw Exception.status(400, "invalid query: " + failure.text());

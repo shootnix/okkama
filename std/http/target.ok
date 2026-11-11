@@ -1,8 +1,7 @@
 module http/target v1.0.0;
 
 import "http/method" take Method;
-import "url/value" take Url, UrlReference, UrlAuthority, UrlQuery, UrlHostKind, UrlComponentText,
-    ParsedUrl, ParsedUrlAuthority, InvalidUrl, MissingUrlPort;
+import "url/value" take UrlParts, UrlComponentText, ParsedUrl, InvalidUrl;
 import "url/percent" take UrlComponent;
 import "encoding/single_byte" take AsciiEncoded, UnrepresentableAsciiCharacter;
 
@@ -11,9 +10,9 @@ enum RequestTargetKind = (origin, absolute, authority, asterisk);
 role RequestTarget {
     kind() is RequestTargetKind;
     path() is string;
-    query() is UrlQuery;
-    url() is Url;
-    authority() is UrlAuthority;
+    query() is Maybe<string>;
+    url() is UrlParts;
+    authority() is UrlParts;
     string() is string;
 }
 
@@ -21,36 +20,54 @@ role RequestTarget {
 // would interpret //path as authority, so it is not the carrier of this form.
 object OriginTarget does RequestTarget {
     has path is string;
-    has query is UrlQuery;
+    has query is Maybe<string>;
 
-    OriginTarget(path is string, query is UrlQuery) {
+    // The path and query are kept in their canonical spelling.
+    OriginTarget(path is string, query is Maybe<string>) {
         confirm path != "" && path.length() <= 8192 && path.slice(0, 1) == "/"
             else throw InvalidRequestTarget.because("absolute origin path required");
         let canonical = try {
-            UrlComponentText(path, UrlComponent.path).string();
+            UrlComponentText(origin: path, component: UrlComponent.path).string();
         }
         catch e is InvalidUrl {
             throw InvalidRequestTarget.because("invalid origin path");
         };
-        let wire = canonical + if query.present() {
-            "?" + query.string();
-        }
-        else {
-            "";
+        let canonical_query is Maybe<string> = match query {
+            case Maybe.some(text) {
+                let checked = try {
+                    UrlComponentText(origin: text, component: UrlComponent.query).string();
+                }
+                catch e is InvalidUrl {
+                    throw InvalidRequestTarget.because("invalid origin query");
+                };
+                Maybe.some(checked);
+            }
+            else {
+                Maybe<string>.none;
+            }
+        };
+        let wire = canonical + match canonical_query {
+            case Maybe.some(text) {
+                "?" + text;
+            }
+            else {
+                "";
+            }
         };
         confirm wire.length() <= 8192
             else throw InvalidRequestTarget.because("target byte limit exceeded");
         self.path = canonical;
-        self.query = query;
+        self.query = canonical_query;
     }
 
-    OriginTarget(origin is UrlReference) {
-        let parts = origin.parts();
-        confirm parts.scheme() == "" && !parts.authority().present() && !parts.fragment().present()
+    OriginTarget(origin is UrlParts) {
+        confirm origin::Parts::scheme == ""
+            && origin::Parts::host == Maybe<string>.none
+            && origin::Parts::fragment == Maybe<string>.none
             else throw InvalidRequestTarget.because(
                 "origin coordinates cannot contain scheme, authority or fragment"
             );
-        let checked = OriginTarget(parts.path(), parts.query());
+        let checked = OriginTarget(origin::Parts::path, origin::Parts::query);
         path = checked.path();
         query = checked.query();
     }
@@ -63,38 +80,40 @@ object OriginTarget does RequestTarget {
         path;
     }
 
-    query() is UrlQuery {
+    query() is Maybe<string> {
         query;
     }
 
-    url() is Url {
+    url() is UrlParts {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.absolute, self.kind());
     }
 
-    authority() is UrlAuthority {
+    authority() is UrlParts {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.authority, self.kind());
     }
 
     string() is string {
-        path + if query.present() {
-            "?" + query.string();
-        }
-        else {
-            "";
+        path + match query {
+            case Maybe.some(text) {
+                "?" + text;
+            }
+            else {
+                "";
+            }
         };
     }
 }
 
 object AbsoluteTarget does RequestTarget {
-    has origin is Url;
+    has origin is UrlParts;
 
-    AbsoluteTarget(origin is Url) {
-        let parts = origin.parts();
-        confirm parts.scheme() == "http" || parts.scheme() == "https"
+    AbsoluteTarget(origin is UrlParts) {
+        confirm origin::Parts::scheme == "http" || origin::Parts::scheme == "https"
             else throw InvalidRequestTarget.because("HTTP absolute URL required");
-        confirm parts.authority().present() && parts.authority().host().kind() != UrlHostKind.empty
+        confirm (origin::Parts::host else "") != ""
             else throw InvalidRequestTarget.because("nonempty HTTP authority required");
-        confirm !parts.authority().userinfo().present() && !parts.fragment().present()
+        confirm origin::Parts::userinfo == Maybe<string>.none
+            && origin::Parts::fragment == Maybe<string>.none
             else throw InvalidRequestTarget.because("userinfo and fragment cannot enter target");
         confirm origin.string().length() <= 8192
             else throw InvalidRequestTarget.because("target byte limit exceeded");
@@ -105,7 +124,7 @@ object AbsoluteTarget does RequestTarget {
         RequestTargetKind.absolute;
     }
 
-    url() is Url {
+    url() is UrlParts {
         origin;
     }
 
@@ -113,11 +132,11 @@ object AbsoluteTarget does RequestTarget {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.origin, self.kind());
     }
 
-    query() is UrlQuery {
+    query() is Maybe<string> {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.origin, self.kind());
     }
 
-    authority() is UrlAuthority {
+    authority() is UrlParts {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.authority, self.kind());
     }
 
@@ -126,21 +145,24 @@ object AbsoluteTarget does RequestTarget {
     }
 }
 
+// The authority-form of CONNECT: host and port only, as the parts of
+// ParsedUrl("//" + authority).
 object AuthorityTarget does RequestTarget {
-    has origin is UrlAuthority;
+    has origin is UrlParts;
 
-    AuthorityTarget(origin is UrlAuthority) {
-        confirm origin.present() && origin.host().kind() != UrlHostKind.empty
+    AuthorityTarget(origin is UrlParts) {
+        confirm origin::Parts::scheme == ""
+            && origin::Parts::path == ""
+            && origin::Parts::query == Maybe<string>.none
+            && origin::Parts::fragment == Maybe<string>.none
+            else throw InvalidRequestTarget.because("CONNECT target is an authority only");
+        confirm (origin::Parts::host else "") != ""
             else throw InvalidRequestTarget.because("nonempty CONNECT authority required");
-        confirm !origin.userinfo().present()
+        confirm origin::Parts::userinfo == Maybe<string>.none
             else throw InvalidRequestTarget.because("CONNECT userinfo prohibited");
-        try {
-            origin.port();
-        }
-        catch e is MissingUrlPort {
-            throw InvalidRequestTarget.because("explicit CONNECT port required");
-        }
-        confirm origin.string().length() <= 8192
+        confirm origin::Parts::port != Maybe<int>.none
+            else throw InvalidRequestTarget.because("explicit CONNECT port required");
+        confirm origin.authority().length() <= 8192
             else throw InvalidRequestTarget.because("target byte limit exceeded");
         self.origin = origin;
     }
@@ -149,7 +171,7 @@ object AuthorityTarget does RequestTarget {
         RequestTargetKind.authority;
     }
 
-    authority() is UrlAuthority {
+    authority() is UrlParts {
         origin;
     }
 
@@ -157,16 +179,16 @@ object AuthorityTarget does RequestTarget {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.origin, self.kind());
     }
 
-    query() is UrlQuery {
+    query() is Maybe<string> {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.origin, self.kind());
     }
 
-    url() is Url {
+    url() is UrlParts {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.absolute, self.kind());
     }
 
     string() is string {
-        origin.string();
+        origin.authority();
     }
 }
 
@@ -185,15 +207,15 @@ object AsteriskTarget does RequestTarget {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.origin, self.kind());
     }
 
-    query() is UrlQuery {
+    query() is Maybe<string> {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.origin, self.kind());
     }
 
-    url() is Url {
+    url() is UrlParts {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.absolute, self.kind());
     }
 
-    authority() is UrlAuthority {
+    authority() is UrlParts {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.authority, self.kind());
     }
 }
@@ -242,21 +264,21 @@ object ParsedRequestTarget {
             }
             else {
                 if method == Method.connect {
-                    AuthorityTarget(ParsedUrlAuthority(origin).value());
+                    AuthorityTarget(ParsedUrl("//" + origin).parts());
                 }
                 else {
                     if origin.slice(0, 1) == "/" {
                         let parts = origin.split("?");
-                        let query = if parts.size() == 1 {
-                            UrlQuery();
+                        let query is Maybe<string> = if parts.size() == 1 {
+                            Maybe<string>.none;
                         }
                         else {
-                            UrlQuery(origin.slice(parts[0].length() + 1, origin.length()));
+                            Maybe.some(origin.slice(parts[0].length() + 1, origin.length()));
                         };
                         OriginTarget(parts[0], query);
                     }
                     else {
-                        AbsoluteTarget(ParsedUrl(origin).value());
+                        AbsoluteTarget(ParsedUrl(origin).parts());
                     }
                 }
             }
@@ -316,6 +338,6 @@ enum InvalidRequestTarget is Error = (because(reason is string));
 test "origin-form keeps double slash path and explicit query" {
     let target = ParsedRequestTarget("//a/b?", Method.get).value();
     test.ok(target.kind() == RequestTargetKind.origin && target.path() == "//a/b");
-    test.ok(target.query().present() && target.string() == "//a/b?");
+    test.ok(target.query() == Maybe.some("") && target.string() == "//a/b?");
     test.ok(!RequestTargetMethod(Method.get, RequestTargetKind.asterisk).valid());
 }

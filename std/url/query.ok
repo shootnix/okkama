@@ -1,6 +1,5 @@
 module url/query v1.0.0;
 
-import "url/value" take UrlQuery;
 import "url/percent" take PercentEncoded, UrlComponent;
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
@@ -42,11 +41,11 @@ object QueryParameters {
     has origin is @QueryParameter;
 
     QueryParameters(entries is Sequencing<QueryParameter>) {
-        origin = ParameterSnapshot(entries, 10000).entries();
+        origin = ParameterSnapshot(origin: entries, maximum: 10000).entries();
     }
 
     QueryParameters(entries is Sequencing<QueryParameter>, maximum_parameters is int) {
-        origin = ParameterSnapshot(entries, maximum_parameters).entries();
+        origin = ParameterSnapshot(origin: entries, maximum: maximum_parameters).entries();
     }
 
     entries() is Sequencing<QueryParameter> {
@@ -80,9 +79,9 @@ object QueryParameters {
 
     string() is string {
         let encoded is @string = origin.map() -> entry {
-            let name = PercentEncoded(entry.name(), UrlComponent.data).string();
+            let name = PercentEncoded(origin: entry.name(), component: UrlComponent.data).string();
             if entry.assigned() {
-                name + "=" + PercentEncoded(entry.value(), UrlComponent.data).string();
+                name + "=" + PercentEncoded(origin: entry.value(), component: UrlComponent.data).string();
             }
             else {
                 name;
@@ -92,17 +91,23 @@ object QueryParameters {
     }
 }
 
-object ParsedQueryParameters {
-    has origin is UrlQuery;
+// The parameters of a query string, decoded as RFC 3986 query text (not
+// HTML form text: "+" stays "+").
+//
+//     let page = ParsedUrl("https://example.com/search?q=okkama&page=2").parts();
+//     let parameters = ParsedQuery(page::Parts::query else "").parameters();
+//     parameters.first("q");     // "okkama"
+object ParsedQuery {
+    has origin is string;
     has maximum_parameters, maximum_bytes is int;
 
-    ParsedQueryParameters(origin is UrlQuery) {
+    ParsedQuery(origin is string) {
         self.origin = origin;
         maximum_parameters = 10000;
         maximum_bytes = 1048576;
     }
 
-    ParsedQueryParameters(origin is UrlQuery, maximum_parameters is int, maximum_bytes is int) {
+    ParsedQuery(origin is string, maximum_parameters is int, maximum_bytes is int) {
         confirm maximum_parameters >= 0 && maximum_bytes >= 0
             else throw InvalidArgument.because("query limits must be nonnegative");
         self.origin = origin;
@@ -110,14 +115,14 @@ object ParsedQueryParameters {
         self.maximum_bytes = maximum_bytes;
     }
 
-    value() is QueryParameters {
-        confirm origin.string().length() <= maximum_bytes
+    parameters() is QueryParameters {
+        confirm origin.length() <= maximum_bytes
             else throw QueryLimitExceeded.kind("bytes");
         ParameterParsing(
-            Utf8Encoded(origin.string()).bytes(),
-            false,
-            maximum_parameters,
-            maximum_bytes
+            origin: Utf8Encoded(origin).bytes(),
+            form: false,
+            maximum_parameters: maximum_parameters,
+            maximum_bytes: maximum_bytes
         ).parameters();
     }
 }
@@ -130,7 +135,7 @@ enum QueryLimitExceeded is Error = (kind(kind is string));
 
 // Importable collaborators shared with form parsing; no mutable parser state
 // escapes. Snapshot sources are observed exactly once in index order.
-object ParameterSnapshot {
+hidden object ParameterSnapshot {
     has origin is Sequencing<QueryParameter>;
     has maximum is int;
 
@@ -196,15 +201,15 @@ object ParameterParsing {
                     else {
                         equals;
                     };
-                    let name = ParameterText(origin.slice(start, split), form, start).string();
+                    let name = ParameterText(origin: origin.slice(start, split), form: form, offset: start).string();
                     let value = if equals < 0 {
                         "";
                     }
                     else {
-                        ParameterText(origin.slice(equals + 1, end), form, equals + 1).string();
+                        ParameterText(origin: origin.slice(equals + 1, end), form: form, offset: equals + 1).string();
                     };
                     let entry = if form || equals >= 0 {
-                        QueryParameter(name, value);
+                        QueryParameter(name: name, value: value);
                     }
                     else {
                         QueryParameter(name);
@@ -213,11 +218,11 @@ object ParameterParsing {
                 }
             }
         }
-        QueryParameters(parts.entries(), maximum_parameters);
+        QueryParameters(entries: parts.entries(), maximum_parameters: maximum_parameters);
     }
 }
 
-object ParameterParts {
+hidden object ParameterParts {
     has position is int;
     has reversed is List<QueryParameter>;
 
@@ -255,7 +260,7 @@ object ParameterParts {
     }
 }
 
-object ParameterPosition {
+hidden object ParameterPosition {
     has source, decoded is int;
 
     ParameterPosition() {
@@ -277,7 +282,7 @@ object ParameterPosition {
     }
 }
 
-object ParameterText {
+hidden object ParameterText {
     has origin is @byte;
     has form is bool;
     has offset is int;
@@ -352,7 +357,7 @@ object ParameterText {
 }
 
 test "flags and duplicate parameters retain their identity" {
-    let entries = ParsedQueryParameters(UrlQuery("a&a=&a=1")).value();
+    let entries = ParsedQuery("a&a=&a=1").parameters();
     test.is(entries.string(), "a&a=&a=1");
     test.is(entries.values("a").size(), 3);
 }

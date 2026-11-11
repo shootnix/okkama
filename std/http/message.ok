@@ -42,7 +42,7 @@ object Request {
         body is BodyOpening = EmptyBody(),
         version is HttpVersion = HttpVersion.http_1_1
     ) {
-        self.target = RequestCoordinates(method, AbsoluteTarget(ParsedUrl(url).value())).target();
+        self.target = RequestCoordinates(method, AbsoluteTarget(ParsedUrl(url).parts())).target();
         self.method = method;
         self.headers = headers;
         self.body = body;

@@ -1,8 +1,7 @@
 module http/robots v1.0.0;
 
 import "http/status" take StatusCode, StatusClass;
-import "url/value" take Url, UrlReference, UrlParts, UrlQuery, UrlFragment, ParsedUrl,
-    UrlComponentText;
+import "url/value" take UrlParts, ParsedUrl, UrlComponentText;
 import "url/percent" take UrlComponent;
 import "http/exchange" take ClientResponse, Exchanging;
 import "http/message" take Request;
@@ -129,7 +128,7 @@ object RobotsPolicy {
     has agents, delays is @RobotsRecord;
     has rules is @RobotsRule;
     has rule_groups, delay_groups is @int;
-    has maps is @Url;
+    has maps is @UrlParts;
 
     RobotsPolicy(origin is string) {
         confirm Utf8Encoded(origin).bytes().size() <= 524288
@@ -144,7 +143,7 @@ object RobotsPolicy {
         confirm lines.size() <= 16384 else throw RobotsLimitExceeded.kind("lines");
         let empty is List<RobotsRecord> = EmptyList();
         let records = Atomic(empty);
-        let no_maps is List<Url> = EmptyList();
+        let no_maps is List<UrlParts> = EmptyList();
         let sitemaps = Atomic(no_maps);
         let group = Atomic(-1);
         let has_rules = Atomic(false);
@@ -164,12 +163,12 @@ object RobotsPolicy {
             };
             let value = RobotsTrim(line.slice(fields[0].length() + 1, line.length())).string();
             if name == "sitemap" {
-                let found is @Url = try {
-                    let url = ParsedUrl(value).value();
-                    let parts = url.parts();
-                    confirm (parts.scheme() == "http" || parts.scheme() == "https")
-                        && parts.authority().present()
-                        && !parts.fragment().present()
+                let found is @UrlParts = try {
+                    let url = ParsedUrl(value).parts();
+                    let parts = url;
+                    confirm (parts::Parts::scheme == "http" || parts::Parts::scheme == "https")
+                        && parts::Parts::host != Maybe<string>.none
+                        && parts::Parts::fragment == Maybe<string>.none
                         else throw InvalidRobots.because("sitemap URL");
                     [url];
                 }
@@ -271,10 +270,10 @@ object RobotsPolicy {
             entry.group();
         };
         delay_groups = delay_ids;
-        let reverse_maps is @Url = sitemaps.value().map() -> url {
+        let reverse_maps is @UrlParts = sitemaps.value().map() -> url {
             url;
         };
-        let ordered_maps is @Url = (0..reverse_maps.size()).map() -> index {
+        let ordered_maps is @UrlParts = (0..reverse_maps.size()).map() -> index {
             reverse_maps[reverse_maps.size() - index - 1];
         };
         maps = ordered_maps;
@@ -309,24 +308,26 @@ object RobotsPolicy {
         ids;
     }
 
-    allowed(agent is string, url is Url) is bool {
-        let parts = url.parts();
-        confirm parts.scheme() == "http" || parts.scheme() == "https"
+    allowed(agent is string, url is UrlParts) is bool {
+        let parts = url;
+        confirm parts::Parts::scheme == "http" || parts::Parts::scheme == "https"
             else throw InvalidRobots.because("HTTP URL required");
-        let path = if parts.path() == "" {
+        let path = if parts::Parts::path == "" {
             "/";
         }
         else {
-            parts.path();
+            parts::Parts::path;
         };
         if path == "/robots.txt" {
             return true;
         }
-        let target = (path + if parts.query().present() {
-            "?" + parts.query().string();
-        }
-        else {
-            "";
+        let target = (path + match parts::Parts::query {
+            case Maybe.some(query) {
+                "?" + query;
+            }
+            else {
+                "";
+            }
         }).replace("*", "%2A").replace("$", "%24");
         let ids = self.selected(agent);
         let score = Atomic(-1);
@@ -381,7 +382,7 @@ object RobotsPolicy {
         Duration(value: seconds.value(), unit: DurationUnit.second);
     }
 
-    sitemaps() is Sequencing<Url> {
+    sitemaps() is Sequencing<UrlParts> {
         maps;
     }
 }
@@ -475,7 +476,7 @@ object RobotsPattern {
             origin;
         };
         let compiled = try {
-            UrlComponentText(body.replace("$", "%24"), UrlComponent.query).string();
+            UrlComponentText(origin: body.replace("$", "%24"), component: UrlComponent.query).string();
         }
         catch e is Error {
             throw InvalidRobots.because("path encoding");
@@ -555,19 +556,25 @@ object RobotsDelay {
 
 object FetchedRobots {
     has origin is Exchanging;
-    has destination is Url;
+    has destination is UrlParts;
     has agent is string;
     has pending is Atomic<@Future<RobotsPolicy>>;
 
-    FetchedRobots(origin is Exchanging, site is Url, agent is string) {
-        let parts = site.parts();
-        confirm (parts.scheme() == "http" || parts.scheme() == "https")
-            && parts.authority().present()
+    FetchedRobots(origin is Exchanging, site is UrlParts, agent is string) {
+        let parts = site;
+        confirm (parts::Parts::scheme == "http" || parts::Parts::scheme == "https")
+            && parts::Parts::host != Maybe<string>.none
             else throw InvalidRobots.because("HTTP site required");
         Header(HeaderName("User-Agent"), agent);
         self.origin = origin;
-        destination = Url(
-            UrlParts(parts.scheme(), parts.authority(), "/robots.txt", UrlQuery(), UrlFragment())
+        destination = UrlParts(
+            scheme: parts::Parts::scheme,
+            userinfo: parts::Parts::userinfo,
+            host: parts::Parts::host,
+            port: parts::Parts::port,
+            path: "/robots.txt",
+            query: Maybe<string>.none,
+            fragment: Maybe<string>.none,
         );
         self.agent = agent;
         let empty is @Future<RobotsPolicy> = [];
@@ -666,5 +673,5 @@ hidden object RobotsSettlement<T> {
 
 test "wildcard fallback and implicit robots path" {
     let policy = RobotsPolicy("User-agent: *\nDisallow: /\n");
-    test.ok(policy.allowed("Bot", ParsedUrl("https://example.test/robots.txt").value()));
+    test.ok(policy.allowed("Bot", ParsedUrl("https://example.test/robots.txt").parts()));
 }

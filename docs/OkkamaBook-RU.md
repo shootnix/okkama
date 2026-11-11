@@ -5025,14 +5025,15 @@ transport-neutral поиск и возвращает проверенные `Soc
 
 ### URL и cookie policy в активной stdlib v4
 
-В активной v4 используется `url/value`, а не исторический `net/url` из
-примеров выше. `ParsedUrl(source).value()` и
-`ParsedUrlReference(source).value()` откладывают разбор; `Url(parts)` и
-`UrlReference(parts)` принимают уже проверенные координаты. `base.url(reference)`
-разрешает ссылку по RFC 3986. Typed authority различает DNS, IP и IPvFuture,
-пустой host, отсутствующие/пустые port и userinfo. Query/fragment также сохраняют
-разницу между отсутствием и явной пустотой. Никакой DNS или transport I/O здесь
-нет. HostName использует bounded UTS46/IDNA; PublicSuffixList — pinned ICANN+PRIVATE
+Текущая std использует `url/value`, а не исторический `net/url` из
+примеров выше. `ParsedUrl(source).parts()` разбирает URL или относительную
+ссылку в один `UrlParts`, чей cap `Parts` держит `scheme`, `userinfo`,
+`host`, `port`, `path`, `query` и `fragment`. Необязательные части — `Maybe`,
+так что отсутствующий query отличается от пустого. `parts.absolute()`
+говорит, есть ли схема, а `base.resolved(reference)` разрешает ссылку по
+RFC 3986. `host_kind()`, `host_name()` и `host_address()` читают host как
+DNS, IP или IPvFuture, а `ParsedQuery(text).parameters()` разбирает query.
+Никакого DNS или transport I/O здесь нет. HostName использует bounded UTS46/IDNA; PublicSuffixList — pinned ICANN+PRIVATE
 policy. Актуальный URL-контракт (okkama-docs `docs/std/url-value.md`) и
 [исполняемый пример](../examples/std-v4/url-resolution.ok).
 
@@ -5052,7 +5053,7 @@ import "time/clock" take SystemClock;
 import "io/stdout" take Stdout;
 main() is int {
     let jar=MemoryCookieJar(SystemClock());defer jar.close();
-    let origin=ParsedUrl("https://example.com/a/b").value();
+    let origin=ParsedUrl("https://example.com/a/b").parts();
     let context=CookieContext(origin,true,Method("GET"));
     jar.store(origin,Headers([Header(HeaderName("Set-Cookie"),"session=opaque; Secure; HttpOnly; SameSite=Lax; Path=/")]),context);
     let cookies=jar.cookies(origin,context);confirm cookies.size()==1;

@@ -1,0 +1,47 @@
+module examples/url/parts v1.0.0;
+
+import "io/stdout" take Stdout;
+import "url/query" take ParsedQuery;
+import "url/value" take InvalidUrl, ParsedUrl, UrlHostKind, UrlParts;
+
+// Parse a URL into its parts, read the optional ones, resolve links found on
+// a page against it, read its query, and build a new URL from parts.
+
+main() is int {
+    let out = Stdout();
+    let page = ParsedUrl("HTTPS://Docs.Example.com:8443/guide/intro.html?lang=en&lang=ru#setup").parts();
+    out.writeln(page.string());
+    out.writeln("scheme " + page::Parts::scheme + ", host " + (page::Parts::host else "-")
+        + ", port " + (page::Parts::port else 443).string() + ", path " + page::Parts::path);
+    out.writeln("named host: " + (page.host_kind() == UrlHostKind.name).string());
+    out.writeln("fragment: " + (page::Parts::fragment else "(none)"));
+
+    for ["../api/index.html", "/download", "?lang=de", "//cdn.example.com/x.js", "mailto:team@example.com"] -> link {
+        out.writeln(link + " -> " + page.resolved(ParsedUrl(link).parts()).string());
+    }
+
+    let languages is @string = ParsedQuery(page::Parts::query else "").parameters().values("lang").map() -> value {
+        value;
+    };
+    out.writeln("languages: " + languages.join(", "));
+
+    let api = UrlParts(
+        scheme: "https",
+        userinfo: Maybe<string>.none,
+        host: Maybe.some("API.example.com"),
+        port: Maybe<int>.none,
+        path: "/v1/items",
+        query: Maybe.some("limit=10"),
+        fragment: Maybe<string>.none,
+    );
+    out.writeln("built: " + api.string() + ", absolute " + api.absolute().string());
+
+    let broken = try {
+        ParsedUrl("http://exa mple.com/").parts().string();
+    }
+    catch InvalidUrl.located(offset, reason) {
+        "invalid at " + offset.string() + ": " + reason;
+    };
+    out.writeln(broken);
+    0;
+}

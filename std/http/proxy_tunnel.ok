@@ -9,7 +9,7 @@ import "http/http1_head" take Http1ResponseHead, Http1Limits;
 import "http/header" take Header;
 import "http/message" take InvalidHttpMessage;
 import "io/stream" take AsyncReading, AsyncWriting;
-import "url/value" take Url;
+import "url/value" take UrlParts;
 import "http/media_type" take HttpMediaPosition;
 
 // Borrowed raw halves. Reading one byte at a time avoids consuming a tunnel
@@ -17,11 +17,11 @@ import "http/media_type" take HttpMediaPosition;
 object HttpProxyTunnel {
     has input is AsyncReading;
     has output is AsyncWriting;
-    has target is Url;
+    has target is UrlParts;
     has fields is @Header;
     has limits is Http1Limits;
 
-    HttpProxyTunnel(input is AsyncReading, output is AsyncWriting, target is Url, fields is @Header) {
+    HttpProxyTunnel(input is AsyncReading, output is AsyncWriting, target is UrlParts, fields is @Header) {
         self.input = input;
         self.output = output;
         self.target = target;
@@ -32,7 +32,7 @@ object HttpProxyTunnel {
     HttpProxyTunnel(
         input is AsyncReading,
         output is AsyncWriting,
-        target is Url,
+        target is UrlParts,
         fields is @Header,
         limits is Http1Limits
     ) {

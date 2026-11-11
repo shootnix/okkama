@@ -88,7 +88,7 @@ object MimeParameters {
             let value = entry.value();
             let bytes = Utf8Encoded(value).bytes();
             if bytes.size() != value.length() {
-                entry.name() + "*=UTF-8''" + PercentEncoded(value, UrlComponent.data).string();
+                entry.name() + "*=UTF-8''" + PercentEncoded(origin: value, component: UrlComponent.data).string();
             }
             else {
                 let valid = (0..value.length()).reduce(true) -> valid, index {
