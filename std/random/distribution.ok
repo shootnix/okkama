@@ -1,6 +1,6 @@
 module random/distribution v1.0.0;
 
-import "random/source" take Randomizing;
+import "random/source" take Randomizing, PcgRandom;
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "collections/combining" take UnequalSizes;
@@ -98,19 +98,19 @@ object NormalDistribution does Distribution<float> {
             center;
         }
         else {
-            center + spread * (StandardNormal(random: random).value());
+            center + spread * (StandardNormal(random: random).sample());
         }
     }
 }
 
-object StandardNormal {
+hidden object StandardNormal {
     has random is Randomizing;
 
     StandardNormal(random is Randomizing) {
         self.random = random;
     }
 
-    value() is float {
+    sample() is float {
         let radius is float = distribution_sqrt(
             -2.0 * distribution_log(1.0 - random.float())
         );
@@ -155,11 +155,11 @@ object GammaDistribution does Distribution<float> {
     }
 
     sample() is float {
-        scale * (GammaUnit(random: random, shape: shape).value());
+        scale * (GammaUnit(random: random, shape: shape).sample());
     }
 }
 
-object GammaUnit {
+hidden object GammaUnit {
     has random is Randomizing;
     has shape is float;
 
@@ -168,21 +168,21 @@ object GammaUnit {
         self.shape = shape;
     }
 
-    value() is float {
+    sample() is float {
         if shape < 1.0 {
             let boosted is float = GammaUnit(
                 random: random,
                 shape: shape + 1.0,
-            ).value();
+            ).sample();
             boosted * distribution_power(random.float(), 1.0 / shape);
         }
         else {
-            GammaCandidate(random: random, shape: shape).value();
+            GammaCandidate(random: random, shape: shape).sample();
         }
     }
 }
 
-object GammaCandidate {
+hidden object GammaCandidate {
     has random is Randomizing;
     has shape is float;
 
@@ -191,13 +191,13 @@ object GammaCandidate {
         self.shape = shape;
     }
 
-    value() is float {
+    sample() is float {
         let adjusted is float = shape - 0.3333333333333333;
         let factor is float = 1.0 / distribution_sqrt(9.0 * adjusted);
-        let normal is float = StandardNormal(random: random).value();
+        let normal is float = StandardNormal(random: random).sample();
         let base is float = 1.0 + factor * normal;
         if base <= 0.0 {
-            self.value();
+            self.sample();
         }
         else {
             let cube is float = base * base * base;
@@ -211,7 +211,7 @@ object GammaCandidate {
                     adjusted * cube;
                 }
                 else {
-                    self.value();
+                    self.sample();
                 }
         }
     }
@@ -237,11 +237,11 @@ object BetaDistribution does Distribution<float> {
     }
 
     sample() is float {
-        BetaSample(random: random, alpha: alpha, beta: beta).value();
+        BetaSample(random: random, alpha: alpha, beta: beta).sample();
     }
 }
 
-object BetaSample {
+hidden object BetaSample {
     has random is Randomizing;
     has alpha is float;
     has beta is float;
@@ -252,11 +252,11 @@ object BetaSample {
         self.beta = beta;
     }
 
-    value() is float {
-        let left is float = GammaUnit(random: random, shape: alpha).value();
-        let right is float = GammaUnit(random: random, shape: beta).value();
+    sample() is float {
+        let left is float = GammaUnit(random: random, shape: alpha).sample();
+        let right is float = GammaUnit(random: random, shape: beta).sample();
         if left == 0.0 && right == 0.0 {
-            self.value();
+            self.sample();
         }
         else {
             if left == 0.0 {
@@ -303,7 +303,7 @@ object LogNormalDistribution does Distribution<float> {
         }
         else {
             distribution_exp(
-                center + spread * (StandardNormal(random: random).value())
+                center + spread * (StandardNormal(random: random).sample())
             );
         }
     }
@@ -335,12 +335,12 @@ object VonMisesDistribution does Distribution<float> {
                 random: random,
                 mean: center,
                 concentration: concentration,
-            ).value();
+            ).sample();
         }
     }
 }
 
-object VonMisesSample {
+hidden object VonMisesSample {
     has random is Randomizing;
     has center is float;
     has concentration is float;
@@ -355,7 +355,7 @@ object VonMisesSample {
         self.concentration = concentration;
     }
 
-    value() is float {
+    sample() is float {
         let scaling is float = 0.5 / concentration;
         let ratio is float = scaling +
             distribution_sqrt(1.0 + scaling * scaling);
@@ -363,11 +363,11 @@ object VonMisesSample {
             random: random,
             mean: center,
             ratio: ratio,
-        ).value();
+        ).sample();
     }
 }
 
-object VonMisesCandidate {
+hidden object VonMisesCandidate {
     has random is Randomizing;
     has center is float;
     has ratio is float;
@@ -382,7 +382,7 @@ object VonMisesCandidate {
         self.ratio = ratio;
     }
 
-    value() is float {
+    sample() is float {
         let cosine is float = distribution_cos(
             PI * random.float()
         );
@@ -413,7 +413,7 @@ object VonMisesCandidate {
                 }
             }
             else {
-                self.value();
+                self.sample();
             }
     }
 }
@@ -533,11 +533,11 @@ object WeightedChoices<T> does Distribution<T> {
             target: distribution_uniform(0.0, total, random.float()),
             position: 0,
             cumulative: 0.0,
-        ).value();
+        ).sample();
     }
 }
 
-object WeightedSelection<T> {
+hidden object WeightedSelection<T> {
     has values is Sequencing<T>;
     has weights is Sequencing<float>;
     has scaling is float;
@@ -561,7 +561,7 @@ object WeightedSelection<T> {
         self.cumulative = cumulative;
     }
 
-    value() is T {
+    sample() is T {
         let following is float = cumulative +
             weights.item(position) / scaling;
         if target < following || position == values.size() - 1 {
@@ -575,7 +575,7 @@ object WeightedSelection<T> {
                 target: target,
                 position: position + 1,
                 cumulative: following,
-            ).value();
+            ).sample();
         }
     }
 }
@@ -615,7 +615,7 @@ object Samples<T> does Distribution<@T> {
                 positions: positions,
                 count: amount,
                 selected: no_selected,
-            ).value();
+            ).sample();
             let ordered is List<int> = reversed.reduce(EmptyList()) -> items, index {
                 items.prefix(index);
             };
@@ -626,7 +626,7 @@ object Samples<T> does Distribution<@T> {
     }
 }
 
-object IndexSamples {
+hidden object IndexSamples {
     has random is Randomizing;
     has positions is List<int>;
     has amount is int;
@@ -644,7 +644,7 @@ object IndexSamples {
         self.selected = selected;
     }
 
-    value() is List<int> {
+    sample() is List<int> {
         if amount == 0 {
             selected;
         }
@@ -658,7 +658,7 @@ object IndexSamples {
                 positions: removal.remainder(),
                 count: amount - 1,
                 selected: selected.prefix(removal.item()),
-            ).value();
+            ).sample();
         }
     }
 }
@@ -708,3 +708,38 @@ object PermutationSamples<T> does Distribution<@T> {
 }
 
 enum InvalidDistribution is Error = (because(message is string));
+
+test "seeded samples keep each distribution's shape" {
+    let random = PcgRandom(seed: 42);
+    let normal = NormalDistribution(random: random, mean: 10.0, deviation: 2.0);
+    let total = (0..2000).reduce(0.0) -> sum, n {
+        sum + normal.sample();
+    };
+    test.ok(total / 2000.0 > 9.8 && total / 2000.0 < 10.2);
+    let gamma = GammaDistribution(random: random, shape: 0.5, scale: 2.0);
+    let beta = BetaDistribution(random: random, alpha: 2.0, beta: 5.0);
+    let circle = VonMisesDistribution(random: random, mean: 0.0, concentration: 4.0);
+    for (0..500) -> n {
+        test.ok(gamma.sample() > 0.0);
+        let b = beta.sample();
+        test.ok(b >= 0.0 && b <= 1.0);
+        let angle = circle.sample();
+        test.ok(angle >= 0.0 && angle < TAU);
+    }
+}
+
+test "choices honour weights and samples are distinct" {
+    let random = PcgRandom(seed: 7);
+    let weighted = WeightedChoices(random: random, values: ["never", "always"], weights: [0.0, 1.0]);
+    for (0..200) -> n {
+        test.is(weighted.sample(), "always");
+    }
+    let picked = Samples(random: random, values: [1, 2, 3, 4, 5, 6], count: 4).sample();
+    test.is(picked.size(), 4);
+    let distinct = picked.reduce(0) -> count, item {
+        count + picked.filter() -> other {
+            other == item;
+        }.size();
+    };
+    test.is(distinct, 4);
+}

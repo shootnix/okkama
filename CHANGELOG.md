@@ -358,6 +358,12 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     | `DaysBetween(a, b).value()` | `DaysBetween(left: a, right: b).count()` |
     | `DateOrdinal(d).value()`, `OrdinalDate(n).value()` | `GregorianDay(d).number()`, `GregorianDay(n).date()` |
     | `ScaledDuration(d, f).value()` | `d.times(f)` |
+  - `random`: the samplers that several distributions share are hidden and
+    answer `sample()`. `SecureInteger` is now a hidden action of
+    `SecureRandom`. `random/distribution` has inline tests now: seeded
+    shapes, weights and distinct samples.
+  - `regex/replace`: the substitution accumulator is hidden and answers
+    `substitution()`.
 ### Fixed
 
 - Traversals own what they walk, and keep no record of what they walked

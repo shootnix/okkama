@@ -64,7 +64,7 @@ object SecureRandom does Randomizing {
 
     integer(start is int, stop is int) is int {
         confirm start < stop else throw InvalidRandomRange.detailed(start, stop);
-        SecureInteger(start: start, stop: stop).value();
+        self.draw(start, stop);
     }
 
     float() is float {
@@ -76,24 +76,16 @@ object SecureRandom does Randomizing {
             else throw InvalidRandomSize.detailed(size, 16777216);
         SecureBytes(size: size).bytes();
     }
-}
 
-object SecureInteger {
-    has beginning is int;
-    has ending is int;
-
-    SecureInteger(start is int, stop is int) {
-        beginning = start;
-        ending = stop;
-    }
-
-    value() is int {
+    // An unbiased integer in start..stop: a sample outside the accepted
+    // range is drawn again.
+    hidden draw(start is int, stop is int) is int {
         let sample is @byte = SecureBytes(size: 8).bytes();
-        if random_sample_accepted(sample, beginning, ending) {
-            random_integer_from_sample(sample, beginning, ending);
+        if random_sample_accepted(sample, start, stop) {
+            random_integer_from_sample(sample, start, stop);
         }
         else {
-            self.value();
+            self.draw(start, stop);
         }
     }
 }

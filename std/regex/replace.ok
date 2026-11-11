@@ -199,11 +199,11 @@ object RegexSubstitution {
     }
 
     string() is string {
-        self.result().string();
+        self.substitution().string();
     }
 
     amount() is int {
-        self.result().amount();
+        self.substitution().amount();
     }
 
     hidden matches() is Iterating<RegexMatching> {
@@ -216,7 +216,7 @@ object RegexSubstitution {
         }
     }
 
-    hidden result() is RegexSubstitutionResult {
+    hidden substitution() is RegexSubstitutionResult {
         if regex_substitution_ready(state) {
             RegexSubstitutionResult(
                 string: regex_substitution_string(state),
@@ -241,7 +241,7 @@ object RegexSubstitution {
                 current.successor(found, replacing);
             },
         ) -> current {
-            let result = current.result();
+            let result = current.substitution();
             regex_substitution_store(
                 state,
                 result.string(),
@@ -252,7 +252,7 @@ object RegexSubstitution {
     }
 }
 
-object RegexSubstitutionProgress {
+hidden object RegexSubstitutionProgress {
     has source is string;
     has rendered is string;
     has offset is int;
@@ -285,7 +285,7 @@ object RegexSubstitutionProgress {
         );
     }
 
-    result() is RegexSubstitutionResult {
+    substitution() is RegexSubstitutionResult {
         RegexSubstitutionResult(
             string: rendered + source.slice(offset, source.length()),
             amount: quantity,
