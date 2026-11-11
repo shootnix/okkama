@@ -4045,8 +4045,9 @@ destination: logs)` пишет через
 откуда значение пришло. Значение, которое есть, но испорчено, бросает
 `MalformedSetting` с именем ключа.
 
-`template` заполняет текст. `TextTemplate("Hello, {{user.name}}")` берёт
-привязки. `SectionTemplate(source:, partials:)` обходит JSON с `{{#list}}`,
+`template` заполняет текст. `TextTemplate("Hello, {{user.name}}").string(["user.name":
+"Ada"])` берёт тексты по путям через точку. `TemplateLibrary(["item":
+TextTemplate(…)])` называет шаблоны. `SectionTemplate(source:, partials:)` обходит JSON с `{{#list}}`,
 `{{^list}}` и `{{>partial}}`. `HtmlTemplate` экранирует каждое значение для
 места, куда оно попадает, и отказывает в атрибутах-событиях.
 

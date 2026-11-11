@@ -11,7 +11,7 @@ module template/compile v1.0.0;
 // copying. Diagnostics scan only the prefix preceding the offending position.
 // Private native UTF-8 byte sizing remains unchanged; grammar parsing does not
 // call runtime/template. Section/partial grammar comes after this migration.
-import "template/model" take TemplateStrings;
+import "template/model" take TemplateStrings, TemplateBindings;
 import "template/path" take TemplatePathFromString;
 import "collections/list" take List, EmptyList;
 import "io/stream" take WritingText;
@@ -65,6 +65,11 @@ object TextTemplate {
 
     source() is string {
         origin;
+    }
+
+    // Texts by dotted path: template.string(["user.name": "Ada"]).
+    string(texts is %string:string) is string {
+        self.string(TemplateBindings(texts));
     }
 
     string(data is TemplateStrings) is string {
@@ -656,4 +661,9 @@ test "Okkama template program delimiter and comment boundaries" {
             true;
         });
     }
+}
+
+test "a template renders a map of dotted paths" {
+    let greeting = TextTemplate("Hello, {{user.name}}! You have {{user.unread}} new messages.");
+    test.is(greeting.string(["user.name": "Ada", "user.unread": "3"]), "Hello, Ada! You have 3 new messages.");
 }
