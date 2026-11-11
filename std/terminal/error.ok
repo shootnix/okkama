@@ -1,14 +1,31 @@
 module terminal/error v1.0.0;
+
 enum TerminalUnavailable is Error = (because(reason is string));
+
 enum TerminalFailure is Error = (detailed(code is string, message is string));
+
 enum TerminalClosed is Error = (closed);
+
 enum TerminalInputLimit is Error = (exceeded);
-object TerminalProblem{
+
+object TerminalProblem {
     has failure is NativeFailure;
-    TerminalProblem(failure is NativeFailure){self.failure=failure;}
-    value() is Error{
-        if failure.code()=="already_closed"{TerminalClosed.closed;}
-        else{if failure.code()=="not_found"{TerminalUnavailable.because(failure.message());}
-        else{TerminalFailure.detailed(failure.code(), failure.message());}}
+
+    TerminalProblem(failure is NativeFailure) {
+        self.failure = failure;
+    }
+
+    value() is Error {
+        if failure.code() == "already_closed" {
+            TerminalClosed.closed;
+        }
+        else {
+            if failure.code() == "not_found" {
+                TerminalUnavailable.because(failure.message());
+            }
+            else {
+                TerminalFailure.detailed(failure.code(), failure.message());
+            }
+        }
     }
 }

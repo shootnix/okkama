@@ -24,7 +24,9 @@ object Storage {
         origin = path;
     }
 
-    path() is Path { origin; }
+    path() is Path {
+        origin;
+    }
 
     usage() is StorageUsage {
         let snapshot is %string:string = try {
@@ -48,14 +50,24 @@ object StorageUsage {
         total_capacity = capacity;
         available_capacity = available;
 
-        confirm self.total_capacity.sign() >= 0 && self.available_capacity.sign() >= 0
+        confirm self.total_capacity.sign() >= 0
+            && self.available_capacity.sign() >= 0
             && self.available_capacity.order(self.total_capacity) != Order.greater
             else throw InvalidStorageUsage.invalid;
     }
 
-    capacity() is BigInt { total_capacity; }
-    used() is BigInt { (total_capacity - available_capacity); }
-    available() is BigInt { available_capacity; }
+    capacity() is BigInt {
+        total_capacity;
+    }
+
+    used() is BigInt {
+        (total_capacity - available_capacity);
+    }
+
+    available() is BigInt {
+        available_capacity;
+    }
+
     fits(amount is BigInt) is bool {
         confirm amount.sign() >= 0 else throw InvalidStorageUsage.invalid;
         amount.order(available_capacity) != Order.greater;

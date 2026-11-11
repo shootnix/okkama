@@ -1,4 +1,5 @@
 module cell v1.0.0;
+
 import "async/atomic" take Atomic;
 
 /*
@@ -30,16 +31,24 @@ compare by identity.
 object Cell<T> {
     has state is Atomic<T>;
 
-    Cell(value is T) { state = Atomic(value); }
+    Cell(value is T) {
+        state = Atomic(value);
+    }
 
-    value() is T { state.value(); }
+    value() is T {
+        state.value();
+    }
 
-    replace(value is T) is void { state.replace(value); }
+    replace(value is T) is void {
+        state.replace(value);
+    }
 }
 
 test "a cell keeps the last value it was given" {
     let count = Cell(0);
-    for 1..=4 -> step { count.replace(count.value() + step); }
+    for 1..=4 -> step {
+        count.replace(count.value() + step);
+    }
     test.is(count.value(), 10);
     let words = Cell(@string());
     words.replace(words.value() + ["a"]);

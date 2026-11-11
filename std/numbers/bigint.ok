@@ -2,14 +2,9 @@ module numbers/bigint v1.0.0;
 
 import "compare" take Comparing, Order;
 import "operators" take Adding, Subtracting, Multiplying, Dividing, Remaindering, Negating;
-import "runtime/bigint" take
-    bigint_valid,
-    bigint_canonical,
-    bigint_sign,
-    bigint_bits,
-    bigint_order, bigint_difference, bigint_sum, bigint_product,
-    bigint_quotient, bigint_remainder,
-    bigint_gcd, bigint_lcm, bigint_power;
+import "runtime/bigint" take bigint_valid, bigint_canonical, bigint_sign, bigint_bits, bigint_order,
+    bigint_difference, bigint_sum, bigint_product, bigint_quotient, bigint_remainder, bigint_gcd,
+    bigint_lcm, bigint_power;
 
 // Immutable arbitrary-precision integer foundation.
 //
@@ -34,55 +29,88 @@ import "runtime/bigint" take
 // by default). 0^0 is 1. An oversized result throws BigPowerLimitExceeded;
 // impossible budgets are rejected before heavy exponentiation. This bounds
 // result bits, not all backend memory or wall-clock time.
-object BigInt does Comparing<BigInt>, Adding<BigInt, BigInt>, Subtracting<BigInt, BigInt>,
-        Multiplying<BigInt, BigInt>, Dividing<BigInt, BigInt>, Remaindering<BigInt, BigInt>, Negating<BigInt> {
+object BigInt does Comparing<BigInt>, Adding<BigInt, BigInt>, Subtracting<BigInt, BigInt>, Multiplying<BigInt, BigInt>, Dividing<BigInt, BigInt>, Remaindering<BigInt, BigInt>, Negating<BigInt> {
     has origin is string;
+
     BigInt(origin is string) {
         confirm bigint_valid(origin) else throw InvalidBigInt.invalid;
         self.origin = bigint_canonical(origin);
     }
+
     sign() is int {
         bigint_sign(origin);
     }
+
     bits() is int {
         bigint_bits(origin);
     }
+
     order(other is BigInt) is Order {
         let result is int = bigint_order(origin, other.string());
         if result < 0 {
             Order.less;
         }
         else {
-            if result > 0 { Order.greater; } else { Order.equal; }
+            if result > 0 {
+                Order.greater;
+            }
+            else {
+                Order.equal;
+            }
         }
     }
+
     string() is string {
         origin;
     }
+
     // a + b
-    plus(other is BigInt) is BigInt { BigInt(bigint_sum(origin, other.string())); }
+    plus(other is BigInt) is BigInt {
+        BigInt(bigint_sum(origin, other.string()));
+    }
+
     // a - b
-    minus(other is BigInt) is BigInt { BigInt(bigint_difference(origin, other.string())); }
+    minus(other is BigInt) is BigInt {
+        BigInt(bigint_difference(origin, other.string()));
+    }
+
     // a * b
-    times(other is BigInt) is BigInt { BigInt(bigint_product(origin, other.string())); }
+    times(other is BigInt) is BigInt {
+        BigInt(bigint_product(origin, other.string()));
+    }
+
     // a / b: truncates toward zero, unlike int's `/`, which gives a rat.
     divided(other is BigInt) is BigInt {
         confirm other.sign() != 0 else throw BigDivisionByZero.by_zero;
         BigInt(bigint_quotient(origin, other.string()));
     }
+
     // a % b: the sign of the dividend.
     remainder(other is BigInt) is BigInt {
         confirm other.sign() != 0 else throw BigDivisionByZero.by_zero;
         BigInt(bigint_remainder(origin, other.string()));
     }
+
     // -a
-    negated() is BigInt { BigInt(bigint_difference("0", origin)); }
+    negated() is BigInt {
+        BigInt(bigint_difference("0", origin));
+    }
+
     // Non-negative; gcd(0, 0) = 0.
-    gcd(other is BigInt) is BigInt { BigInt(bigint_gcd(origin, other.string())); }
+    gcd(other is BigInt) is BigInt {
+        BigInt(bigint_gcd(origin, other.string()));
+    }
+
     // Non-negative; lcm(0, n) = 0.
-    lcm(other is BigInt) is BigInt { BigInt(bigint_lcm(origin, other.string())); }
+    lcm(other is BigInt) is BigInt {
+        BigInt(bigint_lcm(origin, other.string()));
+    }
+
     // self^exponent with at most 1048576 result bits.
-    power(exponent is int) is BigInt { self.power(exponent, 1048576); }
+    power(exponent is int) is BigInt {
+        self.power(exponent, 1048576);
+    }
+
     // self^exponent with at most maximum_bits result bits; 0^0 is 1.
     power(exponent is int, maximum_bits is int) is BigInt {
         confirm exponent >= 0 else throw InvalidBigExponent.exponent(exponent);
@@ -94,10 +122,13 @@ object BigInt does Comparing<BigInt>, Adding<BigInt, BigInt>, Subtracting<BigInt
             if failure.code() == "resource_exhausted" {
                 throw BigPowerLimitExceeded.maximum_bits(maximum_bits);
             }
-            else { throw failure; }
+            else {
+                throw failure;
+            }
         }
     }
 }
+
 enum InvalidBigInt is Error = (invalid);
 
 enum BigDivisionByZero is Error = (by_zero);

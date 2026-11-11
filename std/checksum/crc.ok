@@ -23,8 +23,16 @@ object Crc32 does Checksumming {
     has origin is @byte;
     has initial is int;
 
-    Crc32() { origin = []; initial = 0; }
-    Crc32(origin is @byte) { self.origin = origin; initial = 0; }
+    Crc32() {
+        origin = [];
+        initial = 0;
+    }
+
+    Crc32(origin is @byte) {
+        self.origin = origin;
+        initial = 0;
+    }
+
     Crc32(origin is @byte, initial is int) {
         confirm initial >= 0 && initial <= 4294967295
             else throw InvalidChecksumInitial.detailed(initial, 4294967295);
@@ -35,8 +43,12 @@ object Crc32 does Checksumming {
     value() is int {
         let result = origin.reduce(initial ^ 0xFFFFFFFF) -> checksum, octet {
             (0..8).reduce(checksum ^ octet.int()) -> bits, index {
-                if (bits & 1) != 0 { (bits >> 1) ^ 0xEDB88320; }
-                else { bits >> 1; }
+                if (bits & 1) != 0 {
+                    (bits >> 1) ^ 0xEDB88320;
+                }
+                else {
+                    bits >> 1;
+                }
             };
         };
         result ^ 0xFFFFFFFF;
@@ -65,6 +77,7 @@ object Crc16Ccitt does Checksumming {
         origin = [];
         self.initial = initial;
     }
+
     Crc16Ccitt(origin is @byte, initial is int) {
         confirm initial >= 0 && initial <= 65535
             else throw InvalidChecksumInitial.detailed(initial, 65535);
@@ -75,8 +88,12 @@ object Crc16Ccitt does Checksumming {
     value() is int {
         origin.reduce(initial) -> checksum, octet {
             (0..8).reduce(checksum ^ (octet.int() << 8)) -> bits, index {
-                if (bits & 0x8000) != 0 { ((bits << 1) ^ 0x1021) & 0xFFFF; }
-                else { (bits << 1) & 0xFFFF; }
+                if (bits & 0x8000) != 0 {
+                    ((bits << 1) ^ 0x1021) & 0xFFFF;
+                }
+                else {
+                    (bits << 1) & 0xFFFF;
+                }
             };
         };
     }
@@ -90,7 +107,17 @@ object Crc16Ccitt does Checksumming {
 test "CRC-32 empty and 123456789 independent reference vectors" {
     test.is(Crc32().value(), 0);
     test.is(Crc32([], 4294967295).value(), 4294967295);
-    let digits = [byte(49), byte(50), byte(51), byte(52), byte(53), byte(54), byte(55), byte(56), byte(57)];
+    let digits = [
+        byte(49),
+        byte(50),
+        byte(51),
+        byte(52),
+        byte(53),
+        byte(54),
+        byte(55),
+        byte(56),
+        byte(57)
+    ];
     test.is(Crc32(digits).value(), 3421780262);
     test.is(Crc32(digits, 305419896).value(), 32800891);
 }
@@ -98,7 +125,17 @@ test "CRC-32 empty and 123456789 independent reference vectors" {
 test "CRC-16 specifies seed reflection and final xor" {
     test.is(Crc16Ccitt(65535).value(), 65535);
     test.is(Crc16Ccitt([], 0).value(), 0);
-    let digits = [byte(49), byte(50), byte(51), byte(52), byte(53), byte(54), byte(55), byte(56), byte(57)];
+    let digits = [
+        byte(49),
+        byte(50),
+        byte(51),
+        byte(52),
+        byte(53),
+        byte(54),
+        byte(55),
+        byte(56),
+        byte(57)
+    ];
     test.is(Crc16Ccitt(digits, 0).value(), 12739);
     test.is(Crc16Ccitt(digits, 65535).value(), 10673);
 }
@@ -123,10 +160,22 @@ test "CRC treats high-bit bytes as unsigned" {
 }
 
 test "CRC rejects negative and oversized initial values" {
-    test.throws(Error) { Crc32([], -1); };
-    test.throws(Error) { Crc32([], 4294967296); };
-    test.throws(Error) { Crc16Ccitt(-1); };
-    test.throws(Error) { Crc16Ccitt(65536); };
-    test.throws(Error) { Crc16Ccitt([], -1); };
-    test.throws(Error) { Crc16Ccitt([], 65536); };
+    test.throws(Error) {
+        Crc32([], -1);
+    };
+    test.throws(Error) {
+        Crc32([], 4294967296);
+    };
+    test.throws(Error) {
+        Crc16Ccitt(-1);
+    };
+    test.throws(Error) {
+        Crc16Ccitt(65536);
+    };
+    test.throws(Error) {
+        Crc16Ccitt([], -1);
+    };
+    test.throws(Error) {
+        Crc16Ccitt([], 65536);
+    };
 }

@@ -2,30 +2,14 @@ module fs/file v1.0.0;
 
 import "fs/path" take Path;
 import "fs/stat" take FileStat, FileStatFromMap;
-import "io/stream" take
-    ByteSource, Reading, ReadingText, Closing,
-    Writing,
-    WritingText,
-    IncompleteWrite,
-    InvalidReadLimit;
+import "io/stream" take ByteSource, Reading, ReadingText, Closing, Writing, WritingText,
+    IncompleteWrite, InvalidReadLimit;
 import "io/stdin" take EndOfInput;
-import "runtime/fs" take
-    FileState, FileLockState, file_state_lock, file_lock_closed, file_lock_close,
-    path_encode,
-    file_state_create,
-    file_state_read_line, file_state_read_text, file_state_closed,
-    file_state_read,
-    file_state_write,
-    file_state_write_text,
-    file_state_flush,
-    file_state_close,
-    file_state_position,
-    file_state_seek,
-    file_state_truncate,
-    file_content,
-    stat,
-    unlink,
-    rename;
+import "runtime/fs" take FileState, FileLockState, file_state_lock, file_lock_closed,
+    file_lock_close, path_encode, file_state_create, file_state_read_line, file_state_read_text,
+    file_state_closed, file_state_read, file_state_write, file_state_write_text, file_state_flush,
+    file_state_close, file_state_position, file_state_seek, file_state_truncate, file_content, stat,
+    unlink, rename;
 
 // A lazy file owner with separate byte and text capabilities. Views share
 // position and retain the resource; only the owner exposes close().
@@ -88,13 +72,7 @@ import "runtime/fs" take
 // utf-16-le, utf-16-be, utf-32-le, utf-32-be, ascii and latin-1. No byte order
 // is inferred and BOMs are never consumed or emitted implicitly.
 
-enum FileMode = (
-    reading,
-    writing,
-    appending,
-    reading_and_writing,
-    reading_and_appending
-);
+enum FileMode = (reading, writing, appending, reading_and_writing, reading_and_appending);
 
 // Owned lock capability used by fs/lock without creating a module cycle.
 role FileLocking {
@@ -127,7 +105,12 @@ object File does Closing {
         state = ConfiguredFileState(
             mode: mode,
             path: path,
-            encoding: if binary { ""; } else { "utf-8"; },
+            encoding: if binary {
+                "";
+            }
+            else {
+                "utf-8";
+            },
             binary: binary,
         ).value();
     }
@@ -138,7 +121,8 @@ object File does Closing {
         encoding is string,
         binary is bool,
     ) {
-        confirm !binary else throw InvalidFileOperation.because("binary files cannot specify a text encoding");
+        confirm !binary
+            else throw InvalidFileOperation.because("binary files cannot specify a text encoding");
         state = ConfiguredFileState(
             mode: mode,
             path: path,
@@ -147,11 +131,21 @@ object File does Closing {
         ).value();
     }
 
-    destroy { self.close(); }
+    destroy {
+        self.close();
+    }
 
-    binary() is FileBytes { FileBytes(origin: self); }
-    text() is FileText { FileText(origin: self); }
-    closed() is bool { file_state_closed(state); }
+    binary() is FileBytes {
+        FileBytes(origin: self);
+    }
+
+    text() is FileText {
+        FileText(origin: self);
+    }
+
+    closed() is bool {
+        file_state_closed(state);
+    }
 
     close() is void {
         try {
@@ -171,6 +165,7 @@ object File does Closing {
             throw FileError(failure: failure).value();
         }
     }
+
     write_bytes(source is ByteSource) is void {
         let bytes is @byte = source.bytes();
         try {
@@ -181,6 +176,7 @@ object File does Closing {
             throw FileError(failure: failure).value();
         }
     }
+
     flush_bytes() is void {
         try {
             file_state_flush(state);
@@ -189,6 +185,7 @@ object File does Closing {
             throw FileError(failure: failure).value();
         }
     }
+
     read_line() is string {
         try {
             file_state_read_line(state);
@@ -202,12 +199,16 @@ object File does Closing {
             }
         }
     }
+
     read_text() is string {
-        try { file_state_read_text(state); }
+        try {
+            file_state_read_text(state);
+        }
         catch failure is NativeFailure {
             throw FileError(failure: failure).value();
         }
     }
+
     write_text(values is ...string) is void {
         let text is @string = values...;
         try {
@@ -217,6 +218,7 @@ object File does Closing {
             throw FileError(failure: failure).value();
         }
     }
+
     writeln_text(values is ...string) is void {
         let text is @string = values...;
         try {
@@ -226,6 +228,7 @@ object File does Closing {
             throw FileError(failure: failure).value();
         }
     }
+
     flush_text() is void {
         try {
             file_state_flush(state);
@@ -234,6 +237,7 @@ object File does Closing {
             throw FileError(failure: failure).value();
         }
     }
+
     offset() is int {
         try {
             file_state_position(state);
@@ -242,6 +246,7 @@ object File does Closing {
             throw FileError(failure: failure).value();
         }
     }
+
     seek(offset is int, from is SeekOrigin) is void {
         try {
             file_state_seek(
@@ -254,6 +259,7 @@ object File does Closing {
             throw FileError(failure: failure).value();
         }
     }
+
     truncate(size is int) is void {
         try {
             file_state_truncate(state, size);
@@ -265,40 +271,60 @@ object File does Closing {
 
     // Acquires a new typed resource; the existing file handle remains private.
     locking(mode is int, waiting is int) is FileLocking {
-        FileLockLease(file_state_lock(state,mode,waiting),self);
+        FileLockLease(file_state_lock(state, mode, waiting), self);
     }
 }
 
 object FileBytes does Reading, Writing {
     has owner is File;
-    FileBytes(origin is File) { owner = origin; }
 
-    bytes(limit is int) is @byte { owner.read_bytes(limit); }
+    FileBytes(origin is File) {
+        owner = origin;
+    }
 
-    write(source is ByteSource) is void { owner.write_bytes(source); }
+    bytes(limit is int) is @byte {
+        owner.read_bytes(limit);
+    }
 
-    flush() is void { owner.flush_bytes(); }
+    write(source is ByteSource) is void {
+        owner.write_bytes(source);
+    }
 
+    flush() is void {
+        owner.flush_bytes();
+    }
 }
 
 object FileText does ReadingText, WritingText {
     has owner is File;
-    FileText(origin is File) { owner = origin; }
 
-    line() is string { owner.read_line(); }
+    FileText(origin is File) {
+        owner = origin;
+    }
 
-    content() is string { owner.read_text(); }
+    line() is string {
+        owner.read_line();
+    }
+
+    content() is string {
+        owner.read_text();
+    }
 
     text() is string {
         self.content();
     }
 
-    write(values is ...string) is void { owner.write_text(values...); }
+    write(values is ...string) is void {
+        owner.write_text(values...);
+    }
 
-    writeln(values is ...string) is void { owner.writeln_text(values...); }
+    writeln(values is ...string) is void {
+        owner.writeln_text(values...);
+    }
 
-    flush() is void { owner.flush_text(); }
-
+    flush() is void {
+        owner.flush_text();
+    }
 }
 
 enum SeekOrigin = (start, current, end);
@@ -310,11 +336,17 @@ object FilePosition {
         owner = origin;
     }
 
-    offset() is int { owner.offset(); }
+    offset() is int {
+        owner.offset();
+    }
 
-    seek(offset is int, from is SeekOrigin) is void { owner.seek(offset, from); }
+    seek(offset is int, from is SeekOrigin) is void {
+        owner.seek(offset, from);
+    }
 
-    truncate(size is int) is void { owner.truncate(size); }
+    truncate(size is int) is void {
+        owner.truncate(size);
+    }
 }
 
 object FileEntry {
@@ -324,7 +356,9 @@ object FileEntry {
         origin = path;
     }
 
-    path() is Path { origin; }
+    path() is Path {
+        origin;
+    }
 
     existence() is bool {
         try {
@@ -436,11 +470,21 @@ object FileModeCode {
     FileModeCode(:origin);
 
     value() is int {
-        if origin == FileMode.reading { 0; }
-        else if origin == FileMode.writing { 1; }
-        else if origin == FileMode.appending { 2; }
-        else if origin == FileMode.reading_and_writing { 3; }
-        else { 4; }
+        if origin == FileMode.reading {
+            0;
+        }
+        else if origin == FileMode.writing {
+            1;
+        }
+        else if origin == FileMode.appending {
+            2;
+        }
+        else if origin == FileMode.reading_and_writing {
+            3;
+        }
+        else {
+            4;
+        }
     }
 }
 
@@ -450,9 +494,15 @@ object SeekOriginCode {
     SeekOriginCode(:origin);
 
     value() is int {
-        if origin == SeekOrigin.start { 0; }
-        else if origin == SeekOrigin.current { 1; }
-        else { 2; }
+        if origin == SeekOrigin.start {
+            0;
+        }
+        else if origin == SeekOrigin.current {
+            1;
+        }
+        else {
+            2;
+        }
     }
 }
 
@@ -464,11 +514,11 @@ object FileError {
     value() is Error {
         if failure.code() == "invalid_input"
             || failure.code() == "already_closed" {
-            InvalidFileOperation.because(failure.message());
-        }
-        else {
-            FileSystemFailure.detailed(failure.code(), failure.message());
-        }
+                InvalidFileOperation.because(failure.message());
+            }
+            else {
+                FileSystemFailure.detailed(failure.code(), failure.message());
+            }
     }
 }
 
@@ -480,9 +530,33 @@ enum FileSystemFailure is Error = (detailed(code is string, message is string));
 
 // Retains File for precisely the lifetime of its acquired advisory lock.
 object FileLockLease does FileLocking {
-    has state is FileLockState;has owner is File;
-    FileLockLease(state is FileLockState,owner is File){self.state=state;self.owner=owner;}
-    closed() is bool{try{file_lock_closed(state);}catch failure is NativeFailure{throw FileSystemFailure.detailed(failure.code(), failure.message());}}
-    close() is void{try{file_lock_close(state);}catch failure is NativeFailure{throw FileSystemFailure.detailed(failure.code(), failure.message());}}
-    destroy{self.close();}
+    has state is FileLockState;
+    has owner is File;
+
+    FileLockLease(state is FileLockState, owner is File) {
+        self.state = state;
+        self.owner = owner;
+    }
+
+    closed() is bool {
+        try {
+            file_lock_closed(state);
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
+        }
+    }
+
+    close() is void {
+        try {
+            file_lock_close(state);
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
+        }
+    }
+
+    destroy {
+        self.close();
+    }
 }

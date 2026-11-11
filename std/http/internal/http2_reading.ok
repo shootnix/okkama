@@ -1,63 +1,129 @@
 module http/internal/http2_reading v1.0.0;
-import "http/internal/http2_frame" take ParsedHttp2FrameHeader,Http2Frame,Http2FrameRules,Http2HeaderRules,Http2Fault,Http2FaultScope;
+
+import "http/internal/http2_frame" take ParsedHttp2FrameHeader, Http2Frame, Http2FrameRules,
+    Http2HeaderRules, Http2Fault, Http2FaultScope;
 
 import "io/stream" take AsyncReading;
 import "async/scope" take FutureGroup;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot,InvalidReading;
+import "io/decorators" take ByteSnapshot, InvalidReading;
 
 // One lazy memoized frame; borrows transport and drains cancelled source work.
 object Http2FrameReading {
     has waiting is Future<Http2Frame>;
-    Http2FrameReading(origin is AsyncReading){
-        let input=Http2FrameInput(origin,16384);waiting=input.reading();
+
+    Http2FrameReading(origin is AsyncReading) {
+        let input = Http2FrameInput(origin, 16384);
+        waiting = input.reading();
     }
-    Http2FrameReading(origin is AsyncReading,maximum is int){
-        let input=Http2FrameInput(origin,maximum);waiting=input.reading();
+
+    Http2FrameReading(origin is AsyncReading, maximum is int) {
+        let input = Http2FrameInput(origin, maximum);
+        waiting = input.reading();
     }
-    async result() is Http2Frame{
-        let group is FutureGroup<Http2Frame>=FutureGroup();let cleanup=Http2FrameSettlement(group);defer await cleanup.close();group.start(waiting);await waiting;
+
+    async result() is Http2Frame {
+        let group is FutureGroup<Http2Frame> = FutureGroup();
+        let cleanup = Http2FrameSettlement(group);
+        defer await cleanup.close();
+        group.start(waiting);
+        await waiting;
     }
 }
+
 object Http2FrameInput {
-    has origin is AsyncReading;has maximum is int;
-    Http2FrameInput(origin is AsyncReading,maximum is int){
-        confirm maximum>=16384 && maximum<=16777215 else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "invalid receive frame limit");self.origin=origin;self.maximum=maximum;
+    has origin is AsyncReading;
+    has maximum is int;
+
+    Http2FrameInput(origin is AsyncReading, maximum is int) {
+        confirm maximum >= 16384 && maximum <= 16777215
+            else throw Http2Fault.detailed(
+                Http2FaultScope.connection,
+                1,
+                0,
+                "invalid receive frame limit"
+            );
+        self.origin = origin;
+        self.maximum = maximum;
     }
-    async chunk(limit is int) is @byte{
-        let pending=origin.bytes(limit);await pending;
+
+    async chunk(limit is int) is @byte {
+        let pending = origin.bytes(limit);
+        await pending;
     }
-    async reading() is Http2Frame{
-        let header=ByteBuffer();
-        loop{
-            let remaining=9-header.content().size();if remaining==0{last;}
-            let chunk=await self.chunk(remaining);
-            confirm chunk.size()<=remaining else throw InvalidReading.because("HTTP2 header source exceeded request");
-            if chunk.size()==0{
-                if header.content().size()==0{throw EndOfHttp2Frames.reached;}
+
+    async reading() is Http2Frame {
+        let header = ByteBuffer();
+        loop {
+            let remaining = 9 - header.content().size();
+            if remaining == 0 {
+                last;
+            }
+            let chunk = await self.chunk(remaining);
+            confirm chunk.size() <= remaining
+                else throw InvalidReading.because("HTTP2 header source exceeded request");
+            if chunk.size() == 0 {
+                if header.content().size() == 0 {
+                    throw EndOfHttp2Frames.reached;
+                }
                 throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "partial frame header");
             }
             header.writing().write(ByteSnapshot(chunk));
         }
-        let parsed=ParsedHttp2FrameHeader(header.content().bytes(),maximum).value();
-        try{Http2HeaderRules(parsed).check();}catch Http2Fault.detailed(scope, _, _, _) {
+        let parsed = ParsedHttp2FrameHeader(header.content().bytes(), maximum).value();
+        try {
+            Http2HeaderRules(parsed).check();
+        }
+        catch Http2Fault.detailed(scope, _, _, _) {
             // Connection faults abort immediately. A known stream fault must
             // first consume its bounded payload to preserve frame alignment.
-            if scope==Http2FaultScope.connection{throw;}
+            if scope == Http2FaultScope.connection {
+                throw;
+            }
         }
-        let payload=ByteBuffer();
-        loop{
-            let remaining=parsed.length()-payload.content().size();if remaining==0{last;}
-            let requested=if remaining>65536{65536;}else{remaining;};let chunk=await self.chunk(requested);
-            confirm chunk.size()<=requested else throw InvalidReading.because("HTTP2 payload source exceeded request");
-            confirm chunk.size()>0 else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "partial frame payload");
+        let payload = ByteBuffer();
+        loop {
+            let remaining = parsed.length() - payload.content().size();
+            if remaining == 0 {
+                last;
+            }
+            let requested = if remaining > 65536 {
+                65536;
+            }
+            else {
+                remaining;
+            };
+            let chunk = await self.chunk(requested);
+            confirm chunk.size() <= requested
+                else throw InvalidReading.because("HTTP2 payload source exceeded request");
+            confirm chunk.size() > 0
+                else throw Http2Fault.detailed(
+                    Http2FaultScope.connection,
+                    1,
+                    0,
+                    "partial frame payload"
+                );
             payload.writing().write(ByteSnapshot(chunk));
         }
-        let frame=Http2Frame(parsed,payload.content().bytes());Http2FrameRules(frame).check();frame;
+        let frame = Http2Frame(parsed, payload.content().bytes());
+        Http2FrameRules(frame).check();
+        frame;
     }
 }
+
 hidden object Http2FrameSettlement {
-    has group is FutureGroup<Http2Frame>;Http2FrameSettlement(group is FutureGroup<Http2Frame>){self.group=group;}
-    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
+    has group is FutureGroup<Http2Frame>;
+
+    Http2FrameSettlement(group is FutureGroup<Http2Frame>) {
+        self.group = group;
+    }
+
+    async close() is void {
+        if group.active() > 0 {
+            group.cancel();
+            await group.wait();
+        }
+    }
 }
+
 enum EndOfHttp2Frames is Error = (reached);

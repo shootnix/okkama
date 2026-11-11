@@ -1,4 +1,5 @@
 module template/render v1.0.0;
+
 import "template/compile" take TextTemplate;
 import "template/model" take TemplateStrings, TemplateBindings;
 import "io/stream" take WritingText;
@@ -21,22 +22,37 @@ object TemplateOutput {
     has origin is TextTemplate;
     has data is TemplateStrings;
     has destination is WritingText;
-    TemplateOutput(origin is TextTemplate,data is TemplateStrings,destination is WritingText) {
-        self.origin=origin;self.data=data;self.destination=destination;
+
+    TemplateOutput(origin is TextTemplate, data is TemplateStrings, destination is WritingText) {
+        self.origin = origin;
+        self.data = data;
+        self.destination = destination;
     }
-    write() is void {origin.write(data,destination);}
+
+    write() is void {
+        origin.write(data, destination);
+    }
 }
 
 test "streamed template command repeats and borrows destination" {
-    let out=ByteBuffer();
-    let command=TemplateOutput(TextTemplate("Hello {{name}}"),TemplateStrings.fake(),Utf8Output(origin:out.writing()));
+    let out = ByteBuffer();
+    let command = TemplateOutput(
+        TextTemplate("Hello {{name}}"),
+        TemplateStrings.fake(),
+        Utf8Output(origin: out.writing())
+    );
     command.write();
     command.write();
-    test.is(Utf8Decoded(out.content().bytes()).string(),"Hello AdaHello Ada");
-    test.is(out.closing().closed(),false);
+    test.is(Utf8Decoded(out.content().bytes()).string(), "Hello AdaHello Ada");
+    test.is(out.closing().closed(), false);
 }
+
 test "empty streamed template has no implicit newline" {
-    let out=ByteBuffer();
-    TemplateOutput(TextTemplate("",0,0,0),TemplateBindings([]),Utf8Output(origin:out.writing())).write();
-    test.is(out.content().size(),0);
+    let out = ByteBuffer();
+    TemplateOutput(
+        TextTemplate("", 0, 0, 0),
+        TemplateBindings([]),
+        Utf8Output(origin: out.writing())
+    ).write();
+    test.is(out.content().size(), 0);
 }

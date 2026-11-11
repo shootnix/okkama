@@ -2,30 +2,55 @@ module runtime/db v1.0.0;
 
 // Immutable native cells and shared column lookup; owned independently of cursors.
 native object DbCellState;
+
 native object DbSchemaState;
+
 native db_null() is DbCellState;
+
 native db_boolean(value is bool) is DbCellState;
+
 native db_integer(value is string) is DbCellState;
+
 native db_floating(value is float) is DbCellState;
+
 native db_decimal(value is string) is DbCellState;
+
 native db_text(value is string) is DbCellState;
+
 native db_bytes(value is @byte) is DbCellState;
+
 native db_kind(cell is DbCellState) is int;
+
 native db_boolean_value(cell is DbCellState) is bool;
+
 native db_integer_value(cell is DbCellState) is string;
+
 native db_int_valid(cell is DbCellState) is bool;
+
 native db_int_value(cell is DbCellState) is int;
+
 native db_floating_value(cell is DbCellState) is float;
+
 native db_decimal_value(cell is DbCellState) is string;
+
 native db_text_value(cell is DbCellState) is string;
+
 native db_bytes_value(cell is DbCellState) is @byte;
+
 native db_schema(names is @string) is DbSchemaState;
-native db_position(schema is DbSchemaState,name is string) is int;
+
+native db_position(schema is DbSchemaState, name is string) is int;
+
 native db_cells_bytes(cells is @DbCellState) is int;
 
 native object DbCaptureState;
+
 native db_capture(kind is int) is DbCaptureState;
-native db_capture_emit(capture is DbCaptureState,kind is int) is int;
-native db_capture_publish(capture is DbCaptureState,cell is DbCellState) is bool;
-native db_capture_complete(capture is DbCaptureState,seal is bool) is bool;
+
+native db_capture_emit(capture is DbCaptureState, kind is int) is int;
+
+native db_capture_publish(capture is DbCaptureState, cell is DbCellState) is bool;
+
+native db_capture_complete(capture is DbCaptureState, seal is bool) is bool;
+
 native db_capture_value(capture is DbCaptureState) is DbCellState;

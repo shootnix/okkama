@@ -6,17 +6,10 @@ import "regex/match" take RegexMatching;
 import "regex/pattern" take Regex;
 import "regex/search" take RegexMatches;
 import "strings/parse" take ParsedInt;
-import "runtime/regex" take
-    RegexReplacementState,
-    regex_replacement_state,
-    regex_replacement_prepare,
-    regex_replacement_tokens,
-    RegexSubstitutionState,
-    regex_substitution_state,
-    regex_substitution_ready,
-    regex_substitution_store,
-    regex_substitution_string,
-    regex_substitution_amount;
+import "runtime/regex" take RegexReplacementState, regex_replacement_state,
+    regex_replacement_prepare, regex_replacement_tokens, RegexSubstitutionState,
+    regex_substitution_state, regex_substitution_ready, regex_substitution_store,
+    regex_substitution_string, regex_substitution_amount;
 
 role ReplacingRegexMatch {
     replacement(found is RegexMatching) is string;
@@ -45,8 +38,14 @@ role ReplacingRegexMatch {
 
 object LiteralRegexReplacement does ReplacingRegexMatch {
     has origin is string;
-    LiteralRegexReplacement(value is string) { origin = value; }
-    replacement(found is RegexMatching) is string { origin; }
+
+    LiteralRegexReplacement(value is string) {
+        origin = value;
+    }
+
+    replacement(found is RegexMatching) is string {
+        origin;
+    }
 }
 
 object ExpandedRegexReplacement does ReplacingRegexMatch {
@@ -60,7 +59,11 @@ object ExpandedRegexReplacement does ReplacingRegexMatch {
 
     replacement(found is RegexMatching) is string {
         let status = regex_replacement_prepare(state);
-        confirm status["status"] == 0 else throw InvalidRegexReplacement.located(status["offset"], "invalid regex replacement");
+        confirm status["status"] == 0
+            else throw InvalidRegexReplacement.located(
+                status["offset"],
+                "invalid regex replacement"
+            );
         let tokens is @string = regex_replacement_tokens(state);
         for Accumulated(
             origin: ReplacementTokens(tokens),
@@ -78,6 +81,7 @@ object ExpandedRegexReplacement does ReplacingRegexMatch {
     }
 
     private:
+
     expansion(
         kind is string,
         value is string,
@@ -88,11 +92,21 @@ object ExpandedRegexReplacement does ReplacingRegexMatch {
         }
         else if kind == "index" {
             let capture = found.capture(ParsedInt(value).value());
-            if capture.matched() { capture.text(); } else { ""; }
+            if capture.matched() {
+                capture.text();
+            }
+            else {
+                "";
+            }
         }
         else {
             let capture = found.group(value);
-            if capture.matched() { capture.text(); } else { ""; }
+            if capture.matched() {
+                capture.text();
+            }
+            else {
+                "";
+            }
         }
     }
 }
@@ -100,17 +114,28 @@ object ExpandedRegexReplacement does ReplacingRegexMatch {
 object ReplacementToken {
     has classification is string;
     has origin is string;
+
     ReplacementToken(kind is string, text is string) {
         classification = kind;
         origin = text;
     }
-    kind() is string { classification; }
-    text() is string { origin; }
+
+    kind() is string {
+        classification;
+    }
+
+    text() is string {
+        origin;
+    }
 }
 
 object ReplacementTokens does Iterating<ReplacementToken> {
     has origin is @string;
-    ReplacementTokens(tokens is @string) { origin = tokens; }
+
+    ReplacementTokens(tokens is @string) {
+        origin = tokens;
+    }
+
     cursor() is Cursor<ReplacementToken> {
         ReplacementTokenCursor(tokens: origin, position: 0);
     }
@@ -119,15 +144,21 @@ object ReplacementTokens does Iterating<ReplacementToken> {
 object ReplacementTokenCursor does Cursor<ReplacementToken> {
     has origin is @string;
     has position is int;
+
     ReplacementTokenCursor(tokens is @string, position is int) {
         origin = tokens;
         self.position = position;
     }
-    available() is bool { position < origin.size(); }
+
+    available() is bool {
+        position < origin.size();
+    }
+
     item() is ReplacementToken {
         confirm self.available() else throw IterationEnded.ended;
         ReplacementToken(origin[position], origin[position + 1]);
     }
+
     successor() is Cursor<ReplacementToken> {
         confirm self.available() else throw IterationEnded.ended;
         ReplacementTokenCursor(tokens: origin, position: position + 2);
@@ -169,11 +200,16 @@ object RegexSubstitution {
         state = regex_substitution_state();
     }
 
-    string() is string { self.result().string(); }
+    string() is string {
+        self.result().string();
+    }
 
-    amount() is int { self.result().amount(); }
+    amount() is int {
+        self.result().amount();
+    }
 
     private:
+
     matches() is Iterating<RegexMatching> {
         let found = RegexMatches(source, pattern);
         if maximum < 0 {
@@ -245,11 +281,11 @@ object RegexSubstitutionProgress {
         let range = found.range();
         RegexSubstitutionProgress(
             origin: source,
-            rendered: rendered
-                + source.slice(offset, range.start())
-                + replacing.replacement(found),
-            offset: range.end(),
-            amount: quantity + 1,
+            rendered: rendered +
+                source.slice(offset, range.start()) +
+                replacing.replacement(found),
+                offset: range.end(),
+                amount: quantity + 1,
         );
     }
 
@@ -264,12 +300,19 @@ object RegexSubstitutionProgress {
 object RegexSubstitutionResult {
     has rendered is string;
     has quantity is int;
+
     RegexSubstitutionResult(string is string, amount is int) {
         rendered = string;
         quantity = amount;
     }
-    string() is string { rendered; }
-    amount() is int { quantity; }
+
+    string() is string {
+        rendered;
+    }
+
+    amount() is int {
+        quantity;
+    }
 }
 
 enum InvalidRegexReplacement is Error = (located(offset is int, message is string));

@@ -5,14 +5,8 @@ import "collections/sequence" take Sequencing, EmptySequence;
 import "error" take OutOfRange;
 import "fs/directory" take Directory;
 import "fs/path" take Path;
-import "runtime/environment" take
-    environment_snapshot,
-    environment_normalize,
-    environment_add,
-    environment_diff,
-    environment_name,
-    environment_home,
-    environment_path_separator;
+import "runtime/environment" take environment_snapshot, environment_normalize, environment_add,
+    environment_diff, environment_name, environment_home, environment_path_separator;
 import "size" take Sizing;
 
 // Environment is an immutable snapshot. Environment() reads the process
@@ -94,6 +88,7 @@ object Environment {
     }
 
     private:
+
     normalized(name is string) is string {
         try {
             environment_name(name);
@@ -149,7 +144,12 @@ object SearchPath does Sequencing<Path>, Iterating<Path>, Sizing {
             environment.variable("PATH")
                 .split(environment_path_separator())
                 .map() -> part {
-                    Path(if part.empty() { "."; } else { part; });
+                    Path(if part.empty() {
+                        ".";
+                    }
+                    else {
+                        part;
+                    });
                 };
         }
         else {

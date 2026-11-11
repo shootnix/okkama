@@ -1,7 +1,7 @@
 module digest/read v1.0.0;
 
 import "digest/state" take Digesting;
-import "io/stream" take AsyncReading,Reading;
+import "io/stream" take AsyncReading, Reading;
 import "error" take InvalidArgument;
 import "io/buffer" take ByteBuffer;
 
@@ -32,11 +32,18 @@ object ReadDigest {
         self.chunk = chunk;
     }
 
-    result() is Digesting { self.continued(digest); }
+    result() is Digesting {
+        self.continued(digest);
+    }
 
     continued(current is Digesting) is Digesting {
         let bytes = origin.bytes(chunk);
-        if bytes.size() == 0 { current; } else { self.continued(current.state(bytes)); }
+        if bytes.size() == 0 {
+            current;
+        }
+        else {
+            self.continued(current.state(bytes));
+        }
     }
 }
 
@@ -58,18 +65,29 @@ object AsyncReadDigest {
         self.chunk = chunk;
     }
 
-    async result() is Digesting { await self.continued(digest); }
+    async result() is Digesting {
+        await self.continued(digest);
+    }
 
     async continued(current is Digesting) is Digesting {
         let bytes = await origin.bytes(chunk);
-        if bytes.size() == 0 { current; } else { await self.continued(current.state(bytes)); }
+        if bytes.size() == 0 {
+            current;
+        }
+        else {
+            await self.continued(current.state(bytes));
+        }
     }
 }
 
 test "stream digests equal digests of the whole input" {
-    let input is @byte = (0..1000).map() -> i { (i % 256).byte(); };
+    let input is @byte = (0..1000).map() -> i {
+        (i % 256).byte();
+    };
     let whole = Digesting.fake().state(input).bytes();
     test.is(ReadDigest(ByteBuffer(input).reading(), Digesting.fake(), 7).result().bytes(), whole);
     test.is(ReadDigest(ByteBuffer().reading(), Digesting.fake()).result().bytes().size(), 0);
-    test.throws(InvalidArgument) { ReadDigest(ByteBuffer().reading(), Digesting.fake(), 0); };
+    test.throws(InvalidArgument) {
+        ReadDigest(ByteBuffer().reading(), Digesting.fake(), 0);
+    };
 }

@@ -5,15 +5,8 @@ import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "collections/combining" take UnequalSizes;
 import "math/constants" take Pi, Tau;
-import "runtime/random_distribution" take
-    distribution_uniform,
-    distribution_log,
-    distribution_exp,
-    distribution_sqrt,
-    distribution_cos,
-    distribution_acos,
-    distribution_power,
-    distribution_angle;
+import "runtime/random_distribution" take distribution_uniform, distribution_log, distribution_exp,
+    distribution_sqrt, distribution_cos, distribution_acos, distribution_power, distribution_angle;
 
 // Stateful distribution views over an injected Randomizing capability.
 // Calling sample() advances that source.
@@ -51,7 +44,10 @@ object UniformIntegers does Distribution<int> {
     has ending is int;
 
     UniformIntegers(random is Randomizing, start is int, stop is int) {
-        confirm start < stop else throw InvalidDistribution.because("uniform integer range must satisfy start < stop");
+        confirm start < stop
+            else throw InvalidDistribution.because(
+                "uniform integer range must satisfy start < stop"
+            );
         self.random = random;
         beginning = start;
         ending = stop;
@@ -68,7 +64,8 @@ object UniformFloats does Distribution<float> {
     has ending is float;
 
     UniformFloats(random is Randomizing, start is float, stop is float) {
-        confirm start < stop else throw InvalidDistribution.because("uniform float range must satisfy start < stop");
+        confirm start < stop
+            else throw InvalidDistribution.because("uniform float range must satisfy start < stop");
         self.random = random;
         beginning = start;
         ending = stop;
@@ -89,7 +86,8 @@ object NormalDistribution does Distribution<float> {
         mean is float,
         deviation is float,
     ) {
-        confirm deviation >= 0.0 else throw InvalidDistribution.because("normal deviation must be non-negative");
+        confirm deviation >= 0.0
+            else throw InvalidDistribution.because("normal deviation must be non-negative");
         self.random = random;
         center = mean;
         spread = deviation;
@@ -207,14 +205,14 @@ object GammaCandidate {
             let square is float = normal * normal;
             if uniform == 0.0
                 || uniform < 1.0 - 0.0331 * square * square
-                || distribution_log(uniform)
-                    < 0.5 * square
-                        + adjusted * (1.0 - cube + distribution_log(cube)) {
-                adjusted * cube;
-            }
-            else {
-                self.value();
-            }
+                || distribution_log(uniform) <
+                0.5 * square +
+                adjusted * (1.0 - cube + distribution_log(cube)) {
+                    adjusted * cube;
+                }
+                else {
+                    self.value();
+                }
         }
     }
 }
@@ -292,7 +290,8 @@ object LogNormalDistribution does Distribution<float> {
         mean is float,
         deviation is float,
     ) {
-        confirm deviation >= 0.0 else throw InvalidDistribution.because("log-normal deviation must be non-negative");
+        confirm deviation >= 0.0
+            else throw InvalidDistribution.because("log-normal deviation must be non-negative");
         self.random = random;
         center = mean;
         spread = deviation;
@@ -320,7 +319,8 @@ object VonMisesDistribution does Distribution<float> {
         mean is float,
         concentration is float,
     ) {
-        confirm concentration >= 0.0 else throw InvalidDistribution.because("von Mises concentration must be non-negative");
+        confirm concentration >= 0.0
+            else throw InvalidDistribution.because("von Mises concentration must be non-negative");
         self.random = random;
         center = mean;
         self.concentration = concentration;
@@ -357,8 +357,8 @@ object VonMisesSample {
 
     value() is float {
         let scaling is float = 0.5 / concentration;
-        let ratio is float = scaling
-            + distribution_sqrt(1.0 + scaling * scaling);
+        let ratio is float = scaling +
+            distribution_sqrt(1.0 + scaling * scaling);
         VonMisesCandidate(
             random: random,
             mean: center,
@@ -390,31 +390,31 @@ object VonMisesCandidate {
         let uniform is float = random.float();
         if uniform < 1.0 - delta * delta
             || uniform <= (1.0 - delta) * distribution_exp(delta) {
-            let reciprocal is float = 1.0 / ratio;
-            let projected is float = (reciprocal + cosine)
-                / (1.0 + reciprocal * cosine);
-            let bounded is float = if projected < -1.0 {
-                -1.0;
-            }
-            else {
-                if projected > 1.0 {
-                    1.0;
+                let reciprocal is float = 1.0 / ratio;
+                let projected is float = (reciprocal + cosine) /
+                    (1.0 + reciprocal * cosine);
+                let bounded is float = if projected < -1.0 {
+                    -1.0;
                 }
                 else {
-                    projected;
+                    if projected > 1.0 {
+                        1.0;
+                    }
+                    else {
+                        projected;
+                    }
+                };
+                let angle is float = distribution_acos(bounded);
+                if random.float() > 0.5 {
+                    distribution_angle(center + angle);
                 }
-            };
-            let angle is float = distribution_acos(bounded);
-            if random.float() > 0.5 {
-                distribution_angle(center + angle);
+                else {
+                    distribution_angle(center - angle);
+                }
             }
             else {
-                distribution_angle(center - angle);
+                self.value();
             }
-        }
-        else {
-            self.value();
-        }
     }
 }
 
@@ -498,28 +498,28 @@ object WeightedChoices<T> does Distribution<T> {
         weights is Sequencing<float>,
     ) {
         confirm values.size() == weights.size() else throw UnequalSizes.unequal;
-        confirm values.size() > 0 else throw InvalidDistribution.because("weighted choices require non-empty values");
+        confirm values.size() > 0
+            else throw InvalidDistribution.because("weighted choices require non-empty values");
         let valid is bool = (0..weights.size()).reduce(true) -> valid, index {
             valid && weights.item(index) >= 0.0;
         };
         confirm valid
             else throw InvalidDistribution.because("weights must be non-negative");
-        let maximum is float = (0..weights.size()).reduce(0.0)
-            -> largest, index {
-                if weights.item(index) > largest {
-                    weights.item(index);
-                }
-                else {
-                    largest;
-                }
-            };
-        confirm maximum > 0.0 else throw InvalidDistribution.because("weighted choices require a positive weight");
+        let maximum is float = (0..weights.size()).reduce(0.0) -> largest, index {
+            if weights.item(index) > largest {
+                weights.item(index);
+            }
+            else {
+                largest;
+            }
+        };
+        confirm maximum > 0.0
+            else throw InvalidDistribution.because("weighted choices require a positive weight");
         self.random = random;
         origin = values;
         self.weights = weights;
         scaling = maximum;
-        let normalized is float = (0..weights.size()).reduce(0.0)
-            -> sum, index {
+        let normalized is float = (0..weights.size()).reduce(0.0) -> sum, index {
             sum + weights.item(index) / maximum;
         };
         total = normalized;
@@ -562,8 +562,8 @@ object WeightedSelection<T> {
     }
 
     value() is T {
-        let following is float = cumulative
-            + weights.item(position) / scaling;
+        let following is float = cumulative +
+            weights.item(position) / scaling;
         if target < following || position == values.size() - 1 {
             values.item(position);
         }
@@ -590,7 +590,10 @@ object Samples<T> does Distribution<@T> {
         values is Sequencing<T>,
         count is int,
     ) {
-        confirm count >= 0 && count <= values.size() else throw InvalidDistribution.because("sample count must be between zero and the values size");
+        confirm count >= 0 && count <= values.size()
+            else throw InvalidDistribution.because(
+                "sample count must be between zero and the values size"
+            );
         self.random = random;
         origin = values;
         amount = count;
@@ -603,8 +606,9 @@ object Samples<T> does Distribution<@T> {
         }
         else {
             let no_positions is List<int> = EmptyList();
-            let positions is List<int> = (0..origin.size()).reduce(no_positions)
-                -> items, index { items.prefix(index); };
+            let positions is List<int> = (0..origin.size()).reduce(no_positions) -> items, index {
+                items.prefix(index);
+            };
             let no_selected is List<int> = EmptyList();
             let reversed is List<int> = IndexSamples(
                 random: random,
@@ -612,9 +616,12 @@ object Samples<T> does Distribution<@T> {
                 count: amount,
                 selected: no_selected,
             ).value();
-            let ordered is List<int> = reversed.reduce(EmptyList())
-                -> items, index { items.prefix(index); };
-            ordered.map() -> index { origin.item(index); };
+            let ordered is List<int> = reversed.reduce(EmptyList()) -> items, index {
+                items.prefix(index);
+            };
+            ordered.map() -> index {
+                origin.item(index);
+            };
         }
     }
 }

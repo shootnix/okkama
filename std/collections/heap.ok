@@ -192,10 +192,20 @@ object HeapChildren<T> {
     }
 
     left() is HeapRepresenting<T> {
-        if beginning.rank() >= ending.rank() { beginning; } else { ending; }
+        if beginning.rank() >= ending.rank() {
+            beginning;
+        }
+        else {
+            ending;
+        }
     }
 
     right() is HeapRepresenting<T> {
-        if beginning.rank() >= ending.rank() { ending; } else { beginning; }
+        if beginning.rank() >= ending.rank() {
+            ending;
+        }
+        else {
+            beginning;
+        }
     }
 }

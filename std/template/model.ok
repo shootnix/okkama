@@ -1,4 +1,5 @@
 module template/model v1.0.0;
+
 import "template/path" take TemplatePath;
 
 import "collections/sequence" take Sequencing;
@@ -25,6 +26,7 @@ import "compare" take Order;
 // Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/template/model.ok
 role TemplateStrings {
     string(path is TemplatePath) is string;
+
     fake {
         string(path is TemplatePath) is string {
             test.is(path.string(), "name");
@@ -32,39 +34,63 @@ role TemplateStrings {
         }
     }
 }
+
 object TemplateBinding {
     has key is TemplatePath;
     has value is string;
-    TemplateBinding(path is TemplatePath, value is string) {key = path;self.value = value;}
-    path() is TemplatePath {key;}
-    string() is string {value;}
+
+    TemplateBinding(path is TemplatePath, value is string) {
+        key = path;
+        self.value = value;
+    }
+
+    path() is TemplatePath {
+        key;
+    }
+
+    string() is string {
+        value;
+    }
 }
+
 object TemplateBindings does TemplateStrings {
     has origin is @TemplateBinding;
+
     TemplateBindings(values is Sequencing<TemplateBinding>) {
-        origin = TemplateBindingSnapshot(values,1024).items();
+        origin = TemplateBindingSnapshot(values, 1024).items();
     }
+
     TemplateBindings(values is Sequencing<TemplateBinding>, maximum_bindings is int) {
-        origin = TemplateBindingSnapshot(values,maximum_bindings).items();
+        origin = TemplateBindingSnapshot(values, maximum_bindings).items();
     }
+
     string(path is TemplatePath) is string {
-        let found = (0..origin.size()).reduce(-1) -> previous,index {
-            if origin[index].path().order(path) == Order.equal {index;} else {previous;}
+        let found = (0..origin.size()).reduce(-1) -> previous, index {
+            if origin[index].path().order(path) == Order.equal {
+                index;
+            }
+            else {
+                previous;
+            }
         };
         confirm found >= 0 else throw MissingTemplateValue.path(path.string());
         origin[found].string();
     }
 }
+
 // Internal bounded snapshot collaborator; importable because module declarations
 // have no private visibility. No item is reread during duplicate validation.
 object TemplateBindingSnapshot {
     has origin is @TemplateBinding;
+
     TemplateBindingSnapshot(source is Sequencing<TemplateBinding>, maximum is int) {
         confirm maximum >= 0 else throw InvalidTemplateBindingLimit.invalid;
         let size = source.size();
         confirm size >= 0 else throw InvalidTemplateBindingSize.invalid;
         confirm size <= maximum else throw TemplateBindingLimitExceeded.exceeded;
-        let snapshot is @TemplateBinding = (0..size).map() -> index {source.item(index);};
+        let snapshot is @TemplateBinding = (0..size).map() -> index {
+            source.item(index);
+        };
         for (0..size) -> index {
             for (0..index) -> previous {
                 confirm snapshot[index].path().order(snapshot[previous].path()) != Order.equal
@@ -73,30 +99,68 @@ object TemplateBindingSnapshot {
         }
         origin = snapshot;
     }
-    items() is @TemplateBinding {origin;}
+
+    items() is @TemplateBinding {
+        origin;
+    }
 }
+
 enum MissingTemplateValue is Error = (path(path is string));
+
 enum DuplicateTemplateValue is Error = (path(path is string));
+
 enum InvalidTemplateBindingLimit is Error = (invalid);
+
 enum InvalidTemplateBindingSize is Error = (invalid);
+
 enum TemplateBindingLimitExceeded is Error = (exceeded);
 
 test "explicit template strings have exact nominal paths" {
     let data is TemplateStrings = TemplateBindings([
         TemplateBinding(TemplatePath(["user.name"]), "literal"),
-        TemplateBinding(TemplatePath(["user","name"]), "nested")
+        TemplateBinding(TemplatePath(["user", "name"]), "nested")
     ]);
     test.is(data.string(TemplatePath(["user.name"])), "literal");
-    test.is(data.string(TemplatePath(["user","name"])), "nested");
+    test.is(data.string(TemplatePath(["user", "name"])), "nested");
     test.is(TemplateStrings.fake().string(TemplatePath(["name"])), "Ada");
 }
+
 test "template binding errors retain path and budget contracts" {
-    test.is(try {TemplateBindings([],0).string(TemplatePath(["missing"]));"";}
-        catch MissingTemplateValue.path(path) {path.string();}, "missing");
-    test.ok(try {TemplateBindings([], -1);false;} catch error is InvalidTemplateBindingLimit {true;});
-    test.ok(try {TemplateBindings([TemplateBinding(TemplatePath(["a"]), "")],0);false;}
-        catch error is TemplateBindingLimitExceeded {true;});
-    test.is(try {TemplateBindings([
-        TemplateBinding(TemplatePath(["x"]),"1"),TemplateBinding(TemplatePath(["x"]),"2")]);"";}
-        catch DuplicateTemplateValue.path(path) {path.string();}, "x");
+    test.is(
+        try {
+            TemplateBindings([], 0).string(TemplatePath(["missing"]));
+            "";
+        }
+        catch MissingTemplateValue.path(path) {
+            path.string();
+        },
+        "missing"
+    );
+    test.ok(try {
+        TemplateBindings([], -1);
+        false;
+    }
+    catch error is InvalidTemplateBindingLimit {
+        true;
+    });
+    test.ok(try {
+        TemplateBindings([TemplateBinding(TemplatePath(["a"]), "")], 0);
+        false;
+    }
+    catch error is TemplateBindingLimitExceeded {
+        true;
+    });
+    test.is(
+        try {
+            TemplateBindings([
+                TemplateBinding(TemplatePath(["x"]), "1"),
+                TemplateBinding(TemplatePath(["x"]), "2")
+            ]);
+            "";
+        }
+        catch DuplicateTemplateValue.path(path) {
+            path.string();
+        },
+        "x"
+    );
 }

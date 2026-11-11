@@ -81,7 +81,12 @@ object ParsedFloat {
 
     value() is float {
         let negative is bool = source.slice(0, 1) == "-";
-        let offset is int = if negative { 1; } else { 0; };
+        let offset is int = if negative {
+            1;
+        }
+        else {
+            0;
+        };
         let decimal is int = self.decimal(offset);
 
         if decimal == -1 {
@@ -161,16 +166,36 @@ object ParsedFloat {
         let symbol is string = source.slice(index, index + 1);
 
         match symbol {
-            case "0" { 0.0; }
-            case "1" { 1.0; }
-            case "2" { 2.0; }
-            case "3" { 3.0; }
-            case "4" { 4.0; }
-            case "5" { 5.0; }
-            case "6" { 6.0; }
-            case "7" { 7.0; }
-            case "8" { 8.0; }
-            case "9" { 9.0; }
+            case "0" {
+                0.0;
+            }
+            case "1" {
+                1.0;
+            }
+            case "2" {
+                2.0;
+            }
+            case "3" {
+                3.0;
+            }
+            case "4" {
+                4.0;
+            }
+            case "5" {
+                5.0;
+            }
+            case "6" {
+                6.0;
+            }
+            case "7" {
+                7.0;
+            }
+            case "8" {
+                8.0;
+            }
+            case "9" {
+                9.0;
+            }
 
             else {
                 throw InvalidFloat.source(source);
@@ -239,8 +264,12 @@ object ParsedBool {
 
     value() is bool {
         match source {
-            case "true" { true; }
-            case "false" { false; }
+            case "true" {
+                true;
+            }
+            case "false" {
+                false;
+            }
             else {
                 throw InvalidBoolean.source(source);
             }
@@ -294,22 +323,40 @@ object ParsedByte {
         else {
             "";
         };
-        let prefixed is bool = radix == 0 && match prefix {
-            case "0b", "0B", "0o", "0O", "0x", "0X" { true; }
-            else { false; }
-        };
+        let prefixed is bool = radix == 0
+            && match prefix {
+                case "0b", "0B", "0o", "0O", "0x", "0X" {
+                    true;
+                }
+                else {
+                    false;
+                }
+            };
         let base is int = if radix != 0 {
             radix;
         }
         else {
             match prefix {
-                case "0b", "0B" { 2; }
-                case "0o", "0O" { 8; }
-                case "0x", "0X" { 16; }
-                else { 10; }
+                case "0b", "0B" {
+                    2;
+                }
+                case "0o", "0O" {
+                    8;
+                }
+                case "0x", "0X" {
+                    16;
+                }
+                else {
+                    10;
+                }
             }
         };
-        let start is int = if prefixed { 2; } else { 0; };
+        let start is int = if prefixed {
+            2;
+        }
+        else {
+            0;
+        };
         confirm start < source.length()
             else throw InvalidByte.source(source);
         let integer is int = (start..source.length())
@@ -351,42 +398,114 @@ object ParsedByte {
         let symbol is string = source.slice(index, index + 1);
 
         let result is int = match symbol {
-            case "0" { 0; }
-            case "1" { 1; }
-            case "2" { 2; }
-            case "3" { 3; }
-            case "4" { 4; }
-            case "5" { 5; }
-            case "6" { 6; }
-            case "7" { 7; }
-            case "8" { 8; }
-            case "9" { 9; }
-            case "a", "A" { 10; }
-            case "b", "B" { 11; }
-            case "c", "C" { 12; }
-            case "d", "D" { 13; }
-            case "e", "E" { 14; }
-            case "f", "F" { 15; }
-            case "g", "G" { 16; }
-            case "h", "H" { 17; }
-            case "i", "I" { 18; }
-            case "j", "J" { 19; }
-            case "k", "K" { 20; }
-            case "l", "L" { 21; }
-            case "m", "M" { 22; }
-            case "n", "N" { 23; }
-            case "o", "O" { 24; }
-            case "p", "P" { 25; }
-            case "q", "Q" { 26; }
-            case "r", "R" { 27; }
-            case "s", "S" { 28; }
-            case "t", "T" { 29; }
-            case "u", "U" { 30; }
-            case "v", "V" { 31; }
-            case "w", "W" { 32; }
-            case "x", "X" { 33; }
-            case "y", "Y" { 34; }
-            case "z", "Z" { 35; }
+            case "0" {
+                0;
+            }
+            case "1" {
+                1;
+            }
+            case "2" {
+                2;
+            }
+            case "3" {
+                3;
+            }
+            case "4" {
+                4;
+            }
+            case "5" {
+                5;
+            }
+            case "6" {
+                6;
+            }
+            case "7" {
+                7;
+            }
+            case "8" {
+                8;
+            }
+            case "9" {
+                9;
+            }
+            case "a", "A" {
+                10;
+            }
+            case "b", "B" {
+                11;
+            }
+            case "c", "C" {
+                12;
+            }
+            case "d", "D" {
+                13;
+            }
+            case "e", "E" {
+                14;
+            }
+            case "f", "F" {
+                15;
+            }
+            case "g", "G" {
+                16;
+            }
+            case "h", "H" {
+                17;
+            }
+            case "i", "I" {
+                18;
+            }
+            case "j", "J" {
+                19;
+            }
+            case "k", "K" {
+                20;
+            }
+            case "l", "L" {
+                21;
+            }
+            case "m", "M" {
+                22;
+            }
+            case "n", "N" {
+                23;
+            }
+            case "o", "O" {
+                24;
+            }
+            case "p", "P" {
+                25;
+            }
+            case "q", "Q" {
+                26;
+            }
+            case "r", "R" {
+                27;
+            }
+            case "s", "S" {
+                28;
+            }
+            case "t", "T" {
+                29;
+            }
+            case "u", "U" {
+                30;
+            }
+            case "v", "V" {
+                31;
+            }
+            case "w", "W" {
+                32;
+            }
+            case "x", "X" {
+                33;
+            }
+            case "y", "Y" {
+                34;
+            }
+            case "z", "Z" {
+                35;
+            }
             else {
                 throw InvalidByte.source(source);
             }

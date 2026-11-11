@@ -39,8 +39,13 @@ individual signal is a message which must be consumed exactly once.
 object Event {
     has initial is bool;
 
-    Event() { initial = false; }
-    Event(ready is bool) { initial = ready; }
+    Event() {
+        initial = false;
+    }
+
+    Event(ready is bool) {
+        initial = ready;
+    }
 
     async wait() is Event {
         panic "Event.wait is a VM intrinsic";

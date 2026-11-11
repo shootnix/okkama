@@ -65,10 +65,21 @@ object Barrier {
 }
 
 object BarrierState {
-    parties() is int { panic "BarrierState.parties is a VM intrinsic"; }
-    waiters() is int { panic "BarrierState.waiters is a VM intrinsic"; }
-    generation() is int { panic "BarrierState.generation is a VM intrinsic"; }
-    broken() is bool { panic "BarrierState.broken is a VM intrinsic"; }
+    parties() is int {
+        panic "BarrierState.parties is a VM intrinsic";
+    }
+
+    waiters() is int {
+        panic "BarrierState.waiters is a VM intrinsic";
+    }
+
+    generation() is int {
+        panic "BarrierState.generation is a VM intrinsic";
+    }
+
+    broken() is bool {
+        panic "BarrierState.broken is a VM intrinsic";
+    }
 }
 
 enum InvalidPartyCount is Error = (parties(parties is int));

@@ -3,11 +3,7 @@ module time/clock v1.0.0;
 import "compare" take Comparing, Order;
 import "operators" take Adding, Subtracting;
 import "time/duration" take Duration, DurationUnit;
-import "runtime/time" take
-    wall_clock,
-    monotonic_clock,
-    clock_domain,
-    sleep_nanoseconds;
+import "runtime/time" take wall_clock, monotonic_clock, clock_domain, sleep_nanoseconds;
 
 // Wall-clock and monotonic time are deliberately different nominal values.
 //
@@ -23,8 +19,7 @@ import "runtime/time" take
 // The one-argument constructor binds explicitly supplied readings to the
 // "explicit" domain and never claims compatibility with a live clock.
 
-object Instant does Comparing<Instant>, Adding<Duration, Instant>, Subtracting<Duration, Instant>,
-        Subtracting<Instant, Duration> {
+object Instant does Comparing<Instant>, Adding<Duration, Instant>, Subtracting<Duration, Instant>, Subtracting<Instant, Duration> {
     has origin is Duration;
 
     Instant(origin is Duration) {
@@ -52,8 +47,7 @@ object Instant does Comparing<Instant>, Adding<Duration, Instant>, Subtracting<D
     }
 }
 
-object MonotonicInstant does Comparing<MonotonicInstant>, Adding<Duration, MonotonicInstant>,
-        Subtracting<Duration, MonotonicInstant>, Subtracting<MonotonicInstant, Duration> {
+object MonotonicInstant does Comparing<MonotonicInstant>, Adding<Duration, MonotonicInstant>, Subtracting<Duration, MonotonicInstant>, Subtracting<MonotonicInstant, Duration> {
     has origin is Duration;
     has domain is string;
 
@@ -63,12 +57,15 @@ object MonotonicInstant does Comparing<MonotonicInstant>, Adding<Duration, Monot
     }
 
     MonotonicInstant(origin is Duration, domain is string) {
-        confirm domain.length()>0 && domain.length()<=128 else throw IncompatibleClock.incompatible;
+        confirm domain.length() > 0 && domain.length() <= 128
+            else throw IncompatibleClock.incompatible;
         self.origin = origin;
         self.domain = domain;
     }
 
-    domain() is string {domain;}
+    domain() is string {
+        domain;
+    }
 
     reading() is Duration {
         origin;
@@ -83,12 +80,12 @@ object MonotonicInstant does Comparing<MonotonicInstant>, Adding<Duration, Monot
     }
 
     minus(other is MonotonicInstant) is Duration {
-        confirm domain==other.domain() else throw IncompatibleClock.incompatible;
+        confirm domain == other.domain() else throw IncompatibleClock.incompatible;
         origin.minus(other.reading());
     }
 
     order(other is MonotonicInstant) is Order {
-        confirm domain==other.domain() else throw IncompatibleClock.incompatible;
+        confirm domain == other.domain() else throw IncompatibleClock.incompatible;
         origin.order(other.reading());
     }
 }
@@ -111,10 +108,13 @@ object SystemClock does Timing {
     }
 
     monotonic_instant() is MonotonicInstant {
-        MonotonicInstant(origin: Duration(
-            value: monotonic_clock().rat(),
-            unit: DurationUnit.nanosecond,
-        ), domain: clock_domain(false));
+        MonotonicInstant(
+            origin: Duration(
+                value: monotonic_clock().rat(),
+                unit: DurationUnit.nanosecond,
+            ),
+            domain: clock_domain(false)
+        );
     }
 
     async wait(duration is Duration) is void {

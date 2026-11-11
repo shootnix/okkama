@@ -32,7 +32,7 @@ import "collections/iteration" take Cursor, Iterating, IterationEnded;
 // Every cursor in this module is immutable. successor() returns the next
 // cursor and leaves the receiver at its original item.
 
-object Pair<A,B> {
+object Pair<A, B> {
     has left is A;
     has right is B;
 
@@ -50,18 +50,18 @@ object Pair<A,B> {
     }
 }
 
-object Zipped<A,B> does Iterating<Pair<A,B>> {
+object Zipped<A, B> does Iterating<Pair<A, B>> {
     has left is Iterating<A>;
     has right is Iterating<B>;
 
     Zipped(:left, :right);
 
-    cursor() is Cursor<Pair<A,B>> {
+    cursor() is Cursor<Pair<A, B>> {
         ZippedCursor(left: left.cursor(), right: right.cursor());
     }
 }
 
-object ZippedCursor<A,B> does Cursor<Pair<A,B>> {
+object ZippedCursor<A, B> does Cursor<Pair<A, B>> {
     has left is Cursor<A>;
     has right is Cursor<B>;
 
@@ -71,29 +71,29 @@ object ZippedCursor<A,B> does Cursor<Pair<A,B>> {
         left.available() && right.available();
     }
 
-    item() is Pair<A,B> {
+    item() is Pair<A, B> {
         confirm self.available() else throw IterationEnded.ended;
         Pair(first: left.item(), second: right.item());
     }
 
-    successor() is Cursor<Pair<A,B>> {
+    successor() is Cursor<Pair<A, B>> {
         confirm self.available() else throw IterationEnded.ended;
         ZippedCursor(left: left.successor(), right: right.successor());
     }
 }
 
-object StrictlyZipped<A,B> does Iterating<Pair<A,B>> {
+object StrictlyZipped<A, B> does Iterating<Pair<A, B>> {
     has left is Iterating<A>;
     has right is Iterating<B>;
 
     StrictlyZipped(:left, :right);
 
-    cursor() is Cursor<Pair<A,B>> {
+    cursor() is Cursor<Pair<A, B>> {
         StrictlyZippedCursor(left: left.cursor(), right: right.cursor());
     }
 }
 
-object StrictlyZippedCursor<A,B> does Cursor<Pair<A,B>> {
+object StrictlyZippedCursor<A, B> does Cursor<Pair<A, B>> {
     has left is Cursor<A>;
     has right is Cursor<B>;
 
@@ -106,12 +106,12 @@ object StrictlyZippedCursor<A,B> does Cursor<Pair<A,B>> {
         left_available;
     }
 
-    item() is Pair<A,B> {
+    item() is Pair<A, B> {
         confirm self.available() else throw IterationEnded.ended;
         Pair(first: left.item(), second: right.item());
     }
 
-    successor() is Cursor<Pair<A,B>> {
+    successor() is Cursor<Pair<A, B>> {
         confirm self.available() else throw IterationEnded.ended;
         StrictlyZippedCursor(
             left: left.successor(),
@@ -154,8 +154,7 @@ object ChainedCursorSearch<T> {
     }
 }
 
-object ChainedCursorCandidates<T>
-    does Iterating<ChainedCursorCandidateValue<T>> {
+object ChainedCursorCandidates<T> does Iterating<ChainedCursorCandidateValue<T>> {
     has origins is Cursor<Iterating<T>>;
 
     ChainedCursorCandidates(:origins);
@@ -165,8 +164,7 @@ object ChainedCursorCandidates<T>
     }
 }
 
-object ChainedCursorCandidate<T>
-    does Cursor<ChainedCursorCandidateValue<T>> {
+object ChainedCursorCandidate<T> does Cursor<ChainedCursorCandidateValue<T>> {
     has origins is Cursor<Iterating<T>>;
 
     ChainedCursorCandidate(:origins);

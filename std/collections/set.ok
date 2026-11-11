@@ -63,7 +63,9 @@ object KeyedSet<T> does Set<T>, Iterating<T>, Sizing {
 
     KeyedSet(values is Iterating<T>) {
         let empty is %T:bool = [:];
-        entries = values.reduce(empty) -> found, value { found + [value: true]; };
+        entries = values.reduce(empty) -> found, value {
+            found + [value: true];
+        };
     }
 
     KeyedSet(:entries);
@@ -277,7 +279,12 @@ object SetWith<T> does Set<T>, Iterating<T>, Sizing {
     }
 
     size() is int {
-        origin.size() + if present { 0; } else { 1; };
+        origin.size() + if present {
+            0;
+        }
+        else {
+            1;
+        };
     }
 
     membership(value is T) is bool {
@@ -312,7 +319,12 @@ object SetWithout<T> does Set<T>, Iterating<T>, Sizing {
     }
 
     size() is int {
-        origin.size() - if present { 1; } else { 0; };
+        origin.size() - if present {
+            1;
+        }
+        else {
+            0;
+        };
     }
 
     membership(value is T) is bool {
@@ -341,7 +353,12 @@ object SetWithCursor<T> does Cursor<T> {
 
     item() is T {
         confirm self.available() else throw IterationEnded.ended;
-        if origin.available() { origin.item(); } else { value; }
+        if origin.available() {
+            origin.item();
+        }
+        else {
+            value;
+        }
     }
 
     successor() is Cursor<T> {
@@ -367,7 +384,12 @@ object ConcatenatedSetCursor<T> does Cursor<T> {
 
     item() is T {
         confirm self.available() else throw IterationEnded.ended;
-        if left.available() { left.item(); } else { right.item(); }
+        if left.available() {
+            left.item();
+        }
+        else {
+            right.item();
+        }
     }
 
     successor() is Cursor<T> {
@@ -407,7 +429,9 @@ object SetSize<T> {
     SetSize(:origin);
 
     result() is int {
-        origin.reduce(0) -> amount, item { amount + 1; };
+        origin.reduce(0) -> amount, item {
+            amount + 1;
+        };
     }
 }
 

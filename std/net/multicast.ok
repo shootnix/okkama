@@ -20,14 +20,28 @@ import "runtime/net" take ip_parse;
 object MulticastOptions {
     has hops is int;
     has local_delivery is bool;
-    MulticastOptions() {hops=1;local_delivery=true;}
-    MulticastOptions(hop_limit is int, loopback is bool) {
-        confirm hop_limit>=0 && hop_limit<=255
-            else throw InvalidArgument.because("multicast hop limit must be in 0..255: "+hop_limit.string());
-        hops=hop_limit;local_delivery=loopback;
+
+    MulticastOptions() {
+        hops = 1;
+        local_delivery = true;
     }
-    hop_limit() is int {hops;}
-    loopback() is bool {local_delivery;}
+
+    MulticastOptions(hop_limit is int, loopback is bool) {
+        confirm hop_limit >= 0 && hop_limit <= 255
+            else throw InvalidArgument.because(
+                "multicast hop limit must be in 0..255: " + hop_limit.string()
+            );
+        hops = hop_limit;
+        local_delivery = loopback;
+    }
+
+    hop_limit() is int {
+        hops;
+    }
+
+    loopback() is bool {
+        local_delivery;
+    }
 }
 
 enum InvalidMulticastGroup is Error = (origin(origin is string));
@@ -39,14 +53,23 @@ object MulticastJoining {
     has group is IpAddress;
     has interface is NetworkInterface;
     has options is MulticastOptions;
-    MulticastJoining(socket is UdpSocket, group is IpAddress,
-        interface is NetworkInterface, options is MulticastOptions) {
+
+    MulticastJoining(
+        socket is UdpSocket,
+        group is IpAddress,
+        interface is NetworkInterface,
+        options is MulticastOptions
+    ) {
         confirm group.properties().membership(IpProperty.multicast)
             else throw InvalidMulticastGroup.origin(group.string());
-        self.socket=socket;self.group=group;self.interface=interface;self.options=options;
+        self.socket = socket;
+        self.group = group;
+        self.interface = interface;
+        self.options = options;
     }
+
     membership() is MulticastMembership {
-        MulticastMembership(socket,group,interface,options);
+        MulticastMembership(socket, group, interface, options);
     }
 }
 
@@ -61,50 +84,89 @@ object MulticastMembership does UdpMembership {
     has owner is UdpSocket;
     has joined is IpAddress;
     has device is NetworkInterface;
-    MulticastMembership(socket is UdpSocket, group is IpAddress,
-        interface is NetworkInterface, options is MulticastOptions) {
+
+    MulticastMembership(
+        socket is UdpSocket,
+        group is IpAddress,
+        interface is NetworkInterface,
+        options is MulticastOptions
+    ) {
         confirm group.properties().membership(IpProperty.multicast)
             else throw InvalidMulticastGroup.origin(group.string());
-        lease=try {
-            socket.membership(group,interface,options.hop_limit(),options.loopback());
-        } catch failure is NativeFailure {
-            if failure.domain()=="core.net" && failure.code()=="already_closed" {throw NetworkClosed.closed;}
-            if failure.domain()=="core.net" && failure.code()=="invalid_input" {throw InvalidArgument.because(failure.message());}
-            let translated=NetworkError(NetworkOperation.binding,failure);
-            if translated.applicable() {throw translated.value();}
+        lease = try {
+            socket.membership(group, interface, options.hop_limit(), options.loopback());
+        }
+        catch failure is NativeFailure {
+            if failure.domain() == "core.net" && failure.code() == "already_closed" {
+                throw NetworkClosed.closed;
+            }
+            if failure.domain() == "core.net" && failure.code() == "invalid_input" {
+                throw InvalidArgument.because(failure.message());
+            }
+            let translated = NetworkError(NetworkOperation.binding, failure);
+            if translated.applicable() {
+                throw translated.value();
+            }
             throw;
         };
-        owner=socket;joined=group;device=interface;
+        owner = socket;
+        joined = group;
+        device = interface;
     }
-    group() is IpAddress {joined;}
-    interface() is NetworkInterface {device;}
 
-    closed() is bool{lease.closed();}
+    group() is IpAddress {
+        joined;
+    }
 
-    close() is void{lease.close();}
-    destroy {self.close();}
+    interface() is NetworkInterface {
+        device;
+    }
+
+    closed() is bool {
+        lease.closed();
+    }
+
+    close() is void {
+        lease.close();
+    }
+
+    destroy {
+        self.close();
+    }
 }
 
 test "multicast defaults agree with explicit requests" {
-    test.ok(MulticastOptions()==MulticastOptions(1,true));
+    test.ok(MulticastOptions() == MulticastOptions(1, true));
 }
+
 test "multicast hop boundaries and loopback are independent" {
-    let local=MulticastOptions(0,false);
-    let widest=MulticastOptions(loopback:true,hop_limit:255);
-    test.is(local.hop_limit(),0);
+    let local = MulticastOptions(0, false);
+    let widest = MulticastOptions(loopback: true, hop_limit: 255);
+    test.is(local.hop_limit(), 0);
     test.ok(!local.loopback());
-    test.is(widest.hop_limit(),255);
+    test.is(widest.hop_limit(), 255);
     test.ok(widest.loopback());
 }
+
 test "multicast hop limit rejects host default and overflow" {
-    let negative=try {MulticastOptions(-1,true);false;}
-        catch failure is InvalidArgument {true;};
-    let overflow=try {MulticastOptions(256,false);false;}
-        catch failure is InvalidArgument {true;};
+    let negative = try {
+        MulticastOptions(-1, true);
+        false;
+    }
+    catch failure is InvalidArgument {
+        true;
+    };
+    let overflow = try {
+        MulticastOptions(256, false);
+        false;
+    }
+    catch failure is InvalidArgument {
+        true;
+    };
     test.ok(negative && overflow);
 }
 
 test "invalid multicast group diagnostic preserves canonical address" {
-    let failure=InvalidMulticastGroup.origin((IpAddress("2001:0db8::1")).string());
-    test.is(failure.text(),"InvalidMulticastGroup.origin(\"2001:db8::1\")");
+    let failure = InvalidMulticastGroup.origin((IpAddress("2001:0db8::1")).string());
+    test.is(failure.text(), "InvalidMulticastGroup.origin(\"2001:db8::1\")");
 }

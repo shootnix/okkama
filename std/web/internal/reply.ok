@@ -1,8 +1,9 @@
 module web/internal/reply v1.0.0;
+
 import "http/message" take Response;
 import "http/status" take Status;
-import "http/header" take Headers,Header,HeaderName,HttpAsciiLowercase;
-import "http/body" take ByteBody,EmptyBody;
+import "http/header" take Headers, Header, HeaderName, HttpAsciiLowercase;
+import "http/body" take ByteBody, EmptyBody;
 
 // Shared response assembly for web/reply and web/exception. Replies own their
 // representation and framing metadata: callers may add other fields, but never
@@ -16,20 +17,31 @@ object ReplyHeaders {
         origin = empty;
     }
 
-    ReplyHeaders(origin is @Header) { self.origin = origin; }
+    ReplyHeaders(origin is @Header) {
+        self.origin = origin;
+    }
 
     added(name is string, value is string) is ReplyHeaders {
         let lowered = HttpAsciiLowercase(name).string();
-        confirm lowered != "content-type" && lowered != "content-length" && lowered != "transfer-encoding"
+        confirm lowered != "content-type"
+            && lowered != "content-length"
+            && lowered != "transfer-encoding"
             else throw InvalidReply.because(name + " is owned by the reply itself");
         let header = Header(HeaderName(name), value);
         let following is @Header = (0..origin.size() + 1).map() -> index {
-            if index < origin.size() { origin[index]; } else { header; }
+            if index < origin.size() {
+                origin[index];
+            }
+            else {
+                header;
+            }
         };
         ReplyHeaders(following);
     }
 
-    entries() is @Header { origin; }
+    entries() is @Header {
+        origin;
+    }
 }
 
 object ReplyResponse {
@@ -66,7 +78,13 @@ object EmptyReplyResponse {
     }
 
     response() is Response {
-        let fixed is @Header = if code == 204 { let bare is @Header = []; bare; } else { [Header(HeaderName("Content-Length"), "0")]; };
+        let fixed is @Header = if code == 204 {
+            let bare is @Header = [];
+            bare;
+        }
+        else {
+            [Header(HeaderName("Content-Length"), "0")];
+        };
         Response(Status(code), Headers(ReplyFields(fixed, extra).entries()), EmptyBody());
     }
 }
@@ -74,11 +92,21 @@ object EmptyReplyResponse {
 object ReplyFields {
     has fixed is @Header;
     has extra is ReplyHeaders;
-    ReplyFields(fixed is @Header, extra is ReplyHeaders) { self.fixed = fixed; self.extra = extra; }
+
+    ReplyFields(fixed is @Header, extra is ReplyHeaders) {
+        self.fixed = fixed;
+        self.extra = extra;
+    }
+
     entries() is @Header {
         let more = extra.entries();
         let all is @Header = (0..fixed.size() + more.size()).map() -> index {
-            if index < fixed.size() { fixed[index]; } else { more[index - fixed.size()]; }
+            if index < fixed.size() {
+                fixed[index];
+            }
+            else {
+                more[index - fixed.size()];
+            }
         };
         all;
     }
@@ -87,25 +115,44 @@ object ReplyFields {
 // Status codes that carry a representation body.
 object BodyStatus {
     has code is int;
+
     BodyStatus(status is int) {
         confirm status >= 200 && status <= 599 && status != 204 && status != 205 && status != 304
             else throw InvalidReply.because("status " + status.string() + " cannot carry a body");
         code = status;
     }
-    code() is int { code; }
+
+    code() is int {
+        code;
+    }
 }
 
 enum InvalidReply is Error = (because(reason is string));
 
 test "framing headers are owned by the reply" {
-    let rejected = try { ReplyHeaders().added("content-length", "1"); false; } catch failure is InvalidReply { true; };
+    let rejected = try {
+        ReplyHeaders().added("content-length", "1");
+        false;
+    }
+    catch failure is InvalidReply {
+        true;
+    };
     test.ok(rejected);
-    test.is(ReplyHeaders().added("X-Trace", "a").added("Cache-Control", "no-store").entries().size(), 2);
+    test.is(
+        ReplyHeaders().added("X-Trace", "a").added("Cache-Control", "no-store").entries().size(),
+        2
+    );
 }
 
 test "only representation statuses carry bodies" {
     test.is(BodyStatus(200).code(), 200);
-    test.throws(InvalidReply) { BodyStatus(204); };
-    test.throws(InvalidReply) { BodyStatus(304); };
-    test.throws(InvalidReply) { BodyStatus(101); };
+    test.throws(InvalidReply) {
+        BodyStatus(204);
+    };
+    test.throws(InvalidReply) {
+        BodyStatus(304);
+    };
+    test.throws(InvalidReply) {
+        BodyStatus(101);
+    };
 }

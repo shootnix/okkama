@@ -30,28 +30,50 @@ import "error" take InvalidArgument, InvalidState;
 // or codec is closed. These streams do not implement iteration/cursors.
 object CompressedReading does Reading, Closing {
     has stream is CompressionReading;
+
     CompressedReading(origin is Reading, compressor is Compressing) {
         stream = CompressionReading(CompressingFlow(origin, compressor), 8192);
     }
+
     CompressedReading(origin is Reading, compressor is Compressing, chunk_size is int) {
         stream = CompressionReading(CompressingFlow(origin, compressor), chunk_size);
     }
-    bytes(limit is int) is @byte { stream.bytes(limit); }
-    close() is void { stream.close(); }
-    closed() is bool { stream.closed(); }
+
+    bytes(limit is int) is @byte {
+        stream.bytes(limit);
+    }
+
+    close() is void {
+        stream.close();
+    }
+
+    closed() is bool {
+        stream.closed();
+    }
 }
 
 object DecompressedReading does Reading, Closing {
     has stream is CompressionReading;
+
     DecompressedReading(origin is Reading, decompressor is Decompressing) {
         stream = CompressionReading(DecompressingFlow(origin, decompressor), 8192);
     }
+
     DecompressedReading(origin is Reading, decompressor is Decompressing, chunk_size is int) {
         stream = CompressionReading(DecompressingFlow(origin, decompressor), chunk_size);
     }
-    bytes(limit is int) is @byte { stream.bytes(limit); }
-    close() is void { stream.close(); }
-    closed() is bool { stream.closed(); }
+
+    bytes(limit is int) is @byte {
+        stream.bytes(limit);
+    }
+
+    close() is void {
+        stream.close();
+    }
+
+    closed() is bool {
+        stream.closed();
+    }
 }
 
 // Internal stream over a bound input/codec flow. The flow retains dependencies;
@@ -64,7 +86,8 @@ object CompressionReading does Reading, Closing {
     has status is ByteBuffer;
 
     CompressionReading(flow is CompressionFlow, chunk_size is int) {
-        confirm chunk_size > 0 else throw InvalidArgument.because("compression read chunk size must be positive");
+        confirm chunk_size > 0
+            else throw InvalidArgument.because("compression read chunk size must be positive");
         self.flow = flow;
         self.chunk_size = chunk_size;
         cache = ByteBuffer();
@@ -77,9 +100,15 @@ object CompressionReading does Reading, Closing {
         let phase = status.content().bytes();
         confirm phase.size() == 0 || phase[0] != byte(2)
             else throw InvalidState.because("compression reading has failed");
-        if cache.content().size() > 0 { return cache.reading().bytes(limit); }
-        if phase.size() > 0 { return []; }
-        try { self.fill(); }
+        if cache.content().size() > 0 {
+            return cache.reading().bytes(limit);
+        }
+        if phase.size() > 0 {
+            return [];
+        }
+        try {
+            self.fill();
+        }
         catch error is Error {
             status.writing() <- [byte(2)];
             throw error;
@@ -87,9 +116,18 @@ object CompressionReading does Reading, Closing {
         cache.reading().bytes(limit);
     }
 
-    close() is void { cache.closing().close(); status.closing().close(); }
-    closed() is bool { cache.closing().closed(); }
-    destroy { self.close(); }
+    close() is void {
+        cache.closing().close();
+        status.closing().close();
+    }
+
+    closed() is bool {
+        cache.closing().closed();
+    }
+
+    destroy {
+        self.close();
+    }
 
     private:
 
@@ -98,18 +136,31 @@ object CompressionReading does Reading, Closing {
             let portion = flow.output();
             loop {
                 let bytes = portion.bytes(chunk_size);
-                confirm bytes.size() <= chunk_size else throw InvalidState.because("codec batch exceeded read limit");
-                if bytes.size() == 0 { last; }
+                confirm bytes.size() <= chunk_size
+                    else throw InvalidState.because("codec batch exceeded read limit");
+                if bytes.size() == 0 {
+                    last;
+                }
                 cache.writing() <- bytes;
             }
-            if flow.finished() { status.writing() <- [byte(1)]; return; }
-            if cache.content().size() > 0 { return; }
+            if flow.finished() {
+                status.writing() <- [byte(1)];
+                return;
+            }
+            if cache.content().size() > 0 {
+                return;
+            }
             let bytes = flow.input(chunk_size);
-            confirm bytes.size() <= chunk_size else throw InvalidState.because("compression source exceeded read limit");
+            confirm bytes.size() <= chunk_size
+                else throw InvalidState.because("compression source exceeded read limit");
             if bytes.size() == 0 {
                 flow.finish();
-                confirm flow.finished() else throw InvalidState.because("codec finish did not complete the stream");
-            } else { flow.write(bytes); }
+                confirm flow.finished()
+                    else throw InvalidState.because("codec finish did not complete the stream");
+            }
+            else {
+                flow.write(bytes);
+            }
         }
     }
 }
@@ -125,92 +176,185 @@ role CompressionFlow {
     output() is Reading;
     finish() is void;
     finished() is bool;
+
     fake {
         input(limit is int) is @byte {
             confirm limit > 0 else throw InvalidReadLimit.limit(limit);
             let position is int = if fake.storage.has("position") {
                 fake.storage.get("position");
-            } else {0;};
-            let amount = if limit < 3-position {limit;} else {3-position;};
-            let data=[byte(1),byte(2),byte(255)];
-            let result is @byte = (position..position+amount).map() -> i {data[i];};
-            fake.storage.set("position",position+amount);
+            }
+            else {
+                0;
+            };
+            let amount = if limit < 3 - position {
+                limit;
+            }
+            else {
+                3 - position;
+            };
+            let data = [byte(1), byte(2), byte(255)];
+            let result is @byte = (position..position + amount).map() -> i {
+                data[i];
+            };
+            fake.storage.set("position", position + amount);
             result;
         }
+
         write(origin is @byte) is void {
             confirm !self.finished() else throw InvalidState.because("flow has finished");
             let before is @byte = if fake.storage.has("queued") {
                 fake.storage.get("queued");
-            } else {[];};
-            let result is @byte = (0..before.size()+origin.size()).map() -> i {
-                if i < before.size() {before[i];} else {origin[i-before.size()];}
+            }
+            else {
+                [];
             };
-            fake.storage.set("queued",result);
+            let result is @byte = (0..before.size() + origin.size()).map() -> i {
+                if i < before.size() {
+                    before[i];
+                }
+                else {
+                    origin[i - before.size()];
+                }
+            };
+            fake.storage.set("queued", result);
         }
+
         output() is Reading {
             let result is @byte = if self.finished() && fake.storage.has("queued") {
                 fake.storage.get("queued");
-            } else {[];};
+            }
+            else {
+                [];
+            };
             if self.finished() {
-                let empty is @byte=[];fake.storage.set("queued",empty);
+                let empty is @byte = [];
+                fake.storage.set("queued", empty);
             }
             CompressionOutput(result);
         }
+
         finish() is void {
             confirm !self.finished() else throw InvalidState.because("flow has finished");
-            fake.storage.set("done",true);
+            fake.storage.set("done", true);
         }
-        finished() is bool {fake.storage.has("done");}
+
+        finished() is bool {
+            fake.storage.has("done");
+        }
     }
 }
 
 object CompressingFlow does CompressionFlow {
     has origin is Reading;
     has codec is Compressing;
+
     CompressingFlow(origin is Reading, compressor is Compressing) {
-        self.origin=origin;codec=compressor;
+        self.origin = origin;
+        codec = compressor;
     }
-    input(limit is int) is @byte {origin.bytes(limit);}
-    write(origin is @byte) is void {codec.write(origin);}
-    output() is Reading {codec.output();}
-    finish() is void {codec.finish();}
-    finished() is bool {codec.finished();}
+
+    input(limit is int) is @byte {
+        origin.bytes(limit);
+    }
+
+    write(origin is @byte) is void {
+        codec.write(origin);
+    }
+
+    output() is Reading {
+        codec.output();
+    }
+
+    finish() is void {
+        codec.finish();
+    }
+
+    finished() is bool {
+        codec.finished();
+    }
 }
 
 object DecompressingFlow does CompressionFlow {
     has origin is Reading;
     has codec is Decompressing;
+
     DecompressingFlow(origin is Reading, decompressor is Decompressing) {
-        self.origin=origin;codec=decompressor;
+        self.origin = origin;
+        codec = decompressor;
     }
-    input(limit is int) is @byte {origin.bytes(limit);}
-    write(origin is @byte) is void {codec.write(origin);}
-    output() is Reading {codec.output();}
-    finish() is void {codec.finish();}
-    finished() is bool {codec.finished();}
+
+    input(limit is int) is @byte {
+        origin.bytes(limit);
+    }
+
+    write(origin is @byte) is void {
+        codec.write(origin);
+    }
+
+    output() is Reading {
+        codec.output();
+    }
+
+    finish() is void {
+        codec.finish();
+    }
+
+    finished() is bool {
+        codec.finished();
+    }
 }
 
 // Root test bodies cannot directly construct imports; the local flow fake
 // supplies real finite batches from its declaration scope. Consumer suite 308
 // independently checks both public wrappers and concrete borrowed sources.
 test "compression reader skips empty batches and preserves bounded output" {
-    let flow=CompressionFlow.fake();let stream=CompressionReading(flow,1);
-    test.is(stream.bytes(1),[byte(1)]);
-    test.is(stream.bytes(8),[byte(2),byte(255)]);
-    test.is(stream.bytes(1).size(),0);test.is(stream.bytes(1).size(),0);
-    test.ok(flow.finished());stream.close();test.ok(flow.finished());
+    let flow = CompressionFlow.fake();
+    let stream = CompressionReading(flow, 1);
+    test.is(stream.bytes(1), [byte(1)]);
+    test.is(stream.bytes(8), [byte(2), byte(255)]);
+    test.is(stream.bytes(1).size(), 0);
+    test.is(stream.bytes(1).size(), 0);
+    test.ok(flow.finished());
+    stream.close();
+    test.ok(flow.finished());
 }
+
 test "compression reader validates before consuming and closes idempotently" {
-    let flow=CompressionFlow.fake();
-    test.ok(try {CompressionReading(flow,0);false;} catch e is Error {true;});
-    let stream=CompressionReading(flow,2);
-    test.ok(try {stream.bytes(0);false;} catch e is Error {true;});
-    test.is(stream.bytes(1),[byte(1)]);stream.close();stream.close();
-    test.ok(stream.closed());test.ok(try {stream.bytes(1);false;} catch e is Error {true;});
+    let flow = CompressionFlow.fake();
+    test.ok(try {
+        CompressionReading(flow, 0);
+        false;
+    }
+    catch e is Error {
+        true;
+    });
+    let stream = CompressionReading(flow, 2);
+    test.ok(try {
+        stream.bytes(0);
+        false;
+    }
+    catch e is Error {
+        true;
+    });
+    test.is(stream.bytes(1), [byte(1)]);
+    stream.close();
+    stream.close();
+    test.ok(stream.closed());
+    test.ok(try {
+        stream.bytes(1);
+        false;
+    }
+    catch e is Error {
+        true;
+    });
 }
+
 test "compression reader observes independent empty finished flows" {
-    let empty=CompressionFlow.fake();empty.finish();
-    let stream=CompressionReading(empty,8192);
-    test.is(stream.bytes(1).size(),0);test.is(stream.bytes(1).size(),0);
-    test.ok(!CompressionFlow.fake().finished());stream.close();
+    let empty = CompressionFlow.fake();
+    empty.finish();
+    let stream = CompressionReading(empty, 8192);
+    test.is(stream.bytes(1).size(), 0);
+    test.is(stream.bytes(1).size(), 0);
+    test.ok(!CompressionFlow.fake().finished());
+    stream.close();
 }

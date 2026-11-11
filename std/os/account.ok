@@ -5,10 +5,7 @@ import "collections/sequence" take Sequencing, EmptySequence;
 import "error" take OutOfRange;
 import "fs/directory" take Directory;
 import "fs/path" take Path;
-import "runtime/account" take
-    account_current_user,
-    account_user_named,
-    account_group_named,
+import "runtime/account" take account_current_user, account_user_named, account_group_named,
     account_group_users;
 import "size" take Sizing;
 
@@ -56,13 +53,16 @@ object User {
     }
 
     private:
+
     record() is %string:string {
         if current {
             try {
                 account_current_user();
             }
             catch failure is NativeFailure {
-                throw UnavailableAccountInformation.because("current user information is unavailable");
+                throw UnavailableAccountInformation.because(
+                    "current user information is unavailable"
+                );
             }
         }
         else {
@@ -73,12 +73,16 @@ object User {
             }
             catch failure is NativeFailure {
                 match failure.code() {
-                    case "not_found" { throw MissingUser.name(selected_name); }
+                    case "not_found" {
+                        throw MissingUser.name(selected_name);
+                    }
                     case "invalid_input" {
                         throw InvalidAccountName.origin(selected_name);
                     }
                     else {
-                        throw UnavailableAccountInformation.because("user information is unavailable");
+                        throw UnavailableAccountInformation.because(
+                            "user information is unavailable"
+                        );
                     }
                 }
             }
@@ -116,6 +120,7 @@ object Group {
     }
 
     private:
+
     record() is %string:string {
         confirm !selected_name.empty()
             else throw InvalidAccountName.origin(selected_name);
@@ -124,7 +129,9 @@ object Group {
         }
         catch failure is NativeFailure {
             match failure.code() {
-                case "not_found" { throw MissingGroup.name(selected_name); }
+                case "not_found" {
+                    throw MissingGroup.name(selected_name);
+                }
                 case "invalid_input" {
                     throw InvalidAccountName.origin(selected_name);
                 }
@@ -171,6 +178,7 @@ object GroupUsers does Sequencing<User>, Iterating<User>, Sizing {
     }
 
     private:
+
     names() is @string {
         confirm !group_name.empty() else throw InvalidAccountName.origin(group_name);
         try {
@@ -178,7 +186,9 @@ object GroupUsers does Sequencing<User>, Iterating<User>, Sizing {
         }
         catch failure is NativeFailure {
             match failure.code() {
-                case "not_found" { throw MissingGroup.name(group_name); }
+                case "not_found" {
+                    throw MissingGroup.name(group_name);
+                }
                 case "invalid_input" {
                     throw InvalidAccountName.origin(group_name);
                 }

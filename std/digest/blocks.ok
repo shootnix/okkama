@@ -8,13 +8,18 @@ module digest/blocks v1.0.0;
 role DigestCompression64 {
     block(origin is @byte) is ^DigestCompression64;
     bytes() is @byte;
+
     fake {
         has count is int = 0;
+
         block(origin is @byte) is ^DigestCompression64 {
             confirm origin.size() == 64 else throw InvalidDigestBlock.invalid;
             ^count = count + 1;
         }
-        bytes() is @byte { [byte(count % 256)]; }
+
+        bytes() is @byte {
+            [byte(count % 256)];
+        }
     }
 }
 
@@ -49,7 +54,8 @@ object DigestBlocks64 {
     }
 
     state(origin is @byte) is ^DigestBlocks64 {
-        confirm origin.size() <= 2305843009213693951 - length else throw DigestInputTooLong.too_long;
+        confirm origin.size() <= 2305843009213693951 - length
+            else throw DigestInputTooLong.too_long;
         ^compression = self.completed();
         ^prefix = self.remainder();
         ^origin = origin;
@@ -60,7 +66,9 @@ object DigestBlocks64 {
         let padding = DigestPadding64(self.remainder(), length, little_endian).bytes();
         let completed = self.completed();
         let final = (0..(padding.size() / 64).int()).reduce(completed) -> current, index {
-            let block is @byte = (0..64).map() -> i { padding[index * 64 + i]; };
+            let block is @byte = (0..64).map() -> i {
+                padding[index * 64 + i];
+            };
             let result = current.block(block);
             result;
         };
@@ -70,18 +78,28 @@ object DigestBlocks64 {
     private:
 
     octet(index is int) is byte {
-        if index < prefix.size() { prefix[index]; }
-        else { origin[index - prefix.size()]; }
+        if index < prefix.size() {
+            prefix[index];
+        }
+        else {
+            origin[index - prefix.size()];
+        }
     }
+
     remainder() is @byte {
         let size = prefix.size() + origin.size();
         let start = size - (size % 64);
-        let result is @byte = (start..size).map() -> i { self.octet(i); };
+        let result is @byte = (start..size).map() -> i {
+            self.octet(i);
+        };
         result;
     }
+
     completed() is DigestCompression64 {
         (0..((prefix.size() + origin.size()) / 64).int()).reduce(compression) -> current, index {
-            let block is @byte = (0..64).map() -> i { self.octet(index * 64 + i); };
+            let block is @byte = (0..64).map() -> i {
+                self.octet(index * 64 + i);
+            };
             let result = current.block(block);
             result;
         };
@@ -95,22 +113,41 @@ object DigestPadding64 {
     has tail is @byte;
     has length is int;
     has little_endian is bool;
+
     DigestPadding64(tail is @byte, length is int, little_endian is bool) {
         confirm length >= 0 && length <= 2305843009213693951 else throw DigestInputTooLong.too_long;
-        confirm tail.size() < 64 && tail.size() == length % 64 else throw InvalidDigestPadding.invalid;
+        confirm tail.size() < 64 && tail.size() == length % 64
+            else throw InvalidDigestPadding.invalid;
         self.tail = tail;
         self.length = length;
         self.little_endian = little_endian;
     }
+
     bytes() is @byte {
-        let size = if tail.size() < 56 {64;} else {128;};
+        let size = if tail.size() < 56 {
+            64;
+        }
+        else {
+            128;
+        };
         (0..size).map() -> index {
-            if index < tail.size() { tail[index]; }
-            else if index == tail.size() { byte(128); }
-            else if index < size - 8 { byte(0); }
+            if index < tail.size() {
+                tail[index];
+            }
+            else if index == tail.size() {
+                byte(128);
+            }
+            else if index < size - 8 {
+                byte(0);
+            }
             else {
                 let position = index - (size - 8);
-                let shift = if little_endian {position * 8;} else {(7 - position) * 8;};
+                let shift = if little_endian {
+                    position * 8;
+                }
+                else {
+                    (7 - position) * 8;
+                };
                 byte(((length << 3) >>> shift) & 255);
             }
         };
@@ -118,7 +155,9 @@ object DigestPadding64 {
 }
 
 enum DigestInputTooLong is Error = (too_long);
+
 enum InvalidDigestPadding is Error = (invalid);
+
 enum InvalidDigestBlock is Error = (invalid);
 
 test "digest padding has exact one and two block boundaries" {
@@ -126,18 +165,23 @@ test "digest padding has exact one and two block boundaries" {
     test.is(empty.size(), 64);
     test.is(empty[0].int(), 128);
     test.is(empty[63].int(), 0);
-    let tail is @byte = (0..56).map() -> i {byte(0);};
+    let tail is @byte = (0..56).map() -> i {
+        byte(0);
+    };
     let padded = DigestPadding64(tail, 56, false).bytes();
     test.is(padded.size(), 128);
     test.is(padded[56].int(), 128);
     test.is(padded[126].int(), 1);
     test.is(padded[127].int(), 192);
 }
+
 test "digest block fake counts final padding without changing history" {
     let empty = DigestBlocks64(DigestCompression64.fake(), [], false);
     test.is(empty.bytes(), [byte(1)]);
     test.is(empty.state([]).bytes(), [byte(1)]);
-    let input is @byte = (0..65).map() -> i {byte(i);};
+    let input is @byte = (0..65).map() -> i {
+        byte(i);
+    };
     let origin = DigestBlocks64(DigestCompression64.fake(), input, false);
     let child = origin.state([byte(7)]);
     test.is(origin.bytes(), [byte(2)]);
@@ -145,8 +189,26 @@ test "digest block fake counts final padding without changing history" {
     test.is(origin.state([]).bytes(), [byte(2)]);
     test.is(origin.bytes(), [byte(2)]);
 }
+
 test "digest padding and block failures are typed" {
-    test.ok(try {DigestPadding64([], -1, true);false;} catch e is DigestInputTooLong {true;});
-    test.ok(try {DigestPadding64([], 1, true);false;} catch e is InvalidDigestPadding {true;});
-    test.ok(try {DigestCompression64.fake().block([]).bytes().size()<0;} catch e is InvalidDigestBlock {true;});
+    test.ok(try {
+        DigestPadding64([], -1, true);
+        false;
+    }
+    catch e is DigestInputTooLong {
+        true;
+    });
+    test.ok(try {
+        DigestPadding64([], 1, true);
+        false;
+    }
+    catch e is InvalidDigestPadding {
+        true;
+    });
+    test.ok(try {
+        DigestCompression64.fake().block([]).bytes().size() < 0;
+    }
+    catch e is InvalidDigestBlock {
+        true;
+    });
 }

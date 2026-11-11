@@ -52,7 +52,9 @@ object Combinations<T> does Iterating<@T> {
     }
 
     cursor() is Cursor<@T> {
-        let positions is @int = (0..amount).map() -> index { index; };
+        let positions is @int = (0..amount).map() -> index {
+            index;
+        };
         CombinationCursor(
             origin: origin,
             positions: positions,
@@ -76,10 +78,11 @@ object CombinationCursor<T> does Cursor<@T> {
     ) {
         confirm size >= 0 && positions.size() == size
             else throw InvalidArgument.because("combination cursor shape is invalid");
-        confirm !active || CombinationPositions(
-            positions: positions,
-            origin_size: origin.size(),
-        ).valid()
+        confirm !active
+            || CombinationPositions(
+                positions: positions,
+                origin_size: origin.size(),
+            ).valid()
             else throw InvalidArgument.because("combination cursor positions are invalid");
         self.origin = origin;
         self.positions = positions;
@@ -154,7 +157,9 @@ object CombinationsWithReplacement<T> does Iterating<@T> {
     }
 
     cursor() is Cursor<@T> {
-        let positions is @int = (0..amount).map() -> index { 0; };
+        let positions is @int = (0..amount).map() -> index {
+            0;
+        };
         ReplacementCombinationCursor(
             origin: origin,
             positions: positions,
@@ -178,10 +183,11 @@ object ReplacementCombinationCursor<T> does Cursor<@T> {
     ) {
         confirm size >= 0 && positions.size() == size
             else throw InvalidArgument.because("replacement combination cursor shape is invalid");
-        confirm !active || ReplacementPositions(
-            positions: positions,
-            origin_size: origin.size(),
-        ).valid()
+        confirm !active
+            || ReplacementPositions(
+                positions: positions,
+                origin_size: origin.size(),
+            ).valid()
             else throw InvalidArgument.because("replacement combination positions are invalid");
         self.origin = origin;
         self.positions = positions;
@@ -261,7 +267,9 @@ object Permutations<T> does Iterating<@T> {
     }
 
     cursor() is Cursor<@T> {
-        let positions is @int = (0..amount).map() -> index { index; };
+        let positions is @int = (0..amount).map() -> index {
+            index;
+        };
         PermutationCursor(
             origin: origin,
             positions: positions,
@@ -285,10 +293,11 @@ object PermutationCursor<T> does Cursor<@T> {
     ) {
         confirm size >= 0 && positions.size() == size
             else throw InvalidArgument.because("permutation cursor shape is invalid");
-        confirm !active || PermutationPositions(
-            positions: positions,
-            origin_size: origin.size(),
-        ).valid()
+        confirm !active
+            || PermutationPositions(
+                positions: positions,
+                origin_size: origin.size(),
+            ).valid()
             else throw InvalidArgument.because("permutation cursor positions are invalid");
         self.origin = origin;
         self.positions = positions;
@@ -374,7 +383,9 @@ object CartesianProduct<T> does Iterating<@T> {
     CartesianProduct(:origins);
 
     cursor() is Cursor<@T> {
-        let positions is @int = (0..origins.size()).map() -> index { 0; };
+        let positions is @int = (0..origins.size()).map() -> index {
+            0;
+        };
         CartesianCursor(
             origins: origins,
             positions: positions,
@@ -395,10 +406,11 @@ object CartesianCursor<T> does Cursor<@T> {
     ) {
         confirm positions.size() == origins.size()
             else throw InvalidArgument.because("cartesian cursor shape is invalid");
-        confirm !active || CartesianPositions(
-            origins: origins,
-            positions: positions,
-        ).valid()
+        confirm !active
+            || CartesianPositions(
+                origins: origins,
+                positions: positions,
+            ).valid()
             else throw InvalidArgument.because("cartesian cursor positions are invalid");
         self.origins = origins;
         self.positions = positions;
@@ -444,7 +456,12 @@ object CartesianCursor<T> does Cursor<@T> {
                         positions[index];
                     }
                     else {
-                        if index == pivot { positions[index] + 1; } else { 0; }
+                        if index == pivot {
+                            positions[index] + 1;
+                        }
+                        else {
+                            0;
+                        }
                     }
                 };
                 CartesianCursor(
@@ -492,8 +509,8 @@ object CombinationPivot {
     value() is int {
         for (0..origin.size()) -> offset {
             let index = origin.size() - offset - 1;
-            last index if origin[index]
-                < source_size - origin.size() + index;
+            last index if origin[index] <
+                source_size - origin.size() + index;
             -1;
         }
     }
@@ -668,7 +685,12 @@ object PrefixBefore {
         }
         else {
             (0..ending).reduce(0) -> total, index {
-                total + if origin[index] < boundary { 1; } else { 0; };
+                total + if origin[index] < boundary {
+                    1;
+                }
+                else {
+                    0;
+                };
             };
         }
     }
@@ -706,7 +728,12 @@ object PermutationAvailableIndex {
                 positions: origin,
                 stop: ending,
                 value: candidate,
-            ).amount() - if selected < candidate { 1; } else { 0; };
+            ).amount() - if selected < candidate {
+                1;
+            }
+            else {
+                0;
+            };
             last candidate if !used && candidate != selected && rank == offset;
             -1;
         }

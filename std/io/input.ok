@@ -87,7 +87,8 @@ object ByteInput {
     // Maybe.none at the end of the source; unterminated bytes before the end
     // are the last line. A line longer than limit fails with LineTooLong.
     async line(terminator is @byte, limit is int) is Maybe<@byte> {
-        confirm terminator.size() > 0 else throw InvalidArgument.because("line terminator must not be empty");
+        confirm terminator.size() > 0
+            else throw InvalidArgument.because("line terminator must not be empty");
         confirm limit >= 0 else throw InvalidArgument.because("line limit must not be negative");
         let searched = Atomic(0);
         loop {
@@ -98,10 +99,16 @@ object ByteInput {
                 position.replace(found + terminator.size());
                 last Maybe.some(buffer.value().slice(at, found));
             }
-            confirm self.available() < limit + terminator.size() else throw LineTooLong.after(limit);
+            confirm self.available() < limit + terminator.size()
+                else throw LineTooLong.after(limit);
             // A terminator may straddle the next read: search its tail again.
             let tail is int = self.available() - terminator.size() + 1;
-            searched.replace(if tail > 0 { tail; } else { 0; });
+            searched.replace(if tail > 0 {
+                tail;
+            }
+            else {
+                0;
+            });
             if !(await self.fill(1)) {
                 last Maybe<@byte>.none if self.available() == 0;
                 confirm self.available() <= limit else throw LineTooLong.after(limit);
@@ -124,12 +131,19 @@ object ByteInput {
     async fill(wanted is int) is bool {
         if finished.value() {
             false;
-        } else {
-            let chunk is @byte = await source.bytes(if wanted > 65536 { wanted; } else { 65536; });
+        }
+        else {
+            let chunk is @byte = await source.bytes(if wanted > 65536 {
+                wanted;
+            }
+            else {
+                65536;
+            });
             if chunk.size() == 0 {
                 finished.replace(true);
                 false;
-            } else {
+            }
+            else {
                 buffer.replace(bytes_join(buffer.value(), position.value(), chunk));
                 position.replace(0);
                 true;
@@ -141,15 +155,18 @@ object ByteInput {
 hidden object ChunkReading does AsyncReading {
     has chunks is @@byte;
     has cursor is Atomic<int>;
+
     ChunkReading(chunks is @@byte) {
         self.chunks = chunks;
         cursor = Atomic(0);
     }
+
     async bytes(limit is int) is @byte {
         let at is int = cursor.value();
         if at >= chunks.size() {
             [];
-        } else {
+        }
+        else {
             cursor.replace(at + 1);
             chunks[at];
         }
@@ -158,7 +175,11 @@ hidden object ChunkReading does AsyncReading {
 
 async test "lines are found across reads" {
     let crlf is @byte = [byte(13), byte(10)];
-    let input = ByteInput(ChunkReading([[byte(97), byte(98), byte(13)], [byte(10), byte(99), byte(13), byte(10)], [byte(100)]]));
+    let input = ByteInput(
+        ChunkReading(
+            [[byte(97), byte(98), byte(13)], [byte(10), byte(99), byte(13), byte(10)], [byte(100)]]
+        )
+    );
     test.is(await input.line(crlf, 10) else [byte(0)], [byte(97), byte(98)]);
     test.is(await input.line(crlf, 10) else [byte(0)], [byte(99)]);
     test.is(await input.line(crlf, 10) else [byte(0)], [byte(100)]);
@@ -184,16 +205,70 @@ async test "buffered bytes are peeked, viewed and consumed" {
 async test "limits and bounds fail with typed errors" {
     let lf is @byte = [byte(10)];
     let long = ByteInput(ChunkReading([[byte(97), byte(98), byte(99), byte(10)]]));
-    test.is(try {await long.line(lf, 2); 0;} catch LineTooLong.after(limit) {limit;}, 2);
+    test.is(
+        try {
+            await long.line(lf, 2);
+            0;
+        }
+        catch LineTooLong.after(limit) {
+            limit;
+        },
+        2
+    );
     let exact = ByteInput(ChunkReading([[byte(97), byte(98), byte(10)]]));
     test.is(await exact.line(lf, 2) else [], [byte(97), byte(98)]);
     let unterminated = ByteInput(ChunkReading([[byte(97), byte(98), byte(99)]]));
-    test.is(try {await unterminated.line(lf, 2); 0;} catch LineTooLong.after(limit) {limit;}, 2);
+    test.is(
+        try {
+            await unterminated.line(lf, 2);
+            0;
+        }
+        catch LineTooLong.after(limit) {
+            limit;
+        },
+        2
+    );
     let wide = ByteInput(ChunkReading([[byte(97), byte(98), byte(99)]]));
-    test.is(try {await wide.line([byte(13), byte(10)], 2); 0;} catch LineTooLong.after(limit) {limit;}, 2);
+    test.is(
+        try {
+            await wide.line([byte(13), byte(10)], 2);
+            0;
+        }
+        catch LineTooLong.after(limit) {
+            limit;
+        },
+        2
+    );
     let short = ByteInput(ChunkReading([[byte(1)]]));
     test.is(await short.ensure(1), true);
-    test.is(try {short.take(2); "taken";} catch OutOfRange.because(reason) {reason;}, "count is outside the buffered input");
-    test.is(try {short.peek(1); "peeked";} catch OutOfRange.because(reason) {reason;}, "peek is outside the buffered input");
-    test.is(try {short.range(0, 2); "made";} catch OutOfRange.because(reason) {reason;}, "range is outside the buffered input");
+    test.is(
+        try {
+            short.take(2);
+            "taken";
+        }
+        catch OutOfRange.because(reason) {
+            reason;
+        },
+        "count is outside the buffered input"
+    );
+    test.is(
+        try {
+            short.peek(1);
+            "peeked";
+        }
+        catch OutOfRange.because(reason) {
+            reason;
+        },
+        "peek is outside the buffered input"
+    );
+    test.is(
+        try {
+            short.range(0, 2);
+            "made";
+        }
+        catch OutOfRange.because(reason) {
+            reason;
+        },
+        "range is outside the buffered input"
+    );
 }

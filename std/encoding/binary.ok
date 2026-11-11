@@ -2,15 +2,9 @@ module encoding/binary v1.0.0;
 
 import "encoding/utf" take ByteOrder;
 import "error" take InvalidArgument;
-import "runtime/binary" take
-    binary_integer_fits,
-    binary_integer_bytes,
-    binary_integer_from_bytes_fits,
-    binary_integer_from_bytes,
-    binary_float_fits,
-    binary_float_bytes,
-    binary_float_finite,
-    binary_float_from_bytes;
+import "runtime/binary" take binary_integer_fits, binary_integer_bytes,
+    binary_integer_from_bytes_fits, binary_integer_from_bytes, binary_float_fits,
+    binary_float_bytes, binary_float_finite, binary_float_from_bytes;
 
 // Explicit fixed-width numeric binary representations.
 //
@@ -43,6 +37,7 @@ import "runtime/binary" take
 // typed scalar representations into protocol-specific objects instead.
 
 enum Signedness = (signed, unsigned);
+
 enum FloatWidth = (bits32, bits64);
 
 object IntegerFromBytes {
@@ -69,11 +64,21 @@ object IntegerFromBytes {
     private:
 
     signedness_name() is string {
-        if signedness == Signedness.signed { "signed"; } else { "unsigned"; }
+        if signedness == Signedness.signed {
+            "signed";
+        }
+        else {
+            "unsigned";
+        }
     }
 
     order_name() is string {
-        if order == ByteOrder.big { "big"; } else { "little"; }
+        if order == ByteOrder.big {
+            "big";
+        }
+        else {
+            "little";
+        }
     }
 }
 
@@ -102,11 +107,21 @@ object IntegerBytes {
     private:
 
     signedness_name() is string {
-        if signedness == Signedness.signed { "signed"; } else { "unsigned"; }
+        if signedness == Signedness.signed {
+            "signed";
+        }
+        else {
+            "unsigned";
+        }
     }
 
     order_name() is string {
-        if order == ByteOrder.big { "big"; } else { "little"; }
+        if order == ByteOrder.big {
+            "big";
+        }
+        else {
+            "little";
+        }
     }
 }
 
@@ -124,7 +139,9 @@ object FloatFromBytes {
     value() is float {
         let bits is int = self.width_bits();
         confirm origin.size() == self.width_size()
-            else throw InvalidArgument.because("floating-point input width does not match FloatWidth");
+            else throw InvalidArgument.because(
+                "floating-point input width does not match FloatWidth"
+            );
         let order_name is string = self.order_name();
         confirm binary_float_finite(origin, bits, order_name)
             else throw InvalidArgument.because("binary floating-point value must be finite");
@@ -134,15 +151,30 @@ object FloatFromBytes {
     private:
 
     width_bits() is int {
-        if width == FloatWidth.bits32 { 32; } else { 64; }
+        if width == FloatWidth.bits32 {
+            32;
+        }
+        else {
+            64;
+        }
     }
 
     width_size() is int {
-        if width == FloatWidth.bits32 { 4; } else { 8; }
+        if width == FloatWidth.bits32 {
+            4;
+        }
+        else {
+            8;
+        }
     }
 
     order_name() is string {
-        if order == ByteOrder.big { "big"; } else { "little"; }
+        if order == ByteOrder.big {
+            "big";
+        }
+        else {
+            "little";
+        }
     }
 }
 
@@ -167,10 +199,20 @@ object FloatBytes {
     private:
 
     width_bits() is int {
-        if width == FloatWidth.bits32 { 32; } else { 64; }
+        if width == FloatWidth.bits32 {
+            32;
+        }
+        else {
+            64;
+        }
     }
 
     order_name() is string {
-        if order == ByteOrder.big { "big"; } else { "little"; }
+        if order == ByteOrder.big {
+            "big";
+        }
+        else {
+            "little";
+        }
     }
 }

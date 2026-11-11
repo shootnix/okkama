@@ -5,10 +5,7 @@ import "time/clock" take Instant;
 import "time/date" take Date;
 import "time/day" take TimeOfDay;
 import "time/local_datetime" take LocalDateTime;
-import "time/iso" take
-    IsoLocalDateTime,
-    LocalDateTimeFromIso,
-    InvalidIsoLocalDateTime;
+import "time/iso" take IsoLocalDateTime, LocalDateTimeFromIso, InvalidIsoLocalDateTime;
 import "strings/parse" take ParsedInt, InvalidInteger;
 
 // Strict nanosecond-resolution RFC 3339 timestamps.
@@ -39,7 +36,9 @@ object Rfc3339 {
         confirm seconds % 60 == 0
             else throw InvalidRfc3339Offset.because("RFC 3339 offset must contain whole minutes");
         confirm seconds > -86400 && seconds < 86400
-            else throw InvalidRfc3339Offset.because("RFC 3339 offset magnitude must be below 24 hours");
+            else throw InvalidRfc3339Offset.because(
+                "RFC 3339 offset magnitude must be below 24 hours"
+            );
         self.origin = origin;
         self.offset = offset;
     }
@@ -57,14 +56,24 @@ object Rfc3339 {
             "Z";
         }
         else {
-            let sign is string = if seconds < 0 { "-"; } else { "+"; };
-            let magnitude is int = if seconds < 0 { -seconds; } else { seconds; };
+            let sign is string = if seconds < 0 {
+                "-";
+            }
+            else {
+                "+";
+            };
+            let magnitude is int = if seconds < 0 {
+                -seconds;
+            }
+            else {
+                seconds;
+            };
             let hour is string = (magnitude / 3600).int().string();
             let minute is string = ((magnitude % 3600) / 60).int().string();
-            sign
-                + ("00" + hour).slice(hour.length(), hour.length() + 2)
-                + ":"
-                + ("00" + minute).slice(minute.length(), minute.length() + 2);
+            sign +
+                ("00" + hour).slice(hour.length(), hour.length() + 2) +
+                ":" +
+                ("00" + minute).slice(minute.length(), minute.length() + 2);
         };
         IsoLocalDateTime(origin: local).string() + suffix;
     }
@@ -84,7 +93,7 @@ object InstantFromRfc3339 {
         let utc is bool = origin.slice(length - 1, length) == "Z";
         let numeric is bool = length >= 25
             && (origin.slice(length - 6, length - 5) == "+"
-                || origin.slice(length - 6, length - 5) == "-")
+            || origin.slice(length - 6, length - 5) == "-")
             && origin.slice(length - 3, length - 2) == ":";
         confirm utc || numeric else throw InvalidRfc3339.origin(origin);
 

@@ -1,12 +1,8 @@
 module os/platform v1.0.0;
 
 import "encoding/utf" take ByteOrder;
-import "runtime/system" take
-    system_platform,
-    system_architecture,
-    system_byte_order,
-    system_host_name,
-    system_cpu_count;
+import "runtime/system" take system_platform, system_architecture, system_byte_order,
+    system_host_name, system_cpu_count;
 
 // Platform is an immutable snapshot of portable runtime identity. Consumers
 // branch only on the deliberately small OperatingSystem enum; less common
@@ -43,11 +39,21 @@ object Platform {
             panic "System provider could not identify the operating system";
         };
         system = match platform {
-            case "linux" { OperatingSystem.linux; }
-            case "macos" { OperatingSystem.macos; }
-            case "windows" { OperatingSystem.windows; }
-            case "freebsd" { OperatingSystem.freebsd; }
-            else { OperatingSystem.other; }
+            case "linux" {
+                OperatingSystem.linux;
+            }
+            case "macos" {
+                OperatingSystem.macos;
+            }
+            case "windows" {
+                OperatingSystem.windows;
+            }
+            case "freebsd" {
+                OperatingSystem.freebsd;
+            }
+            else {
+                OperatingSystem.other;
+            }
         };
         machine = try {
             system_architecture();
@@ -62,8 +68,12 @@ object Platform {
             panic "System provider could not identify native byte order";
         };
         order = match byte_order {
-            case "big" { ByteOrder.big; }
-            case "little" { ByteOrder.little; }
+            case "big" {
+                ByteOrder.big;
+            }
+            case "little" {
+                ByteOrder.little;
+            }
             else {
                 panic "System provider returned an invalid native byte order";
             }

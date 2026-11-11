@@ -1,9 +1,11 @@
 module mail/imap_message v1.0.0;
+
 import "mail/imap_response" take ParsedImapResponse;
 import "encoding/utf" take Utf8Encoded;
 
 import "mail/imap_response" take ImapResponse;
-import "mail/imap_data" take ParsedImapData, ImapValue, ImapValueKind, ImapDataUpper, InvalidImapData;
+import "mail/imap_data" take ParsedImapData, ImapValue, ImapValueKind, ImapDataUpper,
+    InvalidImapData;
 import "mail/imap_metadata" take ImapUnsigned, ImapFlagsValue;
 import "mail/imap_uid" take ImapUid, ImapSequence;
 import "mail/mailbox" take MailFlags;
@@ -17,88 +19,207 @@ import "numbers/bigint" take BigInt;
 // explicit; NIL content is unavailable, never fabricated as empty bytes.
 // Body/header/message bytes are exact fetched wire bytes, not MIME-decoded data.
 object ImapFetchAttribute {
-    has name is string;has value is ImapValue;
-    ImapFetchAttribute(name is string, value is ImapValue) {self.name=name;self.value=value;}
-    name() is string {name;}
-    value() is ImapValue {value;}
+    has name is string;
+    has value is ImapValue;
+
+    ImapFetchAttribute(name is string, value is ImapValue) {
+        self.name = name;
+        self.value = value;
+    }
+
+    name() is string {
+        name;
+    }
+
+    value() is ImapValue {
+        value;
+    }
 }
+
 object ImapFetch {
-    has sequence is ImapSequence;has attributes is @ImapFetchAttribute;
+    has sequence is ImapSequence;
+    has attributes is @ImapFetchAttribute;
+
     ImapFetch(origin is ImapResponse) {
-        confirm origin.name()=="FETCH" else throw InvalidImapData.because("expected FETCH response");
-        let values=ParsedImapData(origin).entries();
-        confirm values.size()==4 && values.item(1).kind()==ImapValueKind.atom else throw InvalidImapData.because("invalid FETCH prefix");
-        sequence=ImapSequence(ImapUnsigned(values.item(1).string(),true).value());
-        let fields=values.item(3).entries();
-        confirm fields.size()%2==0 && fields.size()<=256 else throw InvalidImapData.because("FETCH requires at most 128 attribute/value pairs");
-        let result is MimeItems<ImapFetchAttribute>=MimeItems();let names is MimeItems<string>=MimeItems();
-        for (0..(fields.size()/2).int()) -> index {
-            let key=fields.item(index*2);confirm key.kind()==ImapValueKind.atom else throw InvalidImapData.because("FETCH attribute name is not an atom");
-            let name=ImapDataUpper(key.string()).string();let value=fields.item(index*2+1);
-            let duplicate=names.entries().reduce(false) -> found,previous {found || previous==name;};
-            confirm !duplicate else throw InvalidImapData.because("duplicate FETCH attribute");names=names.following(name);
-            if name=="UID" {
-                confirm value.kind()==ImapValueKind.atom else throw InvalidImapData.because("FETCH UID is not an atom");
-                ImapUnsigned(value.string(),true).value();
+        confirm origin.name() == "FETCH"
+            else throw InvalidImapData.because("expected FETCH response");
+        let values = ParsedImapData(origin).entries();
+        confirm values.size() == 4 && values.item(1).kind() == ImapValueKind.atom
+            else throw InvalidImapData.because("invalid FETCH prefix");
+        sequence = ImapSequence(ImapUnsigned(values.item(1).string(), true).value());
+        let fields = values.item(3).entries();
+        confirm fields.size() % 2 == 0 && fields.size() <= 256
+            else throw InvalidImapData.because("FETCH requires at most 128 attribute/value pairs");
+        let result is MimeItems<ImapFetchAttribute> = MimeItems();
+        let names is MimeItems<string> = MimeItems();
+        for (0..(fields.size() / 2).int()) -> index {
+            let key = fields.item(index * 2);
+            confirm key.kind() == ImapValueKind.atom
+                else throw InvalidImapData.because("FETCH attribute name is not an atom");
+            let name = ImapDataUpper(key.string()).string();
+            let value = fields.item(index * 2 + 1);
+            let duplicate = names.entries().reduce(false) -> found, previous {
+                found || previous == name;
+            };
+            confirm !duplicate else throw InvalidImapData.because("duplicate FETCH attribute");
+            names = names.following(name);
+            if name == "UID" {
+                confirm value.kind() == ImapValueKind.atom
+                    else throw InvalidImapData.because("FETCH UID is not an atom");
+                ImapUnsigned(value.string(), true).value();
             }
-            if name=="FLAGS" {ImapFlagsValue(value).flags();}
-            if name=="BODY[HEADER]" || name=="BODY[TEXT]" || name=="BODY[]" {
-                confirm value.absent() || value.kind()==ImapValueKind.quoted || value.kind()==ImapValueKind.literal
+            if name == "FLAGS" {
+                ImapFlagsValue(value).flags();
+            }
+            if name == "BODY[HEADER]" || name == "BODY[TEXT]" || name == "BODY[]" {
+                confirm value.absent()
+                    || value.kind() == ImapValueKind.quoted
+                    || value.kind() == ImapValueKind.literal
                     else throw InvalidImapData.because("FETCH BODY value requires an nstring");
             }
-            result=result.following(ImapFetchAttribute(name,value));
+            result = result.following(ImapFetchAttribute(name, value));
         }
-        attributes=result.entries();
+        attributes = result.entries();
     }
-    sequence() is ImapSequence {sequence;}
-    attributes() is Sequencing<ImapFetchAttribute> {attributes;}
+
+    sequence() is ImapSequence {
+        sequence;
+    }
+
+    attributes() is Sequencing<ImapFetchAttribute> {
+        attributes;
+    }
+
     contains(name is string) is bool {
-        let upper=ImapDataUpper(name).string();
-        attributes.reduce(false) -> found,entry {found || entry.name()==upper;};
+        let upper = ImapDataUpper(name).string();
+        attributes.reduce(false) -> found, entry {
+            found || entry.name() == upper;
+        };
     }
+
     attribute(name is string) is ImapValue {
-        let upper=ImapDataUpper(name).string();
-        for attributes -> entry {if entry.name()==upper {return entry.value();}}
+        let upper = ImapDataUpper(name).string();
+        for attributes -> entry {
+            if entry.name() == upper {
+                return entry.value();
+            }
+        }
         throw MissingImapDatum.name(upper);
     }
-    has_uid() is bool {self.contains("UID");}
-    uid() is ImapUid {ImapUid(BigInt(self.attribute("UID").string()));}
-    has_flags() is bool {self.contains("FLAGS");}
-    flags() is MailFlags {ImapFlagsValue(self.attribute("FLAGS")).flags();}
-    has_headers() is bool {self.contains("BODY[HEADER]") && !self.attribute("BODY[HEADER]").absent();}
+
+    has_uid() is bool {
+        self.contains("UID");
+    }
+
+    uid() is ImapUid {
+        ImapUid(BigInt(self.attribute("UID").string()));
+    }
+
+    has_flags() is bool {
+        self.contains("FLAGS");
+    }
+
+    flags() is MailFlags {
+        ImapFlagsValue(self.attribute("FLAGS")).flags();
+    }
+
+    has_headers() is bool {
+        self.contains("BODY[HEADER]") && !self.attribute("BODY[HEADER]").absent();
+    }
+
     headers() is MessageHeaders {
         confirm self.has_headers() else throw MissingImapDatum.name("BODY[HEADER]");
         ParsedMail(self.attribute("BODY[HEADER]").bytes()).message().headers();
     }
-    has_body() is bool {self.contains("BODY[TEXT]") && !self.attribute("BODY[TEXT]").absent();}
-    body() is @byte {confirm self.has_body() else throw MissingImapDatum.name("BODY[TEXT]");self.attribute("BODY[TEXT]").bytes();}
-    has_message() is bool {self.contains("BODY[]") && !self.attribute("BODY[]").absent();}
+
+    has_body() is bool {
+        self.contains("BODY[TEXT]") && !self.attribute("BODY[TEXT]").absent();
+    }
+
+    body() is @byte {
+        confirm self.has_body() else throw MissingImapDatum.name("BODY[TEXT]");
+        self.attribute("BODY[TEXT]").bytes();
+    }
+
+    has_message() is bool {
+        self.contains("BODY[]") && !self.attribute("BODY[]").absent();
+    }
+
     message() is MailMessage {
         confirm self.has_message() else throw MissingImapDatum.name("BODY[]");
         ParsedMail(self.attribute("BODY[]").bytes()).message();
     }
 }
+
 object ImapMessage {
     has value is ImapFetch;
+
     ImapMessage(origin is ImapResponse) {
-        let parsed=ImapFetch(origin);confirm parsed.has_uid() else throw MissingImapDatum.name("UID");value=parsed;
+        let parsed = ImapFetch(origin);
+        confirm parsed.has_uid() else throw MissingImapDatum.name("UID");
+        value = parsed;
     }
-    sequence() is ImapSequence {value.sequence();}
-    uid() is ImapUid {value.uid();}
-    has_flags() is bool {value.has_flags();}
-    flags() is MailFlags {value.flags();}
-    has_headers() is bool {value.has_headers();}
-    headers() is MessageHeaders {value.headers();}
-    has_body() is bool {value.has_body();}
-    body() is @byte {value.body();}
-    has_message() is bool {value.has_message();}
-    message() is MailMessage {value.message();}
-    attributes() is Sequencing<ImapFetchAttribute> {value.attributes();}
+
+    sequence() is ImapSequence {
+        value.sequence();
+    }
+
+    uid() is ImapUid {
+        value.uid();
+    }
+
+    has_flags() is bool {
+        value.has_flags();
+    }
+
+    flags() is MailFlags {
+        value.flags();
+    }
+
+    has_headers() is bool {
+        value.has_headers();
+    }
+
+    headers() is MessageHeaders {
+        value.headers();
+    }
+
+    has_body() is bool {
+        value.has_body();
+    }
+
+    body() is @byte {
+        value.body();
+    }
+
+    has_message() is bool {
+        value.has_message();
+    }
+
+    message() is MailMessage {
+        value.message();
+    }
+
+    attributes() is Sequencing<ImapFetchAttribute> {
+        value.attributes();
+    }
 }
+
 enum MissingImapDatum is Error = (name(name is string));
 
 test "missing FETCH content remains unavailable" {
-    let message=ImapMessage(ParsedImapResponse(Utf8Encoded("* 2 FETCH (UID 7 BODY[TEXT] NIL)\r\n").bytes()).response());
-    test.is(message.uid().string(),"7");test.is(message.sequence().value(),2);test.is(message.has_body(),false);
-    let absent=try {message.body();false;} catch failure is MissingImapDatum {true;};test.is(absent,true);
+    let message = ImapMessage(
+        ParsedImapResponse(Utf8Encoded("* 2 FETCH (UID 7 BODY[TEXT] NIL)\r\n").bytes()).response()
+    );
+    test.is(message.uid().string(), "7");
+    test.is(message.sequence().value(), 2);
+    test.is(message.has_body(), false);
+    let absent = try {
+        message.body();
+        false;
+    }
+    catch failure is MissingImapDatum {
+        true;
+    };
+    test.is(absent, true);
 }

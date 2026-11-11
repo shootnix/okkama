@@ -36,7 +36,12 @@ object Minimum<T: Comparing<T>> {
         let cursor = origin.cursor();
         confirm cursor.available() else throw EmptySequence.empty;
         CursorItems(cursor: cursor.successor()).reduce(cursor.item()) -> minimum, item {
-            if item.order(minimum) == Order.less { item; } else { minimum; }
+            if item.order(minimum) == Order.less {
+                item;
+            }
+            else {
+                minimum;
+            }
         };
     }
 }
@@ -52,7 +57,12 @@ object Maximum<T: Comparing<T>> {
         let cursor = origin.cursor();
         confirm cursor.available() else throw EmptySequence.empty;
         CursorItems(cursor: cursor.successor()).reduce(cursor.item()) -> maximum, item {
-            if item.order(maximum) == Order.greater { item; } else { maximum; }
+            if item.order(maximum) == Order.greater {
+                item;
+            }
+            else {
+                maximum;
+            }
         };
     }
 }
@@ -65,7 +75,9 @@ object Sum {
     }
 
     value() is float {
-        origin.reduce(0.0) -> total, item { total + item; };
+        origin.reduce(0.0) -> total, item {
+            total + item;
+        };
     }
 }
 
@@ -96,7 +108,8 @@ object AccurateTotal {
         let revised is float = total + value;
         let error is float = if self.magnitude(total) >= self.magnitude(value) {
             (total - revised) + value;
-        } else {
+        }
+        else {
             (value - revised) + total;
         };
         AccurateTotal(sum: revised, correction: correction + error);
@@ -109,7 +122,12 @@ object AccurateTotal {
     private:
 
     magnitude(value is float) is float {
-        if value < 0.0 { -value; } else { value; }
+        if value < 0.0 {
+            -value;
+        }
+        else {
+            value;
+        }
     }
 }
 
@@ -121,7 +139,9 @@ object Product {
     }
 
     value() is float {
-        origin.reduce(1.0) -> product, item { product * item; };
+        origin.reduce(1.0) -> product, item {
+            product * item;
+        };
     }
 }
 
@@ -182,7 +202,12 @@ object ScaledSquares {
     }
 
     addition(value is float) is ScaledSquares {
-        let magnitude is float = if value < 0.0 { -value; } else { value; };
+        let magnitude is float = if value < 0.0 {
+            -value;
+        }
+        else {
+            value;
+        };
         if magnitude == 0.0 {
             self;
         }

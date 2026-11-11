@@ -2,16 +2,9 @@ module os/command_capture v1.0.0;
 
 import "os/command" take Commanding;
 import "os/process" take Exit, ExitKind, ProcessFailure;
-import "runtime/process" take
-    ProcessState,
-    CapturedProcess,
-    process_state_create,
-    process_state_start,
-    process_state_capture,
-    captured_process_status,
-    captured_process_overflow,
-    captured_process_output,
-    captured_process_errors;
+import "runtime/process" take ProcessState, CapturedProcess, process_state_create,
+    process_state_start, process_state_capture, captured_process_status, captured_process_overflow,
+    captured_process_output, captured_process_errors;
 
 // CommandCapture is the safe bounded alternative to manually coordinating
 // ProcessInput, ProcessOutput and ProcessErrors. completion() starts the child,
@@ -97,16 +90,25 @@ object CommandCapture {
     }
 
     private:
+
     exit_kind(status is %string:int) is ExitKind {
         if status["state"] == 1 {
             ExitKind.exited;
         }
         else {
             match status["code"] {
-                case 1 { ExitKind.terminated; }
-                case 2 { ExitKind.killed; }
-                case 3 { ExitKind.interrupted; }
-                else { ExitKind.other; }
+                case 1 {
+                    ExitKind.terminated;
+                }
+                case 2 {
+                    ExitKind.killed;
+                }
+                case 3 {
+                    ExitKind.interrupted;
+                }
+                else {
+                    ExitKind.other;
+                }
             }
         }
     }
@@ -123,11 +125,17 @@ object CompletedCommand {
         captured_errors = errors;
     }
 
-    exit() is Exit { completed_exit; }
+    exit() is Exit {
+        completed_exit;
+    }
 
-    output() is @byte { captured_output; }
+    output() is @byte {
+        captured_output;
+    }
 
-    errors() is @byte { captured_errors; }
+    errors() is @byte {
+        captured_errors;
+    }
 }
 
 enum InvalidCaptureLimit is Error = (limit(limit is int));

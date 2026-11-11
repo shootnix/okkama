@@ -17,13 +17,41 @@ enum EcdsaCurve = (p256, p384);
 
 object EcdsaCurveName {
     has curve is EcdsaCurve;
-    EcdsaCurveName(curve is EcdsaCurve) { self.curve = curve; }
-    name() is string { match curve { case EcdsaCurve.p256 { "p256"; } case EcdsaCurve.p384 { "p384"; } } }
-    width() is int { match curve { case EcdsaCurve.p256 { 32; } case EcdsaCurve.p384 { 48; } } }
+
+    EcdsaCurveName(curve is EcdsaCurve) {
+        self.curve = curve;
+    }
+
+    name() is string {
+        match curve {
+            case EcdsaCurve.p256 {
+                "p256";
+            }
+            case EcdsaCurve.p384 {
+                "p384";
+            }
+        }
+    }
+
+    width() is int {
+        match curve {
+            case EcdsaCurve.p256 {
+                32;
+            }
+            case EcdsaCurve.p384 {
+                48;
+            }
+        }
+    }
+
     algorithm() is string {
         match curve {
-            case EcdsaCurve.p256 { "1.2.840.10045.2.1|1.2.840.10045.3.1.7"; }
-            case EcdsaCurve.p384 { "1.2.840.10045.2.1|1.3.132.0.34"; }
+            case EcdsaCurve.p256 {
+                "1.2.840.10045.2.1|1.2.840.10045.3.1.7";
+            }
+            case EcdsaCurve.p384 {
+                "1.2.840.10045.2.1|1.3.132.0.34";
+            }
         }
     }
 }
@@ -31,37 +59,62 @@ object EcdsaCurveName {
 object EcdsaPrivateKey does SigningKey {
     has curve is EcdsaCurve;
     has key is SecretBytes;
+
     EcdsaPrivateKey(curve is EcdsaCurve, pkcs8 is SecretBytes) {
         let algorithm = HostOperation("pkcs8-algorithm", [pkcs8.export_bytes()]).bytes();
-        confirm EcdsaCurveName(curve).algorithm() == Utf8Decoded(algorithm).string() else throw InvalidCryptoInput.because("PKCS#8 key is not an ECDSA key of this curve");
+        confirm EcdsaCurveName(curve).algorithm() == Utf8Decoded(algorithm).string()
+            else throw InvalidCryptoInput.because("PKCS#8 key is not an ECDSA key of this curve");
         self.curve = curve;
         key = pkcs8;
     }
+
     EcdsaPrivateKey(curve is EcdsaCurve, entropy is Entropy) {
         self.curve = curve;
         key = EcdsaScalar(curve, entropy).pkcs8();
     }
-    pkcs8() is SecretBytes { SecretBytes(key.export_bytes()); }
-    public_key() is VerifyingKey {
-        EcdsaPublicKey(curve, HostOperation("ecdsa-" + EcdsaCurveName(curve).name() + "-public", [key.export_bytes()]).bytes());
+
+    pkcs8() is SecretBytes {
+        SecretBytes(key.export_bytes());
     }
+
+    public_key() is VerifyingKey {
+        EcdsaPublicKey(
+            curve,
+            HostOperation("ecdsa-" + EcdsaCurveName(curve).name() + "-public", [key.export_bytes()]).bytes()
+        );
+    }
+
     signature(message is @byte) is @byte {
-        HostOperation("ecdsa-" + EcdsaCurveName(curve).name() + "-sign", [key.export_bytes(), message]).bytes();
+        HostOperation(
+            "ecdsa-" + EcdsaCurveName(curve).name() + "-sign",
+            [key.export_bytes(), message]
+        ).bytes();
     }
 }
 
 object EcdsaPublicKey does PublicKey, VerifyingKey {
     has curve is EcdsaCurve;
     has origin is @byte;
+
     EcdsaPublicKey(curve is EcdsaCurve, spki is @byte) {
         let algorithm = HostOperation("spki-algorithm", [spki]).bytes();
-        confirm EcdsaCurveName(curve).algorithm() == Utf8Decoded(algorithm).string() else throw InvalidCryptoInput.because("SubjectPublicKeyInfo is not an ECDSA key of this curve");
+        confirm EcdsaCurveName(curve).algorithm() == Utf8Decoded(algorithm).string()
+            else throw InvalidCryptoInput.because(
+                "SubjectPublicKeyInfo is not an ECDSA key of this curve"
+            );
         self.curve = curve;
         origin = spki;
     }
-    bytes() is @byte { origin; }
+
+    bytes() is @byte {
+        origin;
+    }
+
     verified(message is @byte, signature is @byte) is bool {
-        HostOperation("ecdsa-" + EcdsaCurveName(curve).name() + "-verify", [origin, message, signature]).truth();
+        HostOperation(
+            "ecdsa-" + EcdsaCurveName(curve).name() + "-verify",
+            [origin, message, signature]
+        ).truth();
     }
 }
 
@@ -69,12 +122,20 @@ object EcdsaPublicKey does PublicKey, VerifyingKey {
 object EcdsaScalar {
     has curve is EcdsaCurve;
     has entropy is Entropy;
-    EcdsaScalar(curve is EcdsaCurve, entropy is Entropy) { self.curve = curve; self.entropy = entropy; }
+
+    EcdsaScalar(curve is EcdsaCurve, entropy is Entropy) {
+        self.curve = curve;
+        self.entropy = entropy;
+    }
+
     pkcs8() is SecretBytes {
         let candidate = entropy.bytes(EcdsaCurveName(curve).width());
         try {
-            SecretBytes(HostOperation("ecdsa-" + EcdsaCurveName(curve).name() + "-from-scalar", [candidate]).bytes());
-        } catch e is InvalidCryptoInput {
+            SecretBytes(
+                HostOperation("ecdsa-" + EcdsaCurveName(curve).name() + "-from-scalar", [candidate]).bytes()
+            );
+        }
+        catch e is InvalidCryptoInput {
             self.pkcs8();
         }
     }
@@ -88,12 +149,19 @@ test "ECDSA keys sign deterministically and verify" {
     test.ok(public.verified([1.byte(), 2.byte()], signature));
     test.ok(!public.verified([1.byte()], signature));
     test.ok(!public.verified([1.byte(), 2.byte()], [48.byte()]));
-    test.is(EcdsaPrivateKey(curve: EcdsaCurve.p256, pkcs8: key.pkcs8()).signature([9.byte()]), key.signature([9.byte()]));
+    test.is(
+        EcdsaPrivateKey(curve: EcdsaCurve.p256, pkcs8: key.pkcs8()).signature([9.byte()]),
+        key.signature([9.byte()])
+    );
 }
 
 test "ECDSA rejects keys of another curve" {
     let p384 = EcdsaPrivateKey(curve: EcdsaCurve.p384, entropy: Entropy.fake());
     test.ok(p384.public_key().verified([3.byte()], p384.signature([3.byte()])));
-    test.throws(InvalidCryptoInput) { EcdsaPrivateKey(curve: EcdsaCurve.p256, pkcs8: p384.pkcs8()); };
-    test.throws(InvalidCryptoInput) { EcdsaPublicKey(EcdsaCurve.p256, p384.public_key().bytes()); };
+    test.throws(InvalidCryptoInput) {
+        EcdsaPrivateKey(curve: EcdsaCurve.p256, pkcs8: p384.pkcs8());
+    };
+    test.throws(InvalidCryptoInput) {
+        EcdsaPublicKey(EcdsaCurve.p256, p384.public_key().bytes());
+    };
 }

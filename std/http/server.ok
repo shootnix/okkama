@@ -1,34 +1,36 @@
 module http/server v1.0.0;
+
 import "http/http2_server" take Http2ServerSession;
 import "http/server_policy" take ServerPolicy;
-import "http/handler" take Handling,HandlingResult,HandlingKind,ResponseHandling,WebSocketHandling;
+import "http/handler" take Handling, HandlingResult, HandlingKind, ResponseHandling,
+    WebSocketHandling;
 import "http/request_context" take HttpRequestContext;
-import "http/message" take Response,InvalidHttpMessage;
+import "http/message" take Response, InvalidHttpMessage;
 import "http/status" take Status;
 import "http/method" take Method;
-import "http/header" take Headers,Header,HeaderName,HttpAsciiLowercase,ReplacedHeader;
-import "http/version" take HttpVersion,UnsupportedHttpVersion;
+import "http/header" take Headers, Header, HeaderName, HttpAsciiLowercase, ReplacedHeader;
+import "http/version" take HttpVersion, UnsupportedHttpVersion;
 import "http/exchange" take ExchangeDetails;
-import "http/http1_head" take Http1RequestHead,Http1ResponseHead,Http1LimitExceeded;
-import "http/http1_reading" take Http1RequestHeadReading,Http1HeadRead;
-import "http/http1_framing" take Http1RequestFraming,Http1ResponseFraming,Http1BodyKind;
-import "http/http1_body" take Http1BodyReading,Http1IncomingBody;
+import "http/http1_head" take Http1RequestHead, Http1ResponseHead, Http1LimitExceeded;
+import "http/http1_reading" take Http1RequestHeadReading, Http1HeadRead;
+import "http/http1_framing" take Http1RequestFraming, Http1ResponseFraming, Http1BodyKind;
+import "http/http1_body" take Http1BodyReading, Http1IncomingBody;
 import "http/http1_message_writing" take Http1ResponseWriting;
 import "http/http1_writing" take Http1ResponseHeadWriting;
 import "http/target" take RequestTargetKind;
 import "http/websocket_server" take WebSocketAccepting;
-import "http/connection" take HttpAcquisitionCleanup,HttpTcpDisposal;
+import "http/connection" take HttpAcquisitionCleanup, HttpTcpDisposal;
 import "http/internal/websocket_output" take WebSocketOutputSettlement;
-import "net/tcp" take TcpAcceptance,TcpConnection;
+import "net/tcp" take TcpAcceptance, TcpConnection;
 import "net/endpoint" take IpEndpoint;
 import "net/failure" take NetworkClosed;
-import "io/stream" take AsyncReading,AsyncWriting,Closing;
+import "io/stream" take AsyncReading, AsyncWriting, Closing;
 import "url/value" take Url;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
 import "async/scope" take FutureGroup;
 import "async/cancellation" take Cancellation;
-import "async/timeout" take Within,TimedOut;
+import "async/timeout" take Within, TimedOut;
 import "time/clock" take Timing;
 import "time/duration" take Duration;
 
@@ -36,115 +38,807 @@ import "time/duration" take Duration;
 // prior-knowledge H2; mixed ALPN/TLS selection remains a separate transport.
 object HttpServer does Closing {
     has state is HttpServerState;
-    HttpServer(origin is TcpAcceptance,handling is Handling,policy is ServerPolicy,clock is Timing){confirm policy.protocols().size()==1 && (policy.protocols().membership(HttpVersion.http_1_1) || policy.protocols().membership(HttpVersion.http_2)) else throw UnsupportedHttpVersion.unsupported;state=HttpServerState(origin,handling,policy,clock,[]);}
-    HttpServer(origin is TcpAcceptance,handling is Handling,policy is ServerPolicy,clock is Timing,destination is Url){confirm policy.protocols().size()==1 && (policy.protocols().membership(HttpVersion.http_1_1) || policy.protocols().membership(HttpVersion.http_2)) else throw UnsupportedHttpVersion.unsupported;let parts=destination.parts();confirm parts.scheme()=="http" && parts.authority().present() && !parts.authority().userinfo().present() && !parts.fragment().present() else throw BadRequest.because("trusted plaintext server URL required");state=HttpServerState(origin,handling,policy,clock,[destination]);}
-    local_endpoint() is IpEndpoint{state.local_endpoint();}closed() is bool{state.closed();}close() is void{state.close();}
-    async serve() is HttpServer{await state.run();self;}
-    stop_accepting() is void{state.stop_accepting();}
-    async drained() is bool{await state.drained();}
-    async settled() is bool{await state.settled();}
-    destroy{self.close();}
+
+    HttpServer(
+        origin is TcpAcceptance,
+        handling is Handling,
+        policy is ServerPolicy,
+        clock is Timing
+    ) {
+        confirm policy.protocols().size() == 1
+            && (policy.protocols().membership(HttpVersion.http_1_1)
+            || policy.protocols().membership(HttpVersion.http_2))
+            else throw UnsupportedHttpVersion.unsupported;
+        state = HttpServerState(origin, handling, policy, clock, []);
+    }
+
+    HttpServer(
+        origin is TcpAcceptance,
+        handling is Handling,
+        policy is ServerPolicy,
+        clock is Timing,
+        destination is Url
+    ) {
+        confirm policy.protocols().size() == 1
+            && (policy.protocols().membership(HttpVersion.http_1_1)
+            || policy.protocols().membership(HttpVersion.http_2))
+            else throw UnsupportedHttpVersion.unsupported;
+        let parts = destination.parts();
+        confirm parts.scheme() == "http"
+            && parts.authority().present()
+            && !parts.authority().userinfo().present()
+            && !parts.fragment().present()
+            else throw BadRequest.because("trusted plaintext server URL required");
+        state = HttpServerState(origin, handling, policy, clock, [destination]);
+    }
+
+    local_endpoint() is IpEndpoint {
+        state.local_endpoint();
+    }
+
+    closed() is bool {
+        state.closed();
+    }
+
+    close() is void {
+        state.close();
+    }
+
+    async serve() is HttpServer {
+        await state.run();
+        self;
+    }
+
+    stop_accepting() is void {
+        state.stop_accepting();
+    }
+
+    async drained() is bool {
+        await state.drained();
+    }
+
+    async settled() is bool {
+        await state.settled();
+    }
+
+    destroy {
+        self.close();
+    }
 }
+
 object HttpServerState {
-    has origin is TcpAcceptance;has handling is Handling;has policy is ServerPolicy;has clock is Timing;
-    has destinations is @Url;has peers,retired is Atomic<@HttpServerPeer>;has changed is Atomic<Event>;has stopped,started,draining is Event;has serial is Atomic<int>;
-    HttpServerState(origin is TcpAcceptance,handling is Handling,policy is ServerPolicy,clock is Timing,destinations is @Url){self.destinations=destinations;self.origin=origin;self.handling=handling;self.policy=policy;self.clock=clock;let empty is @HttpServerPeer=[];peers=Atomic(empty);retired=Atomic(empty);changed=Atomic(Event());stopped=Event();started=Event();draining=Event();serial=Atomic(0);}
-    local_endpoint() is IpEndpoint{origin.local_endpoint();}closed() is bool{stopped.ready() || (origin.closed() && !draining.ready());}
-    stopping_acceptance() is bool{draining.ready();}
-    async drain_signal() is bool{await draining.wait();true;}
-    stop_accepting() is void{if !draining.ready(){draining.set();origin.close();for peers.value() -> peer{if peer.waiting_for_request(){peer.close();}}changed.value().set();}}
-    async drained() is bool{loop{if peers.value().size()==0{await self.reap();return true;}let signal=changed.value();await signal.wait();}}
-    close() is void{if !stopped.ready(){stopped.set();origin.close();for peers.value() -> peer{peer.close();}changed.value().set();}}
-    remove(id is int) is void{let found is @HttpServerPeer=peers.value().filter()->peer{peer.id()==id;};let old=retired.value();let following is @HttpServerPeer=(0..old.size()+found.size()).map()->index{if index<old.size(){old[index];}else{found[index-old.size()];}};retired.replace(following);peers.replace(peers.value().filter()->peer{peer.id()!=id;});changed.value().set();changed.replace(Event());}
-    async reap() is bool{let batch=retired.value();if batch.size()>0{let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();for batch -> peer{group.start(peer.settled());}await group.wait();retired.replace(retired.value().filter()->peer{!(batch.reduce(false)->found,item{found || item.id()==peer.id();});});}true;}
-    async settled() is bool{let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();for [peers.value(),retired.value()] -> batch{for batch -> peer{group.start(peer.settled());}}await group.wait();retired.replace([]);true;}
-    async run() is bool{
-        confirm !started.ready() && !self.closed() else throw BadRequest.because("server is closed or already serving");started.set();let cleanup=HttpServerCleanup(self);defer await cleanup.close();
-        loop{
-            await self.reap();if self.closed(){return true;}if draining.ready(){if peers.value().size()==0{return true;}let signal=changed.value();await signal.wait();next;}
-            if peers.value().size()>=policy.connections(){let signal=changed.value();await signal.wait();next;}
-            let id=serial.value();serial.replace(id+1);let peer=HttpServerPeer(self,id,origin.connection(),handling,policy,clock,destinations);let old=peers.value();let following is @HttpServerPeer=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{peer;}};peers.replace(following);peer.start();await peer.ready();peer.dispatch();
+    has origin is TcpAcceptance;
+    has handling is Handling;
+    has policy is ServerPolicy;
+    has clock is Timing;
+    has destinations is @Url;
+    has peers, retired is Atomic<@HttpServerPeer>;
+    has changed is Atomic<Event>;
+    has stopped, started, draining is Event;
+    has serial is Atomic<int>;
+
+    HttpServerState(
+        origin is TcpAcceptance,
+        handling is Handling,
+        policy is ServerPolicy,
+        clock is Timing,
+        destinations is @Url
+    ) {
+        self.destinations = destinations;
+        self.origin = origin;
+        self.handling = handling;
+        self.policy = policy;
+        self.clock = clock;
+        let empty is @HttpServerPeer = [];
+        peers = Atomic(empty);
+        retired = Atomic(empty);
+        changed = Atomic(Event());
+        stopped = Event();
+        started = Event();
+        draining = Event();
+        serial = Atomic(0);
+    }
+
+    local_endpoint() is IpEndpoint {
+        origin.local_endpoint();
+    }
+
+    closed() is bool {
+        stopped.ready() || (origin.closed() && !draining.ready());
+    }
+
+    stopping_acceptance() is bool {
+        draining.ready();
+    }
+
+    async drain_signal() is bool {
+        await draining.wait();
+        true;
+    }
+
+    stop_accepting() is void {
+        if !draining.ready() {
+            draining.set();
+            origin.close();
+            for peers.value() -> peer {
+                if peer.waiting_for_request() {
+                    peer.close();
+                }
+            }
+            changed.value().set();
+        }
+    }
+
+    async drained() is bool {
+        loop {
+            if peers.value().size() == 0 {
+                await self.reap();
+                return true;
+            }
+            let signal = changed.value();
+            await signal.wait();
+        }
+    }
+
+    close() is void {
+        if !stopped.ready() {
+            stopped.set();
+            origin.close();
+            for peers.value() -> peer {
+                peer.close();
+            }
+            changed.value().set();
+        }
+    }
+
+    remove(id is int) is void {
+        let found is @HttpServerPeer = peers.value().filter() -> peer {
+            peer.id() == id;
+        };
+        let old = retired.value();
+        let following is @HttpServerPeer = (0..old.size() + found.size()).map() -> index {
+            if index < old.size() {
+                old[index];
+            }
+            else {
+                found[index - old.size()];
+            }
+        };
+        retired.replace(following);
+        peers.replace(peers.value().filter() -> peer {
+            peer.id() != id;
+        });
+        changed.value().set();
+        changed.replace(Event());
+    }
+
+    async reap() is bool {
+        let batch = retired.value();
+        if batch.size() > 0 {
+            let group is FutureGroup<bool> = FutureGroup();
+            let cleanup = WebSocketOutputSettlement(group);
+            defer await cleanup.close();
+            for batch -> peer {
+                group.start(peer.settled());
+            }
+            await group.wait();
+            retired.replace(retired.value().filter() -> peer {
+                !(batch.reduce(false) -> found, item {
+                    found || item.id() == peer.id();
+                });
+            });
+        }
+        true;
+    }
+
+    async settled() is bool {
+        let group is FutureGroup<bool> = FutureGroup();
+        let cleanup = WebSocketOutputSettlement(group);
+        defer await cleanup.close();
+        for [peers.value(), retired.value()] -> batch {
+            for batch -> peer {
+                group.start(peer.settled());
+            }
+        }
+        await group.wait();
+        retired.replace([]);
+        true;
+    }
+
+    async run() is bool {
+        confirm !started.ready() && !self.closed()
+            else throw BadRequest.because("server is closed or already serving");
+        started.set();
+        let cleanup = HttpServerCleanup(self);
+        defer await cleanup.close();
+        loop {
+            await self.reap();
+            if self.closed() {
+                return true;
+            }
+            if draining.ready() {
+                if peers.value().size() == 0 {
+                    return true;
+                }
+                let signal = changed.value();
+                await signal.wait();
+                next;
+            }
+            if peers.value().size() >= policy.connections() {
+                let signal = changed.value();
+                await signal.wait();
+                next;
+            }
+            let id = serial.value();
+            serial.replace(id + 1);
+            let peer = HttpServerPeer(
+                self,
+                id,
+                origin.connection(),
+                handling,
+                policy,
+                clock,
+                destinations
+            );
+            let old = peers.value();
+            let following is @HttpServerPeer = (0..old.size() + 1).map() -> index {
+                if index < old.size() {
+                    old[index];
+                }
+                else {
+                    peer;
+                }
+            };
+            peers.replace(following);
+            peer.start();
+            await peer.ready();
+            peer.dispatch();
         }
     }
 }
-hidden object HttpServerCleanup{has owner is HttpServerState;HttpServerCleanup(owner is HttpServerState){self.owner=owner;}async close() is void{owner.close();await owner.settled();}}
+
+hidden object HttpServerCleanup {
+    has owner is HttpServerState;
+
+    HttpServerCleanup(owner is HttpServerState) {
+        self.owner = owner;
+    }
+
+    async close() is void {
+        owner.close();
+        await owner.settled();
+    }
+}
+
 object HttpServerPeer {
-    has server is HttpServerState;has id is int;has waiting is Future<TcpConnection>;has ready,dispatch is Event;has handling is Handling;has policy is ServerPolicy;has clock is Timing;has group is FutureGroup<bool>;has cancelled is Cancellation;has destinations is @Url;has sent is Atomic<bool>;has phase,seen is Atomic<int>;
-    HttpServerPeer(server is HttpServerState,id is int,waiting is Future<TcpConnection>,handling is Handling,policy is ServerPolicy,clock is Timing,destinations is @Url){self.destinations=destinations;self.server=server;self.id=id;self.waiting=waiting;ready=Event();dispatch=Event();self.handling=handling;self.policy=policy;self.clock=clock;group=FutureGroup();cancelled=Cancellation();sent=Atomic(false);phase=Atomic(0);seen=Atomic(0);}
-    id() is int{id;}waiting_for_request() is bool{phase.value()==0;}async ready() is bool{await ready.wait();true;}dispatch() is void{dispatch.set();}start() is void{group.start(self.run());}close() is void{cancelled.cancel();waiting.cancel();group.cancel();}
-    async settled() is bool{await group.wait();true;}
-    async run() is bool{
-        defer server.remove(id);defer ready.set();defer cancelled.cancel();
-        let connections is FutureGroup<TcpConnection>=FutureGroup();let taken=Event();let empty_connections is @Future<TcpConnection>=[waiting];let pending=Atomic(empty_connections);let cleanup=HttpAcquisitionCleanup(connections,pending,taken,HttpTcpDisposal().release);defer await cleanup.close();connections.start(waiting);
-        let available is @TcpConnection=try{[await waiting];}catch e is NetworkClosed{[];};if available.size()==0{return true;}let connection=available[0];taken.set();defer connection.close();ready.set();await dispatch.wait();
-        let processing=self.requests(connection);
-        try{await processing;}catch e is Cancelled{throw;}catch e is HttpServerBodyTimedOut{await self.failure_response(connection,408);}catch e is TimedOut{await self.failure_response(connection,if phase.value()==0{408;}else{503;});}
-        catch e is InvalidHttpMessage{await self.failure_response(connection,if phase.value()<2{400;}else{500;});}
-        catch Http1LimitExceeded.kind(kind) {await self.failure_response(connection,if phase.value()>=2{500;}else{if kind=="body_bytes"{413;}else{431;}});}
-        catch e is Error{await self.failure_response(connection,if phase.value()==0{400;}else{500;});}
+    has server is HttpServerState;
+    has id is int;
+    has waiting is Future<TcpConnection>;
+    has ready, dispatch is Event;
+    has handling is Handling;
+    has policy is ServerPolicy;
+    has clock is Timing;
+    has group is FutureGroup<bool>;
+    has cancelled is Cancellation;
+    has destinations is @Url;
+    has sent is Atomic<bool>;
+    has phase, seen is Atomic<int>;
+
+    HttpServerPeer(
+        server is HttpServerState,
+        id is int,
+        waiting is Future<TcpConnection>,
+        handling is Handling,
+        policy is ServerPolicy,
+        clock is Timing,
+        destinations is @Url
+    ) {
+        self.destinations = destinations;
+        self.server = server;
+        self.id = id;
+        self.waiting = waiting;
+        ready = Event();
+        dispatch = Event();
+        self.handling = handling;
+        self.policy = policy;
+        self.clock = clock;
+        group = FutureGroup();
+        cancelled = Cancellation();
+        sent = Atomic(false);
+        phase = Atomic(0);
+        seen = Atomic(0);
     }
-    async failure_response(connection is TcpConnection,status is int) is bool{
-        if !sent.value() && !(phase.value()==0 && seen.value()==0){let response=Response(Status(status),Headers([Header(HeaderName("Connection"),"close")]));let pending=Http1ResponseWriting(connection.output(),response,Method("GET"),policy.limits().http1()).result();try{await pending;}catch e is Error{}}true;
+
+    id() is int {
+        id;
     }
-    async h2_drain(session is Http2ServerSession) is bool{await server.drain_signal();await session.drained();true;}
-    async h2_requests(connection is TcpConnection) is bool{
-        phase.replace(1);sent.replace(true);let session=Http2ServerSession(connection.input(),connection.output(),connection,handling,ExchangeDetails(connection.endpoints(),HttpVersion.http_2),policy,clock);
-        let work is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(work);defer await cleanup.close();defer session.close();
-        let serving=session.serve();work.start(serving);work.start(self.h2_drain(session));await serving;await session.settled();true;
+
+    waiting_for_request() is bool {
+        phase.value() == 0;
     }
-    async requests(connection is TcpConnection) is bool{
-        if policy.protocols().membership(HttpVersion.http_2){return await self.h2_requests(connection);}
-        let empty is @byte=[];let prefix=Atomic(empty);let completed=Atomic(0);
-        loop{
-            sent.replace(false);phase.replace(0);seen.replace(prefix.value().size());
-            if completed.value()>0 && prefix.value().size()==0{
-                let idle_deadline is HttpServerDeadline<@byte>=HttpServerDeadline(connection.input().bytes(1),policy.timeouts().keep_alive_timeout(),clock);let idle_waiting=idle_deadline.result();let first=await idle_waiting;
-                if first.size()==0{return true;}prefix.replace(first);seen.replace(first.size());
+
+    async ready() is bool {
+        await ready.wait();
+        true;
+    }
+
+    dispatch() is void {
+        dispatch.set();
+    }
+
+    start() is void {
+        group.start(self.run());
+    }
+
+    close() is void {
+        cancelled.cancel();
+        waiting.cancel();
+        group.cancel();
+    }
+
+    async settled() is bool {
+        await group.wait();
+        true;
+    }
+
+    async run() is bool {
+        defer server.remove(id);
+        defer ready.set();
+        defer cancelled.cancel();
+        let connections is FutureGroup<TcpConnection> = FutureGroup();
+        let taken = Event();
+        let empty_connections is @Future<TcpConnection> = [waiting];
+        let pending = Atomic(empty_connections);
+        let cleanup = HttpAcquisitionCleanup(connections, pending, taken, HttpTcpDisposal().release);
+        defer await cleanup.close();
+        connections.start(waiting);
+        let available is @TcpConnection = try {
+            [await waiting];
+        }
+        catch e is NetworkClosed {
+            [];
+        };
+        if available.size() == 0 {
+            return true;
+        }
+        let connection = available[0];
+        taken.set();
+        defer connection.close();
+        ready.set();
+        await dispatch.wait();
+        let processing = self.requests(connection);
+        try {
+            await processing;
+        }
+        catch e is Cancelled {
+            throw;
+        }
+        catch e is HttpServerBodyTimedOut {
+            await self.failure_response(connection, 408);
+        }
+        catch e is TimedOut {
+            await self.failure_response(connection, if phase.value() == 0 {
+                408;
             }
-            cancelled.cancelling().check();let reading=Http1RequestHeadReading(HttpServerObservedInput(connection.input(),seen),prefix.value(),policy.limits().http1(),4096).result();let deadline is HttpServerDeadline<Http1HeadRead<Http1RequestHead>>=HttpServerDeadline(reading,policy.timeouts().headers_timeout(),clock);let bounded=deadline.result();let received=await bounded;let head=received.head();confirm head.version()==HttpVersion.http_1_1 else throw BadRequest.because("HTTP1.1 request required");confirm head.target().kind()==RequestTargetKind.origin else throw BadRequest.because("direct server origin target required");let plan=Http1RequestFraming(head,policy.limits().http1()).plan();
-            let expectations=head.headers().values(HeaderName("Expect"));let expected=expectations.size()>0;
-            if expected && (expectations.size()!=1 || HttpAsciiLowercase(expectations.item(0)).string()!="100-continue" || head.version()!=HttpVersion.http_1_1){let response=Response(Status(417),Headers([Header(HeaderName("Connection"),"close")]));let pending=Http1ResponseWriting(connection.output(),response,head.method(),policy.limits().http1()).result();await pending;return true;}
-            let continuing=HttpServerContinueInput(connection.input(),connection.output(),expected);let lease=HttpServerBodyLease();let body=Http1BodyReading(HttpServerTimedInput(continuing,policy.timeouts().body_idle_timeout(),clock),lease,plan,received.remainder(),head.headers(),policy.limits().http1());let request=head.request(Http1IncomingBody(body));let details=ExchangeDetails(connection.endpoints(),head.version());let context=HttpRequestContext(details,cancelled.cancelling());
-            phase.replace(1);let handlers is FutureGroup<HandlingResult>=FutureGroup();let handler_cleanup=WebSocketOutputSettlement(handlers);defer await handler_cleanup.close();let handler_deadline is HttpServerDeadline<HandlingResult>=HttpServerDeadline(handling.handling(request,context),policy.timeouts().handling_timeout(),clock);let waiting=handler_deadline.result();handlers.start(waiting);
-            let result is HandlingResult=try{await waiting;}catch e is Cancelled{throw;}catch e is TimedOut{throw;}catch e is HttpServerBodyTimedOut{throw;}catch e is InvalidHttpMessage{throw;}catch e is Http1LimitExceeded{throw;}catch e is Error{ResponseHandling(Response(Status(500),Headers([Header(HeaderName("Connection"),"close")])));};
-            if result.kind()==HandlingKind.websocket{
-                confirm plan.kind()==Http1BodyKind.empty || (plan.kind()==Http1BodyKind.fixed && plan.length().string()=="0") else throw BadRequest.because("WebSocket request body prohibited");confirm destinations.size()==1 else throw BadRequest.because("trusted WebSocket destination required");let destination=destinations[0];let connecting=WebSocketAccepting(connection.input(),connection.output(),connection,received,destination,result.websocket(),clock);sent.replace(true);let socket=await connecting.connection();
-                let pending=result.application().handle(socket,request,context);await pending;await socket.close(1000,"");return true;
+            else {
+                503;
+            });
+        }
+        catch e is InvalidHttpMessage {
+            await self.failure_response(connection, if phase.value() < 2 {
+                400;
             }
-            phase.replace(2);let original=result.response();let response=if expected && !continuing.started(){Response(original.status(),ReplacedHeader(original.headers(),Header(HeaderName("Connection"),"close")).result(),original.body(),original.version());}else{original;};let sending=Http1ResponseWriting(connection.output(),response,head.method(),policy.limits().http1()).result();sent.replace(true);await sending;
-            let outgoing=Http1ResponseFraming(Http1ResponseHead(response.status(),response.headers(),response.version()),head.method(),policy.limits().http1()).plan();if server.stopping_acceptance() || !plan.reuse_after_eof() || !outgoing.reuse_after_eof(){return true;}
-            loop{if body.closed(){last;}let reading=body.bytes(65536);let bytes=await reading;if bytes.size()==0{last;}}
-            prefix.replace(body.remainder());completed.replace(completed.value()+1);
+            else {
+                500;
+            });
+        }
+        catch Http1LimitExceeded.kind(kind) {
+            await self.failure_response(connection, if phase.value() >= 2 {
+                500;
+            }
+            else {
+                if kind == "body_bytes" {
+                    413;
+                }
+                else {
+                    431;
+                }
+            });
+        }
+        catch e is Error {
+            await self.failure_response(connection, if phase.value() == 0 {
+                400;
+            }
+            else {
+                500;
+            });
+        }
+    }
+
+    async failure_response(connection is TcpConnection, status is int) is bool {
+        if !sent.value() && !(phase.value() == 0 && seen.value() == 0) {
+            let response = Response(
+                Status(status),
+                Headers([Header(HeaderName("Connection"), "close")])
+            );
+            let pending = Http1ResponseWriting(
+                connection.output(),
+                response,
+                Method("GET"),
+                policy.limits().http1()
+            ).result();
+            try {
+                await pending;
+            }
+            catch e is Error {}
+        }
+        true;
+    }
+
+    async h2_drain(session is Http2ServerSession) is bool {
+        await server.drain_signal();
+        await session.drained();
+        true;
+    }
+
+    async h2_requests(connection is TcpConnection) is bool {
+        phase.replace(1);
+        sent.replace(true);
+        let session = Http2ServerSession(
+            connection.input(),
+            connection.output(),
+            connection,
+            handling,
+            ExchangeDetails(connection.endpoints(), HttpVersion.http_2),
+            policy,
+            clock
+        );
+        let work is FutureGroup<bool> = FutureGroup();
+        let cleanup = WebSocketOutputSettlement(work);
+        defer await cleanup.close();
+        defer session.close();
+        let serving = session.serve();
+        work.start(serving);
+        work.start(self.h2_drain(session));
+        await serving;
+        await session.settled();
+        true;
+    }
+
+    async requests(connection is TcpConnection) is bool {
+        if policy.protocols().membership(HttpVersion.http_2) {
+            return await self.h2_requests(connection);
+        }
+        let empty is @byte = [];
+        let prefix = Atomic(empty);
+        let completed = Atomic(0);
+        loop {
+            sent.replace(false);
+            phase.replace(0);
+            seen.replace(prefix.value().size());
+            if completed.value() > 0 && prefix.value().size() == 0 {
+                let idle_deadline is HttpServerDeadline<@byte> = HttpServerDeadline(
+                    connection.input().bytes(1),
+                    policy.timeouts().keep_alive_timeout(),
+                    clock
+                );
+                let idle_waiting = idle_deadline.result();
+                let first = await idle_waiting;
+                if first.size() == 0 {
+                    return true;
+                }
+                prefix.replace(first);
+                seen.replace(first.size());
+            }
+            cancelled.cancelling().check();
+            let reading = Http1RequestHeadReading(
+                HttpServerObservedInput(connection.input(), seen),
+                prefix.value(),
+                policy.limits().http1(),
+                4096
+            ).result();
+            let deadline is HttpServerDeadline<Http1HeadRead<Http1RequestHead>> = HttpServerDeadline(
+                reading,
+                policy.timeouts().headers_timeout(),
+                clock
+            );
+            let bounded = deadline.result();
+            let received = await bounded;
+            let head = received.head();
+            confirm head.version() == HttpVersion.http_1_1
+                else throw BadRequest.because("HTTP1.1 request required");
+            confirm head.target().kind() == RequestTargetKind.origin
+                else throw BadRequest.because("direct server origin target required");
+            let plan = Http1RequestFraming(head, policy.limits().http1()).plan();
+            let expectations = head.headers().values(HeaderName("Expect"));
+            let expected = expectations.size() > 0;
+            if expected
+                && (expectations.size() != 1
+                || HttpAsciiLowercase(expectations.item(0)).string() != "100-continue"
+                || head.version() != HttpVersion.http_1_1) {
+                    let response = Response(
+                        Status(417),
+                        Headers([Header(HeaderName("Connection"), "close")])
+                    );
+                    let pending = Http1ResponseWriting(
+                        connection.output(),
+                        response,
+                        head.method(),
+                        policy.limits().http1()
+                    ).result();
+                    await pending;
+                    return true;
+                }
+            let continuing = HttpServerContinueInput(
+                connection.input(),
+                connection.output(),
+                expected
+            );
+            let lease = HttpServerBodyLease();
+            let body = Http1BodyReading(
+                HttpServerTimedInput(continuing, policy.timeouts().body_idle_timeout(), clock),
+                lease,
+                plan,
+                received.remainder(),
+                head.headers(),
+                policy.limits().http1()
+            );
+            let request = head.request(Http1IncomingBody(body));
+            let details = ExchangeDetails(connection.endpoints(), head.version());
+            let context = HttpRequestContext(details, cancelled.cancelling());
+            phase.replace(1);
+            let handlers is FutureGroup<HandlingResult> = FutureGroup();
+            let handler_cleanup = WebSocketOutputSettlement(handlers);
+            defer await handler_cleanup.close();
+            let handler_deadline is HttpServerDeadline<HandlingResult> = HttpServerDeadline(
+                handling.handling(request, context),
+                policy.timeouts().handling_timeout(),
+                clock
+            );
+            let waiting = handler_deadline.result();
+            handlers.start(waiting);
+            let result is HandlingResult = try {
+                await waiting;
+            }
+            catch e is Cancelled {
+                throw;
+            }
+            catch e is TimedOut {
+                throw;
+            }
+            catch e is HttpServerBodyTimedOut {
+                throw;
+            }
+            catch e is InvalidHttpMessage {
+                throw;
+            }
+            catch e is Http1LimitExceeded {
+                throw;
+            }
+            catch e is Error {
+                ResponseHandling(
+                    Response(Status(500), Headers([Header(HeaderName("Connection"), "close")]))
+                );
+            };
+            if result.kind() == HandlingKind.websocket {
+                confirm plan.kind() == Http1BodyKind.empty
+                    || (plan.kind() == Http1BodyKind.fixed && plan.length().string() == "0")
+                    else throw BadRequest.because("WebSocket request body prohibited");
+                confirm destinations.size() == 1
+                    else throw BadRequest.because("trusted WebSocket destination required");
+                let destination = destinations[0];
+                let connecting = WebSocketAccepting(
+                    connection.input(),
+                    connection.output(),
+                    connection,
+                    received,
+                    destination,
+                    result.websocket(),
+                    clock
+                );
+                sent.replace(true);
+                let socket = await connecting.connection();
+                let pending = result.application().handle(socket, request, context);
+                await pending;
+                await socket.close(1000, "");
+                return true;
+            }
+            phase.replace(2);
+            let original = result.response();
+            let response = if expected && !continuing.started() {
+                Response(
+                    original.status(),
+                    ReplacedHeader(original.headers(), Header(HeaderName("Connection"), "close")).result(),
+                    original.body(),
+                    original.version()
+                );
+            }
+            else {
+                original;
+            };
+            let sending = Http1ResponseWriting(
+                connection.output(),
+                response,
+                head.method(),
+                policy.limits().http1()
+            ).result();
+            sent.replace(true);
+            await sending;
+            let outgoing = Http1ResponseFraming(
+                Http1ResponseHead(response.status(), response.headers(), response.version()),
+                head.method(),
+                policy.limits().http1()
+            ).plan();
+            if server.stopping_acceptance()
+                || !plan.reuse_after_eof()
+                || !outgoing.reuse_after_eof() {
+                    return true;
+                }
+            loop {
+                if body.closed() {
+                    last;
+                }
+                let reading = body.bytes(65536);
+                let bytes = await reading;
+                if bytes.size() == 0 {
+                    last;
+                }
+            }
+            prefix.replace(body.remainder());
+            completed.replace(completed.value() + 1);
         }
     }
 }
-object HttpServerBodyLease does Closing{has ended is Event;HttpServerBodyLease(){ended=Event();}closed() is bool{ended.ready();}close() is void{ended.set();}}
-object HttpServerDeadline<T>{has waiting is Future<T>;HttpServerDeadline(waiting is Future<T>,limit is Duration,clock is Timing){if limit.seconds()==0.rat(){self.waiting=waiting;}else{let bounded is Within<T>=Within(waiting,limit,clock);self.waiting=bounded.result();}}result() is Future<T>{waiting;}}
-object HttpServerTimedInput does AsyncReading{
-    has origin is AsyncReading;has limit is Duration;has clock is Timing;HttpServerTimedInput(origin is AsyncReading,limit is Duration,clock is Timing){self.origin=origin;self.limit=limit;self.clock=clock;}
-    async bytes(amount is int) is @byte{let deadline is HttpServerDeadline<@byte>=HttpServerDeadline(origin.bytes(amount),limit,clock);let reading=deadline.result();try{await reading;}catch e is TimedOut{throw HttpServerBodyTimedOut.elapsed;}}
+
+object HttpServerBodyLease does Closing {
+    has ended is Event;
+
+    HttpServerBodyLease() {
+        ended = Event();
+    }
+
+    closed() is bool {
+        ended.ready();
+    }
+
+    close() is void {
+        ended.set();
+    }
 }
+
+object HttpServerDeadline<T> {
+    has waiting is Future<T>;
+
+    HttpServerDeadline(waiting is Future<T>, limit is Duration, clock is Timing) {
+        if limit.seconds() == 0.rat() {
+            self.waiting = waiting;
+        }
+        else {
+            let bounded is Within<T> = Within(waiting, limit, clock);
+            self.waiting = bounded.result();
+        }
+    }
+
+    result() is Future<T> {
+        waiting;
+    }
+}
+
+object HttpServerTimedInput does AsyncReading {
+    has origin is AsyncReading;
+    has limit is Duration;
+    has clock is Timing;
+
+    HttpServerTimedInput(origin is AsyncReading, limit is Duration, clock is Timing) {
+        self.origin = origin;
+        self.limit = limit;
+        self.clock = clock;
+    }
+
+    async bytes(amount is int) is @byte {
+        let deadline is HttpServerDeadline<@byte> = HttpServerDeadline(
+            origin.bytes(amount),
+            limit,
+            clock
+        );
+        let reading = deadline.result();
+        try {
+            await reading;
+        }
+        catch e is TimedOut {
+            throw HttpServerBodyTimedOut.elapsed;
+        }
+    }
+}
+
 enum BadRequest is Error = (because(reason is string));
 
-object HttpServerObservedInput does AsyncReading{has origin is AsyncReading;has seen is Atomic<int>;HttpServerObservedInput(origin is AsyncReading,seen is Atomic<int>){self.origin=origin;self.seen=seen;}async bytes(limit is int) is @byte{let pending=origin.bytes(limit);let bytes=await pending;seen.replace(seen.value()+bytes.size());bytes;}}
+object HttpServerObservedInput does AsyncReading {
+    has origin is AsyncReading;
+    has seen is Atomic<int>;
+
+    HttpServerObservedInput(origin is AsyncReading, seen is Atomic<int>) {
+        self.origin = origin;
+        self.seen = seen;
+    }
+
+    async bytes(limit is int) is @byte {
+        let pending = origin.bytes(limit);
+        let bytes = await pending;
+        seen.replace(seen.value() + bytes.size());
+        bytes;
+    }
+}
 
 // Interims are emitted only upon the first actual source body read. Bodies
 // already in the head prefix may legitimately proceed without 100. A final
 // response before consumption closes rather than emitting 100 while draining.
-object HttpServerContinueInput does AsyncReading{
-    has origin is AsyncReading;has output is AsyncWriting;has expected is bool;has started is Event;
-    HttpServerContinueInput(origin is AsyncReading,output is AsyncWriting,expected is bool){self.origin=origin;self.output=output;self.expected=expected;started=Event();}
-    started() is bool{started.ready();}
-    async bytes(limit is int) is @byte{
-        if expected && !started.ready(){started.set();let sending=Http1ResponseHeadWriting(output,Http1ResponseHead(Status(100),Headers([]),HttpVersion.http_1_1),Method("POST")).result();await sending;}
-        let reading=origin.bytes(limit);await reading;
+object HttpServerContinueInput does AsyncReading {
+    has origin is AsyncReading;
+    has output is AsyncWriting;
+    has expected is bool;
+    has started is Event;
+
+    HttpServerContinueInput(origin is AsyncReading, output is AsyncWriting, expected is bool) {
+        self.origin = origin;
+        self.output = output;
+        self.expected = expected;
+        started = Event();
+    }
+
+    started() is bool {
+        started.ready();
+    }
+
+    async bytes(limit is int) is @byte {
+        if expected && !started.ready() {
+            started.set();
+            let sending = Http1ResponseHeadWriting(
+                output,
+                Http1ResponseHead(Status(100), Headers([]), HttpVersion.http_1_1),
+                Method("POST")
+            ).result();
+            await sending;
+        }
+        let reading = origin.bytes(limit);
+        await reading;
     }
 }
 
 enum HttpServerBodyTimedOut is Error = (elapsed);
+
 object ServerDrain {
-    has server is HttpServer;has limit is Duration;has clock is Timing;
-    ServerDrain(server is HttpServer,limit is Duration,clock is Timing){confirm limit.seconds()>=0.rat() else throw BadRequest.because("negative drain deadline");self.server=server;self.limit=limit;self.clock=clock;}
-    async drain() is ServerDrain{let cleanup=HttpServerDrainCleanup(server);defer await cleanup.close();server.stop_accepting();let bounded is Within<bool>=Within(server.drained(),limit,clock);let waiting=bounded.result();await waiting;self;}
+    has server is HttpServer;
+    has limit is Duration;
+    has clock is Timing;
+
+    ServerDrain(server is HttpServer, limit is Duration, clock is Timing) {
+        confirm limit.seconds() >= 0.rat() else throw BadRequest.because("negative drain deadline");
+        self.server = server;
+        self.limit = limit;
+        self.clock = clock;
+    }
+
+    async drain() is ServerDrain {
+        let cleanup = HttpServerDrainCleanup(server);
+        defer await cleanup.close();
+        server.stop_accepting();
+        let bounded is Within<bool> = Within(server.drained(), limit, clock);
+        let waiting = bounded.result();
+        await waiting;
+        self;
+    }
 }
-hidden object HttpServerDrainCleanup{has server is HttpServer;HttpServerDrainCleanup(server is HttpServer){self.server=server;}async close() is void{server.close();await server.settled();}}
+
+hidden object HttpServerDrainCleanup {
+    has server is HttpServer;
+
+    HttpServerDrainCleanup(server is HttpServer) {
+        self.server = server;
+    }
+
+    async close() is void {
+        server.close();
+        await server.settled();
+    }
+}

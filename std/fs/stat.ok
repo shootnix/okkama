@@ -9,16 +9,7 @@ import "time/duration" take Duration, DurationUnit;
 // runtime boundary. Creation time is optional because many filesystems do not
 // expose one. Calling creation() when it is unavailable throws a typed error.
 
-enum FileKind = (
-    other,
-    file,
-    directory,
-    symbolic_link,
-    block_device,
-    character_device,
-    fifo,
-    socket
-);
+enum FileKind = (other, file, directory, symbolic_link, block_device, character_device, fifo, socket);
 
 object FileStat {
     has file_kind is FileKind;
@@ -41,11 +32,25 @@ object FileStat {
         file_identity = identity;
     }
 
-    kind() is FileKind { file_kind; }
-    size() is int { byte_size; }
-    mode() is PermissionMode { permission_mode; }
-    times() is FileTimes { file_times; }
-    identity() is FileIdentity { file_identity; }
+    kind() is FileKind {
+        file_kind;
+    }
+
+    size() is int {
+        byte_size;
+    }
+
+    mode() is PermissionMode {
+        permission_mode;
+    }
+
+    times() is FileTimes {
+        file_times;
+    }
+
+    identity() is FileIdentity {
+        file_identity;
+    }
 }
 
 object FileTimes {
@@ -61,9 +66,17 @@ object FileTimes {
         created = creation;
     }
 
-    access() is Instant { EpochInstant(seconds: accessed).value(); }
-    modification() is Instant { EpochInstant(seconds: modified).value(); }
-    change() is Instant { EpochInstant(seconds: changed).value(); }
+    access() is Instant {
+        EpochInstant(seconds: accessed).value();
+    }
+
+    modification() is Instant {
+        EpochInstant(seconds: modified).value();
+    }
+
+    change() is Instant {
+        EpochInstant(seconds: changed).value();
+    }
 
     creation() is Instant {
         confirm created >= 0 else throw MissingCreationTime.missing;
@@ -80,9 +93,17 @@ object FileIdentity {
         inode_number = inode;
     }
 
-    same(other is FileIdentity) is bool { self == other; }
-    device() is int { device_number; }
-    inode() is BigInt { inode_number; }
+    same(other is FileIdentity) is bool {
+        self == other;
+    }
+
+    device() is int {
+        device_number;
+    }
+
+    inode() is BigInt {
+        inode_number;
+    }
 }
 
 object Permissions {
@@ -96,9 +117,17 @@ object Permissions {
         execute_bit = executable;
     }
 
-    readable() is bool { read_bit; }
-    writable() is bool { write_bit; }
-    executable() is bool { execute_bit; }
+    readable() is bool {
+        read_bit;
+    }
+
+    writable() is bool {
+        write_bit;
+    }
+
+    executable() is bool {
+        execute_bit;
+    }
 }
 
 object PermissionMode {
@@ -111,10 +140,21 @@ object PermissionMode {
     }
 
     // These are integer bit fields; division produces a rat in Okkama.
-    owner() is Permissions { PermissionBits(bits: (bits >> 6) & 7).value(); }
-    group() is Permissions { PermissionBits(bits: (bits >> 3) & 7).value(); }
-    others() is Permissions { PermissionBits(bits: bits % 8).value(); }
-    special() is int { bits >> 9; }
+    owner() is Permissions {
+        PermissionBits(bits: (bits >> 6) & 7).value();
+    }
+
+    group() is Permissions {
+        PermissionBits(bits: (bits >> 3) & 7).value();
+    }
+
+    others() is Permissions {
+        PermissionBits(bits: bits % 8).value();
+    }
+
+    special() is int {
+        bits >> 9;
+    }
 }
 
 object FileStatFromMap {
@@ -174,14 +214,30 @@ object FileKindFromCode {
     FileKindFromCode(:code);
 
     value() is FileKind {
-        if code == 1 { FileKind.file; }
-        else if code == 2 { FileKind.directory; }
-        else if code == 3 { FileKind.symbolic_link; }
-        else if code == 4 { FileKind.block_device; }
-        else if code == 5 { FileKind.character_device; }
-        else if code == 6 { FileKind.fifo; }
-        else if code == 7 { FileKind.socket; }
-        else { FileKind.other; }
+        if code == 1 {
+            FileKind.file;
+        }
+        else if code == 2 {
+            FileKind.directory;
+        }
+        else if code == 3 {
+            FileKind.symbolic_link;
+        }
+        else if code == 4 {
+            FileKind.block_device;
+        }
+        else if code == 5 {
+            FileKind.character_device;
+        }
+        else if code == 6 {
+            FileKind.fifo;
+        }
+        else if code == 7 {
+            FileKind.socket;
+        }
+        else {
+            FileKind.other;
+        }
     }
 }
 
@@ -191,12 +247,19 @@ enum InvalidPermissionMode is Error = (bits(bits is int));
 
 test "permission observations retain integer bit groups" {
     let mode = PermissionMode(416); // 0640
-    test.ok(mode.owner().readable()); test.ok(mode.owner().writable());
-    test.ok(!mode.owner().executable()); test.ok(mode.group().readable());
-    test.ok(!mode.group().writable()); test.ok(!mode.others().readable());
+    test.ok(mode.owner().readable());
+    test.ok(mode.owner().writable());
+    test.ok(!mode.owner().executable());
+    test.ok(mode.group().readable());
+    test.ok(!mode.group().writable());
+    test.ok(!mode.others().readable());
     test.is(mode.special(), 0);
     let all = PermissionMode(4095); // 07777
-    test.ok(all.owner().executable()); test.ok(all.group().writable());
-    test.ok(all.others().executable()); test.is(all.special(), 7);
-    test.throws(InvalidPermissionMode) { PermissionMode(4096); };
+    test.ok(all.owner().executable());
+    test.ok(all.group().writable());
+    test.ok(all.others().executable());
+    test.is(all.special(), 7);
+    test.throws(InvalidPermissionMode) {
+        PermissionMode(4096);
+    };
 }

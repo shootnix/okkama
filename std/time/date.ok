@@ -13,15 +13,7 @@ import "compare" take Comparing, Order;
 // host calendar dependency. Date ordinals are one-based: 0001-01-01 is day 1
 // and Monday. DaysBetween(left, right) is signed and means right minus left.
 
-enum Weekday = (
-    monday,
-    tuesday,
-    wednesday,
-    thursday,
-    friday,
-    saturday,
-    sunday
-);
+enum Weekday = (monday, tuesday, wednesday, thursday, friday, saturday, sunday);
 
 object Date does Comparing<Date> {
     has year_value is int;
@@ -37,9 +29,20 @@ object Date does Comparing<Date> {
         let leap is bool = year % 4 == 0
             && (year % 100 != 0 || year % 400 == 0);
         let maximum is int = match month {
-            case 2 { if leap { 29; } else { 28; } }
-            case 4, 6, 9, 11 { 30; }
-            else { 31; }
+            case 2 {
+                if leap {
+                    29;
+                }
+                else {
+                    28;
+                }
+            }
+            case 4, 6, 9, 11 {
+                30;
+            }
+            else {
+                31;
+            }
         };
         confirm day >= 1 && day <= maximum
             else throw InvalidDate.because("date day is outside the selected month");
@@ -63,13 +66,27 @@ object Date does Comparing<Date> {
 
     weekday() is Weekday {
         match ((DateOrdinal(origin: self).value()) - 1) % 7 {
-            case 0 { Weekday.monday; }
-            case 1 { Weekday.tuesday; }
-            case 2 { Weekday.wednesday; }
-            case 3 { Weekday.thursday; }
-            case 4 { Weekday.friday; }
-            case 5 { Weekday.saturday; }
-            else { Weekday.sunday; }
+            case 0 {
+                Weekday.monday;
+            }
+            case 1 {
+                Weekday.tuesday;
+            }
+            case 2 {
+                Weekday.wednesday;
+            }
+            case 3 {
+                Weekday.thursday;
+            }
+            case 4 {
+                Weekday.friday;
+            }
+            case 5 {
+                Weekday.saturday;
+            }
+            else {
+                Weekday.sunday;
+            }
         }
     }
 
@@ -115,8 +132,8 @@ object DaysBetween {
     }
 
     value() is int {
-        (DateOrdinal(origin: right).value())
-            - (DateOrdinal(origin: left).value());
+        (DateOrdinal(origin: right).value()) -
+            (DateOrdinal(origin: left).value());
     }
 }
 
@@ -138,16 +155,21 @@ object DateOrdinal {
             0;
         }
         else {
-            if leap { -1; } else { -2; }
+            if leap {
+                -1;
+            }
+            else {
+                -2;
+            }
         };
 
-        previous_year * 365
-            + (previous_year / 4).int()
-            - (previous_year / 100).int()
-            + (previous_year / 400).int()
-            + ((367 * month - 362) / 12).int()
-            + adjustment
-            + origin.day();
+        previous_year * 365 +
+            (previous_year / 4).int() -
+            (previous_year / 100).int() +
+            (previous_year / 400).int() +
+            ((367 * month - 362) / 12).int() +
+            adjustment +
+            origin.day();
     }
 }
 
@@ -166,29 +188,30 @@ object OrdinalDate {
         let shifted is int = origin + 305;
         let era is int = (shifted / 146097).int();
         let day_of_era is int = shifted - era * 146097;
-        let year_of_era is int = ((
-            day_of_era
-                - (day_of_era / 1460).int()
-                + (day_of_era / 36524).int()
-                - (day_of_era / 146096).int()
-        ) / 365).int();
+        let year_of_era is int = ((day_of_era -
+            (day_of_era / 1460).int() +
+            (day_of_era / 36524).int() -
+            (day_of_era / 146096).int()) / 365).int();
         let year_base is int = year_of_era + era * 400;
-        let day_of_year is int = day_of_era - (
-            year_of_era * 365
-                + (year_of_era / 4).int()
-                - (year_of_era / 100).int()
-        );
+        let day_of_year is int = day_of_era - (year_of_era * 365 +
+            (year_of_era / 4).int() -
+            (year_of_era / 100).int());
         let month_part is int = ((5 * day_of_year + 2) / 153).int();
-        let day is int = day_of_year
-            - ((153 * month_part + 2) / 5).int()
-            + 1;
+        let day is int = day_of_year -
+            ((153 * month_part + 2) / 5).int() +
+            1;
         let month is int = if month_part < 10 {
             month_part + 3;
         }
         else {
             month_part - 9;
         };
-        let year is int = year_base + (if month <= 2 { 1; } else { 0; });
+        let year is int = year_base + (if month <= 2 {
+            1;
+        }
+        else {
+            0;
+        });
 
         Date(year: year, month: month, day: day);
     }

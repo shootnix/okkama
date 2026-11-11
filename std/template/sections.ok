@@ -44,43 +44,92 @@ object SectionTemplate {
     has partials is TemplateLibrary;
     has maximum_partial_depth is int = 32;
     has partials_enabled is bool = false;
+
     SectionTemplate(source is string) {
-        program=TemplateTree(source);partials=TemplateLibrary();
-        maximum_iterations=10000;maximum_output=1048576;maximum_members=1024;
+        program = TemplateTree(source);
+        partials = TemplateLibrary();
+        maximum_iterations = 10000;
+        maximum_output = 1048576;
+        maximum_members = 1024;
     }
-    SectionTemplate(source is string, maximum_iterations is int, maximum_output is int, maximum_members is int) {
-        confirm maximum_iterations>=0 && maximum_output>=0 && maximum_members>=0 else throw InvalidTemplateLimits.invalid;
-        program=TemplateTree(source);partials=TemplateLibrary();
-        self.maximum_iterations=maximum_iterations;self.maximum_output=maximum_output;self.maximum_members=maximum_members;
+
+    SectionTemplate(
+        source is string,
+        maximum_iterations is int,
+        maximum_output is int,
+        maximum_members is int
+    ) {
+        confirm maximum_iterations >= 0 && maximum_output >= 0 && maximum_members >= 0
+            else throw InvalidTemplateLimits.invalid;
+        program = TemplateTree(source);
+        partials = TemplateLibrary();
+        self.maximum_iterations = maximum_iterations;
+        self.maximum_output = maximum_output;
+        self.maximum_members = maximum_members;
     }
+
     SectionTemplate(source is string, partials is TemplateLibrary) {
-        program=TemplateTree(source);self.partials=partials;partials_enabled=true;
-        maximum_iterations=10000;maximum_output=1048576;maximum_members=1024;
+        program = TemplateTree(source);
+        self.partials = partials;
+        partials_enabled = true;
+        maximum_iterations = 10000;
+        maximum_output = 1048576;
+        maximum_members = 1024;
     }
-    SectionTemplate(source is string, partials is TemplateLibrary, maximum_iterations is int, maximum_output is int, maximum_members is int, maximum_partial_depth is int) {
-        confirm maximum_iterations>=0 && maximum_output>=0 && maximum_members>=0 && maximum_partial_depth>=0 else throw InvalidTemplateLimits.invalid;
-        program=TemplateTree(source);self.partials=partials;partials_enabled=true;
-        self.maximum_iterations=maximum_iterations;self.maximum_output=maximum_output;self.maximum_members=maximum_members;
-        self.maximum_partial_depth=maximum_partial_depth;
+
+    SectionTemplate(
+        source is string,
+        partials is TemplateLibrary,
+        maximum_iterations is int,
+        maximum_output is int,
+        maximum_members is int,
+        maximum_partial_depth is int
+    ) {
+        confirm maximum_iterations >= 0
+            && maximum_output >= 0
+            && maximum_members >= 0
+            && maximum_partial_depth >= 0
+            else throw InvalidTemplateLimits.invalid;
+        program = TemplateTree(source);
+        self.partials = partials;
+        partials_enabled = true;
+        self.maximum_iterations = maximum_iterations;
+        self.maximum_output = maximum_output;
+        self.maximum_members = maximum_members;
+        self.maximum_partial_depth = maximum_partial_depth;
     }
+
     string(data is Json) is string {
-        let output=ByteBuffer();
+        let output = ByteBuffer();
         defer output.closing().close();
-        self.write(data,Utf8Output(origin:output.writing()));
+        self.write(data, Utf8Output(origin: output.writing()));
         Utf8Decoded(output.content().bytes()).string();
     }
+
     write(data is Json, destination is WritingText) is void {
-        let nodes=program.nodes();
-        if !partials_enabled {self.validate(nodes);}
-        let output=TemplateSectionOutput(destination,maximum_output);
-        let iterations=TemplateIterationBudget(maximum_iterations);
-        TemplateSectionRun(output:output,iterations:iterations,maximum_members:maximum_members,
-            partials:partials,maximum_partial_depth:maximum_partial_depth,partial_depth:0,section_depth:0).write(nodes,data);
+        let nodes = program.nodes();
+        if !partials_enabled {
+            self.validate(nodes);
+        }
+        let output = TemplateSectionOutput(destination, maximum_output);
+        let iterations = TemplateIterationBudget(maximum_iterations);
+        TemplateSectionRun(
+            output: output,
+            iterations: iterations,
+            maximum_members: maximum_members,
+            partials: partials,
+            maximum_partial_depth: maximum_partial_depth,
+            partial_depth: 0,
+            section_depth: 0
+        ).write(nodes, data);
     }
+
     private:
+
     validate(nodes is @TemplateTreeNode) is void {
         for nodes -> node {
-            confirm node.kind()!=TemplateTreeKind.partial else throw UnsupportedTemplatePartial.name(node.text());
+            confirm node.kind() != TemplateTreeKind.partial
+                else throw UnsupportedTemplatePartial.name(node.text());
             self.validate(node.children());
         }
     }
@@ -92,16 +141,25 @@ object SectionTemplate {
 object TemplateIterationBudget {
     has maximum is int;
     has marks is ByteBuffer;
+
     TemplateIterationBudget(maximum is int) {
-        confirm maximum>=0 else throw InvalidTemplateLimits.invalid;
-        self.maximum=maximum;marks=ByteBuffer();
+        confirm maximum >= 0 else throw InvalidTemplateLimits.invalid;
+        self.maximum = maximum;
+        marks = ByteBuffer();
     }
-    remaining() is int {maximum-marks.content().size();}
+
+    remaining() is int {
+        maximum - marks.content().size();
+    }
+
     claim() is void {
-        confirm self.remaining()>0 else throw TemplateIterationLimitExceeded.exceeded;
+        confirm self.remaining() > 0 else throw TemplateIterationLimitExceeded.exceeded;
         marks.writing() <- [byte(1)];
     }
-    destroy {marks.closing().close();}
+
+    destroy {
+        marks.closing().close();
+    }
 }
 
 // Internal command sharing a metered text destination and iteration ledger.
@@ -112,35 +170,90 @@ object TemplateSectionRun {
     has maximum_members is int;
     has partials is TemplateLibrary;
     has maximum_partial_depth, partial_depth, section_depth is int;
-    TemplateSectionRun(:output,:iterations,:maximum_members,:partials,:maximum_partial_depth,:partial_depth,:section_depth);
+
+    TemplateSectionRun(
+        :output,
+        :iterations,
+        :maximum_members,
+        :partials,
+        :maximum_partial_depth,
+        :partial_depth,
+        :section_depth
+    );
+
     nested() is TemplateSectionRun {
-        confirm section_depth<64 else throw TemplateSectionDepthExceeded.exceeded;
-        TemplateSectionRun(output:output,iterations:iterations,maximum_members:maximum_members,
-            partials:partials,maximum_partial_depth:maximum_partial_depth,partial_depth:partial_depth,section_depth:section_depth+1);
+        confirm section_depth < 64 else throw TemplateSectionDepthExceeded.exceeded;
+        TemplateSectionRun(
+            output: output,
+            iterations: iterations,
+            maximum_members: maximum_members,
+            partials: partials,
+            maximum_partial_depth: maximum_partial_depth,
+            partial_depth: partial_depth,
+            section_depth: section_depth + 1
+        );
     }
+
     write(nodes is @TemplateTreeNode, data is Json) is void {
         for nodes -> node {
-            if node.kind()==TemplateTreeKind.literal {output.append(node.text());}
+            if node.kind() == TemplateTreeKind.literal {
+                output.append(node.text());
+            }
             else {
-                if node.kind()==TemplateTreeKind.partial {self.partial(node.text(),data);}
-                else {if node.kind()==TemplateTreeKind.variable {
-                    output.append(JsonTemplateStrings(data,maximum_members,output.remaining()).string(node.text()));
-                } else {
-                    let path is @string=if node.text()=="." {[];}
-                        else {TemplatePathFromString(node.text()).value().segments().map() -> part {part;};};
-                    let found=TemplateSectionLookup(origin:data,path:path,maximum_members:maximum_members).value();
-                    TemplateSection(run:self,node:node,enclosing:data,iterations:iterations,maximum_members:maximum_members).render(found);
-                }}
+                if node.kind() == TemplateTreeKind.partial {
+                    self.partial(node.text(), data);
+                }
+                else {
+                    if node.kind() == TemplateTreeKind.variable {
+                        output.append(
+                            JsonTemplateStrings(data, maximum_members, output.remaining()).string(
+                                node.text()
+                            )
+                        );
+                    }
+                    else {
+                        let path is @string = if node.text() == "." {
+                            [];
+                        }
+                        else {
+                            TemplatePathFromString(node.text()).value().segments().map() -> part {
+                                part;
+                            };
+                        };
+                        let found = TemplateSectionLookup(
+                            origin: data,
+                            path: path,
+                            maximum_members: maximum_members
+                        ).value();
+                        TemplateSection(
+                            run: self,
+                            node: node,
+                            enclosing: data,
+                            iterations: iterations,
+                            maximum_members: maximum_members
+                        ).render(found);
+                    }
+                }
             }
         }
     }
+
     private:
+
     partial(name is string, data is Json) is void {
-        confirm partial_depth<maximum_partial_depth else throw TemplatePartialDepthExceeded.exceeded;
+        confirm partial_depth < maximum_partial_depth
+            else throw TemplatePartialDepthExceeded.exceeded;
         iterations.claim();
-        let nodes=TemplateTree(partials.value(name).source()).nodes();
-        TemplateSectionRun(output:output,iterations:iterations,maximum_members:maximum_members,
-            partials:partials,maximum_partial_depth:maximum_partial_depth,partial_depth:partial_depth+1,section_depth:section_depth).write(nodes,data);
+        let nodes = TemplateTree(partials.value(name).source()).nodes();
+        TemplateSectionRun(
+            output: output,
+            iterations: iterations,
+            maximum_members: maximum_members,
+            partials: partials,
+            maximum_partial_depth: maximum_partial_depth,
+            partial_depth: partial_depth + 1,
+            section_depth: section_depth
+        ).write(nodes, data);
     }
 }
 
@@ -151,21 +264,34 @@ object TemplateSectionRun {
 object TemplateOutputMeter {
     has maximum is int;
     has count is ByteBuffer;
+
     TemplateOutputMeter(maximum is int) {
-        confirm maximum>=0 else throw InvalidTemplateLimits.invalid;
-        self.maximum=maximum;
-        count=ByteBuffer(IntegerBytes(0,8,Signedness.unsigned,ByteOrder.big).bytes());
+        confirm maximum >= 0 else throw InvalidTemplateLimits.invalid;
+        self.maximum = maximum;
+        count = ByteBuffer(IntegerBytes(0, 8, Signedness.unsigned, ByteOrder.big).bytes());
     }
-    remaining() is int {maximum-IntegerFromBytes(count.content().bytes(),Signedness.unsigned,ByteOrder.big).value();}
+
+    remaining() is int {
+        maximum - IntegerFromBytes(count.content().bytes(), Signedness.unsigned, ByteOrder.big).value();
+    }
+
     claim(value is string) is void {
-        let remaining=self.remaining();
-        let amount=template_output_size(value,remaining);
-        confirm amount>=0 else throw TemplateOutputLimitExceeded.exceeded;
-        let following=IntegerBytes(maximum-remaining+amount,8,Signedness.unsigned,ByteOrder.big).bytes();
-        let previous=count.reading().bytes(8);
+        let remaining = self.remaining();
+        let amount = template_output_size(value, remaining);
+        confirm amount >= 0 else throw TemplateOutputLimitExceeded.exceeded;
+        let following = IntegerBytes(
+            maximum - remaining + amount,
+            8,
+            Signedness.unsigned,
+            ByteOrder.big
+        ).bytes();
+        let previous = count.reading().bytes(8);
         count.writing() <- following;
     }
-    destroy {count.closing().close();}
+
+    destroy {
+        count.closing().close();
+    }
 }
 
 // Internal borrowed sink composition. It owns only the meter, never the sink.
@@ -174,17 +300,28 @@ object TemplateOutputMeter {
 object TemplateSectionOutput {
     has destination is WritingText;
     has meter is TemplateOutputMeter;
+
     TemplateSectionOutput(destination is WritingText, maximum is int) {
-        self.destination=destination;meter=TemplateOutputMeter(maximum);
+        self.destination = destination;
+        meter = TemplateOutputMeter(maximum);
     }
-    remaining() is int {meter.remaining();}
+
+    remaining() is int {
+        meter.remaining();
+    }
+
     append(value is string) is void {
         meter.claim(value);
-        for (0..((value.length() >> 10)+1)) -> chunk {
-            let start=chunk << 10;
-            if start<value.length() {
-                let end=if value.length()-start>1024 {start+1024;} else {value.length();};
-                destination.write(value.slice(start,end));
+        for (0..((value.length() >> 10) + 1)) -> chunk {
+            let start = chunk << 10;
+            if start < value.length() {
+                let end = if value.length() - start > 1024 {
+                    start + 1024;
+                }
+                else {
+                    value.length();
+                };
+                destination.write(value.slice(start, end));
             }
         }
     }
@@ -196,21 +333,40 @@ object TemplateSectionLookup {
     has origin is Json;
     has path is @string;
     has maximum_members is int;
-    TemplateSectionLookup(:origin,:path,:maximum_members);
+
+    TemplateSectionLookup(:origin, :path, :maximum_members);
+
     value() is Json {
-        let start is @Json=[origin];
-        let found=(0..path.size()).reduce(start) -> current, index {
-            if current.size()==0 {current;}
+        let start is @Json = [origin];
+        let found = (0..path.size()).reduce(start) -> current, index {
+            if current.size() == 0 {
+                current;
+            }
             else {
-                let value=current[0];
-                if value.kind()!=JsonKind.object_value {let absent is @Json=[];absent;}
+                let value = current[0];
+                if value.kind() != JsonKind.object_value {
+                    let absent is @Json = [];
+                    absent;
+                }
                 else {
-                    confirm value.size()<=maximum_members else throw TemplateJsonLimitExceeded.exceeded;
-                    if value.has(path[index]) {[value.get(path[index])];} else {let absent is @Json=[];absent;}
+                    confirm value.size() <= maximum_members
+                        else throw TemplateJsonLimitExceeded.exceeded;
+                    if value.has(path[index]) {
+                        [value.get(path[index])];
+                    }
+                    else {
+                        let absent is @Json = [];
+                        absent;
+                    }
                 }
             }
         };
-        if found.size()==0 {Json();} else {found[0];}
+        if found.size() == 0 {
+            Json();
+        }
+        else {
+            found[0];
+        }
     }
 }
 
@@ -223,88 +379,174 @@ object TemplateSection {
     has enclosing is Json;
     has iterations is TemplateIterationBudget;
     has maximum_members is int;
-    TemplateSection(:run,:node,:enclosing,:iterations,:maximum_members);
+
+    TemplateSection(:run, :node, :enclosing, :iterations, :maximum_members);
+
     render(value is Json) is void {
         match value.kind() {
-            case JsonKind.null_value {self.scalar(false,value);}
-            case JsonKind.boolean_value {self.scalar(value.boolean(),value);}
-            case JsonKind.number_value {self.scalar(true,value);}
-            case JsonKind.string_value {self.scalar(value.text()!="",value);}
+            case JsonKind.null_value {
+                self.scalar(false, value);
+            }
+            case JsonKind.boolean_value {
+                self.scalar(value.boolean(), value);
+            }
+            case JsonKind.number_value {
+                self.scalar(true, value);
+            }
+            case JsonKind.string_value {
+                self.scalar(value.text() != "", value);
+            }
             case JsonKind.array_value {
-                let items=value.items();
-                if node.kind()==TemplateTreeKind.inverted {
-                    if items.size()==0 {self.body(enclosing);}
-                } else {
-                    confirm items.size()<=iterations.remaining() else throw TemplateIterationLimitExceeded.exceeded;
+                let items = value.items();
+                if node.kind() == TemplateTreeKind.inverted {
+                    if items.size() == 0 {
+                        self.body(enclosing);
+                    }
+                }
+                else {
+                    confirm items.size() <= iterations.remaining()
+                        else throw TemplateIterationLimitExceeded.exceeded;
                     for items -> item {
                         iterations.claim();
-                        run.nested().write(node.children(),item);
+                        run.nested().write(node.children(), item);
                     }
                 }
             }
             else {
-                if node.kind()!=TemplateTreeKind.inverted {
-                    confirm value.size()<=maximum_members else throw TemplateJsonLimitExceeded.exceeded;
+                if node.kind() != TemplateTreeKind.inverted {
+                    confirm value.size() <= maximum_members
+                        else throw TemplateJsonLimitExceeded.exceeded;
                     self.body(value);
                 }
             }
         }
     }
+
     private:
+
     scalar(truth is bool, value is Json) is void {
-        if node.kind()==TemplateTreeKind.inverted {
-            if !truth {self.body(enclosing);}
-        } else {if truth {self.body(value);}}
+        if node.kind() == TemplateTreeKind.inverted {
+            if !truth {
+                self.body(enclosing);
+            }
+        }
+        else {
+            if truth {
+                self.body(value);
+            }
+        }
     }
+
     body(value is Json) is void {
-        iterations.claim();run.nested().write(node.children(),value);
+        iterations.claim();
+        run.nested().write(node.children(), value);
     }
 }
 
 enum TemplateIterationLimitExceeded is Error = (exceeded);
+
 enum InvalidTemplateSectionSize is Error = (invalid);
+
 enum UnsupportedTemplatePartial is Error = (name(name is string));
 
 test "section iterations share a bounded ledger" {
-    let budget=TemplateIterationBudget(2);
-    test.is(budget.remaining(),2);
-    budget.claim();budget.claim();
-    test.is(budget.remaining(),0);
-    test.ok(try {budget.claim();false;} catch e is TemplateIterationLimitExceeded {true;});
-    test.is(budget.remaining(),0);
+    let budget = TemplateIterationBudget(2);
+    test.is(budget.remaining(), 2);
+    budget.claim();
+    budget.claim();
+    test.is(budget.remaining(), 0);
+    test.ok(try {
+        budget.claim();
+        false;
+    }
+    catch e is TemplateIterationLimitExceeded {
+        true;
+    });
+    test.is(budget.remaining(), 0);
 }
+
 test "zero iterations permit no executed body" {
-    let budget=TemplateIterationBudget(0);
-    test.ok(try {budget.claim();false;} catch e is TemplateIterationLimitExceeded {true;});
-    test.is(budget.remaining(),0);
+    let budget = TemplateIterationBudget(0);
+    test.ok(try {
+        budget.claim();
+        false;
+    }
+    catch e is TemplateIterationLimitExceeded {
+        true;
+    });
+    test.is(budget.remaining(), 0);
 }
+
 test "section configuration rejects negatives before parsing" {
-    test.ok(try {SectionTemplate("{{",-1,0,0);false;} catch e is Error {true;});
-    test.ok(try {SectionTemplate("{{",0,-1,0);false;} catch e is Error {true;});
-    test.ok(try {SectionTemplate("{{",0,0,-1);false;} catch e is Error {true;});
+    test.ok(try {
+        SectionTemplate("{{", -1, 0, 0);
+        false;
+    }
+    catch e is Error {
+        true;
+    });
+    test.ok(try {
+        SectionTemplate("{{", 0, -1, 0);
+        false;
+    }
+    catch e is Error {
+        true;
+    });
+    test.ok(try {
+        SectionTemplate("{{", 0, 0, -1);
+        false;
+    }
+    catch e is Error {
+        true;
+    });
 }
 
 // Partial expansion and active section depth are separate bounded dimensions.
 enum TemplatePartialDepthExceeded is Error = (exceeded);
+
 enum TemplateSectionDepthExceeded is Error = (exceeded);
+
 test "partial and active section depth errors stay distinct" {
-    test.is(TemplatePartialDepthExceeded.exceeded.text(),"TemplatePartialDepthExceeded.exceeded");
-    test.is(TemplateSectionDepthExceeded.exceeded.text(),"TemplateSectionDepthExceeded.exceeded");
+    test.is(TemplatePartialDepthExceeded.exceeded.text(), "TemplatePartialDepthExceeded.exceeded");
+    test.is(TemplateSectionDepthExceeded.exceeded.text(), "TemplateSectionDepthExceeded.exceeded");
 }
 
 test "output meter reserves exact UTF-8 contributions" {
-    let meter=TemplateOutputMeter(6);
-    meter.claim("é");test.is(meter.remaining(),4);
-    meter.claim("😀");test.is(meter.remaining(),0);
-    meter.claim("");test.is(meter.remaining(),0);
-    test.ok(try {meter.claim("x");false;} catch e is Error {true;});
-    test.is(meter.remaining(),0);
+    let meter = TemplateOutputMeter(6);
+    meter.claim("é");
+    test.is(meter.remaining(), 4);
+    meter.claim("😀");
+    test.is(meter.remaining(), 0);
+    meter.claim("");
+    test.is(meter.remaining(), 0);
+    test.ok(try {
+        meter.claim("x");
+        false;
+    }
+    catch e is Error {
+        true;
+    });
+    test.is(meter.remaining(), 0);
 }
+
 test "output meter failure is atomic and int maximum does not overflow" {
-    let meter=TemplateOutputMeter(1);
-    test.ok(try {meter.claim("é");false;} catch e is Error {true;});
-    test.is(meter.remaining(),1);
-    let large=TemplateOutputMeter(9223372036854775807);
-    large.claim("x");test.is(large.remaining(),9223372036854775806);
-    test.ok(try {TemplateOutputMeter(-1);false;} catch e is Error {true;});
+    let meter = TemplateOutputMeter(1);
+    test.ok(try {
+        meter.claim("é");
+        false;
+    }
+    catch e is Error {
+        true;
+    });
+    test.is(meter.remaining(), 1);
+    let large = TemplateOutputMeter(9223372036854775807);
+    large.claim("x");
+    test.is(large.remaining(), 9223372036854775806);
+    test.ok(try {
+        TemplateOutputMeter(-1);
+        false;
+    }
+    catch e is Error {
+        true;
+    });
 }

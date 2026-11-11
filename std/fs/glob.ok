@@ -50,7 +50,10 @@ object MatchingPaths does Iterating<Path> {
                 throw InvalidGlobPattern.detailed(glob, failure.message());
             }
             else if failure.code() == "not_found" {
-                throw FileSystemFailure.detailed("invalid_input", "glob root must be an existing directory");
+                throw FileSystemFailure.detailed(
+                    "invalid_input",
+                    "glob root must be an existing directory"
+                );
             }
             else {
                 throw FileSystemFailure.detailed(failure.code(), failure.message());
@@ -66,7 +69,9 @@ object MatchingPathCursor does Cursor<Path> {
 
     MatchingPathCursor(:paths, :position);
 
-    available() is bool { position < paths.size(); }
+    available() is bool {
+        position < paths.size();
+    }
 
     item() is Path {
         confirm self.available() else throw IterationEnded.ended;

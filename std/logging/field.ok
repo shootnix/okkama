@@ -1,42 +1,108 @@
 module logging/field v1.0.0;
+
 import "collections/sequence" take Sequencing;
-import "json" take Json,JsonField,ParsedJson;
+import "json" take Json, JsonField, ParsedJson;
 import "encoding/utf" take Utf8Encoded;
+
 // Fields form one JSON object of at most 256 members, 32 levels and 1 MiB of
 // compact text, checked once at construction; Json values are immutable.
-object LogFields{
+object LogFields {
     has origin is Json;
-    LogFields(members is Sequencing<JsonField>){
-        let size=members.size();confirm size>=0 && size<=256 else throw InvalidLogField.because("field count exceeds 256");
-        let snapshot is @JsonField=(0..size).map()->index{let item=members.item(index);confirm item.name()!="" && item.name().length()<=4096 else throw InvalidLogField.because("invalid field name");item;};
-        for (0..size)->index{for (0..index)->previous{confirm snapshot[index].name()!=snapshot[previous].name() else throw InvalidLogField.because("duplicate field name");}}
-        let fields=Json(snapshot);
-        if size>0{
-            let text=fields.string();
-            confirm Utf8Encoded(text).bytes().size()<=1048576 else throw InvalidLogField.because("fields exceed 1 MiB");
-            ParsedJson(text,32).root();
+
+    LogFields(members is Sequencing<JsonField>) {
+        let size = members.size();
+        confirm size >= 0 && size <= 256
+            else throw InvalidLogField.because("field count exceeds 256");
+        let snapshot is @JsonField = (0..size).map() -> index {
+            let item = members.item(index);
+            confirm item.name() != "" && item.name().length() <= 4096
+                else throw InvalidLogField.because("invalid field name");
+            item;
+        };
+        for (0..size) -> index {
+            for (0..index) -> previous {
+                confirm snapshot[index].name() != snapshot[previous].name()
+                    else throw InvalidLogField.because("duplicate field name");
+            }
         }
-        origin=fields;
+        let fields = Json(snapshot);
+        if size > 0 {
+            let text = fields.string();
+            confirm Utf8Encoded(text).bytes().size() <= 1048576
+                else throw InvalidLogField.because("fields exceed 1 MiB");
+            ParsedJson(text, 32).root();
+        }
+        origin = fields;
     }
-    membership(name is string) is bool{origin.has(name);}
-    value(name is string) is Json{confirm self.membership(name) else throw MissingLogField.name(name);origin.get(name);}
-    values() is Json{origin;}
-    members() is @JsonField{origin.fields();}
+
+    membership(name is string) is bool {
+        origin.has(name);
+    }
+
+    value(name is string) is Json {
+        confirm self.membership(name) else throw MissingLogField.name(name);
+        origin.get(name);
+    }
+
+    values() is Json {
+        origin;
+    }
+
+    members() is @JsonField {
+        origin.fields();
+    }
 }
-object EmptyLogFields{EmptyLogFields();value() is LogFields{LogFields([]);}
+
+object EmptyLogFields {
+    EmptyLogFields();
+
+    value() is LogFields {
+        LogFields([]);
+    }
 }
-object CombinedLogFields{
-    has base,added is LogFields;
-    CombinedLogFields(base is LogFields,added is LogFields){self.base=base;self.added=added;}
-    value() is LogFields{
-        let first=base.members();let second=added.members();
-        if second.size()==0{return base;}
-        if first.size()==0{return added;}
-        let replacements is @JsonField=first.map()->member{if added.membership(member.name()){JsonField(member.name(),added.value(member.name()));}else{member;}};
-        let tail is @JsonField=second.filter()->member{!base.membership(member.name());}.map()->member{member;};
-        let merged is @JsonField=(0..replacements.size()+tail.size()).map()->index{if index<replacements.size(){replacements[index];}else{tail[index-replacements.size()];}};
+
+object CombinedLogFields {
+    has base, added is LogFields;
+
+    CombinedLogFields(base is LogFields, added is LogFields) {
+        self.base = base;
+        self.added = added;
+    }
+
+    value() is LogFields {
+        let first = base.members();
+        let second = added.members();
+        if second.size() == 0 {
+            return base;
+        }
+        if first.size() == 0 {
+            return added;
+        }
+        let replacements is @JsonField = first.map() -> member {
+            if added.membership(member.name()) {
+                JsonField(member.name(), added.value(member.name()));
+            }
+            else {
+                member;
+            }
+        };
+        let tail is @JsonField = second.filter() -> member {
+            !base.membership(member.name());
+        }.map() -> member {
+            member;
+        };
+        let merged is @JsonField = (0..replacements.size() + tail.size()).map() -> index {
+            if index < replacements.size() {
+                replacements[index];
+            }
+            else {
+                tail[index - replacements.size()];
+            }
+        };
         LogFields(merged);
     }
 }
+
 enum MissingLogField is Error = (name(name is string));
+
 enum InvalidLogField is Error = (because(reason is string));

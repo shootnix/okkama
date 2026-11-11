@@ -31,7 +31,8 @@ object JsonTemplateStrings does TemplateStrings {
     }
 
     JsonTemplateStrings(origin is Json, maximum_members is int, maximum_output is int) {
-        confirm maximum_members >= 0 && maximum_output >= 0 else throw InvalidTemplateJsonLimits.invalid;
+        confirm maximum_members >= 0 && maximum_output >= 0
+            else throw InvalidTemplateJsonLimits.invalid;
         self.origin = origin;
         self.maximum_members = maximum_members;
         self.maximum_output = maximum_output;
@@ -45,48 +46,106 @@ object JsonTemplateStrings does TemplateStrings {
     string(path is string) is string {
         if path == "." {
             self.scalar(TemplatePath(["."]), 1);
-        } else {
+        }
+        else {
             self.string(TemplatePathFromString(path).value());
         }
     }
 
     private:
+
     scalar(path is TemplatePath, index is int) is string {
         let segments = path.segments();
         let found = (index..segments.size()).reduce(origin) -> current, position {
-            confirm current.kind() == JsonKind.object_value else throw MissingTemplateValue.path(path.string());
+            confirm current.kind() == JsonKind.object_value
+                else throw MissingTemplateValue.path(path.string());
             confirm current.size() <= maximum_members else throw TemplateJsonLimitExceeded.exceeded;
             let name = segments.item(position);
             confirm current.has(name) else throw MissingTemplateValue.path(path.string());
             current.get(name);
         };
         let text = match found.kind() {
-            case JsonKind.array_value { throw NonScalarTemplateValue.detailed(path.string(), JsonKind.array_value); }
-            case JsonKind.object_value { throw NonScalarTemplateValue.detailed(path.string(), JsonKind.object_value); }
-            case JsonKind.null_value { ""; }
-            case JsonKind.boolean_value { if found.boolean() { "true"; } else { "false"; } }
-            case JsonKind.number_value { found.number().string(); }
-            else { found.text(); }
+            case JsonKind.array_value {
+                throw NonScalarTemplateValue.detailed(path.string(), JsonKind.array_value);
+            }
+            case JsonKind.object_value {
+                throw NonScalarTemplateValue.detailed(path.string(), JsonKind.object_value);
+            }
+            case JsonKind.null_value {
+                "";
+            }
+            case JsonKind.boolean_value {
+                if found.boolean() {
+                    "true";
+                }
+                else {
+                    "false";
+                }
+            }
+            case JsonKind.number_value {
+                found.number().string();
+            }
+            else {
+                found.text();
+            }
         };
-        confirm template_output_size(text, maximum_output) >= 0 else throw TemplateOutputLimitExceeded.exceeded;
+        confirm template_output_size(text, maximum_output) >= 0
+            else throw TemplateOutputLimitExceeded.exceeded;
         text;
     }
 }
 
 // Typed diagnostics retain domain coordinates, not reflected Okkama types.
 enum NonScalarTemplateValue is Error = (detailed(path is string, kind is JsonKind));
+
 enum InvalidTemplateJsonLimits is Error = (invalid);
+
 enum TemplateJsonLimitExceeded is Error = (exceeded);
 
 test "dotted paths read scalars of a Json" {
-    let data = Json([JsonField("name", "Ada"), JsonField("vip", true), JsonField("none", Json()),
-        JsonField("total", Decimal("12.50")), JsonField("address", Json([JsonField("city", "Oslo")]))]);
+    let data = Json([
+        JsonField("name", "Ada"),
+        JsonField("vip", true),
+        JsonField("none", Json()),
+        JsonField("total", Decimal("12.50")),
+        JsonField("address", Json([JsonField("city", "Oslo")]))
+    ]);
     let strings = JsonTemplateStrings(data);
-    test.is(strings.string("name") + "|" + strings.string("vip") + "|" + strings.string("none") + "|"
-        + strings.string("total") + "|" + strings.string("address.city"), "Ada|true||1.25e1|Oslo");
-    test.is(try { strings.string("address"); ""; } catch e is NonScalarTemplateValue { e.text(); }, "NonScalarTemplateValue.detailed(\"address\", JsonKind.object_value)");
-    test.is(try { strings.string("name.first"); false; } catch e is MissingTemplateValue { true; }, true);
-    test.is(try { JsonTemplateStrings(data, 1, 100).string("name"); false; } catch e is TemplateJsonLimitExceeded { true; }, true);
+    test.is(
+        strings.string("name") + "|" + strings.string("vip") + "|" + strings.string("none") + "|" +
+            strings.string("total") + "|" + strings.string("address.city"),
+            "Ada|true||1.25e1|Oslo"
+    );
+    test.is(
+        try {
+            strings.string("address");
+            "";
+        }
+        catch e is NonScalarTemplateValue {
+            e.text();
+        },
+        "NonScalarTemplateValue.detailed(\"address\", JsonKind.object_value)"
+    );
+    test.is(
+        try {
+            strings.string("name.first");
+            false;
+        }
+        catch e is MissingTemplateValue {
+            true;
+        },
+        true
+    );
+    test.is(
+        try {
+            JsonTemplateStrings(data, 1, 100).string("name");
+            false;
+        }
+        catch e is TemplateJsonLimitExceeded {
+            true;
+        },
+        true
+    );
     test.is(JsonTemplateStrings(Json("me")).string("."), "me");
 }
 

@@ -1,10 +1,6 @@
 module fs/lock v1.0.0;
 
-import "fs/file" take
-    File,
-    FileLocking,
-    InvalidFileOperation,
-    FileSystemFailure;
+import "fs/file" take File, FileLocking, InvalidFileOperation, FileSystemFailure;
 import "io/stream" take Closing;
 
 // Whole-file advisory locks over the exact handle owned by File.
@@ -37,6 +33,7 @@ import "io/stream" take Closing;
 // the lock or its File releases the lock, and both closes are idempotent.
 
 enum FileLockMode = (shared, exclusive);
+
 enum FileLockWaiting = (wait, immediate);
 
 object FileLock does Closing, FileLocking {
@@ -57,11 +54,11 @@ object FileLock does Closing, FileLocking {
             }
             else if failure.code() == "invalid_input"
                 || failure.code() == "already_closed" {
-                throw InvalidFileOperation.because(failure.message());
-            }
-            else {
-                throw FileSystemFailure.detailed(failure.code(), failure.message());
-            }
+                    throw InvalidFileOperation.because(failure.message());
+                }
+                else {
+                    throw FileSystemFailure.detailed(failure.code(), failure.message());
+                }
         }
     }
 
@@ -83,20 +80,25 @@ object FileLock does Closing, FileLocking {
             }
             else if failure.code() == "invalid_input"
                 || failure.code() == "already_closed" {
-                throw InvalidFileOperation.because(failure.message());
-            }
-            else {
-                throw FileSystemFailure.detailed(failure.code(), failure.message());
-            }
+                    throw InvalidFileOperation.because(failure.message());
+                }
+                else {
+                    throw FileSystemFailure.detailed(failure.code(), failure.message());
+                }
         }
     }
 
-    destroy { self.close(); }
+    destroy {
+        self.close();
+    }
 
-    closed() is bool { lease.closed(); }
+    closed() is bool {
+        lease.closed();
+    }
 
-    close() is void { lease.close(); }
-
+    close() is void {
+        lease.close();
+    }
 }
 
 object FileLockModeCode {
@@ -105,7 +107,12 @@ object FileLockModeCode {
     FileLockModeCode(:origin);
 
     value() is int {
-        if origin == FileLockMode.shared { 0; } else { 1; }
+        if origin == FileLockMode.shared {
+            0;
+        }
+        else {
+            1;
+        }
     }
 }
 
@@ -115,7 +122,12 @@ object FileLockWaitingCode {
     FileLockWaitingCode(:origin);
 
     value() is int {
-        if origin == FileLockWaiting.wait { 0; } else { 1; }
+        if origin == FileLockWaiting.wait {
+            0;
+        }
+        else {
+            1;
+        }
     }
 }
 

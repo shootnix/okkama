@@ -29,7 +29,7 @@ import "runtime/system" take system_cpu_count;
 // Worker failures retain the existing spawn diagnostics, not reconstructed child
 // Error objects. Empty inputs yield an empty sequence without dispatch.
 
-object ParallelMapped<T,R> {
+object ParallelMapped<T, R> {
     has origins is Sequencing<T>;
     has action is (T) is R;
     has bound is int;
@@ -49,22 +49,28 @@ object ParallelMapped<T,R> {
         bound = workers;
     }
 
-    workers() is int { bound; }
+    workers() is int {
+        bound;
+    }
 
     async results() is Sequencing<R> {
-        let run is ParallelMapRun<T,R> = ParallelMapRun(
-            origins: origins, action: action, workers: bound);
-        let scope is FutureScope<R,Sequencing<R>> = FutureScope(action: run.run);
+        let run is ParallelMapRun<T, R> = ParallelMapRun(
+            origins: origins,
+            action: action,
+            workers: bound
+        );
+        let scope is FutureScope<R, Sequencing<R>> = FutureScope(action: run.run);
         await scope.result();
     }
 }
 
 // Implementation body owned by one FutureScope. All started children remain
 // supervised even if reading or encoding a later input throws during dispatch.
-object ParallelMapRun<T,R> {
+object ParallelMapRun<T, R> {
     has origins is Sequencing<T>;
     has action is (T) is R;
     has workers is int;
+
     ParallelMapRun(:origins, :action, :workers);
 
     async run(group is Supervising<R>) is Sequencing<R> {
@@ -72,17 +78,26 @@ object ParallelMapRun<T,R> {
         let state is ParallelMapProgress<R> = ParallelMapProgress();
         loop {
             let position = state.position();
-            if position >= amount { last; }
-            let count = if workers < amount-position {workers;} else {amount-position;};
+            if position >= amount {
+                last;
+            }
+            let count = if workers < amount - position {
+                workers;
+            }
+            else {
+                amount - position;
+            };
             let batch = AllFutures(origins: self.pending(group, position, count));
             let values = await batch.results();
-            for values -> value { state = state.added(value); }
+            for values -> value {
+                state = state.added(value);
+            }
         }
         state.values();
     }
 
     pending(group is Supervising<R>, position is int, count is int) is @Future<R> {
-        let result is @Future<R> = (position..position+count).map() -> index {
+        let result is @Future<R> = (position..position + count).map() -> index {
             let child = spawn action(origins.item(index));
             group.start(child);
             child;
@@ -95,21 +110,28 @@ object ParallelMapRun<T,R> {
 object ParallelMapProgress<R> {
     has position is int;
     has reversed is List<R>;
+
     ParallelMapProgress() {
         let empty is List<R> = EmptyList();
         position = 0;
         reversed = empty;
     }
-    position() is int { position; }
+
+    position() is int {
+        position;
+    }
+
     added(value is R) is ^ParallelMapProgress<R> {
         ^reversed = reversed.prefix(value);
         ^position = position + 1;
     }
+
     values() is Sequencing<R> {
-        let materialized is @R = reversed.map() -> value {value;};
+        let materialized is @R = reversed.map() -> value {
+            value;
+        };
         Reversed(origin: materialized);
     }
 }
 
 enum InvalidWorkerCount is Error = (workers(workers is int));
-

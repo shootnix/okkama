@@ -18,10 +18,14 @@ role Checksumming {
 
     fake {
         has count is int = 0;
+
         state(origin is @byte) is ^Checksumming {
             ^count = count + origin.size();
         }
-        value() is int { count; }
+
+        value() is int {
+            count;
+        }
     }
 }
 
@@ -47,4 +51,3 @@ test "empty chunks and independent checksum fakes retain their values" {
     test.is(origin.value(), 1);
     test.is(Checksumming.fake().value(), 0);
 }
-

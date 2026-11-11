@@ -5,14 +5,8 @@ import "time/clock" take Instant;
 import "time/date" take Date;
 import "time/day" take TimeOfDay;
 import "time/local_datetime" take LocalDateTime;
-import "runtime/time_zone" take
-    timezone_version,
-    timezone_known,
-    timezone_offset,
-    timezone_daylight,
-    timezone_abbreviation,
-    timezone_local_candidates,
-    timezone_local_instant;
+import "runtime/time_zone" take timezone_version, timezone_known, timezone_offset,
+    timezone_daylight, timezone_abbreviation, timezone_local_candidates, timezone_local_instant;
 
 // Deterministic time-zone values backed only by bundled IANA tzdata 2026c.
 //
@@ -76,7 +70,8 @@ object Zone does TimeZone {
             time.minute(),
             time.second(),
             time.nanosecond(),
-        ) > 0 else throw MissingLocalTime.zone(origin);
+        ) > 0
+            else throw MissingLocalTime.zone(origin);
         Instant(origin: Duration(
             value: timezone_local_instant(
                 origin,

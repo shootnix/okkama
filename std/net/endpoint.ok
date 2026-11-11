@@ -5,27 +5,60 @@ import "compare" take Comparing, Order;
 import "runtime/idna" take hostname_ascii, hostname_unicode;
 
 object HostName does Comparing<HostName> {
-    has ascii,unicode is string;
+    has ascii, unicode is string;
+
     HostName(origin is string) {
-        confirm origin.length()>0 && origin.length()<=1024 else throw InvalidHostName.origin(origin);
-        let encoded=try{hostname_ascii(origin);}catch failure is NativeFailure {
-            if failure.domain()=="core.idna" && failure.code()=="invalid_input" {throw InvalidHostName.origin(origin);}
+        confirm origin.length() > 0 && origin.length() <= 1024
+            else throw InvalidHostName.origin(origin);
+        let encoded = try {
+            hostname_ascii(origin);
+        }
+        catch failure is NativeFailure {
+            if failure.domain() == "core.idna" && failure.code() == "invalid_input" {
+                throw InvalidHostName.origin(origin);
+            }
             throw;
         };
-        ascii=encoded;unicode=hostname_unicode(encoded);
+        ascii = encoded;
+        unicode = hostname_unicode(encoded);
     }
-    ascii() is string {ascii;}unicode() is string {unicode;}
-    order(other is HostName) is Order {ascii.order(other.ascii());}
+
+    ascii() is string {
+        ascii;
+    }
+
+    unicode() is string {
+        unicode;
+    }
+
+    order(other is HostName) is Order {
+        ascii.order(other.ascii());
+    }
 }
+
 object HostEndpoint {
-    has host is HostName;has port is int;
+    has host is HostName;
+    has port is int;
+
     HostEndpoint(host is HostName, port is int) {
-        confirm port>=0 && port<=65535 else throw InvalidPort.port(port);
-        self.host=host;self.port=port;
+        confirm port >= 0 && port <= 65535 else throw InvalidPort.port(port);
+        self.host = host;
+        self.port = port;
     }
-    host() is HostName {host;}port() is int {port;}
-    string() is string {host.ascii()+":"+port.string();}
+
+    host() is HostName {
+        host;
+    }
+
+    port() is int {
+        port;
+    }
+
+    string() is string {
+        host.ascii() + ":" + port.string();
+    }
 }
+
 enum InvalidHostName is Error = (origin(origin is string));
 
 // Immutable numeric endpoint. Construction performs no DNS, interface lookup,
@@ -47,28 +80,54 @@ object IpEndpoint {
     has scope is string;
 
     IpEndpoint(address is IpAddress, port is int) {
-        confirm port>=0 && port<=65535 else throw InvalidPort.port(port);
-        origin=address;number=port;scope="";
+        confirm port >= 0 && port <= 65535 else throw InvalidPort.port(port);
+        origin = address;
+        number = port;
+        scope = "";
     }
+
     IpEndpoint(address is IpAddress, port is int, zone is string) {
-        confirm port>=0 && port<=65535 else throw InvalidPort.port(port);
-        confirm zone=="" || address.version()==IpVersion.v6
+        confirm port >= 0 && port <= 65535 else throw InvalidPort.port(port);
+        confirm zone == "" || address.version() == IpVersion.v6
             else throw InvalidIpv6Zone.origin(zone);
-        let valid=(0..zone.length()).reduce(true) -> valid,index {
-            valid && "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
-                .split(zone.slice(index,index+1)).size()==2;
+        let valid = (0..zone.length()).reduce(true) -> valid, index {
+            valid
+                && "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
+                .split(zone.slice(index, index + 1)).size() == 2;
         };
         confirm valid else throw InvalidIpv6Zone.origin(zone);
-        origin=address;number=port;scope=zone;
+        origin = address;
+        number = port;
+        scope = zone;
     }
-    address() is IpAddress {origin;}
-    port() is int {number;}
-    zone() is string {scope;}
+
+    address() is IpAddress {
+        origin;
+    }
+
+    port() is int {
+        number;
+    }
+
+    zone() is string {
+        scope;
+    }
+
     string() is string {
-        let host=origin.string();
-        let scoped=if scope=="" {host;} else {host+"%"+scope;};
-        let formatted=if origin.version()==IpVersion.v6 {"["+scoped+"]";} else {host;};
-        formatted+":"+number.string();
+        let host = origin.string();
+        let scoped = if scope == "" {
+            host;
+        }
+        else {
+            host + "%" + scope;
+        };
+        let formatted = if origin.version() == IpVersion.v6 {
+            "[" + scoped + "]";
+        }
+        else {
+            host;
+        };
+        formatted + ":" + number.string();
     }
 }
 
@@ -79,14 +138,16 @@ enum InvalidPort is Error = (port(port is int));
 enum InvalidIpv6Zone is Error = (origin(origin is string));
 
 test "zone diagnostic preserves exact spelling" {
-    test.is(InvalidIpv6Zone.origin("bad%zone").text(),"InvalidIpv6Zone.origin(\"bad%zone\")");
+    test.is(InvalidIpv6Zone.origin("bad%zone").text(), "InvalidIpv6Zone.origin(\"bad%zone\")");
 }
+
 test "IPv6 endpoint formatting keeps scope outside the bare address" {
-    let endpoint=IpEndpoint(IpAddress("fe80::1"),443,"eth0");
-    test.is(endpoint.string(),"[fe80::1%eth0]:443");
-    test.is(endpoint.address().string(),"fe80::1");
+    let endpoint = IpEndpoint(IpAddress("fe80::1"), 443, "eth0");
+    test.is(endpoint.string(), "[fe80::1%eth0]:443");
+    test.is(endpoint.address().string(), "fe80::1");
 }
+
 test "hostnames canonicalize through nontransitional IDNA before endpoint formatting" {
-    test.is(HostEndpoint(HostName("BÜCHER.example"),443).string(),"xn--bcher-kva.example:443");
-    test.is(HostName("faß.de").unicode(),"faß.de");
+    test.is(HostEndpoint(HostName("BÜCHER.example"), 443).string(), "xn--bcher-kva.example:443");
+    test.is(HostName("faß.de").unicode(), "faß.de");
 }

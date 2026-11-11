@@ -1,6 +1,7 @@
 module web/routing v1.0.0;
-import "http/routing" take Routes,Route,RoutePattern,RouteRejecting;
-import "http/handler" take Handling,HandlingResult;
+
+import "http/routing" take Routes, Route, RoutePattern, RouteRejecting;
+import "http/handler" take Handling, HandlingResult;
 import "http/request_context" take HttpRequestContext;
 import "http/message" take Request;
 import "http/method" take Method;
@@ -54,32 +55,62 @@ role WebRouting {
 
 object Get does WebRouting {
     has origin is MethodRoute;
-    Get(path is string, endpoint is async (WebRequest) is HandlingResult) { origin = MethodRoute("GET", path, endpoint); }
-    routes(prefix is string, scopes is @ExceptionScope) is @Route { origin.routes(prefix, scopes); }
+
+    Get(path is string, endpoint is async (WebRequest) is HandlingResult) {
+        origin = MethodRoute("GET", path, endpoint);
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @Route {
+        origin.routes(prefix, scopes);
+    }
 }
 
 object Post does WebRouting {
     has origin is MethodRoute;
-    Post(path is string, endpoint is async (WebRequest) is HandlingResult) { origin = MethodRoute("POST", path, endpoint); }
-    routes(prefix is string, scopes is @ExceptionScope) is @Route { origin.routes(prefix, scopes); }
+
+    Post(path is string, endpoint is async (WebRequest) is HandlingResult) {
+        origin = MethodRoute("POST", path, endpoint);
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @Route {
+        origin.routes(prefix, scopes);
+    }
 }
 
 object Put does WebRouting {
     has origin is MethodRoute;
-    Put(path is string, endpoint is async (WebRequest) is HandlingResult) { origin = MethodRoute("PUT", path, endpoint); }
-    routes(prefix is string, scopes is @ExceptionScope) is @Route { origin.routes(prefix, scopes); }
+
+    Put(path is string, endpoint is async (WebRequest) is HandlingResult) {
+        origin = MethodRoute("PUT", path, endpoint);
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @Route {
+        origin.routes(prefix, scopes);
+    }
 }
 
 object Patch does WebRouting {
     has origin is MethodRoute;
-    Patch(path is string, endpoint is async (WebRequest) is HandlingResult) { origin = MethodRoute("PATCH", path, endpoint); }
-    routes(prefix is string, scopes is @ExceptionScope) is @Route { origin.routes(prefix, scopes); }
+
+    Patch(path is string, endpoint is async (WebRequest) is HandlingResult) {
+        origin = MethodRoute("PATCH", path, endpoint);
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @Route {
+        origin.routes(prefix, scopes);
+    }
 }
 
 object Delete does WebRouting {
     has origin is MethodRoute;
-    Delete(path is string, endpoint is async (WebRequest) is HandlingResult) { origin = MethodRoute("DELETE", path, endpoint); }
-    routes(prefix is string, scopes is @ExceptionScope) is @Route { origin.routes(prefix, scopes); }
+
+    Delete(path is string, endpoint is async (WebRequest) is HandlingResult) {
+        origin = MethodRoute("DELETE", path, endpoint);
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @Route {
+        origin.routes(prefix, scopes);
+    }
 }
 
 object Scope does WebRouting {
@@ -104,7 +135,9 @@ object Scope does WebRouting {
     routes(outer is string, scopes is @ExceptionScope) is @Route {
         let inner = ScopeList(scopes, own).value();
         let empty is @Route = [];
-        routings.reduce(empty) -> all, routing { RouteList(all, routing.routes(outer + prefix, inner)).value(); };
+        routings.reduce(empty) -> all, routing {
+            RouteList(all, routing.routes(outer + prefix, inner)).value();
+        };
     }
 }
 
@@ -117,14 +150,20 @@ object WebRoutes does Handling {
         origin = WebRouteTable(routings, bare, fallback).value();
     }
 
-    WebRoutes(routings is @WebRouting, exceptions is ExceptionScope, fallback is async (WebRequest) is HandlingResult) {
+    WebRoutes(
+        routings is @WebRouting,
+        exceptions is ExceptionScope,
+        fallback is async (WebRequest) is HandlingResult
+    ) {
         let single is @ExceptionScope = [exceptions];
         origin = WebRouteTable(routings, single, fallback).value();
     }
 
     // The compiled std table. WebApplication serves it directly, which saves one
     // await level per request compared with going through handling().
-    table() is Routes { origin; }
+    table() is Routes {
+        origin;
+    }
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
         await origin.handling(request, context);
@@ -136,7 +175,11 @@ object WebRouteTable {
     has scopes is @ExceptionScope;
     has fallback is async (WebRequest) is HandlingResult;
 
-    WebRouteTable(routings is @WebRouting, scopes is @ExceptionScope, fallback is async (WebRequest) is HandlingResult) {
+    WebRouteTable(
+        routings is @WebRouting,
+        scopes is @ExceptionScope,
+        fallback is async (WebRequest) is HandlingResult
+    ) {
         self.routings = routings;
         self.scopes = scopes;
         self.fallback = fallback;
@@ -144,7 +187,9 @@ object WebRouteTable {
 
     value() is Routes {
         let empty is @Route = [];
-        let all is @Route = routings.reduce(empty) -> collected, routing { RouteList(collected, routing.routes("", scopes)).value(); };
+        let all is @Route = routings.reduce(empty) -> collected, routing {
+            RouteList(collected, routing.routes("", scopes)).value();
+        };
         Routes(all, WebEndpoint(fallback, scopes), WebRejection());
     }
 }
@@ -153,10 +198,15 @@ object WebRouteTable {
 object WebRejection does RouteRejecting {
     WebRejection();
 
-    malformed(request is Request, reason is string) is HandlingResult { Problem(400, reason); }
+    malformed(request is Request, reason is string) is HandlingResult {
+        Problem(400, reason);
+    }
 
     disallowed(request is Request, allowed is @string) is HandlingResult {
-        Problem(405, "method " + request.method().string() + " is not allowed here").header("Allow", allowed.join(", "));
+        Problem(405, "method " + request.method().string() + " is not allowed here").header(
+            "Allow",
+            allowed.join(", ")
+        );
     }
 }
 
@@ -166,7 +216,8 @@ object MethodRoute {
     has endpoint is async (WebRequest) is HandlingResult;
 
     MethodRoute(method is string, path is string, endpoint is async (WebRequest) is HandlingResult) {
-        confirm path == "" || path.slice(0, 1) == "/" else throw InvalidWebRoute.because("route path must be empty or start with /: " + path);
+        confirm path == "" || path.slice(0, 1) == "/"
+            else throw InvalidWebRoute.because("route path must be empty or start with /: " + path);
         self.method = method;
         self.path = path;
         self.endpoint = endpoint;
@@ -174,19 +225,28 @@ object MethodRoute {
 
     routes(prefix is string, scopes is @ExceptionScope) is @Route {
         let pattern = prefix + path;
-        confirm pattern != "" else throw InvalidWebRoute.because("an empty route path is only valid inside a Scope");
+        confirm pattern != ""
+            else throw InvalidWebRoute.because("an empty route path is only valid inside a Scope");
         [Route(Method(method), RoutePattern(pattern), WebEndpoint(endpoint, scopes))];
     }
 }
 
 object WebPrefix {
     has origin is string;
+
     WebPrefix(origin is string) {
-        confirm origin.length() > 1 && origin.slice(0, 1) == "/" && origin.slice(origin.length() - 1, origin.length()) != "/"
-            else throw InvalidWebRoute.because("scope prefix must start with / and not end with it: " + origin);
+        confirm origin.length() > 1
+            && origin.slice(0, 1) == "/"
+            && origin.slice(origin.length() - 1, origin.length()) != "/"
+            else throw InvalidWebRoute.because(
+                "scope prefix must start with / and not end with it: " + origin
+            );
         self.origin = origin;
     }
-    string() is string { origin; }
+
+    string() is string {
+        origin;
+    }
 }
 
 // Adapts one endpoint and its scope chain to std Handling.
@@ -200,8 +260,12 @@ object WebEndpoint does Handling {
     }
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
-        try { await ScopedEndpoint(endpoint, scopes, 0).call(WebRequest(request, context)); }
-        catch Exception.status(code, detail) { Problem(code, detail); }
+        try {
+            await ScopedEndpoint(endpoint, scopes, 0).call(WebRequest(request, context));
+        }
+        catch Exception.status(code, detail) {
+            Problem(code, detail);
+        }
     }
 }
 
@@ -211,7 +275,11 @@ object ScopedEndpoint {
     has scopes is @ExceptionScope;
     has index is int;
 
-    ScopedEndpoint(endpoint is async (WebRequest) is HandlingResult, scopes is @ExceptionScope, index is int) {
+    ScopedEndpoint(
+        endpoint is async (WebRequest) is HandlingResult,
+        scopes is @ExceptionScope,
+        index is int
+    ) {
         self.endpoint = endpoint;
         self.scopes = scopes;
         self.index = index;
@@ -230,10 +298,20 @@ object ScopedEndpoint {
 object RouteList {
     has left is @Route;
     has right is @Route;
-    RouteList(left is @Route, right is @Route) { self.left = left; self.right = right; }
+
+    RouteList(left is @Route, right is @Route) {
+        self.left = left;
+        self.right = right;
+    }
+
     value() is @Route {
         let joined is @Route = (0..left.size() + right.size()).map() -> index {
-            if index < left.size() { left[index]; } else { right[index - left.size()]; }
+            if index < left.size() {
+                left[index];
+            }
+            else {
+                right[index - left.size()];
+            }
         };
         joined;
     }
@@ -242,10 +320,20 @@ object RouteList {
 object ScopeList {
     has left is @ExceptionScope;
     has right is @ExceptionScope;
-    ScopeList(left is @ExceptionScope, right is @ExceptionScope) { self.left = left; self.right = right; }
+
+    ScopeList(left is @ExceptionScope, right is @ExceptionScope) {
+        self.left = left;
+        self.right = right;
+    }
+
     value() is @ExceptionScope {
         let joined is @ExceptionScope = (0..left.size() + right.size()).map() -> index {
-            if index < left.size() { left[index]; } else { right[index - left.size()]; }
+            if index < left.size() {
+                left[index];
+            }
+            else {
+                right[index - left.size()];
+            }
         };
         joined;
     }
@@ -255,7 +343,13 @@ enum InvalidWebRoute is Error = (because(reason is string));
 
 test "scope prefixes are absolute and have no trailing slash" {
     test.is(WebPrefix("/api").string(), "/api");
-    test.throws(InvalidWebRoute) { WebPrefix("/api/"); };
-    test.throws(InvalidWebRoute) { WebPrefix("api"); };
-    test.throws(InvalidWebRoute) { WebPrefix("/"); };
+    test.throws(InvalidWebRoute) {
+        WebPrefix("/api/");
+    };
+    test.throws(InvalidWebRoute) {
+        WebPrefix("api");
+    };
+    test.throws(InvalidWebRoute) {
+        WebPrefix("/");
+    };
 }

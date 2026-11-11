@@ -6,65 +6,96 @@ import "numbers/bigint" take BigInt;
 // Canonical exact ratio: positive denominator, gcd=1, unique zero 0/1.
 object BigRational does Comparing<BigRational> {
     has upper, lower is BigInt;
+
     BigRational(numerator is BigInt, denominator is BigInt) {
         confirm denominator.sign() != 0 else throw ZeroBigRationalDenominator.zero;
         let common = numerator.gcd(denominator);
         let divisor = if denominator.sign() < 0 {
             (BigInt("0") - common);
-        } else { common; };
+        }
+        else {
+            common;
+        };
         upper = (numerator / divisor);
         lower = (denominator / divisor);
     }
-    numerator() is BigInt { upper; }
-    denominator() is BigInt { lower; }
+
+    numerator() is BigInt {
+        upper;
+    }
+
+    denominator() is BigInt {
+        lower;
+    }
+
     order(other is BigRational) is Order {
         let left = (upper * other.denominator());
         let right = (other.numerator() * lower);
         left.order(right);
     }
-    string() is string { upper.string() + "/" + lower.string(); }
+
+    string() is string {
+        upper.string() + "/" + lower.string();
+    }
 }
 
 object BigRationalSum {
     has left, right is BigRational;
+
     BigRationalSum(:left, :right);
+
     value() is BigRational {
         let first = (left.numerator() * right.denominator());
         let second = (right.numerator() * left.denominator());
-        BigRational(numerator: (first + second),
-            denominator: (left.denominator() * right.denominator()));
+        BigRational(
+            numerator: (first + second),
+            denominator: (left.denominator() * right.denominator())
+        );
     }
 }
 
 object BigRationalDifference {
     has left, right is BigRational;
+
     BigRationalDifference(:left, :right);
+
     value() is BigRational {
         let first = (left.numerator() * right.denominator());
         let second = (right.numerator() * left.denominator());
-        BigRational(numerator: (first - second),
-            denominator: (left.denominator() * right.denominator()));
+        BigRational(
+            numerator: (first - second),
+            denominator: (left.denominator() * right.denominator())
+        );
     }
 }
 
 object BigRationalProduct {
     has left, right is BigRational;
+
     BigRationalProduct(:left, :right);
+
     value() is BigRational {
-        BigRational(numerator: (left.numerator() * right.numerator()),
-            denominator: (left.denominator() * right.denominator()));
+        BigRational(
+            numerator: (left.numerator() * right.numerator()),
+            denominator: (left.denominator() * right.denominator())
+        );
     }
 }
 
 object BigRationalQuotient {
     has left, right is BigRational;
+
     BigRationalQuotient(:left, :right);
+
     value() is BigRational {
         confirm right.numerator().sign() != 0 else throw BigRationalDivisionByZero.by_zero;
-        BigRational(numerator: (left.numerator() * right.denominator()),
-            denominator: (left.denominator() * right.numerator()));
+        BigRational(
+            numerator: (left.numerator() * right.denominator()),
+            denominator: (left.denominator() * right.numerator())
+        );
     }
 }
 
 enum ZeroBigRationalDenominator is Error = (zero);
+
 enum BigRationalDivisionByZero is Error = (by_zero);

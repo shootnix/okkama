@@ -2,14 +2,7 @@ module fs/link v1.0.0;
 
 import "fs/file" take FileEntry, FileSystemFailure;
 import "fs/path" take Path;
-import "runtime/fs" take
-    path_encode,
-    path_decode,
-    lstat,
-    unlink,
-    link,
-    symlink,
-    readlink;
+import "runtime/fs" take path_encode, path_decode, lstat, unlink, link, symlink, readlink;
 
 // SymbolicLink is a path command object. Construction never touches the
 // filesystem; create() and remove() are explicit commands and return nothing:
@@ -39,7 +32,9 @@ object SymbolicLink {
         origin = path;
     }
 
-    path() is Path { origin; }
+    path() is Path {
+        origin;
+    }
 
     existence() is bool {
         try {

@@ -1,11 +1,14 @@
 module db/connection v1.0.0;
-import "db/statement" take Statement,Execution;
+
+import "db/statement" take Statement, Execution;
 import "db/row" take RowReading;
-import "db/transaction" take Transaction,TransactionOptions;
+import "db/transaction" take Transaction, TransactionOptions;
+
 role DbExecuting {
     async execution(origin is Statement) is Execution;
     async rows(origin is Statement) is RowReading;
 }
+
 role DbConnection {
     async execution(origin is Statement) is Execution;
     async rows(origin is Statement) is RowReading;
@@ -14,4 +17,7 @@ role DbConnection {
     close() is void;
     async settled() is bool;
 }
-role DbConnecting{async connection() is DbConnection;}
+
+role DbConnecting {
+    async connection() is DbConnection;
+}

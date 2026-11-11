@@ -3,20 +3,9 @@ module html/events v1.0.0;
 import "collections/iteration" take Cursor, Iterating, IterationEnded;
 import "collections/sequence" take Sequencing;
 import "error" take InvalidArgument;
-import "runtime/html" take
-    HtmlEventsState,
-    html_events,
-    html_event_count,
-    html_event_kind,
-    html_event_name,
-    html_event_value,
-    html_event_target,
-    html_event_data,
-    html_event_self_closing,
-    html_attribute_count,
-    html_attribute_name,
-    html_attribute_valued,
-    html_attribute_value;
+import "runtime/html" take HtmlEventsState, html_events, html_event_count, html_event_kind,
+    html_event_name, html_event_value, html_event_target, html_event_data, html_event_self_closing,
+    html_attribute_count, html_attribute_name, html_attribute_valued, html_attribute_value;
 
 // A deterministic event tokenizer for one already available string.
 //
@@ -38,14 +27,7 @@ import "runtime/html" take
 // The tokenizer never inserts implicit html/head/body/table elements and never
 // attempts browser-equivalent tree construction.
 
-enum HtmlEventKind = (
-    start_tag,
-    end_tag,
-    text,
-    comment,
-    declaration,
-    processing_instruction
-);
+enum HtmlEventKind = (start_tag, end_tag, text, comment, declaration, processing_instruction);
 
 object HtmlAttribute {
     has attribute_name is string;
@@ -54,17 +36,25 @@ object HtmlAttribute {
 
     HtmlAttribute(name is string, valued is bool, value is string) {
         confirm valued || value.empty()
-            else throw InvalidArgument.because("an unvalued HTML attribute must have an empty value");
+            else throw InvalidArgument.because(
+                "an unvalued HTML attribute must have an empty value"
+            );
         attribute_name = name;
         has_value = valued;
         attribute_value = value;
     }
 
-    name() is string { attribute_name; }
+    name() is string {
+        attribute_name;
+    }
 
-    valued() is bool { has_value; }
+    valued() is bool {
+        has_value;
+    }
 
-    value() is string { attribute_value; }
+    value() is string {
+        attribute_value;
+    }
 }
 
 // Payload roles keep the visitor dependency graph acyclic while exposing the
@@ -127,63 +117,105 @@ object HtmlStartTag does HtmlEvent, StartingHtmlTag {
         closes_self = self_closing;
     }
 
-    kind() is HtmlEventKind { HtmlEventKind.start_tag; }
+    kind() is HtmlEventKind {
+        HtmlEventKind.start_tag;
+    }
 
-    name() is string { tag_name; }
+    name() is string {
+        tag_name;
+    }
 
-    attributes() is Sequencing<HtmlAttribute> { tag_attributes; }
+    attributes() is Sequencing<HtmlAttribute> {
+        tag_attributes;
+    }
 
-    self_closing() is bool { closes_self; }
+    self_closing() is bool {
+        closes_self;
+    }
 
-    dispatch(to is HandlingHtmlEvent) is void { to.handle(self); }
+    dispatch(to is HandlingHtmlEvent) is void {
+        to.handle(self);
+    }
 }
 
 object HtmlEndTag does HtmlEvent, EndingHtmlTag {
     has tag_name is string;
 
-    HtmlEndTag(name is string) { tag_name = name; }
+    HtmlEndTag(name is string) {
+        tag_name = name;
+    }
 
-    kind() is HtmlEventKind { HtmlEventKind.end_tag; }
+    kind() is HtmlEventKind {
+        HtmlEventKind.end_tag;
+    }
 
-    name() is string { tag_name; }
+    name() is string {
+        tag_name;
+    }
 
-    dispatch(to is HandlingHtmlEvent) is void { to.handle(self); }
+    dispatch(to is HandlingHtmlEvent) is void {
+        to.handle(self);
+    }
 }
 
 object HtmlText does HtmlEvent, ContainingHtmlText {
     has origin is string;
 
-    HtmlText(value is string) { origin = value; }
+    HtmlText(value is string) {
+        origin = value;
+    }
 
-    kind() is HtmlEventKind { HtmlEventKind.text; }
+    kind() is HtmlEventKind {
+        HtmlEventKind.text;
+    }
 
-    value() is string { origin; }
+    value() is string {
+        origin;
+    }
 
-    dispatch(to is HandlingHtmlEvent) is void { to.handle(self); }
+    dispatch(to is HandlingHtmlEvent) is void {
+        to.handle(self);
+    }
 }
 
 object HtmlComment does HtmlEvent, ContainingHtmlComment {
     has origin is string;
 
-    HtmlComment(value is string) { origin = value; }
+    HtmlComment(value is string) {
+        origin = value;
+    }
 
-    kind() is HtmlEventKind { HtmlEventKind.comment; }
+    kind() is HtmlEventKind {
+        HtmlEventKind.comment;
+    }
 
-    value() is string { origin; }
+    value() is string {
+        origin;
+    }
 
-    dispatch(to is HandlingHtmlEvent) is void { to.handle(self); }
+    dispatch(to is HandlingHtmlEvent) is void {
+        to.handle(self);
+    }
 }
 
 object HtmlDeclaration does HtmlEvent, DeclaringHtml {
     has origin is string;
 
-    HtmlDeclaration(value is string) { origin = value; }
+    HtmlDeclaration(value is string) {
+        origin = value;
+    }
 
-    kind() is HtmlEventKind { HtmlEventKind.declaration; }
+    kind() is HtmlEventKind {
+        HtmlEventKind.declaration;
+    }
 
-    value() is string { origin; }
+    value() is string {
+        origin;
+    }
 
-    dispatch(to is HandlingHtmlEvent) is void { to.handle(self); }
+    dispatch(to is HandlingHtmlEvent) is void {
+        to.handle(self);
+    }
 }
 
 object HtmlProcessingInstruction does HtmlEvent, ProcessingHtmlInstruction {
@@ -195,13 +227,21 @@ object HtmlProcessingInstruction does HtmlEvent, ProcessingHtmlInstruction {
         instruction_data = data;
     }
 
-    kind() is HtmlEventKind { HtmlEventKind.processing_instruction; }
+    kind() is HtmlEventKind {
+        HtmlEventKind.processing_instruction;
+    }
 
-    target() is string { instruction_target; }
+    target() is string {
+        instruction_target;
+    }
 
-    data() is string { instruction_data; }
+    data() is string {
+        instruction_data;
+    }
 
-    dispatch(to is HandlingHtmlEvent) is void { to.handle(self); }
+    dispatch(to is HandlingHtmlEvent) is void {
+        to.handle(self);
+    }
 }
 
 object HtmlEvents does Iterating<HtmlEvent> {
@@ -231,15 +271,15 @@ object HtmlEventCursor does Cursor<HtmlEvent> {
         self.amount = amount;
     }
 
-    available() is bool { position < amount; }
+    available() is bool {
+        position < amount;
+    }
 
     item() is HtmlEvent {
         confirm self.available() else throw IterationEnded.ended;
         match html_event_kind(origin, position) {
             case 0 {
-                let attributes is @HtmlAttribute = (
-                    0..html_attribute_count(origin, position)
-                ).map() -> index {
+                let attributes is @HtmlAttribute = (0..html_attribute_count(origin, position)).map() -> index {
                     HtmlAttribute(
                         name: html_attribute_name(origin, position, index),
                         valued: html_attribute_valued(origin, position, index),

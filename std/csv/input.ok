@@ -54,6 +54,7 @@ object CsvInput {
         maximum_rows = 10000;
         maximum_columns = 1024;
     }
+
     CsvInput(origin is Reading, dialect is CsvDialect) {
         self.origin = origin;
         self.dialect = dialect;
@@ -63,11 +64,22 @@ object CsvInput {
         maximum_rows = 10000;
         maximum_columns = 1024;
     }
-    CsvInput(origin is Reading, maximum_bytes is int, maximum_input is int,
-        maximum_field is int, maximum_rows is int, maximum_columns is int,
-        dialect is CsvDialect) {
-        confirm maximum_bytes >= 0 && maximum_input >= 0 && maximum_field >= 0
-            && maximum_rows >= 0 && maximum_columns >= 0 else throw InvalidCsvLimits.invalid;
+
+    CsvInput(
+        origin is Reading,
+        maximum_bytes is int,
+        maximum_input is int,
+        maximum_field is int,
+        maximum_rows is int,
+        maximum_columns is int,
+        dialect is CsvDialect
+    ) {
+        confirm maximum_bytes >= 0
+            && maximum_input >= 0
+            && maximum_field >= 0
+            && maximum_rows >= 0
+            && maximum_columns >= 0
+            else throw InvalidCsvLimits.invalid;
         self.origin = origin;
         self.dialect = dialect;
         self.maximum_bytes = maximum_bytes;
@@ -82,7 +94,12 @@ object CsvInput {
         loop {
             let remaining = maximum_bytes - buffer.content().size();
             // Add one only after bounding remaining, avoiding int overflow.
-            let requested = if remaining >= 4096 { 4096; } else { remaining + 1; };
+            let requested = if remaining >= 4096 {
+                4096;
+            }
+            else {
+                remaining + 1;
+            };
             let chunk = origin.bytes(requested);
             confirm chunk.size() <= requested
                 else throw InvalidReading.because("CSV origin returned more bytes than requested");
@@ -91,8 +108,16 @@ object CsvInput {
             buffer.writing().write(ByteSnapshot(chunk));
         }
         let text = Utf8Decoded(buffer.content().bytes()).string();
-        let rows is @@string = CsvRows(text, maximum_input, maximum_field,
-            maximum_rows, maximum_columns, dialect).map() -> row { row; };
+        let rows is @@string = CsvRows(
+            text,
+            maximum_input,
+            maximum_field,
+            maximum_rows,
+            maximum_columns,
+            dialect
+        ).map() -> row {
+            row;
+        };
         rows;
     }
 }
@@ -112,53 +137,143 @@ test "resource decoding and repeated EOF" {
 test "empty and blank documents differ" {
     test.is(CsvInput(ByteBuffer().reading()).read(), []);
     test.is(CsvInput(ByteBuffer([byte(13), byte(10)]).reading()).read(), [[""]]);
-    test.is(CsvInput(ByteBuffer().reading(), 0, 0, 0, 0, 0, CsvDialect(",", "\"", "\r\n")).read(), []);
+    test.is(
+        CsvInput(ByteBuffer().reading(), 0, 0, 0, 0, 0, CsvDialect(",", "\"", "\r\n")).read(),
+        []
+    );
 }
 
 test "custom grammar and exact byte bound" {
     let buffer = ByteBuffer(Utf8Encoded("§§§§\n").bytes());
     test.is(CsvInput(buffer.reading(), 9, 5, 1, 1, 1, CsvDialect("😀", "§", "\n")).read(), [["§"]]);
-    test.is(CsvInput(ByteBuffer(Utf8Encoded("a;'b;c'\n").bytes()).reading(), CsvDialect(";", "'", "\n")).read(), [["a", "b;c"]]);
+    test.is(
+        CsvInput(ByteBuffer(Utf8Encoded("a;'b;c'\n").bytes()).reading(), CsvDialect(";", "'", "\n")).read(),
+        [["a", "b;c"]]
+    );
 }
 
 test "byte budgets and invalid configuration" {
     let buffer = ByteBuffer(Utf8Encoded("abcdef").bytes());
-    try { CsvInput(buffer.reading(), 2, 10, 10, 1, 1, CsvDialect(",", "\"", "\r\n")).read(); test.fail("byte budget ignored"); }
-    catch error is CsvByteLimitExceeded { test.is(error.text(), "CsvByteLimitExceeded.exceeded"); }
+    try {
+        CsvInput(buffer.reading(), 2, 10, 10, 1, 1, CsvDialect(",", "\"", "\r\n")).read();
+        test.fail("byte budget ignored");
+    }
+    catch error is CsvByteLimitExceeded {
+        test.is(error.text(), "CsvByteLimitExceeded.exceeded");
+    }
     test.is(Utf8Decoded(buffer.content().bytes()).string(), "def");
-    try { CsvInput(buffer.reading(), -1, 10, 10, 1, 1, CsvDialect(",", "\"", "\r\n")); test.fail("negative limit accepted"); }
-    catch error is InvalidCsvLimits { test.ok(true); }
+    try {
+        CsvInput(buffer.reading(), -1, 10, 10, 1, 1, CsvDialect(",", "\"", "\r\n"));
+        test.fail("negative limit accepted");
+    }
+    catch error is InvalidCsvLimits {
+        test.ok(true);
+    }
     test.is(Utf8Decoded(buffer.content().bytes()).string(), "def");
 }
 
 test "strict UTF-8 and scalar syntax coordinates" {
-    try { CsvInput(ByteBuffer([byte(195)]).reading()).read(); test.fail("truncated UTF-8 accepted"); }
-    catch InvalidUtf8.at(offset) { test.is(offset, 0); }
-    try { CsvInput(ByteBuffer(Utf8Encoded("é\n").bytes()).reading()).read(); test.fail("bare LF accepted"); }
-    catch InvalidCsv.at(offset) { test.is(offset, 1); }
-    try { CsvInput(ByteBuffer(Utf8Encoded("\"é").bytes()).reading()).read(); test.fail("unfinished quote accepted"); }
-    catch InvalidCsv.at(offset) { test.is(offset, 2); }
+    try {
+        CsvInput(ByteBuffer([byte(195)]).reading()).read();
+        test.fail("truncated UTF-8 accepted");
+    }
+    catch InvalidUtf8.at(offset) {
+        test.is(offset, 0);
+    }
+    try {
+        CsvInput(ByteBuffer(Utf8Encoded("é\n").bytes()).reading()).read();
+        test.fail("bare LF accepted");
+    }
+    catch InvalidCsv.at(offset) {
+        test.is(offset, 1);
+    }
+    try {
+        CsvInput(ByteBuffer(Utf8Encoded("\"é").bytes()).reading()).read();
+        test.fail("unfinished quote accepted");
+    }
+    catch InvalidCsv.at(offset) {
+        test.is(offset, 2);
+    }
 }
 
 test "scalar and structural limits retain typed errors" {
-    try { CsvInput(ByteBuffer(Utf8Encoded("é").bytes()).reading(), 2, 0, 1, 1, 1, CsvDialect(",", "\"", "\r\n")).read(); test.fail("scalar limit ignored"); }
-    catch CsvLimitExceeded.kind(kind) { test.is(kind, CsvLimit.input); }
-    try { CsvInput(ByteBuffer(Utf8Encoded("ab").bytes()).reading(), 2, 2, 1, 1, 1, CsvDialect(",", "\"", "\r\n")).read(); test.fail("field limit ignored"); }
-    catch CsvLimitExceeded.kind(kind) { test.is(kind, CsvLimit.field); }
-    try { CsvInput(ByteBuffer(Utf8Encoded("a,b").bytes()).reading(), 3, 3, 1, 1, 1, CsvDialect(",", "\"", "\r\n")).read(); test.fail("column limit ignored"); }
-    catch CsvLimitExceeded.kind(kind) { test.is(kind, CsvLimit.columns); }
-    try { CsvInput(ByteBuffer(Utf8Encoded("a").bytes()).reading(), 1, 1, 1, 0, 1, CsvDialect(",", "\"", "\r\n")).read(); test.fail("row limit ignored"); }
-    catch CsvLimitExceeded.kind(kind) { test.is(kind, CsvLimit.rows); }
+    try {
+        CsvInput(
+            ByteBuffer(Utf8Encoded("é").bytes()).reading(),
+            2,
+            0,
+            1,
+            1,
+            1,
+            CsvDialect(",", "\"", "\r\n")
+        ).read();
+        test.fail("scalar limit ignored");
+    }
+    catch CsvLimitExceeded.kind(kind) {
+        test.is(kind, CsvLimit.input);
+    }
+    try {
+        CsvInput(
+            ByteBuffer(Utf8Encoded("ab").bytes()).reading(),
+            2,
+            2,
+            1,
+            1,
+            1,
+            CsvDialect(",", "\"", "\r\n")
+        ).read();
+        test.fail("field limit ignored");
+    }
+    catch CsvLimitExceeded.kind(kind) {
+        test.is(kind, CsvLimit.field);
+    }
+    try {
+        CsvInput(
+            ByteBuffer(Utf8Encoded("a,b").bytes()).reading(),
+            3,
+            3,
+            1,
+            1,
+            1,
+            CsvDialect(",", "\"", "\r\n")
+        ).read();
+        test.fail("column limit ignored");
+    }
+    catch CsvLimitExceeded.kind(kind) {
+        test.is(kind, CsvLimit.columns);
+    }
+    try {
+        CsvInput(
+            ByteBuffer(Utf8Encoded("a").bytes()).reading(),
+            1,
+            1,
+            1,
+            0,
+            1,
+            CsvDialect(",", "\"", "\r\n")
+        ).read();
+        test.fail("row limit ignored");
+    }
+    catch CsvLimitExceeded.kind(kind) {
+        test.is(kind, CsvLimit.rows);
+    }
 }
 
 test "borrowed source lifetime and external closure" {
     let buffer = ByteBuffer(Utf8Encoded("a,b").bytes());
-    { let unused = CsvInput(buffer.reading()); }
+    {
+        let unused = CsvInput(buffer.reading());
+    }
     test.ok(!buffer.closing().closed());
     let input = CsvInput(buffer.reading());
     let rows = input.read();
     buffer.closing().close();
     test.is(rows, [["a", "b"]]);
-    try { input.read(); test.fail("closed source read succeeded"); }
-    catch error is ClosedBuffer { test.ok(true); }
+    try {
+        input.read();
+        test.fail("closed source read succeeded");
+    }
+    catch error is ClosedBuffer {
+        test.ok(true);
+    }
 }

@@ -104,7 +104,12 @@ object DequeFront<T> {
 
     value() is T {
         confirm amount > 0 else throw EmptyDequeAccess.operation("front value");
-        if beginning.size() > 0 { beginning.first(); } else { ending.first(); }
+        if beginning.size() > 0 {
+            beginning.first();
+        }
+        else {
+            ending.first();
+        }
     }
 
     addition(value is T) is Deque<T> {
@@ -137,7 +142,12 @@ object DequeBack<T> {
 
     value() is T {
         confirm amount > 0 else throw EmptyDequeAccess.operation("back value");
-        if ending.size() > 0 { ending.first(); } else { beginning.first(); }
+        if ending.size() > 0 {
+            ending.first();
+        }
+        else {
+            beginning.first();
+        }
     }
 
     addition(value is T) is Deque<T> {
@@ -187,7 +197,12 @@ object ConcatenatedDequeCursor<T> does Cursor<T> {
 
     item() is T {
         confirm self.available() else throw IterationEnded.ended;
-        if beginning.available() { beginning.item(); } else { ending.item(); }
+        if beginning.available() {
+            beginning.item();
+        }
+        else {
+            ending.item();
+        }
     }
 
     successor() is Cursor<T> {
@@ -289,9 +304,17 @@ object DequeParts<T> {
         amount = size;
     }
 
-    front() is List<T> { beginning; }
-    back() is List<T> { ending; }
-    size() is int { amount; }
+    front() is List<T> {
+        beginning;
+    }
+
+    back() is List<T> {
+        ending;
+    }
+
+    size() is int {
+        amount;
+    }
 }
 
 object BalancedDeque<T> {
@@ -299,7 +322,9 @@ object BalancedDeque<T> {
     has witness is Iterating<T>;
 
     BalancedDeque(values is Iterating<T>) {
-        let materialized is @T = values.map() -> item { item; };
+        let materialized is @T = values.map() -> item {
+            item;
+        };
         origin = materialized;
         witness = values;
     }
@@ -342,6 +367,7 @@ object NormalizedDeque<T> {
     }
 
     private:
+
     unbalanced() is bool {
         if beginning.size() > ending.size() {
             beginning.size() - ending.size() > ending.size() + 1;

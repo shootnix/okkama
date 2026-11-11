@@ -10,12 +10,14 @@ native bytes_find(source is @byte, pattern is @byte, start is int) is int;
 
 // Offset, relative to start, of the first malformed UTF-8 scalar, or -1.
 native bytes_utf8_invalid(source is @byte, start is int, end is int) is int;
+
 // The range as a string; it is valid UTF-8.
 native bytes_text(source is @byte, start is int, end is int) is string;
 
 // Offset, relative to start, of the first byte that breaks an ASCII decimal
 // integer with an optional leading '-', or -1.
 native bytes_decimal_invalid(source is @byte, start is int, end is int) is int;
+
 // The decimal value of a valid range.
 native bytes_decimal(source is @byte, start is int, end is int) is int;
 
@@ -25,6 +27,7 @@ native bytes_equal(source is @byte, start is int, end is int, other is @byte) is
 // Fixed-width integer of a non-empty range: two's complement when signed,
 // magnitude otherwise; big-endian when big. Fits: the value is a 64-bit int.
 native bytes_integer_fits(source is @byte, start is int, end is int, signed is bool, big is bool) is bool;
+
 native bytes_integer(source is @byte, start is int, end is int, signed is bool, big is bool) is int;
 
 // source[start..] followed by tail, as one new byte value.

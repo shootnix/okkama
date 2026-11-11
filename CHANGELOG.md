@@ -10,6 +10,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 in place: nothing leaves std (the owner, 2026-11-11), every module is kept,
 simplified or rewritten to the principles of `docs/std-principles.md`.
 
+### Changed
+
+- Every std module is formatted by `okkama fmt` (#352): 437 of 468 modules
+  (the generated locale data aside) were not, 57 of them written as a few
+  very long lines. Only whitespace changed; each file's syntax tree was
+  compared before and after, and `okkama fmt --check` over std is clean.
+
 ## [0.5.3] — 2026-11-11
 
 0.5.3 brings the persistent collections Tomato has had since 0.4.3 to the IR

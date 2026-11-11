@@ -49,7 +49,9 @@ object Sorted<T: Comparing<T>> does Sequencing<T>, Iterating<T>, Sizing {
     has origin is @T;
 
     Sorted(origin is Iterating<T>) {
-        let materialized is @T = origin.map() -> value { value; };
+        let materialized is @T = origin.map() -> value {
+            value;
+        };
         let ordered is BulkOrdering<T> = BulkOrdering(values: materialized);
         self.origin = ordered.items();
     }
@@ -79,15 +81,14 @@ object Sorted<T: Comparing<T>> does Sequencing<T>, Iterating<T>, Sizing {
     }
 }
 
-object SortedBy<T,K: Comparing<K>>
-    does Sequencing<T>, Iterating<T>, Sizing {
-    has origin is @Ranked<T,K>;
+object SortedBy<T, K: Comparing<K>> does Sequencing<T>, Iterating<T>, Sizing {
+    has origin is @Ranked<T, K>;
 
     SortedBy(origin is Iterating<T>, key is (T) is K) {
-        let ranked is @Ranked<T,K> = origin.map() -> value {
+        let ranked is @Ranked<T, K> = origin.map() -> value {
             Ranked(item: value, key: key(value));
         };
-        let ordered is BulkOrdering<Ranked<T,K>> = BulkOrdering(values: ranked);
+        let ordered is BulkOrdering<Ranked<T, K>> = BulkOrdering(values: ranked);
         self.origin = ordered.items();
     }
 
@@ -116,7 +117,7 @@ object SortedBy<T,K: Comparing<K>>
     }
 }
 
-object Ranked<T,K: Comparing<K>> does Comparing<Ranked<T,K>> {
+object Ranked<T, K: Comparing<K>> does Comparing<Ranked<T, K>> {
     has origin is T;
     has ranking is K;
 
@@ -133,7 +134,7 @@ object Ranked<T,K: Comparing<K>> does Comparing<Ranked<T,K>> {
         ranking;
     }
 
-    order(other is Ranked<T,K>) is Order {
+    order(other is Ranked<T, K>) is Order {
         ranking.order(other.key());
     }
 }
@@ -312,11 +313,11 @@ object OrderedCursor<T> does Cursor<T> {
     }
 }
 
-object RankedCursor<T,K: Comparing<K>> does Cursor<T> {
-    has origin is @Ranked<T,K>;
+object RankedCursor<T, K: Comparing<K>> does Cursor<T> {
+    has origin is @Ranked<T, K>;
     has position is int;
 
-    RankedCursor(values is @Ranked<T,K>, position is int) {
+    RankedCursor(values is @Ranked<T, K>, position is int) {
         confirm position >= 0 && position <= values.size()
             else throw InvalidArgument.because("ranked cursor position is invalid");
         origin = values;

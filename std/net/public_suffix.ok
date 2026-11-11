@@ -1,4 +1,5 @@
 module net/public_suffix v1.0.0;
+
 import "net/endpoint" take HostName;
 import "runtime/public_suffix" take public_suffix_name, registrable_name, public_suffix_version;
 
@@ -6,23 +7,45 @@ import "runtime/public_suffix" take public_suffix_name, registrable_name, public
 // is no runtime network update or host-installed public suffix database.
 object PublicSuffixList {
     PublicSuffixList();
-    version() is string {public_suffix_version();}
-    suffix(origin is HostName) is HostName {HostName(public_suffix_name(origin.ascii()));}
+
+    version() is string {
+        public_suffix_version();
+    }
+
+    suffix(origin is HostName) is HostName {
+        HostName(public_suffix_name(origin.ascii()));
+    }
+
     registrable(origin is HostName) is HostName {
-        let domain=try{registrable_name(origin.ascii());}catch failure is NativeFailure {
-            if failure.domain()=="core.public_suffix" && failure.code()=="not_found" {throw MissingRegistrableDomain.host(origin.ascii());}
+        let domain = try {
+            registrable_name(origin.ascii());
+        }
+        catch failure is NativeFailure {
+            if failure.domain() == "core.public_suffix" && failure.code() == "not_found" {
+                throw MissingRegistrableDomain.host(origin.ascii());
+            }
             throw;
         };
         HostName(domain);
     }
+
     public(origin is HostName) is bool {
-        let present=try{self.registrable(origin);false;}catch failure is MissingRegistrableDomain{true;};present;
+        let present = try {
+            self.registrable(origin);
+            false;
+        }
+        catch failure is MissingRegistrableDomain {
+            true;
+        };
+        present;
     }
 }
+
 enum MissingRegistrableDomain is Error = (host(name is string));
+
 test "private boundaries and wildcard exceptions are explicit pinned policy" {
-    let rules=PublicSuffixList();
-    test.is(rules.suffix(HostName("a.github.io")).ascii(),"github.io");
-    test.is(rules.registrable(HostName("a.www.ck")).ascii(),"www.ck");
+    let rules = PublicSuffixList();
+    test.is(rules.suffix(HostName("a.github.io")).ascii(), "github.io");
+    test.is(rules.registrable(HostName("a.www.ck")).ascii(), "www.ck");
     test.ok(rules.public(HostName("com")));
 }

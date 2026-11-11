@@ -65,7 +65,9 @@ object RegexPartsCursor does Cursor<string> {
         self.final = final;
     }
 
-    available() is bool { !final; }
+    available() is bool {
+        !final;
+    }
 
     item() is string {
         confirm self.available() else throw IterationEnded.ended;
@@ -84,7 +86,12 @@ object RegexPartsCursor does Cursor<string> {
                 origin: source,
                 separators: separators.successor(),
                 offset: separators.item().range().end(),
-                remaining: if remaining < 0 { -1; } else { remaining - 1; },
+                remaining: if remaining < 0 {
+                    -1;
+                }
+                else {
+                    remaining - 1;
+                },
                 final: false,
             );
         }
@@ -100,6 +107,7 @@ object RegexPartsCursor does Cursor<string> {
     }
 
     private:
+
     separated() is bool {
         remaining != 0 && separators.available();
     }

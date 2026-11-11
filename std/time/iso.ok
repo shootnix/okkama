@@ -29,11 +29,11 @@ object IsoDate {
         let year is string = origin.year().string();
         let month is string = origin.month().string();
         let day is string = origin.day().string();
-        ("0000" + year).slice(year.length(), year.length() + 4)
-            + "-"
-            + ("00" + month).slice(month.length(), month.length() + 2)
-            + "-"
-            + ("00" + day).slice(day.length(), day.length() + 2);
+        ("0000" + year).slice(year.length(), year.length() + 4) +
+            "-" +
+            ("00" + month).slice(month.length(), month.length() + 2) +
+            "-" +
+            ("00" + day).slice(day.length(), day.length() + 2);
     }
 }
 
@@ -80,14 +80,14 @@ object IsoLocalDateTime {
         else {
             "." + IsoFraction(origin: time.nanosecond()).string();
         };
-        IsoDate(origin: origin.date()).string()
-            + "T"
-            + ("00" + hour).slice(hour.length(), hour.length() + 2)
-            + ":"
-            + ("00" + minute).slice(minute.length(), minute.length() + 2)
-            + ":"
-            + ("00" + second).slice(second.length(), second.length() + 2)
-            + fraction;
+        IsoDate(origin: origin.date()).string() +
+            "T" +
+            ("00" + hour).slice(hour.length(), hour.length() + 2) +
+            ":" +
+            ("00" + minute).slice(minute.length(), minute.length() + 2) +
+            ":" +
+            ("00" + second).slice(second.length(), second.length() + 2) +
+            fraction;
     }
 }
 

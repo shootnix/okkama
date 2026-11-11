@@ -2,12 +2,8 @@ module math/decimal v1.0.0;
 
 import "compare" take Comparing, Order;
 import "numbers/bigint" take BigInt;
-import "runtime/decimal" take
-    decimal_valid,
-    decimal_canonical,
-    decimal_coefficient,
-    decimal_exponent,
-    decimal_order;
+import "runtime/decimal" take decimal_valid, decimal_canonical, decimal_coefficient,
+    decimal_exponent, decimal_order;
 
 // Exact immutable decimal value. Construction never trims whitespace and
 // never passes through float. Equivalent spellings share one canonical form:
@@ -37,7 +33,12 @@ object Decimal does Comparing<Decimal> {
             Order.less;
         }
         else {
-            if result > 0 { Order.greater; } else { Order.equal; }
+            if result > 0 {
+                Order.greater;
+            }
+            else {
+                Order.equal;
+            }
         }
     }
 

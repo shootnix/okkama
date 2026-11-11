@@ -5,11 +5,7 @@ import "collections/sequence" take Sequencing;
 import "compare" take Comparing, Order;
 import "error" take OutOfRange;
 import "size" take Sizing;
-import "time/date" take
-    Date,
-    DateOrdinal,
-    OrdinalDate,
-    Weekday;
+import "time/date" take Date, DateOrdinal, OrdinalDate, Weekday;
 
 // Immutable Gregorian calendar views.
 //
@@ -77,10 +73,19 @@ object MonthDates does Sequencing<Date>, Iterating<Date>, Sizing {
     size() is int {
         match origin.month() {
             case 2 {
-                if LeapYear(year: origin.year()).value() { 29; } else { 28; }
+                if LeapYear(year: origin.year()).value() {
+                    29;
+                }
+                else {
+                    28;
+                }
             }
-            case 4, 6, 9, 11 { 30; }
-            else { 31; }
+            case 4, 6, 9, 11 {
+                30;
+            }
+            else {
+                31;
+            }
         }
     }
 
@@ -191,10 +196,7 @@ object CalendarWeekCursor does Cursor<Date> {
     }
 }
 
-object CalendarMonth does
-    Sequencing<Sequencing<Date>>,
-    Iterating<Sequencing<Date>>,
-    Sizing {
+object CalendarMonth does Sequencing<Sequencing<Date>>, Iterating<Sequencing<Date>>, Sizing {
     has origin is YearMonth;
     has first_weekday is Weekday;
 
@@ -276,11 +278,9 @@ object CalendarMonthLayout {
 
     first_ordinal() is int {
         let first = Date(year: origin.year(), month: origin.month(), day: 1);
-        let lead is int = (
-            (WeekdayIndex(origin: first.weekday()).value())
-                - (WeekdayIndex(origin: first_weekday).value())
-                + 7
-        ) % 7;
+        let lead is int = ((WeekdayIndex(origin: first.weekday()).value()) -
+            (WeekdayIndex(origin: first_weekday).value()) +
+            7) % 7;
         let result is int = (DateOrdinal(origin: first).value()) - lead;
         confirm result >= 1 && result + self.size() * 7 - 1 <= 3652059
             else throw InvalidCalendarMonth.because(
@@ -291,11 +291,9 @@ object CalendarMonthLayout {
 
     size() is int {
         let first = Date(year: origin.year(), month: origin.month(), day: 1);
-        let lead is int = (
-            (WeekdayIndex(origin: first.weekday()).value())
-                - (WeekdayIndex(origin: first_weekday).value())
-                + 7
-        ) % 7;
+        let lead is int = ((WeekdayIndex(origin: first.weekday()).value()) -
+            (WeekdayIndex(origin: first_weekday).value()) +
+            7) % 7;
         ((lead + MonthDates(origin: origin).size() + 6) / 7).int();
     }
 }
@@ -313,14 +311,19 @@ object IsoWeek does Comparing<IsoWeek> {
         ).value();
         let leap is bool = LeapYear(year: year).value();
         let maximum is int = if january_index == 3
-            || (january_index == 2 && leap) { 53; } else { 52; };
+            || (january_index == 2 && leap) {
+                53;
+            }
+            else {
+                52;
+            };
         confirm week >= 1 && week <= maximum
             else throw InvalidIsoWeek.because("ISO week is outside its week-year");
 
         let january_fourth = Date(year: year, month: 1, day: 4);
-        let first_ordinal is int = (DateOrdinal(origin: january_fourth).value())
-            - (WeekdayIndex(origin: january_fourth.weekday()).value())
-            + (week - 1) * 7;
+        let first_ordinal is int = (DateOrdinal(origin: january_fourth).value()) -
+            (WeekdayIndex(origin: january_fourth.weekday()).value()) +
+            (week - 1) * 7;
         confirm first_ordinal >= 1 && first_ordinal + 6 <= 3652059
             else throw InvalidIsoWeek.because(
                 "ISO week leaves the supported date range"
@@ -341,9 +344,9 @@ object IsoWeek does Comparing<IsoWeek> {
     first() is Date {
         let january_fourth = Date(year: year_value, month: 1, day: 4);
         OrdinalDate(
-            origin: (DateOrdinal(origin: january_fourth).value())
-                - (WeekdayIndex(origin: january_fourth.weekday()).value())
-                + (week_value - 1) * 7,
+            origin: (DateOrdinal(origin: january_fourth).value()) -
+                (WeekdayIndex(origin: january_fourth.weekday()).value()) +
+                (week_value - 1) * 7,
         ).value();
     }
 
@@ -384,17 +387,33 @@ object WeekdayIndex {
 
     value() is int {
         match origin {
-            case Weekday.monday { 0; }
-            case Weekday.tuesday { 1; }
-            case Weekday.wednesday { 2; }
-            case Weekday.thursday { 3; }
-            case Weekday.friday { 4; }
-            case Weekday.saturday { 5; }
-            else { 6; }
+            case Weekday.monday {
+                0;
+            }
+            case Weekday.tuesday {
+                1;
+            }
+            case Weekday.wednesday {
+                2;
+            }
+            case Weekday.thursday {
+                3;
+            }
+            case Weekday.friday {
+                4;
+            }
+            case Weekday.saturday {
+                5;
+            }
+            else {
+                6;
+            }
         }
     }
 }
 
 enum InvalidYearMonth is Error = (because(reason is string));
+
 enum InvalidCalendarMonth is Error = (because(reason is string));
+
 enum InvalidIsoWeek is Error = (because(reason is string));

@@ -1,23 +1,11 @@
 module io/stdin v1.0.0;
 
-import "io/stream" take
-    Reading,
-    ReadingText,
-    Closing,
-    InvalidReadLimit;
+import "io/stream" take Reading, ReadingText, Closing, InvalidReadLimit;
 import "encoding/utf" take Utf8Decoded;
 import "runtime/stdio" take stdin_read;
-import "runtime/input_state" take
-    Utf8InputState,
-    input_state_create,
-    input_state_append,
-    input_state_size,
-    input_state_line_offset,
-    input_state_take,
-    input_state_eof,
-    input_state_finish,
-    input_state_closed,
-    input_state_close;
+import "runtime/input_state" take Utf8InputState, input_state_create, input_state_append,
+    input_state_size, input_state_line_offset, input_state_take, input_state_eof,
+    input_state_finish, input_state_closed, input_state_close;
 
 // Raw process input and a strict UTF-8 text decorator.
 //
@@ -66,7 +54,8 @@ object Utf8Input does ReadingText, Closing {
             let raw is @byte = input_state_take(state, offset + 1);
             let end is int = if offset > 0 && raw[offset - 1] == byte(13) {
                 offset - 1;
-            } else {
+            }
+            else {
                 offset;
             };
             Utf8Decoded(origin: raw.slice(0, end)).string();

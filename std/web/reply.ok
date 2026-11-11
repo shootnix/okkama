@@ -1,10 +1,12 @@
 module web/reply v1.0.0;
-import "http/handler" take HandlingResult,HandlingKind,WebSocketHandling,WrongHandlingKind;
+
+import "http/handler" take HandlingResult, HandlingKind, WebSocketHandling, WrongHandlingKind;
 import "http/message" take Response;
 import "http/websocket_server" take WebSocketUpgrade;
 import "json" take Json;
 import "encoding/utf" take Utf8Encoded;
-import "web/internal/reply" take ReplyHeaders,ReplyResponse,EmptyReplyResponse,BodyStatus,InvalidReply;
+import "web/internal/reply" take ReplyHeaders, ReplyResponse, EmptyReplyResponse, BodyStatus,
+    InvalidReply;
 
 // Endpoint replies. Each one is a std HandlingResult, so an endpoint can return
 // it directly, and can still return ResponseHandling or WebSocketHandlingResult
@@ -24,13 +26,29 @@ object Text does HandlingResult {
         extra = ReplyHeaders();
     }
 
-    header(name is string, value is string) is ^Text { ^extra = extra.added(name, value); }
-    status() is int { code; }
+    header(name is string, value is string) is ^Text {
+        ^extra = extra.added(name, value);
+    }
 
-    kind() is HandlingKind { HandlingKind.response; }
-    response() is Response { ReplyResponse(code, "text/plain; charset=utf-8", Utf8Encoded(content).bytes(), extra).response(); }
-    websocket() is WebSocketUpgrade { throw WrongHandlingKind.mismatch; }
-    application() is WebSocketHandling { throw WrongHandlingKind.mismatch; }
+    status() is int {
+        code;
+    }
+
+    kind() is HandlingKind {
+        HandlingKind.response;
+    }
+
+    response() is Response {
+        ReplyResponse(code, "text/plain; charset=utf-8", Utf8Encoded(content).bytes(), extra).response();
+    }
+
+    websocket() is WebSocketUpgrade {
+        throw WrongHandlingKind.mismatch;
+    }
+
+    application() is WebSocketHandling {
+        throw WrongHandlingKind.mismatch;
+    }
 }
 
 object Html does HandlingResult {
@@ -44,13 +62,29 @@ object Html does HandlingResult {
         extra = ReplyHeaders();
     }
 
-    header(name is string, value is string) is ^Html { ^extra = extra.added(name, value); }
-    status() is int { code; }
+    header(name is string, value is string) is ^Html {
+        ^extra = extra.added(name, value);
+    }
 
-    kind() is HandlingKind { HandlingKind.response; }
-    response() is Response { ReplyResponse(code, "text/html; charset=utf-8", Utf8Encoded(content).bytes(), extra).response(); }
-    websocket() is WebSocketUpgrade { throw WrongHandlingKind.mismatch; }
-    application() is WebSocketHandling { throw WrongHandlingKind.mismatch; }
+    status() is int {
+        code;
+    }
+
+    kind() is HandlingKind {
+        HandlingKind.response;
+    }
+
+    response() is Response {
+        ReplyResponse(code, "text/html; charset=utf-8", Utf8Encoded(content).bytes(), extra).response();
+    }
+
+    websocket() is WebSocketUpgrade {
+        throw WrongHandlingKind.mismatch;
+    }
+
+    application() is WebSocketHandling {
+        throw WrongHandlingKind.mismatch;
+    }
 }
 
 object JsonReply does HandlingResult {
@@ -64,13 +98,29 @@ object JsonReply does HandlingResult {
         extra = ReplyHeaders();
     }
 
-    header(name is string, value is string) is ^JsonReply { ^extra = extra.added(name, value); }
-    status() is int { code; }
+    header(name is string, value is string) is ^JsonReply {
+        ^extra = extra.added(name, value);
+    }
 
-    kind() is HandlingKind { HandlingKind.response; }
-    response() is Response { ReplyResponse(code, "application/json", Utf8Encoded(content.string()).bytes(), extra).response(); }
-    websocket() is WebSocketUpgrade { throw WrongHandlingKind.mismatch; }
-    application() is WebSocketHandling { throw WrongHandlingKind.mismatch; }
+    status() is int {
+        code;
+    }
+
+    kind() is HandlingKind {
+        HandlingKind.response;
+    }
+
+    response() is Response {
+        ReplyResponse(code, "application/json", Utf8Encoded(content.string()).bytes(), extra).response();
+    }
+
+    websocket() is WebSocketUpgrade {
+        throw WrongHandlingKind.mismatch;
+    }
+
+    application() is WebSocketHandling {
+        throw WrongHandlingKind.mismatch;
+    }
 }
 
 // 201 with a Location field and the created representation.
@@ -84,27 +134,61 @@ object Created does HandlingResult {
         extra = ReplyHeaders().added("Location", location);
     }
 
-    header(name is string, value is string) is ^Created { ^extra = extra.added(name, value); }
-    status() is int { 201; }
+    header(name is string, value is string) is ^Created {
+        ^extra = extra.added(name, value);
+    }
 
-    kind() is HandlingKind { HandlingKind.response; }
-    response() is Response { ReplyResponse(201, "application/json", Utf8Encoded(content.string()).bytes(), extra).response(); }
-    websocket() is WebSocketUpgrade { throw WrongHandlingKind.mismatch; }
-    application() is WebSocketHandling { throw WrongHandlingKind.mismatch; }
+    status() is int {
+        201;
+    }
+
+    kind() is HandlingKind {
+        HandlingKind.response;
+    }
+
+    response() is Response {
+        ReplyResponse(201, "application/json", Utf8Encoded(content.string()).bytes(), extra).response();
+    }
+
+    websocket() is WebSocketUpgrade {
+        throw WrongHandlingKind.mismatch;
+    }
+
+    application() is WebSocketHandling {
+        throw WrongHandlingKind.mismatch;
+    }
 }
 
 object NoContent does HandlingResult {
     has extra is ReplyHeaders;
 
-    NoContent() { extra = ReplyHeaders(); }
+    NoContent() {
+        extra = ReplyHeaders();
+    }
 
-    header(name is string, value is string) is ^NoContent { ^extra = extra.added(name, value); }
-    status() is int { 204; }
+    header(name is string, value is string) is ^NoContent {
+        ^extra = extra.added(name, value);
+    }
 
-    kind() is HandlingKind { HandlingKind.response; }
-    response() is Response { EmptyReplyResponse(204, extra).response(); }
-    websocket() is WebSocketUpgrade { throw WrongHandlingKind.mismatch; }
-    application() is WebSocketHandling { throw WrongHandlingKind.mismatch; }
+    status() is int {
+        204;
+    }
+
+    kind() is HandlingKind {
+        HandlingKind.response;
+    }
+
+    response() is Response {
+        EmptyReplyResponse(204, extra).response();
+    }
+
+    websocket() is WebSocketUpgrade {
+        throw WrongHandlingKind.mismatch;
+    }
+
+    application() is WebSocketHandling {
+        throw WrongHandlingKind.mismatch;
+    }
 }
 
 object Redirect does HandlingResult {
@@ -119,13 +203,29 @@ object Redirect does HandlingResult {
         extra = ReplyHeaders().added("Location", location);
     }
 
-    header(name is string, value is string) is ^Redirect { ^extra = extra.added(name, value); }
-    status() is int { code; }
+    header(name is string, value is string) is ^Redirect {
+        ^extra = extra.added(name, value);
+    }
 
-    kind() is HandlingKind { HandlingKind.response; }
-    response() is Response { EmptyReplyResponse(code, extra).response(); }
-    websocket() is WebSocketUpgrade { throw WrongHandlingKind.mismatch; }
-    application() is WebSocketHandling { throw WrongHandlingKind.mismatch; }
+    status() is int {
+        code;
+    }
+
+    kind() is HandlingKind {
+        HandlingKind.response;
+    }
+
+    response() is Response {
+        EmptyReplyResponse(code, extra).response();
+    }
+
+    websocket() is WebSocketUpgrade {
+        throw WrongHandlingKind.mismatch;
+    }
+
+    application() is WebSocketHandling {
+        throw WrongHandlingKind.mismatch;
+    }
 }
 
 test "text reply declares its representation and keeps added fields" {
@@ -134,5 +234,7 @@ test "text reply declares its representation and keeps added fields" {
     test.is(response.headers().entries().size(), 3);
     test.is(response.body().length().string(), "12");
     test.is(NoContent().response().headers().entries().size(), 0);
-    test.throws(InvalidReply) { Redirect(200, "/x"); };
+    test.throws(InvalidReply) {
+        Redirect(200, "/x");
+    };
 }

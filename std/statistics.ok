@@ -7,15 +7,9 @@ import "collections/combining" take UnequalSizes;
 import "error" take OutOfRange;
 import "size" take Sizing;
 import "runtime/math_aggregate" take aggregate_square_root;
-import "runtime/statistics" take
-    statistics_mean,
-    statistics_geometric_mean,
-    statistics_harmonic_mean,
-    statistics_median,
-    statistics_quantiles,
-    statistics_variance,
-    statistics_paired_valid,
-    statistics_paired;
+import "runtime/statistics" take statistics_mean, statistics_geometric_mean,
+    statistics_harmonic_mean, statistics_median, statistics_quantiles, statistics_variance,
+    statistics_paired_valid, statistics_paired;
 
 // Descriptive statistics over finite builtin floats.
 //
@@ -63,15 +57,22 @@ object FloatSample {
     FloatSample(values is Iterating<float>) {
         let empty is @float = [];
         origin = if values.cursor().available() {
-            values.map() -> item { item; };
+            values.map() -> item {
+                item;
+            };
         }
         else {
             empty;
         };
     }
 
-    values() is @float { origin; }
-    size() is int { origin.size(); }
+    values() is @float {
+        origin;
+    }
+
+    size() is int {
+        origin.size();
+    }
 }
 
 object Mean {
@@ -96,7 +97,8 @@ object GeometricMean {
     }
 
     value() is float {
-        confirm origin.size() > 0 else throw StatisticsError.because("geometric mean requires at least one value");
+        confirm origin.size() > 0
+            else throw StatisticsError.because("geometric mean requires at least one value");
         confirm origin.values().reduce(true) -> valid, item {
             valid && item >= 0.0;
         }
@@ -113,7 +115,8 @@ object HarmonicMean {
     }
 
     value() is float {
-        confirm origin.size() > 0 else throw StatisticsError.because("harmonic mean requires at least one value");
+        confirm origin.size() > 0
+            else throw StatisticsError.because("harmonic mean requires at least one value");
         confirm origin.values().reduce(true) -> valid, item {
             valid && item >= 0.0;
         }
@@ -188,7 +191,8 @@ object Quantiles {
     values() is @float {
         confirm amount >= 2
             else throw StatisticsError.because("quantile count must be at least two");
-        confirm origin.size() >= 2 else throw StatisticsError.because("quantiles require at least two values");
+        confirm origin.size() >= 2
+            else throw StatisticsError.because("quantiles require at least two values");
         statistics_quantiles(origin.values(), amount, self.method_name());
     }
 
@@ -224,7 +228,12 @@ object Modes<T> does Sequencing<T>, Iterating<T>, Sizing {
     Modes(values is Iterating<T>) {
         let frequencies = Frequencies(values: values);
         let largest is int = frequencies.reduce(0) -> amount, frequency {
-            if frequency.amount() > amount { frequency.amount(); } else { amount; }
+            if frequency.amount() > amount {
+                frequency.amount();
+            }
+            else {
+                amount;
+            }
         };
         let empty is @T = [];
         origin = if largest == 0 {
@@ -232,8 +241,12 @@ object Modes<T> does Sequencing<T>, Iterating<T>, Sizing {
         }
         else {
             frequencies
-                .filter() -> frequency { frequency.amount() == largest; }
-                .map() -> frequency { frequency.item(); };
+                .filter() -> frequency {
+                    frequency.amount() == largest;
+                }
+                .map() -> frequency {
+                    frequency.item();
+                };
         };
     }
 
@@ -294,7 +307,8 @@ object SampleVariance {
     }
 
     value() is float {
-        confirm origin.size() >= 2 else throw StatisticsError.because("sample variance requires at least two values");
+        confirm origin.size() >= 2
+            else throw StatisticsError.because("sample variance requires at least two values");
         statistics_variance(origin.values(), true);
     }
 }
@@ -307,7 +321,8 @@ object PopulationVariance {
     }
 
     value() is float {
-        confirm origin.size() > 0 else throw StatisticsError.because("population variance requires at least one value");
+        confirm origin.size() > 0
+            else throw StatisticsError.because("population variance requires at least one value");
         statistics_variance(origin.values(), false);
     }
 }
@@ -320,7 +335,8 @@ object SampleDeviation {
     }
 
     value() is float {
-        confirm origin.size() >= 2 else throw StatisticsError.because("sample deviation requires at least two values");
+        confirm origin.size() >= 2
+            else throw StatisticsError.because("sample deviation requires at least two values");
         aggregate_square_root(statistics_variance(origin.values(), true));
     }
 }
@@ -333,7 +349,8 @@ object PopulationDeviation {
     }
 
     value() is float {
-        confirm origin.size() > 0 else throw StatisticsError.because("population deviation requires at least one value");
+        confirm origin.size() > 0
+            else throw StatisticsError.because("population deviation requires at least one value");
         aggregate_square_root(statistics_variance(origin.values(), false));
     }
 }
@@ -349,7 +366,8 @@ object Covariance {
 
     value() is float {
         confirm left.size() == right.size() else throw UnequalSizes.unequal;
-        confirm left.size() >= 2 else throw StatisticsError.because("covariance requires at least two pairs");
+        confirm left.size() >= 2
+            else throw StatisticsError.because("covariance requires at least two pairs");
         statistics_paired(left.values(), right.values(), "covariance");
     }
 }
@@ -365,9 +383,12 @@ object Correlation {
 
     value() is float {
         confirm left.size() == right.size() else throw UnequalSizes.unequal;
-        confirm left.size() >= 2 else throw StatisticsError.because("correlation requires at least two pairs");
+        confirm left.size() >= 2
+            else throw StatisticsError.because("correlation requires at least two pairs");
         confirm statistics_paired_valid(
-            left.values(), right.values(), "correlation"
+            left.values(),
+            right.values(),
+            "correlation"
         )
             else throw StatisticsError.because("correlation is undefined for a constant input");
         statistics_paired(left.values(), right.values(), "correlation");
@@ -382,14 +403,19 @@ object FittedLine {
         let x = FloatSample(values: left);
         let y = FloatSample(values: right);
         confirm x.size() == y.size() else throw UnequalSizes.unequal;
-        confirm x.size() >= 2 else throw StatisticsError.because("linear regression requires at least two pairs");
+        confirm x.size() >= 2
+            else throw StatisticsError.because("linear regression requires at least two pairs");
         confirm statistics_paired_valid(x.values(), y.values(), "slope")
-            else throw StatisticsError.because("linear regression requires distinct left-hand values");
+            else throw StatisticsError.because(
+                "linear regression requires distinct left-hand values"
+            );
         gradient = statistics_paired(x.values(), y.values(), "slope");
         offset = statistics_paired(x.values(), y.values(), "intercept");
     }
 
-    prediction(at is float) is float { gradient * at + offset; }
+    prediction(at is float) is float {
+        gradient * at + offset;
+    }
 
     residual(at is float, observed is float) is float {
         observed - self.prediction(at);

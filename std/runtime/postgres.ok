@@ -11,11 +11,19 @@ module runtime/postgres v1.0.0;
 // failure is one of "message", "truncated", "width", "utf8", "integer",
 // "floating", "nonfinite", "bytea"; a whole page has an empty failure.
 native object PgPageState;
+
 native pg_page(rows is @byte, width is int, types is @int) is PgPageState;
+
 native pg_page_failure(page is PgPageState) is string;
+
 native pg_page_rows(page is PgPageState) is int;
+
 native pg_page_kinds(page is PgPageState) is @int;
+
 native pg_page_values(page is PgPageState) is @int;
+
 native pg_page_floats(page is PgPageState) is @float;
+
 native pg_page_texts(page is PgPageState) is @string;
+
 native pg_page_blobs(page is PgPageState) is @@byte;

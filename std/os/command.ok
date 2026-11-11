@@ -60,25 +60,34 @@ object Command does Commanding {
         command_directory = directory;
     }
 
-    program() is Path { command_program; }
+    program() is Path {
+        command_program;
+    }
 
-    arguments() is @string { command_arguments; }
+    arguments() is @string {
+        command_arguments;
+    }
 
-    environment() is Environment { command_environment; }
+    environment() is Environment {
+        command_environment;
+    }
 
-    directory() is DirectoryLocating { command_directory; }
+    directory() is DirectoryLocating {
+        command_directory;
+    }
 
     string() is string {
-        "Command(program: "
-            + self.quoted(command_program.string())
-            + ", arguments: ["
-            + self.rendered_arguments()
-            + "], directory: "
-            + self.quoted(command_directory.path().string())
-            + ")";
+        "Command(program: " +
+            self.quoted(command_program.string()) +
+            ", arguments: [" +
+            self.rendered_arguments() +
+            "], directory: " +
+            self.quoted(command_directory.path().string()) +
+            ")";
     }
 
     private:
+
     rendered_arguments() is string {
         self.rendered_arguments_from(0);
     }
@@ -88,8 +97,8 @@ object Command does Commanding {
             "";
         }
         else {
-            self.quoted(command_arguments[index])
-                + if index + 1 < command_arguments.size() {
+            self.quoted(command_arguments[index]) +
+                if index + 1 < command_arguments.size() {
                     ", " + self.rendered_arguments_from(index + 1);
                 }
                 else {
@@ -99,14 +108,14 @@ object Command does Commanding {
     }
 
     quoted(origin is string) is string {
-        "\""
-            + origin
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t")
-            + "\"";
+        "\"" +
+            origin
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t") +
+            "\"";
     }
 }
 
@@ -122,25 +131,34 @@ object InheritedCommand does Commanding {
         command_arguments = arguments;
     }
 
-    program() is Path { command_program; }
+    program() is Path {
+        command_program;
+    }
 
-    arguments() is @string { command_arguments; }
+    arguments() is @string {
+        command_arguments;
+    }
 
-    environment() is Environment { Environment(); }
+    environment() is Environment {
+        Environment();
+    }
 
-    directory() is DirectoryLocating { WorkingDirectory(); }
+    directory() is DirectoryLocating {
+        WorkingDirectory();
+    }
 
     string() is string {
-        "Command(program: "
-            + self.quoted(command_program.string())
-            + ", arguments: ["
-            + self.rendered_arguments()
-            + "], directory: "
-            + self.quoted(self.directory().path().string())
-            + ")";
+        "Command(program: " +
+            self.quoted(command_program.string()) +
+            ", arguments: [" +
+            self.rendered_arguments() +
+            "], directory: " +
+            self.quoted(self.directory().path().string()) +
+            ")";
     }
 
     private:
+
     rendered_arguments() is string {
         self.rendered_arguments_from(0);
     }
@@ -150,8 +168,8 @@ object InheritedCommand does Commanding {
             "";
         }
         else {
-            self.quoted(command_arguments[index])
-                + if index + 1 < command_arguments.size() {
+            self.quoted(command_arguments[index]) +
+                if index + 1 < command_arguments.size() {
                     ", " + self.rendered_arguments_from(index + 1);
                 }
                 else {
@@ -161,13 +179,13 @@ object InheritedCommand does Commanding {
     }
 
     quoted(origin is string) is string {
-        "\""
-            + origin
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t")
-            + "\"";
+        "\"" +
+            origin
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t") +
+            "\"";
     }
 }

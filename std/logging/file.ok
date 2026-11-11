@@ -1,71 +1,209 @@
 module logging/file v1.0.0;
+
 import "fs/path" take Path;
-import "fs/stat" take PermissionMode,Permissions;
+import "fs/stat" take PermissionMode, Permissions;
 import "fs/file" take FileError;
-import "io/stream" take ByteSource,Writing,Closing,IncompleteWrite;
+import "io/stream" take ByteSource, Writing, Closing, IncompleteWrite;
 import "async/atomic" take Atomic;
 import "runtime/fs";
 
-object FileLogOptions{
-    has mode is PermissionMode;has flushing,syncing is bool;
-    FileLogOptions(permissions is PermissionMode,flush_each is bool,sync_each is bool){mode=permissions;flushing=flush_each;syncing=sync_each;}
-    permissions() is PermissionMode{mode;}
-    flush_each() is bool{flushing;}sync_each() is bool{syncing;}
+object FileLogOptions {
+    has mode is PermissionMode;
+    has flushing, syncing is bool;
+
+    FileLogOptions(permissions is PermissionMode, flush_each is bool, sync_each is bool) {
+        mode = permissions;
+        flushing = flush_each;
+        syncing = sync_each;
+    }
+
+    permissions() is PermissionMode {
+        mode;
+    }
+
+    flush_each() is bool {
+        flushing;
+    }
+
+    sync_each() is bool {
+        syncing;
+    }
 }
-object LogPermissionBits{
-    has origin is Permissions;LogPermissionBits(origin is Permissions){self.origin=origin;}
-    value() is int{(if origin.readable(){4;}else{0;})+(if origin.writable(){2;}else{0;})+(if origin.executable(){1;}else{0;});}
+
+object LogPermissionBits {
+    has origin is Permissions;
+
+    LogPermissionBits(origin is Permissions) {
+        self.origin = origin;
+    }
+
+    value() is int {
+        (if origin.readable() {
+            4;
+        }
+        else {
+            0;
+        }) + (if origin.writable() {
+            2;
+        }
+        else {
+            0;
+        }) + (if origin.executable() {
+            1;
+        }
+        else {
+            0;
+        });
+    }
 }
+
 // Shared internal state for plain and rotating owners. No public stream view
 // exposes the descriptor. Every operation is non-suspending; native append is
 // a single attempt, and IncompleteWrite retains the exact consumed prefix.
-object LogFileState does Writing,Closing{
-    has path is Path;has options is FileLogOptions;
-    has handles is Atomic<@fs.FileHandle>;has finished is Atomic<bool>;
-    LogFileState(path is Path,options is FileLogOptions){
-        self.path=path;self.options=options;
-        let empty is @fs.FileHandle=[];handles=Atomic(empty);finished=Atomic(false);
+object LogFileState does Writing, Closing {
+    has path is Path;
+    has options is FileLogOptions;
+    has handles is Atomic<@fs.FileHandle>;
+    has finished is Atomic<bool>;
+
+    LogFileState(path is Path, options is FileLogOptions) {
+        self.path = path;
+        self.options = options;
+        let empty is @fs.FileHandle = [];
+        handles = Atomic(empty);
+        finished = Atomic(false);
     }
-    write(source is ByteSource) is void{
+
+    write(source is ByteSource) is void {
         confirm !self.closed() else throw ClosedLogFile.closed;
-        let bytes=source.bytes();let handle=self.handle();
-        try{
-            let written=fs.write(handle,bytes);
-            confirm written==bytes.size() else throw IncompleteWrite.after(written);
-            if options.flush_each(){fs.flush(handle);}
-            if options.sync_each(){fs.sync(handle);}
-        }catch failure is NativeFailure{throw FileError(failure:failure).value();}
+        let bytes = source.bytes();
+        let handle = self.handle();
+        try {
+            let written = fs.write(handle, bytes);
+            confirm written == bytes.size() else throw IncompleteWrite.after(written);
+            if options.flush_each() {
+                fs.flush(handle);
+            }
+            if options.sync_each() {
+                fs.sync(handle);
+            }
+        }
+        catch failure is NativeFailure {
+            throw FileError(failure: failure).value();
+        }
     }
-    flush() is void{
+
+    flush() is void {
         confirm !self.closed() else throw ClosedLogFile.closed;
-        if handles.value().size()>0{try{fs.flush(handles.value()[0]);}catch failure is NativeFailure{throw FileError(failure:failure).value();}}
+        if handles.value().size() > 0 {
+            try {
+                fs.flush(handles.value()[0]);
+            }
+            catch failure is NativeFailure {
+                throw FileError(failure: failure).value();
+            }
+        }
     }
-    reopen() is void{
+
+    reopen() is void {
         confirm !self.closed() else throw ClosedLogFile.closed;
-        let replacement=self.open();let previous=handles.value();handles.replace([replacement]);
-        if previous.size()>0{try{fs.close(previous[0]);}catch failure is NativeFailure{throw FileError(failure:failure).value();}}
+        let replacement = self.open();
+        let previous = handles.value();
+        handles.replace([replacement]);
+        if previous.size() > 0 {
+            try {
+                fs.close(previous[0]);
+            }
+            catch failure is NativeFailure {
+                throw FileError(failure: failure).value();
+            }
+        }
     }
-    release() is void{
-        let previous=handles.value();let empty is @fs.FileHandle=[];handles.replace(empty);
-        if previous.size()>0{try{fs.close(previous[0]);}catch failure is NativeFailure{throw FileError(failure:failure).value();}}
+
+    release() is void {
+        let previous = handles.value();
+        let empty is @fs.FileHandle = [];
+        handles.replace(empty);
+        if previous.size() > 0 {
+            try {
+                fs.close(previous[0]);
+            }
+            catch failure is NativeFailure {
+                throw FileError(failure: failure).value();
+            }
+        }
     }
-    closed() is bool{finished.value();}
-    close() is void{if !self.closed(){finished.replace(true);self.release();}}
-    destroy{self.close();}
+
+    closed() is bool {
+        finished.value();
+    }
+
+    close() is void {
+        if !self.closed() {
+            finished.replace(true);
+            self.release();
+        }
+    }
+
+    destroy {
+        self.close();
+    }
+
     private:
-    handle() is fs.FileHandle{if handles.value().size()==0{let opened=self.open();handles.replace([opened]);}handles.value()[0];}
-    open() is fs.FileHandle{
+
+    handle() is fs.FileHandle {
+        if handles.value().size() == 0 {
+            let opened = self.open();
+            handles.replace([opened]);
+        }
+        handles.value()[0];
+    }
+
+    open() is fs.FileHandle {
         confirm !self.closed() else throw ClosedLogFile.closed;
-        let mode=options.permissions();let bits=LogPermissionBits(mode.owner()).value()*64+LogPermissionBits(mode.group()).value()*8+LogPermissionBits(mode.others()).value()+mode.special()*512;
-        try{fs.open(fs.path_encode(path.string()),22,bits);}catch failure is NativeFailure{throw FileError(failure:failure).value();}
+        let mode = options.permissions();
+        let bits = LogPermissionBits(mode.owner()).value() * 64 + LogPermissionBits(mode.group()).value() * 8 + LogPermissionBits(
+            mode.others()
+        ).value() + mode.special() * 512;
+        try {
+            fs.open(fs.path_encode(path.string()), 22, bits);
+        }
+        catch failure is NativeFailure {
+            throw FileError(failure: failure).value();
+        }
     }
 }
-object LogFile does Writing,Closing{
+
+object LogFile does Writing, Closing {
     has state is LogFileState;
-    LogFile(path is Path,options is FileLogOptions){state=LogFileState(path,options);}
-    write(source is ByteSource) is void{state.write(source);}
-    flush() is void{state.flush();}reopen() is void{state.reopen();}
-    closed() is bool{state.closed();}close() is void{state.close();}
-    destroy{self.close();}
+
+    LogFile(path is Path, options is FileLogOptions) {
+        state = LogFileState(path, options);
+    }
+
+    write(source is ByteSource) is void {
+        state.write(source);
+    }
+
+    flush() is void {
+        state.flush();
+    }
+
+    reopen() is void {
+        state.reopen();
+    }
+
+    closed() is bool {
+        state.closed();
+    }
+
+    close() is void {
+        state.close();
+    }
+
+    destroy {
+        self.close();
+    }
 }
+
 enum ClosedLogFile is Error = (closed);

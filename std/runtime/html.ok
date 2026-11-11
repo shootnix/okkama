@@ -6,16 +6,27 @@ module runtime/html v1.0.0;
 native object HtmlEventsState;
 
 native html_events(origin is string) is HtmlEventsState;
+
 native html_event_count(origin is HtmlEventsState) is int;
+
 native html_event_kind(origin is HtmlEventsState, index is int) is int;
+
 native html_event_name(origin is HtmlEventsState, index is int) is string;
+
 native html_event_value(origin is HtmlEventsState, index is int) is string;
+
 native html_event_target(origin is HtmlEventsState, index is int) is string;
+
 native html_event_data(origin is HtmlEventsState, index is int) is string;
+
 native html_event_self_closing(origin is HtmlEventsState, index is int) is bool;
+
 native html_attribute_count(origin is HtmlEventsState, index is int) is int;
+
 native html_attribute_name(origin is HtmlEventsState, event is int, attribute is int) is string;
+
 native html_attribute_valued(origin is HtmlEventsState, event is int, attribute is int) is bool;
+
 native html_attribute_value(origin is HtmlEventsState, event is int, attribute is int) is string;
 
 // html_events eagerly snapshots the source into ordered lexical events; this
@@ -27,7 +38,9 @@ native html_attribute_value(origin is HtmlEventsState, event is int, attribute i
 // Pure immutable handles remain registry-owned; no I/O or external resources.
 
 test "HTML event coordinates and attributes preserve lexical order" {
-    let events = html_events("<!DOCTYPE html><?xml data?><P disabled title='a&amp;b'/>text<!--note--></p>");
+    let events = html_events(
+        "<!DOCTYPE html><?xml data?><P disabled title='a&amp;b'/>text<!--note--></p>"
+    );
     test.is(html_event_count(events), 6);
     test.is(html_event_kind(events, 0), 4);
     test.is(html_event_value(events, 0), "DOCTYPE html");
@@ -47,11 +60,30 @@ test "HTML event coordinates and attributes preserve lexical order" {
     test.is(html_event_value(events, 4), "note");
     test.is(html_event_kind(events, 5), 1);
 }
+
 test "HTML empty and invalid indices return predictable results" {
     test.is(html_event_count(html_events("")), 0);
     let events = html_events("<p a=1>");
     for [-1, 1] -> index {
-        test.is(try {html_event_kind(events, index); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
-        test.is(try {html_attribute_name(events, 0, index); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
+        test.is(
+            try {
+                html_event_kind(events, index);
+                "";
+            }
+            catch failure is NativeFailure {
+                failure.code();
+            },
+            "invalid_input"
+        );
+        test.is(
+            try {
+                html_attribute_name(events, 0, index);
+                "";
+            }
+            catch failure is NativeFailure {
+                failure.code();
+            },
+            "invalid_input"
+        );
     }
 }

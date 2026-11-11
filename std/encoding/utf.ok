@@ -1,9 +1,7 @@
 module encoding/utf v1.0.0;
 
-import "runtime/utf" take
-    utf8_encode, utf8_decode, utf8_valid_prefix,
-    utf16_encode, utf16_decode, utf16_valid_prefix,
-    utf32_encode, utf32_decode, utf32_valid_prefix;
+import "runtime/utf" take utf8_encode, utf8_decode, utf8_valid_prefix, utf16_encode, utf16_decode,
+    utf16_valid_prefix, utf32_encode, utf32_decode, utf32_valid_prefix;
 
 // Explicit, immutable UTF codecs.
 //
@@ -73,7 +71,12 @@ object Utf16Encoded {
     private:
 
     order_name() is string {
-        if order == ByteOrder.big { "big"; } else { "little"; }
+        if order == ByteOrder.big {
+            "big";
+        }
+        else {
+            "little";
+        }
     }
 }
 
@@ -96,7 +99,12 @@ object Utf16Decoded {
     private:
 
     order_name() is string {
-        if order == ByteOrder.big { "big"; } else { "little"; }
+        if order == ByteOrder.big {
+            "big";
+        }
+        else {
+            "little";
+        }
     }
 }
 
@@ -116,7 +124,12 @@ object Utf32Encoded {
     private:
 
     order_name() is string {
-        if order == ByteOrder.big { "big"; } else { "little"; }
+        if order == ByteOrder.big {
+            "big";
+        }
+        else {
+            "little";
+        }
     }
 }
 
@@ -139,7 +152,12 @@ object Utf32Decoded {
     private:
 
     order_name() is string {
-        if order == ByteOrder.big { "big"; } else { "little"; }
+        if order == ByteOrder.big {
+            "big";
+        }
+        else {
+            "little";
+        }
     }
 }
 
@@ -157,18 +175,70 @@ enum InvalidUtf32 is Error = (at(offset is int));
 // Empty observations are repeatable; codecs own only immutable input values.
 
 test "UTF encoders preserve noncharacters in every byte order" {
-    let text = Utf8Decoded([byte(239), byte(183), byte(144), byte(239), byte(191), byte(191), byte(244), byte(143), byte(191), byte(191)]).string();
+    let text = Utf8Decoded(
+        [
+            byte(239),
+            byte(183),
+            byte(144),
+            byte(239),
+            byte(191),
+            byte(191),
+            byte(244),
+            byte(143),
+            byte(191),
+            byte(191)
+        ]
+    ).string();
     test.is(text.length(), 3);
-    test.is(Utf16Encoded(text, ByteOrder.big).bytes(), [byte(253), byte(208), byte(255), byte(255), byte(219), byte(255), byte(223), byte(255)]);
-    test.is(Utf16Encoded(text, ByteOrder.little).bytes(), [byte(208), byte(253), byte(255), byte(255), byte(255), byte(219), byte(255), byte(223)]);
-    test.is(Utf32Encoded(text, ByteOrder.big).bytes(), [byte(0), byte(0), byte(253), byte(208), byte(0), byte(0), byte(255), byte(255), byte(0), byte(16), byte(255), byte(255)]);
-    test.is(Utf32Encoded(text, ByteOrder.little).bytes(), [byte(208), byte(253), byte(0), byte(0), byte(255), byte(255), byte(0), byte(0), byte(255), byte(255), byte(16), byte(0)]);
+    test.is(
+        Utf16Encoded(text, ByteOrder.big).bytes(),
+        [byte(253), byte(208), byte(255), byte(255), byte(219), byte(255), byte(223), byte(255)]
+    );
+    test.is(
+        Utf16Encoded(text, ByteOrder.little).bytes(),
+        [byte(208), byte(253), byte(255), byte(255), byte(255), byte(219), byte(255), byte(223)]
+    );
+    test.is(
+        Utf32Encoded(text, ByteOrder.big).bytes(),
+        [
+            byte(0),
+            byte(0),
+            byte(253),
+            byte(208),
+            byte(0),
+            byte(0),
+            byte(255),
+            byte(255),
+            byte(0),
+            byte(16),
+            byte(255),
+            byte(255)
+        ]
+    );
+    test.is(
+        Utf32Encoded(text, ByteOrder.little).bytes(),
+        [
+            byte(208),
+            byte(253),
+            byte(0),
+            byte(0),
+            byte(255),
+            byte(255),
+            byte(0),
+            byte(0),
+            byte(255),
+            byte(255),
+            byte(16),
+            byte(0)
+        ]
+    );
     for [ByteOrder.big, ByteOrder.little] -> order {
         test.is(Utf16Decoded(Utf16Encoded(text, order).bytes(), order).string(), text);
         test.is(Utf32Decoded(Utf32Encoded(text, order).bytes(), order).string(), text);
     }
     test.is(Utf8Decoded(Utf8Encoded(text).bytes()).string(), text);
 }
+
 test "empty UTF values and BOM-shaped scalars are stable" {
     test.is(Utf8Encoded("").bytes().size(), 0);
     test.is(Utf8Decoded([]).string(), "");
@@ -182,8 +252,39 @@ test "empty UTF values and BOM-shaped scalars are stable" {
     test.is(bom.length(), 1);
     test.is(Utf16Encoded(bom, ByteOrder.big).bytes(), [byte(254), byte(255)]);
 }
+
 test "malformed scalar boundaries retain typed byte offsets" {
-    test.is(try {Utf8Decoded([byte(65), byte(192), byte(128)]).string(); -1;} catch InvalidUtf8.at(offset) {offset;}, 1);
-    test.is(try {Utf16Decoded([byte(0), byte(65), byte(216), byte(0)], ByteOrder.big).string(); -1;} catch InvalidUtf16.at(offset) {offset;}, 2);
-    test.is(try {Utf32Decoded([byte(0), byte(0), byte(0), byte(65), byte(0), byte(17), byte(0), byte(0)], ByteOrder.big).string(); -1;} catch InvalidUtf32.at(offset) {offset;}, 4);
+    test.is(
+        try {
+            Utf8Decoded([byte(65), byte(192), byte(128)]).string();
+            -1;
+        }
+        catch InvalidUtf8.at(offset) {
+            offset;
+        },
+        1
+    );
+    test.is(
+        try {
+            Utf16Decoded([byte(0), byte(65), byte(216), byte(0)], ByteOrder.big).string();
+            -1;
+        }
+        catch InvalidUtf16.at(offset) {
+            offset;
+        },
+        2
+    );
+    test.is(
+        try {
+            Utf32Decoded(
+                [byte(0), byte(0), byte(0), byte(65), byte(0), byte(17), byte(0), byte(0)],
+                ByteOrder.big
+            ).string();
+            -1;
+        }
+        catch InvalidUtf32.at(offset) {
+            offset;
+        },
+        4
+    );
 }

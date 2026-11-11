@@ -1,9 +1,17 @@
 module testing/context v1.0.0;
+
 import "runtime/testing" take test_context_active;
+
 object TestContext {
     TestContext();
-    require() is void {confirm test_context_active() else throw MissingTestContext.missing;}
+
+    require() is void {
+        confirm test_context_active() else throw MissingTestContext.missing;
+    }
 }
+
 enum MissingTestContext is Error = (missing);
 
-test "test context requirement succeeds only in a running case" {TestContext().require();}
+test "test context requirement succeeds only in a running case" {
+    TestContext().require();
+}

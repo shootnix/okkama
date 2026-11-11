@@ -1,4 +1,5 @@
 module async/atomic v1.0.0;
+
 import "io/stream" take Closing;
 
 /*
@@ -36,12 +37,26 @@ sentinel can be read. The cell's identity is stable; object fields remain immuta
 */
 object Atomic<T> does Closing {
     Atomic(value is T) {}
-    value() is T { panic "Atomic.value is a VM intrinsic"; }
-    replace(value is T) is void { panic "Atomic.replace is a VM intrinsic"; }
+
+    value() is T {
+        panic "Atomic.value is a VM intrinsic";
+    }
+
+    replace(value is T) is void {
+        panic "Atomic.replace is a VM intrinsic";
+    }
+
     compare_and_replace(expected is T, revised is T) is bool {
         panic "Atomic.compare_and_replace is a VM intrinsic";
     }
-    closed() is bool { panic "Atomic.closed is a VM intrinsic"; }
-    close() is void { panic "Atomic.close is a VM intrinsic"; }
+
+    closed() is bool {
+        panic "Atomic.closed is a VM intrinsic";
+    }
+
+    close() is void {
+        panic "Atomic.close is a VM intrinsic";
+    }
 }
+
 enum AtomicClosed is Error = (closed);

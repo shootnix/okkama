@@ -4,15 +4,21 @@ module runtime/utf v1.0.0;
 // same scalar-value, byte-order and malformed-prefix contract.
 
 native utf8_encode(origin is string) is @byte;
+
 native utf8_decode(origin is @byte) is string;
+
 native utf8_valid_prefix(origin is @byte) is int;
 
 native utf16_encode(origin is string, order is string) is @byte;
+
 native utf16_decode(origin is @byte, order is string) is string;
+
 native utf16_valid_prefix(origin is @byte, order is string) is int;
 
 native utf32_encode(origin is string, order is string) is @byte;
+
 native utf32_decode(origin is @byte, order is string) is string;
+
 native utf32_valid_prefix(origin is @byte, order is string) is int;
 
 // Encoders/decoders preserve all Unicode scalars, including noncharacters.
@@ -36,8 +42,36 @@ test "native UTF scalar boundaries agree with decoding" {
         test.is(utf32_decode(wide32, order), text);
     }
 }
+
 test "native malformed UTF never becomes replacement text" {
-    test.is(try {utf8_decode([byte(192), byte(128)]); "";} catch failure is NativeFailure {failure.code();}, "invalid_data");
-    test.is(try {utf16_decode([byte(216), byte(0)], "big"); "";} catch failure is NativeFailure {failure.code();}, "invalid_data");
-    test.is(try {utf32_decode([byte(0), byte(17), byte(0), byte(0)], "big"); "";} catch failure is NativeFailure {failure.code();}, "invalid_data");
+    test.is(
+        try {
+            utf8_decode([byte(192), byte(128)]);
+            "";
+        }
+        catch failure is NativeFailure {
+            failure.code();
+        },
+        "invalid_data"
+    );
+    test.is(
+        try {
+            utf16_decode([byte(216), byte(0)], "big");
+            "";
+        }
+        catch failure is NativeFailure {
+            failure.code();
+        },
+        "invalid_data"
+    );
+    test.is(
+        try {
+            utf32_decode([byte(0), byte(17), byte(0), byte(0)], "big");
+            "";
+        }
+        catch failure is NativeFailure {
+            failure.code();
+        },
+        "invalid_data"
+    );
 }

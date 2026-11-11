@@ -5,7 +5,6 @@ import "regex/pattern" take Regex, RegexQuery, RegexMatchObservation, RegexRange
 import "regex/range" take RegexRange;
 import "regex/match" take RegexCapture, RegexMatch, RegexMatching;
 
-
 // Mandatory searches are matches themselves; there is no projected value().
 // Work is lazy and memoized by an opaque query state on the first observation.
 //
@@ -31,53 +30,113 @@ import "regex/match" take RegexCapture, RegexMatch, RegexMatching;
 
 object FirstRegexMatch does RegexMatching {
     has observation is RegexMatchObservation;
+
     FirstRegexMatch(origin is string, regex is Regex) {
         observation = RegexMatchObservation(
-            origin, regex, RegexRange(0, origin.length()), RegexQuery.first,
+            origin,
+            regex,
+            RegexRange(0, origin.length()),
+            RegexQuery.first,
         );
     }
+
     FirstRegexMatch(origin is string, regex is Regex, range is RegexRange) {
         observation = RegexMatchObservation(origin, regex, range, RegexQuery.first);
     }
-    text() is string { observation.match().text(); }
-    range() is RegexRange { observation.match().range(); }
-    capture(index is int) is RegexCapture { observation.match().capture(index); }
-    group(name is string) is RegexCapture { observation.match().group(name); }
-    captures() is @RegexCapture { observation.match().captures(); }
+
+    text() is string {
+        observation.match().text();
+    }
+
+    range() is RegexRange {
+        observation.match().range();
+    }
+
+    capture(index is int) is RegexCapture {
+        observation.match().capture(index);
+    }
+
+    group(name is string) is RegexCapture {
+        observation.match().group(name);
+    }
+
+    captures() is @RegexCapture {
+        observation.match().captures();
+    }
 }
 
 object PrefixRegexMatch does RegexMatching {
     has observation is RegexMatchObservation;
+
     PrefixRegexMatch(origin is string, regex is Regex) {
         observation = RegexMatchObservation(
-            origin, regex, RegexRange(0, origin.length()), RegexQuery.prefix,
+            origin,
+            regex,
+            RegexRange(0, origin.length()),
+            RegexQuery.prefix,
         );
     }
+
     PrefixRegexMatch(origin is string, regex is Regex, range is RegexRange) {
         observation = RegexMatchObservation(origin, regex, range, RegexQuery.prefix);
     }
-    text() is string { observation.match().text(); }
-    range() is RegexRange { observation.match().range(); }
-    capture(index is int) is RegexCapture { observation.match().capture(index); }
-    group(name is string) is RegexCapture { observation.match().group(name); }
-    captures() is @RegexCapture { observation.match().captures(); }
+
+    text() is string {
+        observation.match().text();
+    }
+
+    range() is RegexRange {
+        observation.match().range();
+    }
+
+    capture(index is int) is RegexCapture {
+        observation.match().capture(index);
+    }
+
+    group(name is string) is RegexCapture {
+        observation.match().group(name);
+    }
+
+    captures() is @RegexCapture {
+        observation.match().captures();
+    }
 }
 
 object EntireRegexMatch does RegexMatching {
     has observation is RegexMatchObservation;
+
     EntireRegexMatch(origin is string, regex is Regex) {
         observation = RegexMatchObservation(
-            origin, regex, RegexRange(0, origin.length()), RegexQuery.entire,
+            origin,
+            regex,
+            RegexRange(0, origin.length()),
+            RegexQuery.entire,
         );
     }
+
     EntireRegexMatch(origin is string, regex is Regex, range is RegexRange) {
         observation = RegexMatchObservation(origin, regex, range, RegexQuery.entire);
     }
-    text() is string { observation.match().text(); }
-    range() is RegexRange { observation.match().range(); }
-    capture(index is int) is RegexCapture { observation.match().capture(index); }
-    group(name is string) is RegexCapture { observation.match().group(name); }
-    captures() is @RegexCapture { observation.match().captures(); }
+
+    text() is string {
+        observation.match().text();
+    }
+
+    range() is RegexRange {
+        observation.match().range();
+    }
+
+    capture(index is int) is RegexCapture {
+        observation.match().capture(index);
+    }
+
+    group(name is string) is RegexCapture {
+        observation.match().group(name);
+    }
+
+    captures() is @RegexCapture {
+        observation.match().captures();
+    }
 }
 
 object RegexMatches does Iterating<RegexMatching> {
@@ -99,7 +158,11 @@ object RegexMatches does Iterating<RegexMatching> {
 
     cursor() is Cursor<RegexMatching> {
         confirm selected.end() <= source.length()
-            else throw RegexRangeOutsideInput.range(selected.start(), selected.end(), source.length());
+            else throw RegexRangeOutsideInput.range(
+                selected.start(),
+                selected.end(),
+                source.length()
+            );
         RegexMatchCursor(
             origin: source,
             regex: pattern,
@@ -109,7 +172,9 @@ object RegexMatches does Iterating<RegexMatching> {
         );
     }
 
-    found() is bool { self.cursor().available(); }
+    found() is bool {
+        self.cursor().available();
+    }
 }
 
 object RegexMatchCursor does Cursor<RegexMatching> {
@@ -140,7 +205,9 @@ object RegexMatchCursor does Cursor<RegexMatching> {
         );
     }
 
-    available() is bool { !exhausted && observation.found(); }
+    available() is bool {
+        !exhausted && observation.found();
+    }
 
     item() is RegexMatching {
         confirm self.available() else throw IterationEnded.ended;
@@ -155,7 +222,12 @@ object RegexMatchCursor does Cursor<RegexMatching> {
             origin: source,
             regex: pattern,
             position: if empty {
-                if range.end() == limit { limit; } else { range.end() + 1; }
+                if range.end() == limit {
+                    limit;
+                }
+                else {
+                    range.end() + 1;
+                }
             }
             else {
                 range.end();

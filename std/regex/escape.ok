@@ -10,6 +10,12 @@ import "runtime/regex" take regex_escape;
 //     EntireRegexMatch(literal, pattern).text(); // "price: $5.00"
 object EscapedRegex {
     has source is string;
-    EscapedRegex(origin is string) { source = origin; }
-    string() is string { regex_escape(source); }
+
+    EscapedRegex(origin is string) {
+        source = origin;
+    }
+
+    string() is string {
+        regex_escape(source);
+    }
 }

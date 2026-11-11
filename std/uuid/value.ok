@@ -1,12 +1,7 @@
 module uuid/value v1.0.0;
 
 import "compare" take Comparing, Order;
-import "runtime/uuid" take
-    uuid_valid,
-    uuid_bytes,
-    uuid_string,
-    uuid_version,
-    uuid_variant;
+import "runtime/uuid" take uuid_valid, uuid_bytes, uuid_string, uuid_version, uuid_variant;
 
 // Immutable 128-bit UUID values.
 //
@@ -43,10 +38,18 @@ object Uuid does Comparing<Uuid> {
 
     variant() is UuidVariant {
         match uuid_variant(origin) {
-            case "rfc" { UuidVariant.rfc; }
-            case "microsoft" { UuidVariant.microsoft; }
-            case "reserved" { UuidVariant.reserved; }
-            else { UuidVariant.future; }
+            case "rfc" {
+                UuidVariant.rfc;
+            }
+            case "microsoft" {
+                UuidVariant.microsoft;
+            }
+            case "reserved" {
+                UuidVariant.reserved;
+            }
+            else {
+                UuidVariant.future;
+            }
         }
     }
 

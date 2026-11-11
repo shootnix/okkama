@@ -15,8 +15,11 @@ object HostDigest {
     HostDigest(algorithm is string, key is @byte, width is int) {
         handle = try {
             digest_create(algorithm, key, width);
-        } catch failure is NativeFailure {
-            if failure.code() == "invalid_input" { throw InvalidCryptoInput.because(failure.message()); }
+        }
+        catch failure is NativeFailure {
+            if failure.code() == "invalid_input" {
+                throw InvalidCryptoInput.because(failure.message());
+            }
             throw CryptoUnavailable.because(failure.message());
         };
         self.width = width;
@@ -28,14 +31,22 @@ object HostDigest {
     }
 
     appended(origin is @byte) is HostDigest {
-        if origin.size() == 0 { self; } else { HostDigest(digest_update(handle, origin), width); }
+        if origin.size() == 0 {
+            self;
+        }
+        else {
+            HostDigest(digest_update(handle, origin), width);
+        }
     }
 
     bytes() is @byte {
         try {
             digest_bytes(handle, width);
-        } catch failure is NativeFailure {
-            if failure.code() == "invalid_input" { throw InvalidCryptoInput.because(failure.message()); }
+        }
+        catch failure is NativeFailure {
+            if failure.code() == "invalid_input" {
+                throw InvalidCryptoInput.because(failure.message());
+            }
             throw CryptoUnavailable.because(failure.message());
         }
     }
@@ -45,5 +56,7 @@ test "host digest states branch and reject unknown algorithms" {
     let origin = HostDigest("sha256", [], 0).appended([1.byte()]);
     test.ok(origin.appended([2.byte()]).bytes() != origin.bytes());
     test.is(origin.appended([]).bytes(), origin.bytes());
-    test.throws(CryptoUnavailable) { HostDigest("md4", [], 0); };
+    test.throws(CryptoUnavailable) {
+        HostDigest("md4", [], 0);
+    };
 }

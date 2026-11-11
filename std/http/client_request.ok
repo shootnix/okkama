@@ -1,8 +1,9 @@
 module http/client_request v1.0.0;
+
 import "http/message" take Request;
-import "http/target" take RequestTargetKind,OriginTarget;
+import "http/target" take RequestTargetKind, OriginTarget;
 import "http/version" take HttpVersion;
-import "http/header" take Header,HeaderName;
+import "http/header" take Header, HeaderName;
 import "url/value" take Url;
 import "url/value" take ParsedUrl;
 import "http/target" take AbsoluteTarget;
@@ -12,25 +13,60 @@ import "http/header" take Headers;
 // Prepare an ordinary direct request before DNS or socket effects. CONNECT and
 // OPTIONS * require separate explicitly routed consumers.
 object HttpDirectRequest {
-    has url is Url;has request is Request;
-    HttpDirectRequest(origin is Request){
-        confirm origin.target().kind()==RequestTargetKind.absolute else throw InvalidClientRequest.because("absolute HTTP URL required");
-        confirm origin.version()==HttpVersion.http_1_1 else throw InvalidClientRequest.because("HTTP1.1 request required");
-        let destination=origin.target().url();let parts=destination.parts();
-        let authority=parts.authority().string();let supplied=origin.headers().values(HeaderName("Host"));
-        confirm supplied.size()<=1 else throw InvalidClientRequest.because("duplicate Host");
-        if supplied.size()==1 {confirm supplied.item(0)==authority else throw InvalidClientRequest.because("Host differs from URL authority");}
-        let fields=if supplied.size()==1{origin.headers();}else{origin.headers().addition(Header(HeaderName("Host"),authority));};
-        let path=if parts.path()==""{"/";}else{parts.path();};
-        let target=OriginTarget(path,parts.query());
-        request=Request(origin.method(),target,fields,origin.body(),origin.version());url=destination;
+    has url is Url;
+    has request is Request;
+
+    HttpDirectRequest(origin is Request) {
+        confirm origin.target().kind() == RequestTargetKind.absolute
+            else throw InvalidClientRequest.because("absolute HTTP URL required");
+        confirm origin.version() == HttpVersion.http_1_1
+            else throw InvalidClientRequest.because("HTTP1.1 request required");
+        let destination = origin.target().url();
+        let parts = destination.parts();
+        let authority = parts.authority().string();
+        let supplied = origin.headers().values(HeaderName("Host"));
+        confirm supplied.size() <= 1 else throw InvalidClientRequest.because("duplicate Host");
+        if supplied.size() == 1 {
+            confirm supplied.item(0) == authority
+                else throw InvalidClientRequest.because("Host differs from URL authority");
+        }
+        let fields = if supplied.size() == 1 {
+            origin.headers();
+        }
+        else {
+            origin.headers().addition(Header(HeaderName("Host"), authority));
+        };
+        let path = if parts.path() == "" {
+            "/";
+        }
+        else {
+            parts.path();
+        };
+        let target = OriginTarget(path, parts.query());
+        request = Request(origin.method(), target, fields, origin.body(), origin.version());
+        url = destination;
     }
-    url() is Url{url;}request() is Request{request;}
+
+    url() is Url {
+        url;
+    }
+
+    request() is Request {
+        request;
+    }
 }
+
 enum InvalidClientRequest is Error = (because(reason is string));
+
 test "direct route adds Host and a slash without adding optional client features" {
-    let request=Request(Method("GET"),AbsoluteTarget(ParsedUrl("http://example.test").value()),Headers([]));
-    let wire=HttpDirectRequest(request).request();
-    test.ok(wire.target().string()=="/" && wire.headers().first(HeaderName("Host"))=="example.test");
+    let request = Request(
+        Method("GET"),
+        AbsoluteTarget(ParsedUrl("http://example.test").value()),
+        Headers([])
+    );
+    let wire = HttpDirectRequest(request).request();
+    test.ok(
+        wire.target().string() == "/" && wire.headers().first(HeaderName("Host")) == "example.test"
+    );
     test.ok(!wire.headers().membership(HeaderName("User-Agent")));
 }

@@ -1,7 +1,6 @@
 module encoding/base64 v1.0.0;
 
-import "runtime/base64" take
-    base64_encode, base64_invalid_offset, base64_decode;
+import "runtime/base64" take base64_encode, base64_invalid_offset, base64_decode;
 
 // Strict RFC 4648 Base64 with explicit standard and URL-safe alphabets.
 //
@@ -45,7 +44,12 @@ object Base64Encoded {
     private:
 
     alphabet_name() is string {
-        if alphabet == Base64Alphabet.standard { "standard"; } else { "url"; }
+        if alphabet == Base64Alphabet.standard {
+            "standard";
+        }
+        else {
+            "url";
+        }
     }
 }
 
@@ -73,7 +77,12 @@ object Base64Decoded {
     private:
 
     alphabet_name() is string {
-        if alphabet == Base64Alphabet.standard { "standard"; } else { "url"; }
+        if alphabet == Base64Alphabet.standard {
+            "standard";
+        }
+        else {
+            "url";
+        }
     }
 }
 

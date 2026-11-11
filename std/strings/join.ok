@@ -7,19 +7,28 @@ import "collections/list" take List, EmptyList;
 // Construction traverses the source once; string() observes only the snapshot.
 object Joined {
     has snapshot is JoinedParts;
+
     Joined(separator is string, values is Iterating<string>) {
         snapshot = values.reduce(JoinedParts(separator, 10000, 1048576)) -> parts, value {
             parts.following(value);
         };
     }
-    Joined(separator is string, values is Iterating<string>, maximum_items is int,
-        maximum_length is int) {
+
+    Joined(
+        separator is string,
+        values is Iterating<string>,
+        maximum_items is int,
+        maximum_length is int
+    ) {
         confirm maximum_items >= 0 && maximum_length >= 0 else throw InvalidJoinLimits.invalid;
         snapshot = values.reduce(JoinedParts(separator, maximum_items, maximum_length)) -> parts, value {
             parts.following(value);
         };
     }
-    string() is string { snapshot.string(); }
+
+    string() is string {
+        snapshot.string();
+    }
 }
 
 // Importable immutable snapshot collaborator; no module-private declarations.
@@ -28,6 +37,7 @@ object JoinedParts {
     has maximum_items, maximum_length is int;
     has used is int = 0;
     has values is List<string>;
+
     JoinedParts(separator is string, maximum_items is int, maximum_length is int) {
         confirm maximum_items >= 0 && maximum_length >= 0 else throw InvalidJoinLimits.invalid;
         self.separator = separator;
@@ -36,17 +46,26 @@ object JoinedParts {
         let empty is List<string> = EmptyList();
         values = empty;
     }
+
     following(value is string) is ^JoinedParts {
         confirm values.size() < maximum_items else throw JoinLimitExceeded.kind(JoinLimit.items);
-        let gap = if values.size() > 0 { separator.length(); } else { 0; };
+        let gap = if values.size() > 0 {
+            separator.length();
+        }
+        else {
+            0;
+        };
         confirm gap <= maximum_length - used else throw JoinLimitExceeded.kind(JoinLimit.length);
         confirm value.length() <= maximum_length - used - gap
             else throw JoinLimitExceeded.kind(JoinLimit.length);
         ^used = used + gap + value.length();
         ^values = values.prefix(value);
     }
+
     string() is string {
-        let backwards is @string = values.map() -> value { value; };
+        let backwards is @string = values.map() -> value {
+            value;
+        };
         let ordered is @string = (0..backwards.size()).map() -> index {
             backwards[backwards.size() - 1 - index];
         };
@@ -55,5 +74,7 @@ object JoinedParts {
 }
 
 enum JoinLimit = (items, length);
+
 enum InvalidJoinLimits is Error = (invalid);
+
 enum JoinLimitExceeded is Error = (kind(kind is JoinLimit));

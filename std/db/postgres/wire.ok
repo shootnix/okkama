@@ -1,4 +1,5 @@
 module db/postgres/wire v1.0.0;
+
 import "io/stream" take AsyncReading, AsyncWriting;
 import "io/decorators" take ByteSnapshot;
 import "io/buffer" take ByteBuffer;
@@ -21,77 +22,129 @@ import "cell" take Cell;
 // for a result page.
 object PgInt32 {
     has value is int;
-    PgInt32(value is int) { self.value = value; }
+
+    PgInt32(value is int) {
+        self.value = value;
+    }
+
     bytes() is @byte {
-        [((value >> 24) & 255).byte(), ((value >> 16) & 255).byte(), ((value >> 8) & 255).byte(), (value & 255).byte()];
+        [
+            ((value >> 24) & 255).byte(),
+            ((value >> 16) & 255).byte(),
+            ((value >> 8) & 255).byte(),
+            (value & 255).byte()
+        ];
     }
 }
 
 object PgInt16 {
     has value is int;
-    PgInt16(value is int) { self.value = value; }
-    bytes() is @byte { [((value >> 8) & 255).byte(), (value & 255).byte()]; }
+
+    PgInt16(value is int) {
+        self.value = value;
+    }
+
+    bytes() is @byte {
+        [((value >> 8) & 255).byte(), (value & 255).byte()];
+    }
 }
 
 object PgCString {
     has text is string;
-    PgCString(text is string) { self.text = text; }
-    bytes() is @byte { @byte(Utf8Encoded(text).bytes()..., 0.byte()); }
+
+    PgCString(text is string) {
+        self.text = text;
+    }
+
+    bytes() is @byte {
+        @byte(Utf8Encoded(text).bytes()..., 0.byte());
+    }
 }
 
 // One frontend message with a type byte.
 object PgFrame {
     has kind is byte;
     has body is @byte;
+
     PgFrame(kind is string, body is @byte) {
         self.kind = Utf8Encoded(kind).bytes()[0];
         self.body = body;
     }
-    bytes() is @byte { @byte(kind, PgInt32(body.size() + 4).bytes()..., body...); }
+
+    bytes() is @byte {
+        @byte(kind, PgInt32(body.size() + 4).bytes()..., body...);
+    }
 }
 
 // Startup-family message without a type byte (StartupMessage, SSLRequest).
 object PgUntypedFrame {
     has body is @byte;
-    PgUntypedFrame(body is @byte) { self.body = body; }
-    bytes() is @byte { @byte(PgInt32(body.size() + 4).bytes()..., body...); }
+
+    PgUntypedFrame(body is @byte) {
+        self.body = body;
+    }
+
+    bytes() is @byte {
+        @byte(PgInt32(body.size() + 4).bytes()..., body...);
+    }
 }
 
 // One backend message: type character and body.
 object PgMessage {
     has kind is string;
     has body is @byte;
+
     PgMessage(kind is string, body is @byte) {
         self.kind = kind;
         self.body = body;
     }
-    kind() is string { kind; }
-    body() is @byte { body; }
-    fields() is PgFields { PgFields(body); }
+
+    kind() is string {
+        kind;
+    }
+
+    body() is @byte {
+        body;
+    }
+
+    fields() is PgFields {
+        PgFields(body);
+    }
 }
 
 // Sequential reader of one message body.
 object PgFields {
     has body is @byte;
     has position is Atomic<int>;
+
     PgFields(body is @byte) {
         self.body = body;
         position = Atomic(0);
     }
-    remaining() is int { body.size() - position.value(); }
+
+    remaining() is int {
+        body.size() - position.value();
+    }
+
     take(count is int) is @byte {
         let start = self.advance(count);
         body.slice(start, start + count);
     }
-    byte() is int { body[self.advance(1)].int(); }
+
+    byte() is int {
+        body[self.advance(1)].int();
+    }
+
     int16() is int {
         let start = self.advance(2);
         ByteRange(body, start, start + 2).integer(Signedness.signed, ByteOrder.big);
     }
+
     int32() is int {
         let start = self.advance(4);
         ByteRange(body, start, start + 4).integer(Signedness.signed, ByteOrder.big);
     }
+
     cstring() is string {
         let start = position.value();
         let end = ByteSearch(body, [0.byte()]).from(start);
@@ -99,14 +152,18 @@ object PgFields {
         position.replace(end + 1);
         ByteRange(body, start, end).text();
     }
-    rest() is @byte { self.take(self.remaining()); }
+
+    rest() is @byte {
+        self.take(self.remaining());
+    }
 
     private:
 
     // The start of the next `count` bytes, consumed.
     advance(count is int) is int {
         let start = position.value();
-        confirm count >= 0 && start + count <= body.size() else throw PgWireFailure.because("message body is truncated");
+        confirm count >= 0 && start + count <= body.size()
+            else throw PgWireFailure.because("message body is truncated");
         position.replace(start + count);
         start;
     }
@@ -115,15 +172,23 @@ object PgFields {
 // Buffered backend message reader over a borrowed stream.
 object PgInput {
     has input is ByteInput;
-    PgInput(source is AsyncReading) { input = ByteInput(source); }
 
-    available() is int { input.available(); }
-
-    async ensure(count is int) is void {
-        confirm await input.ensure(count) else throw PgWireFailure.because("server closed the connection");
+    PgInput(source is AsyncReading) {
+        input = ByteInput(source);
     }
 
-    take(count is int) is @byte { input.take(count); }
+    available() is int {
+        input.available();
+    }
+
+    async ensure(count is int) is void {
+        confirm await input.ensure(count)
+            else throw PgWireFailure.because("server closed the connection");
+    }
+
+    take(count is int) is @byte {
+        input.take(count);
+    }
 
     // One byte, without framing (SSLRequest answer).
     async single() is int {
@@ -135,7 +200,9 @@ object PgInput {
     // more bytes are needed. Hot loops try this before message().
     buffered() is @PgMessage {
         let length = self.length();
-        if length < 0 || input.available() < length + 1 { return []; }
+        if length < 0 || input.available() < length + 1 {
+            return [];
+        }
         let kind = input.peek(0);
         input.skip(5);
         [PgMessage(Utf8Decoded([kind]).string(), input.take(length - 4))];
@@ -149,9 +216,12 @@ object PgInput {
         let count = Cell(0);
         loop {
             let at = end.value();
-            last if count.value() >= limit || input.available() < at + 5 || input.peek(at) != 68.byte();
+            last if count.value() >= limit
+                || input.available() < at + 5
+                || input.peek(at) != 68.byte();
             let length = input.range(at + 1, at + 5).integer(Signedness.signed, ByteOrder.big);
-            confirm length >= 4 && length <= 1073741824 else throw PgWireFailure.because("invalid message length");
+            confirm length >= 4 && length <= 1073741824
+                else throw PgWireFailure.because("invalid message length");
             last if input.available() < at + 1 + length;
             end.replace(at + 1 + length);
             count.replace(count.value() + 1);
@@ -161,7 +231,9 @@ object PgInput {
 
     async message() is PgMessage {
         let ready = self.buffered();
-        if ready.size() == 1 { return ready[0]; }
+        if ready.size() == 1 {
+            return ready[0];
+        }
         await self.ensure(5);
         let length = self.length();
         await self.ensure(length + 1);
@@ -174,9 +246,12 @@ object PgInput {
 
     // The length of the next message, -1 when its header is not buffered.
     length() is int {
-        if input.available() < 5 { return -1; }
+        if input.available() < 5 {
+            return -1;
+        }
         let length = input.range(1, 5).integer(Signedness.signed, ByteOrder.big);
-        confirm length >= 4 && length <= 1073741824 else throw PgWireFailure.because("invalid message length");
+        confirm length >= 4 && length <= 1073741824
+            else throw PgWireFailure.because("invalid message length");
         length;
     }
 }
@@ -185,52 +260,84 @@ object PgInput {
 object PgDataRows {
     has bytes is @byte;
     has count is int;
+
     PgDataRows(bytes is @byte, count is int) {
         self.bytes = bytes;
         self.count = count;
     }
-    bytes() is @byte { bytes; }
-    count() is int { count; }
+
+    bytes() is @byte {
+        bytes;
+    }
+
+    count() is int {
+        count;
+    }
 }
 
 // Concatenation of byte runs through one native buffer.
 object PgJoined {
     has parts is @@byte;
-    PgJoined(parts is @@byte) { self.parts = parts; }
+
+    PgJoined(parts is @@byte) {
+        self.parts = parts;
+    }
+
     bytes() is @byte {
         let joined = ByteBuffer();
         defer joined.closing().close();
         let output = joined.writing();
-        for parts -> part { output.write(ByteSnapshot(part)); }
+        for parts -> part {
+            output.write(ByteSnapshot(part));
+        }
         joined.content().bytes();
     }
 }
 
 object PgOutput {
     has sink is AsyncWriting;
-    PgOutput(sink is AsyncWriting) { self.sink = sink; }
-    async send(bytes is @byte) is void { await sink.write(ByteSnapshot(bytes)); }
+
+    PgOutput(sink is AsyncWriting) {
+        self.sink = sink;
+    }
+
+    async send(bytes is @byte) is void {
+        await sink.write(ByteSnapshot(bytes));
+    }
 }
 
 enum PgWireFailure is Error = (because(reason is string));
 
 test "frames carry big-endian self-inclusive lengths" {
-    test.is(PgFrame("Q", PgCString("SELECT 1").bytes()).bytes().slice(0, 5), [81.byte(), 0.byte(), 0.byte(), 0.byte(), 13.byte()]);
-    test.is(PgUntypedFrame(PgInt32(80877103).bytes()).bytes(), [0.byte(), 0.byte(), 0.byte(), 8.byte(), 4.byte(), 210.byte(), 22.byte(), 47.byte()]);
+    test.is(
+        PgFrame("Q", PgCString("SELECT 1").bytes()).bytes().slice(0, 5),
+        [81.byte(), 0.byte(), 0.byte(), 0.byte(), 13.byte()]
+    );
+    test.is(
+        PgUntypedFrame(PgInt32(80877103).bytes()).bytes(),
+        [0.byte(), 0.byte(), 0.byte(), 8.byte(), 4.byte(), 210.byte(), 22.byte(), 47.byte()]
+    );
     test.is(PgInt16(-1).bytes(), [255.byte(), 255.byte()]);
 }
 
 test "joined runs keep order and boundaries" {
-    test.is(PgJoined([[1.byte()], [], [2.byte(), 3.byte()]]).bytes(), [1.byte(), 2.byte(), 3.byte()]);
+    test.is(
+        PgJoined([[1.byte()], [], [2.byte(), 3.byte()]]).bytes(),
+        [1.byte(), 2.byte(), 3.byte()]
+    );
     let empty is @@byte = [];
     test.is(PgJoined(empty).bytes().size(), 0);
 }
 
 test "fields decode integers and strings" {
-    let fields = PgFields(@byte(PgInt32(-2).bytes()..., PgCString("ok").bytes()..., PgInt16(7).bytes()...));
+    let fields = PgFields(
+        @byte(PgInt32(-2).bytes()..., PgCString("ok").bytes()..., PgInt16(7).bytes()...)
+    );
     test.is(fields.int32(), -2);
     test.is(fields.cstring(), "ok");
     test.is(fields.int16(), 7);
     test.is(fields.remaining(), 0);
-    test.throws(PgWireFailure) { fields.byte(); };
+    test.throws(PgWireFailure) {
+        fields.byte();
+    };
 }

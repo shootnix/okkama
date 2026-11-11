@@ -2,16 +2,9 @@ module os/pipeline_capture v1.0.0;
 
 import "os/command" take Commanding;
 import "os/process" take Exit, ExitKind, ProcessFailure;
-import "runtime/process" take
-    PipelineState,
-    CapturedPipeline,
-    pipeline_state_create,
-    pipeline_state_add,
-    pipeline_state_capture,
-    captured_pipeline_statuses,
-    captured_pipeline_overflow_stream,
-    captured_pipeline_overflow_index,
-    captured_pipeline_output,
+import "runtime/process" take PipelineState, CapturedPipeline, pipeline_state_create,
+    pipeline_state_add, pipeline_state_capture, captured_pipeline_statuses,
+    captured_pipeline_overflow_stream, captured_pipeline_overflow_index, captured_pipeline_output,
     captured_pipeline_errors;
 
 // PipelineCapture connects commands directly without a shell. stdout from
@@ -69,12 +62,16 @@ object PipelineCapture {
             );
             let overflow is int = captured_pipeline_overflow_stream(captured);
             if overflow > 0 {
-                throw PipelineCaptureLimitExceeded.detailed(captured_pipeline_overflow_index(captured), if overflow == 1 {
+                throw PipelineCaptureLimitExceeded.detailed(
+                    captured_pipeline_overflow_index(captured),
+                    if overflow == 1 {
                         PipelineStream.output;
                     }
                     else {
                         PipelineStream.errors;
-                    }, limit);
+                    },
+                    limit
+                );
             }
             let statuses is @%string:int = captured_pipeline_statuses(captured);
             let exits is @Exit = statuses.map() -> status {
@@ -92,16 +89,25 @@ object PipelineCapture {
     }
 
     private:
+
     exit_kind(status is %string:int) is ExitKind {
         if status["state"] == 1 {
             ExitKind.exited;
         }
         else {
             match status["code"] {
-                case 1 { ExitKind.terminated; }
-                case 2 { ExitKind.killed; }
-                case 3 { ExitKind.interrupted; }
-                else { ExitKind.other; }
+                case 1 {
+                    ExitKind.terminated;
+                }
+                case 2 {
+                    ExitKind.killed;
+                }
+                case 3 {
+                    ExitKind.interrupted;
+                }
+                else {
+                    ExitKind.other;
+                }
             }
         }
     }
@@ -118,15 +124,25 @@ object CompletedPipeline {
         captured_errors = errors;
     }
 
-    exits() is @Exit { completed_exits; }
+    exits() is @Exit {
+        completed_exits;
+    }
 
-    output() is @byte { captured_output; }
+    output() is @byte {
+        captured_output;
+    }
 
-    errors() is @@byte { captured_errors; }
+    errors() is @@byte {
+        captured_errors;
+    }
 }
 
 enum EmptyPipeline is Error = (empty);
 
 enum InvalidPipelineCaptureLimit is Error = (limit(limit is int));
 
-enum PipelineCaptureLimitExceeded is Error = (detailed(command_index is int, stream is PipelineStream, limit is int));
+enum PipelineCaptureLimitExceeded is Error = (detailed(
+    command_index is int,
+    stream is PipelineStream,
+    limit is int
+));

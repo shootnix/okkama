@@ -8,19 +8,31 @@ import "error" take InvalidArgument;
 // Explicit form serialization: every entry is assigned; * is safe, ~ is not.
 object FormUrlEncoded {
     has origin is QueryParameters;
-    FormUrlEncoded(origin is QueryParameters) {self.origin=origin;}
+
+    FormUrlEncoded(origin is QueryParameters) {
+        self.origin = origin;
+    }
+
     string() is string {
-        let entries=origin.entries();
-        let parts is @string=(0..entries.size()).map() -> index {
-            let entry=entries.item(index);
-            self.field(entry.name())+"="+self.field(entry.value());
+        let entries = origin.entries();
+        let parts is @string = (0..entries.size()).map() -> index {
+            let entry = entries.item(index);
+            self.field(entry.name()) + "=" + self.field(entry.value());
         };
         parts.join("&");
     }
-    bytes() is @byte {Utf8Encoded(self.string()).bytes();}
+
+    bytes() is @byte {
+        Utf8Encoded(self.string()).bytes();
+    }
+
     private:
+
     field(text is string) is string {
-        PercentEncoded(text,UrlComponent.data).string().replace("%20","+").replace("%2A","*").replace("~","%7E");
+        PercentEncoded(text, UrlComponent.data).string().replace("%20", "+").replace("%2A", "*").replace(
+            "~",
+            "%7E"
+        );
     }
 }
 
@@ -28,20 +40,35 @@ object FormUrlEncoded {
 object ParsedForm {
     has origin is @byte;
     has maximum_parameters, maximum_bytes is int;
-    ParsedForm(origin is @byte) {self.origin=origin;maximum_parameters=10000;maximum_bytes=1048576;}
-    ParsedForm(origin is @byte, maximum_parameters is int, maximum_bytes is int) {
-        confirm maximum_parameters>=0 && maximum_bytes>=0 else throw InvalidArgument.because("form limits must be nonnegative");
-        self.origin=origin;self.maximum_parameters=maximum_parameters;self.maximum_bytes=maximum_bytes;
+
+    ParsedForm(origin is @byte) {
+        self.origin = origin;
+        maximum_parameters = 10000;
+        maximum_bytes = 1048576;
     }
+
+    ParsedForm(origin is @byte, maximum_parameters is int, maximum_bytes is int) {
+        confirm maximum_parameters >= 0 && maximum_bytes >= 0
+            else throw InvalidArgument.because("form limits must be nonnegative");
+        self.origin = origin;
+        self.maximum_parameters = maximum_parameters;
+        self.maximum_bytes = maximum_bytes;
+    }
+
     parameters() is QueryParameters {
-        try {ParameterParsing(origin,true,maximum_parameters,maximum_bytes).parameters();}
-        catch InvalidQueryEncoding.located(offset, _) {throw InvalidFormEncoding.at(offset);}
+        try {
+            ParameterParsing(origin, true, maximum_parameters, maximum_bytes).parameters();
+        }
+        catch InvalidQueryEncoding.located(offset, _) {
+            throw InvalidFormEncoding.at(offset);
+        }
     }
 }
+
 enum InvalidFormEncoding is Error = (at(offset is int));
 
 test "form plus and literal plus have different encodings" {
-    let parsed=ParsedForm(Utf8Encoded("a=+%2B").bytes()).parameters();
-    test.is(parsed.first("a")," +");
-    test.is(FormUrlEncoded(parsed).string(),"a=+%2B");
+    let parsed = ParsedForm(Utf8Encoded("a=+%2B").bytes()).parameters();
+    test.is(parsed.first("a"), " +");
+    test.is(FormUrlEncoded(parsed).string(), "a=+%2B");
 }

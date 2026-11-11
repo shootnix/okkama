@@ -3,13 +3,8 @@ module fs/watch v1.0.0;
 import "fs/file" take FileSystemFailure;
 import "fs/path" take Path;
 import "io/stream" take Closing;
-import "runtime/fs" take
-    FileWatchState,
-    path_encode,
-    file_watch_create,
-    file_watch_event,
-    file_watch_closed,
-    file_watch_close;
+import "runtime/fs" take FileWatchState, path_encode, file_watch_create, file_watch_event,
+    file_watch_closed, file_watch_close;
 
 // FileWatch observes an existing file or directory without exposing blocking
 // operating-system events through Cursor. A directory watch covers the
@@ -70,9 +65,13 @@ object FileEvent {
         previous = previous_path.string();
     }
 
-    path() is Path { origin; }
+    path() is Path {
+        origin;
+    }
 
-    kind() is FileEventKind { classification; }
+    kind() is FileEventKind {
+        classification;
+    }
 
     previous_path() is Path {
         confirm !previous.empty() else throw MissingPreviousPath.path(origin.string());
@@ -101,12 +100,23 @@ object FileWatch does Closing {
         };
         let name is string = details["kind"];
         let kind is FileEventKind = match name {
-            case "created" { FileEventKind.created; }
-            case "modified" { FileEventKind.modified; }
-            case "removed" { FileEventKind.removed; }
-            case "renamed" { FileEventKind.renamed; }
+            case "created" {
+                FileEventKind.created;
+            }
+            case "modified" {
+                FileEventKind.modified;
+            }
+            case "removed" {
+                FileEventKind.removed;
+            }
+            case "renamed" {
+                FileEventKind.renamed;
+            }
             else {
-                throw FileSystemFailure.detailed("invalid_data", "runtime returned an unknown file-event kind");
+                throw FileSystemFailure.detailed(
+                    "invalid_data",
+                    "runtime returned an unknown file-event kind"
+                );
             }
         };
         if kind == FileEventKind.renamed {

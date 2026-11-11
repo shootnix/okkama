@@ -110,7 +110,9 @@ object KeyedFrequencies<T> does Iterating<Frequency<T>>, Sizing {
 
     KeyedFrequencies(values is Iterating<T>) {
         let empty is %T:int = [:];
-        let items = values.map() -> value { value; };
+        let items = values.map() -> value {
+            value;
+        };
         counts = items.reduce(empty) -> found, value {
             let seen = found[value] else 0;
             found + [value: seen + 1];
@@ -144,7 +146,9 @@ object FrequencyTally<T> {
     has items is @T;
 
     FrequencyTally(values is Iterating<T>) {
-        items = values.map() -> value { value; };
+        items = values.map() -> value {
+            value;
+        };
     }
 
     frequencies() is List<Frequency<T>> {
@@ -155,7 +159,12 @@ object FrequencyTally<T> {
             }
             else {
                 (0..found.size() + 1).map() -> index {
-                    if index < found.size() { found[index]; } else { value; }
+                    if index < found.size() {
+                        found[index];
+                    }
+                    else {
+                        value;
+                    }
                 };
             }
         };
@@ -164,7 +173,12 @@ object FrequencyTally<T> {
         (0..distinct.size()).reduce(empty) -> frequencies, offset {
             let item is T = distinct[distinct.size() - 1 - offset];
             let amount is int = items.reduce(0) -> count, value {
-                if value == item { count + 1; } else { count; }
+                if value == item {
+                    count + 1;
+                }
+                else {
+                    count;
+                }
             };
             frequencies.prefix(Frequency(item: item, amount: amount));
         };
@@ -224,10 +238,9 @@ object FrequencyBuilding<T> {
         else {
             revised.frequencies().prefix(Frequency(item: value, amount: 1));
         };
-        let ordered is List<Frequency<T>> = reversed.reduce(EmptyList())
-            -> frequencies, frequency {
-                frequencies.prefix(frequency);
-            };
+        let ordered is List<Frequency<T>> = reversed.reduce(EmptyList()) -> frequencies, frequency {
+            frequencies.prefix(frequency);
+        };
         FrequencyBuilding(frequencies: ordered, total: quantity + 1);
     }
 }
@@ -284,7 +297,9 @@ test "counts in first-occurrence order" {
     test.is(counts.amount("red"), 2);
     test.is(counts.amount("green"), 1);
     test.is(counts.amount("missing"), 0);
-    let order = counts.map() -> frequency { frequency.item() + ":" + frequency.amount().string(); };
+    let order = counts.map() -> frequency {
+        frequency.item() + ":" + frequency.amount().string();
+    };
     test.is(order, ["blue:3", "red:2", "green:1"]);
 }
 
@@ -303,7 +318,9 @@ test "keyed counts in key order" {
     test.is(counts.amount("blue"), 3);
     test.is(counts.amount("red"), 2);
     test.is(counts.amount("missing"), 0);
-    let order = counts.map() -> frequency { frequency.item() + ":" + frequency.amount().string(); };
+    let order = counts.map() -> frequency {
+        frequency.item() + ":" + frequency.amount().string();
+    };
     test.is(order, ["blue:3", "green:1", "red:2"]);
     let nothing is @int = [];
     test.is(KeyedFrequencies(values: nothing).size(), 0);

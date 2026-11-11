@@ -33,7 +33,8 @@ object EscapedHtml {
             .replace("<", "&lt;").replace(">", "&gt;");
         if quotes {
             escaped.replace("\"", "&quot;").replace("'", "&#39;");
-        } else {
+        }
+        else {
             escaped;
         }
     }
@@ -61,7 +62,8 @@ object UnescapedHtml {
     string() is string {
         if origin == "" {
             "";
-        } else {
+        }
+        else {
             // Prevent markup recognition without escaping original references.
             // No literal '<' remains: exactly one text event, decoded once.
             let state = html_events(origin.replace("<", "&lt;"));

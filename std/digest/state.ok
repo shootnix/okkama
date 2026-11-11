@@ -19,12 +19,20 @@ role Digesting {
 
     fake {
         has origin is @byte = [];
-        bytes() is @byte { origin; }
+
+        bytes() is @byte {
+            origin;
+        }
+
         state(origin is @byte) is ^Digesting {
             let before = self.origin;
             let appended is @byte = (0..before.size() + origin.size()).map() -> i {
-                if i < before.size() { before[i]; }
-                else { origin[i - before.size()]; }
+                if i < before.size() {
+                    before[i];
+                }
+                else {
+                    origin[i - before.size()];
+                }
             };
             ^origin = appended;
         }

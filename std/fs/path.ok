@@ -1,11 +1,7 @@
 module fs/path v1.0.0;
 
 import "compare" take Comparing, Order;
-import "runtime/fs" take
-    path_join,
-    path_parent,
-    path_child,
-    path_absolute;
+import "runtime/fs" take path_join, path_parent, path_child, path_absolute;
 import "runtime/system" take system_platform;
 
 // Purely lexical paths for native and foreign path grammars.
@@ -88,8 +84,9 @@ object Path does Comparing<Path> {
     }
 
     // Expose the lexical grammar without probing the host filesystem.
-    style() is PathStyle { path_style; }
-
+    style() is PathStyle {
+        path_style;
+    }
 }
 
 object NativePathStyle {
@@ -111,7 +108,12 @@ object PathStyleCode {
     PathStyleCode(:origin);
 
     value() is int {
-        if origin == PathStyle.posix { 0; } else { 1; }
+        if origin == PathStyle.posix {
+            0;
+        }
+        else {
+            1;
+        }
     }
 }
 

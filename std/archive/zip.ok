@@ -28,28 +28,56 @@ object ZipCompression {
 
     ZipCompression(method is ZipMethod) {
         selected = method;
-        effective = if method == ZipMethod.deflated {6;}
+        effective = if method == ZipMethod.deflated {
+            6;
+        }
         else {
-            if method == ZipMethod.bzip2 {9;}
-            else {if method == ZipMethod.zstandard {3;} else {0;}}
+            if method == ZipMethod.bzip2 {
+                9;
+            }
+            else {
+                if method == ZipMethod.zstandard {
+                    3;
+                }
+                else {
+                    0;
+                }
+            }
         };
     }
 
     ZipCompression(method is ZipMethod, level is int) {
         confirm method != ZipMethod.stored && method != ZipMethod.lzma
             else throw InvalidArgument.because("this ZIP method has no configurable level");
-        let valid = if method == ZipMethod.deflated {level >= 0 && level <= 9;}
+        let valid = if method == ZipMethod.deflated {
+            level >= 0 && level <= 9;
+        }
         else {
-            if method == ZipMethod.bzip2 {level >= 1 && level <= 9;}
-            else {level >= -131072 && level <= 22;}
+            if method == ZipMethod.bzip2 {
+                level >= 1 && level <= 9;
+            }
+            else {
+                level >= -131072 && level <= 22;
+            }
         };
-        confirm valid else throw InvalidArgument.because("compression level is outside the ZIP method range");
+        confirm valid
+            else throw InvalidArgument.because("compression level is outside the ZIP method range");
         selected = method;
-        effective = if method == ZipMethod.zstandard && level == 0 {3;} else {level;};
+        effective = if method == ZipMethod.zstandard && level == 0 {
+            3;
+        }
+        else {
+            level;
+        };
     }
 
-    method() is ZipMethod {selected;}
-    level() is int {effective;}
+    method() is ZipMethod {
+        selected;
+    }
+
+    level() is int {
+        effective;
+    }
 }
 
 // One member's explicit ZIP writing request: an archive value paired with a
@@ -73,29 +101,65 @@ object ZipArchiveEntry {
         choice = compression;
     }
 
-    entry() is ArchiveEntry {origin;}
-    compression() is ZipCompression {choice;}
+    entry() is ArchiveEntry {
+        origin;
+    }
+
+    compression() is ZipCompression {
+        choice;
+    }
 }
 
 test "ZIP choices resolve defaults and preserve the method" {
-    test.is(ZipCompression(ZipMethod.stored).level(),0);
-    test.is(ZipCompression(ZipMethod.deflated).level(),6);
-    test.is(ZipCompression(ZipMethod.bzip2).level(),9);
-    test.is(ZipCompression(ZipMethod.lzma).level(),0);
-    test.is(ZipCompression(ZipMethod.zstandard).level(),3);
-    test.is(ZipCompression(ZipMethod.deflated,0).method(),ZipMethod.deflated);
+    test.is(ZipCompression(ZipMethod.stored).level(), 0);
+    test.is(ZipCompression(ZipMethod.deflated).level(), 6);
+    test.is(ZipCompression(ZipMethod.bzip2).level(), 9);
+    test.is(ZipCompression(ZipMethod.lzma).level(), 0);
+    test.is(ZipCompression(ZipMethod.zstandard).level(), 3);
+    test.is(ZipCompression(ZipMethod.deflated, 0).method(), ZipMethod.deflated);
 }
+
 test "ZIP level ranges are exact and zero has method-specific meaning" {
-    test.is(ZipCompression(ZipMethod.deflated,0).level(),0);
-    test.is(ZipCompression(ZipMethod.zstandard,0),ZipCompression(ZipMethod.zstandard,3));
-    test.is(ZipCompression(ZipMethod.zstandard,-131072).level(),-131072);
-    test.is(ZipCompression(ZipMethod.zstandard,22).level(),22);
+    test.is(ZipCompression(ZipMethod.deflated, 0).level(), 0);
+    test.is(ZipCompression(ZipMethod.zstandard, 0), ZipCompression(ZipMethod.zstandard, 3));
+    test.is(ZipCompression(ZipMethod.zstandard, -131072).level(), -131072);
+    test.is(ZipCompression(ZipMethod.zstandard, 22).level(), 22);
     // Imported InvalidArgument identity is checked by the ordinary-import suite.
-    test.ok(try {ZipCompression(ZipMethod.deflated,10);false;} catch e is Error {true;});
-    test.ok(try {ZipCompression(ZipMethod.bzip2,0);false;} catch e is Error {true;});
-    test.ok(try {ZipCompression(ZipMethod.zstandard,23);false;} catch e is Error {true;});
-    test.ok(try {ZipCompression(ZipMethod.stored,0);false;} catch e is Error {true;});
-    test.ok(try {ZipCompression(ZipMethod.lzma,0);false;} catch e is Error {true;});
+    test.ok(try {
+        ZipCompression(ZipMethod.deflated, 10);
+        false;
+    }
+    catch e is Error {
+        true;
+    });
+    test.ok(try {
+        ZipCompression(ZipMethod.bzip2, 0);
+        false;
+    }
+    catch e is Error {
+        true;
+    });
+    test.ok(try {
+        ZipCompression(ZipMethod.zstandard, 23);
+        false;
+    }
+    catch e is Error {
+        true;
+    });
+    test.ok(try {
+        ZipCompression(ZipMethod.stored, 0);
+        false;
+    }
+    catch e is Error {
+        true;
+    });
+    test.ok(try {
+        ZipCompression(ZipMethod.lzma, 0);
+        false;
+    }
+    catch e is Error {
+        true;
+    });
 }
 
 // ZipArchiveEntry is covered by ordinary-import consumer suite 319. The root

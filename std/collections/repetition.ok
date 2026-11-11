@@ -192,7 +192,9 @@ object EmptyCycleCursor<T> does Cursor<T> {
 
     EmptyCycleCursor(origin is Sequencing<T>) {
         confirm origin.size() == 0
-            else throw InvalidArgument.because("cannot create an empty cursor for a non-empty cycle");
+            else throw InvalidArgument.because(
+                "cannot create an empty cursor for a non-empty cycle"
+            );
         self.origin = origin;
     }
 

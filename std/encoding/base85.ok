@@ -1,7 +1,6 @@
 module encoding/base85 v1.0.0;
 
-import "runtime/base85" take
-    base85_encode, base85_invalid_offset, base85_decode;
+import "runtime/base85" take base85_encode, base85_invalid_offset, base85_decode;
 
 // Strict Base85 codecs with two genuinely implemented variants.
 //
@@ -41,7 +40,12 @@ object Base85Encoded {
     private:
 
     alphabet_name() is string {
-        if alphabet == Base85Alphabet.ascii85 { "ascii85"; } else { "rfc1924"; }
+        if alphabet == Base85Alphabet.ascii85 {
+            "ascii85";
+        }
+        else {
+            "rfc1924";
+        }
     }
 }
 
@@ -64,7 +68,12 @@ object Base85Decoded {
     private:
 
     alphabet_name() is string {
-        if alphabet == Base85Alphabet.ascii85 { "ascii85"; } else { "rfc1924"; }
+        if alphabet == Base85Alphabet.ascii85 {
+            "ascii85";
+        }
+        else {
+            "rfc1924";
+        }
     }
 }
 

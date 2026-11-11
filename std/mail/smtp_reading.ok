@@ -1,4 +1,5 @@
 module mail/smtp_reading v1.0.0;
+
 import "io/stream" take AsyncReading;
 import "mail/smtp_reply" take SmtpReply, SmtpReplyDecoder, SmtpReplyLimits, SmtpLimitExceeded;
 import "io/decorators" take InvalidReading;
@@ -16,51 +17,105 @@ import "error" take InvalidArgument;
 // cleanup through the awaited source future. No implicit timeout or retry.
 object SmtpReplyReading {
     has pending is Future<SmtpReplyRead>;
+
     SmtpReplyReading(origin is AsyncReading) {
-        pending=SmtpReplyInput(origin,[],SmtpReplyLimits(),4096).read();
+        pending = SmtpReplyInput(origin, [], SmtpReplyLimits(), 4096).read();
     }
+
     SmtpReplyReading(origin is AsyncReading, prefix is @byte) {
-        pending=SmtpReplyInput(origin,prefix,SmtpReplyLimits(),4096).read();
+        pending = SmtpReplyInput(origin, prefix, SmtpReplyLimits(), 4096).read();
     }
-    SmtpReplyReading(origin is AsyncReading, prefix is @byte, limits is SmtpReplyLimits, chunk_bytes is int) {
-        pending=SmtpReplyInput(origin,prefix,limits,chunk_bytes).read();
+
+    SmtpReplyReading(
+        origin is AsyncReading,
+        prefix is @byte,
+        limits is SmtpReplyLimits,
+        chunk_bytes is int
+    ) {
+        pending = SmtpReplyInput(origin, prefix, limits, chunk_bytes).read();
     }
-    result() is Future<SmtpReplyRead> {pending;}
+
+    result() is Future<SmtpReplyRead> {
+        pending;
+    }
 }
+
 object SmtpReplyRead {
-    has value is SmtpReply;has tail is @byte;has count is int;
+    has value is SmtpReply;
+    has tail is @byte;
+    has count is int;
+
     SmtpReplyRead(decoder is SmtpReplyDecoder) {
-        value=decoder.finish();tail=decoder.remainder();count=decoder.consumed();
+        value = decoder.finish();
+        tail = decoder.remainder();
+        count = decoder.consumed();
     }
-    reply() is SmtpReply {value;}
-    remainder() is @byte {tail;}
-    consumed() is int {count;}
+
+    reply() is SmtpReply {
+        value;
+    }
+
+    remainder() is @byte {
+        tail;
+    }
+
+    consumed() is int {
+        count;
+    }
 }
+
 object SmtpReplyInput {
-    has origin is AsyncReading;has prefix is @byte;has limits is SmtpReplyLimits;has chunk_bytes is int;
-    SmtpReplyInput(origin is AsyncReading, prefix is @byte, limits is SmtpReplyLimits, chunk_bytes is int) {
-        confirm chunk_bytes>0 else throw InvalidArgument.because("SMTP read chunk size must be positive");
-        confirm prefix.size()<=limits.wire_bytes() else throw SmtpLimitExceeded.kind("chunk_bytes");
-        self.origin=origin;self.prefix=prefix;self.limits=limits;self.chunk_bytes=chunk_bytes;
+    has origin is AsyncReading;
+    has prefix is @byte;
+    has limits is SmtpReplyLimits;
+    has chunk_bytes is int;
+
+    SmtpReplyInput(
+        origin is AsyncReading,
+        prefix is @byte,
+        limits is SmtpReplyLimits,
+        chunk_bytes is int
+    ) {
+        confirm chunk_bytes > 0
+            else throw InvalidArgument.because("SMTP read chunk size must be positive");
+        confirm prefix.size() <= limits.wire_bytes()
+            else throw SmtpLimitExceeded.kind("chunk_bytes");
+        self.origin = origin;
+        self.prefix = prefix;
+        self.limits = limits;
+        self.chunk_bytes = chunk_bytes;
     }
+
     async read() is SmtpReplyRead {
-        let decoder=SmtpReplyDecoder(limits);decoder=decoder.fed(prefix);
+        let decoder = SmtpReplyDecoder(limits);
+        decoder = decoder.fed(prefix);
         loop {
             last if decoder.complete();
-            let remaining=limits.wire_bytes()-decoder.consumed();
-            confirm remaining>0 else throw SmtpLimitExceeded.kind("wire_bytes");
-            let requested=if chunk_bytes<remaining {chunk_bytes;} else {remaining;};
-            let chunk=await origin.bytes(requested);
-            confirm chunk.size()<=requested else throw InvalidReading.because("SMTP origin returned more bytes than requested");
-            if chunk.size()==0 {decoder.finish();}
-            decoder=decoder.fed(chunk);
+            let remaining = limits.wire_bytes() - decoder.consumed();
+            confirm remaining > 0 else throw SmtpLimitExceeded.kind("wire_bytes");
+            let requested = if chunk_bytes < remaining {
+                chunk_bytes;
+            }
+            else {
+                remaining;
+            };
+            let chunk = await origin.bytes(requested);
+            confirm chunk.size() <= requested
+                else throw InvalidReading.because("SMTP origin returned more bytes than requested");
+            if chunk.size() == 0 {
+                decoder.finish();
+            }
+            decoder = decoder.fed(chunk);
         }
         SmtpReplyRead(decoder);
     }
 }
 
 test "SMTP read result preserves a completed decoder snapshot" {
-    let decoder=SmtpReplyDecoder();decoder=decoder.fed([50.byte(),53.byte(),48.byte(),13.byte(),10.byte(),1.byte()]);
-    let read=SmtpReplyRead(decoder);test.is(read.reply().code(),250);test.is(read.consumed(),5);
-    test.is(read.remainder(),[1.byte()]);
+    let decoder = SmtpReplyDecoder();
+    decoder = decoder.fed([50.byte(), 53.byte(), 48.byte(), 13.byte(), 10.byte(), 1.byte()]);
+    let read = SmtpReplyRead(decoder);
+    test.is(read.reply().code(), 250);
+    test.is(read.consumed(), 5);
+    test.is(read.remainder(), [1.byte()]);
 }

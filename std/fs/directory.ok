@@ -5,13 +5,7 @@ import "collections/list" take List, EmptyList;
 import "fs/file" take FileSystemFailure;
 import "fs/path" take Path;
 import "fs/stat" take FileKind, FileStat, FileStatFromMap;
-import "runtime/fs" take
-    path_encode,
-    lstat,
-    mkdir,
-    rmdir,
-    rename,
-    directory_entries,
+import "runtime/fs" take path_encode, lstat, mkdir, rmdir, rename, directory_entries,
     directory_remove_tree;
 
 // Directory is a narrow path command object. create() creates one level with
@@ -48,7 +42,9 @@ object Directory does DirectoryLocating {
         origin = path;
     }
 
-    path() is Path { origin; }
+    path() is Path {
+        origin;
+    }
 
     existence() is bool {
         try {
@@ -107,7 +103,9 @@ object DirectoryEntry {
         origin = path;
     }
 
-    path() is Path { origin; }
+    path() is Path {
+        origin;
+    }
 
     kind() is FileKind {
         self.stat().kind();
@@ -153,7 +151,9 @@ object DirectoryEntryCursor does Cursor<DirectoryEntry> {
 
     DirectoryEntryCursor(:parent, :names, :position);
 
-    available() is bool { position < names.size(); }
+    available() is bool {
+        position < names.size();
+    }
 
     item() is DirectoryEntry {
         confirm self.available() else throw IterationEnded.ended;
@@ -192,9 +192,13 @@ object DescendantCursor does Cursor<DirectoryEntry> {
 
     DescendantCursor(:current, :following);
 
-    available() is bool { true; }
+    available() is bool {
+        true;
+    }
 
-    item() is DirectoryEntry { current.item(); }
+    item() is DirectoryEntry {
+        current.item();
+    }
 
     successor() is Cursor<DirectoryEntry> {
         let entry is DirectoryEntry = current.item();
@@ -243,11 +247,17 @@ object DescendantCursorFrom {
 object ExhaustedDescendantCursor does Cursor<DirectoryEntry> {
     ExhaustedDescendantCursor();
 
-    available() is bool { false; }
+    available() is bool {
+        false;
+    }
 
-    item() is DirectoryEntry { throw IterationEnded.ended; }
+    item() is DirectoryEntry {
+        throw IterationEnded.ended;
+    }
 
-    successor() is Cursor<DirectoryEntry> { throw IterationEnded.ended; }
+    successor() is Cursor<DirectoryEntry> {
+        throw IterationEnded.ended;
+    }
 }
 
 object DirectoryTree {

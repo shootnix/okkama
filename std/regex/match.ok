@@ -1,12 +1,8 @@
 module regex/match v1.0.0;
 
 import "regex/range" take RegexRange;
-import "runtime/regex" take
-    RegexMatchState,
-    regex_match_capture_count,
-    regex_match_capture_name,
-    regex_match_capture_index,
-    regex_match_capture_span;
+import "runtime/regex" take RegexMatchState, regex_match_capture_count, regex_match_capture_name,
+    regex_match_capture_index, regex_match_capture_span;
 
 // RegexMatching is the observable surface shared by mandatory search results
 // and matches yielded by RegexMatches. Implementations are immutable:
@@ -39,9 +35,13 @@ object RegexMatch does RegexMatching {
         self.state = state;
     }
 
-    text() is string { self.capture(0).text(); }
+    text() is string {
+        self.capture(0).text();
+    }
 
-    range() is RegexRange { self.capture(0).range(); }
+    range() is RegexRange {
+        self.capture(0).range();
+    }
 
     capture(index is int) is RegexCapture {
         let count = regex_match_capture_count(state);
@@ -89,11 +89,17 @@ object RegexCapture {
         label = name;
     }
 
-    index() is int { position; }
+    index() is int {
+        position;
+    }
 
-    name() is string { label; }
+    name() is string {
+        label;
+    }
 
-    matched() is bool { self.span()["start"] >= 0; }
+    matched() is bool {
+        self.span()["start"] >= 0;
+    }
 
     text() is string {
         confirm self.matched() else throw UnmatchedRegexCapture.index(position);
@@ -108,6 +114,7 @@ object RegexCapture {
     }
 
     private:
+
     span() is %string:int {
         regex_match_capture_span(state, position);
     }

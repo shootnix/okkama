@@ -9,6 +9,7 @@ import "error" take InvalidArgument;
 import "collections/iteration" take Cursor, Iterating, IterationEnded;
 
 enum IpVersion = (v4, v6);
+
 enum IpProperty = (unspecified, loopback, link_local, private_network, global, multicast, reserved, documentation);
 
 // Immutable numeric IPv4/IPv6 address, without a port, prefix or interface zone.
@@ -36,51 +37,100 @@ object IpAddress does Comparing<IpAddress> {
     has canonical is string;
 
     IpAddress(origin is string) {
-        confirm origin.length()>0 && origin.length()<=45
+        confirm origin.length() > 0 && origin.length() <= 45
             else throw InvalidIpAddress.origin(origin);
-        let valid=(0..origin.length()).reduce(true) -> valid,index {
-            valid && "0123456789abcdefABCDEF:.".split(origin.slice(index,index+1)).size()==2;
+        let valid = (0..origin.length()).reduce(true) -> valid, index {
+            valid && "0123456789abcdefABCDEF:.".split(origin.slice(index, index + 1)).size() == 2;
         };
         confirm valid else throw InvalidIpAddress.origin(origin);
-        let ipv6=origin.split(":").size()>1;
-        let number=if ipv6 {2;} else {1;};
-        let encoded=try {ip_parse(number,origin,0);}
-            catch failure is NativeFailure {
-                if failure.domain()=="core.net" && failure.code()=="invalid_input" {
-                    throw InvalidIpAddress.origin(origin);
-                }
-                throw;
-            };
-        let length=if ipv6 {22;} else {10;};
-        confirm encoded.size()==length && encoded[0]==byte(79) && encoded[1]==byte(75)
-            && encoded[2]==byte(1) && encoded[3]==number.byte()
-            && encoded[4]==byte(0) && encoded[5]==byte(0)
+        let ipv6 = origin.split(":").size() > 1;
+        let number = if ipv6 {
+            2;
+        }
+        else {
+            1;
+        };
+        let encoded = try {
+            ip_parse(number, origin, 0);
+        }
+        catch failure is NativeFailure {
+            if failure.domain() == "core.net" && failure.code() == "invalid_input" {
+                throw InvalidIpAddress.origin(origin);
+            }
+            throw;
+        };
+        let length = if ipv6 {
+            22;
+        }
+        else {
+            10;
+        };
+        confirm encoded.size() == length
+            && encoded[0] == byte(79)
+            && encoded[1] == byte(75)
+            && encoded[2] == byte(1)
+            && encoded[3] == number.byte()
+            && encoded[4] == byte(0)
+            && encoded[5] == byte(0)
             else panic "IP provider returned an invalid address envelope";
-        family=if ipv6 {IpVersion.v6;} else {IpVersion.v4;};
-        packed=encoded.slice(6,encoded.size());
-        canonical=ip_format(encoded);
+        family = if ipv6 {
+            IpVersion.v6;
+        }
+        else {
+            IpVersion.v4;
+        };
+        packed = encoded.slice(6, encoded.size());
+        canonical = ip_format(encoded);
     }
 
-    version() is IpVersion {family;}
-    bytes() is @byte {packed;}
-    string() is string {canonical;}
-    properties() is Set<IpProperty> {
-        let flags=IpClassification(packed).flags();
-        let categories=[IpProperty.unspecified,IpProperty.loopback,IpProperty.link_local,
-            IpProperty.private_network,IpProperty.global,IpProperty.multicast,
-            IpProperty.reserved,IpProperty.documentation];
-        let positions=(0..8).filter() -> index {(flags & (1 << index))!=0;};
-        let values is @IpProperty=positions.map() -> index {categories[index];};
-        OrderedSet(values:values);
+    version() is IpVersion {
+        family;
     }
+
+    bytes() is @byte {
+        packed;
+    }
+
+    string() is string {
+        canonical;
+    }
+
+    properties() is Set<IpProperty> {
+        let flags = IpClassification(packed).flags();
+        let categories = [
+            IpProperty.unspecified,
+            IpProperty.loopback,
+            IpProperty.link_local,
+            IpProperty.private_network,
+            IpProperty.global,
+            IpProperty.multicast,
+            IpProperty.reserved,
+            IpProperty.documentation
+        ];
+        let positions = (0..8).filter() -> index {
+            (flags & (1 << index)) != 0;
+        };
+        let values is @IpProperty = positions.map() -> index {
+            categories[index];
+        };
+        OrderedSet(values: values);
+    }
+
     order(other is IpAddress) is Order {
-        if family!=other.version() {
-            return if family==IpVersion.v4 {Order.less;} else {Order.greater;};
+        if family != other.version() {
+            return if family == IpVersion.v4 {
+                Order.less;
+            }
+            else {
+                Order.greater;
+            };
         }
-        let right=other.bytes();
+        let right = other.bytes();
         for 0..packed.size() -> index {
-            let compared=packed[index].order(right[index]);
-            if compared!=Order.equal {return compared;}
+            let compared = packed[index].order(right[index]);
+            if compared != Order.equal {
+                return compared;
+            }
         }
         Order.equal;
     }
@@ -96,25 +146,39 @@ enum InvalidIpAddress is Error = (origin(origin is string));
 object IpNetwork {
     has base is IpAddress;
     has length is int;
+
     IpNetwork(address is IpAddress, prefix is int) {
-        let width=address.bytes().size()*8;
-        confirm prefix>=0 && prefix<=width
+        let width = address.bytes().size() * 8;
+        confirm prefix >= 0 && prefix <= width
             else throw InvalidIpPrefix.detailed(prefix, address.version());
-        let masked=IpNetworkBytes(address.bytes(),prefix,false).bytes();
-        base=IpAddress(PackedIpText(masked).string());
-        length=prefix;
+        let masked = IpNetworkBytes(address.bytes(), prefix, false).bytes();
+        base = IpAddress(PackedIpText(masked).string());
+        length = prefix;
     }
-    network() is IpAddress {base;}
+
+    network() is IpAddress {
+        base;
+    }
+
     broadcast() is IpAddress {
-        IpAddress(PackedIpText(IpNetworkBytes(base.bytes(),length,true).bytes()).string());
+        IpAddress(PackedIpText(IpNetworkBytes(base.bytes(), length, true).bytes()).string());
     }
-    prefix() is int {length;}
+
+    prefix() is int {
+        length;
+    }
+
     membership(address is IpAddress) is bool {
-        if address.version()!=base.version() {false;}
-        else {IpNetworkBytes(address.bytes(),length,false).bytes()==base.bytes();}
+        if address.version() != base.version() {
+            false;
+        }
+        else {
+            IpNetworkBytes(address.bytes(), length, false).bytes() == base.bytes();
+        }
     }
+
     size() is BigInt {
-        BigInt("2").power(base.bytes().size()*8-length, 129);
+        BigInt("2").power(base.bytes().size() * 8 - length, 129);
     }
 }
 
@@ -124,13 +188,23 @@ object IpNetwork {
 object IpInterface {
     has host is IpAddress;
     has subnet is IpNetwork;
+
     IpInterface(address is IpAddress, prefix is int) {
-        host=address;
-        subnet=IpNetwork(address,prefix);
+        host = address;
+        subnet = IpNetwork(address, prefix);
     }
-    address() is IpAddress {host;}
-    network() is IpNetwork {subnet;}
-    string() is string {host.string()+"/"+subnet.prefix().string();}
+
+    address() is IpAddress {
+        host;
+    }
+
+    network() is IpNetwork {
+        subnet;
+    }
+
+    string() is string {
+        host.string() + "/" + subnet.prefix().string();
+    }
 }
 
 enum InvalidIpPrefix is Error = (detailed(prefix is int, family is IpVersion));
@@ -141,41 +215,70 @@ enum InvalidIpPrefix is Error = (detailed(prefix is int, family is IpVersion));
 // or use the cursor before materializing a bounded prefix of a huge interval.
 object IpAddresses does Iterating<IpAddress> {
     has origin is IpNetwork;
-    IpAddresses(origin is IpNetwork) {self.origin=origin;}
+
+    IpAddresses(origin is IpNetwork) {
+        self.origin = origin;
+    }
+
     cursor() is Cursor<IpAddress> {
-        IpAddressCursor(current:origin.network(),limit:origin.broadcast());
+        IpAddressCursor(current: origin.network(), limit: origin.broadcast());
     }
 }
 
 object IpAddressCursor does Cursor<IpAddress> {
     has current, limit is IpAddress;
+
     IpAddressCursor(current is IpAddress, limit is IpAddress) {
-        confirm current.version()==limit.version() && current.order(limit)!=Order.greater
+        confirm current.version() == limit.version() && current.order(limit) != Order.greater
             else throw InvalidArgument.because("invalid IP cursor interval");
-        self.current=current;self.limit=limit;
+        self.current = current;
+        self.limit = limit;
     }
-    available() is bool {true;}
-    item() is IpAddress {current;}
+
+    available() is bool {
+        true;
+    }
+
+    item() is IpAddress {
+        current;
+    }
+
     successor() is Cursor<IpAddress> {
-        if current==limit {ExhaustedIpAddressCursor();}
+        if current == limit {
+            ExhaustedIpAddressCursor();
+        }
         else {
-            let bytes=current.bytes();
-            let following is @byte=(0..bytes.size()).map() -> index {
-                let carry=(index+1..bytes.size()).reduce(true) -> carry,position {
-                    carry && bytes[position]==byte(255);
+            let bytes = current.bytes();
+            let following is @byte = (0..bytes.size()).map() -> index {
+                let carry = (index + 1..bytes.size()).reduce(true) -> carry, position {
+                    carry && bytes[position] == byte(255);
                 };
-                if carry {((bytes[index].int()+1)%256).byte();} else {bytes[index];}
+                if carry {
+                    ((bytes[index].int() + 1) % 256).byte();
+                }
+                else {
+                    bytes[index];
+                }
             };
-            IpAddressCursor(current:IpAddress(PackedIpText(following).string()),limit:limit);
+            IpAddressCursor(current: IpAddress(PackedIpText(following).string()), limit: limit);
         }
     }
 }
 
 object ExhaustedIpAddressCursor does Cursor<IpAddress> {
     ExhaustedIpAddressCursor();
-    available() is bool {false;}
-    item() is IpAddress {throw IterationEnded.ended;}
-    successor() is Cursor<IpAddress> {throw IterationEnded.ended;}
+
+    available() is bool {
+        false;
+    }
+
+    item() is IpAddress {
+        throw IterationEnded.ended;
+    }
+
+    successor() is Cursor<IpAddress> {
+        throw IterationEnded.ended;
+    }
 }
 
 // Implementation representation of the lower/upper packed CIDR endpoint.
@@ -183,21 +286,43 @@ object IpNetworkBytes {
     has origin is @byte;
     has prefix is int;
     has upper is bool;
+
     IpNetworkBytes(origin is @byte, prefix is int, upper is bool) {
-        confirm (origin.size()==4 || origin.size()==16) && prefix>=0 && prefix<=origin.size()*8
+        confirm (origin.size() == 4 || origin.size() == 16)
+            && prefix >= 0
+            && prefix <= origin.size() * 8
             else throw InvalidArgument.because("invalid packed IP network");
-        self.origin=origin;self.prefix=prefix;self.upper=upper;
+        self.origin = origin;
+        self.prefix = prefix;
+        self.upper = upper;
     }
+
     bytes() is @byte {
         (0..origin.size()).map() -> index {
-            let remaining=prefix-index*8;
-            if remaining>=8 {origin[index];}
-            else {if remaining<=0 {if upper {byte(255);} else {byte(0);}}
+            let remaining = prefix - index * 8;
+            if remaining >= 8 {
+                origin[index];
+            }
             else {
-                let mask=256-(1 << (8-remaining));
-                let kept=origin[index].int() & mask;
-                if upper {(kept | (255-mask)).byte();} else {kept.byte();}
-            }}
+                if remaining <= 0 {
+                    if upper {
+                        byte(255);
+                    }
+                    else {
+                        byte(0);
+                    }
+                }
+                else {
+                    let mask = 256 - (1 << (8 - remaining));
+                    let kept = origin[index].int() & mask;
+                    if upper {
+                        (kept | (255 - mask)).byte();
+                    }
+                    else {
+                        kept.byte();
+                    }
+                }
+            }
         };
     }
 }
@@ -205,50 +330,71 @@ object IpNetworkBytes {
 // Canonical text of packed address bytes. The provider envelope remains private.
 object PackedIpText {
     has origin is @byte;
+
     PackedIpText(origin is @byte) {
-        confirm origin.size()==4 || origin.size()==16
+        confirm origin.size() == 4 || origin.size() == 16
             else throw InvalidArgument.because("IP text needs 4 or 16 bytes");
-        self.origin=origin;
+        self.origin = origin;
     }
+
     string() is string {
-        let family=if origin.size()==4 {1;} else {2;};
-        let header=[byte(79),byte(75),byte(1),family.byte(),byte(0),byte(0)];
-        let envelope is @byte=(0..origin.size()+6).map() -> index {
-            if index<6 {header[index];} else {origin[index-6];}
+        let family = if origin.size() == 4 {
+            1;
+        }
+        else {
+            2;
+        };
+        let header = [byte(79), byte(75), byte(1), family.byte(), byte(0), byte(0)];
+        let envelope is @byte = (0..origin.size() + 6).map() -> index {
+            if index < 6 {
+                header[index];
+            }
+            else {
+                origin[index - 6];
+            }
         };
         ip_format(envelope);
     }
 }
 
 test "numeric address aliases have canonical identity" {
-    let address=IpAddress("2001:0DB8:0:0:0:0:0:1");
-    test.is(address.string(),"2001:db8::1");
-    test.ok(address==IpAddress("2001:db8::1"));
-    test.is(address.bytes().size(),16);
+    let address = IpAddress("2001:0DB8:0:0:0:0:0:1");
+    test.is(address.string(), "2001:db8::1");
+    test.ok(address == IpAddress("2001:db8::1"));
+    test.is(address.bytes().size(), 16);
 }
+
 test "address rejects endpoint decorations" {
-    let rejected=try {IpAddress("[::1]:80");false;}
-        catch failure is InvalidIpAddress {true;};
+    let rejected = try {
+        IpAddress("[::1]:80");
+        false;
+    }
+    catch failure is InvalidIpAddress {
+        true;
+    };
     test.ok(rejected);
 }
+
 test "CIDR masks host bits and keeps inclusive endpoints" {
-    let network=IpNetwork(IpAddress("192.0.2.7"),30);
-    test.is(network.network().string(),"192.0.2.4");
-    test.is(network.broadcast().string(),"192.0.2.7");
-    test.is(network.size().string(),"4");
+    let network = IpNetwork(IpAddress("192.0.2.7"), 30);
+    test.is(network.network().string(), "192.0.2.4");
+    test.is(network.broadcast().string(), "192.0.2.7");
+    test.is(network.size().string(), "4");
     test.ok(network.membership(IpAddress("192.0.2.4")));
     test.ok(!network.membership(IpAddress("192.0.2.8")));
 }
+
 test "single-address network cursor ends without wrapping" {
-    let cursor=IpAddresses(IpNetwork(IpAddress("255.255.255.255"),32)).cursor();
+    let cursor = IpAddresses(IpNetwork(IpAddress("255.255.255.255"), 32)).cursor();
     test.ok(cursor.available());
-    test.is(cursor.item().string(),"255.255.255.255");
+    test.is(cursor.item().string(), "255.255.255.255");
     test.ok(!cursor.successor().available());
     test.ok(cursor.available());
 }
+
 test "interface preserves host bits alongside its normalized network" {
-    let interface=IpInterface(IpAddress("2001:0DB8::7"),64);
-    test.is(interface.string(),"2001:db8::7/64");
-    test.is(interface.address().string(),"2001:db8::7");
-    test.is(interface.network().network().string(),"2001:db8::");
+    let interface = IpInterface(IpAddress("2001:0DB8::7"), 64);
+    test.is(interface.string(), "2001:db8::7/64");
+    test.is(interface.address().string(), "2001:db8::7");
+    test.is(interface.network().network().string(), "2001:db8::");
 }

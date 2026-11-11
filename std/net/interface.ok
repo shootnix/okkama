@@ -24,27 +24,56 @@ object NetworkInterface {
     has active is bool;
     has local is bool;
 
-    NetworkInterface(name is string, index is int, addresses is @IpInterface,
-        up is bool, loopback is bool) {
-        let nul=Utf8Decoded([byte(0)]).string();
-        confirm name!="" && name.split(nul).size()==1
-            else throw InvalidArgument.because("network interface name must be nonempty and contain no NUL");
-        confirm index>0 else throw InvalidArgument.because("network interface index must be positive: "+index.string());
-        label=name;identity=index;assigned=addresses;active=up;local=loopback;
+    NetworkInterface(
+        name is string,
+        index is int,
+        addresses is @IpInterface,
+        up is bool,
+        loopback is bool
+    ) {
+        let nul = Utf8Decoded([byte(0)]).string();
+        confirm name != "" && name.split(nul).size() == 1
+            else throw InvalidArgument.because(
+                "network interface name must be nonempty and contain no NUL"
+            );
+        confirm index > 0
+            else throw InvalidArgument.because(
+                "network interface index must be positive: " + index.string()
+            );
+        label = name;
+        identity = index;
+        assigned = addresses;
+        active = up;
+        local = loopback;
     }
-    name() is string {label;}
-    index() is int {identity;}
-    addresses() is Sequencing<IpInterface> {assigned;}
-    up() is bool {active;}
-    loopback() is bool {local;}
+
+    name() is string {
+        label;
+    }
+
+    index() is int {
+        identity;
+    }
+
+    addresses() is Sequencing<IpInterface> {
+        assigned;
+    }
+
+    up() is bool {
+        active;
+    }
+
+    loopback() is bool {
+        local;
+    }
 }
 
 test "empty interface snapshot retains independent flags" {
-    let addresses is @IpInterface=[];
-    let interface=NetworkInterface("lo",1,addresses,false,true);
-    test.is(interface.name(),"lo");
-    test.is(interface.index(),1);
-    test.is(interface.addresses().size(),0);
+    let addresses is @IpInterface = [];
+    let interface = NetworkInterface("lo", 1, addresses, false, true);
+    test.is(interface.name(), "lo");
+    test.is(interface.index(), 1);
+    test.is(interface.addresses().size(), 0);
     test.ok(!interface.up());
     test.ok(interface.loopback());
 }

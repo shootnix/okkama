@@ -35,12 +35,20 @@ role ReadingArchive {
             fake.storage.set("read", true);
             ArchiveEntry.fake();
         }
+
         finished() is bool {
             confirm !self.closed() else throw InvalidState.because("archive reading is closed");
             fake.storage.has("finished");
         }
-        close() is void { fake.storage.clear(); fake.storage.set("closed", true); }
-        closed() is bool { fake.storage.has("closed"); }
+
+        close() is void {
+            fake.storage.clear();
+            fake.storage.set("closed", true);
+        }
+
+        closed() is bool {
+            fake.storage.has("closed");
+        }
     }
 }
 
@@ -54,18 +62,29 @@ role WritingArchive {
     // Accepts values and records completion; it does not encode any format.
     fake {
         write(entry is ArchiveEntry) is void {
-            confirm !self.finished() else throw InvalidState.because("archive writing has finished");
+            confirm !self.finished()
+                else throw InvalidState.because("archive writing has finished");
         }
+
         finish() is void {
-            confirm !self.finished() else throw InvalidState.because("archive writing has finished");
+            confirm !self.finished()
+                else throw InvalidState.because("archive writing has finished");
             fake.storage.set("finished", true);
         }
+
         finished() is bool {
             confirm !self.closed() else throw InvalidState.because("archive writing is closed");
             fake.storage.has("finished");
         }
-        close() is void { fake.storage.clear(); fake.storage.set("closed", true); }
-        closed() is bool { fake.storage.has("closed"); }
+
+        close() is void {
+            fake.storage.clear();
+            fake.storage.set("closed", true);
+        }
+
+        closed() is bool {
+            fake.storage.has("closed");
+        }
     }
 }
 
@@ -91,7 +110,9 @@ object ArchiveReading does ReadingArchive, Closing {
 
     entry() is ArchiveEntry {
         confirm !self.finished() else throw EndOfArchive.reached;
-        try { next_entry(); }
+        try {
+            next_entry();
+        }
         catch end is EndOfArchive {
             status.writing() <- [byte(1)];
             throw end;
@@ -101,15 +122,26 @@ object ArchiveReading does ReadingArchive, Closing {
             throw error;
         }
     }
+
     finished() is bool {
         self.usable();
         status.content().size() > 0;
     }
-    close() is void { status.closing().close(); }
-    closed() is bool { status.closing().closed(); }
-    destroy { self.close(); }
+
+    close() is void {
+        status.closing().close();
+    }
+
+    closed() is bool {
+        status.closing().closed();
+    }
+
+    destroy {
+        self.close();
+    }
 
     private:
+
     usable() is void {
         confirm !self.closed() else throw InvalidState.because("archive reading is closed");
         let phase = status.content().bytes();
@@ -137,24 +169,46 @@ object ArchiveWriting does WritingArchive, Closing {
 
     write(entry is ArchiveEntry) is void {
         confirm !self.finished() else throw InvalidState.because("archive writing has finished");
-        try { write_entry(entry); }
-        catch error is Error { status.writing() <- [byte(2)]; throw error; }
+        try {
+            write_entry(entry);
+        }
+        catch error is Error {
+            status.writing() <- [byte(2)];
+            throw error;
+        }
     }
+
     finish() is void {
         confirm !self.finished() else throw InvalidState.because("archive writing has finished");
-        try { finish_stream(); }
-        catch error is Error { status.writing() <- [byte(2)]; throw error; }
+        try {
+            finish_stream();
+        }
+        catch error is Error {
+            status.writing() <- [byte(2)];
+            throw error;
+        }
         status.writing() <- [byte(1)];
     }
+
     finished() is bool {
         self.usable();
         status.content().size() > 0;
     }
-    close() is void { status.closing().close(); }
-    closed() is bool { status.closing().closed(); }
-    destroy { self.close(); }
+
+    close() is void {
+        status.closing().close();
+    }
+
+    closed() is bool {
+        status.closing().closed();
+    }
+
+    destroy {
+        self.close();
+    }
 
     private:
+
     usable() is void {
         confirm !self.closed() else throw InvalidState.because("archive writing is closed");
         let phase = status.content().bytes();
@@ -175,14 +229,21 @@ test "archive reader fake consumes one entry before stable EOF" {
     let entry = reader.entry();
     test.is(entry.path().string(), "entry");
     test.ok(!reader.finished());
-    test.throws(EndOfArchive) { reader.entry(); };
+    test.throws(EndOfArchive) {
+        reader.entry();
+    };
     test.ok(reader.finished());
-    test.throws(EndOfArchive) { reader.entry(); };
+    test.throws(EndOfArchive) {
+        reader.entry();
+    };
     test.ok(!independent.finished());
-    reader.close();reader.close();
+    reader.close();
+    reader.close();
     test.ok(reader.closed());
     test.is(entry.path().string(), "entry");
-    test.throws(Error) { reader.entry(); };
+    test.throws(Error) {
+        reader.entry();
+    };
     independent.close();
 }
 
@@ -194,11 +255,17 @@ test "archive writer fake finishes once and rejects terminal writes" {
     writer.write(entry);
     writer.finish();
     test.ok(writer.finished());
-    test.throws(Error) { writer.write(entry); };
-    test.throws(Error) { writer.finish(); };
-    writer.close();writer.close();
+    test.throws(Error) {
+        writer.write(entry);
+    };
+    test.throws(Error) {
+        writer.finish();
+    };
+    writer.close();
+    writer.close();
     test.ok(writer.closed());
-    test.ok(!reader.closed());reader.close();
+    test.ok(!reader.closed());
+    reader.close();
 }
 
 test "archive fake lifetimes are independent and end diagnostic is stable" {
@@ -206,9 +273,14 @@ test "archive fake lifetimes are independent and end diagnostic is stable" {
     let empty = WritingArchive.fake();
     abandoned.close();
     test.ok(!empty.finished());
-    empty.finish();test.ok(empty.finished());
-    test.throws(Error) { abandoned.finish(); };
-    test.throws(Error) { abandoned.finished(); };
+    empty.finish();
+    test.ok(empty.finished());
+    test.throws(Error) {
+        abandoned.finish();
+    };
+    test.throws(Error) {
+        abandoned.finished();
+    };
     empty.close();
     test.is(EndOfArchive.reached.text(), "EndOfArchive.reached");
 }

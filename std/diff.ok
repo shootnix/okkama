@@ -7,6 +7,7 @@ import "runtime/diff" take diff_script;
 import "cell" take Cell;
 
 enum InvalidDiff is Error = (because(reason is string));
+
 enum DiffLimitExceeded is Error = (off_budget);
 
 object DiffListValues<T> {
@@ -41,7 +42,8 @@ object DiffLines {
 
     DiffLines(origin is Sequencing<string>) {
         let size = origin.size();
-        confirm size >= 0 && size <= 512 else throw InvalidDiff.because("line count must be 0..512");
+        confirm size >= 0 && size <= 512
+            else throw InvalidDiff.because("line count must be 0..512");
         let values is @string = (0..size).map() -> index {
             let text = origin.item(index);
             confirm text.length() <= 4096 && text.split("\n").size() == 1
@@ -262,7 +264,8 @@ object DiffHunks {
     has values is @DiffSpan;
 
     DiffHunks(edits is @DiffEdit, context is int) {
-        confirm context >= 0 && context <= 64 else throw InvalidDiff.because("context must be 0..64");
+        confirm context >= 0 && context <= 64
+            else throw InvalidDiff.because("context must be 0..64");
         let empty is List<DiffSpan> = EmptyList();
         let spans is Cell<List<DiffSpan>> = Cell(empty);
         for (0..edits.size()) -> index {
@@ -479,7 +482,8 @@ object UnifiedDiff {
     }
 
     UnifiedDiff(left is Sequencing<string>, right is Sequencing<string>, context is int) {
-        confirm context >= 0 && context <= 64 else throw InvalidDiff.because("context must be 0..64");
+        confirm context >= 0 && context <= 64
+            else throw InvalidDiff.because("context must be 0..64");
         text = DiffPrinting(DiffScript(left, right), context).string(false);
     }
 
@@ -496,7 +500,8 @@ object ContextDiff {
     }
 
     ContextDiff(left is Sequencing<string>, right is Sequencing<string>, context is int) {
-        confirm context >= 0 && context <= 64 else throw InvalidDiff.because("context must be 0..64");
+        confirm context >= 0 && context <= 64
+            else throw InvalidDiff.because("context must be 0..64");
         text = DiffPrinting(DiffScript(left, right), context).string(true);
     }
 

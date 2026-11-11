@@ -10,11 +10,15 @@ import "crypto/error" take HostOperation;
 object ConstantTimeEqual {
     has left is @byte;
     has right is @byte;
+
     ConstantTimeEqual(left is @byte, right is @byte) {
         self.left = left;
         self.right = right;
     }
-    value() is bool { HostOperation("ct-equal", [left, right]).truth(); }
+
+    value() is bool {
+        HostOperation("ct-equal", [left, right]).truth();
+    }
 }
 
 test "constant-time equality compares whole byte strings" {

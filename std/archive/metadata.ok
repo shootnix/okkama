@@ -16,7 +16,12 @@ object ArchiveOwnership {
     has user_name, group_name is string;
     has user_id, group_id is BigInt;
 
-    ArchiveOwnership(user is string, group is string, user_identity is BigInt, group_identity is BigInt) {
+    ArchiveOwnership(
+        user is string,
+        group is string,
+        user_identity is BigInt,
+        group_identity is BigInt
+    ) {
         confirm user_identity.sign() >= 0 && group_identity.sign() >= 0
             else throw InvalidArchiveOwnership.invalid;
         user_name = user;
@@ -25,10 +30,21 @@ object ArchiveOwnership {
         group_id = group_identity;
     }
 
-    user() is string { user_name; }
-    group() is string { group_name; }
-    user_identity() is BigInt { user_id; }
-    group_identity() is BigInt { group_id; }
+    user() is string {
+        user_name;
+    }
+
+    group() is string {
+        group_name;
+    }
+
+    user_identity() is BigInt {
+        user_id;
+    }
+
+    group_identity() is BigInt {
+        group_id;
+    }
 }
 
 // Immutable archive metadata snapshot. The supplied calendar, comment, mode
@@ -59,13 +75,20 @@ object ArchiveMetadata {
         self.modified = modified;
         note = comment;
     }
+
     ArchiveMetadata(mode is PermissionMode, modified is LocalDateTime, comment is string) {
         permission = [mode];
         owners = [];
         self.modified = modified;
         note = comment;
     }
-    ArchiveMetadata(mode is PermissionMode, modified is LocalDateTime, ownership is ArchiveOwnership, comment is string) {
+
+    ArchiveMetadata(
+        mode is PermissionMode,
+        modified is LocalDateTime,
+        ownership is ArchiveOwnership,
+        comment is string
+    ) {
         permission = [mode];
         owners = [ownership];
         self.modified = modified;
@@ -76,12 +99,19 @@ object ArchiveMetadata {
         confirm permission.size() > 0 else throw MissingArchiveMode.missing;
         permission[0];
     }
+
     ownership() is ArchiveOwnership {
         confirm owners.size() > 0 else throw MissingArchiveOwnership.missing;
         owners[0];
     }
-    modification() is LocalDateTime { modified; }
-    comment() is string { note; }
+
+    modification() is LocalDateTime {
+        modified;
+    }
+
+    comment() is string {
+        note;
+    }
 }
 
 // Exact epoch seconds represented as UTC calendar fields for archive metadata.
@@ -90,16 +120,20 @@ object ArchiveMetadata {
 // Negative/fractional seconds are supported, with no clock or timezone lookup.
 object ArchiveModificationFromEpoch {
     has elapsed is Duration;
+
     ArchiveModificationFromEpoch(seconds is rat) {
         elapsed = Duration(seconds, DurationUnit.second);
     }
+
     value() is LocalDateTime {
         LocalDateTime(Date(1970, 1, 1), TimeOfDay(0, 0, 0, 0)).plus(elapsed);
     }
 }
 
 enum MissingArchiveMode is Error = (missing);
+
 enum MissingArchiveOwnership is Error = (missing);
+
 enum InvalidArchiveOwnership is Error = (invalid);
 
 test "archive metadata retains calendar and comment with explicit absence" {
@@ -107,8 +141,12 @@ test "archive metadata retains calendar and comment with explicit absence" {
     let info = ArchiveMetadata(date, " комментарий 😀 ");
     test.is(info.modification(), date);
     test.is(info.comment(), " комментарий 😀 ");
-    test.throws(MissingArchiveMode) { info.mode(); };
-    test.throws(MissingArchiveOwnership) { info.ownership(); };
+    test.throws(MissingArchiveMode) {
+        info.mode();
+    };
+    test.throws(MissingArchiveOwnership) {
+        info.ownership();
+    };
     test.is(info.comment(), " комментарий 😀 ");
 }
 
@@ -120,8 +158,12 @@ test "archive epoch conversion preserves negative fractional seconds" {
     test.is(time.time().hour(), 23);
     test.is(time.time().second(), 59);
     test.is(time.time().nanosecond(), 500000000);
-    test.throws(Error) { ArchiveModificationFromEpoch(rat(1, 3)); };
-    test.throws(Error) { ArchiveModificationFromEpoch(253402300800.rat()).value(); };
+    test.throws(Error) {
+        ArchiveModificationFromEpoch(rat(1, 3));
+    };
+    test.throws(Error) {
+        ArchiveModificationFromEpoch(253402300800.rat()).value();
+    };
 }
 
 test "archive metadata diagnostics are stable values" {

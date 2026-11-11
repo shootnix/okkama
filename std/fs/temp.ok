@@ -3,30 +3,11 @@ module fs/temp v1.0.0;
 import "fs/directory" take DirectoryLocating;
 import "fs/file" take FileEntry, FileSystemFailure;
 import "fs/path" take Path;
-import "io/stream" take
-    ByteSource,
-    Reading,
-    Writing,
-    Closing,
-    IncompleteWrite,
-    InvalidReadLimit;
-import "runtime/fs" take
-    FileState,
-    TemporaryDirectoryState,
-    path_encode,
-    path_decode,
-    file_state_read,
-    file_state_write,
-    file_state_flush,
-    file_state_close,
-    file_state_closed,
-    temporary_file_create,
-    temporary_file_path,
-    temporary_file_preserve,
-    temporary_directory_create,
-    temporary_directory_path,
-    temporary_directory_closed,
-    temporary_directory_close;
+import "io/stream" take ByteSource, Reading, Writing, Closing, IncompleteWrite, InvalidReadLimit;
+import "runtime/fs" take FileState, TemporaryDirectoryState, path_encode, path_decode,
+    file_state_read, file_state_write, file_state_flush, file_state_close, file_state_closed,
+    temporary_file_create, temporary_file_path, temporary_file_preserve, temporary_directory_create,
+    temporary_directory_path, temporary_directory_closed, temporary_directory_close;
 
 // Temporary resources are created eagerly with unpredictable names inside an
 // explicitly supplied directory. prefix is one filename component, not a path.
@@ -100,7 +81,9 @@ object TemporaryFile does Reading, Writing, Closing {
         }
     }
 
-    destroy { self.close(); }
+    destroy {
+        self.close();
+    }
 
     closed() is bool {
         try {
@@ -121,12 +104,21 @@ object TemporaryFile does Reading, Writing, Closing {
     }
 
     path() is Path {
-        try{Path(path_decode(temporary_file_path(state)));}
-        catch failure is NativeFailure{throw FileSystemFailure.detailed(failure.code(), failure.message());}
+        try {
+            Path(path_decode(temporary_file_path(state)));
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
+        }
     }
+
     preserve(destination is Path) is void {
-        try{temporary_file_preserve(state,path_encode(destination.string()));}
-        catch failure is NativeFailure{throw FileSystemFailure.detailed(failure.code(), failure.message());}
+        try {
+            temporary_file_preserve(state, path_encode(destination.string()));
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
+        }
     }
 }
 
@@ -137,8 +129,9 @@ object TemporaryFilePath {
         owner = origin;
     }
 
-
-    value() is Path { owner.path(); }
+    value() is Path {
+        owner.path();
+    }
 }
 
 object TemporaryFilePreservation {
@@ -150,9 +143,13 @@ object TemporaryFilePreservation {
         self.destination = destination;
     }
 
-    destination() is FileEntry { FileEntry(path: destination); }
+    destination() is FileEntry {
+        FileEntry(path: destination);
+    }
 
-    preserve() is void { owner.preserve(destination); }
+    preserve() is void {
+        owner.preserve(destination);
+    }
 }
 
 object TemporaryDirectory does Closing {
@@ -179,7 +176,9 @@ object TemporaryDirectory does Closing {
         }
     }
 
-    destroy { self.close(); }
+    destroy {
+        self.close();
+    }
 
     closed() is bool {
         try {

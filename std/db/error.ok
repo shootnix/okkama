@@ -1,26 +1,78 @@
 module db/error v1.0.0;
 
-enum DbFailureKind=(connection,constraint,syntax,data,permission,busy,deadlock,serialization,timeout,cancelled,resource,unsupported,unexpected);
-enum DbOperation=(connecting,preparing,executing,fetching,committing,rolling_back,closing,opening_blob,reading_blob,writing_blob,backing_up,script);
+enum DbFailureKind = (connection, constraint, syntax, data, permission, busy, deadlock, serialization, timeout, cancelled, resource, unsupported, unexpected);
+
+enum DbOperation = (connecting, preparing, executing, fetching, committing, rolling_back, closing, opening_blob, reading_blob, writing_blob, backing_up, script);
 
 // Provider-controlled diagnostics only. A caller supplying its own message is
 // responsible for that explicit text; drivers never forward SQL/bindings/DSNs.
-enum DbFailure is Error = (detailed(kind is DbFailureKind, operation is DbOperation, code is string, message is string));
-object DbOperationText{
-    has origin is DbOperation;DbOperationText(origin is DbOperation){self.origin=origin;}
-    string() is string{match origin{
-        case DbOperation.connecting{"connecting";}case DbOperation.preparing{"preparing";}
-        case DbOperation.executing{"executing";}case DbOperation.fetching{"fetching";}
-        case DbOperation.committing{"committing";}case DbOperation.rolling_back{"rolling_back";}
-        case DbOperation.closing{"closing";}case DbOperation.opening_blob{"opening_blob";}
-        case DbOperation.reading_blob{"reading_blob";}case DbOperation.writing_blob{"writing_blob";}
-        case DbOperation.backing_up{"backing_up";}case DbOperation.script{"script";}
-        else{"unknown";}
-    }}
+enum DbFailure is Error = (detailed(
+    kind is DbFailureKind,
+    operation is DbOperation,
+    code is string,
+    message is string
+));
+
+object DbOperationText {
+    has origin is DbOperation;
+
+    DbOperationText(origin is DbOperation) {
+        self.origin = origin;
+    }
+
+    string() is string {
+        match origin {
+            case DbOperation.connecting {
+                "connecting";
+            }
+            case DbOperation.preparing {
+                "preparing";
+            }
+            case DbOperation.executing {
+                "executing";
+            }
+            case DbOperation.fetching {
+                "fetching";
+            }
+            case DbOperation.committing {
+                "committing";
+            }
+            case DbOperation.rolling_back {
+                "rolling_back";
+            }
+            case DbOperation.closing {
+                "closing";
+            }
+            case DbOperation.opening_blob {
+                "opening_blob";
+            }
+            case DbOperation.reading_blob {
+                "reading_blob";
+            }
+            case DbOperation.writing_blob {
+                "writing_blob";
+            }
+            case DbOperation.backing_up {
+                "backing_up";
+            }
+            case DbOperation.script {
+                "script";
+            }
+            else {
+                "unknown";
+            }
+        }
+    }
 }
+
 enum InvalidDbDiagnostic is Error = (invalid);
+
 enum AffectedRowsUnknown is Error = (unknown);
+
 enum DbClosed is Error = (closed);
+
 enum DbBusy is Error = (busy);
+
 enum TransactionEnded is Error = (ended);
+
 enum IndeterminateCommit is Error = (indeterminate);

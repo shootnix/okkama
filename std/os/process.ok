@@ -1,28 +1,11 @@
 module os/process v1.0.0;
 
-import "io/stream" take
-    ByteSource,
-    Writing,
-    Reading,
-    Closing,
-    IncompleteWrite,
-    InvalidReadLimit;
+import "io/stream" take ByteSource, Writing, Reading, Closing, IncompleteWrite, InvalidReadLimit;
 import "os/command" take Commanding;
-import "runtime/process" take
-    ProcessState,
-    process_state_create,
-    process_state_start,
-    process_state_started,
-    process_state_id,
-    process_state_running,
-    process_state_exit,
-    process_state_signal,
-    process_state_close,
-    process_state_input_write,
-    process_state_input_flush,
-    process_state_input_closed,
-    process_state_input_close,
-    process_state_output_read,
+import "runtime/process" take ProcessState, process_state_create, process_state_start,
+    process_state_started, process_state_id, process_state_running, process_state_exit,
+    process_state_signal, process_state_close, process_state_input_write, process_state_input_flush,
+    process_state_input_closed, process_state_input_close, process_state_output_read,
     process_state_errors_read;
 
 // Process owns one shared lazy runtime state. Constructing Process and its
@@ -56,7 +39,9 @@ object Exit {
         exit_code = code;
     }
 
-    kind() is ExitKind { classification; }
+    kind() is ExitKind {
+        classification;
+    }
 
     code() is int {
         confirm classification == ExitKind.exited else throw MissingExitCode.missing;
@@ -110,10 +95,18 @@ object Process {
         }
         else {
             match status["code"] {
-                case 1 { ExitKind.terminated; }
-                case 2 { ExitKind.killed; }
-                case 3 { ExitKind.interrupted; }
-                else { ExitKind.other; }
+                case 1 {
+                    ExitKind.terminated;
+                }
+                case 2 {
+                    ExitKind.killed;
+                }
+                case 3 {
+                    ExitKind.interrupted;
+                }
+                else {
+                    ExitKind.other;
+                }
             }
         };
         Exit(kind: kind, code: status["code"]);
@@ -165,6 +158,7 @@ object Process {
         };
         confirm written == content.size() else throw IncompleteWrite.after(written);
     }
+
     input_flush() is void {
         self.start();
         try {
@@ -174,6 +168,7 @@ object Process {
             throw ProcessFailure.detailed(failure.code(), failure.message());
         }
     }
+
     input_closed() is bool {
         try {
             process_state_input_closed(state);
@@ -182,6 +177,7 @@ object Process {
             throw ProcessFailure.detailed(failure.code(), failure.message());
         }
     }
+
     input_close() is void {
         if !self.input_closed() {
             self.start();
@@ -193,6 +189,7 @@ object Process {
             }
         }
     }
+
     output_bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         self.start();
@@ -203,6 +200,7 @@ object Process {
             throw ProcessFailure.detailed(failure.code(), failure.message());
         }
     }
+
     error_bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         self.start();
@@ -213,7 +211,9 @@ object Process {
             throw ProcessFailure.detailed(failure.code(), failure.message());
         }
     }
+
     private:
+
     start() is void {
         if !self.started() {
             try {
@@ -243,29 +243,50 @@ object Process {
 
 object ProcessInput does Writing, Closing {
     has owner is Process;
-    ProcessInput(origin is Process){owner=origin;}
 
-    write(source is ByteSource) is void { owner.input_write(source); }
+    ProcessInput(origin is Process) {
+        owner = origin;
+    }
 
-    flush() is void { owner.input_flush(); }
+    write(source is ByteSource) is void {
+        owner.input_write(source);
+    }
 
-    closed() is bool { owner.input_closed(); }
+    flush() is void {
+        owner.input_flush();
+    }
 
-    close() is void { owner.input_close(); }
+    closed() is bool {
+        owner.input_closed();
+    }
+
+    close() is void {
+        owner.input_close();
+    }
 }
 
 object ProcessOutput does Reading {
     has owner is Process;
-    ProcessOutput(origin is Process){owner=origin;}
 
-    bytes(limit is int) is @byte { owner.output_bytes(limit); }
+    ProcessOutput(origin is Process) {
+        owner = origin;
+    }
+
+    bytes(limit is int) is @byte {
+        owner.output_bytes(limit);
+    }
 }
 
 object ProcessErrors does Reading {
     has owner is Process;
-    ProcessErrors(origin is Process){owner=origin;}
 
-    bytes(limit is int) is @byte { owner.error_bytes(limit); }
+    ProcessErrors(origin is Process) {
+        owner = origin;
+    }
+
+    bytes(limit is int) is @byte {
+        owner.error_bytes(limit);
+    }
 }
 
 enum MissingExitCode is Error = (missing);

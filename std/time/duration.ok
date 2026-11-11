@@ -20,33 +20,43 @@ import "numbers/bigint" take BigInt;
 // numbers deliberately have no `.duration()` or unit conversion methods: a
 // stdlib type is always introduced through its explicit constructor.
 
-enum DurationUnit = (
-    nanosecond,
-    microsecond,
-    millisecond,
-    second,
-    minute,
-    hour,
-    day
-);
+enum DurationUnit = (nanosecond, microsecond, millisecond, second, minute, hour, day);
 
 object Duration does Comparing<Duration>, Adding<Duration, Duration>, Subtracting<Duration, Duration>, Negating<Duration> {
     has origin is rat;
 
     Duration(value is rat, unit is DurationUnit) {
         let multiplier is rat = match unit {
-            case DurationUnit.nanosecond { rat(1, 1000000000); }
-            case DurationUnit.microsecond { rat(1, 1000000); }
-            case DurationUnit.millisecond { rat(1, 1000); }
-            case DurationUnit.second { 1.rat(); }
-            case DurationUnit.minute { 60.rat(); }
-            case DurationUnit.hour { 3600.rat(); }
-            case DurationUnit.day { 86400.rat(); }
-            else { 1.rat(); }
+            case DurationUnit.nanosecond {
+                rat(1, 1000000000);
+            }
+            case DurationUnit.microsecond {
+                rat(1, 1000000);
+            }
+            case DurationUnit.millisecond {
+                rat(1, 1000);
+            }
+            case DurationUnit.second {
+                1.rat();
+            }
+            case DurationUnit.minute {
+                60.rat();
+            }
+            case DurationUnit.hour {
+                3600.rat();
+            }
+            case DurationUnit.day {
+                86400.rat();
+            }
+            else {
+                1.rat();
+            }
         };
         let seconds is rat = value * multiplier;
         confirm (seconds * 1000000000.rat()).denominator() == "1"
-            else throw InvalidDuration.because("duration must contain an integral number of nanoseconds");
+            else throw InvalidDuration.because(
+                "duration must contain an integral number of nanoseconds"
+            );
         origin = seconds;
     }
 

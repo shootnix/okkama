@@ -6,11 +6,19 @@ module runtime/input_state v1.0.0;
 native object Utf8InputState;
 
 native input_state_create() is Utf8InputState;
+
 native input_state_append(state is Utf8InputState, value is @byte) is int;
+
 native input_state_size(state is Utf8InputState) is int;
+
 native input_state_line_offset(state is Utf8InputState) is int;
+
 native input_state_take(state is Utf8InputState, size is int) is @byte;
+
 native input_state_eof(state is Utf8InputState) is bool;
+
 native input_state_finish(state is Utf8InputState) is bool;
+
 native input_state_closed(state is Utf8InputState) is bool;
+
 native input_state_close(state is Utf8InputState) is bool;

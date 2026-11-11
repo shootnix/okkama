@@ -1,31 +1,76 @@
 module config/value v1.0.0;
+
 import "collections/sequence" take Sequencing;
 import "config/key" take SettingKey;
-import "config/source" take SettingReading,SettingEntry,SettingSource,SettingSourceKind;
-object Setting{
+import "config/source" take SettingReading, SettingEntry, SettingSource, SettingSourceKind;
+
+object Setting {
     has origin is SettingReading;
     has key is SettingKey;
-    Setting(origin is SettingReading,key is SettingKey){self.origin=origin;self.key=key;}
-    values() is Sequencing<string>{origin.entry(key).values();}
-    source() is SettingSource{origin.entry(key).source();}
+
+    Setting(origin is SettingReading, key is SettingKey) {
+        self.origin = origin;
+        self.key = key;
+    }
+
+    values() is Sequencing<string> {
+        origin.entry(key).values();
+    }
+
+    source() is SettingSource {
+        origin.entry(key).source();
+    }
 }
-object ScalarSetting{
+
+object ScalarSetting {
     has origin is SettingReading;
     has key is SettingKey;
-    ScalarSetting(origin is SettingReading,key is SettingKey){self.origin=origin;self.key=key;}
-    value() is string{
-        let values=origin.entry(key).values();
-        confirm values.size()==1 else throw NonScalarSetting.detailed(key.string(), values.size());
+
+    ScalarSetting(origin is SettingReading, key is SettingKey) {
+        self.origin = origin;
+        self.key = key;
+    }
+
+    value() is string {
+        let values = origin.entry(key).values();
+        confirm values.size() == 1
+            else throw NonScalarSetting.detailed(key.string(), values.size());
         values.first();
     }
-    source() is SettingSource{origin.entry(key).source();}
+
+    source() is SettingSource {
+        origin.entry(key).source();
+    }
 }
-object ScalarSettingOr{
+
+object ScalarSettingOr {
     has origin is SettingReading;
     has key is SettingKey;
     has fallback is string;
-    ScalarSettingOr(origin is SettingReading,key is SettingKey,fallback is string){self.origin=origin;self.key=key;self.fallback=fallback;}
-    value() is string{if origin.membership(key){ScalarSetting(origin,key).value();}else{fallback;}}
-    source() is SettingSource{if origin.membership(key){origin.entry(key).source();}else{SettingSource(SettingSourceKind.defaults,"fallback");}}
+
+    ScalarSettingOr(origin is SettingReading, key is SettingKey, fallback is string) {
+        self.origin = origin;
+        self.key = key;
+        self.fallback = fallback;
+    }
+
+    value() is string {
+        if origin.membership(key) {
+            ScalarSetting(origin, key).value();
+        }
+        else {
+            fallback;
+        }
+    }
+
+    source() is SettingSource {
+        if origin.membership(key) {
+            origin.entry(key).source();
+        }
+        else {
+            SettingSource(SettingSourceKind.defaults, "fallback");
+        }
+    }
 }
+
 enum NonScalarSetting is Error = (detailed(key is string, count is int));

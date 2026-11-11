@@ -1,130 +1,273 @@
 module crypto/x509/trust v1.0.0;
-import "crypto/x509/certificate" take Certificate,CertificateChain,CertificatePurpose,CertificateBackendUnavailable,CertificateLimitExceeded;
+
+import "crypto/x509/certificate" take Certificate, CertificateChain, CertificatePurpose,
+    CertificateBackendUnavailable, CertificateLimitExceeded;
 import "crypto/x509/value" take InvalidCertificate;
 import "net/endpoint" take HostName;
 import "net/ip" take IpAddress;
 import "time/clock" take Instant;
 import "collections/sequence" take Sequencing;
 import "encoding/pem" take PemBlock;
-import "runtime/pem" take pem_invalid_offset,pem_block_sources;
+import "runtime/pem" take pem_invalid_offset, pem_block_sources;
 import "runtime/x509" as x509;
 
 // Explicit local root selection; an empty store means no trust anchors and
 // never selects system defaults. The role grants no filesystem capability.
-role TrustStore {certificates() is Sequencing<Certificate>;}
-enum CertificateFailure=(untrusted,invalid_signature,invalid_name,invalid_purpose,unknown_critical_extension,invalid_chain,not_yet_valid,expired);
-enum CertificateIdentityKind=(dns,ip);
-role CertificateIdentity {kind() is CertificateIdentityKind;string() is string;}
+role TrustStore {
+    certificates() is Sequencing<Certificate>;
+}
+
+enum CertificateFailure = (untrusted, invalid_signature, invalid_name, invalid_purpose, unknown_critical_extension, invalid_chain, not_yet_valid, expired);
+
+enum CertificateIdentityKind = (dns, ip);
+
+role CertificateIdentity {
+    kind() is CertificateIdentityKind;
+    string() is string;
+}
+
 object DnsCertificateIdentity does CertificateIdentity {
-    has host is HostName;DnsCertificateIdentity(host is HostName){self.host=host;}
-    kind() is CertificateIdentityKind{CertificateIdentityKind.dns;}string() is string{host.ascii();}
+    has host is HostName;
+
+    DnsCertificateIdentity(host is HostName) {
+        self.host = host;
+    }
+
+    kind() is CertificateIdentityKind {
+        CertificateIdentityKind.dns;
+    }
+
+    string() is string {
+        host.ascii();
+    }
 }
+
 object IpCertificateIdentity does CertificateIdentity {
-    has address is IpAddress;IpCertificateIdentity(address is IpAddress){self.address=address;}
-    kind() is CertificateIdentityKind{CertificateIdentityKind.ip;}string() is string{address.string();}
+    has address is IpAddress;
+
+    IpCertificateIdentity(address is IpAddress) {
+        self.address = address;
+    }
+
+    kind() is CertificateIdentityKind {
+        CertificateIdentityKind.ip;
+    }
+
+    string() is string {
+        address.string();
+    }
 }
+
 // A verification request with an explicit immutable root selection, wall-clock
 // instant and nominal DNS/IP identity. Observations perform no host I/O.
 object VerifiedCertificateChain {
-    has supplied is CertificateChain;has roots is TrustedCertificates;
-    has kind,identity is string;has at is Instant;has purpose is CertificatePurpose;
-    VerifiedCertificateChain(chain is CertificateChain,trust is TrustStore,host is CertificateIdentity,at is Instant,purpose is CertificatePurpose){
-        supplied=chain;roots=TrustedCertificates(trust.certificates());
-        kind=if host.kind()==CertificateIdentityKind.dns{"DNS";}else{"IP";};
-        identity=host.string();self.at=at;self.purpose=purpose;
+    has supplied is CertificateChain;
+    has roots is TrustedCertificates;
+    has kind, identity is string;
+    has at is Instant;
+    has purpose is CertificatePurpose;
+
+    VerifiedCertificateChain(
+        chain is CertificateChain,
+        trust is TrustStore,
+        host is CertificateIdentity,
+        at is Instant,
+        purpose is CertificatePurpose
+    ) {
+        supplied = chain;
+        roots = TrustedCertificates(trust.certificates());
+        kind = if host.kind() == CertificateIdentityKind.dns {
+            "DNS";
+        }
+        else {
+            "IP";
+        };
+        identity = host.string();
+        self.at = at;
+        self.purpose = purpose;
     }
+
     path() is CertificateChain {
-        let identifier=purpose.identifier();
-        confirm identifier=="1.3.6.1.5.5.7.3.1" || identifier=="1.3.6.1.5.5.7.3.2" else throw UnsupportedCertificatePurpose.identifier(identifier);
-        let chain is @@byte=supplied.certificates().map()->certificate{certificate.der();};
-        let anchors is @@byte=roots.certificates().map()->certificate{certificate.der();};
-        let verified=try{x509.verify_chain(chain,anchors,kind,identity,at.unix_duration().seconds().string(),identifier);}catch e is NativeFailure {
-            if e.domain()=="core.x509.verify" && e.code()=="permission_denied"{throw CertificateVerificationFailed.because(CertificateFailureCode(e.message()).value());}
-            if e.domain()=="core.x509.verify" || e.domain()=="core.x509"{
-                if e.code()=="resource_exhausted"{throw CertificateLimitExceeded.exceeded;}
-                if e.code()=="unsupported"{throw CertificateBackendUnavailable.unavailable;}
-                if e.code()=="invalid_data" || e.code()=="invalid_input"{throw InvalidCertificate.because("invalid verification inputs");}
+        let identifier = purpose.identifier();
+        confirm identifier == "1.3.6.1.5.5.7.3.1" || identifier == "1.3.6.1.5.5.7.3.2"
+            else throw UnsupportedCertificatePurpose.identifier(identifier);
+        let chain is @@byte = supplied.certificates().map() -> certificate {
+            certificate.der();
+        };
+        let anchors is @@byte = roots.certificates().map() -> certificate {
+            certificate.der();
+        };
+        let verified = try {
+            x509.verify_chain(
+                chain,
+                anchors,
+                kind,
+                identity,
+                at.unix_duration().seconds().string(),
+                identifier
+            );
+        }
+        catch e is NativeFailure {
+            if e.domain() == "core.x509.verify" && e.code() == "permission_denied" {
+                throw CertificateVerificationFailed.because(
+                    CertificateFailureCode(e.message()).value()
+                );
+            }
+            if e.domain() == "core.x509.verify" || e.domain() == "core.x509" {
+                if e.code() == "resource_exhausted" {
+                    throw CertificateLimitExceeded.exceeded;
+                }
+                if e.code() == "unsupported" {
+                    throw CertificateBackendUnavailable.unavailable;
+                }
+                if e.code() == "invalid_data" || e.code() == "invalid_input" {
+                    throw InvalidCertificate.because("invalid verification inputs");
+                }
             }
             throw;
         };
-        let certificates is @Certificate=verified.map()->der{Certificate(der);};
+        let certificates is @Certificate = verified.map() -> der {
+            Certificate(der);
+        };
         CertificateChain(certificates);
     }
-    result() is Certificate{self.path().certificates().first();}
+
+    result() is Certificate {
+        self.path().certificates().first();
+    }
 }
+
 enum CertificateVerificationFailed is Error = (because(reason is CertificateFailure));
+
 enum UnsupportedCertificatePurpose is Error = (identifier(identifier is string));
+
 object CertificateFailureCode {
-    has origin is string;CertificateFailureCode(origin is string){self.origin=origin;}
-    value() is CertificateFailure{
-        if origin=="untrusted"{return CertificateFailure.untrusted;}
-        if origin=="invalid_signature"{return CertificateFailure.invalid_signature;}
-        if origin=="invalid_name"{return CertificateFailure.invalid_name;}
-        if origin=="invalid_purpose"{return CertificateFailure.invalid_purpose;}
-        if origin=="unknown_critical_extension"{return CertificateFailure.unknown_critical_extension;}
-        if origin=="not_yet_valid"{return CertificateFailure.not_yet_valid;}
-        if origin=="expired"{return CertificateFailure.expired;}
+    has origin is string;
+
+    CertificateFailureCode(origin is string) {
+        self.origin = origin;
+    }
+
+    value() is CertificateFailure {
+        if origin == "untrusted" {
+            return CertificateFailure.untrusted;
+        }
+        if origin == "invalid_signature" {
+            return CertificateFailure.invalid_signature;
+        }
+        if origin == "invalid_name" {
+            return CertificateFailure.invalid_name;
+        }
+        if origin == "invalid_purpose" {
+            return CertificateFailure.invalid_purpose;
+        }
+        if origin == "unknown_critical_extension" {
+            return CertificateFailure.unknown_critical_extension;
+        }
+        if origin == "not_yet_valid" {
+            return CertificateFailure.not_yet_valid;
+        }
+        if origin == "expired" {
+            return CertificateFailure.expired;
+        }
         CertificateFailure.invalid_chain;
     }
 }
+
 // Only result() reads selected system CA locations. Every call acquires a new
 // immutable snapshot, allowing its owning client/policy to choose its lifetime.
 object SystemTrustStore {
     SystemTrustStore();
-    result() is TrustStore{
-        try{
-            let sources=x509.system_certificates();
-            let values is @Certificate=sources.map()->source{Certificate(source);};
+
+    result() is TrustStore {
+        try {
+            let sources = x509.system_certificates();
+            let values is @Certificate = sources.map() -> source {
+                Certificate(source);
+            };
             TrustedCertificates(values);
-        }catch e is NativeFailure{
-            if e.domain()=="core.x509"{
-                if e.code()=="resource_exhausted"{throw TrustStoreLimitExceeded.kind("system roots");}
+        }
+        catch e is NativeFailure {
+            if e.domain() == "core.x509" {
+                if e.code() == "resource_exhausted" {
+                    throw TrustStoreLimitExceeded.kind("system roots");
+                }
                 throw SystemTrustUnavailable.because(e.code());
             }
             throw;
         }
     }
 }
+
 enum SystemTrustUnavailable is Error = (because(reason is string));
+
 object TrustedCertificates does TrustStore {
     has origin is @Certificate;
-    TrustedCertificates(certificates is Sequencing<Certificate>){
-        let count=certificates.size();confirm count>=0 else throw InvalidTrustStore.because("negative certificate count");
-        confirm count<=1024 else throw TrustStoreLimitExceeded.kind("certificates");
-        let values is @Certificate=(0..count).map()->index{certificates.item(index);};
-        let bytes=values.reduce(0)->sum,certificate{sum+certificate.der().size();};
-        confirm bytes<=16777216 else throw TrustStoreLimitExceeded.kind("DER bytes");origin=values;
+
+    TrustedCertificates(certificates is Sequencing<Certificate>) {
+        let count = certificates.size();
+        confirm count >= 0 else throw InvalidTrustStore.because("negative certificate count");
+        confirm count <= 1024 else throw TrustStoreLimitExceeded.kind("certificates");
+        let values is @Certificate = (0..count).map() -> index {
+            certificates.item(index);
+        };
+        let bytes = values.reduce(0) -> sum, certificate {
+            sum + certificate.der().size();
+        };
+        confirm bytes <= 16777216 else throw TrustStoreLimitExceeded.kind("DER bytes");
+        origin = values;
     }
-    certificates() is Sequencing<Certificate>{origin;}
+
+    certificates() is Sequencing<Certificate> {
+        origin;
+    }
 }
+
 // Strict CERTIFICATE-only PEM input, snapshotted at construction. It does not
 // read files or validate CA/chain/purpose/time/hostname/revocation policy.
 // Input <=8 MiB, <=1024 roots, total DER <=16 MiB; no secret text in failures.
 object PemTrustStore does TrustStore {
     has origin is TrustedCertificates;
-    PemTrustStore(source is string){
-        confirm source.length()<=8388608 else throw TrustStoreLimitExceeded.kind("PEM input");
-        confirm pem_invalid_offset(source)==-1 else throw InvalidTrustStore.because("invalid PEM document");
-        let blocks=pem_block_sources(source);confirm blocks.size()<=1024 else throw TrustStoreLimitExceeded.kind("certificates");
-        let values is @Certificate=blocks.map()->text{
-            let block=PemBlock(text);confirm block.kind()=="CERTIFICATE" else throw InvalidTrustStore.because("non-certificate PEM block");
+
+    PemTrustStore(source is string) {
+        confirm source.length() <= 8388608 else throw TrustStoreLimitExceeded.kind("PEM input");
+        confirm pem_invalid_offset(source) == -1
+            else throw InvalidTrustStore.because("invalid PEM document");
+        let blocks = pem_block_sources(source);
+        confirm blocks.size() <= 1024 else throw TrustStoreLimitExceeded.kind("certificates");
+        let values is @Certificate = blocks.map() -> text {
+            let block = PemBlock(text);
+            confirm block.kind() == "CERTIFICATE"
+                else throw InvalidTrustStore.because("non-certificate PEM block");
             Certificate(block.bytes());
-        };origin=TrustedCertificates(values);
+        };
+        origin = TrustedCertificates(values);
     }
-    certificates() is Sequencing<Certificate>{origin.certificates();}
+
+    certificates() is Sequencing<Certificate> {
+        origin.certificates();
+    }
 }
+
 enum InvalidTrustStore is Error = (because(reason is string));
+
 enum TrustStoreLimitExceeded is Error = (kind(kind is string));
+
 test "explicit empty roots do not acquire system trust" {
-    let store is TrustStore=TrustedCertificates([]);test.is(store.certificates().size(),0);
-    test.is(PemTrustStore("").certificates().size(),0);
+    let store is TrustStore = TrustedCertificates([]);
+    test.is(store.certificates().size(), 0);
+    test.is(PemTrustStore("").certificates().size(), 0);
 }
+
 test "system root request is available without acquiring host roots" {
-    let request=SystemTrustStore();test.ok(true);
+    let request = SystemTrustStore();
+    test.ok(true);
 }
+
 test "certificate identities preserve nominal DNS and IP selection" {
-    let dns=DnsCertificateIdentity(HostName("EXAMPLE.test"));
-    let ip=IpCertificateIdentity(IpAddress("127.0.0.1"));
-    test.ok(dns.kind()==CertificateIdentityKind.dns && ip.kind()==CertificateIdentityKind.ip);
-    test.is(dns.string(),"example.test");test.is(ip.string(),"127.0.0.1");
+    let dns = DnsCertificateIdentity(HostName("EXAMPLE.test"));
+    let ip = IpCertificateIdentity(IpAddress("127.0.0.1"));
+    test.ok(dns.kind() == CertificateIdentityKind.dns && ip.kind() == CertificateIdentityKind.ip);
+    test.is(dns.string(), "example.test");
+    test.is(ip.string(), "127.0.0.1");
 }
