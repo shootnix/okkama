@@ -1,0 +1,38 @@
+module examples/fs/file/read_lines v1.0.0;
+
+import "fs/file" take File, FileMode;
+import "fs/entry" take FileEntry;
+import "fs/path" take Path;
+import "io/stdout" take Stdout;
+
+// Read a text file line by line, or take its lines as an array. A line loses
+// its LF and one CR before it; the last line needs no LF.
+
+main() is int {
+    let out = Stdout();
+    let path = Path("notes.txt");
+    let sample = File(path: path, mode: FileMode.writing);
+    sample.text().write("title\r\nfirst\nsecond\n\nlast");
+    sample.close();
+
+    // One line at a time: for reads the file in batches, never all of it.
+    let file = File(path: path);
+    defer file.close();
+    for file.text() -> line {
+        out.writeln("[" + line + "]");
+    }
+
+    // All the lines at once.
+    let lines is @string = File(path: path).text().lines();
+    out.writeln(lines.size().string() + " lines");
+
+    // A header line, then the rest of the lines.
+    let report = File(path: path);
+    let title = report.text().line();
+    let body is @string = report.text().lines();
+    report.close();
+    out.writeln(title + ": " + body.join(", "));
+
+    FileEntry(path: path).remove();
+    0;
+}

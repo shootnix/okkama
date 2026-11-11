@@ -1,0 +1,47 @@
+module examples/fs/file/errors v1.0.0;
+
+import "fs/file" take File, FileMode;
+import "fs/error" take FileError;
+import "fs/entry" take FileEntry;
+import "fs/path" take Path;
+import "io/stdout" take Stdout;
+
+// Everything that goes wrong is a FileError; catch the cases you handle.
+
+main() is int {
+    let out = Stdout();
+
+    let text = try {
+        File(path: Path("missing.txt")).text().content();
+    }
+    catch FileError.not_found(path) {
+        "(no " + path + ")";
+    };
+    out.writeln(text);
+
+    let odd = try {
+        File(path: Path("missing.txt"), encoding: "klingon");
+        "opened";
+    }
+    catch FileError.unsupported_encoding(name) {
+        "no encoding " + name;
+    };
+    out.writeln(odd);
+
+    // The first view picks the mode; the other view is then refused.
+    let path = Path("mixed.txt");
+    let file = File(path: path, mode: FileMode.writing);
+    file.text().write("text");
+    let refused = try {
+        file.binary() <- [byte(0)];
+        "written";
+    }
+    catch FileError.invalid_operation(message) {
+        message;
+    };
+    out.writeln(refused);
+    file.close();
+
+    FileEntry(path: path).remove();
+    0;
+}

@@ -1,0 +1,71 @@
+module fs/entry v1.0.0;
+
+import "fs/path" take Path;
+import "fs/stat" take FileStat, FileStatFromMap;
+import "fs/error" take FileFailure;
+import "runtime/fs" take path_encode, stat, unlink, rename;
+
+// A path on disk, opened or not: whether something is there, what it is, and
+// removing or moving it. Reading and writing go through fs/file.
+//
+//     let entry = FileEntry(Path("notes.txt"));
+//     if entry.existence() {
+//         entry.move(Path("notes.old"));
+//     }
+
+object FileEntry {
+    has origin is Path;
+
+    FileEntry(path is Path) {
+        origin = path;
+    }
+
+    path() is Path {
+        origin;
+    }
+
+    existence() is bool {
+        try {
+            stat(path_encode(origin.string()));
+            true;
+        }
+        catch failure is NativeFailure {
+            if failure.code() == "not_found" {
+                false;
+            }
+            else {
+                throw FileFailure(failure, origin.string()).error();
+            }
+        }
+    }
+
+    stat() is FileStat {
+        try {
+            FileStatFromMap(origin: stat(path_encode(origin.string()))).value();
+        }
+        catch failure is NativeFailure {
+            throw FileFailure(failure, origin.string()).error();
+        }
+    }
+
+    remove() is void {
+        try {
+            unlink(path_encode(origin.string()));
+        }
+        catch failure is NativeFailure {
+            throw FileFailure(failure, origin.string()).error();
+        }
+    }
+
+    move(destination is Path) is void {
+        try {
+            rename(
+                path_encode(origin.string()),
+                path_encode(destination.string()),
+            );
+        }
+        catch failure is NativeFailure {
+            throw FileFailure(failure, origin.string()).error();
+        }
+    }
+}

@@ -2,7 +2,8 @@ module mime/types v1.0.0;
 
 import "mime/media_type" take MediaType, MimeItems, MimePosition, InvalidMediaType;
 import "fs/path" take Path, PathStyle, NativePathStyle;
-import "fs/file" take File, FileMode, FileSystemFailure;
+import "fs/file" take File;
+import "fs/error" take FileError;
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
@@ -397,7 +398,7 @@ object OptionalMediaFile {
     }
 
     bytes() is @byte {
-        let file = File(mode: FileMode.reading, path: path, binary: true);
+        let file = File(path: path);
         defer file.close();
         let buffer = ByteBuffer();
         defer buffer.closing().close();
@@ -418,17 +419,8 @@ object OptionalMediaFile {
             }
             buffer.content().bytes();
         }
-        catch failure is FileSystemFailure {
-            match failure {
-                case FileSystemFailure.detailed(code, _) {
-                    if code == "not_found" {
-                        [];
-                    }
-                    else {
-                        throw failure;
-                    }
-                }
-            }
+        catch FileError.not_found(_) {
+            [];
         }
     }
 }

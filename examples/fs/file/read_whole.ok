@@ -1,0 +1,20 @@
+module examples/fs/file/read_whole v1.0.0;
+
+import "fs/file" take File, FileMode;
+import "fs/entry" take FileEntry;
+import "fs/path" take Path;
+import "io/stdout" take Stdout;
+
+// Read a whole text file and print it.
+
+main() is int {
+    let path = Path("notes.txt");
+    let sample = File(path: path, mode: FileMode.writing);
+    sample.text().write("first line\nsecond line\n");
+    sample.close();
+
+    Stdout().write(File(path: path).text().content());
+
+    FileEntry(path: path).remove();
+    0;
+}

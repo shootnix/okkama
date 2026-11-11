@@ -1,7 +1,9 @@
 module app v1.0.0;
 
 import "io/stdout" take Stdout;
-import "fs/file" take File, FileMode, FileEntry, FileContent, FileSystemFailure;
+import "fs/file" take File, FileMode;
+import "fs/entry" take FileEntry;
+import "fs/error" take FileError;
 import "fs/path" take Path;
 import "fs/directory" take Directory, DirectoryEntries;
 import "fs/temp" take TemporaryDirectory;
@@ -11,11 +13,11 @@ import "io/stdin" take EndOfInput;
 main() is int {
     let out = Stdout();
     {
-        let w = File(mode: FileMode.writing, path: Path("lines.txt"));
+        let w = File(path: Path("lines.txt"), mode: FileMode.writing);
         defer w.close();
         w.text().write("a\r\nb\n\nlast");
     }
-    let r = File(mode: FileMode.reading, path: Path("lines.txt"));
+    let r = File(path: Path("lines.txt"));
     defer r.close();
     loop {
         let line = try {

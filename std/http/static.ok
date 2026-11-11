@@ -2,7 +2,7 @@ module http/static v1.0.0;
 
 import "fs/root" take FileRoot, RootedEntry;
 import "fs/stat" take FileStat, FileKind;
-import "fs/file" take FileSystemFailure;
+import "fs/error" take FileError;
 import "fs/path" take Path;
 import "mime/types" take MediaIdentifying, UnknownMediaType;
 import "http/handler" take Handling, HandlingResult, ResponseHandling;
@@ -285,20 +285,10 @@ object StaticFiles does Handling {
         catch e is NoAcceptableValue {
             Response(Status(406), Headers([Header(HeaderName("Vary"), "Accept-Encoding")]));
         }
-        catch e is FileSystemFailure {
-            match e {
-                case FileSystemFailure.detailed(code, _) {
-                    if code == "not_found"
-                        || code == "invalid_input"
-                        || code == "permission_denied"
-                        || code == "invalid_data" {
-                            Response(Status(404), Headers([]));
-                        }
-                        else {
-                            throw e;
-                        }
-                }
-            }
+        catch FileError.not_found(_), FileError.invalid_operation(_), FileError.permission_denied(_), FileError.invalid_text(
+            _
+        ) {
+            Response(Status(404), Headers([]));
         };
         let headers = ReplacedHeader(
             response.headers(),
@@ -527,17 +517,8 @@ object StaticFiles does Handling {
             let candidates is @RootedEntry = try {
                 [root.entry(parts)];
             }
-            catch e is FileSystemFailure {
-                match e {
-                    case FileSystemFailure.detailed(code, _) {
-                        if code == "not_found" || code == "invalid_input" {
-                            [];
-                        }
-                        else {
-                            throw e;
-                        }
-                    }
-                }
+            catch FileError.not_found(_), FileError.invalid_operation(_) {
+                [];
             };
             if candidates.size() == 1 {
                 let candidate = candidates[0];
@@ -593,17 +574,8 @@ object StaticFiles does Handling {
             let candidates is @RootedEntry = try {
                 [root.entry(parts)];
             }
-            catch e is FileSystemFailure {
-                match e {
-                    case FileSystemFailure.detailed(code, _) {
-                        if code == "not_found" || code == "invalid_input" {
-                            [];
-                        }
-                        else {
-                            throw e;
-                        }
-                    }
-                }
+            catch FileError.not_found(_), FileError.invalid_operation(_) {
+                [];
             };
             if candidates.size() == 1 {
                 let candidate = candidates[0];

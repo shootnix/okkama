@@ -1,7 +1,8 @@
 module fs/temp v1.0.0;
 
 import "fs/directory" take DirectoryLocating;
-import "fs/file" take FileEntry, FileSystemFailure;
+import "fs/entry" take FileEntry;
+import "fs/error" take FileError, FileFailure;
 import "fs/path" take Path;
 import "io/stream" take ByteSource, Reading, Writing, Closing, IncompleteWrite, InvalidReadLimit;
 import "runtime/fs" take FileState, TemporaryDirectoryState, path_encode, path_decode,
@@ -47,7 +48,7 @@ object TemporaryFile does Reading, Writing, Closing {
             );
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure, directory.path().string()).error();
         };
     }
 
@@ -57,7 +58,7 @@ object TemporaryFile does Reading, Writing, Closing {
             file_state_read(state, limit);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure).error();
         }
     }
 
@@ -67,7 +68,7 @@ object TemporaryFile does Reading, Writing, Closing {
             file_state_write(state, content);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure).error();
         };
         confirm written == content.size() else throw IncompleteWrite.after(written);
     }
@@ -77,7 +78,7 @@ object TemporaryFile does Reading, Writing, Closing {
             file_state_flush(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure).error();
         }
     }
 
@@ -90,7 +91,7 @@ object TemporaryFile does Reading, Writing, Closing {
             file_state_closed(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure).error();
         }
     }
 
@@ -99,7 +100,7 @@ object TemporaryFile does Reading, Writing, Closing {
             file_state_close(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure).error();
         }
     }
 
@@ -108,7 +109,7 @@ object TemporaryFile does Reading, Writing, Closing {
             Path(path_decode(temporary_file_path(state)));
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure).error();
         }
     }
 
@@ -117,7 +118,7 @@ object TemporaryFile does Reading, Writing, Closing {
             temporary_file_preserve(state, path_encode(destination.string()));
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure, destination.string()).error();
         }
     }
 }
@@ -163,7 +164,7 @@ object TemporaryDirectory does Closing {
             );
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure, parent.path().string()).error();
         };
     }
 
@@ -172,7 +173,7 @@ object TemporaryDirectory does Closing {
             Path(path_decode(temporary_directory_path(state)));
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure).error();
         }
     }
 
@@ -185,7 +186,7 @@ object TemporaryDirectory does Closing {
             temporary_directory_closed(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure).error();
         }
     }
 
@@ -194,7 +195,7 @@ object TemporaryDirectory does Closing {
             temporary_directory_close(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure).error();
         }
     }
 }

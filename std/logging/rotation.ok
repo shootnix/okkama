@@ -2,7 +2,7 @@ module logging/rotation v1.0.0;
 
 import "logging/file" take FileLogOptions, LogFileState, ClosedLogFile;
 import "fs/path" take Path, PathStyle;
-import "fs/file" take FileError;
+import "fs/error" take FileFailure;
 import "io/stream" take ByteSource, Writing, Closing;
 import "io/decorators" take ByteSnapshot;
 import "async/atomic" take Atomic;
@@ -100,7 +100,7 @@ object LogArchiveCatalog {
             fs.directory_entries(fs.path_encode(path.parent().string()));
         }
         catch failure is NativeFailure {
-            throw FileError(failure: failure).value();
+            throw FileFailure(failure).error();
         };
         let empty is List<LogArchive> = EmptyList();
         let entries is List<LogArchive> = names.reduce(empty) -> old, text {
@@ -120,7 +120,7 @@ object LogArchiveCatalog {
                         fs.lstat(fs.path_encode(entry.string()))["kind"];
                     }
                     catch failure is NativeFailure {
-                        throw FileError(failure: failure).value();
+                        throw FileFailure(failure).error();
                     };
                     confirm kind == 1
                         else throw InvalidLogRotation.because(
@@ -173,7 +173,7 @@ object LogArchiveCatalog {
                 fs.unlink(fs.path_encode(oldest.path().string()));
             }
             catch failure is NativeFailure {
-                throw FileError(failure: failure).value();
+                throw FileFailure(failure).error();
             }
         }
     }
@@ -265,7 +265,7 @@ object RotatingLogFile does Writing, Closing {
                 BigInt("0");
             }
             else {
-                throw FileError(failure: failure).value();
+                throw FileFailure(failure).error();
             }
         }
     }
@@ -297,7 +297,7 @@ object RotatingLogFile does Writing, Closing {
             }
         }
         catch failure is NativeFailure {
-            throw FileError(failure: failure).value();
+            throw FileFailure(failure).error();
         }
         if backups > 0 {
             catalog.trim(catalog.records(), backups);

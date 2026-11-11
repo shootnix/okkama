@@ -13,7 +13,8 @@ import "collections/ordering" take Sorted, SortedBy;
 import "compare" take Comparing, Order;
 import "async/atomic" take Atomic;
 import "io/stream" take Closing;
-import "fs/file" take File, FileMode, FileEntry;
+import "fs/file" take File;
+import "fs/entry" take FileEntry;
 import "fs/directory" take Directory;
 import "fs/temp" take TemporaryDirectory, TemporaryFile, TemporaryFilePreservation;
 import "io/buffer" take ByteBuffer;
@@ -580,7 +581,7 @@ object LoadedCookieJar {
     result() is MemoryCookieJar {
         confirm origin.stat().size() <= 67108864
             else throw InvalidCookieStore.because("file byte limit exceeded");
-        let file = File(mode: FileMode.reading, path: origin.path(), binary: true);
+        let file = File(path: origin.path());
         defer file.close();
         let output = ByteBuffer();
         defer output.closing().close();

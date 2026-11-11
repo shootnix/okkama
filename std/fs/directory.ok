@@ -2,7 +2,7 @@ module fs/directory v1.0.0;
 
 import "collections/iteration" take Cursor, Iterating, IterationEnded;
 import "collections/list" take List, EmptyList;
-import "fs/file" take FileSystemFailure;
+import "fs/error" take FileError, FileFailure;
 import "fs/path" take Path;
 import "fs/stat" take FileKind, FileStat, FileStatFromMap;
 import "runtime/fs" take path_encode, lstat, mkdir, rmdir, rename, directory_entries,
@@ -10,7 +10,7 @@ import "runtime/fs" take path_encode, lstat, mkdir, rmdir, rename, directory_ent
 
 // Directory is a narrow path command object. create() creates one level with
 // portable 0755 permissions filtered by the process umask. remove() removes
-// only an empty directory and throws DirectoryNotEmpty otherwise.
+// only an empty directory and throws FileError.not_empty otherwise.
 //
 // DirectoryEntries snapshots and lexicographically sorts one directory in one
 // native bulk operation when cursor() is requested:
@@ -55,7 +55,7 @@ object Directory does DirectoryLocating {
                 false;
             }
             else {
-                throw FileSystemFailure.detailed(failure.code(), failure.message());
+                throw FileFailure(failure, origin.string()).error();
             }
         }
     }
@@ -65,7 +65,7 @@ object Directory does DirectoryLocating {
             mkdir(path_encode(origin.string()), 493);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure, origin.string()).error();
         }
     }
 
@@ -74,12 +74,7 @@ object Directory does DirectoryLocating {
             rmdir(path_encode(origin.string()));
         }
         catch failure is NativeFailure {
-            if failure.code() == "not_empty" {
-                throw DirectoryNotEmpty.path(origin.string());
-            }
-            else {
-                throw FileSystemFailure.detailed(failure.code(), failure.message());
-            }
+            throw FileFailure(failure, origin.string()).error();
         }
     }
 
@@ -91,7 +86,7 @@ object Directory does DirectoryLocating {
             );
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure, origin.string()).error();
         }
     }
 }
@@ -116,7 +111,7 @@ object DirectoryEntry {
             FileStatFromMap(origin: lstat(path_encode(origin.string()))).value();
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure, origin.string()).error();
         }
     }
 }
@@ -139,7 +134,7 @@ object DirectoryEntries does Iterating<DirectoryEntry> {
             );
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure, origin.path().string()).error();
         }
     }
 }
@@ -273,9 +268,7 @@ object DirectoryTree {
             directory_remove_tree(path_encode(removed.string()));
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure, removed.string()).error();
         }
     }
 }
-
-enum DirectoryNotEmpty is Error = (path(path is string));

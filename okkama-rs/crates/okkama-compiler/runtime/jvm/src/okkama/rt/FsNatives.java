@@ -1226,6 +1226,8 @@ public final class FsNatives {
         int mode;
         int flags;
         boolean binary;
+        // file_state_open: the first text or byte operation picks binary.
+        boolean undecided;
         String encoding;
         Charset charset;
         FileChannel channel;
@@ -1243,6 +1245,27 @@ public final class FsNatives {
         FileState file;
         FileLock lock;
         boolean closed;
+        Object key;
+    }
+
+    // The locks of this process by file, and whether each is shared.
+    private static final Map<Object, Boolean> HELD = new HashMap<Object, Boolean>();
+
+    private static Object lockKey(String path) {
+        Path file = Path.of(path).toAbsolutePath().normalize();
+        try {
+            Object key = Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class).fileKey();
+            return key != null ? key : file.toString();
+        } catch (IOException error) {
+            return file.toString();
+        }
+    }
+
+    private static void forget(LockState lock) {
+        if (lock.key != null) {
+            HELD.remove(lock.key);
+            lock.key = null;
+        }
     }
 
     private static Integer stateFlags(BigInteger mode) {
@@ -1270,6 +1293,27 @@ public final class FsNatives {
             case "latin-1": return StandardCharsets.ISO_8859_1;
             default: return null;
         }
+    }
+
+    public static Object runtime_fs__file_state_open(List<?> pathValue, BigInteger mode, String encoding) {
+        String name = "file_state_open";
+        String path = path(pathValue, name, 3);
+        Integer flags = stateFlags(mode);
+        if (flags == null) {
+            throw fail("invalid_input", name, 3, "Invalid file mode");
+        }
+        Charset charset = charset(encoding);
+        if (charset == null) {
+            throw fail("unsupported", name, 3, "Unsupported file encoding");
+        }
+        FileState state = new FileState();
+        state.path = path;
+        state.mode = mode.intValue();
+        state.flags = flags;
+        state.undecided = true;
+        state.encoding = encoding;
+        state.charset = charset;
+        return state;
     }
 
     public static Object runtime_fs__file_state_create(List<?> pathValue, BigInteger mode, String encoding,
@@ -1330,16 +1374,25 @@ public final class FsNatives {
         return (state.flags & APPEND) != 0;
     }
 
+    // Picks the mode of an undecided state; then fails an operation of the other kind.
+    private static void settleMode(FileState state, boolean text, String name, int arity) {
+        if (state.undecided) {
+            state.binary = !text;
+            state.undecided = false;
+        }
+        if (text && state.binary) {
+            throw fail("invalid_input", name, arity, "The file is open as bytes");
+        }
+        if (!text && !state.binary) {
+            throw fail("invalid_input", name, arity, "The file is open as text");
+        }
+    }
+
     private static FileChannel prepareRead(FileState state, boolean text, String name, int arity) {
         if (!readable(state)) {
             throw fail("invalid_input", name, arity, "File mode does not permit reading");
         }
-        if (text && state.binary) {
-            throw fail("invalid_input", name, arity, "Text operation required");
-        }
-        if (!text && !state.binary) {
-            throw fail("invalid_input", name, arity, "Binary operation required");
-        }
+        settleMode(state, text, name, arity);
         FileChannel channel = stateOpen(state, name, arity);
         state.last = "read";
         return channel;
@@ -1349,12 +1402,7 @@ public final class FsNatives {
         if (!writable(state)) {
             throw fail("invalid_input", name, arity, "File mode does not permit writing");
         }
-        if (text && state.binary) {
-            throw fail("invalid_input", name, arity, "Text operation required");
-        }
-        if (!text && !state.binary) {
-            throw fail("invalid_input", name, arity, "Binary operation required");
-        }
+        settleMode(state, text, name, arity);
         FileChannel channel = stateOpen(state, name, arity);
         if ("read".equals(state.last) && state.buffer.size() > 0) {
             try {
@@ -1542,6 +1590,39 @@ public final class FsNatives {
         }
     }
 
+    public static BigInteger runtime_fs__file_state_rewrite_text(Object handle, List<?> values) {
+        String name = "file_state_rewrite_text";
+        FileState state = state(handle, name, 2);
+        FileChannel channel = prepareWrite(state, true, name, 2);
+        StringBuilder text = new StringBuilder();
+        for (Object value : values) {
+            text.append((String) value);
+        }
+        byte[] bytes;
+        try {
+            ByteBuffer encoded = state.charset.newEncoder().onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT).encode(CharBuffer.wrap(text));
+            bytes = new byte[encoded.remaining()];
+            encoded.get(bytes);
+        } catch (CharacterCodingException invalid) {
+            throw fail("invalid_data", name, 2, "Text cannot be encoded");
+        }
+        state.buffer.reset();
+        state.eof = false;
+        state.last = null;
+        try {
+            channel.truncate(0);
+            channel.position(0);
+            ByteBuffer buffer = ByteBuffer.wrap(bytes);
+            while (buffer.hasRemaining()) {
+                channel.write(buffer);
+            }
+        } catch (IOException error) {
+            throw host(error, name, 2, "Cannot write file");
+        }
+        return BigInteger.valueOf(bytes.length);
+    }
+
     public static BigInteger runtime_fs__file_state_write_text(Object handle, List<?> values, boolean newline) {
         String name = "file_state_write_text";
         FileState state = state(handle, name, 3);
@@ -1595,6 +1676,7 @@ public final class FsNatives {
                 // Закрытие канала всё равно снимает блокировку.
             }
             state.lock.closed = true;
+            forget(state.lock);
             state.lock.file = null;
             state.lock = null;
         }
@@ -1639,9 +1721,7 @@ public final class FsNatives {
 
     public static BigInteger runtime_fs__file_state_position(Object handle) {
         FileState state = state(handle, "file_state_position", 1);
-        if (!state.binary) {
-            throw fail("invalid_input", "file_state_position", 1, "Byte position is unavailable in text mode");
-        }
+        settleMode(state, false, "file_state_position", 1);
         try {
             return BigInteger.valueOf(stateOpen(state, "file_state_position", 1).position());
         } catch (IOException error) {
@@ -1651,9 +1731,7 @@ public final class FsNatives {
 
     public static BigInteger runtime_fs__file_state_seek(Object handle, BigInteger offset, BigInteger origin) {
         FileState state = state(handle, "file_state_seek", 3);
-        if (!state.binary) {
-            throw fail("invalid_input", "file_state_seek", 3, "Byte seeking is unavailable in text mode");
-        }
+        settleMode(state, false, "file_state_seek", 3);
         if (!origin.equals(BigInteger.ZERO) && !origin.equals(BigInteger.ONE) && !origin.equals(BigInteger.valueOf(2))) {
             throw fail("invalid_input", "file_state_seek", 3, "Invalid seek origin");
         }
@@ -1668,9 +1746,7 @@ public final class FsNatives {
     public static boolean runtime_fs__file_state_truncate(Object handle, BigInteger size) {
         String name = "file_state_truncate";
         FileState state = state(handle, name, 2);
-        if (!state.binary) {
-            throw fail("invalid_input", name, 2, "Truncation is unavailable in text mode");
-        }
+        settleMode(state, false, name, 2);
         if (!writable(state)) {
             throw fail("invalid_input", name, 2, "File mode does not permit writing");
         }
@@ -1718,8 +1794,57 @@ public final class FsNatives {
         LockState lockState = new LockState();
         lockState.file = state;
         lockState.lock = lock;
+        lockState.key = lockKey(state.path);
+        HELD.put(lockState.key, shared);
         state.lock = lockState;
         return lockState;
+    }
+
+    public static boolean runtime_fs__file_state_locked(Object handle, BigInteger mode) {
+        String name = "file_state_locked";
+        FileState state = state(handle, name, 2);
+        if (!mode.equals(BigInteger.ZERO) && !mode.equals(BigInteger.ONE)) {
+            throw fail("invalid_input", name, 2, "Invalid file lock mode");
+        }
+        boolean shared = mode.signum() == 0;
+        stateOpen(state, name, 2);
+        Boolean own = HELD.get(lockKey(state.path));
+        if (own != null) {
+            return own == shared;
+        }
+        // Another process: a lock in the way refuses ours, and the kind it refuses
+        // tells its own. The probe has a channel of its own; this process holds no
+        // lock on the file, so closing it releases nothing.
+        Path file = Path.of(state.path);
+        boolean writable = true;
+        FileChannel probe;
+        try {
+            probe = FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE);
+        } catch (IOException readOnly) {
+            writable = false;
+            try {
+                probe = FileChannel.open(file, StandardOpenOption.READ);
+            } catch (IOException error) {
+                throw host(error, name, 2, "Cannot inspect file lock");
+            }
+        }
+        try (FileChannel channel = probe) {
+            if (writable) {
+                FileLock any = channel.tryLock(0, Long.MAX_VALUE, false);
+                if (any != null) {
+                    any.release();
+                    return false;
+                }
+            }
+            FileLock reading = channel.tryLock(0, Long.MAX_VALUE, true);
+            if (reading == null) {
+                return !shared;
+            }
+            reading.release();
+            return shared && writable;
+        } catch (IOException | OverlappingFileLockException error) {
+            throw host(Host.io(error), name, 2, "Cannot inspect file lock");
+        }
     }
 
     public static boolean runtime_fs__file_lock_closed(Object handle) {
@@ -1742,6 +1867,7 @@ public final class FsNatives {
         if (file != null && file.lock == lock) {
             file.lock = null;
         }
+        forget(lock);
         lock.file = null;
         lock.closed = true;
         return true;

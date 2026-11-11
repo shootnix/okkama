@@ -1,0 +1,63 @@
+module fs/error v1.0.0;
+
+// Everything that goes wrong with a file, a directory or a path is a
+// FileError; the cases about one path carry it.
+//
+//     let text = try {
+//         File(Path("notes.txt")).text().content();
+//     }
+//     catch FileError.not_found(path) {
+//         "";
+//     };
+//
+// FileFailure turns a failed runtime/fs call into its FileError, for the fs
+// modules built on the runtime; a call on an open handle names no path.
+
+enum FileError is Error = (not_found(path is string), already_exists(path is string), permission_denied(
+    path is string
+), not_empty(path is string), not_symbolic_link(path is string), invalid_hard_link_source(
+    path is string
+), invalid_text(path is string), invalid_operation(message is string), unsupported_encoding(
+    name is string
+), failed(code is string, message is string));
+
+object FileFailure {
+    has failure is NativeFailure;
+    has path is string;
+
+    FileFailure(failure is NativeFailure, path is string) {
+        self.failure = failure;
+        self.path = path;
+    }
+
+    // A failure of an operation on an open handle, which names no path.
+    FileFailure(failure is NativeFailure) {
+        self.failure = failure;
+        path = "";
+    }
+
+    error() is FileError {
+        let code = failure.code();
+        if code == "not_found" {
+            FileError.not_found(path);
+        }
+        else if code == "already_exists" {
+            FileError.already_exists(path);
+        }
+        else if code == "permission_denied" {
+            FileError.permission_denied(path);
+        }
+        else if code == "not_empty" {
+            FileError.not_empty(path);
+        }
+        else if code == "invalid_data" {
+            FileError.invalid_text(path);
+        }
+        else if code == "invalid_input" || code == "already_closed" {
+            FileError.invalid_operation(failure.message());
+        }
+        else {
+            FileError.failed(code, failure.message());
+        }
+    }
+}

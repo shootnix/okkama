@@ -1,0 +1,23 @@
+module examples/fs/file/append v1.0.0;
+
+import "fs/file" take File, FileMode;
+import "fs/entry" take FileEntry;
+import "fs/path" take Path;
+import "io/stdout" take Stdout;
+
+// Append to a text file, then close it. FileMode.appending creates the file
+// when it is missing and always writes at its end.
+
+main() is int {
+    let path = Path("app.log");
+    for ["started", "working", "stopped"] -> event {
+        let log = File(path: path, mode: FileMode.appending);
+        log.text().writeln(event);
+        log.close();
+    }
+
+    Stdout().write(File(path: path).text().content());
+
+    FileEntry(path: path).remove();
+    0;
+}

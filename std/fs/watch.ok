@@ -1,6 +1,6 @@
 module fs/watch v1.0.0;
 
-import "fs/file" take FileSystemFailure;
+import "fs/error" take FileError, FileFailure;
 import "fs/path" take Path;
 import "io/stream" take Closing;
 import "runtime/fs" take FileWatchState, path_encode, file_watch_create, file_watch_event,
@@ -87,7 +87,7 @@ object FileWatch does Closing {
             file_watch_create(path_encode(path.string()));
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure, path.string()).error();
         };
     }
 
@@ -96,7 +96,7 @@ object FileWatch does Closing {
             await file_watch_event(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure).error();
         };
         let name is string = details["kind"];
         let kind is FileEventKind = match name {
@@ -113,7 +113,7 @@ object FileWatch does Closing {
                 FileEventKind.renamed;
             }
             else {
-                throw FileSystemFailure.detailed(
+                throw FileError.failed(
                     "invalid_data",
                     "runtime returned an unknown file-event kind"
                 );
@@ -136,7 +136,7 @@ object FileWatch does Closing {
             file_watch_closed(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure).error();
         }
     }
 
@@ -145,7 +145,7 @@ object FileWatch does Closing {
             file_watch_close(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure).error();
         }
     }
 }

@@ -23,6 +23,8 @@ pub(crate) struct FileState {
     flags: i64,
     encoding: String,
     binary: bool,
+    /// `file_state_open`: the first text or byte operation picks `binary`.
+    undecided: bool,
     channel: Option<RawFile>,
     buffer: Vec<u8>,
     start: usize,
@@ -47,6 +49,18 @@ impl FileState {
         }
         Ok(())
     }
+    /// Picks the mode of an undecided state; then fails an operation of the other kind.
+    fn settle_mode(&mut self, n: Native, text: bool) -> Result<(), ProviderError> {
+        if self.undecided {
+            self.binary = !text;
+            self.undecided = false;
+        }
+        if text == self.binary {
+            let message = if text { "The file is open as bytes" } else { "The file is open as text" };
+            return Err(fail(n, "invalid_input", message));
+        }
+        Ok(())
+    }
     pub(crate) fn temporary(path: PathBuf, channel: RawFile) -> Self {
         Self {
             delete_on_close: Some(path.clone()),
@@ -55,6 +69,7 @@ impl FileState {
             flags: 3,
             encoding: String::new(),
             binary: true,
+            undecided: false,
             channel: Some(channel),
             buffer: vec![],
             start: 0,
@@ -97,13 +112,7 @@ impl FileState {
         if self.closed {
             return Err(fail(n, "already_closed", "File is closed"));
         }
-        if text == self.binary {
-            return Err(fail(
-                n,
-                "invalid_input",
-                "Operation does not match binary/text file mode",
-            ));
-        }
+        self.settle_mode(n, text)?;
         if self.flags & if write { 2 } else { 1 } == 0 {
             return Err(fail(
                 n,
@@ -206,6 +215,7 @@ pub(crate) fn handles(n: Native) -> bool {
     matches!(
         n,
         FsFileStateCreate
+            | FsFileStateOpen
             | FsFileStateReadText
             | FsFileStateReadLine
             | FsFileStateReadLines
@@ -219,6 +229,8 @@ pub(crate) fn handles(n: Native) -> bool {
             | FsFileStateSeek
             | FsFileStateTruncate
             | FsFileStateLock
+            | FsFileStateLocked
+            | FsFileStateRewriteText
             | FsFileLockClosed
             | FsFileLockClose
     )
@@ -240,7 +252,7 @@ impl Heap {
     ) -> Result<Slot, ProviderError> {
         use Native::*;
         let yes = Slot::boolean(true);
-        if n == FsFileStateCreate {
+        if n == FsFileStateCreate || n == FsFileStateOpen {
             let bytes = self.native_bytes(a[0])?;
             if bytes.is_empty() || bytes.contains(&0) {
                 return Err(fail(n, "invalid_input", "Invalid file path"));
@@ -254,7 +266,8 @@ impl Heap {
                 _ => return Err(fail(n, "invalid_input", "Invalid file mode")),
             };
             let name = self.text(a[2])?.to_owned();
-            let binary = a[3].bits != 0;
+            let undecided = n == FsFileStateOpen;
+            let binary = !undecided && a[3].bits != 0;
             if binary && !name.is_empty() {
                 return Err(fail(n, "invalid_input", "Binary file cannot have encoding"));
             }
@@ -268,6 +281,7 @@ impl Heap {
                 flags,
                 encoding: name,
                 binary,
+                undecided,
                 channel: None,
                 buffer: vec![],
                 start: 0,
@@ -433,6 +447,40 @@ impl Heap {
                 };
                 Ok(Slot::small(size as i64))
             }
+            FsFileStateRewriteText => {
+                state.prepare(n, &cwd, true, true)?;
+                let mut text = String::new();
+                for v in self.elements(a[1])? {
+                    text.push_str(self.text(v)?);
+                }
+                let bytes = encode(n, &text, &state.encoding)?;
+                state.buffer.clear();
+                state.start = 0;
+                state.eof = false;
+                let file = state.opened(n, &cwd)?.open(n)?;
+                file.set_len(0).map_err(|e| host(n, e))?;
+                file.seek(SeekFrom::Start(0)).map_err(|e| host(n, e))?;
+                file.write_all(&bytes).map_err(|e| host(n, e))?;
+                Ok(Slot::small(bytes.len() as i64))
+            }
+            FsFileStateLocked => {
+                let mode = self
+                    .integer(a[1])?
+                    .to_i64()
+                    .filter(|v| (0..=1).contains(v))
+                    .ok_or_else(|| fail(n, "invalid_input", "Invalid lock mode"))?;
+                let channel = state.opened(n, &cwd)?;
+                #[cfg(unix)]
+                {
+                    let file = channel.file.as_ref().expect("open");
+                    Ok(Slot::boolean(crate::host::file_lock::Lock::held(n, file, mode == 0)?))
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = (channel, mode);
+                    Err(fail(n, "unsupported", "Record locks unavailable"))
+                }
+            }
             FsFileStateFlush => {
                 if state.flags & 2 == 0 {
                     return Err(fail(n, "invalid_input", "File is not writable"));
@@ -441,13 +489,7 @@ impl Heap {
                 Ok(yes)
             }
             FsFileStatePosition | FsFileStateSeek | FsFileStateTruncate => {
-                if !state.binary {
-                    return Err(fail(
-                        n,
-                        "invalid_input",
-                        "Byte positions require binary mode",
-                    ));
-                }
+                state.settle_mode(n, false)?;
                 if n == FsFileStateTruncate {
                     if state.flags & 2 == 0 {
                         return Err(fail(n, "invalid_input", "File is not writable"));

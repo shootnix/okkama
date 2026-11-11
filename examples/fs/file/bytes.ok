@@ -1,0 +1,38 @@
+module examples/fs/file/bytes v1.0.0;
+
+import "fs/file" take File, FileMode, SeekOrigin;
+import "fs/entry" take FileEntry;
+import "fs/path" take Path;
+import "io/stdout" take Stdout;
+
+// Bytes: one by one, a piece, the rest, and at a byte offset. The first view
+// a file is used through picks its mode: this one is binary.
+
+main() is int {
+    let out = Stdout();
+    let path = Path("data.bin");
+    let sample = File(path: path, mode: FileMode.writing);
+    sample.binary() <- [byte(137), byte(80), byte(78), byte(71), byte(13), byte(10)];
+    sample.close();
+
+    // Byte by byte: for reads the file in batches.
+    let sum = File(path: path).binary().reduce(0) -> total, b {
+        total + b.int();
+    };
+    out.writeln("sum " + sum.string());
+
+    let file = File(path: path, mode: FileMode.reading_and_writing);
+    let data = file.binary();
+    out.writeln("first " + data.byte().int().string());
+    out.writeln("next three " + data.bytes(3).map() -> b { b.int().string(); }.join(" "));
+    out.writeln("rest " + data.bytes().size().string() + " bytes");
+
+    data.seek(1, SeekOrigin.start);
+    out.writeln("at " + data.offset().string() + ": " + data.byte().int().string());
+    data.truncate(4);
+    file.close();
+    out.writeln("now " + File(path: path).binary().bytes().size().string() + " bytes");
+
+    FileEntry(path: path).remove();
+    0;
+}

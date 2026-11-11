@@ -1,7 +1,9 @@
 module app v1.0.0;
 
 import "io/stdout" take Stdout;
-import "fs/file" take File, FileMode, FileEntry, FileContent, FileSystemFailure;
+import "fs/file" take File, FileMode;
+import "fs/entry" take FileEntry;
+import "fs/error" take FileError;
 import "fs/path" take Path;
 import "fs/directory" take Directory, DirectoryEntries;
 import "fs/temp" take TemporaryDirectory;
@@ -9,12 +11,12 @@ import "encoding/utf" take Utf8Decoded;
 
 main() is int {
     {
-        let file = File(mode: FileMode.writing, path: Path("out.txt"));
+        let file = File(path: Path("out.txt"), mode: FileMode.writing);
         defer file.close();
         file.text().writeln("first line");
         file.text().write("second ", "line\n");
     }
-    let content = Utf8Decoded(origin: FileContent(origin: FileEntry(path: Path("out.txt"))).bytes()).string();
+    let content = File(path: Path("out.txt")).text().content();
     Stdout().write(content);
     0;
 }

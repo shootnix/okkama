@@ -3650,6 +3650,17 @@ that goes wrong is one `JsonError`, whose reading cases carry the RFC 6901
 pointer of the value: `catch JsonError.missing(pointer)`. The guide is
 `docs/std/json.md` in okkama-docs.
 
+`fs/file` makes a file a resource read through two symmetric views; the first
+one used picks the mode. `File(path: Path("notes.txt"))` opens for reading;
+`for file.text() -> line` walks the lines in batches, `lines()` and
+`content()` give the rest at once, and `writeln`, `write` and `rewrite`
+write. `file.binary()` gives bytes: `for`, `byte()`, `bytes(n)`, `bytes()`,
+`seek`, `truncate`. `file.lock(FileLockMode.exclusive)` is a `Maybe` — a lock
+in the way is `Maybe.none` — and `file.locked(mode)` tells what holds the
+file. Every fs failure is one `FileError` from `fs/error`; `FileEntry` (a
+path on disk) lives in `fs/entry`. `examples/fs/file/` shows each task as a
+program.
+
 The historical inventory and examples below describe **legacy `stdlib/`**.
 They remain executable with that library, but are not API proposals or completion
 claims for `std/`. Select the library root explicitly; do not combine their modules.

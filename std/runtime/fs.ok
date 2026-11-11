@@ -52,6 +52,11 @@ native close(handle is FileHandle) is bool;
 // encoding is one of the canonical portable names, or empty in binary mode.
 native file_state_create(path is @byte, mode is int, encoding is string, binary is bool) is FileState;
 
+// The same, with the mode left open: the first text or byte operation picks it
+// (#352), and an operation of the other kind then fails with invalid_input.
+// encoding applies when text is picked.
+native file_state_open(path is @byte, mode is int, encoding is string) is FileState;
+
 native file_state_read_text(state is FileState) is string;
 
 native file_state_read_line(state is FileState) is string;
@@ -78,6 +83,13 @@ native file_state_truncate(state is FileState, size is int) is bool;
 
 // mode: 0 shared, 1 exclusive; waiting: 0 wait, 1 immediate.
 native file_state_lock(state is FileState, mode is int, waiting is int) is FileLockState;
+
+// Whether the file is locked now in mode (0 shared, 1 exclusive), by this
+// process or another one.
+native file_state_locked(state is FileState, mode is int) is bool;
+
+// Empties a text file and writes values from its start.
+native file_state_rewrite_text(state is FileState, values is @string) is int;
 
 native file_lock_closed(state is FileLockState) is bool;
 

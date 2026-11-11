@@ -1,0 +1,46 @@
+module examples/fs/file/lock v1.0.0;
+
+import "fs/file" take File, FileMode;
+import "fs/lock" take FileLockMode;
+import "fs/entry" take FileEntry;
+import "fs/path" take Path;
+import "strings/parse" take ParsedInt;
+import "io/stdout" take Stdout;
+
+// Locks are whole-file and advisory: they keep out those who lock too.
+// lock(mode) does not wait; a lock in the way gives Maybe.none, so the
+// busy branch is ordinary code. locked(mode) tells what holds the file now.
+
+main() is int {
+    let out = Stdout();
+    let path = Path("counter.txt");
+    let sample = File(path: path, mode: FileMode.writing);
+    sample.text().write("41");
+    sample.close();
+
+    // Read, change and write back under an exclusive lock.
+    let file = File(path: path, mode: FileMode.reading_and_writing);
+    let lock = file.lock(FileLockMode.exclusive) else panic "the counter is busy";
+    let count = ParsedInt(origin: file.text().content()).value();
+    file.text().rewrite((count + 1).string());
+    out.writeln("locked exclusively: " + file.locked(FileLockMode.exclusive).string());
+
+    // Another taker finds it busy and goes its own way.
+    let other = File(path: path);
+    match other.lock(FileLockMode.shared) {
+        case Maybe.some(shared) {
+            out.writeln("unexpected: the file was free");
+        }
+        case Maybe.none {
+            out.writeln("busy, try later");
+        }
+    }
+    other.close();
+
+    lock.close();
+    file.close();
+    out.writeln("count " + File(path: path).text().content());
+
+    FileEntry(path: path).remove();
+    0;
+}

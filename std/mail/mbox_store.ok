@@ -4,10 +4,12 @@ import "mail/mbox" take MboxRecord, MboxArchive, ParsedMbox, MboxLimits, MboxLim
 import "mail/mailbox" take StoredMail, MailFlag, MailFlags, MissingStoredMail, InvalidMailbox;
 import "collections/sequence" take Sequencing;
 import "fs/path" take Path;
-import "fs/file" take File, FileMode, FileEntry, FileSystemFailure;
+import "fs/file" take File, FileMode;
+import "fs/entry" take FileEntry;
+import "fs/error" take FileError;
 import "fs/directory" take Directory, DirectoryEntry;
 import "fs/stat" take FileKind;
-import "fs/lock" take FileLock, FileLockMode, FileLockWaiting;
+import "fs/lock" take FileLock, FileLockMode;
 import "fs/temp" take TemporaryFile, TemporaryFilePath;
 import "io/buffer" take ByteBuffer;
 import "io/decorators" take ByteSnapshot;
@@ -205,26 +207,11 @@ object MboxLease does Closing {
             confirm DirectoryEntry(coordinate).kind() == FileKind.file
                 else throw InvalidMailbox.located(0, "mbox lock is not a regular file");
         }
-        catch failure is FileSystemFailure {
-            match failure {
-                case FileSystemFailure.detailed(code, _) {
-                    if code != "not_found" {
-                        throw failure;
-                    }
-                }
-            }
-        }
-        let file = File(mode: FileMode.reading_and_appending, path: coordinate, binary: true);
-        let lock = try {
-            FileLock(file, FileLockMode.exclusive, FileLockWaiting.immediate);
-        }
-        catch failure is Error {
-            try {
-                file.close();
-            }
-            catch cleanup is Error {}
-            throw failure;
-        };
+        catch FileError.not_found(_) {}
+        let file = File(path: coordinate, mode: FileMode.reading_and_appending);
+        let lock = file.lock(FileLockMode.exclusive) else throw InvalidState.because(
+            "mbox is locked by another session"
+        );
         owner = file;
         guard = lock;
     }
@@ -268,7 +255,7 @@ object MboxFileBytes {
     bytes() is @byte {
         confirm DirectoryEntry(path).kind() == FileKind.file
             else throw InvalidMailbox.located(0, "mbox is not a regular file");
-        let file = File(mode: FileMode.reading, path: path, binary: true);
+        let file = File(path: path);
         defer file.close();
         let buffer = ByteBuffer();
         defer buffer.closing().close();
@@ -366,12 +353,12 @@ object MboxReplacement {
         try {
             temporary.close();
         }
-        catch FileSystemFailure.detailed(code, message) {
+        catch failure is FileError {
             try {
                 lease.close();
             }
             catch cleanup is Error {}
-            throw CommittedMboxFailure.detailed(code, message);
+            throw CommittedMboxFailure.detailed("file", failure.text());
         }
     }
 }

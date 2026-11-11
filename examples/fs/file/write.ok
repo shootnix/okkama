@@ -1,0 +1,23 @@
+module examples/fs/file/write v1.0.0;
+
+import "fs/file" take File, FileMode;
+import "fs/entry" take FileEntry;
+import "fs/path" take Path;
+import "io/stdout" take Stdout;
+
+// Write a text file, then close it. FileMode.writing creates the file or
+// empties an existing one.
+
+main() is int {
+    let path = Path("report.txt");
+    let file = File(path: path, mode: FileMode.writing);
+    file.text().writeln("total: ", 42.string());
+    file.text().write("done");
+    file.text().writeln();
+    file.close();
+
+    Stdout().write(File(path: path).text().content());
+
+    FileEntry(path: path).remove();
+    0;
+}

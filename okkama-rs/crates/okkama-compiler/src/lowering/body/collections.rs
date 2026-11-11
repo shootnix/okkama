@@ -373,6 +373,8 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 span,
             )
         };
+        // The scope of the loop owns its source, as a `let` owns its value.
+        self.adopt_into(self.cleanups.len() - 1, &source, span);
         // The loop starts with an empty batch, so its first step is the refill:
         // exactly one batch() call per batch, an empty source included.
         let first = self.emit(InstKind::ArrayNew(Vec::new()), batch_type.clone(), span);
@@ -572,6 +574,11 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         value: bool,
         mut body: impl FnMut(&mut Self, Vec<Typed>, Vec<Typed>) -> Result<Option<Vec<ValueId>>>,
     ) -> Result<(Out, Vec<Typed>)> {
+        // The scope of the loop owns its cursors, as a `let` owns its value:
+        // a free cursor would be taken by the first action it is passed to
+        // and destroyed, with what it reaches, when that action returns.
+        let scope = self.cleanups.len() - 1;
+        self.adopt_into(scope, &start, span);
         let base = self.vars.len();
         let carried = self.carried_vars(scanned, span)?;
         let state_types: Vec<Type> = state.iter().map(|value| value.ty.clone()).collect();
@@ -664,6 +671,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             start.ty.clone(),
             span,
         );
+        self.adopt_into(scope, &advanced, span);
         let mut args = vec![advanced.value];
         args.extend(step_params[..state.len()].iter().copied());
         args.extend(self.carried_args(&carried, span));

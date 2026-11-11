@@ -1,7 +1,9 @@
 module app v1.0.0;
 
 import "io/stdout" take Stdout;
-import "fs/file" take File, FileMode, FileEntry, FileContent, FileSystemFailure;
+import "fs/file" take File, FileMode;
+import "fs/entry" take FileEntry;
+import "fs/error" take FileError;
 import "fs/path" take Path;
 import "fs/directory" take Directory, DirectoryEntries;
 import "fs/temp" take TemporaryDirectory;
@@ -10,10 +12,10 @@ import "encoding/utf" take Utf8Decoded;
 main() is int {
     let out = Stdout();
     let r = try {
-        let bytes = FileContent(origin: FileEntry(path: Path("does-not-exist.txt"))).bytes();
+        let bytes = File(path: Path("does-not-exist.txt")).binary().bytes();
         "read";
-    } catch FileSystemFailure.detailed(code, _) {
-        "failure " + code;
+    } catch FileError.not_found(path) {
+        "failure not_found " + path;
     };
     out.writeln(r);
     0;

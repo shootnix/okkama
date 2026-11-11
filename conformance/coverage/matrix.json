@@ -1839,11 +1839,13 @@
     "interaction": {
      "cases": [
       "L05.batching.functional",
-      "L05.batching.preferred-over-cursor"
+      "L05.batching.preferred-over-cursor",
+      "L10.fs.text-lines-in-batches"
      ],
      "mandatory_cases": [
       "L05.batching.functional",
-      "L05.batching.preferred-over-cursor"
+      "L05.batching.preferred-over-cursor",
+      "L10.fs.text-lines-in-batches"
      ],
      "requirement": "required"
     },
@@ -12907,18 +12909,102 @@
     "std/fs/directory.ok"
    ],
    "status": "mandatory",
-   "title": "std fs/directory public contract (DescendantCursor, DescendantCursorFrom, Descendants, Directory, DirectoryEntries, DirectoryEntry, DirectoryEntryCursor, DirectoryLocating, DirectoryNotEmpty, DirectoryTree, ExhaustedDescendantCursor)"
+   "title": "std fs/directory public contract (DescendantCursor, DescendantCursorFrom, Descendants, Directory, DirectoryEntries, DirectoryEntry, DirectoryEntryCursor, DirectoryLocating, DirectoryTree, ExhaustedDescendantCursor)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L10.fs.temporary-directory-cleanup"
+     ],
+     "mandatory_cases": [
+      "L10.fs.temporary-directory-cleanup"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L10.fs.temporary-directory-cleanup"
+     ],
+     "mandatory_cases": [
+      "L10.fs.temporary-directory-cleanup"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.FS.ENTRY",
+   "discrepancies": [],
+   "family": "Standard library: fs",
+   "spec_refs": [
+    "std/fs/entry.ok"
+   ],
+   "status": "mandatory",
+   "title": "std fs/entry public contract (FileEntry)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L10.fs.missing-file-message"
+     ],
+     "mandatory_cases": [
+      "L10.fs.missing-file-message"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L10.fs.missing-file"
+     ],
+     "mandatory_cases": [
+      "L10.fs.missing-file"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.FS.ERROR",
+   "discrepancies": [],
+   "family": "Standard library: fs",
+   "spec_refs": [
+    "std/fs/error.ok"
+   ],
+   "status": "mandatory",
+   "title": "std fs/error public contract (FileError, FileFailure)"
   },
   {
    "aspects": {
     "boundary": {
      "cases": [
       "L10.fs.line-reading",
-      "L10.fs.missing-file-message"
+      "L10.fs.missing-file-message",
+      "L10.fs.text-lines-in-batches"
      ],
      "mandatory_cases": [
       "L10.fs.line-reading",
-      "L10.fs.missing-file-message"
+      "L10.fs.missing-file-message",
+      "L10.fs.text-lines-in-batches"
      ],
      "requirement": "required"
     },
@@ -12955,7 +13041,7 @@
     "std/fs/file.ok"
    ],
    "status": "mandatory",
-   "title": "std fs/file public contract (ConfiguredFileState, File, FileBytes, FileContent, FileEntry, FileError, FileLockLease, FileLocking, FileMode, FileModeCode, FilePosition, FileSystemFailure, FileText, InvalidFileOperation, SeekOrigin, SeekOriginCode, SupportedFileEncoding, UnsupportedFileEncoding)"
+   "title": "std fs/file public contract (File, FileBytes, FileMode, FileText, SeekOrigin)"
   },
   {
    "aspects": {
@@ -13025,7 +13111,7 @@
     "std/fs/link.ok"
    ],
    "status": "mandatory",
-   "title": "std fs/link public contract (HardLink, InvalidHardLinkSource, NotSymbolicLink, SymbolicLink)"
+   "title": "std fs/link public contract (HardLink, SymbolicLink)"
   },
   {
    "aspects": {
@@ -13060,7 +13146,7 @@
     "std/fs/lock.ok"
    ],
    "status": "mandatory",
-   "title": "std fs/lock public contract (FileLock, FileLockMode, FileLockModeCode, FileLockWaiting, FileLockWaitingCode, UnavailableFileLock)"
+   "title": "std fs/lock public contract (FileLock, FileLockMode)"
   },
   {
    "aspects": {
@@ -31107,6 +31193,8 @@
    "STD.ERROR [boundary]",
    "STD.ERROR [invalid]",
    "STD.FS.DIRECTORY [invalid]",
+   "STD.FS.ENTRY [invalid]",
+   "STD.FS.ERROR [invalid]",
    "STD.FS.GLOB [normal]",
    "STD.FS.GLOB [boundary]",
    "STD.FS.GLOB [invalid]",
@@ -32501,5 +32589,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "2b4cb58d4dd72514ae7515d17d9917f5e4463218c2360a0ffe9e852616ad5382"
+ "suite_tree_sha256": "02d078eeeccbdc65298eddb3cebba9e20cc6d2c527490c101c9a244cfff803ed"
 }

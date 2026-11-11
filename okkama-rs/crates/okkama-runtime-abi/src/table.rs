@@ -606,5 +606,8 @@ natives! {
     PostgresPgPageTexts = 620, "runtime/postgres@1::pg_page_texts/1", "(PgPageState) -> @string";
     PostgresPgPageBlobs = 621, "runtime/postgres@1::pg_page_blobs/1", "(PgPageState) -> @@byte";
     FsFileStateReadLines = 622, "runtime/fs@1::file_state_read_lines/2", "(FileState, int) -> @string";
+    FsFileStateOpen = 623, "runtime/fs@1::file_state_open/3", "(@byte, int, string) -> FileState";
+    FsFileStateLocked = 624, "runtime/fs@1::file_state_locked/2", "(FileState, int) -> bool";
+    FsFileStateRewriteText = 625, "runtime/fs@1::file_state_rewrite_text/2", "(FileState, @string) -> int";
 }
 // retired: 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258

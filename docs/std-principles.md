@@ -65,6 +65,22 @@ actions should still be the questions callers actually ask
 - **Decorators earn their place.** Composition is the Okkama way (Chapter 14
   of the Bible), but a chain of wrappers that every caller has to assemble is
   a missing object.
+- **Flat over nested** (the owner, 2026-11-11). An object that only forwards
+  to another, or a view with two actions, folds into its neighbour; one
+  constructor with defaults beats a family of overloads. Not at any price: an
+  object with twenty-five actions is no better.
+- **Constructors take named arguments** in std, in code and in docs:
+  `File(path: Path("notes.txt"), mode: FileMode.appending)`. Positional
+  arguments are for actions.
+- **Iterate with `for`, not with closures.** A sequence is walked as
+  `for source -> item`; a stream does `Batching<T>` (#465). No `each(fn)`.
+- **One name, one meaning, one type.** The same action name never returns an
+  iterator here and an array there. Actions that answer are nouns (`lines()`,
+  `content()`); verbs are commands that answer nothing (`write`, `close`).
+- **No dependency cycles, and no workarounds for them.** A domain's errors
+  live in a module below everything that throws them (`fs/error`); a lower
+  concept never imports a higher one (`fs/entry` and `fs/lock` sit below
+  `fs/file`).
 
 ## 3. Readable
 

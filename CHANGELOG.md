@@ -103,8 +103,60 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   - New characterization tests pin `config/document`, `logging/field` and
     `logging/redact`, which had none.
 
+- **`fs/file` is reviewed (#352), the second exemplar, with the fs layering
+  fixed.** The owner approved each change.
+  - A file is a resource read and written through two symmetric views. The
+    first view used picks the mode (the runtime gains `file_state_open`), so
+    `binary: true` and the four constructors go: `File(path: …, mode: …,
+    encoding: …)` with defaults (reading, UTF-8).
+    - `file.text()`: `for … -> line` (in batches, #465), `line()`, `lines()`,
+      `content()`, `write`, `writeln`, `rewrite` (empty and write anew).
+    - `file.binary()`: `for … -> b`, `byte()`, `bytes(n)`, `bytes()`,
+      `offset()`, `seek(…)`, `truncate(…)`, `write`, `<-`.
+  - `file.lock(mode) is Maybe<FileLock>` does not wait, and a lock in the
+    way is `Maybe.none`. `file.locked(mode)` tells whether the file is locked
+    in that mode now, by this process or another (new runtime native).
+  - One `FileError` for the whole fs domain, in the new module `fs/error`:
+    `not_found(path)`, `already_exists(path)`, `permission_denied(path)`,
+    `not_empty(path)`, `not_symbolic_link(path)`,
+    `invalid_hard_link_source(path)`, `invalid_text(path)`,
+    `invalid_operation(message)`, `unsupported_encoding(name)`,
+    `failed(code, message)`. `FileFailure(failure, path).error()` maps a
+    runtime failure for the fs modules.
+  - The layering is fixed. `FileEntry` moves to the new module `fs/entry`.
+    `fs/lock` sits below `fs/file` and no longer imports it, and the
+    `locking(int, int)` hook goes. fs/directory, glob, root, watch, link,
+    temp and os/directory import `fs/error`, not `fs/file`.
+  - The role `ReadingText` names its whole read `content()` (was `text()`);
+    `io/stdin`'s `Utf8Input` follows.
+  - Migration:
+
+    | Before | After |
+    |---|---|
+    | `File(mode: m, path: p, binary: true)` | `File(path: p, mode: m)`, then `file.binary()` |
+    | `FileContent(origin: FileEntry(path: p)).bytes()` | `File(path: p).binary().bytes()` |
+    | `file.read_text()` | `file.text().content()` |
+    | `FilePosition(origin: file).seek(…)` | `file.binary().seek(…)` |
+    | `FileLock(origin: f, mode: m, waiting: …)` | `f.lock(m) else …` |
+    | `FileSystemFailure.detailed(code, _)` with `code == "not_found"` | `catch FileError.not_found(path)` |
+    | `DirectoryNotEmpty`, `NotSymbolicLink`, `InvalidHardLinkSource` | `FileError` cases |
+    | `import "fs/file" take FileEntry` | `import "fs/entry" take FileEntry` |
+
+  - Callers follow: mail (a busy mailbox is `InvalidState`), http/cookie_jar,
+    http/static, mime/types and logging.
+  - `fs/file` has inline tests at last, for text, bytes, errors and locks, in
+    a temporary directory.
+  - New `examples/fs/file/` shows each task as a program with its expected
+    output, and `examples/check.py` runs them.
+
 ### Fixed
 
+- `for` and `map`/`filter`/`reduce`/`find` over a temporary source destroyed
+  it after the first call (#483). In `for Resource().view() -> n`, the
+  cursor (and for #465 the batch source) lived in a block parameter nobody
+  owned. The first action it was passed to took it and destroyed it, with
+  everything it reached, on return. The scope of the loop now owns its
+  cursors and its source, as a `let` does.
 - `config/document` turned a JSON number into a setting in the canonical form
   of `Decimal`, so `"port": 5432` became `"5.432e3"` while INI and the
   environment gave `5432` (#366). Numbers are now written as JSON writes

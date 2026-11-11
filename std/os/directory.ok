@@ -1,7 +1,7 @@
 module os/directory v1.0.0;
 
 import "fs/directory" take DirectoryLocating;
-import "fs/file" take FileSystemFailure;
+import "fs/error" take FileError, FileFailure;
 import "fs/path" take Path;
 import "runtime/fs" take cwd, path_decode;
 
@@ -29,7 +29,7 @@ object WorkingDirectory does DirectoryLocating {
             Path(path_decode(cwd()));
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure.detailed(failure.code(), failure.message());
+            throw FileFailure(failure).error();
         }
     }
 }

@@ -3786,6 +3786,17 @@ null. Объекты обходятся целиком через `each`, `merge
 идёт не так, — один `JsonError`; случаи чтения несут RFC 6901 pointer значения:
 `catch JsonError.missing(pointer)`. Гайд — `docs/std/json.md` в okkama-docs.
 
+`fs/file` делает файл ресурсом, который читают через два симметричных
+представления; режим выбирает первое использованное. `File(path:
+Path("notes.txt"))` открывает на чтение; `for file.text() -> line` проходит
+строки пачками, `lines()` и `content()` отдают остаток сразу, а `writeln`,
+`write` и `rewrite` пишут. `file.binary()` даёт байты: `for`, `byte()`,
+`bytes(n)`, `bytes()`, `seek`, `truncate`. `file.lock(FileLockMode.exclusive)`
+— это `Maybe`: мешающая блокировка даёт `Maybe.none`, а `file.locked(mode)`
+говорит, кто держит файл. Любой отказ fs — один `FileError` из `fs/error`;
+`FileEntry` (путь на диске) живёт в `fs/entry`. `examples/fs/file/`
+показывает каждую задачу программой.
+
 Следующие исторический перечень и примеры относятся к **прежней `stdlib/`**.
 Они исполняются с этой библиотекой, но не определяют API и готовность `std/`.
 Корень библиотеки следует выбирать явно; смешивать их модули нельзя.

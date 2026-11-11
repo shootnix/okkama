@@ -2,7 +2,7 @@ module logging/file v1.0.0;
 
 import "fs/path" take Path;
 import "fs/stat" take PermissionMode, Permissions;
-import "fs/file" take FileError;
+import "fs/error" take FileFailure;
 import "io/stream" take ByteSource, Writing, Closing, IncompleteWrite;
 import "async/atomic" take Atomic;
 import "runtime/fs";
@@ -89,7 +89,7 @@ object LogFileState does Writing, Closing {
             }
         }
         catch failure is NativeFailure {
-            throw FileError(failure: failure).value();
+            throw FileFailure(failure).error();
         }
     }
 
@@ -100,7 +100,7 @@ object LogFileState does Writing, Closing {
                 fs.flush(handles.value()[0]);
             }
             catch failure is NativeFailure {
-                throw FileError(failure: failure).value();
+                throw FileFailure(failure).error();
             }
         }
     }
@@ -115,7 +115,7 @@ object LogFileState does Writing, Closing {
                 fs.close(previous[0]);
             }
             catch failure is NativeFailure {
-                throw FileError(failure: failure).value();
+                throw FileFailure(failure).error();
             }
         }
     }
@@ -129,7 +129,7 @@ object LogFileState does Writing, Closing {
                 fs.close(previous[0]);
             }
             catch failure is NativeFailure {
-                throw FileError(failure: failure).value();
+                throw FileFailure(failure).error();
             }
         }
     }
@@ -167,7 +167,7 @@ object LogFileState does Writing, Closing {
             fs.open(fs.path_encode(path.string()), 22, bits);
         }
         catch failure is NativeFailure {
-            throw FileError(failure: failure).value();
+            throw FileFailure(failure).error();
         }
     }
 }

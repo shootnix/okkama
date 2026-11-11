@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L10.fs.text-lines-in-batches",
+  "title": "for walks the lines of a text file in batches, as line() reads them",
+  "purpose": "Observe host-resource behaviour inside the case's isolated working directory.",
+  "level": "L10",
+  "contracts": [
+    {
+      "contract": "COLL.BATCHING",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "STD.FS.FILE",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "filesystem"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "[a]\n[b]\n[]\n[last]\n4 lines\n[b]\n"
+    }
+  },
+  "spec_refs": [
+    "std/fs/file.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #352/#465 from the cited contract text",
+    "expected_basis": "fs/file: a line loses its LF and one CR before it, a final unterminated line is a line; for over file.text() yields the same lines as line(), and lines() is the rest as an array."
+  },
+  "status": "mandatory"
+}

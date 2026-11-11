@@ -2,7 +2,7 @@ module fs/glob v1.0.0;
 
 import "collections/iteration" take Cursor, Iterating, IterationEnded;
 import "fs/directory" take DirectoryLocating;
-import "fs/file" take FileSystemFailure;
+import "fs/error" take FileError, FileFailure;
 import "fs/path" take Path;
 import "runtime/fs" take path_encode, matching_paths;
 
@@ -50,13 +50,10 @@ object MatchingPaths does Iterating<Path> {
                 throw InvalidGlobPattern.detailed(glob, failure.message());
             }
             else if failure.code() == "not_found" {
-                throw FileSystemFailure.detailed(
-                    "invalid_input",
-                    "glob root must be an existing directory"
-                );
+                throw FileError.invalid_operation("glob root must be an existing directory");
             }
             else {
-                throw FileSystemFailure.detailed(failure.code(), failure.message());
+                throw FileFailure(failure, origin.path().string()).error();
             }
         };
         MatchingPathCursor(paths: paths, position: 0);

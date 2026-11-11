@@ -1,0 +1,25 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "fs/file" take File, FileMode;
+import "fs/path" take Path;
+
+main() is int {
+    let out = Stdout();
+    {
+        let w = File(path: Path("lines.txt"), mode: FileMode.writing);
+        defer w.close();
+        w.text().write("a\r\nb\n\nlast");
+    }
+    let file = File(path: Path("lines.txt"));
+    defer file.close();
+    for file.text() -> line {
+        out.writeln("[" + line + "]");
+    }
+    out.writeln(File(path: Path("lines.txt")).text().lines().size().string() + " lines");
+    let rest = File(path: Path("lines.txt"));
+    rest.text().line();
+    out.writeln("[" + rest.text().lines()[0] + "]");
+    rest.close();
+    0;
+}

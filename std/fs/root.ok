@@ -3,7 +3,7 @@ module fs/root v1.0.0;
 import "fs/directory" take DirectoryLocating, Directory;
 import "fs/path" take Path;
 import "fs/stat" take FileStat, FileStatFromMap;
-import "fs/file" take FileSystemFailure;
+import "fs/error" take FileError, FileFailure;
 import "runtime/fs" take path_encode;
 import "runtime/fs_root" as rooted;
 import "io/stream" take Closing, InvalidReadLimit;
@@ -18,7 +18,7 @@ object FileRoot does Closing {
             rooted.file_root_open(path_encode(directory.path().string()));
         }
         catch e is NativeFailure {
-            throw FileSystemFailure.detailed(e.code(), e.message());
+            throw FileFailure(e, directory.path().string()).error();
         };
     }
 
@@ -27,7 +27,7 @@ object FileRoot does Closing {
             rooted.file_root_entry(self.state, segments);
         }
         catch e is NativeFailure {
-            throw FileSystemFailure.detailed(e.code(), e.message());
+            throw FileFailure(e).error();
         };
         RootedEntry(state);
     }
@@ -41,7 +41,7 @@ object FileRoot does Closing {
             rooted.file_root_close(state);
         }
         catch e is NativeFailure {
-            throw FileSystemFailure.detailed(e.code(), e.message());
+            throw FileFailure(e).error();
         }
     }
 
@@ -62,7 +62,7 @@ object RootedEntry does Closing {
             rooted.rooted_entry_stat(state);
         }
         catch e is NativeFailure {
-            throw FileSystemFailure.detailed(e.code(), e.message());
+            throw FileFailure(e).error();
         };
         FileStatFromMap(origin: metadata).value();
     }
@@ -73,7 +73,7 @@ object RootedEntry does Closing {
             rooted.rooted_entry_read(state, offset, limit);
         }
         catch e is NativeFailure {
-            throw FileSystemFailure.detailed(e.code(), e.message());
+            throw FileFailure(e).error();
         }
     }
 
@@ -82,7 +82,7 @@ object RootedEntry does Closing {
             rooted.rooted_entry_names(state, maximum);
         }
         catch e is NativeFailure {
-            throw FileSystemFailure.detailed(e.code(), e.message());
+            throw FileFailure(e).error();
         }
     }
 
@@ -95,7 +95,7 @@ object RootedEntry does Closing {
             rooted.rooted_entry_close(state);
         }
         catch e is NativeFailure {
-            throw FileSystemFailure.detailed(e.code(), e.message());
+            throw FileFailure(e).error();
         }
     }
 
@@ -108,17 +108,9 @@ test "explicit root close is idempotent and child descriptor is independent" {
     let roots is @FileRoot = try {
         [FileRoot(directory: Directory(path: Path(".")))];
     }
-    catch e is FileSystemFailure {
-        match e {
-            case FileSystemFailure.detailed(code, _) {
-                if code == "unsupported" {
-                    [];
-                }
-                else {
-                    throw e;
-                }
-            }
-        }
+    catch FileError.failed(code, message) {
+        confirm code == "unsupported" else throw FileError.failed(code, message);
+        [];
     };
     if roots.size() == 1 {
         let root = roots[0];
