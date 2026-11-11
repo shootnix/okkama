@@ -146,7 +146,7 @@ text = '''module locale/internal/lists v1.0.0;
 // Generated from SHA-checked CLDR 46.1.0 list patterns. Profiles store
 // pair/start/middle/end as prefix, separator, suffix; items stay literal.
 import "compare" take Order;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 object CldrLists {
  has keys,rows,profiles is @string;
  CldrLists() {
@@ -155,7 +155,7 @@ object CldrLists {
  lookup(tag is string,style is int) is @string {
   let position=self.search(tag,0,keys.size());
   if position<0 {let empty is @string=[];return empty;}
-  let row=rows[position].split(",");profiles[ParsedInt(row[style]).value()].split("|");
+  let row=rows[position].split(",");profiles[Number(row[style]).int()].split("|");
  }
  hidden search(key is string,start is int,stop is int) is int {
   if start>=stop {return -1;}let middle=start+((stop-start)/2).int();

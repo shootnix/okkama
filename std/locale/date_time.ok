@@ -16,7 +16,7 @@ import "time/local_datetime" take LocalDateTime;
 import "time/zone" take TimeZone, ZonedDateTime, FixedZone, Zone, UnknownTimeZone;
 import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 
 enum DateStyle = (full, long, medium, short);
 
@@ -166,7 +166,7 @@ object GregorianLocaleData {
     }
 
     date(style is DateStyle) is string {
-        table.program(ParsedInt(fields[167 + DateStyleIndex(style).value()]).value());
+        table.program(Number(fields[167 + DateStyleIndex(style).value()]).int());
     }
 
     time(style is TimeStyle, zoned is bool) is string {
@@ -177,7 +177,7 @@ object GregorianLocaleData {
         else {
             width;
         };
-        table.program(ParsedInt(fields[171 + selected]).value());
+        table.program(Number(fields[171 + selected]).int());
     }
 
     combination(style is DateStyle) is string {
@@ -280,8 +280,8 @@ object GregorianLocaleData {
                     chosen;
                 }
                 else {
-                    let start = ParsedInt(rules[index * 4 + 1]).value();
-                    let finish = ParsedInt(rules[index * 4 + 2]).value();
+                    let start = Number(rules[index * 4 + 1]).int();
+                    let finish = Number(rules[index * 4 + 2]).int();
                     let exact = rules[index * 4 + 3] == "1";
                     let matched = if exact {
                         tick == start;
@@ -295,7 +295,7 @@ object GregorianLocaleData {
                         }
                     };
                     if matched {
-                        ParsedInt(rules[index * 4]).value();
+                        Number(rules[index * 4]).int();
                     }
                     else {
                         -1;
@@ -362,7 +362,7 @@ object GregorianProgram {
     }
 
     width(index is int) is int {
-        ParsedInt(values[index * 3 + 1]).value();
+        Number(values[index * 3 + 1]).int();
     }
 
     literal(index is int) is string {
@@ -436,8 +436,8 @@ object LocalizedZoneName {
                 chosen;
             }
             else {
-                let start = ParsedInt(intervals[index * 3]).value().rat();
-                let finish = ParsedInt(intervals[index * 3 + 1]).value().rat();
+                let start = Number(intervals[index * 3]).int().rat();
+                let finish = Number(intervals[index * 3 + 1]).int().rat();
                 if seconds >= start && seconds < finish {
                     intervals[index * 3 + 2];
                 }

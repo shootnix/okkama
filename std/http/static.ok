@@ -24,7 +24,7 @@ import "encoding/utf" take Utf8Encoded, InvalidUtf8;
 import "html/entities" take EscapedHtml;
 import "collections/sequence" take Sequencing;
 import "numbers/bigint" take BigInt;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "compare" take Order;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
@@ -472,8 +472,8 @@ object StaticFiles does Handling {
                 );
                 pieces = pieces.following(
                     StaticPiece(
-                        ParsedInt(part.start().string()).value(),
-                        ParsedInt(part.size().string()).value()
+                        Number(part.start().string()).int(),
+                        Number(part.size().string()).int()
                     )
                 );
             }
@@ -496,8 +496,8 @@ object StaticFiles does Handling {
                     );
                     pieces = pieces.following(
                         StaticPiece(
-                            ParsedInt(part.start().string()).value(),
-                            ParsedInt(part.size().string()).value()
+                            Number(part.start().string()).int(),
+                            Number(part.size().string()).int()
                         )
                     );
                     pieces = pieces.following(StaticPiece("\r\n"));

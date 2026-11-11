@@ -3,7 +3,7 @@ module testing/runner v1.0.0;
 import "testing/result" take TestReport, TestResult, TestFailure, TestPosition, TestOutput,
     TestStatus, InvalidTestResult;
 import "json" take Json, JsonKind, ParsedJson;
-import "strings/parse" take ParsedRat;
+import "strings/parse" take Number;
 import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
 import "encoding/base64" take Base64Decoded;
@@ -22,8 +22,8 @@ object RecordedTestReport {
             RecordedTestResult(entry).value();
         };
         report = TestReport(
-            Instant(Duration(ParsedRat(document.text("start_ns")).value(), DurationUnit.nanosecond)),
-            Duration(ParsedRat(document.text("duration_ns")).value(), DurationUnit.nanosecond),
+            Instant(Duration(Number(document.text("start_ns")).rat(), DurationUnit.nanosecond)),
+            Duration(Number(document.text("duration_ns")).rat(), DurationUnit.nanosecond),
             document.int("seed"),
             results
         );
@@ -106,7 +106,7 @@ object RecordedTestResult {
         result = TestResult(
             entry.text("name"),
             status,
-            Duration(ParsedRat(entry.text("duration_ns")).value(), DurationUnit.nanosecond),
+            Duration(Number(entry.text("duration_ns")).rat(), DurationUnit.nanosecond),
             failures,
             TestOutput(output, errors, entry.boolean("truncated")),
             if entry.has("skip_reason") {

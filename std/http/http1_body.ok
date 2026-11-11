@@ -12,7 +12,7 @@ import "io/decorators" take ByteSnapshot, InvalidReading;
 import "io/buffer" take ByteBuffer;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
 import "numbers/bigint" take BigInt;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "compare" take Order;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
@@ -154,7 +154,7 @@ object Http1BodyInput does AsyncReading {
         self.head = head;
         cache = ByteBuffer(prefix);
         phase = Atomic(0);
-        remaining = Atomic(ParsedInt(length.string()).value());
+        remaining = Atomic(Number(length.string()).int());
         used = Atomic(0);
         metadata = Atomic(0);
         trailers = Atomic(Headers([]));
@@ -227,7 +227,7 @@ object Http1BodyInput does AsyncReading {
             if stage == 0 {
                 let line = await self.line(group);
                 let size = ParsedHttp1ChunkLine(line, limits).size();
-                let count = ParsedInt(size.string()).value();
+                let count = Number(size.string()).int();
                 confirm count <= limits.body_bytes() - used.value()
                     else throw Http1LimitExceeded.kind("body_bytes");
                 remaining.replace(count);

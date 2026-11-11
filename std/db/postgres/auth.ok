@@ -9,7 +9,7 @@ import "digest/legacy" take Md5;
 import "encoding/base64" take Base64Encoded, Base64Decoded;
 import "encoding/hex" take HexEncoded;
 import "encoding/utf" take Utf8Encoded;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 
 // PostgreSQL password authentication, written in Okkama over crypto/*.
 //
@@ -109,7 +109,7 @@ object ScramServerFirst {
     }
 
     iterations() is int {
-        let count = ParsedInt(self.attribute("i")).value();
+        let count = Number(self.attribute("i")).int();
         confirm count >= 4096
             else throw ScramFailure.because("SCRAM iteration count is below 4096");
         count;

@@ -6,7 +6,7 @@ import "time/date" take Date;
 import "time/day" take TimeOfDay;
 import "time/local_datetime" take LocalDateTime;
 import "time/iso" take IsoLocalDateTime, LocalDateTimeFromIso, InvalidIsoLocalDateTime;
-import "strings/parse" take ParsedInt, InvalidInteger;
+import "strings/parse" take Number, InvalidInteger;
 
 // Strict nanosecond-resolution RFC 3339 timestamps.
 //
@@ -115,12 +115,8 @@ object InstantFromRfc3339 {
         }
         else {
             try {
-                let hour is int = ParsedInt(
-                    origin.slice(length - 5, length - 3)
-                ).value();
-                let minute is int = ParsedInt(
-                    origin.slice(length - 2, length)
-                ).value();
+                let hour is int = Number(origin.slice(length - 5, length - 3)).int();
+                let minute is int = Number(origin.slice(length - 2, length)).int();
                 confirm hour <= 23 && minute <= 59
                     else throw InvalidRfc3339.origin(origin);
                 let sign is int = if origin.slice(length - 6, length - 5) == "-" {

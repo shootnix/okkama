@@ -10,7 +10,7 @@ import "net/stream" take StreamConnection, StreamReading, StreamWriting, Connect
 import "net/failure" take NetworkOperation, NetworkClosed;
 import "io/stream" take Closing;
 import "io/decorators" take ByteSnapshot;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "net/ip" take IpAddress;
 import "async/event" take Event;
 
@@ -217,7 +217,7 @@ object TcpAcceptance does Closing {
     TcpAcceptance(state is network.TcpListenerState, accepted is TcpOptions) {
         let endpoint = try {
             let fields = network.tcp_listener_endpoint(state);
-            IpEndpoint(IpAddress(fields[0]), ParsedInt(fields[1]).value(), fields[2]);
+            IpEndpoint(IpAddress(fields[0]), Number(fields[1]).int(), fields[2]);
         }
         catch e is NativeFailure {
             network.tcp_listener_close(state);

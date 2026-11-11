@@ -5,7 +5,7 @@ import "collections/views" take Accumulated, Taken;
 import "regex/match" take RegexMatching;
 import "regex/pattern" take Regex;
 import "regex/search" take RegexMatches;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "runtime/regex" take RegexReplacementState, regex_replacement_state,
     regex_replacement_prepare, regex_replacement_tokens, RegexSubstitutionState,
     regex_substitution_state, regex_substitution_ready, regex_substitution_store,
@@ -89,7 +89,7 @@ object ExpandedRegexReplacement does ReplacingRegexMatch {
             value;
         }
         else if kind == "index" {
-            let capture = found.capture(ParsedInt(value).value());
+            let capture = found.capture(Number(value).int());
             if capture.matched() {
                 capture.text();
             }

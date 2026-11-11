@@ -8,7 +8,7 @@ import "io/buffer" take ByteBuffer;
 import "io/decorators" take ByteSnapshot;
 import "async/atomic" take Atomic;
 import "encoding/utf" take Utf8Decoded, InvalidUtf8;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 
 // One owner per incoming message sequence. Control frames leave this state
 // intact and are handled by the connection. No repeated payload concatenation.
@@ -20,7 +20,7 @@ object WebSocketMessageAssembly does Closing {
     WebSocketMessageAssembly(limits is WebSocketLimits) {
         bytes = ByteBuffer();
         opcode = Atomic(-1);
-        maximum = ParsedInt(limits.message_bytes().string()).value();
+        maximum = Number(limits.message_bytes().string()).int();
         frame_maximum = limits.frame_bytes();
     }
 

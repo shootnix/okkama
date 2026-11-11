@@ -64,7 +64,7 @@ actions should still be the questions callers actually ask
 - **Short common path.** A common task takes one to three lines from the
   caller's side. If it takes more, the module is missing an entry point.
 - **No matryoshkas.** Three or more constructors nested in one expression to
-  do one thing (`ParsedInt(Utf8Arguments(ProcessArguments()).item(0))`) is a
+  do one thing (`Number(Utf8Arguments(ProcessArguments()).item(0)).int()`) is a
   smell. Give the task one object that does it.
 - **One way to do each thing**, and a small public surface. A second way to
   do the same task needs a reason in the module's comment.

@@ -6,13 +6,13 @@ import "net/endpoint" take IpEndpoint;
 import "net/ip" take IpAddress;
 import "net/failure" take NetworkFailure;
 import "cli/arguments" take ProcessArguments, Utf8Arguments;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded;
 import "io/decorators" take ByteSnapshot;
 
 async main() is int {
     let out = Stdout();
-    let port = ParsedInt(Utf8Arguments(ProcessArguments()).item(0)).value();
+    let port = Number(Utf8Arguments(ProcessArguments()).item(0)).int();
     let r = try {
         let connection = await TcpConnecting(IpEndpoint(IpAddress("127.0.0.1"), port)).connection();
         connection.close();

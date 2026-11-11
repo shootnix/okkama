@@ -24,7 +24,7 @@ import "db/error" take DbFailure, DbFailureKind, DbOperation, DbClosed, DbBusy, 
 import "collections/sequence" take Sequencing;
 import "encoding/utf" take Utf8Encoded;
 import "numbers/bigint" take BigInt;
-import "strings/parse" take ParsedInt, ParsedFloat;
+import "strings/parse" take Number;
 import "time/duration" take Duration, DurationUnit;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
@@ -1218,7 +1218,7 @@ object SqliteFrame {
     }
 
     size() is int {
-        ParsedInt(sqlite.sqlite_reply_info(state)["size"]).value();
+        Number(sqlite.sqlite_reply_info(state)["size"]).int();
     }
 
     bytes() is @byte {

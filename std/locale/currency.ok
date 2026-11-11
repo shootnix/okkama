@@ -10,7 +10,7 @@ import "locale/number" take NumberPrecision, NumberFormat, NumberNotation, Numbe
     NumberSign, NumberPattern, NumberLocaleData, NumberRenderingData, NumberCompactData,
     NumberPrinting, DecimalNumberMagnitude, NumberRendered, InvalidLocalizedNumber;
 import "math/decimal" take Decimal;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "compare" take Comparing, Order;
 import "i18n/plural" take PluralNumber, PluralCategory, PluralCategoryOf, PluralKind;
 
@@ -33,7 +33,7 @@ object Currency does Comparing<Currency> {
 
     digits() is int {
         confirm minor_units != "N.A." else throw MissingCurrencyDigits.code(code);
-        ParsedInt(minor_units).value();
+        Number(minor_units).int();
     }
 
     order(other is Currency) is Order {

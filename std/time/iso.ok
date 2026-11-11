@@ -3,7 +3,7 @@ module time/iso v1.0.0;
 import "time/date" take Date;
 import "time/day" take TimeOfDay;
 import "time/local_datetime" take LocalDateTime;
-import "strings/parse" take ParsedInt, InvalidInteger;
+import "strings/parse" take Number, InvalidInteger;
 
 // Strict ISO 8601 calendar and local-date-time representations.
 //
@@ -51,9 +51,9 @@ object DateFromIso {
             else throw InvalidIsoDate.origin(origin);
         try {
             Date(
-                year: ParsedInt(origin.slice(0, 4)).value(),
-                month: ParsedInt(origin.slice(5, 7)).value(),
-                day: ParsedInt(origin.slice(8, 10)).value(),
+                year: Number(origin.slice(0, 4)).int(),
+                month: Number(origin.slice(5, 7)).int(),
+                day: Number(origin.slice(8, 10)).int(),
             );
         }
         catch error is InvalidInteger {
@@ -111,9 +111,7 @@ object LocalDateTimeFromIso {
         try {
             let nanosecond is int = if fraction {
                 let digits is string = origin.slice(20, length);
-                ParsedInt(
-                    (digits + "000000000").slice(0, 9)
-                ).value();
+                Number((digits + "000000000").slice(0, 9)).int();
             }
             else {
                 0;
@@ -121,9 +119,9 @@ object LocalDateTimeFromIso {
             LocalDateTime(
                 date: DateFromIso(origin.slice(0, 10)).value(),
                 time: TimeOfDay(
-                    hour: ParsedInt(origin.slice(11, 13)).value(),
-                    minute: ParsedInt(origin.slice(14, 16)).value(),
-                    second: ParsedInt(origin.slice(17, 19)).value(),
+                    hour: Number(origin.slice(11, 13)).int(),
+                    minute: Number(origin.slice(14, 16)).int(),
+                    second: Number(origin.slice(17, 19)).int(),
                     nanosecond: nanosecond,
                 ),
             );

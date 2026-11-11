@@ -1,17 +1,17 @@
 module app v1.0.0;
 
 import "conformance/check" take Checks;
-import "strings/parse" take ParsedInt, ParsedByte, ParsedRat, ParsedBool, ParsedFloat;
+import "strings/parse" take Number, Truth;
 
 main() is int {
     let c = Checks();
-    c = c.same_int("decimal", ParsedInt("42").value(), 42);
-    c = c.same_int("negative", ParsedInt("-17").value(), -17);
-    c = c.same_int("base 16", ParsedInt("ff", 16).value(), 255);
-    c = c.same_int("base 0 prefix", ParsedInt("0xFF", 0).value(), 255);
-    c = c.same_int("byte base 2", (ParsedByte("11111111", 2).value()).int(), 255);
-    c = c.same_text("rat", string(ParsedRat("6/8").value()), "3/4");
-    c = c.same_bool("bool true", ParsedBool("true").value(), true);
-    c = c.same_float("float", ParsedFloat("2.5").value(), 2.5);
+    c = c.same_int("decimal", Number("42").int(), 42);
+    c = c.same_int("negative", Number("-17").int(), -17);
+    c = c.same_int("base 16", Number("ff").int(16), 255);
+    c = c.same_int("base 0 prefix", Number("0xFF").int(0), 255);
+    c = c.same_int("byte base 2", (Number("11111111").byte(2)).int(), 255);
+    c = c.same_text("rat", string(Number("6/8").rat()), "3/4");
+    c = c.same_bool("bool true", Truth("true").bool(), true);
+    c = c.same_float("float", Number("2.5").float(), 2.5);
     c.done();
 }

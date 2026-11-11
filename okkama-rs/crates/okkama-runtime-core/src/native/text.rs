@@ -387,7 +387,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
 
 // ---- runtime/number_text ----
 
-/// Целое в записи `strings/parse::ParsedInt`: необязательный `-`, при
+/// Целое в записи `strings/parse::Number.int`: необязательный `-`, при
 /// `radix == 0` — префикс `0b`/`0o`/`0x` (иначе основание 10), затем хотя бы
 /// одна цифра `0-9a-zA-Z` меньше основания. Длина записи не ограничена.
 fn int_parse(text: &str, radix: &IntValue) -> Option<IntValue> {

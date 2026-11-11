@@ -4,7 +4,7 @@ import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
 import "url/percent" take PercentEncoded, PercentDecoded, UrlComponent, InvalidPercentEncoding;
-import "strings/parse" take ParsedInt, InvalidInteger;
+import "strings/parse" take Number, InvalidInteger;
 import "io/buffer" take ByteBuffer;
 import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument;
@@ -498,7 +498,7 @@ object MimeWireParameter {
             confirm valid && (parts.size() == 2 || parts[2] == "")
                 else throw InvalidMediaType.located(offset, "invalid continuation index");
             let parsed = try {
-                ParsedInt(digits).value();
+                Number(digits).int();
             }
             catch failure is InvalidInteger {
                 throw InvalidMediaType.located(offset, "invalid continuation index");

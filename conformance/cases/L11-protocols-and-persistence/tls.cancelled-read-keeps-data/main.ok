@@ -9,7 +9,7 @@ import "net/ip" take IpAddress;
 import "net/tls" take TlsClientHandshake, TlsClientPolicy, TlsConnection;
 import "crypto/x509/trust" take PemTrustStore, IpCertificateIdentity;
 import "cli/arguments" take ProcessArguments, Utf8Arguments;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "encoding/utf" take Utf8Decoded;
 import "async/timeout" take Within, TimedOut;
 import "time/duration" take Duration, DurationUnit;
@@ -26,7 +26,7 @@ object Reader {
 
 async main() is int {
     let out = Stdout();
-    let port = ParsedInt(Utf8Arguments(ProcessArguments()).item(0)).value();
+    let port = Number(Utf8Arguments(ProcessArguments()).item(0)).int();
     let tcp = await TcpConnecting(IpEndpoint(IpAddress("127.0.0.1"), port)).connection();
     let policy = TlsClientPolicy(PemTrustStore(TEST_CERTIFICATE));
     let connection = await TlsClientHandshake(tcp, IpCertificateIdentity(IpAddress("127.0.0.1")), policy).connection();

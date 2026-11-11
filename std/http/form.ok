@@ -6,7 +6,7 @@ import "mime/media_type" take MediaType, MediaTypeLimits, MimeToken, MimeCharact
 import "encoding/single_byte" take Latin1Decoded, Latin1Encoded, AsciiDecoded;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded;
 import "numbers/bigint" take BigInt;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "compare" take Order;
 import "io/stream" take InvalidReadLimit;
 import "io/decorators" take InvalidReading;
@@ -294,9 +294,9 @@ object MultipartState {
         self.boundary = boundary;
         marker = "\r\n--" + boundary;
         self.limits = limits;
-        field_limit = ParsedInt(limits.field_bytes().string()).value();
-        file_limit = ParsedInt(limits.file_bytes().string()).value();
-        total_limit = ParsedInt(limits.total_bytes().string()).value();
+        field_limit = Number(limits.field_bytes().string()).int();
+        file_limit = Number(limits.file_bytes().string()).int();
+        total_limit = Number(limits.total_bytes().string()).int();
         tail = Atomic("");
         wire = Atomic(0);
         fields = Atomic(0);
@@ -1129,7 +1129,7 @@ object ParsedUrlEncodedForm {
 
     async read() is QueryParameters {
         defer origin.close();
-        let maximum = ParsedInt(limits.total_bytes().string()).value();
+        let maximum = Number(limits.total_bytes().string()).int();
         let cap = if maximum < 1048576 {
             maximum;
         }
@@ -1162,7 +1162,7 @@ object ParsedUrlEncodedForm {
             throw FormLimitExceeded.kind("fields");
         };
         let entries = parameters.entries();
-        let field_limit = ParsedInt(limits.field_bytes().string()).value();
+        let field_limit = Number(limits.field_bytes().string()).int();
         for (0..entries.size()) -> index {
             let entry = entries.item(index);
             confirm Utf8Encoded(entry.value()).bytes().size() <= field_limit

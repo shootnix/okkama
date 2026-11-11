@@ -7,7 +7,7 @@ import "crypto/x509/name" take DistinguishedName, RelativeDistinguishedName, Nam
 import "crypto/key" take PublicKey;
 import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "collections/sequence" take Sequencing;
 import "net/ip" take IpAddress;
 import "collections/set" take Set, OrderedSet;
@@ -73,8 +73,8 @@ object Certificate {
     validity() is CertificateValidity {
         let times = x509.certificate_times(facts);
         CertificateValidity(
-            Instant(Duration(ParsedInt(times[0]).value().rat(), DurationUnit.second)),
-            Instant(Duration(ParsedInt(times[1]).value().rat(), DurationUnit.second))
+            Instant(Duration(Number(times[0]).int().rat(), DurationUnit.second)),
+            Instant(Duration(Number(times[1]).int().rat(), DurationUnit.second))
         );
     }
 
@@ -154,7 +154,7 @@ object Certificate {
                 CertificateConstraints(authority);
             }
             else {
-                CertificateConstraints(authority, ParsedInt(value[1]).value());
+                CertificateConstraints(authority, Number(value[1]).int());
             }
         }
         catch e is NativeFailure {

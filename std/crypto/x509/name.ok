@@ -3,7 +3,7 @@ module crypto/x509/name v1.0.0;
 import "collections/sequence" take Sequencing;
 import "regex/pattern" take Regex;
 import "regex/search" take RegexMatches;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 
 object NameAttribute {
     has identifier, value is string;
@@ -20,7 +20,7 @@ object NameAttribute {
         confirm parts.size() <= 128
             else throw InvalidDistinguishedName.because("OID arc limit exceeded");
         if parts[0] != "2" {
-            confirm parts[1].length() <= 2 && ParsedInt(parts[1]).value() <= 39
+            confirm parts[1].length() <= 2 && Number(parts[1]).int() <= 39
                 else throw InvalidDistinguishedName.because("OID second arc outside root range");
         }
         self.identifier = identifier;

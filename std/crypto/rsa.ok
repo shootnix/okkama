@@ -5,7 +5,7 @@ import "crypto/secret" take SecretBytes;
 import "crypto/nonce" take Entropy;
 import "crypto/error" take HostOperation, DecimalArgument, InvalidCryptoInput;
 import "encoding/utf" take Utf8Decoded;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "encoding/pem" take PemBlock;
 import "encoding/hex" take HexDecoded;
 
@@ -91,7 +91,7 @@ object RsaPublicKey does PublicKey {
     }
 
     bits() is int {
-        ParsedInt(Utf8Decoded(HostOperation("rsa-bits", [origin]).bytes()).string()).value();
+        Number(Utf8Decoded(HostOperation("rsa-bits", [origin]).bytes()).string()).int();
     }
 }
 

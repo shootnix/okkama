@@ -1,13 +1,13 @@
 module app v1.0.0;
 
 import "conformance/check" take Checks;
-import "strings/parse" take ParsedInt, ParsedByte, ParsedBool, InvalidInteger, InvalidByte, InvalidBoolean;
+import "strings/parse" take Number, Truth, InvalidInteger, InvalidByte, InvalidBoolean;
 
 main() is int {
     let c = Checks();
-    c = c.same_text("leading space", try { let probe = ParsedInt(" 42").value(); "no error"; } catch InvalidInteger.source(source) { source; }, " 42");
-    c = c.same_text("plus sign", try { let probe = ParsedInt("+1").value(); "no error"; } catch InvalidInteger.source(source) { source; }, "+1");
-    c = c.same_text("byte overflow", try { let probe = ParsedByte("256").value(); "no error"; } catch InvalidByte.source(source) { source; }, "256");
-    c = c.same_text("capitalised bool", try { let probe = ParsedBool("True").value(); "no error"; } catch InvalidBoolean.source(source) { source; }, "True");
+    c = c.same_text("leading space", try { let probe = Number(" 42").int(); "no error"; } catch InvalidInteger.source(source) { source; }, " 42");
+    c = c.same_text("plus sign", try { let probe = Number("+1").int(); "no error"; } catch InvalidInteger.source(source) { source; }, "+1");
+    c = c.same_text("byte overflow", try { let probe = Number("256").byte(); "no error"; } catch InvalidByte.source(source) { source; }, "256");
+    c = c.same_text("capitalised bool", try { let probe = Truth("True").bool(); "no error"; } catch InvalidBoolean.source(source) { source; }, "True");
     c.done();
 }

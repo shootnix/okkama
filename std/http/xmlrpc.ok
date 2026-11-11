@@ -11,7 +11,7 @@ import "time/day" take TimeOfDay;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
 import "encoding/base64" take Base64Encoded, Base64Decoded;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "html/entities" take EscapedHtml;
 import "plist/parse" take PlistXmlSource, PlistXmlToken, PlistXmlText;
 import "async/atomic" take Atomic;
@@ -425,8 +425,8 @@ object XmlRpcLimits {
         XmlRpcBudget(depth, values, text_bytes, binary_bytes);
         self.depth = depth;
         self.values = values;
-        self.text_bytes = ParsedInt(text_bytes.string()).value();
-        self.binary_bytes = ParsedInt(binary_bytes.string()).value();
+        self.text_bytes = Number(text_bytes.string()).int();
+        self.binary_bytes = Number(binary_bytes.string()).int();
         nil_enabled = false;
     }
 
@@ -440,8 +440,8 @@ object XmlRpcLimits {
         XmlRpcBudget(depth, values, text_bytes, binary_bytes);
         self.depth = depth;
         self.values = values;
-        self.text_bytes = ParsedInt(text_bytes.string()).value();
-        self.binary_bytes = ParsedInt(binary_bytes.string()).value();
+        self.text_bytes = Number(text_bytes.string()).int();
+        self.binary_bytes = Number(binary_bytes.string()).int();
         self.nil_enabled = nil_enabled;
     }
 
@@ -506,13 +506,13 @@ object XmlRpcUsage {
 
     text(origin is string) is void {
         let bytes = Utf8Encoded(origin).bytes().size();
-        confirm bytes <= ParsedInt(limits.text_bytes().string()).value() - text.value()
+        confirm bytes <= Number(limits.text_bytes().string()).int() - text.value()
             else throw XmlRpcLimitExceeded.kind("text_bytes");
         text.replace(text.value() + bytes);
     }
 
     binary(bytes is int) is void {
-        confirm bytes <= ParsedInt(limits.binary_bytes().string()).value() - binary.value()
+        confirm bytes <= Number(limits.binary_bytes().string()).int() - binary.value()
             else throw XmlRpcLimitExceeded.kind("binary_bytes");
         binary.replace(binary.value() + bytes);
     }
@@ -1102,7 +1102,7 @@ object XmlRpcParsing {
                         "\r",
                         ""
                     ).replace("\n", "");
-                    let remaining = ParsedInt(usage.limits().binary_bytes().string()).value();
+                    let remaining = Number(usage.limits().binary_bytes().string()).int();
                     confirm text.length() <= ((remaining + 2) / 3).int() * 4
                         else throw XmlRpcLimitExceeded.kind("binary_bytes");
                     let bytes = try {
@@ -1234,7 +1234,7 @@ object XmlRpcIntegerText {
             origin;
         };
         value = try {
-            ParsedInt(text).value();
+            Number(text).int();
         }
         catch e is Error {
             throw InvalidXmlRpc.because("integer spelling");
@@ -1312,14 +1312,14 @@ object XmlRpcParsedDate {
         value = try {
             LocalDateTime(
                 Date(
-                    ParsedInt(origin.slice(0, 4)).value(),
-                    ParsedInt(origin.slice(4, 6)).value(),
-                    ParsedInt(origin.slice(6, 8)).value()
+                    Number(origin.slice(0, 4)).int(),
+                    Number(origin.slice(4, 6)).int(),
+                    Number(origin.slice(6, 8)).int()
                 ),
                 TimeOfDay(
-                    ParsedInt(origin.slice(9, 11)).value(),
-                    ParsedInt(origin.slice(12, 14)).value(),
-                    ParsedInt(origin.slice(15, 17)).value(),
+                    Number(origin.slice(9, 11)).int(),
+                    Number(origin.slice(12, 14)).int(),
+                    Number(origin.slice(15, 17)).int(),
                     0
                 )
             );

@@ -11,7 +11,7 @@ import "io/decorators" take ByteSnapshot, InvalidReading;
 import "io/buffer" take ByteBuffer;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
 import "numbers/bigint" take BigInt;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "compare" take Order;
 import "async/atomic" take Atomic;
 import "async/scope" take FutureGroup;
@@ -116,7 +116,7 @@ object Http1BodyWriteOperation {
         let used = Atomic(0);
         let metadata = Atomic(0);
         let required = if kind == Http1BodyKind.fixed {
-            ParsedInt(plan.length().string()).value();
+            Number(plan.length().string()).int();
         }
         else {
             limits.body_bytes();
@@ -304,7 +304,7 @@ object Http1HexSize {
             let value = digits.number();
             last if value.sign() == 0;
             let remainder = (value % BigInt("16"));
-            let index = ParsedInt(remainder.string()).value();
+            let index = Number(remainder.string()).int();
             digits = digits.following(
                 (value / BigInt("16")),
                 "0123456789abcdef".slice(index, index + 1) + digits.string()

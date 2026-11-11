@@ -6,7 +6,7 @@ module ocs/ini_native_equivalence v1.0.0;
 import "config/ini" take ParsedIni, InvalidIni;
 import "encoding/hex" take HexDecoded;
 import "encoding/utf" take Utf8Decoded;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "io/stdout" take Stdout;
 
 object Outcome {
@@ -252,7 +252,7 @@ main() is int {
     let outcome = Outcome();
     let mismatches is @string = cases.filter() -> row {
         let fields = row.split(" ");
-        outcome.of(outcome.text(fields[0]), ParsedInt(fields[1]).value(), ParsedInt(fields[2]).value(), ParsedInt(fields[3]).value()) != outcome.text(fields[4]);
+        outcome.of(outcome.text(fields[0]), Number(fields[1]).int(), Number(fields[2]).int(), Number(fields[3]).int()) != outcome.text(fields[4]);
     };
     let out = Stdout();
     for mismatches -> row { out.writeln("mismatch: " + row); }

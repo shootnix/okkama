@@ -60,7 +60,7 @@ import "fs/directory" take Directory;
 //     let file = File(path: Path("counter.txt"), mode: FileMode.reading_and_writing);
 //     defer file.close();
 //     let lock = file.lock(FileLockMode.exclusive) else throw Busy.now;
-//     let count = ParsedInt(file.text().content()).value();
+//     let count = Number(file.text().content()).int();
 //     file.text().rewrite((count + 1).string());
 //
 //     match guard.lock(FileLockMode.exclusive) {

@@ -64,7 +64,7 @@ def literal(value):return json.dumps(value,ensure_ascii=False,separators=(',',':
 def mapping(value):return literal(value).replace('{','[',1)[:-1]+']' if value else '[:]'
 
 text=['module locale/internal/numbers v1.0.0;','// Generated from SHA-checked CLDR 46.1.0 / Unicode 16.0.0.',
-      'import "compare" take Order;','import "strings/parse" take ParsedInt;',
+      'import "compare" take Order;','import "strings/parse" take Number;',
       'object CldrNumbers {has keys,rows is @string;',
       'CldrNumbers(){keys='+literal('|'.join(sorted(rows)))+'.split("|");rows='+literal('|'.join(rows[k] for k in sorted(rows)))+'.split("|");}',
       'row(tag is string) is @string{let index=self.search(tag,0,keys.size());if index<0{let empty is @string=[];empty;}else{let start=index*7;let values is @string=(start..start+7).map()->at{rows[at];};values;}}',

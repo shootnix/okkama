@@ -1315,7 +1315,7 @@ integer() is int {
     loop {
         let text = input.prompt("Enter an integer:");
         try {
-            last value ParsedInt(text);
+            last Number(text).int();
         }
         catch error is InvalidInteger {
             output.writeln("Not a valid integer");
@@ -4091,12 +4091,12 @@ summarizes the samples:
 ```okkama
 import "test/benchmark" take BenchmarkCase, Benchmark, BenchmarkResult;
 import "time/clock" take MonotonicClock;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 
 object ParseWorkload does BenchmarkCase {
     ParseWorkload();
     run() is void {
-        value ParsedInt("12345");
+        Number("12345").int();
     }
 }
 

@@ -32,7 +32,7 @@ import "http/internal/hpack" take HpackBudget;
 import "io/stream" take AsyncReading, AsyncWriting, Closing;
 import "io/decorators" take InvalidReading;
 import "numbers/bigint" take BigInt;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "compare" take Order;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
@@ -196,7 +196,7 @@ object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier, Http2B
     }
 
     body_limit() is int {
-        ParsedInt(policy.limits().body_bytes().string()).value();
+        Number(policy.limits().body_bytes().string()).int();
     }
 
     budget() is HpackBudget {

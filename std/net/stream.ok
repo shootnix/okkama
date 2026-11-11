@@ -6,7 +6,7 @@ import "net/failure" take NetworkClosed, NetworkError, NetworkOperation, Network
     NetworkFailureKind;
 import "net/endpoint" take IpEndpoint;
 import "net/ip" take IpAddress;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "async/lock" take Lock, LockGuard;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
@@ -53,8 +53,8 @@ object StreamConnection does Closing {
             let local = network.tcp_endpoint(state, false);
             let remote = network.tcp_endpoint(state, true);
             ConnectionEndpoints(
-                IpEndpoint(IpAddress(local[0]), ParsedInt(local[1]).value(), local[2]),
-                IpEndpoint(IpAddress(remote[0]), ParsedInt(remote[1]).value(), remote[2])
+                IpEndpoint(IpAddress(local[0]), Number(local[1]).int(), local[2]),
+                IpEndpoint(IpAddress(remote[0]), Number(remote[1]).int(), remote[2])
             );
         }
         catch e is NativeFailure {

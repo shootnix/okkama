@@ -16,7 +16,7 @@ import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8, ByteOrder;
 import "encoding/binary" take IntegerBytes, IntegerFromBytes, Signedness;
 import "numbers/bigint" take BigInt;
 import "compare" take Order;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "fs/stat" take Permissions, PermissionMode;
 import "error" take InvalidArgument, InvalidState, OutOfRange;
 
@@ -356,13 +356,13 @@ object TarMemberHeader {
             "";
         };
         let uid = if ordinary_uid {
-            ParsedInt(owner.user_identity().string()).value();
+            Number(owner.user_identity().string()).int();
         }
         else {
             0;
         };
         let gid = if ordinary_gid {
-            ParsedInt(owner.group_identity().string()).value();
+            Number(owner.group_identity().string()).int();
         }
         else {
             0;
@@ -860,7 +860,7 @@ object TarParseProgress {
                 confirm length.sign() >= 0 else throw InvalidTar.because("negative extension size");
                 confirm length.order(BigInt(metadata_left.string())) != Order.greater
                     else throw ArchiveLimitExceeded.detailed("tar_metadata", maximum_metadata);
-                let size = ParsedInt(length.string()).value();
+                let size = Number(length.string()).int();
                 let end = TarBodySpan(origin, at + 512, size).end();
                 let payload = origin.slice(at + 512, at + 512 + size);
                 if flag == "g" {
@@ -1143,7 +1143,7 @@ object TarPaxPayload {
             let digits = TarUtf8(origin.slice(at, space)).string();
             confirm TarDecimalDigits(digits).valid()
                 else throw InvalidTar.because("invalid PAX length");
-            let length = ParsedInt(digits).value();
+            let length = Number(digits).int();
             confirm length >= 5 && length <= origin.size() - at && space < at + length - 2
                 else throw InvalidTar.because("invalid PAX span");
             confirm origin[at + length - 1] == byte(10)
@@ -1288,7 +1288,7 @@ object TarInputMember {
         confirm length.sign() >= 0 else throw InvalidTar.because("negative member size");
         confirm length.order(BigInt(limits.entry_size().string())) != Order.greater
             else throw ArchiveLimitExceeded.detailed("entry_size", limits.entry_size());
-        let amount = ParsedInt(length.string()).value();
+        let amount = Number(length.string()).int();
         confirm kind == "0" || amount == 0
             else throw InvalidTar.because("non-file member has data");
         size = amount;
@@ -1430,7 +1430,7 @@ object TarCheckedInt {
     value() is int {
         confirm origin.sign() >= 0 && origin.order(BigInt(maximum.string())) != Order.greater
             else throw InvalidTar.because("numeric field out of range");
-        ParsedInt(origin.string()).value();
+        Number(origin.string()).int();
     }
 }
 
@@ -1475,7 +1475,7 @@ object TarPaxTime {
         let scale = (0..width).reduce(1) -> value, ignored {
             value * 10;
         };
-        let result = whole.rat() + rat(ParsedInt(fraction.slice(0, width)).value(), scale);
+        let result = whole.rat() + rat(Number(fraction.slice(0, width)).int(), scale);
         if negative {
             -result;
         }
@@ -1904,7 +1904,7 @@ object TarStreamCounts {
         confirm length.sign() >= 0 else throw InvalidTar.because("negative extension size");
         confirm length.order(BigInt(metadata_left.string())) != Order.greater
             else throw ArchiveLimitExceeded.detailed("tar_metadata", maximum_metadata);
-        ParsedInt(length.string()).value();
+        Number(length.string()).int();
     }
 
     extended(size is int) is ^TarStreamCounts {

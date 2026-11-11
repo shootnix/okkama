@@ -1373,7 +1373,7 @@ integer() is int {
     loop {
         let text = input.prompt("Введите целое число:");
         try {
-            last ParsedInt(text).value();
+            last Number(text).int();
         }
         catch error is InvalidInteger {
             output.writeln("Это не целое число");
@@ -4238,12 +4238,12 @@ byte-ячейке `runtime/memory`, так же как `io/buffer` владее�
 ```okkama
 import "test/benchmark" take BenchmarkCase, Benchmark, BenchmarkResult;
 import "time/clock" take MonotonicClock;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 
 object ParseWorkload does BenchmarkCase {
     ParseWorkload();
     run() is void {
-        ParsedInt("12345").value();
+        Number("12345").int();
     }
 }
 
@@ -5659,13 +5659,13 @@ import "strings/parse" take
     InvalidInteger, InvalidFloat, InvalidBoolean, InvalidByte;
 
 main() is int {
-    let count is int = ParsedInt("-42").value();
-    let ratio is float = ParsedFloat("3.0").value();
-    let enabled is bool = ParsedBool("true").value();
-    let octet is byte = ParsedByte("255").value();
+    let count is int = Number("-42").int();
+    let ratio is float = Number("3.0").float();
+    let enabled is bool = Truth("true").bool();
+    let octet is byte = Number("255").byte();
 
     try {
-        ParsedInt(" 42").value();
+        Number(" 42").int();
     }
     catch error is InvalidInteger {
         error.source(); // исходная строка без изменений: " 42"

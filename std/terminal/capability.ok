@@ -1,7 +1,7 @@
 module terminal/capability v1.0.0;
 
 import "os/environment" take Environment;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 
 enum TerminalColorDepth = (disabled, basic, indexed, true_color);
 
@@ -137,7 +137,7 @@ object TerminalFallback {
         if environment.membership(name) {
             let text = environment.variable(name);
             let parsed = try {
-                ParsedInt(text).value();
+                Number(text).int();
             }
             catch e is Error {
                 0;

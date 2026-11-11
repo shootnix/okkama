@@ -5,7 +5,7 @@ import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "numbers/bigint" take BigInt;
 import "compare" take Order;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "encoding/utf" take Utf8Encoded, Utf16Encoded, Utf32Encoded, ByteOrder;
 import "encoding/binary" take IntegerBytes, IntegerFromBytes, FloatBytes, FloatWidth, Signedness;
 import "encoding/base64" take Base64Encoded;
@@ -623,7 +623,7 @@ object PlistWireInteger {
             let divisor = BigInt("256").power(size - index - 1, 129);
             let quotient = (magnitude / divisor);
             let remainder = (quotient % BigInt("256"));
-            ParsedInt(remainder.string()).value().byte();
+            Number(remainder.string()).int().byte();
         };
         result;
     }

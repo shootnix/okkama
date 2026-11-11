@@ -94,7 +94,7 @@ for tag in all_tags:
  model=packed(fields)
  if model not in profile_ids:profile_ids[model]=len(profiles);profiles.append(model)
  rows[tag]=profile_ids[model]
-lines=['module locale/internal/gregorian v1.0.0;','// Generated from SHA-checked CLDR 46.1.0 Gregorian standard styles.', 'import "compare" take Order;import "strings/parse" take ParsedInt;', 'object CldrGregorian {has tags,ids is @string;', 'CldrGregorian(){tags='+literal('|'.join(rows))+'.split("|");ids='+literal('|'.join(map(str,rows.values())))+'.split("|");}', 'profile(tag is string) is int{let index=self.search(tag,0,tags.size());if index<0{-1;}else{ParsedInt(ids[index]).value();}}', 'fields(id is int) is @string{']
+lines=['module locale/internal/gregorian v1.0.0;','// Generated from SHA-checked CLDR 46.1.0 Gregorian standard styles.', 'import "compare" take Order;import "strings/parse" take Number;', 'object CldrGregorian {has tags,ids is @string;', 'CldrGregorian(){tags='+literal('|'.join(rows))+'.split("|");ids='+literal('|'.join(map(str,rows.values())))+'.split("|");}', 'profile(tag is string) is int{let index=self.search(tag,0,tags.size());if index<0{-1;}else{Number(ids[index]).int();}}', 'fields(id is int) is @string{']
 for i,p in enumerate(profiles):lines.append('if id=='+str(i)+'{return '+literal(p)+'.split("|");}')
 lines+=['let empty is @string=[];empty;}','program(id is int) is string{']
 for i,p in enumerate(programs):lines.append('if id=='+str(i)+'{return '+literal(p)+';}')

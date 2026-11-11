@@ -26,7 +26,7 @@ import "http/internal/hpack_tables" take HpackField;
 import "io/stream" take AsyncReading, AsyncWriting, Closing, InvalidReadLimit;
 import "io/decorators" take InvalidReading;
 import "numbers/bigint" take BigInt;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "compare" take Order;
 import "collections/sequence" take Sequencing;
 import "async/atomic" take Atomic;
@@ -191,7 +191,7 @@ object Http2SessionState does Http2ReceivingEvents, Http2BodyEvents {
     }
 
     body_limit() is int {
-        ParsedInt(limits.body_bytes().string()).value();
+        Number(limits.body_bytes().string()).int();
     }
 
     local_window() is int {

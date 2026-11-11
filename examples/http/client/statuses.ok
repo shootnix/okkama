@@ -11,7 +11,7 @@ import "io/stdout" take Stdout;
 import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "async/atomic" take Atomic;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 
 // Read a status: compare it with a case, match on it, take its class.
 
@@ -80,7 +80,7 @@ hidden object LocalServer {
                     line.lower().starts_with("content-length:");
                 };
                 let expected = if sizes.size() == 1 {
-                    ParsedInt(sizes[0].split(":")[1].trim()).value();
+                    Number(sizes[0].split(":")[1].trim()).int();
                 }
                 else {
                     0;

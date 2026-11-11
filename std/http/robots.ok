@@ -12,7 +12,7 @@ import "http/header" take Headers, Header, HeaderName, HttpAsciiLowercase;
 import "time/duration" take Duration, DurationUnit;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "collections/list" take List, EmptyList;
 import "collections/sequence" take Sequencing;
 import "collections/ordering" take LowerBound;
@@ -544,7 +544,7 @@ object RobotsDelay {
             confirm "0123456789".split(digits.slice(index, index + 1)).size() == 2
                 else throw InvalidRobots.because("delay digits");
         }
-        seconds = rat(ParsedInt(digits).value(), denominator.value());
+        seconds = rat(Number(digits).int(), denominator.value());
         confirm self.seconds <= 86400.rat() else throw InvalidRobots.because("delay cap");
     }
 

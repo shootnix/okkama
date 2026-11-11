@@ -4,7 +4,7 @@ import "fs/file" take File, FileMode;
 import "fs/lock" take FileLockMode;
 import "fs/entry" take FileEntry;
 import "fs/path" take Path;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "io/stdout" take Stdout;
 
 // Locks are whole-file and advisory: they keep out those who lock too.
@@ -21,7 +21,7 @@ main() is int {
     // Read, change and write back under an exclusive lock.
     let file = File(path: path, mode: FileMode.reading_and_writing);
     let lock = file.lock(FileLockMode.exclusive) else panic "the counter is busy";
-    let count = ParsedInt(origin: file.text().content()).value();
+    let count = Number(origin: file.text().content()).int();
     file.text().rewrite((count + 1).string());
     out.writeln("locked exclusively: " + file.locked(FileLockMode.exclusive).string());
 

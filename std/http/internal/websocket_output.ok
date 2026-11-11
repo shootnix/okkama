@@ -10,7 +10,7 @@ import "io/decorators" take ByteSnapshot;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
 import "async/scope" take FutureGroup;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "error" take InvalidState;
 
 // Exactly one writer owns the wire. Started messages finish all fragments even
@@ -35,7 +35,7 @@ object WebSocketOutput {
         self.random = random;
         frame_maximum = limits.frame_bytes();
         maximum = limits.queue();
-        message_maximum = ParsedInt(limits.message_bytes().string()).value();
+        message_maximum = Number(limits.message_bytes().string()).int();
         let empty is @WebSocketOutputTicket = [];
         jobs = Atomic(empty);
         current = Atomic(empty);

@@ -260,6 +260,18 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   - `examples/http/client/` shows a GET as text, a POST of JSON and the
     reading of a status, each against a stand-in local server. The Book
     (§26.5) and the okkama-docs guide describe the client.
+- **std review, wave 1: core (#352).** Answers get their nouns and objects
+  become the subject they are about (`docs/std-principles.md` §2).
+  - `strings/parse`: one `Number(text)` reads every number type, and
+    `Truth(text)` reads a truth value. The base belongs to the reading
+    (`Number("ff").int(16)`). The errors (`InvalidInteger`, …) are unchanged.
+
+    | before | now |
+    |---|---|
+    | `ParsedInt(t).value()`, `ParsedInt(t, 16).value()` | `Number(t).int()`, `Number(t).int(16)` |
+    | `ParsedFloat(t).value()`, `ParsedRat(t).value()` | `Number(t).float()`, `Number(t).rat()` |
+    | `ParsedByte(t, 2).value()` | `Number(t).byte(2)` |
+    | `ParsedBool(t).value()` | `Truth(t).bool()` |
 ### Fixed
 
 - Traversals own what they walk, and keep no record of what they walked

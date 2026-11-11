@@ -78,11 +78,11 @@ for tag,entry in sorted(numbers.items()):
 def literal(v):return json.dumps(v,ensure_ascii=False,separators=(',',':'))
 def mapping(v):return literal(v).replace('{','[',1)[:-1]+']' if v else '[:]'
 text=['module locale/internal/currencies v1.0.0;','// Generated from SHA-checked SIX ISO 4217 2026-09-17 and CLDR 46.1.0.',
-'import "compare" take Order;import "strings/parse" take ParsedInt;',
+'import "compare" take Order;import "strings/parse" take Number;',
 'object CldrCurrencies {has tags,rows is @string;',
 'CldrCurrencies(){tags='+literal('|'.join(rows))+'.split("|");rows='+literal('|'.join(rows.values()))+'.split("|");}',
 'digits(code is string) is string{let values is %string:string='+mapping(codes)+';if values.has(code){values[code];}else{"";}}',
-'profile(tag is string,system is string) is int{let index=self.search(tag,0,tags.size());if index<0{return -1;}let names=rows[index*3].split(",");let ids=rows[index*3+1].split(",");for (0..names.size())->at{if names[at]==system{return ParsedInt(ids[at]).value();}}ParsedInt(rows[index*3+2]).value();}',
+'profile(tag is string,system is string) is int{let index=self.search(tag,0,tags.size());if index<0{return -1;}let names=rows[index*3].split(",");let ids=rows[index*3+1].split(",");for (0..names.size())->at{if names[at]==system{return Number(ids[at]).int();}}Number(rows[index*3+2]).int();}',
 'fields(profile is int) is @string{']
 for i,m in enumerate(profiles):text.append('if profile=='+str(i)+'{return '+literal(m['fields'])+'.split("|");}')
 text+=['let empty is @string=[];empty;}','compact(profile is int) is %string:string{']

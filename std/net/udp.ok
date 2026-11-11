@@ -6,7 +6,7 @@ import "net/interface" take NetworkInterface;
 import "io/stream" take ByteSource;
 import "runtime/network";
 import "runtime/net" take ip_parse;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "net/failure" take NetworkError, NetworkOperation, NetworkClosed;
 import "net/stream" take ConnectionEndpoints;
 import "error" take InvalidArgument;
@@ -169,7 +169,7 @@ object UdpSocket {
         self.state = state;
         endpoint = try {
             let fields = network.local_endpoint(state);
-            IpEndpoint(IpAddress(fields[0]), ParsedInt(fields[1]).value(), fields[2]);
+            IpEndpoint(IpAddress(fields[0]), Number(fields[1]).int(), fields[2]);
         }
         catch failure is NativeFailure {
             network.close(state);
@@ -225,7 +225,7 @@ object UdpSocket {
             let packet = await network.udp_receive(state, limit);
             let peer = network.packet_source(packet);
             Datagram(
-                IpEndpoint(IpAddress(peer[0]), ParsedInt(peer[1]).value(), peer[2]),
+                IpEndpoint(IpAddress(peer[0]), Number(peer[1]).int(), peer[2]),
                 network.packet_bytes(packet),
                 network.packet_truncated(packet)
             );
@@ -375,8 +375,8 @@ object UdpConnection {
             let local = network.local_endpoint(state);
             let remote = network.peer_endpoint(state);
             ConnectionEndpoints(
-                IpEndpoint(IpAddress(local[0]), ParsedInt(local[1]).value(), local[2]),
-                IpEndpoint(IpAddress(remote[0]), ParsedInt(remote[1]).value(), remote[2])
+                IpEndpoint(IpAddress(local[0]), Number(local[1]).int(), local[2]),
+                IpEndpoint(IpAddress(remote[0]), Number(remote[1]).int(), remote[2])
             );
         }
         catch failure is NativeFailure {
@@ -428,7 +428,7 @@ object UdpConnection {
             let packet = await network.udp_connected_receive(state, limit);
             let peer = network.packet_source(packet);
             Datagram(
-                IpEndpoint(IpAddress(peer[0]), ParsedInt(peer[1]).value(), peer[2]),
+                IpEndpoint(IpAddress(peer[0]), Number(peer[1]).int(), peer[2]),
                 network.packet_bytes(packet),
                 network.packet_truncated(packet)
             );

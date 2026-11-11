@@ -8,7 +8,7 @@ import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
 import "runtime/utf" take utf8_valid_prefix;
 import "time/duration" take Duration, DurationUnit;
 import "numbers/bigint" take BigInt;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "compare" take Order;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
@@ -160,7 +160,7 @@ object EventRetry {
                 2147483647;
             }
             else {
-                ParsedInt(amount.string()).value();
+                Number(amount.string()).int();
             }
         };
     }
@@ -438,7 +438,7 @@ object ServerEvents {
                         2147483647;
                     }
                     else {
-                        ParsedInt(amount.string()).value();
+                        Number(amount.string()).int();
                     };
                     retry.replace([bounded]);
                 }

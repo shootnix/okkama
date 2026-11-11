@@ -12,7 +12,7 @@ import "math/decimal" take Decimal, InvalidDecimal;
 import "math/rounding" take Rounding;
 import "numbers/bigint" take BigInt;
 import "numbers/float" take ShortestFloat;
-import "strings/parse" take ParsedInt;
+import "strings/parse" take Number;
 import "compare" take Order;
 import "i18n/plural" take PluralNumber, PluralCategoryOf, PluralKind, PluralCategory;
 
@@ -158,13 +158,13 @@ object NumberDataRow {
     }
 
     minimum_grouping() is int {
-        ParsedInt(values[4]).value();
+        Number(values[4]).int();
     }
 
     id(system is string) is int {
         for (0..names.size()) -> index {
             if names[index] == system {
-                return ParsedInt(ids[index]).value();
+                return Number(ids[index]).int();
             }
         }
         -1;
@@ -199,19 +199,19 @@ object NumberPattern {
     }
 
     primary() is int {
-        ParsedInt(values[4]).value();
+        Number(values[4]).int();
     }
 
     secondary() is int {
-        ParsedInt(values[5]).value();
+        Number(values[5]).int();
     }
 
     exponent_digits() is int {
-        ParsedInt(values[6]).value();
+        Number(values[6]).int();
     }
 
     zeros() is int {
-        ParsedInt(values[7]).value();
+        Number(values[7]).int();
     }
 }
 
@@ -893,7 +893,7 @@ object NumberPrinting {
     hidden exponential(engineering is bool) is NumberRendered {
         let magnitude = origin.magnitude();
         let remainder = if engineering {
-            let rest = ParsedInt((BigInt(magnitude.numerator()) % BigInt("3")).string()).value();
+            let rest = Number((BigInt(magnitude.numerator()) % BigInt("3")).string()).int();
             if rest < 0 {
                 rest + 3;
             }
@@ -1059,7 +1059,7 @@ object NumberPrinting {
     hidden bucket(entries is NumberCompactData, magnitude is rat) is int {
         entries.keys().reduce(-1) -> chosen, key {
             let parts = key.split(":");
-            let power = ParsedInt(parts[0]).value();
+            let power = Number(parts[0]).int();
             if parts[1] == "other" && power > chosen && power.rat() <= magnitude {
                 power;
             }
