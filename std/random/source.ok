@@ -120,3 +120,65 @@ enum InvalidRandomRange is Error = (detailed(start is int, stop is int));
 enum InvalidRandomSize is Error = (detailed(requested is int, maximum is int));
 
 enum UnavailableRandom is Error = (unavailable);
+
+test "a seeded source repeats the published PCG32 sequence" {
+    // The first two pcg32 outputs for seed 42, little-endian; checked
+    // against an independent implementation of the stated algorithm.
+    test.is(PcgRandom(42).bytes(8), [byte(214), byte(123), byte(245), byte(194), byte(169), byte(196), byte(7), byte(107)]);
+    let random = PcgRandom(42);
+    test.is(random.integer(0, 100), 5);
+    test.is(random.integer(0, 100), 15);
+    test.is(random.integer(-5, 5), 3);
+    test.is(random.float(), 0.7960081833279878);
+    // Copies share one stream: a draw through either advances both.
+    let shared = PcgRandom(9);
+    let copy = shared;
+    let first = shared.integer(0, 1000000);
+    let second = copy.integer(0, 1000000);
+    let fresh = PcgRandom(9);
+    test.is(fresh.integer(0, 1000000), first);
+    test.is(fresh.integer(0, 1000000), second);
+    test.is(PcgRandom(7).bytes(3), PcgRandom(7).bytes(3));
+    test.is(PcgRandom(7).bytes(0).size(), 0);
+}
+
+test "ranges are half-open and never empty" {
+    let random is Randomizing = PcgRandom(1);
+    for (0..200) -> index {
+        let roll = random.integer(1, 7);
+        test.ok(roll >= 1 && roll < 7);
+        let fraction = random.float();
+        test.ok(fraction >= 0.0 && fraction < 1.0);
+    }
+    test.is(random.integer(3, 4), 3);
+    test.is(
+        try {
+            random.integer(4, 4);
+        }
+        catch InvalidRandomRange.detailed(start, stop) {
+            start * 10 + stop;
+        },
+        44
+    );
+    test.is(
+        try {
+            random.bytes(-1).size();
+        }
+        catch InvalidRandomSize.detailed(requested, maximum) {
+            requested;
+        },
+        -1
+    );
+}
+
+test "secure source answers within the same contract" {
+    let secure is Randomizing = SecureRandom();
+    test.is(secure.bytes(24).size(), 24);
+    for (0..50) -> index {
+        let roll = secure.integer(-3, 3);
+        test.ok(roll >= -3 && roll < 3);
+        let fraction = secure.float();
+        test.ok(fraction >= 0.0 && fraction < 1.0);
+    }
+    test.is(SecureBytes(size: 5).bytes().size(), 5);
+}

@@ -589,9 +589,9 @@ object Reduced<T, R> {
     Reduced(:origin, :initial, :action);
 
     total() is R {
-        for Accumulated(origin: origin, initial: initial, action: action) -> value {
-            value;
-        }
+        origin.reduce(initial) -> total, item {
+            action(total, item);
+        };
     }
 }
 
@@ -721,4 +721,89 @@ object SlicedCursor<T> does Cursor<T> {
             step: step,
         );
     }
+}
+
+test "lazy views map, filter, take and drop" {
+    let numbers = [1, 2, 3, 4, 5, 6];
+    let text = (items is Iterating<int>) is string {
+        items.map() -> item {
+            item.string();
+        }.join(",");
+    };
+    let square is (int) is int = (value is int) is int { value * value; };
+    let even is (int) is bool = (value is int) is bool { value % 2 == 0; };
+    let small is (int) is bool = (value is int) is bool { value < 3; };
+    test.is(text(Mapped(origin: numbers, mapping: square)), "1,4,9,16,25,36");
+    test.is(text(Filtered(origin: numbers, condition: even)), "2,4,6");
+    test.is(text(Taken(origin: numbers, count: 2)), "1,2");
+    test.is(text(Taken(origin: numbers, count: 0)), "");
+    test.is(text(Dropped(origin: numbers, count: 4)), "5,6");
+    test.is(text(Dropped(origin: numbers, count: 9)), "");
+    test.is(text(TakenWhile(origin: numbers, condition: small)), "1,2");
+    test.is(text(DroppedWhile(origin: numbers, condition: small)), "3,4,5,6");
+    test.is(text(Taken(origin: Filtered(origin: numbers, condition: even), count: 2)), "2,4");
+    test.is(text(Filtered(origin: numbers, condition: (value is int) is bool { value > 9; })), "");
+}
+
+test "chunks, pairs, running and final folds" {
+    let numbers = [1, 2, 3, 4, 5];
+    test.is(Chunked(origin: numbers, size: 2).map() -> chunk {
+        chunk.map() -> item {
+            item.string();
+        }.join("");
+    }.join(","), "12,34,5");
+    test.is(Pairwise(origin: numbers).map() -> pair {
+        (pair.first() * 10 + pair.second()).string();
+    }.join(","), "12,23,34,45");
+    let plus is (int, int) is int = (total is int, item is int) is int { total + item; };
+    test.is(Accumulated(origin: numbers, initial: 0, action: plus).map() -> total {
+        total.string();
+    }.join(","), "0,1,3,6,10,15");
+    test.is(Reduced(origin: numbers, initial: 0, action: plus).total(), 15);
+    let nothing is @int = [];
+    test.is(Reduced(origin: nothing, initial: 7, action: plus).total(), 7);
+}
+
+test "reversed, sliced and flattened views" {
+    let letters = ["a", "b", "c", "d", "e", "f", "g"];
+    let backwards = Reversed(origin: letters);
+    test.is(backwards.size(), 7);
+    test.is(backwards.first(), "g");
+    test.is(backwards.last(), "a");
+    test.is(backwards.item(1), "f");
+    test.is(backwards.map() -> letter {
+        letter;
+    }.join(""), "gfedcba");
+    test.is(Sliced(origin: letters, start: 1, stop: 6, step: 2).map() -> letter {
+        letter;
+    }.join(""), "bdf");
+    test.is(Sliced(origin: letters, start: 5, stop: 100, step: 1).map() -> letter {
+        letter;
+    }.join(""), "fg");
+    test.is(
+        try {
+            Sliced(origin: letters, start: 0, stop: 3, step: 0);
+            "accepted";
+        }
+        catch error is InvalidArgument {
+            "refused";
+        },
+        "refused"
+    );
+    let parts is @Iterating<string> = [Reversed(origin: ["b", "a"]), Reversed(origin: ["c"])];
+    test.is(Flattened(origin: parts).map() -> letter {
+        letter;
+    }.join(""), "abc");
+}
+
+test "cursor steps expose each position and the one after it" {
+    let steps = CursorSteps(cursor: ["x", "y"].cursor());
+    test.is(steps.map() -> step {
+        step.item() + if step.following().available() {
+            step.following().item();
+        }
+        else {
+            ".";
+        };
+    }.join(","), "xy,y.");
 }

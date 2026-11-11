@@ -314,3 +314,76 @@ object RegexSubstitutionResult {
 enum InvalidRegexReplacement is Error = (located(offset is int, message is string));
 
 enum InvalidRegexReplacementLimit is Error = (limit(limit is int));
+
+test "literal replacement never expands dollars" {
+    let changed = RegexSubstitution(
+        origin: "a1 b22 c",
+        regex: Regex("\\d+"),
+        replacing: LiteralRegexReplacement("$0"),
+    );
+    test.is(changed.string(), "a$0 b$0 c");
+    test.is(changed.amount(), 2);
+    let untouched = RegexSubstitution(
+        origin: "abc",
+        regex: Regex("\\d"),
+        replacing: LiteralRegexReplacement("N"),
+    );
+    test.is(untouched.string(), "abc");
+    test.is(untouched.amount(), 0);
+}
+
+test "expanded replacement reads groups by number and name" {
+    let changed = RegexSubstitution(
+        origin: "Ada Lovelace",
+        regex: Regex("(?<first>\\w+) (?<last>\\w+)"),
+        replacing: ExpandedRegexReplacement("${last}, ${first} ($0) $$1"),
+    );
+    test.is(changed.string(), "Lovelace, Ada (Ada Lovelace) $1");
+    test.is(changed.amount(), 1);
+    test.is(RegexSubstitution(
+        origin: "2026-11-11",
+        regex: Regex("(\\d+)-(\\d+)-(\\d+)"),
+        replacing: ExpandedRegexReplacement("$3.$2.$1"),
+    ).string(), "11.11.2026");
+}
+
+test "a limit stops after that many replacements" {
+    let limited = RegexSubstitution(
+        origin: "x x x x",
+        regex: Regex("x"),
+        replacing: LiteralRegexReplacement("y"),
+        limit: 2,
+    );
+    test.is(limited.string(), "y y x x");
+    test.is(limited.amount(), 2);
+    test.is(
+        try {
+            RegexSubstitution(
+                origin: "x",
+                regex: Regex("x"),
+                replacing: LiteralRegexReplacement("y"),
+                limit: 0,
+            ).string();
+        }
+        catch InvalidRegexReplacementLimit.limit(limit) {
+            limit.string();
+        },
+        "0"
+    );
+}
+
+test "a broken template is refused with its offset" {
+    test.is(
+        try {
+            RegexSubstitution(
+                origin: "ab",
+                regex: Regex("(a)"),
+                replacing: ExpandedRegexReplacement("${first"),
+            ).string();
+        }
+        catch InvalidRegexReplacement.located(offset, message) {
+            "offset " + offset.string();
+        },
+        "offset 0"
+    );
+}

@@ -249,3 +249,46 @@ object ChainedItemCursor<T> does Cursor<T> {
         }
     }
 }
+
+test "pairs keep both types" {
+    let entry = Pair(first: "answer", second: 42);
+    test.is(entry.first(), "answer");
+    test.is(entry.second(), 42);
+}
+
+test "zipped stops at the shorter side, strictly zipped refuses it" {
+    let names = ["a", "b", "c"];
+    let scores = [1, 2];
+    test.is(Zipped(left: names, right: scores).map() -> pair {
+        pair.first() + pair.second().string();
+    }.join(","), "a1,b2");
+    test.is(StrictlyZipped(left: ["a", "b"], right: scores).map() -> pair {
+        pair.first() + pair.second().string();
+    }.join(","), "a1,b2");
+    test.is(
+        try {
+            StrictlyZipped(left: names, right: scores).map() -> pair {
+                pair.first();
+            }.join("");
+        }
+        catch error is UnequalSizes {
+            "unequal";
+        },
+        "unequal"
+    );
+}
+
+test "chained joins sources one level deep and skips empty ones" {
+    let nothing is @string = [];
+    let first is Iterating<string> = ["a", "b"];
+    let empty is Iterating<string> = nothing;
+    let final is Iterating<string> = ["c"];
+    let sources is @Iterating<string> = [empty, first, empty, empty, final, empty];
+    test.is(Chained(origins: sources).map() -> letter {
+        letter;
+    }.join(""), "abc");
+    let none_at_all is @Iterating<string> = [empty, empty];
+    test.is(Chained(origins: none_at_all).map() -> letter {
+        letter;
+    }.join(""), "");
+}

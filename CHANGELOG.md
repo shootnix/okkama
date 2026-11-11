@@ -364,6 +364,14 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     shapes, weights and distinct samples.
   - `regex/replace`: the substitution accumulator is hidden and answers
     `substitution()`.
+  - Characterization tests cover the changed modules that had none:
+    `collections/ordering`, `views` and `combining`, `encoding/binary`,
+    `random/source` (the PCG32 sequence, checked against an independent
+    implementation), `regex/replace` and `time/zone`. `Reduced.total()`
+    folds with `reduce` instead of walking `Accumulated`.
+  - The Book's `random` and `strings/parse` passages describe the current
+    API, and §17.6 shows a plain call after a constructor instead of the
+    removed `#projected` (#367).
 ### Fixed
 
 - Traversals own what they walk, and keep no record of what they walked
@@ -430,6 +438,14 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   name now starts type arguments only when the name has a lower-case letter
   (`List<int>`, `Maybe<int>.none`). A name in capitals is a constant and is
   compared. Conformance case `L06.const.compared`.
+
+- Sparrow: named time zones failed, because `rat` did not cross the bridge
+  to origin natives (#489). `Zone.offset`, `abbreviation`,
+  `daylight_saving` and `instant` stopped with `native argument type is not
+  bridged`, and `Zoned(…).instant()` with `native result Rat(…) does not
+  match Rat`. A Tomato rat is a payload around the origin's own `Rat`, so the
+  bridge now clones it each way. No conformance case used a named zone; the
+  new `L09.time.zones` and the `time/zone` inline tests do.
 
 ### Performance
 

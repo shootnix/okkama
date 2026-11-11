@@ -170,3 +170,81 @@ object FloatBytes {
         }
     }
 }
+
+test "integers round-trip through both byte orders" {
+    let big = IntegerBytes(value: -2, size: 2, signedness: Signedness.signed, order: ByteOrder.big).bytes();
+    test.is(big, [byte(255), byte(254)]);
+    test.is(Binary(bytes: big, order: ByteOrder.big).int(Signedness.signed), -2);
+    test.is(Binary(bytes: big, order: ByteOrder.big).int(Signedness.unsigned), 65534);
+    let little = IntegerBytes(value: 258, size: 4, signedness: Signedness.unsigned, order: ByteOrder.little).bytes();
+    test.is(little, [byte(2), byte(1), byte(0), byte(0)]);
+    test.is(Binary(bytes: little, order: ByteOrder.little).int(Signedness.unsigned), 258);
+    test.is(Binary(bytes: [byte(0), byte(0), byte(0), byte(1)], order: ByteOrder.big).int(Signedness.signed), 1);
+}
+
+test "integer widths and ranges are refused, never wrapped" {
+    let refused = (work is () is @byte) is string {
+        try {
+            work();
+            "accepted";
+        }
+        catch error is InvalidArgument {
+            "refused";
+        }
+    };
+    test.is(refused(() is @byte {
+        IntegerBytes(value: 256, size: 1, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+    }), "refused");
+    test.is(refused(() is @byte {
+        IntegerBytes(value: -1, size: 2, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+    }), "refused");
+    test.is(refused(() is @byte {
+        IntegerBytes(value: 1, size: 0, signedness: Signedness.signed, order: ByteOrder.big).bytes();
+    }), "refused");
+    let empty is @byte = [];
+    test.is(
+        try {
+            Binary(bytes: empty, order: ByteOrder.big).int(Signedness.signed);
+        }
+        catch error is InvalidArgument {
+            -1;
+        },
+        -1
+    );
+    let wide is @byte = [byte(1), byte(0), byte(0), byte(0), byte(0), byte(0), byte(0), byte(0), byte(0)];
+    test.is(
+        try {
+            Binary(bytes: wide, order: ByteOrder.big).int(Signedness.unsigned);
+        }
+        catch error is InvalidArgument {
+            -1;
+        },
+        -1
+    );
+}
+
+test "floats keep their IEEE 754 form" {
+    test.is(Binary(bytes: [byte(64), byte(32), byte(0), byte(0)], order: ByteOrder.big).float(FloatWidth.bits32), 2.5);
+    let encoded = FloatBytes(value: -0.75, width: FloatWidth.bits64, order: ByteOrder.little).bytes();
+    test.is(encoded.size(), 8);
+    test.is(Binary(bytes: encoded, order: ByteOrder.little).float(FloatWidth.bits64), -0.75);
+    test.is(
+        try {
+            Binary(bytes: encoded, order: ByteOrder.little).float(FloatWidth.bits32);
+        }
+        catch error is InvalidArgument {
+            1.0;
+        },
+        1.0
+    );
+    let infinity = [byte(127), byte(128), byte(0), byte(0)];
+    test.is(
+        try {
+            Binary(bytes: infinity, order: ByteOrder.big).float(FloatWidth.bits32);
+        }
+        catch error is InvalidArgument {
+            1.0;
+        },
+        1.0
+    );
+}
