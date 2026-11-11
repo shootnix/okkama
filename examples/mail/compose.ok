@@ -2,7 +2,6 @@ module examples/mail/compose v1.0.0;
 
 import "mail/message" take MailMessage, ParsedMail;
 import "mail/mailbox" take Maildir;
-import "message/header" take MessageHeaderName;
 import "fs/temp" take TemporaryDirectory;
 import "fs/directory" take Directory;
 import "fs/path" take Path;
@@ -47,8 +46,8 @@ main() is int {
     out.writeln("---");
 
     let back = ParsedMail(message.bytes()).message();
-    out.writeln("subject: " + back.headers().first(MessageHeaderName("Subject")));
-    out.writeln("from: " + back.headers().first(MessageHeaderName("From")));
+    out.writeln("subject: " + back.headers().first("Subject"));
+    out.writeln("from: " + back.headers().first("From"));
 
     let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "maildir-");
     let box = Maildir(scratch.path().child("inbox")).created();
@@ -56,7 +55,7 @@ main() is int {
     box.add(back);
     out.writeln("maildir holds " + box.messages().size().string() + " messages");
     for box.messages() -> stored {
-        out.writeln("  " + stored.message().headers().first(MessageHeaderName("Subject")));
+        out.writeln("  " + stored.message().headers().first("Subject"));
     }
     scratch.close();
     0;

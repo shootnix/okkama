@@ -129,6 +129,19 @@ object MessageHeaders {
         };
         MessageHeaders(entries: entries, maximum_entries: maximum);
     }
+
+    // By name as text: headers.first("Subject").
+    membership(name is string) is bool {
+        self.membership(MessageHeaderName(name));
+    }
+
+    first(name is string) is string {
+        self.first(MessageHeaderName(name));
+    }
+
+    values(name is string) is Sequencing<string> {
+        self.values(MessageHeaderName(name));
+    }
 }
 
 object RenderedMessageHeaders {
@@ -316,4 +329,15 @@ test "field lookup ignores case without losing spelling" {
     let headers = MessageHeaders([MessageHeader(name: MessageHeaderName("Subject"), value: "hello")]);
     test.is(headers.first(MessageHeaderName("SUBJECT")), "hello");
     test.is(headers.entries().item(0).name().string(), "Subject");
+}
+
+test "headers are read by name as text, case-insensitively" {
+    let fields = MessageHeaders([
+        MessageHeader(name: MessageHeaderName("Subject"), value: "Lunch?"),
+        MessageHeader(name: MessageHeaderName("Received"), value: "a"),
+        MessageHeader(name: MessageHeaderName("Received"), value: "b"),
+    ]);
+    test.is(fields.first("subject"), "Lunch?");
+    test.is(fields.values("Received").size(), 2);
+    test.is(fields.membership("Cc"), false);
 }
