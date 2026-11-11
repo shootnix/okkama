@@ -1,7 +1,7 @@
 module http/server v1.0.0;
 
 import "http/http2_server" take Http2ServerSession;
-import "http/server_policy" take ServerPolicy;
+import "http/server_policy" take ServerPolicy, ServerTimeouts;
 import "http/handler" take Handling, HandlingResult, HandlingKind, ResponseHandling, WebSocketHandling;
 import "http/request_context" take HttpRequestContext;
 import "http/message" take Response, InvalidHttpMessage, Request;
@@ -9,7 +9,7 @@ import "http/status" take Status, StatusCode;
 import "http/method" take Method, MethodName;
 import "http/header" take Headers, Header, HeaderName, HttpAsciiLowercase, ReplacedHeader;
 import "http/version" take HttpVersion, UnsupportedHttpVersion;
-import "http/exchange" take ExchangeDetails;
+import "http/exchange" take ExchangeDetails, ClientResponse;
 import "http/http1_head" take Http1RequestHead, Http1ResponseHead, Http1LimitExceeded;
 import "http/http1_reading" take Http1RequestHeadReading, Http1HeadRead;
 import "http/http1_framing" take Http1RequestFraming, Http1ResponseFraming, Http1BodyKind;
@@ -37,6 +37,8 @@ import "http/client" take HttpClient;
 import "http/endpoint" take ListedNetworks;
 import "net/ip" take IpAddress, IpNetwork;
 import "net/dns" take FixedResolution;
+import "http/client_policy" take HttpLimits;
+import "collections/set" take Set, OrderedSet;
 import "encoding/utf" take Utf8Decoded;
 
 // Owned plaintext listener. A single explicit protocol selects HTTP1.1 or
@@ -869,7 +871,27 @@ hidden object EchoApplication does Handling {
     EchoApplication();
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
-        let target = request::Head::target.string();
+        // HTTP/2 hands the handler an absolute target, HTTP/1.1 its origin
+        // form (#497), so the test reads both, as routing does.
+        let given = request::Head::target;
+        let path = if given.kind() == RequestTargetKind.origin {
+            given.path();
+        }
+        else {
+            given.url()::Parts::path;
+        };
+        let query = if given.kind() == RequestTargetKind.origin {
+            given.query();
+        }
+        else {
+            given.url()::Parts::query;
+        };
+        let target = if query == Maybe<string>.none {
+            path;
+        }
+        else {
+            path + "?" + (query else "");
+        };
         if target == "/missing" {
             return ResponseHandling(Response(status: Status.not_found));
         }
@@ -913,6 +935,37 @@ async test "a server answers over loopback, reads bodies, and drains" {
     test.is(missing::Head::status, Status.not_found);
     let posted = await client.post(url: base + "/notes", body: TextBody(text: "héllo"));
     test.is(await posted.text(), "POST /notes héllo");
+    client.close();
+    await ServerDrain(server: server, limit: Duration(value: 5.rat(), unit: DurationUnit.second), clock: clock).drain();
+    await workers.wait();
+    test.is(server.closed(), true);
+}
+
+async test "a server speaks HTTP/2 over cleartext and multiplexes one connection" {
+    let listener = await TcpListening(IpEndpoint(address: IpAddress("127.0.0.1"), port: 0)).acceptance();
+    let clock = SystemClock();
+    let two is Set<HttpVersion> = OrderedSet([HttpVersion.http_2]);
+    let policy = ServerPolicy(protocols: two, limits: HttpLimits(), timeouts: ServerTimeouts(), connections: 8, ranges: 16);
+    let server = HttpServer(origin: listener, handling: EchoApplication(), policy: policy, clock: clock);
+    let workers is FutureGroup<HttpServer> = FutureGroup();
+    workers.start(server.serve());
+    let base = "http://127.0.0.1:" + server.local_endpoint()::Parts::port.string();
+    let client = HttpClient(
+        resolver: FixedResolution([]),
+        endpoints: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)]),
+        protocols: two,
+    );
+    let get is async (string) is ClientResponse = client.get;
+    let first = spawn get(base + "/one");
+    let second = spawn get(base + "/two");
+    let one = await first;
+    let other = await second;
+    test.is(one::Head::version == HttpVersion.http_2, true);
+    test.is(await one.text(), "GET /one ");
+    test.is(await other.text(), "GET /two ");
+    let posted = await client.post(url: base + "/notes", body: TextBody(text: "h2 body"));
+    test.is(await posted.text(), "POST /notes h2 body");
+    test.is((await client.get(base + "/missing"))::Head::status, Status.not_found);
     client.close();
     await ServerDrain(server: server, limit: Duration(value: 5.rat(), unit: DurationUnit.second), clock: clock).drain();
     await workers.wait();
