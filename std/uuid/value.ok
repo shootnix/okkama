@@ -21,9 +21,9 @@ import "runtime/uuid" take uuid_valid, uuid_bytes, uuid_string, uuid_version, uu
 // version() exposes the raw four-bit version field for every variant. Variant
 // decoding follows the RFC bit prefixes: 0xxx reserved/NCS, 10xx RFC,
 // 110x Microsoft and 111x future. order() compares the unsigned 128-bit value,
-// most-significant byte first; canonical string ordering is identical. Two
-// UUIDs made differently are the same UUID when their bytes are equal; `==`
-// compares how they were made, so compare bytes() or string().
+// most-significant byte first; canonical string ordering is identical. UUIDs
+// made differently are different types, and `==` between different types is
+// a semantic error: convert explicitly and compare bytes(), string() or order().
 
 enum UuidVariant = (rfc, microsoft, reserved, future);
 

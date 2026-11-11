@@ -624,8 +624,9 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
       `order()`. All five makers implement it, and `Uuid4s(…).sample()`
       answers a `Uuid`.
     - `Uuid3` and `Uuid5` hash on the first question, with `memo let`.
-    - `==` compares how a UUID was made. To compare values, use `bytes()`
-      or `order()`.
+    - UUIDs made differently are different types. Comparing them with `==`
+      is a semantic error (the owner: convert explicitly, then compare), so
+      compare `bytes()`, `string()` or `order()`.
     - Inline tests, with the RFC 4122 v3/v5 vectors. There is an example,
       `examples/uuid/`.
   - `calendar`:
