@@ -4,7 +4,11 @@ mod parser;
 use crate::host::*;
 use num_bigint::BigInt;
 use okkama_runtime_abi::{Native, NativeFailure};
-use std::{cell::RefCell, collections::HashSet, rc::Rc};
+use std::{
+    cell::{OnceCell, RefCell},
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 #[derive(Debug)]
 pub(crate) enum Node {
     Null,
@@ -12,7 +16,45 @@ pub(crate) enum Node {
     Number(Rc<str>),
     Text(Rc<str>),
     Array(Vec<u64>),
-    Object(Vec<Rc<str>>, Vec<u64>),
+    Object(Names, Vec<u64>),
+}
+/// Below this size an object finds a member by a scan, which beats hashing.
+const INDEXED_OBJECT: usize = 16;
+/// Member names in document order. A large object finds a name through an
+/// index built on the first lookup; otherwise walking `names()` with `get()`
+/// is quadratic (#352).
+#[derive(Debug)]
+pub(crate) struct Names {
+    list: Vec<Rc<str>>,
+    // Boxed: few objects have an index, and every node pays for `Node`'s size.
+    #[allow(clippy::box_collection)]
+    index: OnceCell<Box<HashMap<Rc<str>, usize>>>,
+}
+impl Names {
+    fn position(&self, sought: &str) -> Option<usize> {
+        if self.list.len() < INDEXED_OBJECT {
+            return self.list.iter().position(|name| &**name == sought);
+        }
+        let index = self.index.get_or_init(|| {
+            let mut index = HashMap::with_capacity(self.list.len());
+            for (at, name) in self.list.iter().enumerate() {
+                index.entry(name.clone()).or_insert(at);
+            }
+            Box::new(index)
+        });
+        index.get(sought).copied()
+    }
+}
+impl From<Vec<Rc<str>>> for Names {
+    fn from(list: Vec<Rc<str>>) -> Self {
+        Self { list, index: OnceCell::new() }
+    }
+}
+impl std::ops::Deref for Names {
+    type Target = [Rc<str>];
+    fn deref(&self) -> &[Rc<str>] {
+        &self.list
+    }
 }
 impl Node {
     fn kind(&self) -> i64 {
@@ -481,12 +523,7 @@ impl Heap {
                     return Err(invalid("JSON node is not an object"));
                 };
                 let sought = self.text(args[1])?;
-                Slot::small(
-                    names
-                        .iter()
-                        .position(|name| &**name == sought)
-                        .map_or(-1, |i| i as i64),
-                )
+                Slot::small(names.position(sought).map_or(-1, |i| i as i64))
             }
             JsonJsonQuote => self.allocate_text(quote(self.text(args[0])?))?,
             JsonJsonNumberText => {
@@ -596,7 +633,7 @@ impl Heap {
                 if !names.iter().all(|n| seen.insert(n.as_ref())) {
                     return Err(invalid("duplicate JSON member name"));
                 }
-                self.json_new(Node::Object(names, children))?
+                self.json_new(Node::Object(names.into(), children))?
             }
             JsonJsonNodeWrite => {
                 let indentation = self
@@ -635,7 +672,7 @@ impl Heap {
                 let Node::Object(names, _) = self.json_node(args[0])? else {
                     return Err(invalid("JSON node is not an object"));
                 };
-                let names = names.clone();
+                let names = names.to_vec();
                 let slots = names
                     .into_iter()
                     .map(|s| self.json_text(s))

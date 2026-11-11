@@ -211,6 +211,26 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   - Checked locally with an arm64 build: CentOS 7 (glibc 2.17), Rocky
     Linux 8, Amazon Linux 2, Ubuntu 18.04 and 20.04, Debian 10 and 11.
 
+### Performance
+
+- A JSON object of 16 members or more finds a member by name through an
+  index, which every engine builds on the first lookup (#352). Before, every
+  `get(name)`, `has(name)`, `maybe(name)` and `presence(name)` scanned the
+  names, so walking an object with `for doc.names() -> name { doc.get(name) }`
+  was quadratic. For 50 000 members:
+
+  | engine | before | now |
+  |---|---|---|
+  | Tomato | 2170 ms | 42 ms |
+  | IR | 2189 ms | 100 ms |
+  | JVM | 2098 ms | 224 ms |
+
+  - Smaller objects still scan, which is faster for them.
+  - Each node is 8 bytes larger (about 2.5% more peak memory for an array of
+    100 000 three-member objects), and the time is unchanged.
+  - Conformance case `L09.json.large-objects` covers parsed, built and merged
+    objects past the indexed size.
+
 ## [0.5.3] — 2026-11-11
 
 0.5.3 brings the persistent collections Tomato has had since 0.4.3 to the IR

@@ -2,6 +2,7 @@ package okkama.rt;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 
@@ -42,7 +43,26 @@ public final class JsonNatives {
         String value;
         ArrayList<Node> values;
         ArrayList<String> names;
+        // Name to position, built on the first lookup in a large object:
+        // walking names() with get() is otherwise quadratic (#352).
+        HashMap<String, Integer> index;
+
+        int position(String name) {
+            if (names.size() < INDEXED_OBJECT) {
+                return names.indexOf(name);
+            }
+            if (index == null) {
+                index = new HashMap<>(names.size() * 2);
+                for (int at = 0; at < names.size(); at++) {
+                    index.putIfAbsent(names.get(at), at);
+                }
+            }
+            return index.getOrDefault(name, -1);
+        }
     }
+
+    // Below this size an object finds a member by a scan, which beats hashing.
+    private static final int INDEXED_OBJECT = 16;
 
     private static final class ParseError extends RuntimeException {
         private static final long serialVersionUID = 1L;
@@ -519,7 +539,7 @@ public final class JsonNatives {
         if (node.kind != 5) {
             throw failure("invalid_input", "json_member_position", 2, "JSON node is not an object");
         }
-        return BigInteger.valueOf(node.names.indexOf(name));
+        return BigInteger.valueOf(node.position(name));
     }
 
     // A JSON string literal: '"' and backslash escaped, \n, \r, \t by name, the

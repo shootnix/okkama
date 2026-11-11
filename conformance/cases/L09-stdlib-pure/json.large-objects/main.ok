@@ -1,0 +1,45 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "json" take Json, JsonField, ParsedJson, JsonError;
+
+// Objects of 40 members: past the size where engines find a member through
+// an index instead of a scan. Parsed and built objects take both paths.
+main() is int {
+    let c = Checks();
+    let members is @string = (0..40).map() -> i {
+        "\"m" + i.string() + "\":" + (i * i).string();
+    };
+    let text = "{" + members.reduce("") -> joined, member {
+        if joined == "" { member; } else { joined + "," + member; }
+    } + "}";
+    let doc = ParsedJson(text).root();
+    let sum = doc.names().reduce(0) -> total, name {
+        total + doc.get(name).int();
+    };
+    c = c.same_int("every member by name", sum, 20540);
+    c = c.same_int("first member", doc.get("m0").int(), 0);
+    c = c.same_int("last member", doc.get("m39").int(), 1521);
+    c = c.same_text("order kept", doc.names()[17], "m17");
+    c = c.same_bool("has present", doc.has("m25"), true);
+    c = c.same_bool("has absent", doc.has("m40"), false);
+    c = c.same_bool("has prefix", doc.has("m"), false);
+    c = c.same_bool("has empty name", doc.has(""), false);
+    c = c.same_int("maybe present", doc.maybe("m3").int() else -1, 9);
+    c = c.same_int("maybe absent", doc.maybe("m99").int() else -1, -1);
+    c = c.same_text("missing names the pointer", try { doc.get("m40"); "no error"; } catch JsonError.missing(pointer) { pointer; }, "/m40");
+
+    let fields is @JsonField = (0..40).map() -> i {
+        JsonField("f" + i.string(), Json(i));
+    };
+    let built = Json(fields);
+    c = c.same_int("built first", built.get("f0").int(), 0);
+    c = c.same_int("built last", built.get("f39").int(), 39);
+    c = c.same_bool("built absent", built.has("m0"), false);
+
+    let merged = doc.merged(built);
+    c = c.same_int("merged size", merged.size(), 80);
+    c = c.same_int("merged mine", merged.get("m20").int(), 400);
+    c = c.same_int("merged theirs", merged.get("f20").int(), 20);
+    c.done();
+}

@@ -4,7 +4,8 @@
 use super::Error;
 use super::support::{failure, handle, int, int_value, items, new_handle, string, text};
 use crate::{IntValue, Value, abi::Native};
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 /// Глубина рекурсии разбора, на которой JVM теряет стек (`StackOverflowError`).
@@ -18,7 +19,51 @@ enum Node {
     Number(Rc<str>),
     Text(Rc<str>),
     Array(Vec<Rc<Node>>),
-    Object(Vec<Rc<str>>, Vec<Rc<Node>>),
+    Object(Names, Vec<Rc<Node>>),
+}
+
+/// Объект меньше этого ищет член перебором: так быстрее, чем хешировать.
+const INDEXED_OBJECT: usize = 16;
+
+/// Имена членов объекта в порядке документа. Большой объект ищет имя по
+/// индексу, построенному при первом поиске: иначе обход `names()` и `get()`
+/// квадратичен (#352).
+#[derive(Debug)]
+struct Names {
+    list: Vec<Rc<str>>,
+    // Box: индекс есть у немногих объектов, а размер `Node` — у каждого узла.
+    #[allow(clippy::box_collection)]
+    index: OnceCell<Box<HashMap<Rc<str>, usize>>>,
+}
+
+impl Names {
+    fn position(&self, sought: &str) -> Option<usize> {
+        if self.list.len() < INDEXED_OBJECT {
+            return self.list.iter().position(|name| &**name == sought);
+        }
+        let index = self.index.get_or_init(|| {
+            let mut index = HashMap::with_capacity(self.list.len());
+            for (at, name) in self.list.iter().enumerate() {
+                index.entry(name.clone()).or_insert(at);
+            }
+            Box::new(index)
+        });
+        index.get(sought).copied()
+    }
+}
+
+impl From<Vec<Rc<str>>> for Names {
+    fn from(list: Vec<Rc<str>>) -> Self {
+        Names { list, index: OnceCell::new() }
+    }
+}
+
+impl std::ops::Deref for Names {
+    type Target = [Rc<str>];
+
+    fn deref(&self) -> &[Rc<str>] {
+        &self.list
+    }
 }
 
 impl Node {
@@ -307,7 +352,7 @@ impl Parser<'_> {
         let mut seen: std::collections::HashSet<Rc<str>> = std::collections::HashSet::new();
         if self.at(self.position) == Some('}') {
             self.position += 1;
-            return Ok(Node::Object(names, values));
+            return Ok(Node::Object(names.into(), values));
         }
         loop {
             let name_offset = self.position;
@@ -338,7 +383,7 @@ impl Parser<'_> {
             match self.at(self.position) {
                 Some('}') => {
                     self.position += 1;
-                    return Ok(Node::Object(names, values));
+                    return Ok(Node::Object(names.into(), values));
                 }
                 Some(',') => {}
                 _ => return Err(self.error("expected comma or closing brace in JSON object")),
@@ -673,7 +718,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
         Native::JsonJsonMemberPosition => match node(&args[0])?.as_ref() {
             Node::Object(names, _) => {
                 let sought = string(&args[1])?;
-                Ok(int_value(names.iter().position(|name| &**name == sought).map_or(-1, |at| at as i64)))
+                Ok(int_value(names.position(sought).map_or(-1, |at| at as i64)))
             }
             _ => Err(invalid("JSON node is not an object")),
         },
@@ -752,7 +797,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             if !names.iter().all(|name| seen.insert(&**name)) {
                 return Err(invalid("duplicate JSON member name"));
             }
-            Ok(node_value(Rc::new(Node::Object(names, values))))
+            Ok(node_value(Rc::new(Node::Object(names.into(), values))))
         }
         Native::JsonJsonNodeWrite => {
             let indentation = int(&args[1])?.to_i64().ok_or_else(|| invalid("JSON indentation is out of range"))?;

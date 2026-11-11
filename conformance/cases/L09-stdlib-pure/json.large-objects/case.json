@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.json.large-objects",
+  "title": "JSON objects past the indexed size find every member by name",
+  "purpose": "Verify member lookup in objects large enough that engines use a member index: parsed and built objects, present and absent names, document order and merging.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.JSON",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - every member by name\nok 2 - first member\nok 3 - last member\nok 4 - order kept\nok 5 - has present\nok 6 - has absent\nok 7 - has prefix\nok 8 - has empty name\nok 9 - maybe present\nok 10 - maybe absent\nok 11 - missing names the pointer\nok 12 - built first\nok 13 - built last\nok 14 - built absent\nok 15 - merged size\nok 16 - merged mine\nok 17 - merged theirs\nchecks: 17, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/json.ok",
+    "RFC 8259"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #352 (json member index)",
+    "expected_basis": "Members m0..m39 hold i*i, so their sum is 39*40*79/6 = 20540 and m39 is 1521; built members f0..f39 hold i; merging two disjoint objects of 40 keeps all 80 members."
+  },
+  "status": "mandatory"
+}

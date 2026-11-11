@@ -277,7 +277,7 @@ pub(super) fn parse(source: &[char], maximum_depth: &BigInt) -> Parsed<(Vec<Node
                 p.skip_whitespace();
                 if p.at(p.position) == Some('}') {
                     p.position += 1;
-                    Node::Object(vec![], vec![])
+                    Node::Object(Vec::new().into(), vec![])
                 } else {
                     let mut names = Vec::new();
                     let mut seen = HashSet::new();
@@ -320,7 +320,7 @@ pub(super) fn parse(source: &[char], maximum_depth: &BigInt) -> Parsed<(Vec<Node
                 p.position += 1;
                 let node = match stack.pop().expect("parent") {
                     Frame::Array(values) => Node::Array(values),
-                    Frame::Object { names, values, .. } => Node::Object(names, values),
+                    Frame::Object { names, values, .. } => Node::Object(names.into(), values),
                 };
                 value = nodes.len() as u64;
                 nodes.push(node);
