@@ -719,11 +719,18 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
                     Ok(())
                 })?;
             }
-            InstKind::ObjGet { object, field } | InstKind::ObjPending { object, field } => {
+            InstKind::ObjGet { object, field }
+            | InstKind::ObjPending { object, field }
+            | InstKind::MemoLoad { object, field } => {
                 let owner = object_of(&self.function.values[object.0]);
                 self.get_field(*object, owner, *field)?;
             }
             InstKind::ObjInit {
+                object,
+                field,
+                value,
+            }
+            | InstKind::MemoStore {
                 object,
                 field,
                 value,

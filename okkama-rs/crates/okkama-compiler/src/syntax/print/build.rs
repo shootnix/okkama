@@ -341,10 +341,19 @@ fn stmt_node(stmt: &Stmt) -> Node {
             name: binding,
             ty,
             value,
-        } => Node::new("LetStatement", span)
-            .field("name", name(binding))
-            .field("type", opt_node(ty.as_ref(), type_node))
-            .field("value", Value::node(expr_node(value))),
+            memo,
+        } => {
+            let node = Node::new("LetStatement", span)
+                .field("name", name(binding))
+                .field("type", opt_node(ty.as_ref(), type_node))
+                .field("value", Value::node(expr_node(value)));
+            // Only `memo let` carries the field, so plain lets print as before.
+            if *memo {
+                node.field("memo", Value::Bool(true))
+            } else {
+                node
+            }
+        }
         StmtKind::Defer { value } => {
             Node::new("DeferStatement", span).field("value", Value::node(expr_node(value)))
         }

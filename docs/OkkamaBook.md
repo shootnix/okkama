@@ -2406,6 +2406,52 @@ Current boundaries are intentionally narrow:
   loop, while `throw`, `catch`, and per-invocation `defer` follow ordinary
   action rules.
 
+### 18.6 `memo let`
+
+`memo let name = value;` keeps a value the object computes once. The first
+time the statement runs, the value is computed and stored in a hidden slot of
+`self`; every later run on the same object reads the slot (#491). Objects are
+immutable, so a value that depends only on them stays right:
+
+```okkama
+object Stats {
+    has source is Source;
+    Stats(:source);
+
+    maximum() is int {
+        self.values().reduce(self.values()[0]) -> best, item { if item > best { item; } else { best; } };
+    }
+
+    // One kept value, shared by every action that calls it.
+    hidden values() is @int {
+        memo let kept = source.items();
+        kept;
+    }
+}
+```
+
+The rules keep the stored value right for every later call:
+
+- `memo let` stands among the statements of an object's action, not in a
+  nested block, a constructor, a cap, a test or `main`.
+- Its value reads only fields, `self`, constants and earlier `memo let`s. A
+  parameter or an ordinary local makes the value depend on the call:
+  `memo let cannot depend on "n"`.
+- Its value has no effects. Natives that reach the clock, files, the
+  network, processes, randomness or the environment are refused, and so are
+  `Cell`, the `async` objects, `await` and `spawn`. The compiler follows
+  calls into concrete objects' actions and constructors. Calls through a role
+  or a function value are trusted: that the input answers the same each time
+  is part of the contract.
+- The value holds no resource (an object with `destroy`), because it would
+  outlive the scope that releases it.
+
+A slot is not part of the object's value. `==`, map keys and `Dumper` ignore
+it, so an object compares equal before and after its first answer. A
+successor (`^field = …`) starts with empty slots: its fields changed, so the
+old answers no longer hold. When the value throws, the slot stays empty and
+the next call computes again.
+
 ## Chapter 19. Successor Actions and Immutability
 
 Objects are immutable after construction. The *only* way to express a state

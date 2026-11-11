@@ -18,7 +18,7 @@ pub(super) fn execute(name: &str, native: Native, value: &Value, context: &Conte
         "data_leaf" => text(leaf(native, context, value)?),
         "data_names" => array(names(context, value).into_iter().map(text).collect()),
         "data_keys" => array(keys(value).into_iter().map(boxed).collect()),
-        "data_items" => array(items(value).into_iter().map(boxed).collect()),
+        "data_items" => array(items(context, value).into_iter().map(boxed).collect()),
         _ => return Err(super::support::failed(native)),
     })
 }
@@ -156,7 +156,10 @@ fn leaf(native: Native, context: &Context, value: &Value) -> Result<String, Erro
 fn names(context: &Context, value: &Value) -> Vec<String> {
     match plain(value) {
         Value::Object(object) => match context.objects.get(object.declaration) {
-            Some((_, fields)) => fields.clone(),
+            Some((_, fields)) => shown(context, object.declaration, object.field_count())
+                .into_iter()
+                .map(|index| fields[index].clone())
+                .collect(),
             None => (0..object.field_count()).map(|index| format!("#{index}")).collect(),
         },
         Value::NativeFailure(_) => NATIVE_FAILURE_FIELDS.map(String::from).to_vec(),
@@ -171,11 +174,21 @@ fn keys(value: &Value) -> Vec<Value> {
     }
 }
 
-fn items(value: &Value) -> Vec<Value> {
+/// The fields a dump shows: all but the `memo let` slots (#491), which the
+/// compiler names `$memo0`, `$memo1`, … and which only cache an answer.
+fn shown(context: &Context, declaration: usize, count: usize) -> Vec<usize> {
+    let names = context.objects.get(declaration).map(|(_, fields)| fields.as_slice()).unwrap_or(&[]);
+    (0..count)
+        .filter(|index| !names.get(*index).is_some_and(|name| name.starts_with("$memo")))
+        .collect()
+}
+
+fn items(context: &Context, value: &Value) -> Vec<Value> {
     match plain(value) {
         Value::Array(array) => array.items().to_vec(),
         Value::Map(map) => map.entries().values().cloned().collect(),
-        Value::Object(object) => (0..object.field_count())
+        Value::Object(object) => shown(context, object.declaration, object.field_count())
+            .into_iter()
             .map(|index| object.field(index).unwrap_or(Value::Undef))
             .collect(),
         Value::NativeFailure(failure) => [&failure.domain, &failure.code, &failure.operation, &failure.message]

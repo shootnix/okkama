@@ -44,6 +44,26 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   - `async` (a channel between a producer and a consumer; timeouts, races
     and waiting for all), checked in a container like the async tests.
 
+- **Language: `memo let` keeps a value computed once per object (#491).**
+  The owner, 2026-11-11: a mark on the value, not on the method.
+  `memo let kept = source.items();` in an object's action computes the value
+  the first time and reads a hidden slot of `self` afterwards.
+  - The compiler refuses a value that reads a parameter or a local, one that
+    reaches an effect (natives of the clock, files, network, processes,
+    randomness or environment; `Cell`, `async` objects, `await`, `spawn`,
+    followed through concrete objects' actions), a resource, and a `memo let`
+    outside an action body's own statements. Calls through a role or a
+    function value are trusted.
+  - Slots are left out of `==`, map keys and `Dumper`. A successor starts
+    with empty slots, and a value that throws leaves its slot empty.
+  - IR: hidden `$memoN` fields of `Maybe<T>` marked `memo`, and the
+    instructions `memo.load` and `memo.store`. Each engine keeps the slot its
+    own way: the IR runtime beside the fields, Sparrow and the JVM in the
+    field itself, skipped by equality, keys and dumps.
+  - Conformance contract `OBJ.MEMO-LET` with five cases; `t/lang/memo.ok`
+    runs in every configuration. Book §18.6, Bible §13.13, VS Code
+    highlighting.
+
 ### Changed
 
 - **Language: `hidden` marks an action (#365).** An action that only its own

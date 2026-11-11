@@ -588,7 +588,7 @@ fn variant_module() -> Module {
         object("Reading.empty", Vec::new()),
         object(
             "Reading.value",
-            vec![ir::Field { name: "item".to_string(), ty: Type::Int, default: None }],
+            vec![ir::Field { name: "item".to_string(), ty: Type::Int, default: None, memo: false }],
         ),
     ];
     module.variants = vec![ir::Variant {

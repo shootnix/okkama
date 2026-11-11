@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.memo.rejects-parameter",
+  "title": "a memo let cannot read a parameter",
+  "purpose": "A kept value that reads a parameter would be wrong for the next call.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.MEMO-LET",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ],
+      "justification": "#491: the value may read only fields, self, constants and other memo lets."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/OkkamaBook.md#186-memo-let"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #491",
+    "expected_basis": "#491: `memo let x = max * n` with a parameter n is refused."
+  },
+  "status": "mandatory"
+}

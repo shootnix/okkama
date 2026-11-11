@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.memo.rejects-outside-action",
+  "title": "a memo let belongs to an object's action",
+  "purpose": "A memo let in main has no object to keep its value.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.MEMO-LET",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ],
+      "justification": "#491: only an object's action has a self to keep the value in."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/OkkamaBook.md#186-memo-let"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #491",
+    "expected_basis": "#491: memo let is allowed only in an object's action."
+  },
+  "status": "mandatory"
+}

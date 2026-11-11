@@ -1,0 +1,131 @@
+module t v1.0.0;
+
+// t/lang: memo let keeps a value once per object (#491).
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+role Source {
+    items() is @int;
+}
+
+// Counts how often it is read: a memo let reads its input once.
+object Counted does Source {
+    has values is @int;
+    has reads is Atomic<int>;
+    Counted(:values, :reads);
+
+    items() is @int {
+        reads.replace(reads.value() + 1);
+        values;
+    }
+}
+
+role Measuring {
+    total() is int;
+}
+
+enum Broken is Error = (negative);
+
+object Sheet does Measuring {
+    has source is Source;
+    has title is string;
+    Sheet(:source, :title);
+
+    // Two slots, the second built from the first.
+    total() is int {
+        memo let values = source.items();
+        memo let sum = values.reduce(0) -> acc, item { acc + item; };
+        sum;
+    }
+
+    first() is Maybe<int> {
+        memo let found = if self.total() > 0 { Maybe.some(source.items()[0]); } else { Maybe<int>.none; };
+        found;
+    }
+
+    checked() is int {
+        memo let safe = source.items().reduce(0) -> acc, item {
+            confirm item >= 0 else throw Broken.negative;
+            acc + item;
+        };
+        safe;
+    }
+
+    pair() is Pair {
+        memo let made = Pair(left: title, right: self.total());
+        made;
+    }
+
+    retitled(name is string) is ^Sheet {
+        ^title = name;
+    }
+
+    async later() is int {
+        memo let tripled = self.total() * 3;
+        tripled;
+    }
+}
+
+object Pair {
+    has left is string;
+    has right is int;
+    Pair(:left, :right);
+
+    cap Sides {
+        right is int {
+            right;
+        }
+    }
+}
+
+object Keep<T> {
+    has value is T;
+    Keep(:value);
+
+    twice() is @T {
+        memo let both = [value, value];
+        both;
+    }
+}
+
+object Key {
+    has name is string;
+    Key(:name);
+
+    loud() is string {
+        memo let upper = name + "!";
+        upper;
+    }
+}
+
+async main() is int {
+    let t = Tap(16);
+    let reads = Atomic(0);
+    let sheet = Sheet(source: Counted(values: [4, 5, 6], reads: reads), title: "q1");
+    t = t.is(sheet.total(), 15, "a sum kept in a slot");
+    t = t.is(sheet.total(), 15, "read again");
+    t = t.is(reads.value(), 1, "the role input was read once");
+    let through is Measuring = sheet;
+    t = t.is(through.total(), 15, "through a role");
+    t = t.is(reads.value(), 1, "a role call reads the same slot");
+    t = t.is(sheet.first() else -1, 4, "a Maybe kept in a slot");
+    t = t.is(sheet.pair()::Sides::right, 15, "an object kept in a slot");
+    t = t.ok(sheet.pair() == Pair(left: "q1", right: 15), "the kept object is the computed one");
+    let renamed = sheet.retitled("q2");
+    t = t.is(renamed.total(), 15, "a successor computes again");
+    t = t.is(reads.value(), 3, "a successor reads its input again");
+    t = t.is(await sheet.later(), 45, "an async action keeps a value");
+    let broken = Sheet(source: Counted(values: [1, -2], reads: Atomic(0)), title: "x");
+    let attempts = (0..2).map() -> attempt {
+        try { broken.checked().string(); } catch error is Broken { "failed"; };
+    };
+    t = t.is(attempts.join(","), "failed,failed", "a throw leaves the slot empty");
+    t = t.is(Keep(value: "a").twice().join(""), "aa", "a generic object over string");
+    t = t.is(Keep(value: 7).twice().size(), 2, "a generic object over int");
+    let used = Key(name: "k");
+    used.loud();
+    let counts is %Key:int = [used: 1];
+    t = t.ok(counts.has(Key(name: "k")), "a used object is the same map key");
+    t = t.ok(Sheet(source: Counted(values: [1], reads: reads), title: "z") == Sheet(source: Counted(values: [1], reads: reads), title: "z"), "slots stay out of ==");
+    t.done();
+}

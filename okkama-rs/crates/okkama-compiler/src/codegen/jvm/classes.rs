@@ -259,6 +259,9 @@ fn okkama_fields_method(pool: &mut ConstantPool, object: &ObjectLayout) -> Resul
     let add = pool.interface_method_ref(runtime::LIST, "add", "(Ljava/lang/Object;)Z")?;
     let mut asm = Asm::default();
     for (index, (name, descriptor)) in object.fields.iter().enumerate() {
+        if object.memo.get(index).copied().unwrap_or(false) {
+            continue;
+        }
         let label = pool.string(name)?;
         asm.op(&[0x2b], 0, 1); // aload_1
         asm.ldc(label);
@@ -329,7 +332,7 @@ fn equals_method(pool: &mut ConstantPool, object: &ObjectLayout, name: &str) -> 
     asm.op(&[0x2b], 0, 1); // aload_1
     asm.op_index(0xc0, class, 1, 1); // checkcast
     asm.op(&[0x4d], 1, 0); // astore_2
-    for (name, descriptor) in &object.fields {
+    for (name, descriptor) in object.compared() {
         let field = pool.field_ref(&object.class, name, descriptor)?;
         asm.op(&[0x2a], 0, 1); // aload_0
         asm.op_index(0xb4, field, 1, 1); // getfield
@@ -350,7 +353,7 @@ fn equals_method(pool: &mut ConstantPool, object: &ObjectLayout, name: &str) -> 
         }
     }
     asm.op(&[0x04, 0xac], 0, 0); // iconst_1 ireturn
-    if !object.fields.is_empty() {
+    if object.compared().next().is_some() {
         asm.place_with_frame(
             differ,
             Frame {
@@ -413,7 +416,7 @@ fn hash_code_method(pool: &mut ConstantPool, object: &ObjectLayout, name: &str) 
     let deep_hash = pool.method_ref(runtime::RT, "hash", "(Ljava/lang/Object;)I")?;
     let mut asm = Asm::default();
     asm.op(&[0x04], 0, 1); // iconst_1
-    for (name, descriptor) in &object.fields {
+    for (name, descriptor) in object.compared() {
         let field = pool.field_ref(&object.class, name, descriptor)?;
         asm.op(&[0x10, 31], 0, 1); // bipush 31
         asm.op(&[0x68], 2, 1); // imul

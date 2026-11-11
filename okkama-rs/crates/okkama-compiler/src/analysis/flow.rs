@@ -451,7 +451,7 @@ impl<'r> Flow<'r, '_> {
     /// Оператор; `None` — управление ушло.
     fn stmt(&mut self, stmt: &'r Stmt, want: bool, state: &mut State) -> Option<Obligations> {
         match &stmt.kind {
-            StmtKind::Let { local, value } => {
+            StmtKind::Let { local, value, .. } => {
                 let held = self.expr(value, true, state)?;
                 state.holds.set(local.0, held.clone());
                 if let Some(scope) = self.scopes.last_mut() {

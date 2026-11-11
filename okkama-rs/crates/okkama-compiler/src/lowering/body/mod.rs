@@ -1035,6 +1035,14 @@ fn lower_ctor(
         lowerer.vars[var].value = Some(typed);
         lowerer.mark_bound(field);
     }
+    // Слоты `memo let` (#491) начинаются с `none`.
+    for (_, _, field) in lowerer.ctx.objects[object.0].memos.clone() {
+        let none = lowerer.memo_none(object, field, span);
+        let var = lowerer.field_vars[field];
+        let ty = lowerer.ctx.objects[object.0].fields[field].1.clone();
+        lowerer.vars[var].value = Some(Typed { value: none, ty });
+        lowerer.mark_bound(field);
+    }
     // `$pending` объекта, построенного в конце конструктора, — `false`; ранний
     // `self` строит его несвязанным, `obj.init` в конце связывает `false` (#271).
     if let Some(field) = lowerer.ctx.objects[object.0].pending {
@@ -1344,6 +1352,73 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         Ok(())
     }
 
+    /// `none` слота `memo let` `field` объекта `object` (#491).
+    fn memo_none(&mut self, object: ObjectId, field: usize, span: Span) -> ValueId {
+        let ty = self.ctx.objects[object.0].fields[field].1.clone();
+        self.b.emit(InstKind::VariantNew { case: 1, fields: Vec::new() }, ty, span)
+    }
+
+    /// `memo let` (#491): значение из слота `self`, если оно уже посчитано;
+    /// иначе — посчитать, запомнить `some` и отдать.
+    fn memo_let(&mut self, local: thir::LocalId, value: &'r thir::Expr, span: Span) -> Result<Out> {
+        let (Some(object), Some(receiver)) = (self.object, self.self_value) else {
+            return Err(LoweringError::invalid(span, "internal compiler error: memo let outside an object's action"));
+        };
+        let BodyOwner::Method { method, .. } = self.body.owner else {
+            return Err(LoweringError::invalid(span, "internal compiler error: memo let outside an action"));
+        };
+        let Some(field) = self.ctx.memo_field(object, method, local) else {
+            return Err(LoweringError::invalid(span, "internal compiler error: memo let without a slot"));
+        };
+        let slot_ty = self.ctx.objects[object.0].fields[field].1.clone();
+        let ty = self.local_type(local, span)?;
+        if !self.ctx.is_plain(&ty) {
+            return Err(LoweringError::invalid(
+                span,
+                "memo let cannot keep a resource: its value would outlive the scope that releases it",
+            ));
+        }
+        let slot = self.b.emit(InstKind::MemoLoad { object: receiver, field }, slot_ty.clone(), span);
+        let tag = self.b.emit(InstKind::VariantTag(slot), Type::Int, span);
+        let some = self.b.emit(InstKind::Const(Constant::Int(IntValue::from_i64(0))), Type::Int, span);
+        let known = self.b.emit(
+            InstKind::IntCompare { op: crate::ir::CompareOp::Eq, left: tag, right: some },
+            Type::Bool,
+            span,
+        );
+        let found = self.b.new_block();
+        let compute = self.b.new_block();
+        let join = self.b.new_block();
+        let result = self.b.add_param(join, ty.clone());
+        self.b.terminate(
+            TermKind::Cond {
+                condition: known,
+                then_target: Target::new(found),
+                else_target: Target::new(compute),
+            },
+            span,
+        );
+        self.b.switch_to(found);
+        let kept = self.b.emit(InstKind::VariantGet { value: slot, case: 0, field: 0 }, ty.clone(), span);
+        self.b.terminate(TermKind::Br(Target { block: join, args: vec![kept] }), span);
+        self.b.switch_to(compute);
+        let Some(computed) = self.value(value)? else {
+            // The value always fails: the slot stays empty, and so does `join`
+            // on this path.
+            self.b.switch_to(join);
+            let typed = Typed { value: result, ty };
+            self.bind_local(local, typed.clone());
+            return Ok(Out::Value(typed));
+        };
+        let wrapped = self.b.emit(InstKind::VariantNew { case: 0, fields: vec![computed.value] }, slot_ty, span);
+        self.b.emit_void(InstKind::MemoStore { object: receiver, field, value: wrapped }, span);
+        self.b.terminate(TermKind::Br(Target { block: join, args: vec![computed.value] }), span);
+        self.b.switch_to(join);
+        let typed = Typed { value: result, ty };
+        self.bind_local(local, typed.clone());
+        Ok(Out::Value(typed))
+    }
+
     fn finish_successor(&mut self, span: Span) -> Result<()> {
         let receiver = self.self_value.expect("successor has a receiver");
         let mut updates = Vec::new();
@@ -1353,6 +1428,12 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             }
         }
         let object = self.object.expect("successor belongs to an object");
+        // Запомненные ответы принадлежат прежнему состоянию (#491).
+        for (_, _, field) in self.ctx.objects[object.0].memos.clone() {
+            let none = self.memo_none(object, field, span);
+            updates.retain(|(known, _)| *known != field);
+            updates.push((field, none));
+        }
         let next = self.b.emit(
             InstKind::ObjNext {
                 object: receiver,
@@ -1925,7 +2006,8 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
     fn stmt(&mut self, stmt: &'r thir::Stmt, want: bool) -> Result<Out> {
         let span = stmt.span;
         match &stmt.kind {
-            StmtKind::Let { local, value } => {
+            StmtKind::Let { local, value, memo: true } => self.memo_let(*local, value, span),
+            StmtKind::Let { local, value, .. } => {
                 let Some(typed) = self.value(value)? else {
                     return Ok(Out::Diverged);
                 };

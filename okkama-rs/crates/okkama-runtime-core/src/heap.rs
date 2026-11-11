@@ -42,6 +42,9 @@ pub struct Object {
 pub(crate) struct Extra {
     /// Поля, связанные `obj.init`: (номер поля, значение).
     pub(crate) late: Vec<(usize, Value)>,
+    /// Значения слотов `memo let` (#491): (номер поля, `Maybe.some`). Поле
+    /// объекта остаётся `none`, поэтому `==`, хэш и Dumper их не видят.
+    pub(crate) memo: Vec<(usize, Value)>,
     /// Состояние рантайма объекта std с intrinsic-действиями (канал, Event, …).
     pub(crate) intrinsic: Option<Rc<dyn Any>>,
 }
@@ -131,6 +134,21 @@ impl Object {
             .collect()
     }
 
+    /// Запомненное значение слота `memo let` (#491), если оно уже есть.
+    pub fn memo(&self, index: usize) -> Option<Value> {
+        let extra = self.extra.borrow();
+        let (_, value) = extra.as_ref()?.memo.iter().find(|(field, _)| *field == index)?;
+        Some(value.clone())
+    }
+
+    /// Запомнить значение слота `memo let` (#491); поля объекта не меняются.
+    pub fn memo_store(&self, index: usize, value: Value) {
+        let mut extra = self.extra.borrow_mut();
+        let memo = &mut extra.get_or_insert_default().memo;
+        memo.retain(|(field, _)| *field != index);
+        memo.push((index, value));
+    }
+
     /// `obj.init`: связать поле после ухода `self`.
     pub fn init(&self, index: usize, value: Value) -> Result<(), ValueError> {
         if !matches!(
@@ -173,6 +191,7 @@ impl Object {
         take_deep(&mut self.fields, pending);
         if let Some(extra) = self.extra.get_mut().take() {
             pending.extend(extra.late.into_iter().map(|(_, value)| value));
+            pending.extend(extra.memo.into_iter().map(|(_, value)| value));
         }
     }
 }
@@ -1429,6 +1448,21 @@ impl ObjectHeap {
         let cyclic = crate::gc::traced(&bound);
         object.init(field, bound)?;
         // Поздняя ссылка может замкнуть цикл через уже ушедший `self`.
+        if cyclic {
+            crate::gc::track_object(object);
+        }
+        Ok(())
+    }
+
+    /// `memo.store` (#491): запомнить значение слота объекта `value`.
+    pub fn memo_store(&self, value: &Value, field: usize, bound: Value) -> Result<(), ValueError> {
+        let object = match value {
+            Value::Object(object) => object,
+            _ => return Err(invalid("expected object value")),
+        };
+        let cyclic = crate::gc::traced(&bound);
+        object.memo_store(field, bound);
+        // Запомненное значение может замкнуть цикл на сам объект.
         if cyclic {
             crate::gc::track_object(object);
         }

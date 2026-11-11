@@ -104,6 +104,11 @@ pub(super) struct Checker<'r, 'a> {
     /// The `try?` being checked is the operand of a fallback (`try? x else y`):
     /// with no successful path its type may come from the fallback (#307).
     pub open_try: bool,
+    /// Locals bound by `memo let`: another `memo let` may read them (#491).
+    pub memo_locals: Vec<LocalId>,
+    /// The scope depth of the action body's own statements: a `memo let`
+    /// stands there, not in a nested block (#491).
+    pub body_scope: Option<usize>,
 }
 
 /// Проверить все тела программы: зависимости раньше корня, в порядке исходника.
@@ -360,6 +365,8 @@ impl<'r, 'a> Checker<'r, 'a> {
             cap_external: false,
             barrier: None,
             open_try: false,
+            memo_locals: Vec::new(),
+            body_scope: None,
         }
     }
 
@@ -801,6 +808,7 @@ impl<'r, 'a> Checker<'r, 'a> {
     pub fn body(&mut self, block: &ast::Block, name: &str) -> Block {
         let result = self.result.clone();
         let want = result.is_some();
+        self.body_scope = Some(self.scopes.len() + 1);
         let out = self.block(block, want, result.as_ref());
         let tail_span = block.stmts.last().map_or(block.span, |stmt| stmt.span);
         let mut thir = self.block_of(out.clone());
@@ -811,10 +819,10 @@ impl<'r, 'a> Checker<'r, 'a> {
                 if let Some(last) = thir.stmts.pop() {
                     let value = match last.kind {
                         StmtKind::Expr(value) => value,
-                        StmtKind::Let { local, value } => {
+                        StmtKind::Let { local, value, memo } => {
                             // `let` последним: значение — значение привязки.
                             thir.stmts.push(Stmt {
-                                kind: StmtKind::Let { local, value },
+                                kind: StmtKind::Let { local, value, memo },
                                 span: last.span,
                             });
                             let ty = self.locals[local.0].ty.clone();

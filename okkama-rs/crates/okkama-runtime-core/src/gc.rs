@@ -226,6 +226,7 @@ impl Node {
                 };
                 if let Some(extra) = extra.as_ref() {
                     extra.late.iter().for_each(|(_, value)| out.value(value));
+                    extra.memo.iter().for_each(|(_, value)| out.value(value));
                     if let Some(state) = &extra.intrinsic {
                         out.0.push(Self::State(state.clone()));
                     }
@@ -299,6 +300,7 @@ impl Node {
                     && let Some(extra) = extra.take()
                 {
                     sink.extend(extra.late.into_iter().map(|(_, value)| value));
+                    sink.extend(extra.memo.into_iter().map(|(_, value)| value));
                     states.extend(extra.intrinsic);
                 }
             }

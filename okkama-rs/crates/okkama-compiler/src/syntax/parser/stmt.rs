@@ -60,7 +60,7 @@ impl Parser<'_> {
         self.reject_native_outside_module()?;
         let start = self.peek().span;
         let kind = match self.peek_kind() {
-            TokenKind::Let => self.let_statement()?,
+            TokenKind::Let => self.let_statement(false)?,
             TokenKind::Defer => self.defer_statement()?,
             // Like `if` and `loop`, a statement `try` and `match` take one
             // optional `;` (#302).
@@ -93,6 +93,11 @@ impl Parser<'_> {
             TokenKind::Loop => self.loop_statement(start)?,
             TokenKind::Next => self.next_statement()?,
             TokenKind::Last => self.last_statement()?,
+            // `memo let` (#491): `memo` is a word only right before `let`.
+            _ if self.check_name() && self.lexeme(self.peek()) == "memo" && self.check_next(TokenKind::Let) => {
+                self.advance();
+                self.let_statement(true)?
+            }
             _ if self.is_member_field_bind() => self.self_field_bind()?,
             _ if self.check_name() && self.check_next(TokenKind::Equal) => self.field_bind()?,
             _ => self.expression_statement()?,
@@ -260,8 +265,8 @@ impl Parser<'_> {
             && self.tokens[self.pos + 3].kind == TokenKind::Equal
     }
 
-    /// `let name ("is" type)? "=" expr ";"`
-    fn let_statement(&mut self) -> PResult<StmtKind> {
+    /// `memo? let name ("is" type)? "=" expr ";"`; the `memo` is already read.
+    fn let_statement(&mut self, memo: bool) -> PResult<StmtKind> {
         self.advance();
         let name = self.consume_binding_name("Expect variable name after \"let\".")?;
         let ty = if self.eat(TokenKind::Is) {
@@ -272,7 +277,7 @@ impl Parser<'_> {
         self.consume(TokenKind::Equal, "Expect \"=\" after variable name.")?;
         let value = self.expression()?;
         self.consume(TokenKind::Semicolon, "Expect \";\" after let declaration.")?;
-        Ok(StmtKind::Let { name, ty, value })
+        Ok(StmtKind::Let { name, ty, value, memo })
     }
 
     /// After `try`: `block catch_clause+`. Shared by the statement and the

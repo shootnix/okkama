@@ -885,7 +885,10 @@ impl<'s> Printer<'s> {
 
     fn stmt(&mut self, stmt: &Stmt) {
         match &stmt.kind {
-            StmtKind::Let { name, ty, value } => {
+            StmtKind::Let { name, ty, value, memo } => {
+                if *memo {
+                    self.word("memo ");
+                }
                 self.word("let ");
                 self.word(&name.text);
                 if let Some(ty) = ty {

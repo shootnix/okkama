@@ -8133,6 +8133,60 @@
   {
    "aspects": {
     "boundary": {
+     "cases": [
+      "L04.memo.computed-once"
+     ],
+     "mandatory_cases": [
+      "L04.memo.computed-once"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L04.memo.computed-once"
+     ],
+     "mandatory_cases": [
+      "L04.memo.computed-once"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [
+      "L04.memo.rejects-effect",
+      "L04.memo.rejects-nested",
+      "L04.memo.rejects-outside-action",
+      "L04.memo.rejects-parameter"
+     ],
+     "mandatory_cases": [
+      "L04.memo.rejects-effect",
+      "L04.memo.rejects-nested",
+      "L04.memo.rejects-outside-action",
+      "L04.memo.rejects-parameter"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L04.memo.computed-once"
+     ],
+     "mandatory_cases": [
+      "L04.memo.computed-once"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "OBJ.MEMO-LET",
+   "discrepancies": [],
+   "family": "Objects, roles, caps and successors",
+   "spec_refs": [
+    "docs/OkkamaBook.md#186-memo-let"
+   ],
+   "status": "mandatory",
+   "title": "memo let computes a value once per object; slots stay out of equality and reset in successors"
+  },
+  {
+   "aspects": {
+    "boundary": {
      "cases": [],
      "mandatory_cases": [],
      "requirement": "n/a: the contract defines no boundary values distinct from its normal behaviour"
@@ -9100,9 +9154,12 @@
   {
    "aspects": {
     "boundary": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L08.collect.first-successful-and-completions"
+     ],
+     "mandatory_cases": [
+      "L08.collect.first-successful-and-completions"
+     ],
      "requirement": "required"
     },
     "interaction": {
@@ -9112,19 +9169,23 @@
     },
     "invalid": {
      "cases": [
+      "L08.collect.first-successful-and-completions",
       "L08.collect.race-empty"
      ],
      "mandatory_cases": [
+      "L08.collect.first-successful-and-completions",
       "L08.collect.race-empty"
      ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
-      "L08.collect.all-futures-order"
+      "L08.collect.all-futures-order",
+      "L08.collect.first-successful-and-completions"
      ],
      "mandatory_cases": [
-      "L08.collect.all-futures-order"
+      "L08.collect.all-futures-order",
+      "L08.collect.first-successful-and-completions"
      ],
      "requirement": "required"
     }
@@ -9214,9 +9275,12 @@
   {
    "aspects": {
     "boundary": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L08.scope.future-scope-and-deadlines"
+     ],
+     "mandatory_cases": [
+      "L08.scope.future-scope-and-deadlines"
+     ],
      "requirement": "required"
     },
     "interaction": {
@@ -9225,16 +9289,21 @@
      "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
     },
     "invalid": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L08.scope.future-scope-and-deadlines"
+     ],
+     "mandatory_cases": [
+      "L08.scope.future-scope-and-deadlines"
+     ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
+      "L08.scope.future-scope-and-deadlines",
       "L08.scope.group-waits"
      ],
      "mandatory_cases": [
+      "L08.scope.future-scope-and-deadlines",
       "L08.scope.group-waits"
      ],
      "requirement": "required"
@@ -9287,9 +9356,12 @@
   {
    "aspects": {
     "boundary": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L08.scope.future-scope-and-deadlines"
+     ],
+     "mandatory_cases": [
+      "L08.scope.future-scope-and-deadlines"
+     ],
      "requirement": "required"
     },
     "interaction": {
@@ -9298,16 +9370,21 @@
      "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
     },
     "invalid": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L08.scope.future-scope-and-deadlines"
+     ],
+     "mandatory_cases": [
+      "L08.scope.future-scope-and-deadlines"
+     ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
+      "L08.scope.future-scope-and-deadlines",
       "L08.timeout.before-and-within"
      ],
      "mandatory_cases": [
+      "L08.scope.future-scope-and-deadlines",
       "L08.timeout.before-and-within"
      ],
      "requirement": "required"
@@ -31077,19 +31154,14 @@
    "STD.ASYNC.BARRIER [boundary]",
    "STD.ASYNC.BARRIER [invalid]",
    "STD.ASYNC.CANCELLATION [invalid]",
-   "STD.ASYNC.COLLECT [boundary]",
    "STD.ASYNC.EVENT [boundary]",
    "STD.ASYNC.EVENT [invalid]",
    "STD.ASYNC.LOCK [normal]",
    "STD.ASYNC.LOCK [boundary]",
    "STD.ASYNC.LOCK [invalid]",
-   "STD.ASYNC.SCOPE [boundary]",
-   "STD.ASYNC.SCOPE [invalid]",
    "STD.ASYNC.SEMAPHORE [normal]",
    "STD.ASYNC.SEMAPHORE [boundary]",
    "STD.ASYNC.SEMAPHORE [invalid]",
-   "STD.ASYNC.TIMEOUT [boundary]",
-   "STD.ASYNC.TIMEOUT [invalid]",
    "STD.CALENDAR [normal]",
    "STD.CALENDAR [boundary]",
    "STD.CALENDAR [invalid]",
@@ -32692,5 +32764,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "397255365188a0174472b2165fd2dfadcd1d0ef333c7bd27b540973c1dcabaa6"
+ "suite_tree_sha256": "34f092de8e8867b91a6f9bab30a7151339e39a77fdd79b40cf2e01696da922b0"
 }

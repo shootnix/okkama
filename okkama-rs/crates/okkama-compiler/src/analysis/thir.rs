@@ -86,6 +86,8 @@ pub enum StmtKind {
     Let {
         local: LocalId,
         value: Expr,
+        /// `memo let` (#491): the value is kept in a hidden slot of `self`.
+        memo: bool,
     },
     Expr(Expr),
     /// `stmt if condition` (постфиксное условие, `next if`, `last if`).
@@ -894,7 +896,7 @@ pub fn stmt_contains(stmt: &Stmt, test: &dyn Fn(&Expr) -> bool) -> bool {
     found
 }
 
-fn first_in(expr: &Expr, test: &dyn Fn(&Expr) -> bool) -> Option<Span> {
+pub fn first_in(expr: &Expr, test: &dyn Fn(&Expr) -> bool) -> Option<Span> {
     if test(expr) {
         return Some(expr.span);
     }
@@ -908,7 +910,7 @@ fn first_in(expr: &Expr, test: &dyn Fn(&Expr) -> bool) -> Option<Span> {
 }
 
 /// The expressions directly inside the statements of `block`.
-fn each_block_expr<'e>(block: &'e Block, visit: &mut dyn FnMut(&'e Expr)) {
+pub(crate) fn each_block_expr<'e>(block: &'e Block, visit: &mut dyn FnMut(&'e Expr)) {
     for stmt in &block.stmts {
         each_stmt_expr(stmt, visit);
     }
@@ -955,7 +957,7 @@ fn each_source_expr<'e>(source: &'e Source, visit: &mut dyn FnMut(&'e Expr)) {
 
 /// The direct sub-expressions of `expr` (statements of nested blocks
 /// included), except the body of an anonymous action.
-fn each_child<'e>(expr: &'e Expr, visit: &mut dyn FnMut(&'e Expr)) {
+pub(crate) fn each_child<'e>(expr: &'e Expr, visit: &mut dyn FnMut(&'e Expr)) {
     match &expr.kind {
         ExprKind::Local(_)
         | ExprKind::Constant(_) | ExprKind::Global(_)

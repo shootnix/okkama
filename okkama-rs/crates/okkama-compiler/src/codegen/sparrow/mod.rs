@@ -211,8 +211,10 @@ impl FunctionGen<'_> {
             K::StrConcat { left, right } => I::StrConcat { dst: dst()?, left: reg(*left), right: reg(*right) },
             K::StrCompare { op, left, right } => I::StrCmp { op: cmp(*op), dst: dst()?, left: reg(*left), right: reg(*right) },
             K::ObjNew { object, fields } => I::ObjNew { dst: dst()?, object: ObjectRef(object.0 as u32), fields: regs(fields) },
-            K::ObjInit { object, field, value } => I::ObjInit { object: reg(*object), field: *field as u32, value: reg(*value) },
-            K::ObjGet { object, field } | K::ObjPending { object, field } => {
+            K::ObjInit { object, field, value } | K::MemoStore { object, field, value } => {
+                I::ObjInit { object: reg(*object), field: *field as u32, value: reg(*value) }
+            }
+            K::ObjGet { object, field } | K::ObjPending { object, field } | K::MemoLoad { object, field } => {
                 I::ObjGet { dst: dst()?, object: reg(*object), field: *field as u32 }
             }
             K::ObjNext { object, updates } => I::ObjNext {

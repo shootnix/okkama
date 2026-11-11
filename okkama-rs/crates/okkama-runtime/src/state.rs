@@ -329,6 +329,18 @@ impl State {
             .map_err(|e| invalid_state(span, e.message))
     }
 
+    pub(crate) fn object_memo(
+        &self,
+        object: &Value,
+        field: usize,
+        value: Value,
+        span: Span,
+    ) -> Result<(), RuntimeError> {
+        self.objects
+            .memo_store(object, field, value)
+            .map_err(|e| invalid_state(span, e.message))
+    }
+
     pub(crate) fn object_next(
         &self,
         value: &Value,

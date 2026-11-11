@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+object Box {
+    has items is @int;
+    Box(:items);
+
+    scaled(n is int) is int {
+        memo let first = items[0] * n;
+        first;
+    }
+}
+
+main() is int {
+    return Box(items: [2]).scaled(3) - 6;
+}

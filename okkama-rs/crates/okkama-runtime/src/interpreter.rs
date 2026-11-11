@@ -895,6 +895,28 @@ pub(crate) fn execute_function(
                         from.transfer(to, read(slots, *value, inst.span)?);
                         Value::Undef
                     }
+                    InstKind::MemoLoad { object, field } => {
+                        let Value::Object(target) = read(slots, *object, inst.span)? else {
+                            return Err(invalid_state(inst.span, "memo.load expects an object"));
+                        };
+                        match target.memo(*field).or_else(|| target.field(*field)) {
+                            Some(value) => value,
+                            None => return Err(invalid_state(inst.span, "memo.load field is out of bounds")),
+                        }
+                    }
+                    InstKind::MemoStore {
+                        object,
+                        field,
+                        value,
+                    } => {
+                        state.object_memo(
+                            read(slots, *object, inst.span)?,
+                            *field,
+                            read(slots, *value, inst.span)?.clone(),
+                            inst.span,
+                        )?;
+                        Value::Undef
+                    }
                     InstKind::ObjInit {
                         object,
                         field,

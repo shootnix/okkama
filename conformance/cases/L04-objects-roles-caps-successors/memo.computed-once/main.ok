@@ -1,0 +1,79 @@
+module app v1.0.0;
+
+// A memo let is computed once per object and kept; its input is read through
+// a role, which a memo let trusts, so the reads are counted here.
+import "io/stdout" take Stdout;
+import "async/atomic" take Atomic;
+
+role Source {
+    items() is @int;
+}
+
+object CountedSource does Source {
+    has values is @int;
+    has reads is Atomic<int>;
+    CountedSource(:values, :reads);
+
+    items() is @int {
+        reads.replace(reads.value() + 1);
+        values;
+    }
+}
+
+enum Negative is Error = (found);
+
+object Stats {
+    has source is Source;
+    has label is string;
+    Stats(:source, :label);
+
+    maximum() is int {
+        self.values().reduce(self.values()[0]) -> best, item {
+            if item > best { item; } else { best; }
+        };
+    }
+
+    minimum() is int {
+        self.values().reduce(self.values()[0]) -> best, item {
+            if item < best { item; } else { best; }
+        };
+    }
+
+    // Both actions share one kept value through this hidden action.
+    hidden values() is @int {
+        memo let kept = source.items();
+        kept;
+    }
+
+    checked() is int {
+        memo let total = source.items().reduce(0) -> sum, item {
+            confirm item >= 0 else throw Negative.found;
+            sum + item;
+        };
+        total;
+    }
+
+    renamed(name is string) is ^Stats {
+        ^label = name;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let reads = Atomic(0);
+    let stats = Stats(source: CountedSource(values: [5, 1, 9], reads: reads), label: "a");
+    out.writeln(stats.maximum().string() + " " + stats.minimum().string() + " " + stats.maximum().string());
+    out.writeln("reads after three answers: " + reads.value().string());
+
+    out.writeln("equal to an unused one: " + (stats == Stats(source: CountedSource(values: [5, 1, 9], reads: reads), label: "a")).string());
+
+    let renamed = stats.renamed("b");
+    out.writeln(renamed.maximum().string());
+    out.writeln("reads after a successor: " + reads.value().string());
+
+    let failing = Stats(source: CountedSource(values: [1, -1], reads: Atomic(0)), label: "f");
+    for (0..2) -> attempt {
+        out.writeln(try { failing.checked().string(); } catch error is Negative { "failed " + attempt.string(); });
+    }
+    return 0;
+}

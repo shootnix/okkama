@@ -1461,6 +1461,7 @@ impl Checker<'_, '_> {
                         kind: StmtKind::Let {
                             local: binding_local,
                             value,
+                            memo: false,
                         },
                         span: arg.span,
                     });

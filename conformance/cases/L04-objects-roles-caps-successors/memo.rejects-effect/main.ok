@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+import "time/clock" take SystemClock, Instant;
+
+object Stamp {
+    has name is string;
+    Stamp(:name);
+
+    taken() is Instant {
+        memo let now = SystemClock().instant();
+        now;
+    }
+}
+
+main() is int {
+    Stamp(name: "a").taken();
+    return 0;
+}

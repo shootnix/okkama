@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.memo.computed-once",
+  "title": "memo let is computed once per object and reset by a successor",
+  "purpose": "Observe that a memo let reads its role input once, is shared through a hidden action, is left out of equality, is reset by a successor and stays empty after a failure.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.MEMO-LET",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "9 1 9\nreads after three answers: 1\nequal to an unused one: true\n9\nreads after a successor: 2\nfailed 0\nfailed 1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/OkkamaBook.md#186-memo-let"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #491",
+    "expected_basis": "#491: one slot per memo site per object, filled by the first evaluation; a successor starts empty; a throw leaves the slot empty; slots are not part of ==."
+  },
+  "status": "mandatory"
+}
