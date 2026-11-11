@@ -1,6 +1,10 @@
 module os/pipeline_capture v1.0.0;
 
-import "os/command" take Commanding;
+import "encoding/utf" take Utf8Decoded;
+import "fs/path" take Path;
+import "os/command" take Command, Commanding;
+import "os/directory" take WorkingDirectory;
+import "os/environment" take Environment;
 import "os/process" take Exit, ExitKind, ProcessFailure;
 import "runtime/process" take PipelineState, CapturedPipeline, pipeline_state_create,
     pipeline_state_add, pipeline_state_capture, captured_pipeline_statuses,
@@ -126,12 +130,15 @@ object CompletedPipeline {
         completed_exits;
     }
 
-    output() is @byte {
-        captured_output;
-    }
+    // What the last command wrote to stdout, and what each wrote to stderr.
+    cap Captured {
+        output is @byte {
+            captured_output;
+        }
 
-    errors() is @@byte {
-        captured_errors;
+        errors is @@byte {
+            captured_errors;
+        }
     }
 }
 
@@ -144,3 +151,56 @@ enum PipelineCaptureLimitExceeded is Error = (detailed(
     stream is PipelineStream,
     limit is int
 ));
+
+async test "a pipeline passes output along; each command's errors are kept apart" {
+    let env = Environment();
+    let here = WorkingDirectory();
+    let pipeline is @Commanding = [
+        Command(program: Path("sh"), arguments: ["-c", "printf 'b\\na\\n'; printf one >&2"], environment: env, directory: here),
+        Command(program: Path("sort"), arguments: [], environment: env, directory: here),
+        Command(program: Path("tr"), arguments: ["a-z", "A-Z"], environment: env, directory: here),
+    ];
+    let done = await PipelineCapture(commands: pipeline, limit: 1024).completion();
+    test.is(Utf8Decoded(origin: done::Captured::output).string(), "A\nB\n");
+    test.is(done::Captured::errors.size(), 3);
+    test.is(Utf8Decoded(origin: done::Captured::errors[0]).string(), "one");
+    test.is(done::Captured::errors[2], []);
+    let codes is @int = done.exits().map() -> exit {
+        exit.code();
+    };
+    test.is(codes, [0, 0, 0]);
+}
+
+async test "input feeds the first command; every exit is reported" {
+    let env = Environment();
+    let here = WorkingDirectory();
+    let pipeline is @Commanding = [
+        Command(program: Path("cat"), arguments: [], environment: env, directory: here),
+        Command(program: Path("sh"), arguments: ["-c", "cat; exit 4"], environment: env, directory: here),
+    ];
+    let done = await PipelineCapture(commands: pipeline, input: [byte(120)], limit: 16).completion();
+    test.is(done::Captured::output, [byte(120)]);
+    test.ok(done.exits()[0].success());
+    test.is(done.exits()[1].code(), 4);
+}
+
+async test "an empty pipeline and a zero limit are refused" {
+    let empty is @Commanding = [];
+    let refused = try {
+        await PipelineCapture(commands: empty, limit: 16).completion();
+        false;
+    }
+    catch failure is EmptyPipeline {
+        true;
+    };
+    test.ok(refused);
+    let one is @Commanding = [Command(program: Path("true"), arguments: [], environment: Environment(), directory: WorkingDirectory())];
+    let zero = try {
+        await PipelineCapture(commands: one, limit: 0).completion();
+        false;
+    }
+    catch InvalidPipelineCaptureLimit.limit(limit) {
+        limit == 0;
+    };
+    test.ok(zero);
+}

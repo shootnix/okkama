@@ -77,3 +77,37 @@ object StorageUsage {
 enum InvalidStorageUsage is Error = (invalid);
 
 enum StorageFailure is Error = (detailed(code is string, message is string));
+
+test "usage counts what is used and what fits" {
+    let usage = StorageUsage(capacity: BigInt(origin: "100"), available: BigInt(origin: "30"));
+    test.is(usage.capacity(), BigInt(origin: "100"));
+    test.is(usage.available(), BigInt(origin: "30"));
+    test.is(usage.used(), BigInt(origin: "70"));
+    test.ok(usage.fits(BigInt(origin: "30")));
+    test.ok(!usage.fits(BigInt(origin: "31")));
+    test.ok(usage.fits(BigInt(origin: "0")));
+    test.throws(InvalidStorageUsage) {
+        usage.fits(BigInt(origin: "-1"));
+    };
+}
+
+test "impossible usage is refused" {
+    test.throws(InvalidStorageUsage) {
+        StorageUsage(capacity: BigInt(origin: "10"), available: BigInt(origin: "11"));
+    };
+    test.throws(InvalidStorageUsage) {
+        StorageUsage(capacity: BigInt(origin: "-1"), available: BigInt(origin: "0"));
+    };
+    let empty = StorageUsage(capacity: BigInt(origin: "0"), available: BigInt(origin: "0"));
+    test.is(empty.used(), BigInt(origin: "0"));
+}
+
+test "the volume of the working directory reports a consistent usage" {
+    let usage = Storage(path: Path(".")).usage();
+    test.ok(usage.capacity().sign() > 0);
+    test.ok(usage.available().order(usage.capacity()) != Order.greater);
+    test.is(Storage(path: Path(".")).path(), Path("."));
+    test.throws(StorageFailure) {
+        Storage(path: Path("./okkama-storage-test-absent/x")).usage();
+    };
+}

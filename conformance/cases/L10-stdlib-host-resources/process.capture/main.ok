@@ -12,7 +12,7 @@ async main() is int {
     let out = Stdout();
     let command = Command(program: Path("printf"), arguments: ["%s|%s", "a b", "c;d"], environment: Environment(), directory: Directory(path: Path(".")));
     let completed = await CommandCapture(origin: command, limit: 4096).completion();
-    out.writeln(Utf8Decoded(origin: completed.output()).string());
+    out.writeln(Utf8Decoded(origin: completed::Captured::output).string());
     out.writeln(if completed.exit().success() { "success"; } else { "failure"; });
     let failing = Command(program: Path("false"), arguments: [], environment: Environment(), directory: Directory(path: Path(".")));
     let failed = await CommandCapture(origin: failing, limit: 4096).completion();

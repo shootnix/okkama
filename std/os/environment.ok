@@ -30,6 +30,11 @@ import "size" take Sizing;
 // Names are case-sensitive on POSIX and normalized case-insensitively on
 // Windows. Empty names, names containing = or NUL, and values containing NUL
 // are rejected before an Environment becomes observable.
+//
+// home() derives the home directory from this snapshot alone and never
+// rereads ambient process state:
+//
+//     let home is Directory = Environment().home();
 
 object Environment {
     has origin is %string:string;
@@ -67,6 +72,23 @@ object Environment {
         origin;
     }
 
+    // The home directory this environment names (HOME, or USERPROFILE on
+    // Windows), not the account database's (os/account's User().home()).
+    home() is Directory {
+        let path is string = try {
+            environment_home(origin);
+        }
+        catch failure is NativeFailure {
+            if failure.code() == "not_found" {
+                throw MissingHomeDirectory.missing;
+            }
+            else {
+                throw InvalidEnvironmentVariable.because(failure.message());
+            }
+        };
+        Directory(path: Path(path));
+    }
+
     addition(name is string, value is string) is Environment {
         let revised is %string:string = try {
             environment_add(origin, name, value);
@@ -97,34 +119,6 @@ object Environment {
     }
 }
 
-// HomeDirectory derives a directory only from its explicit Environment.
-// It never rereads ambient process state:
-//
-//     let home is Directory = HomeDirectory(
-//         environment: Environment(),
-//     ).value();
-
-object HomeDirectory {
-    has environment is Environment;
-
-    HomeDirectory(:environment);
-
-    value() is Directory {
-        let path is string = try {
-            environment_home(environment.variables());
-        }
-        catch failure is NativeFailure {
-            if failure.code() == "not_found" {
-                throw MissingHomeDirectory.missing;
-            }
-            else {
-                throw InvalidEnvironmentVariable.because(failure.message());
-            }
-        };
-        Directory(path: Path(path));
-    }
-}
-
 // SearchPath parses PATH using the runtime-selected separator. Ordering and
 // duplicates are preserved. Empty components mean Path("."); a missing PATH
 // produces an empty sequence:
@@ -135,10 +129,12 @@ object HomeDirectory {
 //     }
 
 object SearchPath does Sequencing<Path>, Iterating<Path>, Sizing {
-    has paths is @Path;
+    has environment is Environment;
 
-    SearchPath(environment is Environment) {
-        paths = if environment.membership("PATH") {
+    SearchPath(:environment);
+
+    hidden paths() is @Path {
+        if environment.membership("PATH") {
             environment.variable("PATH")
                 .split(environment_path_separator())
                 .map() -> part {
@@ -152,35 +148,38 @@ object SearchPath does Sequencing<Path>, Iterating<Path>, Sizing {
         }
         else {
             [];
-        };
+        }
     }
 
     cursor() is Cursor<Path> {
-        SearchPathCursor(paths: paths, position: 0);
+        SearchPathCursor(paths: self.paths(), position: 0);
     }
 
     size() is int {
-        paths.size();
+        self.paths().size();
     }
 
     item(index is int) is Path {
-        confirm index >= 0 && index < self.size()
+        let paths is @Path = self.paths();
+        confirm index >= 0 && index < paths.size()
             else throw OutOfRange.because("search-path index is outside the sequence");
         paths[index];
     }
 
     first() is Path {
-        confirm self.size() > 0 else throw EmptySequence.empty;
+        let paths is @Path = self.paths();
+        confirm paths.size() > 0 else throw EmptySequence.empty;
         paths[0];
     }
 
     last() is Path {
-        confirm self.size() > 0 else throw EmptySequence.empty;
-        paths[self.size() - 1];
+        let paths is @Path = self.paths();
+        confirm paths.size() > 0 else throw EmptySequence.empty;
+        paths[paths.size() - 1];
     }
 }
 
-object SearchPathCursor does Cursor<Path> {
+hidden object SearchPathCursor does Cursor<Path> {
     has paths is @Path;
     has position is int;
 
@@ -206,3 +205,86 @@ enum MissingEnvironmentVariable is Error = (name(name is string));
 enum InvalidEnvironmentVariable is Error = (because(message is string));
 
 enum MissingHomeDirectory is Error = (missing);
+
+test "an isolated environment answers only what it was given" {
+    let env = Environment(values: ["LANG": "C.UTF-8", "EMPTY": ""]);
+    test.ok(env.membership("LANG"));
+    test.is(env.variable("LANG"), "C.UTF-8");
+    test.ok(env.membership("EMPTY"));
+    test.is(env.variable("EMPTY"), "");
+    test.ok(!env.membership("HOME"));
+    test.ok(try {
+        env.variable("HOME");
+        false;
+    }
+    catch MissingEnvironmentVariable.name(name) {
+        name == "HOME";
+    });
+    test.is(env.variables().size(), 2);
+}
+
+test "addition and difference make new snapshots" {
+    let base = Environment(values: ["A": "1"]);
+    let more = base.addition("B", "2");
+    test.ok(more.membership("B") && !base.membership("B"));
+    let replaced = more.addition("A", "one");
+    test.is(replaced.variable("A"), "one");
+    test.is(more.variable("A"), "1");
+    let fewer = replaced.difference("A");
+    test.ok(!fewer.membership("A") && fewer.membership("B"));
+    test.ok(Environment(values: ["A": "1"]) == base);
+}
+
+test "bad names and values are refused before an environment exists" {
+    test.throws(InvalidEnvironmentVariable) {
+        Environment(values: ["": "x"]);
+    };
+    test.throws(InvalidEnvironmentVariable) {
+        Environment(values: ["A=B": "x"]);
+    };
+    test.throws(InvalidEnvironmentVariable) {
+        Environment(values: ["A": "x"]).addition("B=C", "y");
+    };
+}
+
+test "home() reads this snapshot alone" {
+    if environment_path_separator() == ":" {
+        test.is(Environment(values: ["HOME": "/home/ada"]).home().path(), Path("/home/ada"));
+    }
+    else {
+        test.is(
+            Environment(values: ["USERPROFILE": "C:\\Users\\ada"]).home().path().string(),
+            "C:\\Users\\ada",
+        );
+    }
+    test.throws(MissingHomeDirectory) {
+        Environment(values: ["LANG": "C"]).home();
+    };
+}
+
+test "the search path keeps order and duplicates; an empty part is the current directory" {
+    let separator = environment_path_separator();
+    let path = "/usr/bin" + separator + separator + "/bin" + separator + "/usr/bin";
+    let search = SearchPath(environment: Environment(values: ["PATH": path]));
+    test.is(search.size(), 4);
+    test.is(search.first(), Path("/usr/bin"));
+    test.is(search.item(1), Path("."));
+    test.is(search.last(), Path("/usr/bin"));
+    let walked is @string = search.map() -> directory {
+        directory.string();
+    };
+    test.is(walked, ["/usr/bin", ".", "/bin", "/usr/bin"]);
+    test.throws(OutOfRange) {
+        search.item(4);
+    };
+    let unset = SearchPath(environment: Environment(values: ["LANG": "C"]));
+    test.is(unset.size(), 0);
+    test.throws(EmptySequence) {
+        unset.first();
+    };
+}
+
+test "the process environment is a snapshot" {
+    let system = Environment();
+    test.ok(system == system.addition("OKKAMA_TEST_ONLY", "1").difference("OKKAMA_TEST_ONLY"));
+}

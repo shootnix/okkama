@@ -139,7 +139,7 @@ object Group {
     }
 }
 
-object GroupUsers does Sequencing<User>, Iterating<User>, Sizing {
+hidden object GroupUsers does Sequencing<User>, Iterating<User>, Sizing {
     has group_name is string;
 
     GroupUsers(name is string) {
@@ -194,7 +194,7 @@ object GroupUsers does Sequencing<User>, Iterating<User>, Sizing {
     }
 }
 
-object GroupUserCursor does Cursor<User> {
+hidden object GroupUserCursor does Cursor<User> {
     has origin is @string;
     has position is int;
 
@@ -227,3 +227,50 @@ enum MissingUserHome is Error = (name(name is string));
 enum InvalidAccountName is Error = (origin(origin is string));
 
 enum UnavailableAccountInformation is Error = (because(message is string));
+
+test "the current user is found again by name, with the same identity" {
+    let current = User();
+    test.ok(!current.name().empty());
+    test.ok(!current.identity().empty());
+    let again = User(name: current.name());
+    test.is(again.identity(), current.identity());
+    test.is(again.home().path(), current.home().path());
+}
+
+test "unknown and malformed names are told apart" {
+    test.ok(try {
+        User(name: "okkama-no-such-user-7f3a").identity();
+        false;
+    }
+    catch MissingUser.name(name) {
+        name == "okkama-no-such-user-7f3a";
+    });
+    test.throws(InvalidAccountName) {
+        User(name: "").identity();
+    };
+    test.ok(try {
+        Group(name: "okkama-no-such-group-7f3a").identity();
+        false;
+    }
+    catch MissingGroup.name(name) {
+        name == "okkama-no-such-group-7f3a";
+    });
+    test.throws(InvalidAccountName) {
+        Group(name: "").users().size();
+    };
+}
+
+test "a group lists its members as users" {
+    if User().name() == "root" {
+        let root = Group(name: "root");
+        test.is(root.name(), "root");
+        test.ok(!root.identity().empty());
+        let members is @string = root.users().map() -> user {
+            user.name();
+        };
+        test.is(members.size(), root.users().size());
+    }
+    else {
+        test.ok(true);
+    }
+}

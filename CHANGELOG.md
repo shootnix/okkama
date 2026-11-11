@@ -505,6 +505,22 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
       `directory`, `glob`, `link`, `temp` and `watch`. That includes an
       async watch test, run in a container. `error` and `lock` are tested
       through `entry` and `file`.
+  - `os`:
+    - Caps for records:
+      - `Exit::Status` holds `kind`; `code()` still refuses an exit
+        without one, so it stays an action.
+      - `CompletedCommand::Captured` and `CompletedPipeline::Captured`
+        hold `output` and `errors`.
+    - `env.home()` replaces `HomeDirectory(environment: env).value()`, as
+      the card proposed.
+    - `GroupUsers` and the group and search-path cursors are hidden.
+    - `Platform()` and `Host()` read the system when asked, not when made.
+      `SearchPath` reads PATH in its actions.
+    - Inline tests for all nine modules. They run commands, pipelines,
+      signals and account lookups, in a container. There are examples for
+      `os/command`, `os/process` and `os/environment`.
+    - The Book drops the legacy `os`, `env/var`, `env/cwd` and `proc/cmd`
+      passages and describes the current `os` in §26.5.
 
 ### Fixed
 

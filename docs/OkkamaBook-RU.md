@@ -3871,6 +3871,21 @@ Path("notes.txt"))` открывает на чтение; `for file.text() -> li
 `FileEvent`'ом, вид которого лежит в `event::Change::kind`.
 `examples/fs/directory/` показывает каждую задачу программой.
 
+`os` запускает программы и читает систему без shell. `Command(program:,
+arguments:, environment:, directory:)` держит явный контекст, а
+`InheritedCommand(program:, arguments:)` берёт контекст процесса. Каждый
+аргумент доходит до программы одной точной строкой. `await
+CommandCapture(origin:, limit:).completion()` собирает вывод: через
+`done::Captured::output` и `::errors`, а `done.exit()` отвечает на
+`success()`, `code()` и `exit::Status::kind`. `PipelineCapture(commands:, …)`
+соединяет команды. `Process(command:)` разговаривает с запущенной
+программой через `ProcessInput`, `ProcessOutput` и `signal()`.
+`Environment()` — снимок, `Environment(values:)` — изолированный снимок.
+Оба отвечают на `variable(name)`, `home()`, `addition()` и `difference()`;
+`SearchPath(environment:)` обходит PATH. `Platform()`, `Host()`, `User()`,
+`Group(name:)`, `WorkingDirectory()` и `Storage(path:).usage()` отвечают,
+когда их спрашивают. `examples/os/` показывает каждую задачу программой.
+
 `http/client` отправляет запросы через `HttpClient()`. По умолчанию он берёт системные DNS и доверенные корни, ходит только на публичные адреса и говорит по HTTP/1.1. Всё остальное задаётся именованными аргументами: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)`, `cookies: MemoryCookieJar()`. Для каждого REST-метода есть шорткат: `get(url)`, `head`, `options`, `delete`, а также `post(url:, body:)`, `put`, `patch` с `Content`, например `JsonBody(json)`. Любой другой запрос пишется как `client.response(Request(url:, method:, headers:, body:))`. Ответ показывает голову через cap `Head` (`page::Head::status`, `::class`, `::headers`) и читает тело через `await page.text()`, `bytes()`, `json()` или `reading()`. `Status` и `Method` — enum'ы: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` и `MethodName` переводят их в числа и токены протокола и обратно. Каждая задача показана программой в `examples/http/client/`.
 
 `strings/parse` читает текст как тип, который у него просят: `Number("42").int()`,
@@ -4047,8 +4062,6 @@ Stdlib намеренно узка, пока язык стабилизирует
   последующие элементы другого конкретного типа, но той же роли),
   найденный и объяснённый, но не исправленный, обойдённый через явный
   `let` — см. `db-migration-22072026.md`;
-- `os` — типизированное описание хоста и явных POSIX/Windows-систем с закрытыми
-  enum платформы, архитектуры и стиля путей;
 - `test/fake_clock` — реализация `Clock`, которую тест явно продвигает,
   откатывает или устанавливает, так что `sleep` никогда не блокирует;
 - `test/benchmark` — repeatable измерение длительности через внедряемый
@@ -4064,15 +4077,8 @@ Stdlib намеренно узка, пока язык стабилизирует
   без блока `finally` — в грамматике языка его просто нет — за счёт того,
   что `try`/`catch` на каждый кейс полностью поглощает любую `Error` в
   `bool`, и идущий следом цикл `after()` достигается всегда;
-- `env/var` — номинальные переменные окружения, точные сырые байты, строгие
-  UTF-8-проекции и изолированный role fake;
-- `env/cwd` — явная stateless capability для ambient рабочей директории, с
-  неизменяемым `FixedCwd`, который отвергает любое изменение;
 - `proc/args` — неизменяемый application argv с точным байтовым и строгим
   UTF-8-представлением и индексированными ошибками;
-- `proc/cmd` — `Cmd`/`RunningCmd` строят, запускают и супервизируют дочерний
-  процесс через настоящие OS-пайпы, без шелла и без наследования ambient
-  окружения/директории, если это не запрошено явно (только POSIX);
 - `net/address` — неизменяемые проверенные IPv4/IPv6, socket endpoint и
   неразрешённые пары host/port без утечки native envelope;
 - `test/more` — stateless переиспользуемые утверждения поверх контекстной test
@@ -4082,36 +4088,6 @@ Stdlib намеренно узка, пока язык стабилизирует
   `runtime/net`, `runtime/poll`, `runtime/environment`, `runtime/system`,
   `runtime/debug`, `runtime/regex`, `runtime/stdio`, `runtime/memory`, `runtime/format`,
   `runtime/crypto`, `runtime/tls`, `runtime/utf8`.
-
-Соглашения операционной системы представлены значениями, а не сырыми строками
-хоста или глобальными константами:
-
-```okkama
-import "os" take
-    Host, OperatingSystem, Posix,
-    Platform, Architecture, PathStyle;
-
-main() is int {
-    let host is OperatingSystem = Host();
-    let foreign is OperatingSystem = Posix(
-        Platform.freebsd,
-        Architecture.arm64,
-    );
-
-    host.platform();
-    host.path_style();
-    foreign.path_list_separator(); // ":"
-    return 0;
-}
-```
-
-`Host()` не хранит состояние и обращается к `runtime/system` только при
-вычислении экшена. Известные не-Windows-хосты используют POSIX-пути, LF и `:`,
-а Windows — Windows-пути, CRLF и `;`. Неизвестный хост сохраняет
-типизированную идентичность `Platform.unknown`, но запрос соглашений о путях и
-строках бросает `UnsupportedPlatform`, а не делает догадку. `Posix` и
-`Windows` описывают явно выбранную чужую или тестовую систему; их
-перегруженные конструкторы только сохраняют enum-состояние.
 
 Код, написанный против role `Clock`, можно тестировать без реальных часов
 через `test/fake_clock`:
@@ -4185,68 +4161,6 @@ main() is int {
 запуска — это реальный, достижимый случай (а не просто defensive code),
 когда `BenchmarkCase` на основе `test/fake_clock` откатывает собственные
 часы назад.
-
-Переменные окружения сохраняют сырую границу хоста, но обычный код работает с
-объектами:
-
-```okkama
-import "env/var" take Environment, Env, EnvVar, EnvEntry;
-
-main() is int {
-    let environment is Environment = Env();
-    let home = EnvVar("HOME");
-
-    if environment.has(home) {
-        environment.value(home); // строгий UTF-8
-        environment.bytes(home); // точные байты
-    }
-
-    let snapshot is @EnvEntry = environment.variables();
-    snapshot.size();
-}
-```
-
-Конструкторы `EnvVar` и `EnvEntry` только сохраняют аргументы. Имя проверяется
-при наблюдении: это непустой UTF-8 без NUL и `=`. Значение может быть пустым
-или содержать произвольные не-NUL байты, необязательно UTF-8. Текстовая
-проекция бросает `InvalidEnvEncoding`, не заменяя и не нормализуя данные.
-`MissingEnvVar` отличает отсутствие от присутствующего пустого значения.
-`Env` изменяет окружение процесса, а `Environment.fake()` доступен только в
-тестах, изолирован по экземплярам и возвращает отделённые snapshots в
-байтовом порядке.
-
-Текущая рабочая директория — отдельная явная capability, `env/cwd`, а не
-несистемная static-функция на `fs`:
-
-```okkama
-import "env/cwd" take WorkingDirectory, Cwd, FixedCwd, InvalidWorkingDirectory;
-import "fs/path" take Path;
-
-main() is int {
-    let cwd is WorkingDirectory = Cwd();
-    let previous is Path = cwd.path();
-
-    try {
-        cwd.change(Path("/tmp"));
-    }
-    catch error is InvalidWorkingDirectory {
-        error.text();
-    }
-    return 0;
-}
-```
-
-`Cwd` stateless: `path()` всегда заново читает хост, а `change()` всегда
-напрямую вызывает `chdir`, так же как `SystemClock`/`Env`/`Dns` никогда не
-кешируют ambient-состояние. Ошибка `chdir` — отсутствующая цель, ошибка
-прав, всё, что вызывающий код мог бы правдоподобно повторить с другим
-путём — превращается в один санированный `InvalidWorkingDirectory`; ошибка
-*чтения* ambient-директории — это, наоборот, invariant panic, то же
-обращение, что `SystemClock.now()` даёт нечитаемым системным часам,
-поскольку вины вызывающего кода тут быть не может. `FixedCwd(start)`
-неизменяем, а не mutable test double: `change()` всегда бросает
-`InvalidWorkingDirectory`, что заодно даёт способ в тесте убедиться, что
-какой-то code path вообще никогда не пытается менять директорию.
 
 Аргументы приложения представлены отдельным stateless-объектом над
 неизменяемым snapshot рантайма:

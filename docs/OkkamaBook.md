@@ -3698,6 +3698,21 @@ answers `await watch.event()` with a `FileEvent`, whose kind is in
 `event::Change::kind`. `examples/fs/directory/` shows each task as a
 program.
 
+`os` runs programs and reads the system without a shell. `Command(program:,
+arguments:, environment:, directory:)` keeps an explicit context, while
+`InheritedCommand(program:, arguments:)` takes the process's own. Each
+argument reaches the program as one exact string. `await
+CommandCapture(origin:, limit:).completion()` collects the output, through
+`done::Captured::output` and `::errors`, and the `done.exit()`, which
+answers `success()`, `code()` and `exit::Status::kind`.
+`PipelineCapture(commands:, …)` chains commands. `Process(command:)` talks to
+a running program through `ProcessInput`, `ProcessOutput` and `signal()`.
+`Environment()` is a snapshot, and `Environment(values:)` an isolated one.
+Both answer `variable(name)`, `home()`, `addition()` and `difference()`;
+`SearchPath(environment:)` walks PATH. `Platform()`, `Host()`, `User()`,
+`Group(name:)`, `WorkingDirectory()` and `Storage(path:).usage()` answer
+when asked. `examples/os/` shows each task as a program.
+
 `http/client` sends requests with `HttpClient()`. By default it uses the system's DNS and trusted roots, reaches public endpoints only and speaks HTTP/1.1. Every other part is a named argument: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)` and `cookies: MemoryCookieJar()`. Every REST method has a shortcut: `get(url)`, `head`, `options`, `delete`, and `post(url:, body:)`, `put`, `patch` with a `Content` such as `JsonBody(json)`. Anything else is `client.response(Request(url:, method:, headers:, body:))`. A reply shows its head through the cap `Head` (`page::Head::status`, `::class`, `::headers`) and reads its body with `await page.text()`, `bytes()`, `json()` or `reading()`. `Status` and `Method` are enums: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` and `MethodName` turn them into wire numbers and tokens and back. `examples/http/client/` shows each task as a program.
 
 `strings/parse` reads text as the type asked for: `Number("42").int()`,
@@ -3870,8 +3885,6 @@ The stdlib is intentionally narrow while the language stabilizes:
   differently-typed-but-role-compatible elements), root-caused but not
   fixed, worked around with an explicit `let` — see
   `db-migration-22072026.md`;
-- `os` — typed host and explicit POSIX/Windows descriptions with closed
-  platform, architecture, and path-style enums;
 - `test/fake_clock` — a `Clock` implementation tests can explicitly advance,
   rewind or set, so `sleep` never blocks;
 - `test/benchmark` — injectable-clock repeatable duration measurement over a
@@ -3887,15 +3900,8 @@ The stdlib is intentionally narrow while the language stabilizes:
   by structuring the per-case `try`/`catch` to fully absorb any `Error`
   into a `bool` first, so the `after()` loop that follows it is always
   reached;
-- `env/var` — nominal environment variables, exact raw-byte access, strict
-  UTF-8 text projections and an isolated role fake;
-- `env/cwd` — the explicit, stateless ambient working-directory capability,
-  with an immutable `FixedCwd` that rejects every change;
 - `proc/args` — immutable application argv with exact byte and strict UTF-8
   views plus indexed failures;
-- `proc/cmd` — `Cmd`/`RunningCmd` build, run and supervise a child process
-  over real OS pipes with no shell and no ambient environment/directory
-  inheritance unless explicitly requested (POSIX only);
 - `net/address` — immutable validated IPv4/IPv6, socket endpoint and unresolved
   host/port values without exposing native endpoint envelopes;
 - `test/more` — stateless reusable assertions over the contextual test
@@ -3905,35 +3911,6 @@ The stdlib is intentionally narrow while the language stabilizes:
   `runtime/poll`, `runtime/environment`, `runtime/system`, `runtime/debug`,
   `runtime/regex`, `runtime/stdio`, `runtime/memory`, `runtime/format`, `runtime/crypto`,
   `runtime/tls`, `runtime/utf8`.
-
-Operating-system conventions are values, not raw host strings or constants:
-
-```okkama
-import "os" take
-    Host, OperatingSystem, Posix,
-    Platform, Architecture, PathStyle;
-
-main() is int {
-    let host is OperatingSystem = Host();
-    let foreign is OperatingSystem = Posix(
-        Platform.freebsd,
-        Architecture.arm64,
-    );
-
-    host.platform();
-    host.path_style();
-    foreign.path_list_separator(); // ":"
-    return 0;
-}
-```
-
-`Host()` has no retained state and resolves each property through
-`runtime/system` only when requested. Known non-Windows hosts use POSIX paths,
-LF, and `:`; Windows uses Windows paths, CRLF, and `;`. An unknown host still
-has the typed identity `Platform.unknown`, but asking it for path or line
-conventions throws `UnsupportedPlatform` instead of making a guess. `Posix`
-and `Windows` describe an explicit foreign or test target; their overloaded
-constructors only retain enum state.
 
 Code written against the `Clock` role can be tested without a real clock
 through `test/fake_clock`:
@@ -4004,67 +3981,6 @@ are unit-tested without any clock at all. `InvalidBenchmark` covers a
 non-positive iteration count and a run whose clock reports an earlier
 instant afterward than before, which is a real, reachable case (not just
 defensive code) when a `test/fake_clock`-backed case rewinds its own clock.
-
-Environment variables preserve the raw host boundary without making ordinary
-application code procedural:
-
-```okkama
-import "env/var" take Environment, Env, EnvVar, EnvEntry;
-
-main() is int {
-    let environment is Environment = Env();
-    let home = EnvVar("HOME");
-
-    if environment.has(home) {
-        environment.value(home); // strict UTF-8
-        environment.bytes(home); // exact bytes
-    }
-
-    let snapshot is @EnvEntry = environment.variables();
-    snapshot.size();
-}
-```
-
-`EnvVar` and `EnvEntry` constructors only retain their arguments. Names are
-validated when observed: they are nonempty UTF-8 without NUL or `=`. Values
-may be empty or non-UTF-8 raw bytes, but cannot contain NUL. Text projection
-throws `InvalidEnvEncoding`; no replacement or normalization occurs.
-`MissingEnvVar` distinguishes absence from a present empty value. `Env`
-mutates the ambient process, whereas `Environment.fake()` is test-only,
-instance-local and returns detached byte-sorted snapshots.
-
-The current working directory is its own explicit capability, `env/cwd`, not
-an incidental static function on `fs`:
-
-```okkama
-import "env/cwd" take WorkingDirectory, Cwd, FixedCwd, InvalidWorkingDirectory;
-import "fs/path" take Path;
-
-main() is int {
-    let cwd is WorkingDirectory = Cwd();
-    let previous is Path = cwd.path();
-
-    try {
-        cwd.change(Path("/tmp"));
-    }
-    catch error is InvalidWorkingDirectory {
-        error.text();
-    }
-    return 0;
-}
-```
-
-`Cwd` is stateless: `path()` always re-reads the host, and `change()` always
-calls `chdir` directly, matching how `SystemClock`/`Env`/`Dns` never cache
-ambient state either. A `chdir` failure — a missing target, a permission
-error, anything the caller could plausibly retry with a different path —
-becomes one sanitized `InvalidWorkingDirectory`; failing to *read* the
-ambient directory is instead an invariant panic, the same treatment
-`SystemClock.now()` gives an unreadable host clock, since no caller input
-could be at fault. `FixedCwd(start)` is immutable rather than a mutable test
-double: `change()` always throws `InvalidWorkingDirectory`, which doubles as
-a way to assert in a test that some code path never tries to change
-directories at all.
 
 Application arguments use a separate stateless object over the immutable
 runtime snapshot:

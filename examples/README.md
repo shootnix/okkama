@@ -43,6 +43,14 @@ and compares the output.
 | `fs/link/links.ok` | switch a release with a symbolic link, share a file with a hard link |
 | `fs/watch/changes.ok` | react to files created, modified, renamed and removed in a directory |
 
+## os
+
+| Program | Task |
+|---|---|
+| `os/command/capture.ok` | run a program without a shell, collect its output and exit code, feed a pipeline, stop at a limit |
+| `os/process/talk.ok` | write to a running program, read its answer, stop a long-running one with a signal |
+| `os/environment/variables.ok` | read a snapshot, derive a child's environment, find home and the search path |
+
 ## strings/parse
 
 | Program | Task |

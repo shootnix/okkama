@@ -33,3 +33,9 @@ object WorkingDirectory does DirectoryLocating {
         }
     }
 }
+
+test "the working directory is an absolute path" {
+    let here = WorkingDirectory().path();
+    test.ok(here.absolute());
+    test.is(WorkingDirectory().path(), here);
+}

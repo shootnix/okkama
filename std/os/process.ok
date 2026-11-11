@@ -1,7 +1,12 @@
 module os/process v1.0.0;
 
 import "io/stream" take ByteSource, Writing, Reading, Closing, IncompleteWrite, InvalidReadLimit;
-import "os/command" take Commanding;
+import "encoding/utf" take Utf8Decoded;
+import "fs/path" take Path;
+import "io/decorators" take ByteSnapshot;
+import "os/command" take Command, Commanding;
+import "os/directory" take WorkingDirectory;
+import "os/environment" take Environment;
 import "runtime/process" take ProcessState, process_state_create, process_state_start,
     process_state_started, process_state_id, process_state_running, process_state_exit,
     process_state_signal, process_state_close, process_state_input_write, process_state_input_flush,
@@ -39,8 +44,11 @@ object Exit {
         exit_code = code;
     }
 
-    kind() is ExitKind {
-        classification;
+    // How the process ended.
+    cap Status {
+        kind is ExitKind {
+            classification;
+        }
     }
 
     code() is int {
@@ -292,3 +300,73 @@ enum MissingExitCode is Error = (missing);
 enum UnsupportedSignal is Error = (signal(signal is Signal));
 
 enum ProcessFailure is Error = (detailed(code is string, message is string));
+
+test "an exit tells how the process ended; only an exited one has a code" {
+    let ok = Exit(kind: ExitKind.exited, code: 0);
+    test.ok(ok.success());
+    test.ok(ok::Status::kind == ExitKind.exited);
+    test.is(ok.code(), 0);
+    let failed = Exit(kind: ExitKind.exited, code: 2);
+    test.ok(!failed.success());
+    test.is(failed.code(), 2);
+    let killed = Exit(kind: ExitKind.killed, code: 9);
+    test.ok(!killed.success());
+    test.throws(MissingExitCode) {
+        killed.code();
+    };
+}
+
+async test "a process is fed through its input and read through its output" {
+    let process = Process(command: Command(
+        program: Path("cat"),
+        arguments: [],
+        environment: Environment(),
+        directory: WorkingDirectory(),
+    ));
+    let input = ProcessInput(origin: process);
+    input.write(ByteSnapshot([byte(111), byte(107)]));
+    input.flush();
+    test.ok(!input.closed());
+    input.close();
+    test.ok(input.closed());
+    test.ok(process.id() > 0);
+    let output = ProcessOutput(origin: process);
+    let first is @byte = output.bytes(1);
+    let rest is @byte = output.bytes(16);
+    test.is(Utf8Decoded(origin: first + rest).string(), "ok");
+    test.is(output.bytes(16), []);
+    test.is(ProcessErrors(origin: process).bytes(16), []);
+    let exit = await process.exit();
+    test.ok(exit.success());
+    test.ok(!process.running());
+    process.close();
+    process.close();
+}
+
+async test "a signal ends a running process" {
+    let process = Process(command: Command(
+        program: Path("sleep"),
+        arguments: ["30"],
+        environment: Environment(),
+        directory: WorkingDirectory(),
+    ));
+    test.ok(process.running());
+    process.signal(Signal.terminate);
+    let exit = await process.exit();
+    test.ok(exit::Status::kind == ExitKind.terminated);
+    test.ok(!exit.success());
+    process.close();
+}
+
+test "closing a process that never started does not start it" {
+    let process = Process(command: Command(
+        program: Path("okkama-no-such-program-7f3a"),
+        arguments: [],
+        environment: Environment(),
+        directory: WorkingDirectory(),
+    ));
+    process.close();
+    test.throws(InvalidReadLimit) {
+        process.output_bytes(0);
+    };
+}

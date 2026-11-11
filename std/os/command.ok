@@ -185,3 +185,32 @@ object InheritedCommand does Commanding {
             "\"";
     }
 }
+
+test "a command keeps its context exactly; string() quotes every argument" {
+    let env = Environment(values: ["LANG": "C"]);
+    let here = WorkingDirectory();
+    let command = Command(
+        program: Path("/usr/bin/git"),
+        arguments: ["log", "--format=%h \"%s\"", "a\tb"],
+        environment: env,
+        directory: here,
+    );
+    test.is(command.program(), Path("/usr/bin/git"));
+    test.is(command.arguments(), ["log", "--format=%h \"%s\"", "a\tb"]);
+    test.ok(command.environment() == env);
+    test.is(command.directory().path(), here.path());
+    test.is(
+        command.string(),
+        "Command(program: \"/usr/bin/git\", arguments: [\"log\", \"--format=%h \\\"%s\\\"\", \"a\\tb\"], directory: \""
+            + here.path().string() + "\")",
+    );
+    let bare = Command(program: Path("git"), arguments: [], environment: env, directory: here);
+    test.is(bare.string(), "Command(program: \"git\", arguments: [], directory: \"" + here.path().string() + "\")");
+}
+
+test "an inherited command observes the process environment and directory" {
+    let command = InheritedCommand(program: Path("printf"), arguments: ["x"]);
+    test.ok(command.environment() == Environment());
+    test.is(command.directory().path(), WorkingDirectory().path());
+    test.is(command.arguments(), ["x"]);
+}

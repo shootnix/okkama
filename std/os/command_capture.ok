@@ -1,7 +1,11 @@
 module os/command_capture v1.0.0;
 
-import "os/command" take Commanding;
-import "os/process" take Exit, ExitKind, ProcessFailure;
+import "encoding/utf" take Utf8Decoded;
+import "fs/path" take Path;
+import "os/command" take Command, Commanding;
+import "os/directory" take WorkingDirectory;
+import "os/environment" take Environment;
+import "os/process" take Exit, ExitKind, MissingExitCode, ProcessFailure;
 import "runtime/process" take ProcessState, CapturedProcess, process_state_create,
     process_state_start, process_state_capture, captured_process_status, captured_process_overflow,
     captured_process_output, captured_process_errors;
@@ -127,15 +131,102 @@ object CompletedCommand {
         completed_exit;
     }
 
-    output() is @byte {
-        captured_output;
-    }
+    // What the process wrote to stdout and stderr.
+    cap Captured {
+        output is @byte {
+            captured_output;
+        }
 
-    errors() is @byte {
-        captured_errors;
+        errors is @byte {
+            captured_errors;
+        }
     }
 }
 
 enum InvalidCaptureLimit is Error = (limit(limit is int));
 
 enum CaptureLimitExceeded is Error = (detailed(stream is CapturedStream, limit is int));
+
+async test "output, errors and the exit are captured" {
+    let shell = Command(
+        program: Path("sh"),
+        arguments: ["-c", "printf out; printf err >&2; exit 3"],
+        environment: Environment(),
+        directory: WorkingDirectory(),
+    );
+    let done = await CommandCapture(origin: shell, limit: 1024).completion();
+    test.is(Utf8Decoded(origin: done::Captured::output).string(), "out");
+    test.is(Utf8Decoded(origin: done::Captured::errors).string(), "err");
+    test.ok(done.exit()::Status::kind == ExitKind.exited);
+    test.is(done.exit().code(), 3);
+    test.ok(!done.exit().success());
+}
+
+async test "input is written whole and closed; arguments are never split" {
+    let echo = Command(
+        program: Path("printf"),
+        arguments: ["%s|%s", "a b", "c;d"],
+        environment: Environment(),
+        directory: WorkingDirectory(),
+    );
+    let printed = await CommandCapture(origin: echo, limit: 64).completion();
+    test.is(Utf8Decoded(origin: printed::Captured::output).string(), "a b|c;d");
+    test.ok(printed.exit().success());
+    let cat = Command(program: Path("cat"), arguments: [], environment: Environment(), directory: WorkingDirectory());
+    let copied = await CommandCapture(origin: cat, input: [byte(104), byte(105)], limit: 64).completion();
+    test.is(copied::Captured::output, [byte(104), byte(105)]);
+}
+
+async test "limits are checked: zero is refused, more output than allowed fails" {
+    let yes = Command(
+        program: Path("sh"),
+        arguments: ["-c", "printf 0123456789"],
+        environment: Environment(),
+        directory: WorkingDirectory(),
+    );
+    let refused = try {
+        await CommandCapture(origin: yes, limit: 0).completion();
+        false;
+    }
+    catch InvalidCaptureLimit.limit(limit) {
+        limit == 0;
+    };
+    test.ok(refused);
+    let exceeded = try {
+        await CommandCapture(origin: yes, limit: 4).completion();
+        false;
+    }
+    catch CaptureLimitExceeded.detailed(stream, limit) {
+        stream == CapturedStream.output && limit == 4;
+    };
+    test.ok(exceeded);
+}
+
+async test "a missing program fails; a killed one has no exit code" {
+    let missing = Command(
+        program: Path("okkama-no-such-program-7f3a"),
+        arguments: [],
+        environment: Environment(),
+        directory: WorkingDirectory(),
+    );
+    let failed = try {
+        await CommandCapture(origin: missing, limit: 16).completion();
+        false;
+    }
+    catch failure is ProcessFailure {
+        true;
+    };
+    test.ok(failed);
+    let killed = Command(
+        program: Path("sh"),
+        arguments: ["-c", "kill -9 $$"],
+        environment: Environment(),
+        directory: WorkingDirectory(),
+    );
+    let done = await CommandCapture(origin: killed, limit: 16).completion();
+    test.ok(done.exit()::Status::kind == ExitKind.killed);
+    test.ok(!done.exit().success());
+    test.throws(MissingExitCode) {
+        done.exit().code();
+    };
+}

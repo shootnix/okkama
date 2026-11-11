@@ -1,0 +1,58 @@
+module examples/os/command/capture v1.0.0;
+
+import "encoding/utf" take Utf8Decoded;
+import "fs/path" take Path;
+import "os/command" take Command, InheritedCommand;
+import "os/command_capture" take CommandCapture, CaptureLimitExceeded;
+import "os/directory" take WorkingDirectory;
+import "os/environment" take Environment;
+import "os/pipeline_capture" take PipelineCapture;
+import "io/stdout" take Stdout;
+
+// Run a program and collect what it prints. No shell is involved: each
+// argument reaches the program as one exact string. A bare program name is
+// searched in the command's own PATH. Output is bounded by a limit.
+
+async main() is int {
+    let out = Stdout();
+
+    // Arguments with spaces and semicolons stay whole.
+    let printf = InheritedCommand(program: Path("printf"), arguments: ["%s|%s", "a b", "c;d"]);
+    let printed = await CommandCapture(origin: printf, limit: 1024).completion();
+    out.writeln(Utf8Decoded(origin: printed::Captured::output).string());
+    out.writeln("success: " + printed.exit().success().string());
+
+    // Explicit context: an environment of our own, and the exit code.
+    let check = Command(
+        program: Path("sh"),
+        arguments: ["-c", "echo \"$GREETING\" >&2; exit 3"],
+        environment: Environment().addition("GREETING", "hello from stderr"),
+        directory: WorkingDirectory(),
+    );
+    let checked = await CommandCapture(origin: check, limit: 1024).completion();
+    out.write("stderr: " + Utf8Decoded(origin: checked::Captured::errors).string());
+    out.writeln("exit code: " + checked.exit().code().string());
+
+    // Standard input, then a pipeline: sort | uniq -c style counting.
+    let sort = InheritedCommand(program: Path("sort"), arguments: []);
+    let unique = InheritedCommand(program: Path("uniq"), arguments: []);
+    let words = Utf8Decoded(origin: (await PipelineCapture(
+        commands: [sort, unique],
+        input: [byte(98), byte(10), byte(97), byte(10), byte(98), byte(10)],
+        limit: 1024,
+    ).completion())::Captured::output).string();
+    out.write("unique: " + words.replace("\n", " "));
+    out.writeln("");
+
+    // Too much output is an error, not a silent cut.
+    let noisy = InheritedCommand(program: Path("printf"), arguments: ["0123456789"]);
+    let verdict = try {
+        await CommandCapture(origin: noisy, limit: 4).completion();
+        "fit";
+    }
+    catch failure is CaptureLimitExceeded {
+        "over the limit";
+    };
+    out.writeln("noisy: " + verdict);
+    0;
+}
