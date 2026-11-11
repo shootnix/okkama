@@ -1,7 +1,7 @@
 module app v1.0.0;
 
 import "conformance/check" take Checks;
-import "json" take Json, ParsedJson, WrongJsonKind, InvalidJsonNumber;
+import "json" take Json, ParsedJson, JsonError;
 
 main() is int {
     let c = Checks();
@@ -55,19 +55,19 @@ main() is int {
     c = c.same_text("lazy fallback", doc.maybe("empty").text() else panic "eager fallback", "");
     c = c.same_text("missing fallback", doc.maybe("absent").text() else "guest", "guest");
     c = c.same_text("null fallback", doc.presence("nil").text().fold() else "guest", "guest");
-    c = c.same_text("maybe rejects zero as text", try { doc.maybe("zero").text(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/zero");
-    c = c.same_text("maybe rejects decimal as int", try { doc.maybe("decimal").int(); "no error"; } catch InvalidJsonNumber.detailed(location, _, _) { location; }, "/decimal");
-    c = c.same_text("maybe rejects big as int", try { doc.maybe("big").int(); "no error"; } catch InvalidJsonNumber.detailed(location, _, _) { location; }, "/big");
-    c = c.same_text("maybe rejects flag as list", try { doc.maybe("flag").list(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/flag");
-    c = c.same_text("maybe rejects items as object", try { doc.maybe("items").object(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/items");
-    c = c.same_text("maybe rejects object as list", try { doc.maybe("object").list(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/object");
-    c = c.same_bool("maybe rejects scalar parent", try { Json(0).maybe("name"); false; } catch failure is WrongJsonKind { true; }, true);
-    c = c.same_text("presence rejects zero as text", try { doc.presence("zero").text(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/zero");
-    c = c.same_text("presence rejects decimal as int", try { doc.presence("decimal").int(); "no error"; } catch InvalidJsonNumber.detailed(location, _, _) { location; }, "/decimal");
-    c = c.same_text("presence rejects big as int", try { doc.presence("big").int(); "no error"; } catch InvalidJsonNumber.detailed(location, _, _) { location; }, "/big");
-    c = c.same_text("presence rejects flag as list", try { doc.presence("flag").list(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/flag");
-    c = c.same_text("presence rejects items as object", try { doc.presence("items").object(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/items");
-    c = c.same_text("presence rejects object as list", try { doc.presence("object").list(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/object");
-    c = c.same_bool("presence rejects scalar parent", try { Json(0).presence("name"); false; } catch failure is WrongJsonKind { true; }, true);
+    c = c.same_text("maybe rejects zero as text", try { doc.maybe("zero").text(); "no error"; } catch JsonError.wrong_kind(pointer, _, _) { pointer; }, "/zero");
+    c = c.same_text("maybe rejects decimal as int", try { doc.maybe("decimal").int(); "no error"; } catch JsonError.invalid_number(location, _, _) { location; }, "/decimal");
+    c = c.same_text("maybe rejects big as int", try { doc.maybe("big").int(); "no error"; } catch JsonError.invalid_number(location, _, _) { location; }, "/big");
+    c = c.same_text("maybe rejects flag as list", try { doc.maybe("flag").list(); "no error"; } catch JsonError.wrong_kind(pointer, _, _) { pointer; }, "/flag");
+    c = c.same_text("maybe rejects items as object", try { doc.maybe("items").object(); "no error"; } catch JsonError.wrong_kind(pointer, _, _) { pointer; }, "/items");
+    c = c.same_text("maybe rejects object as list", try { doc.maybe("object").list(); "no error"; } catch JsonError.wrong_kind(pointer, _, _) { pointer; }, "/object");
+    c = c.same_bool("maybe rejects scalar parent", try { Json(0).maybe("name"); false; } catch JsonError.wrong_kind(_, _, _) { true; }, true);
+    c = c.same_text("presence rejects zero as text", try { doc.presence("zero").text(); "no error"; } catch JsonError.wrong_kind(pointer, _, _) { pointer; }, "/zero");
+    c = c.same_text("presence rejects decimal as int", try { doc.presence("decimal").int(); "no error"; } catch JsonError.invalid_number(location, _, _) { location; }, "/decimal");
+    c = c.same_text("presence rejects big as int", try { doc.presence("big").int(); "no error"; } catch JsonError.invalid_number(location, _, _) { location; }, "/big");
+    c = c.same_text("presence rejects flag as list", try { doc.presence("flag").list(); "no error"; } catch JsonError.wrong_kind(pointer, _, _) { pointer; }, "/flag");
+    c = c.same_text("presence rejects items as object", try { doc.presence("items").object(); "no error"; } catch JsonError.wrong_kind(pointer, _, _) { pointer; }, "/items");
+    c = c.same_text("presence rejects object as list", try { doc.presence("object").list(); "no error"; } catch JsonError.wrong_kind(pointer, _, _) { pointer; }, "/object");
+    c = c.same_bool("presence rejects scalar parent", try { Json(0).presence("name"); false; } catch JsonError.wrong_kind(_, _, _) { true; }, true);
     c.done();
 }

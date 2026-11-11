@@ -1,6 +1,6 @@
 module app v1.0.0;
 
-import "json" take Json, JsonField, ParsedJson, WrongJsonKind, MissingJsonValue;
+import "json" take Json, JsonField, ParsedJson, JsonError;
 import "math/decimal" take Decimal;
 import "io/stdout" take Stdout;
 
@@ -29,7 +29,7 @@ object Order {
 // A codec is a plain object: value() reads a Json, json() writes one.
 object LineJson {
     LineJson();
-    value(view is Json) is Line { Line(sku: view.text("sku"), qty: view.optional("qty").int(1)); }
+    value(view is Json) is Line { Line(sku: view.text("sku"), qty: view.maybe("qty").int() else 1); }
     json(line is Line) is Json { Json([JsonField("sku", line.sku()), JsonField("qty", line.quantity())]); }
 }
 
@@ -38,9 +38,9 @@ object OrderJson {
     value(view is Json) is Order {
         Order(
             id: view.int("id"),
-            note: view.optional("note").text("-"),
+            note: view.maybe("note").text() else "-",
             total: view.number("total"),
-            tags: view.optional("tags").items().map() -> tag { tag.text(); },
+            tags: (view.maybe("tags").list() else []).map() -> tag { tag.text(); },
             lines: view.list("lines").map() -> line { LineJson().value(line); }
         );
     }
@@ -75,8 +75,8 @@ main() is int {
     let orders = codec.value(source);
     out.writeln(codec.string(orders));
     let broken = "[{\"id\":7,\"total\":1,\"lines\":[{\"sku\":\"A\",\"qty\":\"2\"}]}]";
-    out.writeln(try { codec.value(broken); ""; } catch failure is WrongJsonKind { failure.text(); });
+    out.writeln(try { codec.value(broken); ""; } catch failure is JsonError { failure.text(); });
     let missing = "[{\"id\":7,\"total\":1}]";
-    out.writeln(try { codec.value(missing); ""; } catch failure is MissingJsonValue { failure.text(); });
+    out.writeln(try { codec.value(missing); ""; } catch failure is JsonError { failure.text(); });
     0;
 }

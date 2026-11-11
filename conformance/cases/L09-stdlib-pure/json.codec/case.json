@@ -29,7 +29,7 @@
     "outcome": "success",
     "exit_status": 0,
     "stdout": {
-      "text": "[{\"id\":7,\"note\":\"-\",\"total\":12.5,\"tags\":[],\"lines\":[{\"sku\":\"A\",\"qty\":2},{\"sku\":\"B\",\"qty\":1}]},{\"id\":8,\"note\":\"gift \\\"wrap\\\"\",\"total\":100,\"tags\":[\"x\",\"y\"],\"lines\":[]}]\nWrongJsonKind.detailed(\"/0/lines/0/qty\", JsonKind.number_value, JsonKind.string_value)\nMissingJsonValue.pointer(\"/0/lines\")\n"
+      "text": "[{\"id\":7,\"note\":\"-\",\"total\":12.5,\"tags\":[],\"lines\":[{\"sku\":\"A\",\"qty\":2},{\"sku\":\"B\",\"qty\":1}]},{\"id\":8,\"note\":\"gift \\\"wrap\\\"\",\"total\":100,\"tags\":[\"x\",\"y\"],\"lines\":[]}]\nJsonError.wrong_kind(\"/0/lines/0/qty\", JsonKind.number_value, JsonKind.string_value)\nJsonError.missing(\"/0/lines\")\n"
     }
   },
   "spec_refs": [
@@ -41,7 +41,7 @@
   },
   "provenance": {
     "origin": "authored for OCS 0.3.1 (json/codec); rewritten for the json module (Json.optional, Json.list)",
-    "expected_basis": "null note and absent qty/tags take their fallbacks (\"-\", 1, []); 12.50 and 1e2 are written positionally as 12.5 and 100; a string qty is WrongJsonKind at /0/lines/0/qty; absent lines read by list() is MissingJsonValue at /0/lines."
+    "expected_basis": "null note and absent qty/tags take their fallbacks (\"-\", 1, []); 12.50 and 1e2 are written positionally as 12.5 and 100; a string qty is JsonError.wrong_kind at /0/lines/0/qty; absent lines read by list() is JsonError.missing at /0/lines."
   },
   "status": "mandatory"
 }

@@ -3748,6 +3748,15 @@ hidden const SALT = "x";
 `document.string()` записывает значение `Json`
 без рефлексии. Удалённые API перечислены в [гайде миграции](std/stdlib-v4-migration.md).
 
+`json` — один неизменяемый `Json` на значение: разобранный через
+`ParsedJson(text).root()` или собранный из `JsonField`. Строгие читатели
+(`int("id")`, `get("customer")`) бросают ошибку; `maybe(name)` читает
+отсутствующий или null-член как запасное значение
+(`body.maybe("age").int() else 18`), а `presence(name)` отличает отсутствие от
+null. Объекты обходятся целиком через `each`, `merged` и `mapped`. Всё, что
+идёт не так, — один `JsonError`; случаи чтения несут RFC 6901 pointer значения:
+`catch JsonError.missing(pointer)`. Гайд — `docs/std/json.md` в okkama-docs.
+
 Следующие исторический перечень и примеры относятся к **прежней `stdlib/`**.
 Они исполняются с этой библиотекой, но не определяют API и готовность `std/`.
 Корень библиотеки следует выбирать явно; смешивать их модули нельзя.
@@ -6847,8 +6856,8 @@ actions вроде `is`, `fake` в `Role.fake()`, имена утвержден�
   непрозрачные хэндлы и поставляемые вертикали `runtime/*` (time, fs,
   process, net, poll, environment, system, debug, regex), плюс
   `okkama.Dump` и высокоуровневый неизменяемый объект `regex.Regex`;
-- точные pure-Okkama значения `encoding/json`, рекурсивный parsing,
-  детерминированный компактный encoding и координаты ошибок source.
+- точные значения `json`, строгий parsing и запись в рантайме, читатели
+  с RFC 6901 pointer и один `JsonError`.
 
 В рантайме не реализована семантика литералов decimal.
 

@@ -1,13 +1,13 @@
 module app v1.0.0;
 
 import "conformance/check" take Checks;
-import "json" take ParsedJson, InvalidJson, DuplicateJsonMember;
+import "json" take ParsedJson, JsonError;
 import "math/decimal" take Decimal;
 
 main() is int {
     let c = Checks();
-    c = c.same_text("trailing comma", try { let probe = ParsedJson(origin: "[1,]").root().items(); "no error"; } catch InvalidJson.located(_, line, _, _) { "line " + line.string(); }, "line 1");
-    c = c.same_text("duplicate member", try { let probe = ParsedJson(origin: "{\"a\":1,\"a\":2}").root().int("a"); "no error"; } catch e is DuplicateJsonMember { match e { case DuplicateJsonMember.named(origin) { origin; } case DuplicateJsonMember.located(name, _, _, _) { name; } } }, "a");
-    c = c.same_text("single quotes", try { let probe = ParsedJson(origin: "{'a':1}").root().names(); "no error"; } catch e is InvalidJson { "invalid"; }, "invalid");
+    c = c.same_text("trailing comma", try { let probe = ParsedJson(origin: "[1,]").root().items(); "no error"; } catch JsonError.invalid(_, line, _, _) { "line " + line.string(); }, "line 1");
+    c = c.same_text("duplicate member", try { let probe = ParsedJson(origin: "{\"a\":1,\"a\":2}").root().int("a"); "no error"; } catch JsonError.duplicate_member(name) { name; } catch JsonError.duplicate_member_at(name, _, _, _) { name; }, "a");
+    c = c.same_text("single quotes", try { let probe = ParsedJson(origin: "{'a':1}").root().names(); "no error"; } catch JsonError.invalid(_, _, _, _) { "invalid"; }, "invalid");
     c.done();
 }

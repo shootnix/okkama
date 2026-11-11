@@ -1,8 +1,12 @@
 module logging/redact v1.0.0;
 
-import "logging/write" take LogWriting;
+import "logging/write" take LogWriting, CollectedLogs;
 import "logging/record" take LogRecord, LogContext;
-import "logging/field" take LogFields, InvalidLogField;
+import "logging/field" take LogFields, EmptyLogFields, InvalidLogField;
+import "logging/name" take LogName;
+import "logging/level" take LogLevel;
+import "time/clock" take Instant;
+import "time/duration" take Duration, DurationUnit;
 import "json" take Json, JsonField;
 import "collections/sequence" take Sequencing;
 
@@ -27,24 +31,26 @@ object RedactedLogs does LogWriting {
     }
 
     write(record is LogRecord) is void {
-        let members is @JsonField = record.context().fields().members().map() -> member {
-            let matches = names.reduce(false) -> old, name {
-                old || name == member.name();
-            };
-            if matches {
-                JsonField(member.name(), replacement);
+        let fields = record.context().fields().values().mapped(
+            (name is string, value is Json) is Json {
+                let matches = names.reduce(false) -> old, candidate {
+                    old || candidate == name;
+                };
+                if matches {
+                    replacement;
+                }
+                else {
+                    value;
+                }
             }
-            else {
-                member;
-            }
-        };
+        );
         let causes is @Error = if record.has_cause() {
             [record.cause()];
         }
         else {
             [];
         };
-        origin.write(ChangedLogRecord(record, LogFields(members), causes).value());
+        origin.write(ChangedLogRecord(record, LogFields(fields), causes).value());
     }
 }
 
@@ -91,4 +97,25 @@ object ChangedLogRecord {
             LogRecord(origin.time(), origin.level(), origin.message(), context, causes[0]);
         }
     }
+}
+
+test "redaction replaces the named members and keeps the rest in order" {
+    let collected = CollectedLogs();
+    let redacted = RedactedLogs(collected, ["pass", "token"], Json("***"));
+    let time = Instant(Duration(0.rat(), DurationUnit.second));
+    let fields = LogFields([JsonField("user", "ann"), JsonField("id", 7), JsonField("pass", "x")]);
+    redacted.write(LogRecord(time, LogLevel.info, "hi", LogContext(LogName(["app"]), fields, 1)));
+    redacted.write(
+        LogRecord(
+            time,
+            LogLevel.info,
+            "hi",
+            LogContext(LogName(["app"]), EmptyLogFields().value(), 1)
+        )
+    );
+    let texts is @string = collected.records().map() -> record {
+        record.context().fields().values().string();
+    };
+    test.is(texts[0], "{\"user\":\"ann\",\"id\":7,\"pass\":\"***\"}");
+    test.is(texts[1], "{}");
 }

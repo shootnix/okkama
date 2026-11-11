@@ -1,6 +1,6 @@
 module app v1.0.0;
 
-import "json" take Json, JsonKind, ParsedJson, WrongJsonKind, MissingJsonValue, InvalidJsonNumber;
+import "json" take Json, JsonKind, ParsedJson, JsonError;
 import "io/stdout" take Stdout;
 
 object Outcome {
@@ -26,14 +26,14 @@ object Outcome {
                 else { "null@" + view.pointer(); }
             }
         }
-        catch failure is WrongJsonKind { failure.text(); }
-        catch failure is MissingJsonValue { failure.text(); }
-        catch failure is InvalidJsonNumber { failure.text(); }
+        catch failure is JsonError { failure.text(); }
+        catch failure is JsonError { failure.text(); }
+        catch failure is JsonError { failure.text(); }
     }
 
     integral() is string {
         try { view.int().string(); }
-        catch failure is InvalidJsonNumber { failure.text(); }
+        catch failure is JsonError { failure.text(); }
     }
 }
 

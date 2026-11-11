@@ -1,7 +1,7 @@
 module logging/field v1.0.0;
 
 import "collections/sequence" take Sequencing;
-import "json" take Json, JsonField, ParsedJson;
+import "json" take Json, JsonKind, JsonField, ParsedJson, JsonError;
 import "encoding/utf" take Utf8Encoded;
 
 // Fields form one JSON object of at most 256 members, 32 levels and 1 MiB of
@@ -14,25 +14,19 @@ object LogFields {
         confirm size >= 0 && size <= 256
             else throw InvalidLogField.because("field count exceeds 256");
         let snapshot is @JsonField = (0..size).map() -> index {
-            let item = members.item(index);
-            confirm item.name() != "" && item.name().length() <= 4096
-                else throw InvalidLogField.because("invalid field name");
-            item;
+            members.item(index);
         };
-        for (0..size) -> index {
-            for (0..index) -> previous {
-                confirm snapshot[index].name() != snapshot[previous].name()
-                    else throw InvalidLogField.because("duplicate field name");
-            }
+        let fields = try {
+            Json(snapshot);
         }
-        let fields = Json(snapshot);
-        if size > 0 {
-            let text = fields.string();
-            confirm Utf8Encoded(text).bytes().size() <= 1048576
-                else throw InvalidLogField.because("fields exceed 1 MiB");
-            ParsedJson(text, 32).root();
-        }
-        origin = fields;
+        catch JsonError.duplicate_member(_) {
+            throw InvalidLogField.because("duplicate field name");
+        };
+        origin = LogFieldLimits(fields).value();
+    }
+
+    LogFields(values is Json) {
+        origin = LogFieldLimits(values).value();
     }
 
     membership(name is string) is bool {
@@ -49,7 +43,36 @@ object LogFields {
     }
 
     members() is @JsonField {
-        origin.fields();
+        origin.names().map() -> name {
+            JsonField(name, origin.get(name));
+        };
+    }
+}
+
+hidden object LogFieldLimits {
+    has fields is Json;
+
+    LogFieldLimits(fields is Json) {
+        self.fields = fields;
+    }
+
+    value() is Json {
+        confirm fields.kind() == JsonKind.object_value
+            else throw InvalidLogField.because("fields are not an object");
+        let names = fields.names();
+        confirm names.size() <= 256
+            else throw InvalidLogField.because("field count exceeds 256");
+        for names -> name {
+            confirm name != "" && name.length() <= 4096
+                else throw InvalidLogField.because("invalid field name");
+        }
+        if names.size() > 0 {
+            let text = fields.string();
+            confirm Utf8Encoded(text).bytes().size() <= 1048576
+                else throw InvalidLogField.because("fields exceed 1 MiB");
+            ParsedJson(text, 32).root();
+        }
+        fields;
     }
 }
 
@@ -70,39 +93,90 @@ object CombinedLogFields {
     }
 
     value() is LogFields {
-        let first = base.members();
-        let second = added.members();
-        if second.size() == 0 {
+        if added.values().size() == 0 {
             return base;
         }
-        if first.size() == 0 {
+        if base.values().size() == 0 {
             return added;
         }
-        let replacements is @JsonField = first.map() -> member {
-            if added.membership(member.name()) {
-                JsonField(member.name(), added.value(member.name()));
-            }
-            else {
-                member;
-            }
-        };
-        let tail is @JsonField = second.filter() -> member {
-            !base.membership(member.name());
-        }.map() -> member {
-            member;
-        };
-        let merged is @JsonField = (0..replacements.size() + tail.size()).map() -> index {
-            if index < replacements.size() {
-                replacements[index];
-            }
-            else {
-                tail[index - replacements.size()];
-            }
-        };
-        LogFields(merged);
+        LogFields(base.values().merged(added.values()));
     }
 }
 
 enum MissingLogField is Error = (name(name is string));
 
 enum InvalidLogField is Error = (because(reason is string));
+
+test "log fields keep member order, reject bad names and merge by name" {
+    let fields = LogFields([JsonField("user", "ann"), JsonField("id", 7), JsonField("pass", "x")]);
+    test.is(fields.values().string(), "{\"user\":\"ann\",\"id\":7,\"pass\":\"x\"}");
+    test.ok(fields.membership("id") && !fields.membership("nope"));
+    test.is(fields.value("user").string(), "\"ann\"");
+    test.is(
+        try {
+            fields.value("nope").string();
+        }
+        catch failure is MissingLogField {
+            failure.text();
+        },
+        "MissingLogField.name(\"nope\")"
+    );
+    test.is(EmptyLogFields().value().values().string(), "{}");
+    test.is(
+        try {
+            LogFields([JsonField("a", 1), JsonField("a", 2)]).values().string();
+        }
+        catch failure is InvalidLogField {
+            failure.text();
+        },
+        "InvalidLogField.because(\"duplicate field name\")"
+    );
+    test.is(
+        try {
+            LogFields([JsonField("", 1)]).values().string();
+        }
+        catch failure is InvalidLogField {
+            failure.text();
+        },
+        "InvalidLogField.because(\"invalid field name\")"
+    );
+    let many is @JsonField = (0..257).map() -> index {
+        JsonField("k" + index.string(), index);
+    };
+    test.is(
+        try {
+            LogFields(many).values().string();
+        }
+        catch failure is InvalidLogField {
+            failure.text();
+        },
+        "InvalidLogField.because(\"field count exceeds 256\")"
+    );
+    test.is(
+        try {
+            LogFields(ParsedJson("[1]").root()).values().string();
+        }
+        catch failure is InvalidLogField {
+            failure.text();
+        },
+        "InvalidLogField.because(\"fields are not an object\")"
+    );
+    let added = LogFields([JsonField("id", 8), JsonField("trace", "t1")]);
+    test.is(
+        CombinedLogFields(fields, added).value().values().string(),
+        "{\"user\":\"ann\",\"id\":8,\"pass\":\"x\",\"trace\":\"t1\"}"
+    );
+    test.is(
+        CombinedLogFields(added, fields).value().values().string(),
+        "{\"id\":7,\"trace\":\"t1\",\"user\":\"ann\",\"pass\":\"x\"}"
+    );
+    test.is(
+        CombinedLogFields(EmptyLogFields().value(), added).value().values().string(),
+        "{\"id\":8,\"trace\":\"t1\"}"
+    );
+    test.is(
+        CombinedLogFields(fields, EmptyLogFields().value()).value().values().string(),
+        fields.values().string()
+    );
+    test.is(LogFields(fields.members()).values().string(), fields.values().string());
+}

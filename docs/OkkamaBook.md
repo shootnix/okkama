@@ -3613,6 +3613,15 @@ Tree deletion and temporary-file preservation are explicit void commands.
 `document.string()` writes a `Json` value without reflection.
 See the [migration guide](std/stdlib-v4-migration.md) for removed APIs.
 
+`json` is one immutable `Json` for a value, parsed by `ParsedJson(text).root()`
+or built from `JsonField`s. Strict readers (`int("id")`, `get("customer")`)
+throw; `maybe(name)` reads an absent or null member as a fallback
+(`body.maybe("age").int() else 18`), and `presence(name)` tells absent from
+null. Objects are walked whole with `each`, `merged` and `mapped`. Everything
+that goes wrong is one `JsonError`, whose reading cases carry the RFC 6901
+pointer of the value: `catch JsonError.missing(pointer)`. The guide is
+`docs/std/json.md` in okkama-docs.
+
 The historical inventory and examples below describe **legacy `stdlib/`**.
 They remain executable with that library, but are not API proposals or completion
 claims for `std/`. Select the library root explicitly; do not combine their modules.
@@ -6547,8 +6556,8 @@ Runtime-supported and covered by tests (`okkama-pl/t/interpreter`,
   and the bundled `runtime/*` verticals (time, fs, process, net, poll,
   environment, system, debug, regex) plus `okkama.Dump` and the high-level
   immutable `regex.Regex` object;
-- pure-Okkama exact `encoding/json` values, recursive parsing, deterministic
-  compact encoding and located source failures.
+- exact `json` values, strict parsing and writing in the runtime, readers
+  with RFC 6901 pointers and one `JsonError`.
 
 Not implemented in the runtime:
 

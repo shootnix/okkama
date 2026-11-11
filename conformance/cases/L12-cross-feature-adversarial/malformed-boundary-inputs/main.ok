@@ -4,7 +4,7 @@ import "io/stdout" take Stdout;
 import "fs/file" take File, FileMode, FileEntry, FileContent;
 import "fs/path" take Path;
 import "encoding/utf" take Utf8Decoded, InvalidUtf8;
-import "json" take ParsedJson, InvalidJson;
+import "json" take ParsedJson, JsonError;
 import "io/decorators" take ByteSnapshot;
 
 main() is int {
@@ -20,7 +20,7 @@ main() is int {
     out.writeln(decoded);
     let deep = try {
         ParsedJson(origin: "[[[1]]]", maximum_depth: 2).root().items().size().string();
-    } catch e is InvalidJson {
+    } catch JsonError.invalid(_, _, _, _) {
         "too deep";
     };
     out.writeln(deep);

@@ -16,6 +16,41 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   (the generated locale data aside) were not, 57 of them written as a few
   very long lines. Only whitespace changed; each file's syntax tree was
   compared before and after, and `okkama fmt --check` over std is clean.
+- `json` is the first module reviewed (#352), the exemplar for the others.
+  Its public API changes; the owner approved each change:
+  - One error enum, `JsonError`, replaces seven. Migration: `WrongJsonKind.detailed`
+    → `JsonError.wrong_kind`, `MissingJsonValue.pointer` → `missing`,
+    `InvalidJsonNumber.detailed` → `invalid_number`, `InvalidJson.located` →
+    `invalid`, `DuplicateJsonMember.named` / `.located` → `duplicate_member` /
+    `duplicate_member_at`, `InvalidJsonIndentation` → `invalid_indentation`.
+    `MissingJsonLocation` is gone, since nothing could throw it. A
+    `catch JsonError.wrong_kind(pointer, expected, actual)` binds the fields.
+  - One way to read an optional member. `optional(name)` and `JsonOptional`
+    are removed. `optional(n).text(x)` becomes `maybe(n).text() else x`,
+    `optional(n).items()` becomes `maybe(n).list() else []`, and
+    `optional(a).optional(b)` becomes `maybe(a).maybe(b)`. `JsonMaybeReader`
+    gained `maybe(name)`, `present()` and `pointer()`.
+  - Objects are walked whole: `each((name, value) -> void)`,
+    `merged(other)` and `mapped((name, value) -> Json)`. These replace
+    `fields()`, and `JsonField` no longer has `name()` and `value()`.
+  - `web/request` follows. `RequestJson.fields()` becomes `each(visit)`, the
+    body parse catches `JsonError`, and `RequestJsonOptional` is built on
+    `JsonMaybeReader`.
+  - `logging/field` follows. `LogFields(values is Json)` is a new
+    constructor; `CombinedLogFields` is `merged` and redaction is `mapped`.
+    For a list with both an empty and a repeated name, the error is now
+    "duplicate field name", not "invalid field name"; both are still
+    `InvalidLogField`.
+  - `config/document` walks JSON with `each`.
+  - New characterization tests pin `config/document`, `logging/field` and
+    `logging/redact`, which had none.
+
+### Fixed
+
+- `config/document` turned a JSON number into a setting in the canonical form
+  of `Decimal`, so `"port": 5432` became `"5.432e3"` while INI and the
+  environment gave `5432` (#366). Numbers are now written as JSON writes
+  them: `5432`, `0.5`, `1200`.
 
 ## [0.5.3] — 2026-11-11
 
