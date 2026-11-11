@@ -4082,13 +4082,15 @@ SqliteMemory().connection()` открывает базу. `await db.execution(sq
 
 `http/server` обслуживает HTTP/1.1 или HTTP/2 (prior knowledge) на
 слушателе. Объект `Handling` отвечает на `handling(request, context)` через
-`ResponseHandling(Response(status:, headers:, body:))` или через
+`ResponseHandling(Response(status:, content: TextBody(text: "hi")))`, что
+задаёт тело и его Content-Type, или через
 `WebSocketHandlingResult(origin: WebSocketUpgrade(…), application:)`, чтобы
-перейти на WebSocket. `HttpServer(origin: listener, handling:, policy:
-ServerPolicy(), clock:)` обслуживает через `serve()`, а `ServerDrain(server:,
-limit:, clock:)` перестаёт принимать соединения, даёт закончить начатые
-запросы и закрывает сервер. WebSocket-серверу нужен ещё `destination:`, его
-собственный URL, чтобы сверять с ним `Origin`.
+перейти на WebSocket. `HttpServer(listener:, handling:)` обслуживает через
+`serve()` с `ServerPolicy()` и системными часами, если не заданы `policy:` и
+`clock:`, а `await server.drain(limit:)` перестаёт принимать соединения, даёт
+закончить начатые запросы и закрывает сервер. WebSocket-серверу нужен ещё
+`url:`, его собственный URL, чтобы сверять с ним `Origin`. И по HTTP/1.1, и по
+HTTP/2 обработчик читает `request::Head::target.path()` и `query()`.
 
 `web` строит маршруты поверх: `WebRoutes(routings: [Scope(prefix: "/api",
 routings: [Get(path: "/notes/:id", endpoint: notes.one), Post(…)])],
@@ -4105,14 +4107,15 @@ fallback:)`. Endpoint получает `WebRequest` с `path("id")`,
 `examples/web/` и `examples/http/websocket/` есть JSON-сервис и
 WebSocket-эхо.
 
-`mail` составляет, хранит и читает почту. `MailMessage(headers:
-MessageHeaders([…]), body: TextBody(origin:, charset:))` даёт байты RFC 5322
-через `bytes()`, а `ParsedMail(bytes).message()` читает их обратно.
-`Maildir(path)` и `Mbox(path)` хранят письма на диске.
-У SMTP есть части протокола (`PreparedSmtpData`, `SmtpReply`,
-`SmtpCapabilities`), но клиента пока нет. `ImapSession` выбирает ящики, ищет через
-`UnseenMail()`, `SinceMail(date)`, `AndMail` и `OrMail`, копирует и
-переносит через `CopiedMail`/`MovedMail` и следит за `MailboxEvents`.
+`mail` составляет, хранит и читает почту. `MailMessage(from:, to: […],
+subject:, text:)` добавляет Date, новый Message-ID и Content-Type и даёт байты
+RFC 5322 через `bytes()`. `ParsedMail(bytes).message()` читает их обратно.
+`Maildir(path).created()` и `Mbox(path)` хранят письма на диске. У SMTP есть
+части протокола (`PreparedSmtpData`, `SmtpReply`, `SmtpCapabilities`), но
+клиента пока нет. `ImapSession` выбирает ящики и ищет через `UnseenMail()`,
+`SinceMail(date)`, `AndMail` и `OrMail`. Выбранный ящик отвечает
+`await box.copied(uids, to:)`, `moved` и `expunged`, сессия — `created`,
+`renamed`, `deleted` и `appended`, а `MailboxEvents` следит за изменениями.
 `PopSession().mailbox()` скачивает письма. В `examples/mail/` письмо
 составляется и кладётся в Maildir.
 

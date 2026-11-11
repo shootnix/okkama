@@ -1,6 +1,12 @@
 module mail/message v1.0.0;
 
-import "mime/part" take MimeBody, MimePart, MimeLimits, ParsedMime, InvalidMime, BinaryBody;
+import "mime/part" take MimeBody, MimePart, MimeLimits, ParsedMime, InvalidMime, BinaryBody, TextBody;
+import "mime/word" take EncodedWord;
+import "random/source" take Randomizing, SecureRandom, PcgRandom;
+import "time/clock" take Timing, SystemClock, Instant;
+import "encoding/hex" take HexEncoded;
+import "collections/sequence" take Sequencing;
+import "testing/time" take ManualClock;
 import "message/header" take MessageHeader, MessageHeaderName, MessageHeaders;
 import "io/stream" take ByteSource;
 import "compare" take Order;
@@ -36,6 +42,52 @@ object MailMessage does ByteSource {
     MailMessage(headers is MessageHeaders, body is MimeBody, limits is MimeLimits) {
         bounds = limits;
         content = MimePart(headers: headers, body: body, limits: limits);
+    }
+
+    // MailMessage(from: "Ada <ada@example.test>", to: ["grace@example.test"],
+    // subject: "Lunch?", text: "Shall we?"): Date is now, Message-ID is fresh
+    // and the body is UTF-8 text. clock: and random: fix them, as tests do.
+    MailMessage(
+        from is string,
+        to is Sequencing<string>,
+        subject is string,
+        text is string,
+        clock is Timing = SystemClock(),
+        random is Randomizing = SecureRandom()
+    ) {
+        let addresses is @string = (0..to.size()).map() -> index {
+            to.item(index);
+        };
+        confirm addresses.size() > 0 else throw InvalidArgument.because("a message needs a recipient");
+        let parts = from.split("@");
+        let domain = if parts.size() > 1 {
+            parts[parts.size() - 1].split(">")[0];
+        }
+        else {
+            "localhost";
+        };
+        let ascii = Utf8Encoded(subject).bytes().reduce(true) -> plain, octet {
+            plain && octet.int() < 128;
+        };
+        let title = if ascii {
+            subject;
+        }
+        else {
+            EncodedWord(subject).string();
+        };
+        let utc = FixedZone(name: "UTC", offset: Duration(value: 0.rat(), unit: DurationUnit.second));
+        let headers = MessageHeaders([
+            MessageHeader(name: MessageHeaderName("From"), value: from),
+            MessageHeader(name: MessageHeaderName("To"), value: addresses.join(", ")),
+            MessageHeader(name: MessageHeaderName("Subject"), value: title),
+            MessageHeader(name: MessageHeaderName("Date"), value: MailDate(ZonedDateTime(instant: clock.instant(), zone: utc)).string()),
+            MessageHeader(name: MessageHeaderName("Message-ID"), value: MessageId("<" + HexEncoded(random.bytes(16)).string() + "@" + domain + ">").string()),
+            MessageHeader(name: MessageHeaderName("MIME-Version"), value: "1.0"),
+            MessageHeader(name: MessageHeaderName("Content-Type"), value: "text/plain; charset=utf-8"),
+        ]);
+        let limits = MimeLimits();
+        bounds = limits;
+        content = MimePart(headers: headers, body: TextBody(origin: text, charset: "utf-8"), limits: limits);
     }
 
     part() is MimePart {
@@ -663,4 +715,29 @@ test "mail dates preserve unknown zero offsets" {
         MailDate(origin: parsed.date_time(), offset_known: parsed.offset_known()).string(),
         "Fri, 21 Nov 1997 09:55:06 -0000"
     );
+}
+
+test "a message from its fields sets its date, identifier and content type" {
+    let clock = ManualClock(Instant(Duration(value: 1700000000.rat(), unit: DurationUnit.second)));
+    let message = MailMessage(
+        from: "Ada <ada@example.test>",
+        to: ["grace@example.test", "alan@example.test"],
+        subject: "Lunch?",
+        text: "Shall we?\r\n",
+        clock: clock,
+        random: PcgRandom(7),
+    );
+    let fields = message.headers();
+    test.is(fields.first(MessageHeaderName("To")), "grace@example.test, alan@example.test");
+    test.is(fields.first(MessageHeaderName("Date")), "Tue, 14 Nov 2023 22:13:20 +0000");
+    test.is(fields.first(MessageHeaderName("Message-ID")).split("@")[1], "example.test>");
+    test.is(fields.first(MessageHeaderName("Content-Type")), "text/plain; charset=utf-8");
+    let back = ParsedMail(message.bytes()).message();
+    test.is(back.headers().first(MessageHeaderName("Subject")), "Lunch?");
+    let other = MailMessage(from: "a@b.test", to: ["c@d.test"], subject: "Привет", text: "", clock: clock, random: PcgRandom(1));
+    test.is(other.headers().first(MessageHeaderName("Subject")).slice(0, 8), "=?UTF-8?");
+    test.throws(InvalidArgument) {
+        let nobody is @string = [];
+        MailMessage(from: "a@b.test", to: nobody, subject: "x", text: "", clock: clock, random: PcgRandom(1));
+    };
 }

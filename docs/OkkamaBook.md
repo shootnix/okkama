@@ -3902,12 +3902,15 @@ with `TransactionOptions::Mode`, blobs, scripts and an online backup
 
 `http/server` serves HTTP/1.1, or HTTP/2 by prior knowledge, on a listener.
 A `Handling` object answers `handling(request, context)` with
-`ResponseHandling(Response(status:, headers:, body:))`, or with
+`ResponseHandling(Response(status:, content: TextBody(text: "hi")))`, which
+sets the body and its Content-Type, or with
 `WebSocketHandlingResult(origin: WebSocketUpgrade(…), application:)` to switch
-to WebSocket. `HttpServer(origin: listener, handling:, policy: ServerPolicy(),
-clock:)` serves with `serve()`, and `ServerDrain(server:, limit:, clock:)`
-stops accepting, lets requests in flight finish and closes. A WebSocket server
-also takes `destination:`, its own URL, to check the `Origin` against.
+to WebSocket. `HttpServer(listener:, handling:)` serves with `serve()` under
+`ServerPolicy()` and the system clock unless `policy:` and `clock:` are given,
+and `await server.drain(limit:)` stops accepting, lets requests in flight
+finish and closes. A WebSocket server also takes `url:`, its own URL, to check
+the `Origin` against. Over HTTP/1.1 and HTTP/2 alike, a handler reads
+`request::Head::target.path()` and `query()`.
 
 `web` puts routes on top: `WebRoutes(routings: [Scope(prefix: "/api",
 routings: [Get(path: "/notes/:id", endpoint: notes.one), Post(…)])],
@@ -3924,16 +3927,17 @@ client, and `mime` parses and renders media types, multipart bodies and
 encoded words. `examples/web/` and `examples/http/websocket/` show a JSON
 service and a WebSocket echo.
 
-`mail` composes, stores and reads e-mail. `MailMessage(headers:
-MessageHeaders([…]), body: TextBody(origin:, charset:))` renders RFC 5322
-bytes with `bytes()`, and `ParsedMail(bytes).message()` reads them back.
-`Maildir(path)` and `Mbox(path)` keep messages on disk.
+`mail` composes, stores and reads e-mail. `MailMessage(from:, to: […],
+subject:, text:)` adds the Date, a fresh Message-ID and the Content-Type, and
+renders RFC 5322 bytes with `bytes()`. `ParsedMail(bytes).message()` reads them
+back. `Maildir(path).created()` and `Mbox(path)` keep messages on disk.
 SMTP has its wire pieces (`PreparedSmtpData`, `SmtpReply`,
-`SmtpCapabilities`) but no client yet. `ImapSession` selects mailboxes, searches with
-`UnseenMail()`, `SinceMail(date)`, `AndMail` and `OrMail`, copies and moves
-with `CopiedMail`/`MovedMail`, and follows `MailboxEvents`.
-`PopSession().mailbox()` downloads. `examples/mail/` composes a message and
-keeps it in a Maildir.
+`SmtpCapabilities`) but no client yet. `ImapSession` selects mailboxes and
+searches with `UnseenMail()`, `SinceMail(date)`, `AndMail` and `OrMail`. A
+selected mailbox answers `await box.copied(uids, to:)`, `moved` and
+`expunged`, the session answers `created`, `renamed`, `deleted` and
+`appended`, and `MailboxEvents` follows changes. `PopSession().mailbox()`
+downloads. `examples/mail/` composes a message and keeps it in a Maildir.
 
 `strings/parse` reads text as the type asked for: `Number("42").int()`,
 `Number("ff").int(16)`, `Number("6/8").rat()`, `Number("3.0").float()`,

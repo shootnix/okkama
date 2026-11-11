@@ -15,7 +15,7 @@ import "fs/lock" take FileLock, FileLockMode;
 import "fs/file" take File, FileMode;
 import "fs/entry" take FileEntry;
 import "fs/error" take FileError;
-import "fs/temp" take TemporaryFile;
+import "fs/temp" take TemporaryFile, TemporaryDirectory;
 import "fs/link" take HardLink;
 import "random/source" take Randomizing, SecureRandom;
 import "encoding/hex" take HexEncoded;
@@ -555,6 +555,18 @@ object Maildir {
         messages.entries();
     }
 
+    // Make the directory and its new/, cur/ and tmp/ where they are missing,
+    // and answer the Maildir: Maildir(path).created().
+    created() is Maildir {
+        for [origin, origin.child("new"), origin.child("cur"), origin.child("tmp")] -> folder {
+            let place = Directory(path: folder);
+            if !place.existence() {
+                place.create();
+            }
+        }
+        self;
+    }
+
     add(message is MailMessage) is void {
         MaildirDelivery(origin: self, message: message).deliver();
     }
@@ -993,4 +1005,14 @@ test "maildir flag names use canonical order" {
         true;
     };
     test.ok(rejected);
+}
+
+test "a Maildir creates its folders, then keeps and lists messages" {
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "maildir-test-");
+    let box = Maildir(scratch.path().child("inbox")).created();
+    Maildir(scratch.path().child("inbox")).created();
+    test.is(box.messages().size(), 0);
+    box.add(ParsedMail(Utf8Encoded("Subject: hi\r\n\r\nbody\r\n").bytes()).message());
+    test.is(box.messages().size(), 1);
+    scratch.close();
 }

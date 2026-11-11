@@ -826,6 +826,38 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   - **Named arguments** in 241 calls.
   - **Example:** `examples/mail/compose.ok` agrees on IR, Sparrow and the JVM.
   - std has no SMTP client, only its wire pieces (#499, postponed).
+- **std review, the owner's decisions for waves 5 and 6 (#352, 2026-11-12:
+  «везде да»).**
+  - **Request targets read the same over every protocol (#497).** An HTTP/2
+    request reaches the handler in origin form, with its authority in
+    `Host`. `AbsoluteTarget.path()` and `query()` answer the URL's path and
+    query instead of throwing. The HTTP/1.1 server accepts absolute-form
+    requests, as RFC 9112 §3.2.2 asks. Before, `target.path()` worked over
+    HTTP/1.1 and answered 500 over HTTP/2.
+  - **`HttpServer(listener:, handling:)`**: `policy:` and `clock:` have
+    defaults, and `url:` turns on WebSocket upgrades. An upgrade without
+    `url:` gets a 500 that says so. The `origin:`/`destination:` constructors
+    are gone.
+  - **`await server.drain(limit:)`** replaces `ServerDrain(server:, limit:,
+    clock:).drain()`, which stays.
+  - **`Response(status:, content: TextBody(…))`** sets the body and its
+    Content-Type.
+  - **`WebSocketConnecting(url:)`** has `HttpClient`'s defaults: system DNS
+    and trust, no subprotocols and no extra headers.
+  - **`request.query("limit") else "10"`**: `WebRequest.query(name)` answers a
+    `Maybe`, `query(name, fallback)` is gone, and `method()` answers the
+    `Method` enum.
+  - **`MailMessage(from:, to:, subject:, text:)`** adds the Date, a fresh
+    Message-ID, MIME-Version and the Content-Type, and encodes a non-ASCII
+    subject. Tests can fix the date and identifier with `clock:` and
+    `random:`.
+  - **`Maildir(path).created()`** makes the directory with `new/`, `cur/` and
+    `tmp/`.
+  - **Mailbox operations are actions:** `await box.copied(uids, to:)`,
+    `moved` and `expunged`, and `session.created(name)`, `renamed(name, to:)`,
+    `deleted(name)` and `appended(mailbox, message:, flags:)`. The
+    operation objects move from `mail/imap_changes` into `mail/imap_session`,
+    beside the mailbox they act on.
 - **std review, the owner's decisions for waves 3 and 4 (#352, 2026-11-12:
   «да» to every recommendation).**
   - **TCP and UDP without matryoshkas.**

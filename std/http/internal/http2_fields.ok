@@ -424,26 +424,18 @@ object ParsedHttp2Request {
                     stream,
                     "origin or OPTIONS star path required"
                 );
-            if checked.kind() == RequestTargetKind.asterisk {
-                checked;
-            }
-            else {
-                try {
-                    AbsoluteTarget(ParsedUrl(scheme + "://" + authority.authority() + path).parts());
-                }
-                catch failure is InvalidUrl {
-                    throw Http2Fault.detailed(
-                        Http2FaultScope.stream,
-                        1,
-                        stream,
-                        "invalid reconstructed URL"
-                    );
-                }
-            }
+            // Handlers see the origin form whatever the protocol, with the
+            // authority in Host, as an HTTP/1.1 request carries it (#497).
+            checked;
         };
         self.method = method;
         self.target = target;
-        headers = section.headers();
+        headers = if section.headers().membership(HeaderName("Host")) {
+            section.headers();
+        }
+        else {
+            section.headers().addition(Header(name: HeaderName("Host"), value: raw));
+        };
         self.scheme = scheme;
         self.authority = authority;
     }

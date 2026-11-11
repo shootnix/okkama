@@ -20,7 +20,7 @@ import "async/scope" take FutureGroup;
 import "io/buffer" take ByteBuffer;
 import "io/decorators" take ByteSnapshot, InvalidReading;
 import "io/stream" take InvalidReadLimit, Closing;
-import "http/server" take HttpServer, ServerDrain;
+import "http/server" take HttpServer;
 import "http/server_policy" take ServerPolicy;
 import "http/handler" take Handling, HandlingResult, ResponseHandling;
 import "http/request_context" take HttpRequestContext;
@@ -547,7 +547,7 @@ async test "a fresh response is served from memory without reaching the origin" 
     let listener = await TcpListening(port: 0).listener();
     let clock = SystemClock();
     let origin = CountedOrigin();
-    let server = HttpServer(origin: listener, handling: origin, policy: ServerPolicy(), clock: clock);
+    let server = HttpServer(listener: listener, handling: origin, policy: ServerPolicy(), clock: clock);
     let workers is FutureGroup<HttpServer> = FutureGroup();
     workers.start(server.serve());
     let base = "http://127.0.0.1:" + server.local_endpoint()::Parts::port.string();
@@ -565,6 +565,6 @@ async test "a fresh response is served from memory without reaching the origin" 
     test.is(origin.served(), 2);
     memory.close();
     client.close();
-    await ServerDrain(server: server, limit: Duration(value: 5.rat(), unit: DurationUnit.second), clock: clock).drain();
+    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
     await workers.wait();
 }
