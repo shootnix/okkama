@@ -804,6 +804,49 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     the JVM.
   - The Book drops the legacy log, sql, db, template and test passages (480
     lines) and describes the wave-4 areas in §26.5.
+- **std review, the owner's decisions for waves 3 and 4 (#352, 2026-11-12:
+  «да» to every recommendation).**
+  - **TCP and UDP without matryoshkas.**
+    - `TcpListening(port: 0).listener()` listens on loopback unless
+      `address:` is given. `backlog:`, `address_reuse:`, `dual_stack:`,
+      `keep_alive:` and `no_delay:` are named arguments, and
+      `listener::Local::port` is the port it got.
+    - `TcpConnecting(address:, port:, no_delay:)` connects to one address.
+      `TcpConnecting(host: "example.com", port: 443)` resolves the name (the
+      system's DNS unless `resolver:` is given) and races the addresses as
+      RFC 8305 asks.
+    - `UdpBinding(port:, broadcast:).socket()`.
+    - The answer is `listener()`, and its type is `TcpListener`.
+      `acceptance()` and `TcpAcceptance` are gone, and `UnixListener`
+      follows for local sockets.
+    - The endpoint-and-options constructors stay.
+
+    | before | after |
+    |---|---|
+    | `await TcpListening(IpEndpoint(IpAddress("127.0.0.1"), 0)).acceptance()` | `await TcpListening(port: 0).listener()` |
+    | `TcpConnecting(IpEndpoint(IpAddress(a), p), TcpOptions(false, true))` | `TcpConnecting(address: IpAddress(a), port: p, no_delay: true)` |
+  - **`stored.matches(supplied)`** compares a `SecretBytes` in constant time.
+    `ConstantTimeEqual(left:, right:)` answers `matches()`.
+  - **`certificate.extensions()`** answers one `CertificateExtensions` with
+    `items()`, `extension(id)`, `critical()`, `constraints()`,
+    `key_usages()` and `purposes()`. Before, these were six `extensions_*`
+    actions of the certificate.
+  - **Key generation stays in constructors** (`RsaPrivateKey(bits:,
+    entropy:)`): a key is the object's own state, like an open file.
+  - **Settings by name:** `settings.int("server.port") else 8080`, `text`,
+    `float`, `bool`, `texts(name)` and `source(name)`, on `Settings` and
+    `LayeredSettings`. A malformed value throws `MalformedSetting` naming the
+    key.
+  - **SQL from the connection:** `await db.execution(sql, [Param(…)])` and
+    `db.query(sql, values).one()`, `maybe()` and `all(limit)`. Connections and
+    transactions answer them through the role `DbQuery`.
+  - **`NamedLogging(name: "shop", destination: logs)`** uses the system's clock
+    and adds no fields unless told.
+  - **`GettextCatalog` does `Translating`** itself, and `GettextTranslation` is
+    hidden.
+  - **`RowReader` is hidden**, because `Row` reads the same way.
+  - **`TemporaryDirectory` is a `DirectoryLocating`**, so
+    `TemporaryFile(directory: scratch, …)` takes it directly.
 - **std review, wave 5: web, the part without a decision (#352).** The areas
   are mime, http and web. The card is
   `okkama-docs/std-review/cards/wave-5-web.md`.
