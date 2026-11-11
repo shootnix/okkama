@@ -3924,6 +3924,17 @@ client, and `mime` parses and renders media types, multipart bodies and
 encoded words. `examples/web/` and `examples/http/websocket/` show a JSON
 service and a WebSocket echo.
 
+`mail` composes, stores and reads e-mail. `MailMessage(headers:
+MessageHeaders([…]), body: TextBody(origin:, charset:))` renders RFC 5322
+bytes with `bytes()`, and `ParsedMail(bytes).message()` reads them back.
+`Maildir(path)` and `Mbox(path)` keep messages on disk.
+SMTP has its wire pieces (`PreparedSmtpData`, `SmtpReply`,
+`SmtpCapabilities`) but no client yet. `ImapSession` selects mailboxes, searches with
+`UnseenMail()`, `SinceMail(date)`, `AndMail` and `OrMail`, copies and moves
+with `CopiedMail`/`MovedMail`, and follows `MailboxEvents`.
+`PopSession().mailbox()` downloads. `examples/mail/` composes a message and
+keeps it in a Maildir.
+
 `strings/parse` reads text as the type asked for: `Number("42").int()`,
 `Number("ff").int(16)`, `Number("6/8").rat()`, `Number("3.0").float()`,
 `Number("255").byte()` and `Truth("true").bool()`. Nothing is trimmed and a

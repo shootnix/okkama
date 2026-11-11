@@ -19,7 +19,7 @@ object ImapUid does Comparing<ImapUid> {
         value = origin;
     }
 
-    value() is BigInt {
+    number() is BigInt {
         value;
     }
 
@@ -28,7 +28,7 @@ object ImapUid does Comparing<ImapUid> {
     }
 
     order(other is ImapUid) is Order {
-        value.order(other.value());
+        value.order(other.number());
     }
 }
 
@@ -40,7 +40,7 @@ object ImapUidValidity does Comparing<ImapUidValidity> {
         value = origin;
     }
 
-    value() is BigInt {
+    number() is BigInt {
         value;
     }
 
@@ -49,7 +49,7 @@ object ImapUidValidity does Comparing<ImapUidValidity> {
     }
 
     order(other is ImapUidValidity) is Order {
-        value.order(other.value());
+        value.order(other.number());
     }
 }
 
@@ -62,7 +62,7 @@ object ImapSequence does Comparing<ImapSequence> {
         value = origin;
     }
 
-    value() is int {
+    number() is int {
         value;
     }
 
@@ -71,7 +71,7 @@ object ImapSequence does Comparing<ImapSequence> {
     }
 
     order(other is ImapSequence) is Order {
-        value.order(other.value());
+        value.order(other.number());
     }
 }
 
@@ -90,12 +90,14 @@ object ImapUidSetLimits {
         self.wire_bytes = wire_bytes;
     }
 
-    entries() is int {
-        entries;
-    }
+    cap Limits {
+        entries is int {
+            entries;
+        }
 
-    wire_bytes() is int {
-        wire_bytes;
+        wire_bytes is int {
+            wire_bytes;
+        }
     }
 }
 
@@ -103,11 +105,11 @@ object ImapUidSet {
     has value is ImapUidSnapshot;
 
     ImapUidSet(origin is Sequencing<ImapUid>) {
-        value = ImapUidSnapshot(origin, ImapUidSetLimits());
+        value = ImapUidSnapshot(origin: origin, limits: ImapUidSetLimits());
     }
 
     ImapUidSet(origin is Sequencing<ImapUid>, limits is ImapUidSetLimits) {
-        value = ImapUidSnapshot(origin, limits);
+        value = ImapUidSnapshot(origin: origin, limits: limits);
     }
 
     entries() is Sequencing<ImapUid> {
@@ -195,7 +197,7 @@ enum ImapUidLimitExceeded is Error = (kind(kind is string));
 
 enum StaleImapUids is Error = (stale);
 
-object ImapUidNumber {
+hidden object ImapUidNumber {
     has origin is BigInt;
 
     ImapUidNumber(origin is BigInt) {
@@ -208,7 +210,7 @@ object ImapUidNumber {
     }
 }
 
-object ImapUidSnapshot {
+hidden object ImapUidSnapshot {
     has entries is @ImapUid;
     has wire is string;
 
@@ -216,7 +218,7 @@ object ImapUidSnapshot {
         let size = origin.size();
         confirm size >= 0
             else throw InvalidArgument.because("IMAP UID source size must be nonnegative");
-        confirm size <= limits.entries() else throw ImapUidLimitExceeded.kind("entries");
+        confirm size <= limits::Limits::entries else throw ImapUidLimitExceeded.kind("entries");
         let all is MimeItems<ImapUid> = MimeItems();
         let texts is MimeItems<string> = MimeItems();
         let seen = ImapUidSeen();
@@ -231,8 +233,8 @@ object ImapUidSnapshot {
                 else {
                     1;
                 };
-                confirm separator <= limits.wire_bytes() - used.index()
-                    && text.length() <= limits.wire_bytes() - used.index() - separator
+                confirm separator <= limits::Limits::wire_bytes - used.index()
+                    && text.length() <= limits::Limits::wire_bytes - used.index() - separator
                     else throw ImapUidLimitExceeded.kind("wire_bytes");
                 used = used.following(used.index() + separator + text.length());
                 all = all.following(uid);
@@ -253,7 +255,7 @@ object ImapUidSnapshot {
     }
 }
 
-object ImapUidSeen {
+hidden object ImapUidSeen {
     has value is Set<string>;
 
     ImapUidSeen() {

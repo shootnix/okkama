@@ -92,16 +92,18 @@ object MboxLimits {
         self.mime = mime;
     }
 
-    messages() is int {
-        messages;
-    }
-
-    wire_bytes() is int {
-        wire_bytes;
-    }
-
     mime() is MimeLimits {
         mime;
+    }
+
+    cap Limits {
+        messages is int {
+            messages;
+        }
+
+        wire_bytes is int {
+            wire_bytes;
+        }
     }
 }
 
@@ -111,19 +113,19 @@ object MboxArchive does ByteSource {
 
     MboxArchive(records is Sequencing<MboxRecord>) {
         let bounds = MboxLimits();
-        self.records = MboxRecordsSnapshot(records, bounds.messages()).values();
+        self.records = MboxRecordsSnapshot(origin: records, maximum: bounds::Limits::messages).values();
         limits = bounds;
     }
 
     MboxArchive(records is Sequencing<MboxRecord>, limits is MboxLimits) {
-        self.records = MboxRecordsSnapshot(records, limits.messages()).values();
+        self.records = MboxRecordsSnapshot(origin: records, maximum: limits::Limits::messages).values();
         self.limits = limits;
     }
 
     bytes() is @byte {
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        let output = MboxOutput(buffer, limits.wire_bytes(), "wire_bytes");
+        let output = MboxOutput(buffer: buffer, maximum: limits::Limits::wire_bytes, kind: "wire_bytes");
         for records -> record {
             let message = record.message();
             let wire = MimePart(headers: message.headers(), body: message.body(), limits: limits.mime()).bytes();
@@ -131,8 +133,8 @@ object MboxArchive does ByteSource {
             let start = MimePosition(0);
             loop {
                 last if start.index() == wire.size();
-                let end = MboxMimeLine(wire, start.index()).end();
-                let line = MboxBytes(wire, start.index(), end).bytes();
+                let end = MboxMimeLine(origin: wire, start: start.index()).end();
+                let line = MboxBytes(origin: wire, start: start.index(), stop: end).bytes();
                 if MboxFromLine(line).escaped() {
                     output.write([62.byte()]);
                 }
@@ -161,7 +163,7 @@ object ParsedMbox {
     }
 
     records() is Sequencing<MboxRecord> {
-        MboxParsing(origin, limits).records();
+        MboxParsing(origin: origin, limits: limits).records();
     }
 }
 
@@ -169,7 +171,7 @@ enum InvalidMbox is Error = (located(offset is int, reason is string));
 
 enum MboxLimitExceeded is Error = (kind(kind is string));
 
-object MboxRecordsSnapshot {
+hidden object MboxRecordsSnapshot {
     has origin is Sequencing<MboxRecord>;
     has maximum is int;
 
@@ -190,7 +192,7 @@ object MboxRecordsSnapshot {
     }
 }
 
-object MboxOutput {
+hidden object MboxOutput {
     has buffer is ByteBuffer;
     has maximum is int;
     has kind is string;
@@ -212,7 +214,7 @@ object MboxOutput {
     }
 }
 
-object MboxBytes {
+hidden object MboxBytes {
     has origin is @byte;
     has start, stop is int;
 
@@ -230,7 +232,7 @@ object MboxBytes {
     }
 }
 
-object MboxFromLine {
+hidden object MboxFromLine {
     has origin is @byte;
 
     MboxFromLine(origin is @byte) {
@@ -260,7 +262,7 @@ object MboxFromLine {
     }
 }
 
-object MboxMimeLine {
+hidden object MboxMimeLine {
     has origin is @byte;
     has start is int;
 
@@ -284,7 +286,7 @@ object MboxMimeLine {
     }
 }
 
-object MboxLine {
+hidden object MboxLine {
     has origin is @byte;
     has start is int;
 
@@ -306,7 +308,7 @@ object MboxLine {
     }
 }
 
-object MboxSeparatorBytes {
+hidden object MboxSeparatorBytes {
     has origin is @byte;
     has start, stop is int;
 
@@ -316,7 +318,7 @@ object MboxSeparatorBytes {
         self.stop = stop;
     }
 
-    value() is MboxSeparator {
+    separator() is MboxSeparator {
         confirm stop - start <= 998
             else throw InvalidMbox.located(start, "separator exceeds 998 bytes");
         for (start..stop) -> index {
@@ -324,7 +326,7 @@ object MboxSeparatorBytes {
                 else throw InvalidMbox.located(index, "separator must be printable ASCII");
         }
         try {
-            MboxSeparator(Utf8Decoded(MboxBytes(origin, start, stop).bytes()).string());
+            MboxSeparator(Utf8Decoded(MboxBytes(origin: origin, start: start, stop: stop).bytes()).string());
         }
         catch InvalidMbox.located(offset, reason) {
             throw InvalidMbox.located(start + offset, reason);
@@ -332,7 +334,7 @@ object MboxSeparatorBytes {
     }
 }
 
-object MboxRecordStart {
+hidden object MboxRecordStart {
     has start is int;
     has separator is MboxSeparator;
 
@@ -355,7 +357,7 @@ object MboxRecordStart {
     }
 }
 
-object MboxParsing {
+hidden object MboxParsing {
     has origin is @byte;
     has limits is MboxLimits;
 
@@ -365,50 +367,50 @@ object MboxParsing {
     }
 
     records() is @MboxRecord {
-        confirm origin.size() <= limits.wire_bytes()
+        confirm origin.size() <= limits::Limits::wire_bytes
             else throw MboxLimitExceeded.kind("wire_bytes");
         let records is MimeItems<MboxRecord> = MimeItems();
         if origin.size() == 0 {
             return records.entries();
         }
-        confirm limits.messages() > 0 else throw MboxLimitExceeded.kind("messages");
-        let first = MboxLine(origin, 0).end();
-        let current = MboxRecordStart(first + 1, MboxSeparatorBytes(origin, 0, first).value());
+        confirm limits::Limits::messages > 0 else throw MboxLimitExceeded.kind("messages");
+        let first = MboxLine(origin: origin, start: 0).end();
+        let current = MboxRecordStart(start: first + 1, separator: MboxSeparatorBytes(origin, 0, first).separator());
         let position = MimePosition(first + 1);
         loop {
             let start = position.index();
             last if start == origin.size();
-            let end = MboxLine(origin, start).end();
-            if MboxFromLine(MboxBytes(origin, start, end).bytes()).plain() {
+            let end = MboxLine(origin: origin, start: start).end();
+            if MboxFromLine(MboxBytes(origin: origin, start: start, stop: end).bytes()).plain() {
                 records = records.following(
                     MboxDecodedRecord(
-                        origin,
-                        current.start(),
-                        start,
-                        current.separator(),
-                        limits.mime()
-                    ).value()
+                        origin: origin,
+                        start: current.start(),
+                        stop: start,
+                        separator: current.separator(),
+                        limits: limits.mime()
+                    ).record()
                 );
-                confirm records.size() < limits.messages()
+                confirm records.size() < limits::Limits::messages
                     else throw MboxLimitExceeded.kind("messages");
-                current = current.following(end + 1, MboxSeparatorBytes(origin, start, end).value());
+                current = current.following(end + 1, MboxSeparatorBytes(origin: origin, start: start, stop: end).separator());
             }
             position = position.following(end + 1);
         }
         records = records.following(
             MboxDecodedRecord(
-                origin,
-                current.start(),
-                origin.size(),
-                current.separator(),
-                limits.mime()
-            ).value()
+                origin: origin,
+                start: current.start(),
+                stop: origin.size(),
+                separator: current.separator(),
+                limits: limits.mime()
+            ).record()
         );
         records.entries();
     }
 }
 
-object MboxDecodedRecord {
+hidden object MboxDecodedRecord {
     has origin is @byte;
     has start, stop is int;
     has separator is MboxSeparator;
@@ -428,21 +430,21 @@ object MboxDecodedRecord {
         self.limits = limits;
     }
 
-    value() is MboxRecord {
+    record() is MboxRecord {
         confirm stop - start >= 2 && origin[stop - 1].int() == 10 && origin[stop - 2].int() == 10
             else throw InvalidMbox.located(stop, "record requires an extra empty delimiter line");
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        let output = MboxOutput(buffer, limits::Limits::body_bytes, "message_bytes");
+        let output = MboxOutput(buffer: buffer, maximum: limits::Limits::body_bytes, kind: "message_bytes");
         let position = MimePosition(start);
         loop {
             let beginning = position.index();
             last if beginning == stop - 1;
-            let end = MboxLine(origin, beginning).end();
-            let line = MboxBytes(origin, beginning, end).bytes();
+            let end = MboxLine(origin: origin, start: beginning).end();
+            let line = MboxBytes(origin: origin, start: beginning, stop: end).bytes();
             let quoted = line.size() > 0 && line[0].int() == 62 && MboxFromLine(line).escaped();
             if quoted {
-                output.write(MboxBytes(origin, beginning + 1, end).bytes());
+                output.write(MboxBytes(origin: origin, start: beginning + 1, stop: end).bytes());
             }
             else {
                 output.write(line);
@@ -450,7 +452,7 @@ object MboxDecodedRecord {
             output.write([13.byte(), 10.byte()]);
             position = position.following(end + 1);
         }
-        MboxRecord(separator, ParsedMail(buffer.content().bytes(), limits).message());
+        MboxRecord(separator: separator, message: ParsedMail(buffer.content().bytes(), limits).message());
     }
 }
 
@@ -463,8 +465,8 @@ test "empty mboxrd archive" {
 test "mboxrd quoting preserves already quoted From lines" {
     let wire = "\r\nFrom sender\r\n>From quoted\r\n";
     let record = MboxRecord(
-        MboxSeparator("From sender date"),
-        ParsedMail(Utf8Encoded(wire).bytes()).message()
+        separator: MboxSeparator("From sender date"),
+        message: ParsedMail(Utf8Encoded(wire).bytes()).message()
     );
     let parsed = ParsedMbox(MboxArchive([record]).bytes()).records().item(0);
     test.is(Utf8Decoded(parsed.message().bytes()).string(), wire);

@@ -70,7 +70,7 @@ object ImapSession does Closing {
     }
 
     event_capacity() is int {
-        origin.limits().responses();
+        origin.limits()::Limits::responses;
     }
 
     closed() is bool {
@@ -102,7 +102,7 @@ object ImapSession does Closing {
             [],
             false
         );
-        let read = reply.result();
+        let read = reply.read();
         read.require_success();
         let source = read.responses();
         let boxes is MimeItems<ImapMailbox> = MimeItems();
@@ -130,7 +130,7 @@ object ImapSession does Closing {
         defer guard.close();
         confirm !self.closed() else throw ImapChannelClosed.closed;
         let completed = Event();
-        let cleanup = ImapSessionCleanup(self, completed);
+        let cleanup = ImapSessionCleanup(origin: self, completed: completed);
         defer cleanup.close();
         let state = await states.receiving().item();
         state = state.cleared();
@@ -140,18 +140,18 @@ object ImapSession does Closing {
         else {
             ImapMailboxCommand.select;
         };
-        let result = await origin.request(ImapCommand(operation: action, mailbox: name)).result();
+        let result = await origin.request(ImapCommand(operation: action, mailbox: name)).read();
         if !result.successful() {
             await states.sending().send(state);
             completed.set();
             result.require_success();
         }
-        let snapshot = ImapMailboxState(result, read_only);
+        let snapshot = ImapMailboxState(result: result, read_only: read_only);
         state = state.selected(name, snapshot);
         let token = state.selection().token();
         await states.sending().send(state);
         completed.set();
-        SelectedMailbox(self, token);
+        SelectedMailbox(origin: self, token: token);
     }
 
     async observation(token is ImapSelectionToken) is ImapMailboxState {
@@ -161,7 +161,7 @@ object ImapSession does Closing {
         defer guard.close();
         confirm !self.closed() else throw ImapChannelClosed.closed;
         let completed = Event();
-        let cleanup = ImapSessionCleanup(self, completed);
+        let cleanup = ImapSessionCleanup(origin: self, completed: completed);
         defer cleanup.close();
         let state = await states.receiving().item();
         try {
@@ -190,7 +190,7 @@ object ImapSession does Closing {
         defer guard.close();
         confirm !self.closed() else throw ImapChannelClosed.closed;
         let completed = Event();
-        let cleanup = ImapSessionCleanup(self, completed);
+        let cleanup = ImapSessionCleanup(origin: self, completed: completed);
         defer cleanup.close();
         let state = await states.receiving().item();
         try {
@@ -232,7 +232,7 @@ object ImapSession does Closing {
             completed.set();
             throw;
         }
-        let result = await origin.request(command).result();
+        let result = await origin.request(command).read();
         let responses = result.responses();
         for (0..responses.size()) -> index {
             state = state.observed(responses.item(index));
@@ -244,7 +244,7 @@ object ImapSession does Closing {
         let selections = state.selections();
         await states.sending().send(state);
         completed.set();
-        ImapSessionReply(result, selections);
+        ImapSessionReply(result: result, selection: selections);
     }
 
     async entry() is LockGuard {
@@ -253,13 +253,13 @@ object ImapSession does Closing {
         let control = await idle_control.guard();
         defer control.close();
         let complete = Event();
-        let cleanup = ImapSessionCleanup(self, complete);
+        let cleanup = ImapSessionCleanup(origin: self, completed: complete);
         defer cleanup.close();
         let slot = await idle_slots.receiving().item();
         if slot.active() {
             slot.task().stop();
             try {
-                await slot.task().result();
+                await slot.task().outcome();
             }
             catch failure is Error {
                 if self.closed() {
@@ -287,13 +287,13 @@ object ImapSession does Closing {
         let control = await idle_control.guard();
         defer control.close();
         let complete = Event();
-        let cleanup = ImapSessionCleanup(self, complete);
+        let cleanup = ImapSessionCleanup(origin: self, completed: complete);
         defer cleanup.close();
         let slot = await idle_slots.receiving().item();
         if slot.active() {
             slot.task().stop();
             try {
-                await slot.task().result();
+                await slot.task().outcome();
             }
             catch failure is Error {
                 if self.closed() {
@@ -301,7 +301,7 @@ object ImapSession does Closing {
                 }
             }
         }
-        let task = ImapIdleTask(self, token, events, stop, finished);
+        let task = ImapIdleTask(origin: self, token: token, events: events, stop: stop, finished: finished);
         await idle_slots.sending().send(ImapIdleSlot(task));
         task.start();
         complete.set();
@@ -314,7 +314,7 @@ object ImapSession does Closing {
         stop is Event,
         finished is Event
     ) is int {
-        let ending = ImapIdleEnding(events, finished);
+        let ending = ImapIdleEnding(events: events, finished: finished);
         defer ending.close();
         if stop.ready() {
             return 0;
@@ -328,7 +328,7 @@ object ImapSession does Closing {
         }
         confirm !self.closed() else throw ImapChannelClosed.closed;
         let completed = Event();
-        let cleanup = ImapSessionCleanup(self, completed);
+        let cleanup = ImapSessionCleanup(origin: self, completed: completed);
         defer cleanup.close();
         let state = await states.receiving().item();
         try {
@@ -339,7 +339,7 @@ object ImapSession does Closing {
             completed.set();
             throw;
         }
-        let observer = ImapEventObservation(state.selection().state(), events);
+        let observer = ImapEventObservation(state: state.selection().state(), events: events);
         let replies = await origin.idle(stop, observer);
         if replies.size() > 0 {
             let result = replies[0];
@@ -448,7 +448,7 @@ object ImapSelectedState {
     }
 }
 
-object ImapSessionState {
+hidden object ImapSessionState {
     has serial is BigInt;
     has selection is @ImapSelectedState;
 
@@ -482,9 +482,9 @@ object ImapSessionState {
 
     selected(name is ImapMailboxName, value is ImapMailboxState) is ^ImapSessionState {
         let following = (serial + BigInt("1"));
-        let token = ImapSelectionToken(name, following);
+        let token = ImapSelectionToken(name: name, generation: following);
         ^serial = following;
-        ^selection = [ImapSelectedState(token, value)];
+        ^selection = [ImapSelectedState(token: token, value: value)];
     }
 
     observed(response is ImapResponse) is ^ImapSessionState {
@@ -504,7 +504,7 @@ object ImapSessionReply {
         self.selection = selection;
     }
 
-    result() is ImapCommandRead {
+    read() is ImapCommandRead {
         result;
     }
 
@@ -534,7 +534,7 @@ object SearchedMail {
     has pending is Future<MailboxUids>;
 
     SearchedMail(origin is SelectedMailbox, matching is MailMatching) {
-        pending = ImapSearching(origin, ImapCommand(matching: matching)).read();
+        pending = ImapSearching(origin: origin, command: ImapCommand(matching: matching)).read();
     }
 
     uids() is Future<MailboxUids> {
@@ -542,7 +542,7 @@ object SearchedMail {
     }
 }
 
-object ImapSearching {
+hidden object ImapSearching {
     has origin is SelectedMailbox;
     has command is ImapCommand;
 
@@ -555,7 +555,7 @@ object ImapSearching {
         let before = await origin.state();
         let epoch = before.uid_validity();
         let reply = await origin.session().run(command, [origin.context()], [epoch], false);
-        let result = reply.result();
+        let result = reply.read();
         result.require_success();
         // Do not relabel identifiers with a new epoch if UIDVALIDITY changed
         // while the server was producing this SEARCH result.
@@ -568,9 +568,9 @@ object ImapSearching {
             if response.name() == "SEARCH" || response.name() == "ESEARCH" {
                 matches = matches.following(
                     ImapSearchResult(
-                        response,
-                        ImapTag(result.completion().tag()),
-                        ImapUidSetLimits()
+                        origin: response,
+                        tag: ImapTag(result.completion().tag()),
+                        limits: ImapUidSetLimits()
                     ).uids()
                 );
             }
@@ -583,10 +583,10 @@ object ImapSearching {
                 "UIDNOTSTICKY cannot produce reusable mailbox UID snapshots"
             );
         MailboxUids(
-            origin.name(),
-            reply.state().uid_validity(),
-            values[0],
-            origin.session().account()
+            mailbox: origin.name(),
+            validity: reply.state().uid_validity(),
+            uids: values[0],
+            account: origin.session().account()
         );
     }
 }
@@ -596,7 +596,7 @@ object FetchedMail {
 
     FetchedMail(origin is SelectedMailbox, uids is MailboxUids, data is Sequencing<ImapDatum>) {
         let ids = uids.checked(origin.name(), uids.validity(), origin.session().account());
-        pending = ImapFetching(origin, uids, ImapCommand(uids: ids, data: data), false).read();
+        pending = ImapFetching(origin: origin, uids: uids, command: ImapCommand(uids: ids, data: data), writable: false).read();
     }
 
     messages() is Future<Sequencing<ImapMessage>> {
@@ -615,10 +615,10 @@ object ChangedMailFlags {
     ) {
         let ids = uids.checked(origin.name(), uids.validity(), origin.session().account());
         pending = ImapFetching(
-            origin,
-            uids,
-            ImapCommand(uids: ids, flags: flags, change: change),
-            true
+            origin: origin,
+            uids: uids,
+            command: ImapCommand(uids: ids, flags: flags, change: change),
+            writable: true
         ).read();
     }
 
@@ -627,7 +627,7 @@ object ChangedMailFlags {
     }
 }
 
-object ImapFetching {
+hidden object ImapFetching {
     has origin is SelectedMailbox;
     has uids is MailboxUids;
     has command is ImapCommand;
@@ -652,7 +652,7 @@ object ImapFetching {
             [uids.validity()],
             writable
         );
-        let result = reply.result();
+        let result = reply.read();
         result.require_success();
         uids.checked(origin.name(), reply.state().uid_validity(), origin.session().account());
         let responses = result.responses();
@@ -701,7 +701,7 @@ object MailboxEvent {
         }
         if response.name() == "EXPUNGE" {
             let values = ParsedImapData(response).entries();
-            return ImapSequence(ImapUnsigned(values.item(1).string(), true).value());
+            return ImapSequence(ImapUnsigned(origin: values.item(1).string(), nonzero: true).int());
         }
         throw MissingImapDatum.name("sequence");
     }
@@ -774,7 +774,7 @@ object MailboxEvents {
         if self.closed() {
             if begun.ready() {
                 let task = await activation;
-                await task.result();
+                await task.outcome();
             }
             throw MailboxEventsClosed.closed;
         }
@@ -791,7 +791,7 @@ object MailboxEvents {
             await events.receiving().item();
         }
         catch failure is ChannelClosed {
-            await task.result();
+            await task.outcome();
             throw MailboxEventsClosed.closed;
         }
     }
@@ -809,7 +809,7 @@ object MailboxEvents {
             return self;
         }
         let task = await activation;
-        await task.result();
+        await task.outcome();
         self;
     }
 
@@ -854,12 +854,12 @@ object ImapIdleTask {
         stop.set();
     }
 
-    result() is Future<int> {
+    outcome() is Future<int> {
         pending;
     }
 }
 
-object ImapIdleSlot {
+hidden object ImapIdleSlot {
     has values is @ImapIdleTask;
 
     ImapIdleSlot() {
@@ -880,7 +880,7 @@ object ImapIdleSlot {
     }
 }
 
-object ImapIdleEnding {
+hidden object ImapIdleEnding {
     has events is Sending<MailboxEvent>;
     has finished is Event;
 
@@ -912,7 +912,7 @@ object ImapEventObservation does ImapResponseObserving {
         let state = await states.receiving().item();
         state = state.observed(response);
         await states.sending().send(state);
-        await events.send(MailboxEvent(response, state));
+        await events.send(MailboxEvent(response: response, state: state));
         1;
     }
 }

@@ -83,12 +83,12 @@ object MboxSession does Closing {
             throw failure;
         };
         let initial = try {
-            let wire = MboxFileBytes(origin.path(), origin.limits().wire_bytes()).bytes();
-            let records = ParsedMbox(wire, origin.limits()).records();
+            let wire = MboxFileBytes(path: origin.path(), maximum: origin.limits()::Limits::wire_bytes).bytes();
+            let records = ParsedMbox(origin: wire, limits: origin.limits()).records();
             let identifiers is @string = (0..records.size()).map() -> index {
                 token + "." + index.string();
             };
-            MboxSnapshot(wire, records, identifiers, origin.limits());
+            MboxSnapshot(wire: wire, records: records, identifiers: identifiers, limits: origin.limits());
         }
         catch failure is Error {
             try {
@@ -128,7 +128,7 @@ object MboxSession does Closing {
         self.current();
         let records = view.records();
         let count = records.size();
-        confirm count < origin.limits().messages() else throw MboxLimitExceeded.kind("messages");
+        confirm count < origin.limits()::Limits::messages else throw MboxLimitExceeded.kind("messages");
         confirm serial < 9223372036854775807 else throw MboxLimitExceeded.kind("identifiers");
         let added is @MboxRecord = (0..count + 1).map() -> index {
             if index < count {
@@ -147,15 +147,15 @@ object MboxSession does Closing {
                 nonce + "." + serial.string();
             }
         };
-        let wire = MboxArchive(added, origin.limits()).bytes();
+        let wire = MboxArchive(records: added, limits: origin.limits()).bytes();
         let prepared = MboxSnapshot(
-            wire,
-            ParsedMbox(wire, origin.limits()).records(),
-            identifiers,
-            origin.limits()
+            wire: wire,
+            records: ParsedMbox(wire, origin.limits()).records(),
+            identifiers: identifiers,
+            limits: origin.limits()
         );
         self.current();
-        MboxReplacement(origin.path(), wire, lease).commit();
+        MboxReplacement(path: origin.path(), wire: wire, lease: lease).commit();
         ^view = prepared;
         ^serial = serial + 1;
     }
@@ -174,21 +174,21 @@ object MboxSession does Closing {
         let identifiers is @string = kept.map() -> index {
             before[index];
         };
-        let wire = MboxArchive(retained, origin.limits()).bytes();
+        let wire = MboxArchive(records: retained, limits: origin.limits()).bytes();
         let prepared = MboxSnapshot(
-            wire,
-            ParsedMbox(wire, origin.limits()).records(),
-            identifiers,
-            origin.limits()
+            wire: wire,
+            records: ParsedMbox(wire, origin.limits()).records(),
+            identifiers: identifiers,
+            limits: origin.limits()
         );
         self.current();
-        MboxReplacement(origin.path(), wire, lease).commit();
+        MboxReplacement(path: origin.path(), wire: wire, lease: lease).commit();
         ^view = prepared;
     }
 
     hidden current() is void {
         lease.check();
-        let present = MboxFileBytes(origin.path(), origin.limits().wire_bytes()).bytes();
+        let present = MboxFileBytes(path: origin.path(), maximum: origin.limits()::Limits::wire_bytes).bytes();
         confirm present == view.bytes() else throw MboxConflict.conflict;
     }
 }
@@ -197,7 +197,7 @@ enum MboxConflict is Error = (conflict);
 
 enum CommittedMboxFailure is Error = (detailed(code is string, reason is string));
 
-object MboxLease does Closing {
+hidden object MboxLease does Closing {
     has owner is File;
     has guard is FileLock;
 
@@ -243,7 +243,7 @@ object MboxLease does Closing {
     }
 }
 
-object MboxFileBytes {
+hidden object MboxFileBytes {
     has path is Path;
     has maximum is int;
 
@@ -277,7 +277,7 @@ object MboxFileBytes {
     }
 }
 
-object MboxSnapshot {
+hidden object MboxSnapshot {
     has wire is @byte;
     has records is @MboxRecord;
     has identifiers is @string;
@@ -292,14 +292,14 @@ object MboxSnapshot {
         let count = records.size();
         confirm count == identifiers.size()
             else throw InvalidArgument.because("mbox identity count mismatch");
-        confirm count <= limits.messages() else throw MboxLimitExceeded.kind("messages");
+        confirm count <= limits::Limits::messages else throw MboxLimitExceeded.kind("messages");
         let values is @MboxRecord = (0..count).map() -> index {
             records.item(index);
         };
         let empty is @MailFlag = [];
         let flags = MailFlags(empty);
         let saved is @StoredMail = (0..count).map() -> index {
-            StoredMail(identifiers[index], values[index].message(), flags, limits.mime());
+            StoredMail(identifier: identifiers[index], message: values[index].message(), flags: flags, limits: limits.mime());
         };
         self.wire = wire;
         self.records = values;
@@ -324,7 +324,7 @@ object MboxSnapshot {
     }
 }
 
-object MboxReplacement {
+hidden object MboxReplacement {
     has path is Path;
     has wire is @byte;
     has lease is MboxLease;
@@ -364,7 +364,7 @@ object MboxReplacement {
 }
 
 test "mbox coordinates do not observe a filesystem" {
-    let mailbox = Mbox(Path("missing/archive"), MboxLimits());
+    let mailbox = Mbox(path: Path("missing/archive"), limits: MboxLimits());
     test.is(mailbox.path().string(), "missing/archive");
-    test.is(mailbox.limits().messages(), 1000);
+    test.is(mailbox.limits()::Limits::messages, 1000);
 }

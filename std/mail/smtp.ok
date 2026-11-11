@@ -176,7 +176,7 @@ enum InvalidSmtpCapabilities is Error = (because(reason is string));
 
 enum MissingSmtpSize is Error = (missing);
 
-object SmtpKnownFeature {
+hidden object SmtpKnownFeature {
     has name is string;
 
     SmtpKnownFeature(name is string) {
@@ -223,7 +223,7 @@ object SmtpKnownFeature {
     }
 }
 
-object SmtpSizeNumber {
+hidden object SmtpSizeNumber {
     has origin is string;
 
     SmtpSizeNumber(origin is string) {
@@ -240,7 +240,7 @@ object SmtpSizeNumber {
     }
 }
 
-object SmtpMechanismName {
+hidden object SmtpMechanismName {
     has origin is string;
 
     SmtpMechanismName(origin is string) {
@@ -263,12 +263,12 @@ object SmtpMechanismName {
 }
 
 test "EHLO distinguishes SIZE presence and retains unknown extensions" {
-    let caps = SmtpCapabilities(SmtpReply(250, ["server", "SIZE", "X-LOCAL Value"]));
+    let caps = SmtpCapabilities(SmtpReply(code: 250, lines: ["server", "SIZE", "X-LOCAL Value"]));
     test.ok(caps.features().membership(SmtpFeature.size));
     test.ok(!caps.has_maximum_size());
     test.is(caps.extensions().last().string(), "X-LOCAL Value");
 }
 
 test "EHLO does not promote greeting text into capabilities" {
-    test.is(SmtpCapabilities(SmtpReply(250, ["STARTTLS"])).features().size(), 0);
+    test.is(SmtpCapabilities(SmtpReply(code: 250, lines: ["STARTTLS"])).features().size(), 0);
 }

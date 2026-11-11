@@ -36,10 +36,10 @@ object ImapCommandChannel does Closing {
         prefix is @byte,
         limits is ImapCommandLimits
     ) {
-        confirm prefix.size() <= limits.wire_bytes()
+        confirm prefix.size() <= limits::Limits::wire_bytes
             else throw ImapCommandLimitExceeded.kind("prefix_bytes");
-        confirm limits.responses() > 0 else throw ImapCommandLimitExceeded.kind("responses");
-        confirm limits.wire_bytes() > 0 && limits.response().wire_bytes() > 0
+        confirm limits::Limits::responses > 0 else throw ImapCommandLimitExceeded.kind("responses");
+        confirm limits::Limits::wire_bytes > 0 && limits.response()::Limits::wire_bytes > 0
             else throw ImapCommandLimitExceeded.kind("wire_bytes");
         self.input = input;
         self.output = output;
@@ -49,11 +49,11 @@ object ImapCommandChannel does Closing {
         stopped = Event();
         let channel is Channel<ImapExchangeState> = Channel(1);
         states = channel;
-        initial = channel.sending().send(ImapExchangeState(prefix, BigInt("1")));
+        initial = channel.sending().send(ImapExchangeState(prefix: prefix, serial: BigInt("1")));
     }
 
     request(command is ImapCommand) is ImapCommandExchange {
-        ImapCommandExchange(self, command);
+        ImapCommandExchange(origin: self, command: command);
     }
 
     limits() is ImapCommandLimits {
@@ -87,12 +87,12 @@ object ImapCommandChannel does Closing {
         defer guard.close();
         confirm !self.closed() else throw ImapChannelClosed.closed;
         let completed = Event();
-        let cleanup = ImapExchangeCleanup(self, completed);
+        let cleanup = ImapExchangeCleanup(origin: self, complete: completed);
         defer cleanup.close();
         let state = await states.receiving().item();
         let tag = ImapTag("O" + state.serial().string());
         let continuation is ImapContinuationWriting = if command.literal() {
-            ImapLiteralWriting(output, command);
+            ImapLiteralWriting(output: output, command: command);
         }
         else {
             ImapNoContinuation();
@@ -100,13 +100,13 @@ object ImapCommandChannel does Closing {
         let logout = command.name() == "LOGOUT";
         await output.write(ByteSnapshot(command.bytes(tag)));
         let result = await ImapCommandInput(
-            input,
-            tag,
-            state.prefix(),
-            limits,
-            ImapReplyMode(continuation, logout)
+            origin: input,
+            tag: tag,
+            prefix: state.prefix(),
+            limits: limits,
+            mode: ImapReplyMode(continuation, logout)
         ).read();
-        let following = ImapExchangeState(result.remainder(), (state.serial() + BigInt("1")));
+        let following = ImapExchangeState(prefix: result.remainder(), serial: (state.serial() + BigInt("1")));
         await states.sending().send(following);
         completed.set();
         if logout {
@@ -125,16 +125,16 @@ object ImapCommandChannel does Closing {
             return [];
         }
         let completed = Event();
-        let cleanup = ImapExchangeCleanup(self, completed);
+        let cleanup = ImapExchangeCleanup(origin: self, complete: completed);
         defer cleanup.close();
         let state = await states.receiving().item();
         let tag = ImapTag("O" + state.serial().string());
         await output.write(ByteSnapshot(ImapCommand(simple: ImapSimpleCommand.idle).bytes(tag)));
-        let action = ImapIdleWireInput(input, output, tag, state.prefix(), limits, stop, observer);
+        let action = ImapIdleWireInput(input: input, output: output, tag: tag, prefix: state.prefix(), limits: limits, stop: stop, observer: observer);
         let scope is FutureScope<int, ImapCommandRead> = FutureScope(action: action.run);
         let result = await scope.outcome();
         await states.sending().send(
-            ImapExchangeState(result.remainder(), (state.serial() + BigInt("1")))
+            ImapExchangeState(prefix: result.remainder(), serial: (state.serial() + BigInt("1")))
         );
         completed.set();
         [result];
@@ -152,12 +152,12 @@ object ImapCommandExchange {
         pending = origin.perform(command);
     }
 
-    result() is Future<ImapCommandRead> {
+    read() is Future<ImapCommandRead> {
         pending;
     }
 }
 
-object ImapExchangeState {
+hidden object ImapExchangeState {
     has prefix is @byte;
     has serial is BigInt;
 
@@ -208,7 +208,7 @@ object ImapLiteralWriting does ImapContinuationWriting {
 
 enum ImapChannelClosed is Error = (closed);
 
-object ImapIdleWireInput {
+hidden object ImapIdleWireInput {
     has input is AsyncReading;
     has output is AsyncWriting;
     has tag is ImapTag;
@@ -237,13 +237,13 @@ object ImapIdleWireInput {
 
     async run(group is Supervising<int>) is ImapCommandRead {
         let sent = Event();
-        let continuation = ImapIdleContinuation(output, stop, sent, group);
+        let continuation = ImapIdleContinuation(output: output, stop: stop, sent: sent, group: group);
         let result = await ImapCommandInput(
-            input,
-            tag,
-            prefix,
-            limits,
-            ImapReplyMode(continuation, false, observer)
+            origin: input,
+            tag: tag,
+            prefix: prefix,
+            limits: limits,
+            mode: ImapReplyMode(continuation, false, observer)
         ).read();
         if !sent.ready() {
             group.cancel();
@@ -272,12 +272,12 @@ object ImapIdleContinuation does ImapContinuationWriting {
     }
 
     async write() is int {
-        group.start(ImapDoneWriting(output, stop, sent).write());
+        group.start(ImapDoneWriting(output: output, stop: stop, sent: sent).write());
         1;
     }
 }
 
-object ImapDoneWriting {
+hidden object ImapDoneWriting {
     has output is AsyncWriting;
     has stop, sent is Event;
 
@@ -296,7 +296,7 @@ object ImapDoneWriting {
 }
 
 test "exchange state retains exact unread bytes and unbounded serial" {
-    let state = ImapExchangeState([0.byte(), 255.byte()], BigInt("4294967296"));
+    let state = ImapExchangeState(prefix: [0.byte(), 255.byte()], serial: BigInt("4294967296"));
     test.is(state.prefix(), [0.byte(), 255.byte()]);
     test.is(state.serial().string(), "4294967296");
 }

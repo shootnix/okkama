@@ -45,16 +45,18 @@ object SmtpDataLimits {
         self.line_bytes = line_bytes;
     }
 
-    message_bytes() is int {
-        message_bytes;
-    }
+    cap Limits {
+        message_bytes is int {
+            message_bytes;
+        }
 
-    wire_bytes() is int {
-        wire_bytes;
-    }
+        wire_bytes is int {
+            wire_bytes;
+        }
 
-    line_bytes() is int {
-        line_bytes;
+        line_bytes is int {
+            line_bytes;
+        }
     }
 }
 
@@ -62,7 +64,7 @@ object PreparedSmtpData does ByteSource {
     has value is SmtpDataValue;
 
     PreparedSmtpData(origin is MailMessage, capabilities is SmtpCapabilities) {
-        value = SmtpDataValue(origin, capabilities, SmtpDataLimits());
+        value = SmtpDataValue(origin: origin, capabilities: capabilities, limits: SmtpDataLimits());
     }
 
     PreparedSmtpData(
@@ -70,7 +72,7 @@ object PreparedSmtpData does ByteSource {
         capabilities is SmtpCapabilities,
         limits is SmtpDataLimits
     ) {
-        value = SmtpDataValue(origin, capabilities, limits);
+        value = SmtpDataValue(origin: origin, capabilities: capabilities, limits: limits);
     }
 
     bytes() is @byte {
@@ -90,7 +92,7 @@ enum InvalidSmtpData is Error = (located(offset is int, reason is string));
 
 enum MissingSmtpExtension is Error = (name(name is string));
 
-object SmtpDataValue {
+hidden object SmtpDataValue {
     has wire is @byte;
     has size is int;
     has mode is SmtpBodyMode;
@@ -99,11 +101,11 @@ object SmtpDataValue {
         confirm MimeMetadata(origin.headers()).encoding() != TransferEncoding.binary
             else throw InvalidSmtpData.located(0, "binary MIME requires BDAT, not DATA");
         let original = origin.limits();
-        let maximum = if original::Limits::body_bytes < limits.message_bytes() {
+        let maximum = if original::Limits::body_bytes < limits::Limits::message_bytes {
             original::Limits::body_bytes;
         }
         else {
-            limits.message_bytes();
+            limits::Limits::message_bytes;
         };
         let mime = MimeLimits(
             header_bytes: original::Limits::header_bytes,
@@ -113,7 +115,7 @@ object SmtpDataValue {
             body_bytes: maximum
         );
         let rendered = try {
-            DeliveredMail(MailMessage(origin.headers(), origin.body(), mime)).bytes();
+            DeliveredMail(MailMessage(headers: origin.headers(), body: origin.body(), limits: mime)).bytes();
         }
         catch failure is MimeLimitFailure {
             match failure {
@@ -169,11 +171,11 @@ object SmtpDataValue {
         }
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        let output = SmtpDataOutput(buffer, limits.wire_bytes());
+        let output = SmtpDataOutput(buffer: buffer, maximum: limits::Limits::wire_bytes);
         let start = MimePosition(0);
         loop {
             last if start.index() == content.size();
-            let end = SmtpDataLine(content, start.index(), limits.line_bytes()).end();
+            let end = SmtpDataLine(origin: content, start: start.index(), maximum: limits::Limits::line_bytes).end();
             if content[start.index()].int() == 46 {
                 output.write([46.byte()]);
             }
@@ -207,7 +209,7 @@ object SmtpDataValue {
     }
 }
 
-object SmtpDataMime {
+hidden object SmtpDataMime {
     // Parsed nodes retain the inspected child tree. No concrete MimeBody
     // downcast or recursive re-serialization is needed to observe nested CTE.
     has limits is MimeLimits;
@@ -259,7 +261,7 @@ object SmtpDataMime {
     }
 }
 
-object SmtpDataLine {
+hidden object SmtpDataLine {
     has origin is @byte;
     has start, maximum is int;
 
@@ -287,7 +289,7 @@ object SmtpDataLine {
     }
 }
 
-object SmtpDataOutput {
+hidden object SmtpDataOutput {
     has buffer is ByteBuffer;
     has maximum is int;
 
@@ -305,7 +307,7 @@ object SmtpDataOutput {
 
 test "SMTP DATA counts original content and quotes a dot-only line" {
     let message = ParsedMail(Utf8Encoded("\r\n.\r\n").bytes()).message();
-    let prepared = PreparedSmtpData(message, SmtpCapabilities(SmtpReply(250, ["server", "SIZE 5"])));
+    let prepared = PreparedSmtpData(origin: message, capabilities: SmtpCapabilities(SmtpReply(250, ["server", "SIZE 5"])));
     test.is(prepared.message_size(), 5);
     test.is(Utf8Decoded(prepared.bytes()).string(), "\r\n..\r\n.\r\n");
 }

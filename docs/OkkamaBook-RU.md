@@ -4105,6 +4105,17 @@ fallback:)`. Endpoint получает `WebRequest` с `path("id")`,
 `examples/web/` и `examples/http/websocket/` есть JSON-сервис и
 WebSocket-эхо.
 
+`mail` составляет, хранит и читает почту. `MailMessage(headers:
+MessageHeaders([…]), body: TextBody(origin:, charset:))` даёт байты RFC 5322
+через `bytes()`, а `ParsedMail(bytes).message()` читает их обратно.
+`Maildir(path)` и `Mbox(path)` хранят письма на диске.
+У SMTP есть части протокола (`PreparedSmtpData`, `SmtpReply`,
+`SmtpCapabilities`), но клиента пока нет. `ImapSession` выбирает ящики, ищет через
+`UnseenMail()`, `SinceMail(date)`, `AndMail` и `OrMail`, копирует и
+переносит через `CopiedMail`/`MovedMail` и следит за `MailboxEvents`.
+`PopSession().mailbox()` скачивает письма. В `examples/mail/` письмо
+составляется и кладётся в Maildir.
+
 `strings/parse` читает текст как тип, который у него просят: `Number("42").int()`,
 `Number("ff").int(16)`, `Number("6/8").rat()`, `Number("3.0").float()`,
 `Number("255").byte()` и `Truth("true").bool()`. Пробелы не обрезаются, ведущий

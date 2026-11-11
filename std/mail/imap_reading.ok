@@ -22,11 +22,11 @@ object ImapResponseReading {
     has pending is Future<ImapResponseRead>;
 
     ImapResponseReading(origin is AsyncReading) {
-        pending = ImapResponseInput(origin, [], ImapResponseLimits(), 4096).read();
+        pending = ImapResponseInput(origin: origin, prefix: [], limits: ImapResponseLimits(), chunk_bytes: 4096).read();
     }
 
     ImapResponseReading(origin is AsyncReading, prefix is @byte) {
-        pending = ImapResponseInput(origin, prefix, ImapResponseLimits(), 4096).read();
+        pending = ImapResponseInput(origin: origin, prefix: prefix, limits: ImapResponseLimits(), chunk_bytes: 4096).read();
     }
 
     ImapResponseReading(
@@ -35,10 +35,10 @@ object ImapResponseReading {
         limits is ImapResponseLimits,
         chunk_bytes is int
     ) {
-        pending = ImapResponseInput(origin, prefix, limits, chunk_bytes).read();
+        pending = ImapResponseInput(origin: origin, prefix: prefix, limits: limits, chunk_bytes: chunk_bytes).read();
     }
 
-    result() is Future<ImapResponseRead> {
+    read() is Future<ImapResponseRead> {
         pending;
     }
 }
@@ -67,7 +67,7 @@ object ImapResponseRead {
     }
 }
 
-object ImapResponseInput {
+hidden object ImapResponseInput {
     has origin is AsyncReading;
     has prefix is @byte;
     has limits is ImapResponseLimits;
@@ -81,7 +81,7 @@ object ImapResponseInput {
     ) {
         confirm chunk_bytes > 0
             else throw InvalidArgument.because("IMAP read chunk size must be positive");
-        confirm prefix.size() <= limits.wire_bytes()
+        confirm prefix.size() <= limits::Limits::wire_bytes
             else throw ImapResponseLimitExceeded.kind("chunk_bytes");
         self.origin = origin;
         self.prefix = prefix;
@@ -94,7 +94,7 @@ object ImapResponseInput {
         decoder = decoder.fed(prefix);
         loop {
             last if decoder.complete();
-            let remaining = limits.wire_bytes() - decoder.consumed();
+            let remaining = limits::Limits::wire_bytes - decoder.consumed();
             confirm remaining > 0 else throw ImapResponseLimitExceeded.kind("wire_bytes");
             let requested = if chunk_bytes < remaining {
                 chunk_bytes;

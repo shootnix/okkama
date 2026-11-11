@@ -123,28 +123,30 @@ object ImapCommandLimits {
         self.response = response;
     }
 
-    responses() is int {
-        responses;
-    }
-
-    wire_bytes() is int {
-        wire_bytes;
-    }
-
-    chunk_bytes() is int {
-        chunk_bytes;
-    }
-
     response() is ImapResponseLimits {
         response;
     }
+
+    cap Limits {
+        responses is int {
+            responses;
+        }
+
+        wire_bytes is int {
+            wire_bytes;
+        }
+
+        chunk_bytes is int {
+            chunk_bytes;
+        }
+    }
 }
 
-object ImapCommandReading {
+hidden object ImapCommandReading {
     has pending is Future<ImapCommandRead>;
 
     ImapCommandReading(origin is AsyncReading, tag is ImapTag) {
-        pending = ImapCommandInput(origin, tag, [], ImapCommandLimits()).read();
+        pending = ImapCommandInput(origin: origin, tag: tag, prefix: [], limits: ImapCommandLimits()).read();
     }
 
     ImapCommandReading(
@@ -153,10 +155,10 @@ object ImapCommandReading {
         prefix is @byte,
         limits is ImapCommandLimits
     ) {
-        pending = ImapCommandInput(origin, tag, prefix, limits).read();
+        pending = ImapCommandInput(origin: origin, tag: tag, prefix: prefix, limits: limits).read();
     }
 
-    result() is Future<ImapCommandRead> {
+    read() is Future<ImapCommandRead> {
         pending;
     }
 }
@@ -222,7 +224,7 @@ object ImapCommandInput {
         prefix is @byte,
         limits is ImapCommandLimits
     ) {
-        confirm prefix.size() <= limits.wire_bytes()
+        confirm prefix.size() <= limits::Limits::wire_bytes
             else throw ImapCommandLimitExceeded.kind("prefix_bytes");
         self.origin = origin;
         self.tag = tag;
@@ -238,7 +240,7 @@ object ImapCommandInput {
         limits is ImapCommandLimits,
         mode is ImapReplyMode
     ) {
-        confirm prefix.size() <= limits.wire_bytes()
+        confirm prefix.size() <= limits::Limits::wire_bytes
             else throw ImapCommandLimitExceeded.kind("prefix_bytes");
         self.origin = origin;
         self.tag = tag;
@@ -254,40 +256,40 @@ object ImapCommandInput {
         let tail = ImapCommandTail(prefix);
         let continued = Event();
         loop {
-            confirm count.index() < limits.responses()
+            confirm count.index() < limits::Limits::responses
                 else throw ImapCommandLimitExceeded.kind("responses");
-            let remaining = limits.wire_bytes() - used.index();
+            let remaining = limits::Limits::wire_bytes - used.index();
             confirm remaining > 0 else throw ImapCommandLimitExceeded.kind("wire_bytes");
             let per = limits.response();
-            let maximum = if remaining < per.wire_bytes() {
+            let maximum = if remaining < per::Limits::wire_bytes {
                 remaining;
             }
             else {
-                per.wire_bytes();
+                per::Limits::wire_bytes;
             };
             let bounded = ImapResponseLimits(
-                per.line_bytes(),
-                per.literal_bytes(),
-                maximum,
-                per.literals()
+                line_bytes: per::Limits::line_bytes,
+                literal_bytes: per::Limits::literal_bytes,
+                wire_bytes: maximum,
+                literals: per::Limits::literals
             );
             // A previous read can contain bytes beyond this command. Feed only
             // the bounded prefix and retain the rest explicitly without loss.
-            let split = ImapCommandPrefix(tail.bytes(), maximum);
+            let split = ImapCommandPrefix(origin: tail.bytes(), maximum: maximum);
             let read = await ImapResponseReading(
-                origin,
-                split.head(),
-                bounded,
-                limits.chunk_bytes()
-            ).result();
+                origin: origin,
+                prefix: split.head(),
+                limits: bounded,
+                chunk_bytes: limits::Limits::chunk_bytes
+            ).read();
             let response = read.response();
             used = used.following(used.index() + read.consumed());
             count = count.following(count.index() + 1);
-            tail = tail.following(ImapCommandPrefixJoin(read.remainder(), split.tail()).bytes());
+            tail = tail.following(ImapCommandPrefixJoin(first: read.remainder(), second: split.tail()).bytes());
             if response.kind() == ImapResponseKind.tagged {
                 confirm response.tag() == tag.string()
                     else throw UnexpectedImapTag.detailed(tag.string(), response.tag());
-                return ImapCommandRead(collected.entries(), response, tail.bytes(), used.index());
+                return ImapCommandRead(responses: collected.entries(), completion: response, remainder: tail.bytes(), consumed: used.index());
             }
             if response.kind() == ImapResponseKind.continuation {
                 confirm !continued.ready() else throw UnexpectedImapContinuation.unexpected;
@@ -302,7 +304,7 @@ object ImapCommandInput {
     }
 }
 
-object ImapCommandTail {
+hidden object ImapCommandTail {
     has value is @byte;
 
     ImapCommandTail(origin is @byte) {
@@ -318,7 +320,7 @@ object ImapCommandTail {
     }
 }
 
-object ImapCommandPrefix {
+hidden object ImapCommandPrefix {
     has head, tail is @byte;
 
     ImapCommandPrefix(origin is @byte, maximum is int) {
@@ -347,7 +349,7 @@ object ImapCommandPrefix {
     }
 }
 
-object ImapCommandPrefixJoin {
+hidden object ImapCommandPrefixJoin {
     has first, second is @byte;
 
     ImapCommandPrefixJoin(first is @byte, second is @byte) {
@@ -376,7 +378,7 @@ enum ImapServerClosed is Error = (bye);
 test "tagged rejection remains a completed aligned outcome" {
     let wire = Utf8Encoded("O1 NO rejected\r\n").bytes();
     let response = ParsedImapResponse(wire).response();
-    let result = ImapCommandRead([], response, [7.byte()], wire.size());
+    let result = ImapCommandRead(responses: [], completion: response, remainder: [7.byte()], consumed: wire.size());
     test.is(result.successful(), false);
     test.is(result.remainder(), [7.byte()]);
     let rejected = try {

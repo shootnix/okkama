@@ -20,11 +20,11 @@ object PopReplyReading {
     has pending is Future<PopReplyRead>;
 
     PopReplyReading(origin is AsyncReading, mode is PopReplyMode) {
-        pending = PopReplyInput(origin, mode, [], PopReplyLimits(), 4096).read();
+        pending = PopReplyInput(origin: origin, mode: mode, prefix: [], limits: PopReplyLimits(), chunk_bytes: 4096).read();
     }
 
     PopReplyReading(origin is AsyncReading, mode is PopReplyMode, prefix is @byte) {
-        pending = PopReplyInput(origin, mode, prefix, PopReplyLimits(), 4096).read();
+        pending = PopReplyInput(origin: origin, mode: mode, prefix: prefix, limits: PopReplyLimits(), chunk_bytes: 4096).read();
     }
 
     PopReplyReading(
@@ -34,10 +34,10 @@ object PopReplyReading {
         limits is PopReplyLimits,
         chunk_bytes is int
     ) {
-        pending = PopReplyInput(origin, mode, prefix, limits, chunk_bytes).read();
+        pending = PopReplyInput(origin: origin, mode: mode, prefix: prefix, limits: limits, chunk_bytes: chunk_bytes).read();
     }
 
-    result() is Future<PopReplyRead> {
+    read() is Future<PopReplyRead> {
         pending;
     }
 }
@@ -66,7 +66,7 @@ object PopReplyRead {
     }
 }
 
-object PopReplyInput {
+hidden object PopReplyInput {
     has origin is AsyncReading;
     has mode is PopReplyMode;
     has prefix is @byte;
@@ -82,7 +82,7 @@ object PopReplyInput {
     ) {
         confirm chunk_bytes > 0
             else throw InvalidArgument.because("POP3 read chunk size must be positive");
-        confirm prefix.size() <= limits.wire_bytes()
+        confirm prefix.size() <= limits::Limits::wire_bytes
             else throw PopReplyLimitExceeded.kind("chunk_bytes");
         self.origin = origin;
         self.mode = mode;
@@ -92,11 +92,11 @@ object PopReplyInput {
     }
 
     async read() is PopReplyRead {
-        let decoder = PopReplyDecoder(mode, limits);
+        let decoder = PopReplyDecoder(mode: mode, limits: limits);
         decoder = decoder.fed(prefix);
         loop {
             last if decoder.complete();
-            let remaining = limits.wire_bytes() - decoder.consumed();
+            let remaining = limits::Limits::wire_bytes - decoder.consumed();
             confirm remaining > 0 else throw PopReplyLimitExceeded.kind("wire_bytes");
             let requested = if chunk_bytes < remaining {
                 chunk_bytes;
@@ -120,7 +120,7 @@ test "POP3 read snapshot preserves status and exact remainder" {
     let decoder = PopReplyDecoder(PopReplyMode.single);
     decoder = decoder.fed([43.byte(), 79.byte(), 75.byte(), 13.byte(), 10.byte(), 1.byte()]);
     let read = PopReplyRead(decoder);
-    test.is(read.reply().successful(), true);
+    test.is(read.reply()::Reply::successful, true);
     test.is(read.consumed(), 5);
     test.is(read.remainder(), [1.byte()]);
 }

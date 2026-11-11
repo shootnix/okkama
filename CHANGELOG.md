@@ -804,6 +804,28 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     the JVM.
   - The Book drops the legacy log, sql, db, template and test passages (480
     lines) and describes the wave-4 areas in §26.5.
+- **std review, wave 6: mail, the part without a decision (#352).** The card
+  is `okkama-docs/std-review/cards/wave-6-mail.md`.
+  - **Hidden machinery: 102 objects.** These are the IMAP, POP3 and SMTP
+    wire readers, UTF-7 coders, date parsers and mbox and Maildir
+    internals. The operations stay public although nothing calls them yet:
+    `CopiedMail`, `MovedMail`, `ExpungedMail`, `AppendedMail`, the mailbox
+    creation, deletion, renaming and subscription, `ChangedMailFlags`,
+    `MailboxEvents`, `PreviewedPopMail`, and the search keys `UnseenMail`,
+    `SinceMail`, `AndMail`, `OrMail` and `NotMail`.
+  - **Answers with nouns (27):** `ParsedMailDate(…).date_time()`,
+    `ImapUid.number()`, `PopNumber.number()`, `CreatedImapMailbox(…).mailbox()`,
+    `ChangedMaildirFlags(…).mail()` and the readers' `read()`.
+    `ImapFetchAttribute`, a name/value pair, keeps `value()`.
+  - **Caps:**
+    - the mail limits (`::Limits`);
+    - `PopReply::Reply` (`successful`, `text`, `body`, `lines`,
+      `multiline`);
+    - `PopMailboxState::Mailbox` (`count`);
+    - `StoredMail::Mail` (`identifier`).
+  - **Named arguments** in 241 calls.
+  - **Example:** `examples/mail/compose.ok` agrees on IR, Sparrow and the JVM.
+  - std has no SMTP client, only its wire pieces (#499, postponed).
 - **std review, the owner's decisions for waves 3 and 4 (#352, 2026-11-12:
   «да» to every recommendation).**
   - **TCP and UDP without matryoshkas.**

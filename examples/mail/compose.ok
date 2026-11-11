@@ -1,0 +1,59 @@
+module examples/mail/compose v1.0.0;
+
+import "mail/message" take MailMessage, ParsedMail, MailDate, MessageId;
+import "mail/mailbox" take Maildir;
+import "message/header" take MessageHeaders, MessageHeader, MessageHeaderName;
+import "mime/part" take TextBody;
+import "fs/temp" take TemporaryDirectory;
+import "fs/directory" take Directory;
+import "fs/path" take Path;
+import "time/clock" take Instant;
+import "time/zone" take FixedZone, ZonedDateTime;
+import "time/duration" take Duration, DurationUnit;
+import "encoding/utf" take Utf8Decoded;
+import "io/stdout" take Stdout;
+
+// An e-mail is headers and a MIME body. Compose one, render it as RFC 5322
+// bytes, parse the bytes back, and keep the message in a Maildir: a directory
+// where each message is one file, delivered atomically. Sending it is
+// SmtpSession's job; reading a server's mailbox, ImapSession's or PopSession's.
+
+main() is int {
+    let out = Stdout();
+    let sent = ZonedDateTime(
+        instant: Instant(Duration(value: 1700000000.rat(), unit: DurationUnit.second)),
+        zone: FixedZone(name: "+0300", offset: Duration(value: 10800.rat(), unit: DurationUnit.second)),
+    );
+    let headers = MessageHeaders([
+        MessageHeader(name: MessageHeaderName("From"), value: "Ada <ada@example.test>"),
+        MessageHeader(name: MessageHeaderName("To"), value: "Grace <grace@example.test>"),
+        MessageHeader(name: MessageHeaderName("Subject"), value: "Lunch on Thursday?"),
+        MessageHeader(name: MessageHeaderName("Date"), value: MailDate(sent).string()),
+        MessageHeader(name: MessageHeaderName("Message-ID"), value: MessageId("<lunch.1@example.test>").string()),
+        MessageHeader(name: MessageHeaderName("MIME-Version"), value: "1.0"),
+        MessageHeader(name: MessageHeaderName("Content-Type"), value: "text/plain; charset=utf-8"),
+    ]);
+    let message = MailMessage(headers: headers, body: TextBody(origin: "Shall we try the new place?\r\n", charset: "utf-8"));
+    out.write(Utf8Decoded(message.bytes()).string().split("\r\n").join("\n"));
+    out.writeln("---");
+
+    let back = ParsedMail(message.bytes()).message();
+    out.writeln("subject: " + back.headers().first(MessageHeaderName("Subject")));
+    out.writeln("from: " + back.headers().first(MessageHeaderName("From")));
+
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "maildir-");
+    // A Maildir is a directory with new/, cur/ and tmp/ in it.
+    let inbox = scratch.path().child("inbox");
+    for [inbox, inbox.child("new"), inbox.child("cur"), inbox.child("tmp")] -> folder {
+        Directory(path: folder).create();
+    }
+    let box = Maildir(inbox);
+    box.add(message);
+    box.add(back);
+    out.writeln("maildir holds " + box.messages().size().string() + " messages");
+    for box.messages() -> stored {
+        out.writeln("  " + stored.message().headers().first(MessageHeaderName("Subject")));
+    }
+    scratch.close();
+    0;
+}

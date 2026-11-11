@@ -34,16 +34,18 @@ object ImapSearchLimits {
         self.wire_bytes = wire_bytes;
     }
 
-    nodes() is int {
-        nodes;
-    }
+    cap Limits {
+        nodes is int {
+            nodes;
+        }
 
-    depth() is int {
-        depth;
-    }
+        depth is int {
+            depth;
+        }
 
-    wire_bytes() is int {
-        wire_bytes;
+        wire_bytes is int {
+            wire_bytes;
+        }
     }
 }
 
@@ -101,10 +103,10 @@ object ImapSearchKey does ByteSource {
                 8;
             }
         };
-        confirm left.nodes() < limits.nodes() else throw ImapSearchLimitExceeded.kind("nodes");
-        confirm left.depth() < limits.depth() else throw ImapSearchLimitExceeded.kind("depth");
-        confirm extra <= limits.wire_bytes()
-            && left.string().length() <= limits.wire_bytes() - extra
+        confirm left.nodes() < limits::Limits::nodes else throw ImapSearchLimitExceeded.kind("nodes");
+        confirm left.depth() < limits::Limits::depth else throw ImapSearchLimitExceeded.kind("depth");
+        confirm extra <= limits::Limits::wire_bytes
+            && left.string().length() <= limits::Limits::wire_bytes - extra
             else throw ImapSearchLimitExceeded.kind("wire_bytes");
         if unary {
             value = "NOT (" + left.string() + ")";
@@ -113,10 +115,10 @@ object ImapSearchKey does ByteSource {
         }
         else {
             let right = children.item(1);
-            confirm right.nodes() <= limits.nodes() - left.nodes() - 1
+            confirm right.nodes() <= limits::Limits::nodes - left.nodes() - 1
                 else throw ImapSearchLimitExceeded.kind("nodes");
-            confirm right.depth() < limits.depth() else throw ImapSearchLimitExceeded.kind("depth");
-            confirm right.string().length() <= limits.wire_bytes() - extra - left.string().length()
+            confirm right.depth() < limits::Limits::depth else throw ImapSearchLimitExceeded.kind("depth");
+            confirm right.string().length() <= limits::Limits::wire_bytes - extra - left.string().length()
                 else throw ImapSearchLimitExceeded.kind("wire_bytes");
             value = if operation == ImapSearchOperator.conjunction {
                 "(" + left.string() + " " + right.string() + ")";
@@ -184,14 +186,14 @@ object AndMail does MailMatching {
 
     AndMail(left is MailMatching, right is MailMatching) {
         value = ImapSearchKey(
-            ImapSearchOperator.conjunction,
-            [left.key(), right.key()],
-            ImapSearchLimits()
+            operation: ImapSearchOperator.conjunction,
+            children: [left.key(), right.key()],
+            limits: ImapSearchLimits()
         );
     }
 
     AndMail(left is MailMatching, right is MailMatching, limits is ImapSearchLimits) {
-        value = ImapSearchKey(ImapSearchOperator.conjunction, [left.key(), right.key()], limits);
+        value = ImapSearchKey(operation: ImapSearchOperator.conjunction, children: [left.key(), right.key()], limits: limits);
     }
 
     key() is ImapSearchKey {
@@ -204,14 +206,14 @@ object OrMail does MailMatching {
 
     OrMail(left is MailMatching, right is MailMatching) {
         value = ImapSearchKey(
-            ImapSearchOperator.disjunction,
-            [left.key(), right.key()],
-            ImapSearchLimits()
+            operation: ImapSearchOperator.disjunction,
+            children: [left.key(), right.key()],
+            limits: ImapSearchLimits()
         );
     }
 
     OrMail(left is MailMatching, right is MailMatching, limits is ImapSearchLimits) {
-        value = ImapSearchKey(ImapSearchOperator.disjunction, [left.key(), right.key()], limits);
+        value = ImapSearchKey(operation: ImapSearchOperator.disjunction, children: [left.key(), right.key()], limits: limits);
     }
 
     key() is ImapSearchKey {
@@ -223,11 +225,11 @@ object NotMail does MailMatching {
     has value is ImapSearchKey;
 
     NotMail(origin is MailMatching) {
-        value = ImapSearchKey(ImapSearchOperator.negation, [origin.key()], ImapSearchLimits());
+        value = ImapSearchKey(operation: ImapSearchOperator.negation, children: [origin.key()], limits: ImapSearchLimits());
     }
 
     NotMail(origin is MailMatching, limits is ImapSearchLimits) {
-        value = ImapSearchKey(ImapSearchOperator.negation, [origin.key()], limits);
+        value = ImapSearchKey(operation: ImapSearchOperator.negation, children: [origin.key()], limits: limits);
     }
 
     key() is ImapSearchKey {
@@ -235,7 +237,7 @@ object NotMail does MailMatching {
     }
 }
 
-object ImapSearchBound {
+hidden object ImapSearchBound {
     has limits is ImapSearchLimits;
 
     ImapSearchBound(limits is ImapSearchLimits) {
@@ -243,14 +245,14 @@ object ImapSearchBound {
     }
 
     check(nodes is int, depth is int, wire_bytes is int) is void {
-        confirm nodes <= limits.nodes() else throw ImapSearchLimitExceeded.kind("nodes");
-        confirm depth <= limits.depth() else throw ImapSearchLimitExceeded.kind("depth");
-        confirm wire_bytes <= limits.wire_bytes()
+        confirm nodes <= limits::Limits::nodes else throw ImapSearchLimitExceeded.kind("nodes");
+        confirm depth <= limits::Limits::depth else throw ImapSearchLimitExceeded.kind("depth");
+        confirm wire_bytes <= limits::Limits::wire_bytes
             else throw ImapSearchLimitExceeded.kind("wire_bytes");
     }
 }
 
-object ImapSearchDate {
+hidden object ImapSearchDate {
     has origin is Date;
 
     ImapSearchDate(origin is Date) {
@@ -279,7 +281,7 @@ object ImapSearchDate {
 }
 
 test "IMAP search preserves grouping and uses internal date" {
-    let search = OrMail(AndMail(UnseenMail(), SinceMail(Date(year: 2026, month: 9, day: 27))), NotMail(AllMail()));
+    let search = OrMail(left: AndMail(UnseenMail(), SinceMail(Date(year: 2026, month: 9, day: 27))), right: NotMail(AllMail()));
     test.is(search.key().string(), "OR ((UNSEEN SINCE 27-Sep-2026)) (NOT (ALL))");
     test.is(search.key().nodes(), 6);
     test.is(search.key().depth(), 3);
