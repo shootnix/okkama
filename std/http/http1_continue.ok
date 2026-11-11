@@ -47,7 +47,7 @@ object Http1RequestStart {
             let scope is FutureScope<AsyncWriting, AsyncWriting> = FutureScope(
                 action: sending.write
             );
-            pending = scope.result();
+            pending = scope.outcome();
         }
         else {
             pending = Http1RequestWriting(origin, request, limits).result();
@@ -126,7 +126,7 @@ object Http1ContinueState {
                 deadline: deadline[0],
                 clock: clock
             );
-            return bounded.result();
+            return bounded.outcome();
         }
         origin;
     }

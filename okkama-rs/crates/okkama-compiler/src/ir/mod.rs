@@ -79,9 +79,9 @@ pub enum Type {
 /// Закрытый перечень intrinsics `okkama-rs` (§14.2): действия объектов std
 /// `async/*`, чьё состояние держит рантайм.
 pub const INTRINSICS: [&str; 69] = [
-    "okkama.timeout.Within.result",
-    "okkama.timeout.Before.result",
-    "okkama.scope.FutureScope.result",
+    "okkama.timeout.Within.outcome",
+    "okkama.timeout.Before.outcome",
+    "okkama.scope.FutureScope.outcome",
     "okkama.lock.Lock.new",
     "okkama.lock.Lock.guard",
     "okkama.lock.Lock.locked",
@@ -141,8 +141,8 @@ pub const INTRINSICS: [&str; 69] = [
     "okkama.scope.FutureGroup.cancel",
     "okkama.scope.FutureGroup.wait",
     "okkama.collect.AllFutures.results",
-    "okkama.collect.Raced.result",
-    "okkama.collect.FirstSuccessful.result",
+    "okkama.collect.Raced.winner",
+    "okkama.collect.FirstSuccessful.outcome",
     "okkama.collect.FutureCompletions.remaining_count",
     "okkama.collect.FutureCompletions.completion",
     "okkama.channel.Sending.new",

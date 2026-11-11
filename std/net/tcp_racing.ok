@@ -132,7 +132,7 @@ object TcpRacing {
             group.start(future);
             future;
         };
-        let winner = await FirstSuccessful(origins: futures).result();
+        let winner = await FirstSuccessful(origins: futures).outcome();
         keeper.replace([winner.position()]);
         // Dispose ready losers before publication, as well as pending losers
         // already cancelled by the selector. Cancellation during cleanup keeps
@@ -218,7 +218,7 @@ object TcpRaceAttempt {
                     TcpRaceDelay(clock, delay).ready(),
                     TcpRaceSignal(prior_failed).ready()
                 ];
-                let pending = Raced(origins: origins).result();
+                let pending = Raced(origins: origins).winner();
                 waiting.start(pending);
                 await pending;
             }

@@ -21,6 +21,6 @@ async main() is int {
     let within is Within<int> = Within(origin: Answer(value: 41).compute(), limit: budget, clock: clock);
     let deadline = clock.monotonic_instant() + budget;
     let before is Before<int> = Before(origin: Answer(value: 1).compute(), deadline: deadline, clock: clock);
-    out.writeln((await within.result()).string() + " " + (await before.result()).string());
+    out.writeln((await within.outcome()).string() + " " + (await before.outcome()).string());
     0;
 }

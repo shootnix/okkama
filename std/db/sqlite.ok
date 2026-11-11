@@ -668,7 +668,7 @@ object SqliteSession does Closing {
             deadline: deadline,
             clock: clock
         );
-        let opened = await self.reply(opening.result(), DbOperation.backing_up);
+        let opened = await self.reply(opening.outcome(), DbOperation.backing_up);
         defer opened.close();
         let id = opened.identifier();
         let cleanup = SqliteBackupCleanup(self, id);
@@ -681,7 +681,7 @@ object SqliteSession does Closing {
                 deadline: deadline,
                 clock: clock
             );
-            let frame = await self.reply(request.result(), DbOperation.backing_up);
+            let frame = await self.reply(request.outcome(), DbOperation.backing_up);
             defer frame.close();
             if frame.done() {
                 return BackupReport(frame.copies(), frame.total());

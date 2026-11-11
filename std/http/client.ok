@@ -1096,7 +1096,7 @@ object HttpDeadline<T> {
         }
         let bounded is Within<T> = Within(origin, limit, clock);
         try {
-            await bounded.result();
+            await bounded.outcome();
         }
         catch e is TimedOut {
             throw HttpTimeout.phase(phase);

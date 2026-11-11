@@ -56,9 +56,9 @@ for every child before publishing the body result:
     }
 
     let scope is FutureScope<int, int> = FutureScope(action: Batch().run);
-    let answer = await scope.result();
+    let answer = await scope.outcome();
 
-If the body fails, or the caller cancels C<scope.result()>, unfinished children
+If the body fails, or the caller cancels C<scope.outcome()>, unfinished children
 are cancelled and their cleanup is awaited. The body failure remains primary;
 independent child cleanup failures are retained as ordered secondary failures.
 
@@ -100,7 +100,7 @@ object FutureScope<T, R> {
 
     FutureScope(:action);
 
-    async result() is R {
+    async outcome() is R {
         let group is FutureGroup<T> = FutureGroup();
         await group.wait();
         panic "FutureScope.result is a VM intrinsic";

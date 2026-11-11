@@ -233,7 +233,7 @@ object Http1ScopedReading does AsyncReading {
     async bytes(limit is int) is @byte {
         let source = Http1PhysicalRead(origin, limit);
         let scope is FutureScope<@byte, @byte> = FutureScope(action: source.read);
-        await scope.result();
+        await scope.outcome();
     }
 }
 

@@ -324,6 +324,16 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     | `deque.front().remainder()`, `deque.back().remainder()` | `deque.tail()`, `deque.body()` |
     | `LowerBound(xs, x).value()`, `UpperBound`, `PositionOf` | `.index()` |
     | `Reduced(…).value()` | `Reduced(…).total()` |
+  - `async`: the awaited answer is `outcome()`, and a race answers
+    `winner()`. These five actions are runtime intrinsics, so their keys are
+    renamed in the compiler, IR, Sparrow, the IR runtime and the JVM runtime
+    (`okkama.timeout.Within.outcome`, …, `okkama.collect.Raced.winner`).
+    Programs compiled before must be compiled again.
+
+    | before | now |
+    |---|---|
+    | `await Within(f, limit, clock).result()`, `Before`, `FutureScope`, `FirstSuccessful` | `.outcome()` |
+    | `await Raced(futures).result()` | `await Raced(futures).winner()` |
 ### Fixed
 
 - Traversals own what they walk, and keep no record of what they walked

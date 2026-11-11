@@ -60,7 +60,7 @@ object ParallelMapped<T, R> {
             workers: bound
         );
         let scope is FutureScope<R, Sequencing<R>> = FutureScope(action: run.run);
-        await scope.result();
+        await scope.outcome();
     }
 }
 

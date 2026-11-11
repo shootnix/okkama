@@ -83,7 +83,7 @@ object Http1HeadOutput {
     writing(origin is AsyncWriting, wire is @byte) is Future<AsyncWriting> {
         let output = Http1HeadWriteOperation(origin, ByteSnapshot(wire));
         let scope is FutureScope<AsyncWriting, AsyncWriting> = FutureScope(action: output.write);
-        scope.result();
+        scope.outcome();
     }
 }
 

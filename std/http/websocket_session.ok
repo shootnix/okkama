@@ -226,7 +226,7 @@ object WebSocketSessionState {
                             close_timeout,
                             clock
                         );
-                        await echo.result();
+                        await echo.outcome();
                         close_sent.set();
                     }
                     else {
@@ -276,7 +276,7 @@ object WebSocketSessionState {
                         close_timeout,
                         clock
                     );
-                    await bounded.result();
+                    await bounded.outcome();
                 }
                 catch e is Error {}
                 catch e is NativeFailure {}
@@ -345,7 +345,7 @@ object WebSocketSessionState {
         defer await cleanup.close();
         if !self.closed() {
             let bounded is Within<bool> = Within(self.handshake(code, reason), close_timeout, clock);
-            let pending = bounded.result();
+            let pending = bounded.outcome();
             await pending;
         }
         true;

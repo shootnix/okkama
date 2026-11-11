@@ -496,7 +496,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             return false;
         };
         // `panic "… is a VM intrinsic";` — первым (за ним бывает `self;`
-        // ради типа) или последним (у FutureScope.result — после подготовки).
+        // ради типа) или последним (у FutureScope.outcome — после подготовки).
         let marks = |stmt: &ast::Stmt| {
             matches!(
                 &stmt.kind,

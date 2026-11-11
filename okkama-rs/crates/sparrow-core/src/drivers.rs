@@ -430,7 +430,7 @@ impl Payload for GroupWait {
     }
 }
 
-/// `FutureGroup.wait` and `FutureScope.result`: run the scope body (scope
+/// `FutureGroup.wait` and `FutureScope.outcome`: run the scope body (scope
 /// only), then wait for every member; a failure from outside (the body's, a
 /// cancellation) cancels the group and is reported after it.
 fn group_wait(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize, scope: bool, deliver: bool) -> Step {

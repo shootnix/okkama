@@ -54,7 +54,7 @@ async main() is int {
     let none_pending is @Future<int> = [];
     let r = try {
         let race is Raced<int> = Raced(origins: none_pending);
-        await race.result();
+        await race.winner();
     } catch e is NoFutures {
         -1;
     };

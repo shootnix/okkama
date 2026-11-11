@@ -93,7 +93,7 @@ object Http1MessageOutput {
             );
         let operation = Http1MessageWriteOperation(head, body, plan, fields, limits, request);
         let scope is FutureScope<AsyncWriting, AsyncWriting> = FutureScope(action: operation.write);
-        scope.result();
+        scope.outcome();
     }
 }
 

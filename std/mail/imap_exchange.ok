@@ -132,7 +132,7 @@ object ImapCommandChannel does Closing {
         await output.write(ByteSnapshot(ImapCommand(simple: ImapSimpleCommand.idle).bytes(tag)));
         let action = ImapIdleWireInput(input, output, tag, state.prefix(), limits, stop, observer);
         let scope is FutureScope<int, ImapCommandRead> = FutureScope(action: action.run);
-        let result = await scope.result();
+        let result = await scope.outcome();
         await states.sending().send(
             ImapExchangeState(result.remainder(), (state.serial() + BigInt("1")))
         );

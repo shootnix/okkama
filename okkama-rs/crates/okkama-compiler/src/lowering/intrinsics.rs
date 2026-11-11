@@ -69,16 +69,16 @@ fn related(name: &str) -> &'static [&'static str] {
         "okkama.cancellation.Cancellation.cancelling" => &["CancellationToken"],
         "okkama.scope.FutureGroup.start" => &["FinishedFutureGroup.finished"],
         "okkama.collect.AllFutures.results" => &["core::ArraySequence"],
-        "okkama.collect.Raced.result"
-        | "okkama.collect.FirstSuccessful.result"
+        "okkama.collect.Raced.winner"
+        | "okkama.collect.FirstSuccessful.outcome"
         | "okkama.collect.FutureCompletions.completion" => &["NoFutures.none"],
-        "okkama.scope.FutureScope.result" => &["FutureGroup<T0>"],
+        "okkama.scope.FutureScope.outcome" => &["FutureGroup<T0>"],
         "okkama.lock.Lock.new" => &["Self"],
         "okkama.lock.Lock.guard" => &["LockGuard"],
         "okkama.semaphore.Semaphore.permit" => &["Permit"],
         "okkama.barrier.Barrier.wait" => &["BrokenBarrier.broken"],
         "okkama.barrier.Barrier.state" => &["BarrierState"],
-        "okkama.timeout.Within.result" | "okkama.timeout.Before.result" => &["TimedOut.elapsed"],
+        "okkama.timeout.Within.outcome" | "okkama.timeout.Before.outcome" => &["TimedOut.elapsed"],
         _ => &[],
     }
 }
@@ -91,8 +91,8 @@ type Helper = (&'static str, &'static str, usize, &'static [&'static str]);
 
 fn helpers(name: &str) -> &'static [Helper] {
     match name {
-        "okkama.timeout.Within.result" => &[("limit", "seconds", 0, &[]), ("clock", "wait", 1, &[])],
-        "okkama.timeout.Before.result" => &[
+        "okkama.timeout.Within.outcome" => &[("limit", "seconds", 0, &[]), ("clock", "wait", 1, &[])],
+        "okkama.timeout.Before.outcome" => &[
             ("clock", "monotonic_instant", 0, &[]),
             ("deadline", "minus", 1, &["^0"]),
             ("^1", "seconds", 0, &[]),

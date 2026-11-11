@@ -35,7 +35,7 @@ settlement remains a failure; the race does not wait for a later success.
 Every loser is cancelled and fully cleaned before the result settles:
 
     let race is Raced<Response> = Raced(origins: requests);
-    let response = await race.result();
+    let response = await race.winner();
 
 C<FirstSuccessful<T>> instead ignores failed attempts while success is still
 possible. If all inputs fail, the first failure in completion order remains
@@ -44,7 +44,7 @@ primary and later failures become ordered secondary diagnostics:
     let attempts is FirstSuccessful<Response> = FirstSuccessful(
         origins: requests,
     );
-    let response = await attempts.result();
+    let response = await attempts.outcome();
 
 Neither selector accepts an empty input; both throw C<NoFutures>. A successful
 winner is not published when cancelling a loser exposes a cleanup failure.
@@ -93,7 +93,7 @@ object Raced<T> {
 
     Raced(:origins);
 
-    async result() is T {
+    async winner() is T {
         throw NoFutures.none;
     }
 }
@@ -103,7 +103,7 @@ object FirstSuccessful<T> {
 
     FirstSuccessful(:origins);
 
-    async result() is T {
+    async outcome() is T {
         throw NoFutures.none;
     }
 }

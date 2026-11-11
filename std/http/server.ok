@@ -725,7 +725,7 @@ object HttpServerDeadline<T> {
         }
         else {
             let bounded is Within<T> = Within(waiting, limit, clock);
-            self.waiting = bounded.result();
+            self.waiting = bounded.outcome();
         }
     }
 
@@ -834,7 +834,7 @@ object ServerDrain {
         defer await cleanup.close();
         server.stop_accepting();
         let bounded is Within<bool> = Within(server.drained(), limit, clock);
-        let waiting = bounded.result();
+        let waiting = bounded.outcome();
         await waiting;
         self;
     }

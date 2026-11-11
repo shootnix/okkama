@@ -304,11 +304,11 @@ object DbPoolState {
         let race is Raced<PooledConnection> = Raced(origins: [pending, self.stopping()]);
         let deadline = clock.monotonic_instant().plus(options.acquisition_timeout());
         let bounded is Before<PooledConnection> = Before(
-            origin: race.result(),
+            origin: race.winner(),
             deadline: deadline,
             clock: clock
         );
-        let result = await bounded.result();
+        let result = await bounded.outcome();
         taken.set();
         result;
     }

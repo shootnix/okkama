@@ -1363,7 +1363,7 @@ pub fn call_borrowed(
             unit
         }
         "scope.FutureGroup.wait" => Ok(group_wait(arg(0)?)),
-        "scope.FutureScope.result" => {
+        "scope.FutureScope.outcome" => {
             let (group_type, receiver) = (kind(0)?, arg(0)?);
             let body_receiver = receiver.clone();
             cached(&receiver, move || {
@@ -1410,14 +1410,14 @@ pub fn call_borrowed(
                 })
             })
         }
-        "collect.Raced.result" => {
+        "collect.Raced.winner" => {
             let (none, receiver) = (kind(0)?, arg(0)?);
             let body_receiver = receiver.clone();
             cached(&receiver, move || {
                 op(vec![body_receiver.clone()], move || raced(&host, none, &body_receiver))
             })
         }
-        "collect.FirstSuccessful.result" => {
+        "collect.FirstSuccessful.outcome" => {
             let (none, receiver) = (kind(0)?, arg(0)?);
             let body_receiver = receiver.clone();
             cached(&receiver, move || {
@@ -1556,7 +1556,7 @@ pub fn call_borrowed(
         "barrier.BarrierState.generation" => Ok(int(snapshot(&arg(0)?)?.generation)),
         "barrier.BarrierState.broken" => Ok(Value::Bool(snapshot(&arg(0)?)?.broken)),
         // ----- timeout -----
-        "timeout.Within.result" => {
+        "timeout.Within.outcome" => {
             let (timed_out, receiver) = (kind(0)?, arg(0)?);
             let (seconds, wait) = (helper(helpers, 0)?, helper(helpers, 1)?);
             let body_host = host.clone();
@@ -1574,7 +1574,7 @@ pub fn call_borrowed(
                 )
             })
         }
-        "timeout.Before.result" => {
+        "timeout.Before.outcome" => {
             let (timed_out, receiver) = (kind(0)?, arg(0)?);
             let (now, minus) = (helper(helpers, 0)?, helper(helpers, 1)?);
             let (seconds, wait) = (helper(helpers, 2)?, helper(helpers, 3)?);

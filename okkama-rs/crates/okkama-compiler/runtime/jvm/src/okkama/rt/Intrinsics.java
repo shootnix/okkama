@@ -702,7 +702,7 @@ public final class Intrinsics {
         return cancelled;
     }
 
-    public static Object collect_Raced_result(Object none, Object self) {
+    public static Object collect_Raced_winner(Object none, Object self) {
         Retained state = retained(self);
         if (state.result == null) {
             state.result = op(() -> raced(none, self), self);
@@ -733,7 +733,7 @@ public final class Intrinsics {
         return Scheduler.await(done);
     }
 
-    public static Object collect_FirstSuccessful_result(Object none, Object self) {
+    public static Object collect_FirstSuccessful_outcome(Object none, Object self) {
         Retained state = retained(self);
         if (state.result == null) {
             state.result = op(() -> firstSuccessful(none, self), self);
@@ -1276,10 +1276,10 @@ public final class Intrinsics {
     // ----- async/scope: FutureScope -----
 
     /**
-     * {@code FutureScope.result()}: группа задач для {@code action}, тело,
+     * {@code FutureScope.outcome()}: группа задач для {@code action}, тело,
      * затем ожидание группы; отказ тела отменяет группу и остаётся первичным.
      */
-    public static Object scope_FutureScope_result(Object groupType, Object self) {
+    public static Object scope_FutureScope_outcome(Object groupType, Object self) {
         Retained state = retained(self);
         if (state.result == null) {
             state.result = op(() -> {
@@ -1457,7 +1457,7 @@ public final class Intrinsics {
         return origin.value;
     }
 
-    public static Object timeout_Within_result(Object timedOut, Object seconds, Object wait, final Object self) {
+    public static Object timeout_Within_outcome(Object timedOut, Object seconds, Object wait, final Object self) {
         return timeoutResult(timedOut, self, new DurationSource() {
             public Object duration(Object clock) {
                 return field(self, "limit");
@@ -1465,7 +1465,7 @@ public final class Intrinsics {
         }, (Fn) seconds, (Fn) wait);
     }
 
-    public static Object timeout_Before_result(Object timedOut, final Object now, final Object minus,
+    public static Object timeout_Before_outcome(Object timedOut, final Object now, final Object minus,
             Object seconds, Object wait, final Object self) {
         return timeoutResult(timedOut, self, new DurationSource() {
             public Object duration(Object clock) {
