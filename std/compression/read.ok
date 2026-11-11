@@ -32,11 +32,11 @@ object CompressedReading does Reading, Closing {
     has stream is CompressionReading;
 
     CompressedReading(origin is Reading, compressor is Compressing) {
-        stream = CompressionReading(CompressingFlow(origin, compressor), 8192);
+        stream = CompressionReading(flow: CompressingFlow(origin, compressor), chunk_size: 8192);
     }
 
     CompressedReading(origin is Reading, compressor is Compressing, chunk_size is int) {
-        stream = CompressionReading(CompressingFlow(origin, compressor), chunk_size);
+        stream = CompressionReading(flow: CompressingFlow(origin, compressor), chunk_size: chunk_size);
     }
 
     bytes(limit is int) is @byte {
@@ -56,11 +56,11 @@ object DecompressedReading does Reading, Closing {
     has stream is CompressionReading;
 
     DecompressedReading(origin is Reading, decompressor is Decompressing) {
-        stream = CompressionReading(DecompressingFlow(origin, decompressor), 8192);
+        stream = CompressionReading(flow: DecompressingFlow(origin, decompressor), chunk_size: 8192);
     }
 
     DecompressedReading(origin is Reading, decompressor is Decompressing, chunk_size is int) {
-        stream = CompressionReading(DecompressingFlow(origin, decompressor), chunk_size);
+        stream = CompressionReading(flow: DecompressingFlow(origin, decompressor), chunk_size: chunk_size);
     }
 
     bytes(limit is int) is @byte {
@@ -79,7 +79,7 @@ object DecompressedReading does Reading, Closing {
 // Internal stream over a bound input/codec flow. The flow retains dependencies;
 // this object never closes them. Owns only cache/status. Private status is empty
 // while active, byte 1 at EOF and byte 2 after a failure.
-object CompressionReading does Reading, Closing {
+hidden object CompressionReading does Reading, Closing {
     has flow is CompressionFlow;
     has chunk_size is int;
     has cache is ByteBuffer;
@@ -242,7 +242,7 @@ role CompressionFlow {
     }
 }
 
-object CompressingFlow does CompressionFlow {
+hidden object CompressingFlow does CompressionFlow {
     has origin is Reading;
     has codec is Compressing;
 
@@ -272,7 +272,7 @@ object CompressingFlow does CompressionFlow {
     }
 }
 
-object DecompressingFlow does CompressionFlow {
+hidden object DecompressingFlow does CompressionFlow {
     has origin is Reading;
     has codec is Decompressing;
 
@@ -307,7 +307,7 @@ object DecompressingFlow does CompressionFlow {
 // independently checks both public wrappers and concrete borrowed sources.
 test "compression reader skips empty batches and preserves bounded output" {
     let flow = CompressionFlow.fake();
-    let stream = CompressionReading(flow, 1);
+    let stream = CompressionReading(flow: flow, chunk_size: 1);
     test.is(stream.bytes(1), [byte(1)]);
     test.is(stream.bytes(8), [byte(2), byte(255)]);
     test.is(stream.bytes(1).size(), 0);
@@ -320,13 +320,13 @@ test "compression reader skips empty batches and preserves bounded output" {
 test "compression reader validates before consuming and closes idempotently" {
     let flow = CompressionFlow.fake();
     test.ok(try {
-        CompressionReading(flow, 0);
+        CompressionReading(flow: flow, chunk_size: 0);
         false;
     }
     catch e is Error {
         true;
     });
-    let stream = CompressionReading(flow, 2);
+    let stream = CompressionReading(flow: flow, chunk_size: 2);
     test.ok(try {
         stream.bytes(0);
         false;
@@ -350,7 +350,7 @@ test "compression reader validates before consuming and closes idempotently" {
 test "compression reader observes independent empty finished flows" {
     let empty = CompressionFlow.fake();
     empty.finish();
-    let stream = CompressionReading(empty, 8192);
+    let stream = CompressionReading(flow: empty, chunk_size: 8192);
     test.is(stream.bytes(1).size(), 0);
     test.is(stream.bytes(1).size(), 0);
     test.ok(!CompressionFlow.fake().finished());

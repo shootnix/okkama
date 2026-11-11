@@ -119,14 +119,15 @@ object ArchiveMetadata {
 // value() performs pure calendar arithmetic; outside 1..9999 throws InvalidDate.
 // Negative/fractional seconds are supported, with no clock or timezone lookup.
 object ArchiveModificationFromEpoch {
-    has elapsed is Duration;
+    has seconds is rat;
 
     ArchiveModificationFromEpoch(seconds is rat) {
-        elapsed = Duration(value: seconds, unit: DurationUnit.second);
+        self.seconds = seconds;
     }
 
-    value() is LocalDateTime {
-        LocalDateTime(date: Date(1970, 1, 1), time: TimeOfDay(0, 0, 0, 0)).plus(elapsed);
+    local_date_time() is LocalDateTime {
+        LocalDateTime(date: Date(1970, 1, 1), time: TimeOfDay(0, 0, 0, 0))
+            .plus(Duration(value: seconds, unit: DurationUnit.second));
     }
 }
 
@@ -137,8 +138,8 @@ enum MissingArchiveOwnership is Error = (missing);
 enum InvalidArchiveOwnership is Error = (invalid);
 
 test "archive metadata retains calendar and comment with explicit absence" {
-    let date = ArchiveModificationFromEpoch(0.rat()).value();
-    let info = ArchiveMetadata(date, " комментарий 😀 ");
+    let date = ArchiveModificationFromEpoch(0.rat()).local_date_time();
+    let info = ArchiveMetadata(modified: date, comment: " комментарий 😀 ");
     test.is(info.modification(), date);
     test.is(info.comment(), " комментарий 😀 ");
     test.throws(MissingArchiveMode) {
@@ -151,7 +152,7 @@ test "archive metadata retains calendar and comment with explicit absence" {
 }
 
 test "archive epoch conversion preserves negative fractional seconds" {
-    let time = ArchiveModificationFromEpoch(rat(-1, 2)).value();
+    let time = ArchiveModificationFromEpoch(rat(-1, 2)).local_date_time();
     test.is(time.date()::Calendar::year, 1969);
     test.is(time.date()::Calendar::month, 12);
     test.is(time.date()::Calendar::day, 31);
@@ -159,10 +160,10 @@ test "archive epoch conversion preserves negative fractional seconds" {
     test.is(time.time()::Clock::second, 59);
     test.is(time.time()::Clock::nanosecond, 500000000);
     test.throws(Error) {
-        ArchiveModificationFromEpoch(rat(1, 3));
+        ArchiveModificationFromEpoch(rat(1, 3)).local_date_time();
     };
     test.throws(Error) {
-        ArchiveModificationFromEpoch(253402300800.rat()).value();
+        ArchiveModificationFromEpoch(253402300800.rat()).local_date_time();
     };
 }
 

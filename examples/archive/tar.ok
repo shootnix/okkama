@@ -1,0 +1,62 @@
+module examples/archive/tar v1.0.0;
+
+import "archive/entry" take ArchiveDirectory, ArchiveEntry, ArchiveEntryKind, ArchiveFile;
+import "archive/limits" take ArchiveLimitExceeded, ArchiveLimits;
+import "archive/metadata" take ArchiveMetadata, ArchiveModificationFromEpoch;
+import "archive/path" take ArchivePath, UnsafeArchivePath;
+import "archive/tar" take ParsedTar, TarArchive;
+import "collections/list" take EmptyList, List;
+import "encoding/utf" take Utf8Decoded, Utf8Encoded;
+import "io/stdout" take Stdout;
+import "time/iso" take IsoLocalDateTime;
+
+// Build a TAR archive in memory, read it back within limits, and see that
+// unsafe paths and oversized members are refused. Nothing touches the disk:
+// an archive is bytes, an entry is a value.
+
+main() is int {
+    let out = Stdout();
+    let stamp = ArchiveMetadata(
+        modified: ArchiveModificationFromEpoch(1762851600.rat()).local_date_time(),
+        comment: "",
+    );
+    let empty is List<ArchiveEntry> = EmptyList();
+    let entries = empty
+        .prefix(ArchiveFile(
+            path: ArchivePath("docs/readme.txt"),
+            metadata: stamp,
+            data: Utf8Encoded("Read me first.\n").bytes(),
+        ))
+        .prefix(ArchiveDirectory(path: ArchivePath("docs"), metadata: stamp));
+    let bytes = TarArchive(entries).bytes();
+    out.writeln("archive: " + bytes.size().string() + " bytes");
+
+    let limits = ArchiveLimits(entries: 10, entry_size: 1024, total_size: 4096, path_length: 100);
+    for ParsedTar(origin: bytes, limits: limits).entries() -> entry {
+        if entry.kind() == ArchiveEntryKind.directory {
+            out.writeln("dir  " + entry.path().string());
+        }
+        else {
+            out.writeln("file " + entry.path().string() + " modified "
+                + IsoLocalDateTime(entry.metadata().modification()).string());
+        }
+    }
+
+    let unsafe = try {
+        ArchivePath("../etc/passwd").string();
+    }
+    catch UnsafeArchivePath.detailed(path, message) {
+        "refused " + path + ": " + message;
+    };
+    out.writeln(unsafe);
+
+    let tight = ArchiveLimits(entries: 10, entry_size: 4, total_size: 4096, path_length: 100);
+    let oversized = try {
+        ParsedTar(origin: bytes, limits: tight).entries().size().string();
+    }
+    catch ArchiveLimitExceeded.detailed(limit, maximum) {
+        "over " + limit + " (" + maximum.string() + ")";
+    };
+    out.writeln(oversized);
+    0;
+}

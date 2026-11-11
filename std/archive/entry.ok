@@ -40,11 +40,11 @@ role ArchiveEntry {
         }
 
         metadata() is ArchiveMetadata {
-            ArchiveMetadata(ArchiveModificationFromEpoch(0.rat()).value(), "");
+            ArchiveMetadata(modified: ArchiveModificationFromEpoch(0.rat()).local_date_time(), comment: "");
         }
 
         accept(to is ArchiveEntryVisitor) is void {
-            to.file(ArchiveFile(self.path(), self.metadata(), []));
+            to.file(ArchiveFile(path: self.path(), metadata: self.metadata(), data: []));
         }
     }
 }
@@ -262,8 +262,8 @@ enum InvalidArchiveDevice is Error = (because(reason is string));
 
 test "archive entries preserve the role coordinates and file bytes" {
     let source = ArchiveEntry.fake();
-    let file = ArchiveFile(source.path(), source.metadata(), [byte(0), byte(255)]);
-    let directory = ArchiveDirectory(source.path(), source.metadata());
+    let file = ArchiveFile(path: source.path(), metadata: source.metadata(), data: [byte(0), byte(255)]);
+    let directory = ArchiveDirectory(path: source.path(), metadata: source.metadata());
     test.is(file.kind(), ArchiveEntryKind.file);
     test.is(directory.kind(), ArchiveEntryKind.directory);
     test.is(file.path(), directory.path());
@@ -273,33 +273,33 @@ test "archive entries preserve the role coordinates and file bytes" {
 
 test "archive symbolic and hard links keep distinct kinds" {
     let source = ArchiveEntry.fake();
-    let symbolic = ArchiveSymbolicLink(source.path(), source.metadata(), source.path());
-    let hard = ArchiveHardLink(source.path(), source.metadata(), source.path());
+    let symbolic = ArchiveSymbolicLink(path: source.path(), metadata: source.metadata(), target: source.path());
+    let hard = ArchiveHardLink(path: source.path(), metadata: source.metadata(), target: source.path());
     test.ok(symbolic.kind() != hard.kind());
     test.is(symbolic.target(), hard.target());
-    test.is(ArchiveFifo(source.path(), source.metadata()).kind(), ArchiveEntryKind.fifo);
+    test.is(ArchiveFifo(path: source.path(), metadata: source.metadata()).kind(), ArchiveEntryKind.fifo);
 }
 
 test "archive devices reject contradictory kind and negative numbers" {
     let source = ArchiveEntry.fake();
     let device = ArchiveDevice(
-        source.path(),
-        ArchiveEntryKind.block_device,
-        source.metadata(),
-        0,
-        7
+        path: source.path(),
+        kind: ArchiveEntryKind.block_device,
+        metadata: source.metadata(),
+        major: 0,
+        minor: 7
     );
     test.is(device.major(), 0);
     test.is(device.minor(), 7);
     test.ok(try {
-        ArchiveDevice(source.path(), ArchiveEntryKind.file, source.metadata(), 0, 0);
+        ArchiveDevice(path: source.path(), kind: ArchiveEntryKind.file, metadata: source.metadata(), major: 0, minor: 0);
         false;
     }
     catch error is InvalidArchiveDevice {
         true;
     });
     test.ok(try {
-        ArchiveDevice(source.path(), ArchiveEntryKind.character_device, source.metadata(), -1, 0);
+        ArchiveDevice(path: source.path(), kind: ArchiveEntryKind.character_device, metadata: source.metadata(), major: -1, minor: 0);
         false;
     }
     catch error is InvalidArchiveDevice {

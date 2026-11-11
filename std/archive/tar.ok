@@ -57,7 +57,7 @@ object TarArchive {
     bytes() is @byte {
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        let writer = TarWriting(buffer.writing(), format);
+        let writer = TarWriting(origin: buffer.writing(), format: format);
         defer writer.close();
         for origin -> entry {
             writer.write(entry);
@@ -80,15 +80,15 @@ object TarWriting does WritingArchive, Closing {
     TarWriting(origin is Writing) {
         let paths = ByteBuffer();
         names = paths;
-        let output = TarMemberWriting(origin, TarFormat.pax, paths);
-        lifecycle = ArchiveWriting(output.write, output.finish);
+        let output = TarMemberWriting(destination: origin, format: TarFormat.pax, names: paths);
+        lifecycle = ArchiveWriting(write_entry: output.write, finish_stream: output.finish);
     }
 
     TarWriting(origin is Writing, format is TarFormat) {
         let paths = ByteBuffer();
         names = paths;
-        let output = TarMemberWriting(origin, format, paths);
-        lifecycle = ArchiveWriting(output.write, output.finish);
+        let output = TarMemberWriting(destination: origin, format: format, names: paths);
+        lifecycle = ArchiveWriting(write_entry: output.write, finish_stream: output.finish);
     }
 
     write(entry is ArchiveEntry) is void {
@@ -124,7 +124,7 @@ enum DuplicateArchivePath is Error = (path(path is string));
 // Internal typed dispatch over archive variants. Owns no resources: its writer
 // and NUL-delimited path store belong to TarWriting. NUL cannot occur in a path,
 // so newline and other legal filename characters cannot collide in this store.
-object TarMemberWriting does ArchiveEntryVisitor {
+hidden object TarMemberWriting does ArchiveEntryVisitor {
     has destination is Writing;
     has format is TarFormat;
     has names is ByteBuffer;
@@ -190,7 +190,7 @@ object TarMemberWriting does ArchiveEntryVisitor {
         minor is int
     ) is void {
         // All field checks and extension encoding complete BEFORE sink output.
-        let header = TarMemberHeader(entry, data.size(), flag, link, major, minor, format).bytes();
+        let header = TarMemberHeader(entry: entry, size: data.size(), flag: flag, link: link, major: major, minor: minor, format: format).bytes();
         destination <- header;
         if data.size() > 0 {
             destination <- data;
@@ -205,7 +205,7 @@ object TarMemberWriting does ArchiveEntryVisitor {
 // Internal immutable wire projection. Variant coordinates come only from typed
 // dispatch above. PAX records and their ordinary USTAR header form one result;
 // file bytes are emitted separately and are never copied into this header value.
-object TarMemberHeader {
+hidden object TarMemberHeader {
     has entry is ArchiveEntry;
     has size, major, minor is int;
     has flag, link is string;
@@ -252,9 +252,9 @@ object TarMemberHeader {
             metadata.ownership();
         }
         catch absent is MissingArchiveOwnership {
-            ArchiveOwnership("", "", BigInt("0"), BigInt("0"));
+            ArchiveOwnership(user: "", group: "", user_identity: BigInt("0"), group_identity: BigInt("0"));
         };
-        let seconds = metadata.modification().minus(ArchiveModificationFromEpoch(0.rat()).value())::Span::seconds;
+        let seconds = metadata.modification().minus(ArchiveModificationFromEpoch(0.rat()).local_date_time())::Span::seconds;
         let ordinary_time = seconds >= 0.rat()
             && seconds <= 8589934591.rat()
             && seconds == seconds.int().rat();
@@ -267,9 +267,9 @@ object TarMemberHeader {
         };
         let fields = TarUstarPath(path).fields();
         let ordinary_path = fields.size() == 2;
-        let ordinary_link = TarAsciiField(link, 100).fits();
-        let ordinary_user = TarAsciiField(owner.user(), 32).fits();
-        let ordinary_group = TarAsciiField(owner.group(), 32).fits();
+        let ordinary_link = TarAsciiField(origin: link, width: 100).fits();
+        let ordinary_user = TarAsciiField(origin: owner.user(), width: 32).fits();
+        let ordinary_group = TarAsciiField(origin: owner.group(), width: 32).fits();
         let ordinary_uid = owner.user_identity().bits() <= 21;
         let ordinary_gid = owner.group_identity().bits() <= 21;
         // Header strings and PAX values never silently stop at embedded NUL.
@@ -294,31 +294,31 @@ object TarMemberHeader {
         let extensions = ByteBuffer();
         defer extensions.closing().close();
         if !ordinary_path {
-            extensions.writing() <- TarPaxRecord("path", path).bytes();
+            extensions.writing() <- TarPaxRecord(key: "path", origin: path).bytes();
         }
         if !ordinary_link {
-            extensions.writing() <- TarPaxRecord("linkpath", link).bytes();
+            extensions.writing() <- TarPaxRecord(key: "linkpath", origin: link).bytes();
         }
         if !ordinary_user {
-            extensions.writing() <- TarPaxRecord("uname", owner.user()).bytes();
+            extensions.writing() <- TarPaxRecord(key: "uname", origin: owner.user()).bytes();
         }
         if !ordinary_group {
-            extensions.writing() <- TarPaxRecord("gname", owner.group()).bytes();
+            extensions.writing() <- TarPaxRecord(key: "gname", origin: owner.group()).bytes();
         }
         if !ordinary_uid {
-            extensions.writing() <- TarPaxRecord("uid", owner.user_identity().string()).bytes();
+            extensions.writing() <- TarPaxRecord(key: "uid", origin: owner.user_identity().string()).bytes();
         }
         if !ordinary_gid {
-            extensions.writing() <- TarPaxRecord("gid", owner.group_identity().string()).bytes();
+            extensions.writing() <- TarPaxRecord(key: "gid", origin: owner.group_identity().string()).bytes();
         }
         if !ordinary_time {
-            extensions.writing() <- TarPaxRecord("mtime", TarEpochText(seconds).string()).bytes();
+            extensions.writing() <- TarPaxRecord(key: "mtime", origin: TarEpochText(seconds).string()).bytes();
         }
         if !ordinary_size {
-            extensions.writing() <- TarPaxRecord("size", size.string()).bytes();
+            extensions.writing() <- TarPaxRecord(key: "size", origin: size.string()).bytes();
         }
         if metadata.comment() != "" {
-            extensions.writing() <- TarPaxRecord("comment", metadata.comment()).bytes();
+            extensions.writing() <- TarPaxRecord(key: "comment", origin: metadata.comment()).bytes();
         }
         let name = if ordinary_path {
             fields[1];
@@ -384,36 +384,36 @@ object TarMemberHeader {
         if extensions.content().size() > 0 {
             let payload = extensions.content().bytes();
             result.writing() <- TarUstarHeader(
-                "PaxHeaders/entry",
-                "",
-                420,
-                0,
-                0,
-                payload.size(),
-                0,
-                "x",
-                "",
-                "",
-                "",
-                0,
-                0
+                name: "PaxHeaders/entry",
+                prefix: "",
+                mode: 420,
+                uid: 0,
+                gid: 0,
+                size: payload.size(),
+                mtime: 0,
+                flag: "x",
+                link: "",
+                user: "",
+                group: "",
+                major: 0,
+                minor: 0
             ).bytes();
             result.writing() <- payload <- TarZeroes((512 - payload.size() % 512) % 512).bytes();
         }
         result.writing() <- TarUstarHeader(
-            name,
-            prefix,
-            mode,
-            uid,
-            gid,
-            length,
-            mtime,
-            flag,
-            target,
-            user,
-            group,
-            major,
-            minor
+            name: name,
+            prefix: prefix,
+            mode: mode,
+            uid: uid,
+            gid: gid,
+            size: length,
+            mtime: mtime,
+            flag: flag,
+            link: target,
+            user: user,
+            group: group,
+            major: major,
+            minor: minor
         ).bytes();
         result.content().bytes();
     }
@@ -421,7 +421,7 @@ object TarMemberHeader {
 
 // Internal fixed USTAR wire record: only prevalidated ASCII/octal coordinates.
 // Each field encoder checks width; this projection never truncates on overflow.
-object TarUstarHeader {
+hidden object TarUstarHeader {
     has name, prefix, flag, link, user, group is string;
     has mode, uid, gid, size, mtime, major, minor is int;
 
@@ -459,26 +459,26 @@ object TarUstarHeader {
         let buffer = ByteBuffer();
         defer buffer.closing().close();
         let out = buffer.writing();
-        out <- TarAsciiField(name, 100).bytes() <- TarOctal(mode, 8).bytes() <- TarOctal(uid, 8).bytes() <- TarOctal(
-            gid,
-            8
-        ).bytes() <- TarOctal(size, 12).bytes() <- TarOctal(mtime, 12).bytes() <- "        " <- TarAsciiField(
-            flag,
-            1
-        ).bytes() <- TarAsciiField(link, 100).bytes() <- "ustar" <- [byte(0)] <- "00" <- TarAsciiField(
-            user,
-            32
-        ).bytes() <- TarAsciiField(group, 32).bytes() <- TarOctal(major, 8).bytes() <- TarOctal(
-            minor,
-            8
-        ).bytes() <- TarAsciiField(prefix, 155).bytes() <- TarZeroes(12).bytes();
+        out <- TarAsciiField(origin: name, width: 100).bytes() <- TarOctal(number: mode, width: 8).bytes() <- TarOctal(number: uid, width: 8).bytes() <- TarOctal(
+            number: gid,
+            width: 8
+        ).bytes() <- TarOctal(number: size, width: 12).bytes() <- TarOctal(number: mtime, width: 12).bytes() <- "        " <- TarAsciiField(
+            origin: flag,
+            width: 1
+        ).bytes() <- TarAsciiField(origin: link, width: 100).bytes() <- "ustar" <- [byte(0)] <- "00" <- TarAsciiField(
+            origin: user,
+            width: 32
+        ).bytes() <- TarAsciiField(origin: group, width: 32).bytes() <- TarOctal(number: major, width: 8).bytes() <- TarOctal(
+            number: minor,
+            width: 8
+        ).bytes() <- TarAsciiField(origin: prefix, width: 155).bytes() <- TarZeroes(12).bytes();
         let raw = buffer.content().bytes();
         let checksum = raw.reduce(0) -> sum, b {
             sum + b.int();
         };
         let result = ByteBuffer();
         defer result.closing().close();
-        result.writing() <- raw.slice(0, 148) <- TarOctal(checksum, 7).bytes() <- " " <- raw.slice(
+        result.writing() <- raw.slice(0, 148) <- TarOctal(number: checksum, width: 7).bytes() <- " " <- raw.slice(
             156,
             512
         );
@@ -488,7 +488,7 @@ object TarUstarHeader {
 
 // ASCII name splitting uses an existing slash and a nonempty suffix. A trailing
 // directory slash cannot become an empty name. Empty fields means no USTAR fit.
-object TarUstarPath {
+hidden object TarUstarPath {
     has origin is string;
 
     TarUstarPath(origin is string) {
@@ -496,11 +496,11 @@ object TarUstarPath {
     }
 
     fields() is @string {
-        if TarAsciiField(origin, 100).fits() {
+        if TarAsciiField(origin: origin, width: 100).fits() {
             ["", origin];
         }
         else {
-            if !TarAsciiField(origin, 256).fits() {
+            if !TarAsciiField(origin: origin, width: 256).fits() {
                 [];
             }
             else {
@@ -522,7 +522,7 @@ object TarUstarPath {
     }
 }
 
-object TarAsciiField {
+hidden object TarAsciiField {
     has origin is string;
     has width is int;
 
@@ -555,7 +555,7 @@ object TarAsciiField {
 
 // Width includes the final NUL. Internal widths are 7, 8 or 12, so shifts stay
 // within the signed int domain; the largest supported number is 8^11-1.
-object TarOctal {
+hidden object TarOctal {
     has number, width is int;
 
     TarOctal(number is int, width is int) {
@@ -579,7 +579,7 @@ object TarOctal {
     }
 }
 
-object TarZeroes {
+hidden object TarZeroes {
     has size is int;
 
     TarZeroes(size is int) {
@@ -597,7 +597,7 @@ object TarZeroes {
 
 // PAX length includes decimal digits, space, key, '=', UTF-8 value and newline.
 // The second length adjustment handles a decimal-width carry (e.g. 99 -> 100).
-object TarPaxRecord {
+hidden object TarPaxRecord {
     has key, origin is string;
 
     TarPaxRecord(key is string, origin is string) {
@@ -616,7 +616,7 @@ object TarPaxRecord {
 
 // Exact decimal epoch text. Metadata already guarantees integral nanoseconds;
 // truncate toward zero then emit sign separately, including -0.000000001.
-object TarEpochText {
+hidden object TarEpochText {
     has seconds is rat;
 
     TarEpochText(seconds is rat) {
@@ -651,7 +651,7 @@ object TarEpochText {
     }
 }
 
-object TarPermissionBits {
+hidden object TarPermissionBits {
     has origin is Permissions;
 
     TarPermissionBits(origin is Permissions) {
@@ -683,20 +683,20 @@ object TarPermissionBits {
 
 test "TAR octal fields enforce exact bounds" {
     test.is(
-        TarOctal(2097151, 8).bytes(),
+        TarOctal(number: 2097151, width: 8).bytes(),
         [byte(55), byte(55), byte(55), byte(55), byte(55), byte(55), byte(55), byte(0)]
     );
     test.throws(InvalidTar) {
-        TarOctal(2097152, 8);
+        TarOctal(number: 2097152, width: 8);
     };
     test.throws(InvalidTar) {
-        TarOctal(-1, 8);
+        TarOctal(number: -1, width: 8);
     };
 }
 
 test "PAX lengths count UTF8 bytes and decimal width carries" {
     test.is(
-        TarPaxRecord("path", "я").bytes(),
+        TarPaxRecord(key: "path", origin: "я").bytes(),
         [
             byte(49),
             byte(49),
@@ -714,8 +714,8 @@ test "PAX lengths count UTF8 bytes and decimal width carries" {
     let text = (0..90).reduce("") -> result, ignored {
         result + "a";
     };
-    test.is(TarPaxRecord("path", text).bytes().size(), 99);
-    test.is(TarPaxRecord("path", text + "a").bytes().size(), 101);
+    test.is(TarPaxRecord(key: "path", origin: text).bytes().size(), 99);
+    test.is(TarPaxRecord(key: "path", origin: text + "a").bytes().size(), 101);
 }
 
 test "TAR epoch text retains the sign of fractional negative seconds" {
@@ -768,7 +768,7 @@ object ParsedTar {
     }
 
     entries() is Sequencing<ArchiveEntry> {
-        let progress = TarParseProgress(limits, maximum_metadata, maximum_extensions);
+        let progress = TarParseProgress(limits: limits, maximum_metadata: maximum_metadata, maximum_extensions: maximum_extensions);
         loop {
             if progress.finished() {
                 last;
@@ -783,7 +783,7 @@ object ParsedTar {
 // only admitted entries retain payload. Older states are immutable and share
 // entry/name list tails. Budgets count payload, not VM lifetime bookkeeping.
 // Extension records are independently bounded.
-object TarParseProgress {
+hidden object TarParseProgress {
     has limits is ArchiveLimits;
     has budget is ArchiveBudget;
     has at, metadata_left, extensions_left, maximum_metadata, maximum_extensions is int;
@@ -861,7 +861,7 @@ object TarParseProgress {
                 confirm length.order(BigInt(metadata_left.string())) != Order.greater
                     else throw ArchiveLimitExceeded.detailed("tar_metadata", maximum_metadata);
                 let size = Number(length.string()).int();
-                let end = TarBodySpan(origin, at + 512, size).end();
+                let end = TarBodySpan(origin: origin, start: at + 512, size: size).end();
                 let payload = origin.slice(at + 512, at + 512 + size);
                 if flag == "g" {
                     ^global = TarPaxPayload(payload).applied(global);
@@ -888,14 +888,14 @@ object TarParseProgress {
                 ^extensions_left = extensions_left - 1;
             }
             else {
-                let member = TarInputMember(header, local, global, limits);
+                let member = TarInputMember(header: header, local: local, global: global, limits: limits);
                 let admitted = budget.entered(member.path().string(), member.size());
                 for names -> name {
                     confirm name != member.path().string()
                         else throw DuplicateArchivePath.path(member.path().string());
                 }
                 let spent = admitted.expanded(member.size());
-                let end = TarBodySpan(origin, at + 512, member.size()).end();
+                let end = TarBodySpan(origin: origin, start: at + 512, size: member.size()).end();
                 let entry = member.entry(origin.slice(at + 512, at + 512 + member.size()));
                 let completed = spent.completed();
                 ^budget = completed;
@@ -911,7 +911,7 @@ object TarParseProgress {
 
 // Internal wire span checks use subtraction before addition, including padding.
 // No payload slice happens until the declared size fits the remaining input.
-object TarBodySpan {
+hidden object TarBodySpan {
     has origin is @byte;
     has start, size is int;
 
@@ -938,7 +938,7 @@ object TarBodySpan {
 
 // A validated 512-byte header. Checksum validation precedes magic/type/fields.
 // GNU's layout does not have the POSIX prefix field at byte 345.
-object TarInputHeader {
+hidden object TarInputHeader {
     has origin is @byte;
 
     TarInputHeader(origin is @byte) {
@@ -1024,7 +1024,7 @@ object TarInputHeader {
 
 // Exact octal or GNU signed base-256 integer; conversions to int are separate
 // checked boundaries. No decimal accumulation in int can wrap on hostile input.
-object TarNumericField {
+hidden object TarNumericField {
     has origin is @byte;
 
     TarNumericField(origin is @byte) {
@@ -1065,7 +1065,7 @@ object TarNumericField {
 
 // Immutable PAX keyword history: newest wins. Empty values are retained so a
 // local deletion can suppress a global value and fall back to the base header.
-object TarAttribute {
+hidden object TarAttribute {
     has name, text is string;
 
     TarAttribute(name is string, text is string) {
@@ -1082,7 +1082,7 @@ object TarAttribute {
     }
 }
 
-object TarAttributes {
+hidden object TarAttributes {
     has records is List<TarAttribute>;
 
     TarAttributes() {
@@ -1091,7 +1091,7 @@ object TarAttributes {
     }
 
     following(name is string, text is string) is ^TarAttributes {
-        ^records = records.prefix(TarAttribute(name, text));
+        ^records = records.prefix(TarAttribute(name: name, text: text));
     }
 
     lookup(name is string, fallback is string) is string {
@@ -1104,7 +1104,7 @@ object TarAttributes {
     }
 }
 
-object TarReadOffset {
+hidden object TarReadOffset {
     has position is int;
 
     TarReadOffset(position is int) {
@@ -1122,7 +1122,7 @@ object TarReadOffset {
 
 // Byte-counted PAX records, never newline splitting. Unknown ordinary keywords
 // are retained under the metadata bound; sparse/binary-name directives fail.
-object TarPaxPayload {
+hidden object TarPaxPayload {
     has origin is @byte;
 
     TarPaxPayload(origin is @byte) {
@@ -1186,7 +1186,7 @@ object TarPaxPayload {
     }
 }
 
-object TarGnuName {
+hidden object TarGnuName {
     has origin is @byte;
 
     TarGnuName(origin is @byte) {
@@ -1205,7 +1205,7 @@ object TarGnuName {
     }
 }
 
-object TarUtf8 {
+hidden object TarUtf8 {
     has origin is @byte;
 
     TarUtf8(origin is @byte) {
@@ -1222,7 +1222,7 @@ object TarUtf8 {
     }
 }
 
-object TarDecimalDigits {
+hidden object TarDecimalDigits {
     has origin is string;
 
     TarDecimalDigits(origin is string) {
@@ -1239,7 +1239,7 @@ object TarDecimalDigits {
 
 // Effective immutable member coordinates at the format boundary. Paths and
 // numeric bounds are checked before a payload is copied by the outer progress.
-object TarInputMember {
+hidden object TarInputMember {
     has origin is ArchivePath;
     has attributes is ArchiveMetadata;
     has target is string;
@@ -1286,8 +1286,8 @@ object TarInputMember {
             TarDecimalNumber(size_text).integer();
         };
         confirm length.sign() >= 0 else throw InvalidTar.because("negative member size");
-        confirm length.order(BigInt(limits.entry_size().string())) != Order.greater
-            else throw ArchiveLimitExceeded.detailed("entry_size", limits.entry_size());
+        confirm length.order(BigInt(limits::Limits::entry_size.string())) != Order.greater
+            else throw ArchiveLimitExceeded.detailed("entry_size", limits::Limits::entry_size);
         let amount = Number(length.string()).int();
         confirm kind == "0" || amount == 0
             else throw InvalidTar.because("non-file member has data");
@@ -1324,22 +1324,22 @@ object TarInputMember {
         let user = local.lookup("uname", global.lookup("uname", ""));
         let group = local.lookup("gname", global.lookup("gname", ""));
         let owner = ArchiveOwnership(
-            if user != "" {
+            user: if user != "" {
                 user;
             }
             else {
                 header.text(265, 32);
             },
-            if group != "" {
+            group: if group != "" {
                 group;
             }
             else {
                 header.text(297, 32);
             },
-            user_id,
-            group_id
+            user_identity: user_id,
+            group_identity: group_id
         );
-        let mode = TarCheckedInt(header.number(100, 8), 4095).value();
+        let mode = TarCheckedInt(origin: header.number(100, 8), maximum: 4095).value();
         let time = local.lookup("mtime", global.lookup("mtime", ""));
         let time_text = if time != "" {
             time;
@@ -1348,20 +1348,20 @@ object TarInputMember {
             header.number(136, 12).string();
         };
         let modified = try {
-            ArchiveModificationFromEpoch(TarPaxTime(time_text).seconds()).value();
+            ArchiveModificationFromEpoch(TarPaxTime(time_text).seconds()).local_date_time();
         }
         catch error is Error {
             throw InvalidTar.because("invalid modification time");
         };
         attributes = ArchiveMetadata(
-            PermissionMode(mode),
-            modified,
-            owner,
-            local.lookup("comment", global.lookup("comment", ""))
+            mode: PermissionMode(mode),
+            modified: modified,
+            ownership: owner,
+            comment: local.lookup("comment", global.lookup("comment", ""))
         );
         if kind == "3" || kind == "4" {
-            major = TarCheckedInt(header.number(329, 8), 9223372036854775807).value();
-            minor = TarCheckedInt(header.number(337, 8), 9223372036854775807).value();
+            major = TarCheckedInt(origin: header.number(329, 8), maximum: 9223372036854775807).value();
+            minor = TarCheckedInt(origin: header.number(337, 8), maximum: 9223372036854775807).value();
         }
         else {
             major = 0;
@@ -1380,31 +1380,31 @@ object TarInputMember {
     entry(data is @byte) is ArchiveEntry {
         match flag {
             case "0" {
-                ArchiveFile(origin, attributes, data);
+                ArchiveFile(path: origin, metadata: attributes, data: data);
             }
             case "1" {
-                ArchiveHardLink(origin, attributes, ArchivePath(target));
+                ArchiveHardLink(path: origin, metadata: attributes, target: ArchivePath(target));
             }
             case "2" {
-                ArchiveSymbolicLink(origin, attributes, ArchivePath(target));
+                ArchiveSymbolicLink(path: origin, metadata: attributes, target: ArchivePath(target));
             }
             case "3" {
-                ArchiveDevice(origin, ArchiveEntryKind.character_device, attributes, major, minor);
+                ArchiveDevice(path: origin, kind: ArchiveEntryKind.character_device, metadata: attributes, major: major, minor: minor);
             }
             case "4" {
-                ArchiveDevice(origin, ArchiveEntryKind.block_device, attributes, major, minor);
+                ArchiveDevice(path: origin, kind: ArchiveEntryKind.block_device, metadata: attributes, major: major, minor: minor);
             }
             case "5" {
-                ArchiveDirectory(origin, attributes);
+                ArchiveDirectory(path: origin, metadata: attributes);
             }
             else {
-                ArchiveFifo(origin, attributes);
+                ArchiveFifo(path: origin, metadata: attributes);
             }
         }
     }
 }
 
-object TarDecimalNumber {
+hidden object TarDecimalNumber {
     has origin is string;
 
     TarDecimalNumber(origin is string) {
@@ -1418,7 +1418,7 @@ object TarDecimalNumber {
     }
 }
 
-object TarCheckedInt {
+hidden object TarCheckedInt {
     has origin is BigInt;
     has maximum is int;
 
@@ -1434,7 +1434,7 @@ object TarCheckedInt {
     }
 }
 
-object TarPaxTime {
+hidden object TarPaxTime {
     has origin is string;
 
     TarPaxTime(origin is string) {
@@ -1453,7 +1453,7 @@ object TarPaxTime {
         let parts = magnitude.split(".");
         confirm parts.size() <= 2 && TarDecimalDigits(parts[0]).valid()
             else throw InvalidTar.because("invalid timestamp");
-        let whole = TarCheckedInt(BigInt(parts[0]), 253402300800).value();
+        let whole = TarCheckedInt(origin: BigInt(parts[0]), maximum: 253402300800).value();
         let fraction = if parts.size() == 2 {
             parts[1];
         }
@@ -1487,7 +1487,7 @@ object TarPaxTime {
 
 // Indexed immutable snapshot and cursor. No input, parser state or resource is
 // retained. Index errors and empty/exhausted observations use collection errors.
-object TarEntrySequence does Sequencing<ArchiveEntry>, Iterating<ArchiveEntry> {
+hidden object TarEntrySequence does Sequencing<ArchiveEntry>, Iterating<ArchiveEntry> {
     has origin is @ArchiveEntry;
 
     TarEntrySequence(origin is @ArchiveEntry) {
@@ -1515,11 +1515,11 @@ object TarEntrySequence does Sequencing<ArchiveEntry>, Iterating<ArchiveEntry> {
     }
 
     cursor() is Cursor<ArchiveEntry> {
-        TarEntryCursor(self, 0);
+        TarEntryCursor(origin: self, position: 0);
     }
 }
 
-object TarEntryCursor does Cursor<ArchiveEntry> {
+hidden object TarEntryCursor does Cursor<ArchiveEntry> {
     has origin is TarEntrySequence;
     has position is int;
 
@@ -1539,7 +1539,7 @@ object TarEntryCursor does Cursor<ArchiveEntry> {
 
     successor() is Cursor<ArchiveEntry> {
         confirm self.available() else throw IterationEnded.ended;
-        TarEntryCursor(origin, position + 1);
+        TarEntryCursor(origin: origin, position: position + 1);
     }
 }
 
@@ -1609,7 +1609,7 @@ object TarReading does ReadingArchive, Closing {
     has status is ByteBuffer;
 
     TarReading(origin is Reading, limits is ArchiveLimits) {
-        input = TarStreamInput(origin, limits, 1048576, 4096);
+        input = TarStreamInput(origin: origin, limits: limits, maximum_metadata: 1048576, maximum_extensions: 4096);
         status = ByteBuffer();
     }
 
@@ -1619,7 +1619,7 @@ object TarReading does ReadingArchive, Closing {
         maximum_metadata is int,
         maximum_extensions is int
     ) {
-        input = TarStreamInput(origin, limits, maximum_metadata, maximum_extensions);
+        input = TarStreamInput(origin: origin, limits: limits, maximum_metadata: maximum_metadata, maximum_extensions: maximum_extensions);
         status = ByteBuffer();
     }
 
@@ -1668,7 +1668,7 @@ object TarReading does ReadingArchive, Closing {
 // local extensions live only until this call returns one real member. The wire
 // decoders and per-member validation are shared with ParsedTar. Counter state is
 // explicit byte storage because ordinary Okkama values have no mutable setters.
-object TarStreamInput {
+hidden object TarStreamInput {
     has source is TarExactReading;
     has limits is ArchiveLimits;
     has seed is TarStreamCounts;
@@ -1685,11 +1685,11 @@ object TarStreamInput {
         source = TarExactReading(origin);
         self.limits = limits;
         let initial = TarStreamCounts(
-            limits.entries(),
-            limits.entry_size(),
-            limits.total_size(),
-            maximum_metadata,
-            maximum_extensions
+            entries: limits::Limits::entries,
+            entry_size: limits::Limits::entry_size,
+            total: limits::Limits::total_size,
+            metadata: maximum_metadata,
+            extensions: maximum_extensions
         );
         seed = initial;
         counters = ByteBuffer(initial.bytes());
@@ -1742,7 +1742,7 @@ object TarStreamInput {
                 }
             }
             else {
-                let member = TarInputMember(header, local.attributes(), global, limits);
+                let member = TarInputMember(header: header, local: local.attributes(), global: global, limits: limits);
                 counts = counts.admitted(member.size()); // Before payload I/O.
                 let nul = Utf8Decoded([byte(0)]).string();
                 let previous = Utf8Decoded(names.content().bytes()).string().split(nul);
@@ -1783,7 +1783,7 @@ object TarStreamInput {
 // One exact admitted span; does not read ahead or own the source. Its temporary
 // buffer is released on every exit. Empty-at-start is permitted only while
 // checking the trailer after both required EOF blocks have already been read.
-object TarExactReading {
+hidden object TarExactReading {
     has origin is Reading;
 
     TarExactReading(origin is Reading) {
@@ -1821,7 +1821,7 @@ object TarExactReading {
 
 // Internal per-call local extension value. An empty x header still needs a
 // subsequent real member; present is independent of the number of attributes.
-object TarStreamLocal {
+hidden object TarStreamLocal {
     has values is TarAttributes;
     has pending is bool;
 
@@ -1862,7 +1862,7 @@ object TarStreamLocal {
 // TarInputMember; these remaining counters persist across consuming entry calls.
 // State is four unsigned 8-byte big-endian integers with no host endian choice.
 // Compare BEFORE subtracting; configured maxima remain available for diagnostics.
-object TarStreamCounts {
+hidden object TarStreamCounts {
     has maximum_entries, maximum_entry, maximum_total, maximum_metadata, maximum_extensions is int;
     has entries_left, total_left, metadata_left, extensions_left is int;
 
@@ -1946,7 +1946,7 @@ object TarStreamCounts {
 }
 
 test "TAR stream counter snapshots preserve cumulative independent budgets" {
-    let initial = TarStreamCounts(2, 4, 6, 8, 3);
+    let initial = TarStreamCounts(entries: 2, entry_size: 4, total: 6, metadata: 8, extensions: 3);
     let first = initial.admitted(4).extended(5);
     let recovered = initial.restored(first.bytes());
     test.is(recovered.bytes(), first.bytes());

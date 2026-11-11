@@ -3750,6 +3750,16 @@ a byte source, until `EndOfCsv`. Every limit (input, field, rows, columns,
 output) is a named argument, and `InvalidCsv.at(offset)` names the first
 bad character. `examples/csv/` shows each task.
 
+`archive` builds and reads TAR in memory. An entry is a value:
+`ArchiveFile(path:, metadata:, data:)`, `ArchiveDirectory`, links and
+devices. `TarArchive(entries).bytes()` writes, and `TarWriting(sink)`
+streams. `ParsedTar(origin:, limits: ArchiveLimits(entries:, entry_size:,
+total_size:, path_length:)).entries()` reads within limits, which show
+through `limits::Limits`. `ArchivePath` refuses `..`, absolute and other
+unsafe paths. `compression` wraps a `Compressing` or `Decompressing` codec as
+a reading stream: `CompressedReading(origin:, compressor:)`.
+`examples/archive/` shows a round trip.
+
 `http/client` sends requests with `HttpClient()`. By default it uses the system's DNS and trusted roots, reaches public endpoints only and speaks HTTP/1.1. Every other part is a named argument: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)` and `cookies: MemoryCookieJar()`. Every REST method has a shortcut: `get(url)`, `head`, `options`, `delete`, and `post(url:, body:)`, `put`, `patch` with a `Content` such as `JsonBody(json)`. Anything else is `client.response(Request(url:, method:, headers:, body:))`. A reply shows its head through the cap `Head` (`page::Head::status`, `::class`, `::headers`) and reads its body with `await page.text()`, `bytes()`, `json()` or `reading()`. `Status` and `Method` are enums: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` and `MethodName` turn them into wire numbers and tokens and back. `examples/http/client/` shows each task as a program.
 
 `strings/parse` reads text as the type asked for: `Number("42").int()`,

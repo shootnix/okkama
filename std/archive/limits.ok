@@ -32,20 +32,23 @@ object ArchiveLimits {
         path_limit = path_length;
     }
 
-    entries() is int {
-        count_limit;
-    }
+    // The four limits as given.
+    cap Limits {
+        entries is int {
+            count_limit;
+        }
 
-    entry_size() is int {
-        entry_limit;
-    }
+        entry_size is int {
+            entry_limit;
+        }
 
-    total_size() is int {
-        total_limit;
-    }
+        total_size is int {
+            total_limit;
+        }
 
-    path_length() is int {
-        path_limit;
+        path_length is int {
+            path_limit;
+        }
     }
 
     path(origin is string) is ArchivePath {
@@ -78,8 +81,8 @@ object ArchiveBudget {
 
     ArchiveBudget(limits is ArchiveLimits) {
         policy = limits;
-        count_left = limits.entries();
-        total_left = limits.total_size();
+        count_left = limits::Limits::entries;
+        total_left = limits::Limits::total_size;
         entry_left = 0;
         current = [];
     }
@@ -110,14 +113,14 @@ object ArchiveBudget {
         confirm declared_size >= 0
             else throw InvalidArgument.because("declared archive entry size must be nonnegative");
         confirm count_left > 0
-            else throw ArchiveLimitExceeded.detailed("entries", policy.entries());
+            else throw ArchiveLimitExceeded.detailed("entries", policy::Limits::entries);
         let member = policy.path(origin);
-        confirm declared_size <= policy.entry_size()
-            else throw ArchiveLimitExceeded.detailed("entry_size", policy.entry_size());
+        confirm declared_size <= policy::Limits::entry_size
+            else throw ArchiveLimitExceeded.detailed("entry_size", policy::Limits::entry_size);
         confirm declared_size <= total_left
-            else throw ArchiveLimitExceeded.detailed("total_size", policy.total_size());
+            else throw ArchiveLimitExceeded.detailed("total_size", policy::Limits::total_size);
         ^count_left = count_left - 1;
-        ^entry_left = policy.entry_size();
+        ^entry_left = policy::Limits::entry_size;
         ^current = [member];
     }
 
@@ -127,9 +130,9 @@ object ArchiveBudget {
         confirm amount >= 0
             else throw InvalidArgument.because("expanded archive size must be nonnegative");
         confirm amount <= entry_left
-            else throw ArchiveLimitExceeded.detailed("entry_size", policy.entry_size());
+            else throw ArchiveLimitExceeded.detailed("entry_size", policy::Limits::entry_size);
         confirm amount <= total_left
-            else throw ArchiveLimitExceeded.detailed("total_size", policy.total_size());
+            else throw ArchiveLimitExceeded.detailed("total_size", policy::Limits::total_size);
         ^entry_left = entry_left - amount;
         ^total_left = total_left - amount;
     }
@@ -149,7 +152,7 @@ enum ArchiveLimitExceeded is Error = (detailed(limit is string, maximum is int))
 enum InvalidArchiveLimit is Error = (detailed(limit is string, maximum is int));
 
 test "archive limits validate positive coordinates and Unicode path length" {
-    let policy = ArchiveLimits(2, 4, 6, 3);
+    let policy = ArchiveLimits(entries: 2, entry_size: 4, total_size: 6, path_length: 3);
     test.is(policy.path("é/😀").string(), "é/😀");
     test.is(
         try {
@@ -162,14 +165,14 @@ test "archive limits validate positive coordinates and Unicode path length" {
         "path_length"
     );
     test.ok(try {
-        ArchiveLimits(0, 1, 1, 1);
+        ArchiveLimits(entries: 0, entry_size: 1, total_size: 1, path_length: 1);
         false;
     }
     catch InvalidArchiveLimit.detailed(_, maximum) {
         maximum == 0;
     });
     test.ok(try {
-        ArchiveLimits(1, 1, 1, -1);
+        ArchiveLimits(entries: 1, entry_size: 1, total_size: 1, path_length: -1);
         false;
     }
     catch InvalidArchiveLimit.detailed(limit, _) {
@@ -178,7 +181,7 @@ test "archive limits validate positive coordinates and Unicode path length" {
 }
 
 test "archive budget spends actual bytes cumulatively across entries" {
-    let initial = ArchiveLimits(2, 4, 6, 8).budget();
+    let initial = ArchiveLimits(entries: 2, entry_size: 4, total_size: 6, path_length: 8).budget();
     let first = initial.entered("a", 0).expanded(4).completed();
     let second = first.entered("b", 0).expanded(2);
     test.is(initial.total_remaining(), 6);
@@ -209,7 +212,7 @@ test "archive budget spends actual bytes cumulatively across entries" {
 }
 
 test "archive accounting phase and failed transitions preserve prior values" {
-    let idle = ArchiveLimits(2, 4, 8, 8).budget();
+    let idle = ArchiveLimits(entries: 2, entry_size: 4, total_size: 8, path_length: 8).budget();
     let active = idle.entered("a", 0);
     let left = active.expanded(1);
     let right = active.expanded(4);

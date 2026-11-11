@@ -563,6 +563,18 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
       `CsvMode` are hidden.
     - `csv/stream` has inline tests.
     - Named arguments in 47 calls. There is an example, `examples/csv/`.
+  - `archive` and `compression`:
+    - 31 TAR parser and writer internals are hidden, among them the entry
+      sequence and cursor. `TarArchive`, `TarWriting`, `ParsedTar` and
+      `TarReading` stay public.
+    - `CompressionReading` and the two flows are hidden.
+    - `ArchiveLimits::Limits` holds `entries`, `entry_size`, `total_size`
+      and `path_length`.
+    - `ArchiveModificationFromEpoch(seconds).local_date_time()` replaces
+      `.value()`. The constructor keeps the seconds, so a value that cannot
+      be represented is refused when it is converted.
+    - Named arguments in 103 calls in std, and 26 in the okkama-docs
+      examples. There is an example, `examples/archive/`.
 
 ### Fixed
 

@@ -63,6 +63,12 @@ and compares the output.
 |---|---|
 | `csv/rows.ok` | read rows with quotes inside, write them back, use another dialect, stream rows, report a bad quote |
 
+## archive
+
+| Program | Task |
+|---|---|
+| `archive/tar.ok` | build a TAR in memory, read it back within limits, refuse an unsafe path and an oversized member |
+
 ## strings/parse
 
 | Program | Task |

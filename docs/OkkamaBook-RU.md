@@ -3923,6 +3923,17 @@ event`), а `event.dispatch(handler)` отдаёт каждое в его `handl
 именованный аргумент, а `InvalidCsv.at(offset)` называет первый плохой
 символ. `examples/csv/` показывает каждую задачу.
 
+`archive` строит и читает TAR в памяти. Запись — это значение:
+`ArchiveFile(path:, metadata:, data:)`, `ArchiveDirectory`, ссылки и
+устройства. `TarArchive(entries).bytes()` записывает, а `TarWriting(sink)`
+пишет потоком. `ParsedTar(origin:, limits: ArchiveLimits(entries:,
+entry_size:, total_size:, path_length:)).entries()` читает в пределах,
+которые видны через `limits::Limits`. `ArchivePath` отказывает `..`,
+абсолютным и прочим опасным путям. `compression` оборачивает кодек
+`Compressing` или `Decompressing` в читающий поток:
+`CompressedReading(origin:, compressor:)`. `examples/archive/` показывает
+путь туда и обратно.
+
 `http/client` отправляет запросы через `HttpClient()`. По умолчанию он берёт системные DNS и доверенные корни, ходит только на публичные адреса и говорит по HTTP/1.1. Всё остальное задаётся именованными аргументами: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)`, `cookies: MemoryCookieJar()`. Для каждого REST-метода есть шорткат: `get(url)`, `head`, `options`, `delete`, а также `post(url:, body:)`, `put`, `patch` с `Content`, например `JsonBody(json)`. Любой другой запрос пишется как `client.response(Request(url:, method:, headers:, body:))`. Ответ показывает голову через cap `Head` (`page::Head::status`, `::class`, `::headers`) и читает тело через `await page.text()`, `bytes()`, `json()` или `reading()`. `Status` и `Method` — enum'ы: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` и `MethodName` переводят их в числа и токены протокола и обратно. Каждая задача показана программой в `examples/http/client/`.
 
 `strings/parse` читает текст как тип, который у него просят: `Number("42").int()`,
