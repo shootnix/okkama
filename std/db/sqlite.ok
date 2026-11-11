@@ -55,9 +55,9 @@ object SqliteOptions {
         journal is SqliteJournal
     ) {
         confirm !(read_only && create)
-            && busy_timeout.seconds() >= 0.rat()
-            && busy_timeout.seconds() <= 60.rat()
-            && (busy_timeout.seconds() * 1000.rat()).denominator() == "1"
+            && busy_timeout::Span::seconds >= 0.rat()
+            && busy_timeout::Span::seconds <= 60.rat()
+            && (busy_timeout::Span::seconds * 1000.rat()).denominator() == "1"
             else throw InvalidSqliteOptions.invalid;
         self.read_only = read_only;
         self.create = create;
@@ -197,7 +197,7 @@ object SqliteOpening {
                 options.read_only(),
                 options.creation(),
                 options.foreign_keys(),
-                (options.busy_timeout().seconds() * 1000.rat()).int(),
+                (options.busy_timeout()::Span::seconds * 1000.rat()).int(),
                 journal,
                 memory
             );
@@ -1670,7 +1670,7 @@ hidden object SqliteFinishCleanup {
 test "SQLite defaults are explicit and foreign keys remain enabled" {
     let options = SqliteOptions();
     test.ok(!options.read_only() && options.creation() && options.foreign_keys());
-    test.ok(options.busy_timeout().seconds() == 0.rat());
+    test.ok(options.busy_timeout()::Span::seconds == 0.rat());
 }
 
 test "SQLite rejects contradictory flags and sub-millisecond busy timeouts" {

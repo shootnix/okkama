@@ -87,15 +87,17 @@ fn related(name: &str) -> &'static [&'static str] {
 /// арность, типы аргументов). Значение — поле receiver или `^N`: тип
 /// результата N-го. Типы аргументов (те же ссылки) выбирают перегрузку:
 /// `minus(MonotonicInstant)` даёт `Duration`, `minus(Duration)` — момент (#215).
+/// Действие `Cap::field` читает поле cap: его функция, как действие без
+/// аргументов, принимает одно значение и отдаёт поле.
 type Helper = (&'static str, &'static str, usize, &'static [&'static str]);
 
 fn helpers(name: &str) -> &'static [Helper] {
     match name {
-        "okkama.timeout.Within.outcome" => &[("limit", "seconds", 0, &[]), ("clock", "wait", 1, &[])],
+        "okkama.timeout.Within.outcome" => &[("limit", "Span::seconds", 0, &[]), ("clock", "wait", 1, &[])],
         "okkama.timeout.Before.outcome" => &[
             ("clock", "monotonic_instant", 0, &[]),
             ("deadline", "minus", 1, &["^0"]),
-            ("^1", "seconds", 0, &[]),
+            ("^1", "Span::seconds", 0, &[]),
             ("clock", "wait", 1, &[]),
         ],
         _ => &[],
@@ -238,6 +240,10 @@ impl Ctx<'_, '_> {
                 this.ir_type(&field.ty.subst(&env), span)
             };
             let receiver = resolve(self, path)?;
+            if let Some((cap_name, field_name)) = action.split_once("::") {
+                found.push(self.intrinsic_cap_field(&receiver, cap_name, field_name, span)?);
+                continue;
+            }
             let params = if args.is_empty() {
                 None
             } else {
@@ -274,6 +280,39 @@ impl Ctx<'_, '_> {
             found.push((func, result));
         }
         Ok(found.into_iter().map(|(func, _)| func).collect())
+    }
+
+    /// Функция поля `cap_name::field_name` объекта `receiver` и тип поля.
+    fn intrinsic_cap_field(
+        &mut self,
+        receiver: &Type,
+        cap_name: &str,
+        field_name: &str,
+        span: Span,
+    ) -> Result<(ir::FuncId, Type)> {
+        let missing = || {
+            LoweringError::invalid(
+                span,
+                format!("internal compiler error: no cap field {cap_name}::{field_name} for a runtime helper"),
+            )
+        };
+        let Type::Object(target) = receiver else {
+            return Err(missing());
+        };
+        let decl = self.objects[target.0].decl;
+        let env = self.objects[target.0].env.clone();
+        let args = env.iter().map(|(_, ty)| ty.clone()).collect();
+        let reg = self.reg;
+        let info = &reg.objects[decl.0];
+        let cap = info.caps.iter().position(|cap| cap.name == cap_name).ok_or_else(missing)?;
+        let field = info.caps[cap]
+            .fields
+            .iter()
+            .position(|(name, ..)| name == field_name)
+            .ok_or_else(missing)?;
+        let ty = self.ir_type(&info.caps[cap].fields[field].1.subst(&env), span)?;
+        let id = self.cap_instance(decl, args, cap, span)?;
+        Ok((self.caps[id.0].2[field].1, ty))
     }
 
     /// Функция intrinsic: параметры (receiver первым у действия), результат,

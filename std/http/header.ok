@@ -110,7 +110,7 @@ object HttpFieldValue {
                 end;
             };
             let piece = origin.slice(start, stop);
-            let removed = PrefixRegexMatch(origin: piece, regex: spaces).range().end();
+            let removed = PrefixRegexMatch(origin: piece, regex: spaces).range()::Bounds::end;
             range = range.following(start + removed, end);
             last if removed < piece.length();
         }
@@ -125,12 +125,12 @@ object HttpFieldValue {
                 start;
             };
             let piece = origin.slice(from, end);
-            let removed = PrefixRegexMatch(origin: piece, regex: spaces).range().end();
+            let removed = PrefixRegexMatch(origin: piece, regex: spaces).range()::Bounds::end;
             if removed == piece.length() {
                 range = range.following(start, from);
             }
             else {
-                range = range.following(start, from + PrefixRegexMatch(origin: piece, regex: ending).range().end());
+                range = range.following(start, from + PrefixRegexMatch(origin: piece, regex: ending).range()::Bounds::end);
                 last;
             }
         }

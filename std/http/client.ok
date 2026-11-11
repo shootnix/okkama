@@ -1091,7 +1091,7 @@ object HttpDeadline<T> {
     }
 
     async result() is T {
-        if limit.seconds() == 0.rat() {
+        if limit::Span::seconds == 0.rat() {
             return await origin;
         }
         let bounded is Within<T> = Within(origin: origin, limit: limit, clock: clock);

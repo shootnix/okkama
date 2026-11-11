@@ -267,13 +267,13 @@ object GregorianLocaleData {
     }
 
     period(time is TimeOfDay, width is int, flexible is bool) is string {
-        let ordinary = if time.hour() < 12 {
+        let ordinary = if time::Clock::hour < 12 {
             0;
         }
         else {
             1;
         };
-        let tick = (time.hour() * 3600 + time.minute() * 60 + time.second()) * 1000000000 + time.nanosecond();
+        let tick = (time::Clock::hour * 3600 + time::Clock::minute * 60 + time::Clock::second) * 1000000000 + time::Clock::nanosecond;
         let selected = if flexible {
             (0..(rules.size() / 4).int()).reduce(-1) -> chosen, index {
                 if chosen >= 0 {
@@ -382,9 +382,9 @@ object LocalizedZoneObservation {
         confirm name.length() > 0 && name.length() <= 255
             else throw InvalidLocalizedDateTime.because("timezone name length");
         let offset = zone.offset(instant);
-        confirm offset.seconds().denominator() == "1"
-            && offset.seconds() > (-86400).rat()
-            && offset.seconds() < 86400.rat()
+        confirm offset::Span::seconds.denominator() == "1"
+            && offset::Span::seconds > (-86400).rat()
+            && offset::Span::seconds < 86400.rat()
             else throw InvalidLocalizedDateTime.because(
                 "timezone offset must contain whole seconds within a day"
             );
@@ -430,7 +430,7 @@ object LocalizedZoneName {
         let metadata = CldrZoneMeta();
         let canonical = metadata.canonical(origin.name());
         let intervals = metadata.intervals(canonical);
-        let seconds = origin.instant().unix_duration().seconds();
+        let seconds = origin.instant().unix_duration()::Span::seconds;
         let zone = (0..(intervals.size() / 3).int()).reduce("") -> chosen, index {
             if chosen != "" {
                 chosen;
@@ -479,14 +479,14 @@ object LocalizedZoneName {
 
     hidden compatible(canonical is string, metazone is string, specific is bool) is bool {
         if canonical == "Etc/UTC" || canonical == "Etc/GMT" {
-            return origin.offset().seconds() == 0.rat() && !origin.daylight();
+            return origin.offset()::Span::seconds == 0.rat() && !origin.daylight();
         }
         if metazone == "" && !specific {
             return false;
         }
         try {
             let named = Zone(canonical);
-            named.offset(origin.instant()).seconds() == origin.offset().seconds()
+            named.offset(origin.instant())::Span::seconds == origin.offset()::Span::seconds
                 && named.daylight_saving(origin.instant()) == origin.daylight();
         }
         catch error is UnknownTimeZone {
@@ -551,7 +551,7 @@ object LocalizedGmtOffset {
     }
 
     string() is string {
-        let seconds = offset.seconds().int();
+        let seconds = offset::Span::seconds.int();
         if seconds == 0 {
             return fields[2];
         }
@@ -669,7 +669,7 @@ object GregorianPrinting {
                 data.era(width);
             }
             case "y" {
-                let year = self.date().year();
+                let year = self.date()::Calendar::year;
                 data.number(
                     if width == 2 {
                         year % 100;
@@ -681,7 +681,7 @@ object GregorianPrinting {
                 );
             }
             case "M", "L" {
-                let month = self.date().month();
+                let month = self.date()::Calendar::month;
                 if width <= 2 {
                     data.number(month, width);
                 }
@@ -690,19 +690,19 @@ object GregorianPrinting {
                 }
             }
             case "roman-month" {
-                ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x", "xi", "xii"][self.date().month() - 1];
+                ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x", "xi", "xii"][self.date()::Calendar::month - 1];
             }
             case "d" {
-                data.number(self.date().day(), width);
+                data.number(self.date()::Calendar::day, width);
             }
             case "E", "c" {
                 data.weekday(self.date().weekday(), width, kind == "c");
             }
             case "H" {
-                data.number(self.time().hour(), width);
+                data.number(self.time()::Clock::hour, width);
             }
             case "h" {
-                let hour = self.time().hour() % 12;
+                let hour = self.time()::Clock::hour % 12;
                 data.number(
                     if hour == 0 {
                         12;
@@ -714,10 +714,10 @@ object GregorianPrinting {
                 );
             }
             case "m" {
-                data.number(self.time().minute(), width);
+                data.number(self.time()::Clock::minute, width);
             }
             case "s" {
-                data.number(self.time().second(), width);
+                data.number(self.time()::Clock::second, width);
             }
             case "a", "B" {
                 data.period(self.time(), width, kind == "B");

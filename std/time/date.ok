@@ -52,16 +52,19 @@ object Date does Comparing<Date> {
         day_value = day;
     }
 
-    year() is int {
-        year_value;
-    }
+    // The parts of the date, already checked by the constructor.
+    cap Calendar {
+        year is int {
+            year_value;
+        }
 
-    month() is int {
-        month_value;
-    }
+        month is int {
+            month_value;
+        }
 
-    day() is int {
-        day_value;
+        day is int {
+            day_value;
+        }
     }
 
     weekday() is Weekday {
@@ -91,15 +94,15 @@ object Date does Comparing<Date> {
     }
 
     order(other is Date) is Order {
-        if year_value != other.year() {
-            year_value.order(other.year());
+        if year_value != other::Calendar::year {
+            year_value.order(other::Calendar::year);
         }
         else {
-            if month_value != other.month() {
-                month_value.order(other.month());
+            if month_value != other::Calendar::month {
+                month_value.order(other::Calendar::month);
             }
             else {
-                day_value.order(other.day());
+                day_value.order(other::Calendar::day);
             }
         }
     }
@@ -139,8 +142,8 @@ object GregorianDay {
     has origin is int;
 
     GregorianDay(date is Date) {
-        let year is int = date.year();
-        let month is int = date.month();
+        let year is int = date::Calendar::year;
+        let month is int = date::Calendar::month;
         let previous_year is int = year - 1;
         let leap is bool = year % 4 == 0
             && (year % 100 != 0 || year % 400 == 0);
@@ -161,7 +164,7 @@ object GregorianDay {
             (previous_year / 400).int() +
             ((367 * month - 362) / 12).int() +
             adjustment +
-            date.day();
+            date::Calendar::day;
     }
 
     GregorianDay(number is int) {
@@ -210,14 +213,14 @@ object GregorianDay {
 test "dates shift, count days between and map to day numbers" {
     let release = Date(year: 2026, month: 8, day: 11);
     test.is(release.weekday(), Weekday.tuesday);
-    test.is(release.shifted(1).day(), 12);
-    test.is(release.shifted(-11).month(), 7);
-    test.is(release.shifted(143).year(), 2027);
+    test.is(release.shifted(1)::Calendar::day, 12);
+    test.is(release.shifted(-11)::Calendar::month, 7);
+    test.is(release.shifted(143)::Calendar::year, 2027);
     test.is(DaysBetween(left: release, right: release.shifted(30)).count(), 30);
     test.is(DaysBetween(left: release.shifted(30), right: release).count(), -30);
     test.is(GregorianDay(Date(year: 1, month: 1, day: 1)).number(), 1);
     test.is(GregorianDay(Date(year: 1970, month: 1, day: 1)).number(), 719163);
-    test.is(GregorianDay(719163).date().year(), 1970);
+    test.is(GregorianDay(719163).date()::Calendar::year, 1970);
     test.is(GregorianDay(GregorianDay(release).number()).date().order(release), Order.equal);
     test.ok(try {
         GregorianDay(0).date();

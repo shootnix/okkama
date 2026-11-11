@@ -11,7 +11,7 @@ object XmlCharacters {
         let invalid = Regex("[\\x{0}-\\x{8}\\x{B}\\x{C}\\x{E}-\\x{1F}\\x{FFFE}\\x{FFFF}]");
         if RegexMatches(origin: origin, regex: invalid).found() {
             throw InvalidXml.located(
-                FirstRegexMatch(origin: origin, regex: invalid).range().start(),
+                FirstRegexMatch(origin: origin, regex: invalid).range()::Bounds::start,
                 "character forbidden by XML 1.0"
             );
         }

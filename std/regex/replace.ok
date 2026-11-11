@@ -278,9 +278,9 @@ hidden object RegexSubstitutionProgress {
         RegexSubstitutionProgress(
             origin: source,
             rendered: rendered +
-                source.slice(offset, range.start()) +
+                source.slice(offset, range::Bounds::start) +
                 replacing.replacement(found),
-                offset: range.end(),
+                offset: range::Bounds::end,
                 amount: quantity + 1,
         );
     }

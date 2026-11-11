@@ -778,7 +778,7 @@ object StaticValidator {
     has tag is EntityTag;
 
     StaticValidator(facts is FileStat, coding is string) {
-        let value = facts.identity().device().string() + "-" + facts.identity().inode().string() + "-" + facts.size().string() + "-" + facts.times().modification().unix_duration().seconds().int().string() + "-" + facts.times().change().unix_duration().seconds().int().string() + "-" + coding;
+        let value = facts.identity().device().string() + "-" + facts.identity().inode().string() + "-" + facts.size().string() + "-" + facts.times().modification().unix_duration()::Span::seconds.int().string() + "-" + facts.times().change().unix_duration()::Span::seconds.int().string() + "-" + coding;
         tag = EntityTag(value, true);
     }
 

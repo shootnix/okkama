@@ -82,7 +82,7 @@ object TcpRacing {
         delay is Duration,
         clock is Timing
     ) {
-        confirm delay.seconds() >= 0.rat() else throw InvalidTcpRace.because("negative stagger");
+        confirm delay::Span::seconds >= 0.rat() else throw InvalidTcpRace.because("negative stagger");
         endpoints = TcpRaceEndpoints(origins).items();
         self.options = options;
         self.delay = delay;
@@ -213,7 +213,7 @@ object TcpRaceAttempt {
                     await pending;
                 }
             }
-            if position > 0 && delay.seconds() > 0.rat() && !prior_failed.ready() {
+            if position > 0 && delay::Span::seconds > 0.rat() && !prior_failed.ready() {
                 let origins is @Future<bool> = [
                     TcpRaceDelay(clock, delay).ready(),
                     TcpRaceSignal(prior_failed).ready()

@@ -181,7 +181,7 @@ object TlsClientHandshake {
                 roots,
                 kind,
                 identity,
-                clock.instant().unix_duration().seconds().string()
+                clock.instant().unix_duration()::Span::seconds.string()
             );
         }
         catch e is NativeFailure {

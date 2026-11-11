@@ -21,10 +21,10 @@ object ServerTimeouts {
         keep_alive is Duration,
         handling is Duration
     ) {
-        confirm headers.seconds() >= 0.rat()
-            && body_idle.seconds() >= 0.rat()
-            && keep_alive.seconds() >= 0.rat()
-            && handling.seconds() >= 0.rat()
+        confirm headers::Span::seconds >= 0.rat()
+            && body_idle::Span::seconds >= 0.rat()
+            && keep_alive::Span::seconds >= 0.rat()
+            && handling::Span::seconds >= 0.rat()
             else throw InvalidServerPolicy.because("negative deadline");
         self.headers = headers;
         self.body_idle = body_idle;

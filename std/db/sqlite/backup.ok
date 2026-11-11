@@ -24,7 +24,7 @@ object SqliteBackup {
         clock is Timing,
         timeout is Duration
     ) {
-        confirm pages >= 1 && pages <= 256 && timeout.seconds() > 0.rat()
+        confirm pages >= 1 && pages <= 256 && timeout::Span::seconds > 0.rat()
             else throw InvalidSqliteBackup.invalid;
         self.origin = origin;
         self.target = target;

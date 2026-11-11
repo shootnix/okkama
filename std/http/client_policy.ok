@@ -65,9 +65,9 @@ object ClientTimeouts {
     }
 
     ClientTimeouts(connection is Duration, headers is Duration, body_idle is Duration) {
-        confirm connection.seconds() >= 0.rat()
-            && headers.seconds() >= 0.rat()
-            && body_idle.seconds() >= 0.rat()
+        confirm connection::Span::seconds >= 0.rat()
+            && headers::Span::seconds >= 0.rat()
+            && body_idle::Span::seconds >= 0.rat()
             else throw InvalidClientPolicy.because("negative deadline");
         self.connection = connection;
         self.headers = headers;

@@ -62,12 +62,14 @@ object Regex {
         state = regex_state_create(expression, codes);
     }
 
-    expression() is string {
-        source;
-    }
+    cap Source {
+        expression is string {
+            source;
+        }
 
-    flags() is @RegexFlag {
-        selected_flags;
+        flags is @RegexFlag {
+            selected_flags;
+        }
     }
 
     group_count() is int {
@@ -84,8 +86,8 @@ object Regex {
         let query = regex_query_create(
             state,
             origin,
-            range.start(),
-            range.end(),
+            range::Bounds::start,
+            range::Bounds::end,
             if mode == RegexQuery.first {
                 0;
             }
@@ -179,10 +181,10 @@ object RegexQueryObservation {
     }
 
     found() is bool {
-        confirm selected.end() <= source.length()
+        confirm selected::Bounds::end <= source.length()
             else throw RegexRangeOutsideInput.range(
-                selected.start(),
-                selected.end(),
+                selected::Bounds::start,
+                selected::Bounds::end,
                 source.length()
             );
         pattern.group_count();
@@ -197,11 +199,11 @@ object RegexQueryObservation {
 
 test "a regex reports its groups, flags and syntax errors" {
     let pair = Regex("(?<key>\\w+)=(\\d+)?");
-    test.is(pair.expression(), "(?<key>\\w+)=(\\d+)?");
+    test.is(pair::Source::expression, "(?<key>\\w+)=(\\d+)?");
     test.is(pair.group_count(), 2);
     test.is(pair.group_names()["key"], 1);
-    test.is(Regex(expression: "ABC", flags: [RegexFlag.ignore_case]).flags(), [RegexFlag.ignore_case]);
-    test.is(Regex("x").flags().size(), 0);
+    test.is(Regex(expression: "ABC", flags: [RegexFlag.ignore_case])::Source::flags, [RegexFlag.ignore_case]);
+    test.is(Regex("x")::Source::flags.size(), 0);
     let offset = (expression is string) is int {
         try {
             Regex(expression).group_count();

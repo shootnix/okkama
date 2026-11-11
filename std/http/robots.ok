@@ -371,7 +371,7 @@ object RobotsPolicy {
             let stop = LowerBound(origin: delay_groups, item: id + 1).index();
             for (start..stop) -> at {
                 found.replace(true);
-                let value = delays[at].delay().seconds();
+                let value = delays[at].delay()::Span::seconds;
                 if value > seconds.value() {
                     seconds.replace(value);
                 }

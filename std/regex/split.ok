@@ -72,7 +72,7 @@ hidden object RegexPartsCursor does Cursor<string> {
     item() is string {
         confirm self.available() else throw IterationEnded.ended;
         if self.separated() {
-            source.slice(offset, separators.item().range().start());
+            source.slice(offset, separators.item().range()::Bounds::start);
         }
         else {
             source.slice(offset, source.length());
@@ -85,7 +85,7 @@ hidden object RegexPartsCursor does Cursor<string> {
             RegexPartsCursor(
                 origin: source,
                 separators: separators.successor(),
-                offset: separators.item().range().end(),
+                offset: separators.item().range()::Bounds::end,
                 remaining: if remaining < 0 {
                     -1;
                 }

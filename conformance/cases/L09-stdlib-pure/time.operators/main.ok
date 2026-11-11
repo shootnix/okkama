@@ -9,7 +9,7 @@ main() is int {
     let minute = Duration(value: 60.rat(), unit: DurationUnit.second);
     let start = Instant(origin: Duration(value: 1000.rat(), unit: DurationUnit.second));
     let later = start + minute + minute;
-    out.writeln((later - start).seconds().string() + " " + (later - minute).unix_duration().seconds().string() + " " + (-minute).seconds().string());
+    out.writeln((later - start)::Span::seconds.string() + " " + (later - minute).unix_duration()::Span::seconds.string() + " " + (-minute)::Span::seconds.string());
     out.writeln((start < later).string() + " " + (minute + minute > minute).string());
     0;
 }

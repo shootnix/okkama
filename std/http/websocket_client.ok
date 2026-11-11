@@ -47,7 +47,7 @@ object WebSocketPolicy {
         closing is Duration,
         access is EndpointAllowing
     ) {
-        confirm opening.seconds() > 0.rat() && closing.seconds() > 0.rat()
+        confirm opening::Span::seconds > 0.rat() && closing::Span::seconds > 0.rat()
             else throw WebSocketFailure.because("positive WebSocket deadlines required");
         self.limits = limits;
         self.opening = opening;

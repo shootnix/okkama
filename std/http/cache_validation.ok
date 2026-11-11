@@ -237,8 +237,8 @@ object CacheRequestFreshness {
         }
         let permitted = try {
             let control = CacheControl(request::Head::headers);
-            let age = observed.age(now).seconds();
-            let remaining = observed.lifetime().seconds() - age;
+            let age = observed.age(now)::Span::seconds;
+            let remaining = observed.lifetime()::Span::seconds - age;
             let required = !control.present("no-cache")
                 && !control.present("no-store")
                 && (!control.present("max-age") || age <= control.seconds("max-age").rat())
@@ -259,7 +259,7 @@ object CacheRequestFreshness {
                         && !incoming.present("no-cache")
                         && !incoming.present("no-store")
                         && (arguments.size() == 0
-                        || age - observed.lifetime().seconds() <= CacheDeltaSeconds(arguments[0]).value().rat());
+                        || age - observed.lifetime()::Span::seconds <= CacheDeltaSeconds(arguments[0]).value().rat());
                 }
             }
         }

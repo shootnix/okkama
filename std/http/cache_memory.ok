@@ -180,7 +180,7 @@ object CachedHttpEntry {
     }
 
     response(request is Request, now is MonotonicInstant) is ClientResponse {
-        let current = freshness.age(now).seconds().int();
+        let current = freshness.age(now)::Span::seconds.int();
         let fields = ReplacedHeader(
             result::Head::headers,
             Header(HeaderName("Age"), current.string())

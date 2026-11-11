@@ -118,7 +118,7 @@ object SystemClock does Timing {
     }
 
     async wait(duration is Duration) is void {
-        confirm duration.seconds() >= 0.rat()
+        confirm duration::Span::seconds >= 0.rat()
             else throw InvalidWait.because("wait duration must not be negative");
         await sleep_nanoseconds(duration.nanoseconds().string());
     }
@@ -132,8 +132,8 @@ test "instants are durations from the epoch" {
     let second = Duration(value: 1.rat(), unit: DurationUnit.second);
     let epoch = Instant(origin: Duration(value: 0.rat(), unit: DurationUnit.second));
     let later = epoch + second;
-    test.is(later.unix_duration().seconds(), 1.rat());
-    test.is((later - epoch).seconds(), 1.rat());
+    test.is(later.unix_duration()::Span::seconds, 1.rat());
+    test.is((later - epoch)::Span::seconds, 1.rat());
     test.is((later - second).order(epoch), Order.equal);
     test.ok(epoch < later);
 }
@@ -142,11 +142,11 @@ test "monotonic readings never mix domains" {
     let tick = Duration(value: 5.rat(), unit: DurationUnit.millisecond);
     let start = MonotonicInstant(origin: Duration(value: 10.rat(), unit: DurationUnit.second));
     test.is(start.domain(), "explicit");
-    test.is((start + tick - start).seconds(), 1.rat() / 200.rat());
+    test.is((start + tick - start)::Span::seconds, 1.rat() / 200.rat());
     let other = MonotonicInstant(origin: Duration(value: 10.rat(), unit: DurationUnit.second), domain: "elsewhere");
     test.is(
         try {
-            (start - other).seconds().string();
+            (start - other)::Span::seconds.string();
         }
         catch error is IncompatibleClock {
             "incompatible";
@@ -156,5 +156,5 @@ test "monotonic readings never mix domains" {
     let clock = SystemClock();
     let before = clock.monotonic_instant();
     test.ok(clock.monotonic_instant() >= before);
-    test.ok(clock.instant().unix_duration().seconds() > 1700000000.rat());
+    test.ok(clock.instant().unix_duration()::Span::seconds > 1700000000.rat());
 }

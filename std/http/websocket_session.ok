@@ -116,7 +116,7 @@ object WebSocketSessionState {
         close_timeout is Duration,
         clock is Timing
     ) {
-        confirm close_timeout.seconds() > 0.rat()
+        confirm close_timeout::Span::seconds > 0.rat()
             else throw WebSocketFailure.because("positive close deadline required");
         confirm !owner.closed() else throw WebSocketClosed.detailed(1006, "");
         self.input = input;

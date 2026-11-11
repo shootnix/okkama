@@ -7,7 +7,7 @@ import "numbers/bigint" take BigInt;
 // Exact immutable durations with nanosecond resolution.
 //
 //     let delay = Duration(value: rat(3, 2), unit: DurationUnit.second);
-//     delay.seconds();               // rat(3, 2)
+//     delay::Span::seconds;          // rat(3, 2)
 //     delay.nanoseconds().string();  // "1500000000"
 //     DurationString(origin: delay).string(); // "3/2s"
 //
@@ -60,8 +60,11 @@ object Duration does Comparing<Duration>, Adding<Duration, Duration>, Subtractin
         origin = seconds;
     }
 
-    seconds() is rat {
-        origin;
+    // The exact length in seconds, normalised by the constructor.
+    cap Span {
+        seconds is rat {
+            origin;
+        }
     }
 
     nanoseconds() is BigInt {
@@ -70,14 +73,14 @@ object Duration does Comparing<Duration>, Adding<Duration, Duration>, Subtractin
 
     plus(other is Duration) is Duration {
         Duration(
-            value: origin + other.seconds(),
+            value: origin + other::Span::seconds,
             unit: DurationUnit.second,
         );
     }
 
     minus(other is Duration) is Duration {
         Duration(
-            value: origin - other.seconds(),
+            value: origin - other::Span::seconds,
             unit: DurationUnit.second,
         );
     }
@@ -89,11 +92,11 @@ object Duration does Comparing<Duration>, Adding<Duration, Duration>, Subtractin
 
     // This duration scaled by `factor`.
     times(factor is rat) is Duration {
-        Duration(value: self.seconds() * factor, unit: DurationUnit.second);
+        Duration(value: origin * factor, unit: DurationUnit.second);
     }
 
     order(other is Duration) is Order {
-        origin.order(other.seconds());
+        origin.order(other::Span::seconds);
     }
 }
 
@@ -105,7 +108,7 @@ object DurationString {
     }
 
     string() is string {
-        origin.seconds().string() + "s";
+        origin::Span::seconds.string() + "s";
     }
 }
 
@@ -113,7 +116,7 @@ enum InvalidDuration is Error = (because(message is string));
 
 test "durations scale exactly" {
     let minute = Duration(value: 1.rat(), unit: DurationUnit.minute);
-    test.is(minute.times(rat(3, 2)).seconds().string(), "90");
-    test.is(minute.times(0.rat()).seconds().string(), "0");
-    test.is(minute.times(-2.rat()).seconds().string(), "-120");
+    test.is(minute.times(rat(3, 2))::Span::seconds.string(), "90");
+    test.is(minute.times(0.rat())::Span::seconds.string(), "0");
+    test.is(minute.times(-2.rat())::Span::seconds.string(), "-120");
 }

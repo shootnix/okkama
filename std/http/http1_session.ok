@@ -79,7 +79,7 @@ object Http1Session does Closing {
         clock is Timing
     ) {
         confirm !owner.closed() else throw Http1SessionClosed.closed;
-        confirm continue_wait.seconds() >= 0.rat()
+        confirm continue_wait::Span::seconds >= 0.rat()
             else throw InvalidArgument.because("negative continue wait");
         self.input = input;
         self.output = output;

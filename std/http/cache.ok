@@ -502,7 +502,7 @@ object CacheVerifiedPublication {
         if stored.size() == 1
             && stored[0].bytes() == entry.bytes()
             && stored[0].result()::Head::headers == entry.result()::Head::headers
-            && stored[0].timing().finished().reading().seconds() == entry.timing().finished().reading().seconds() {
+            && stored[0].timing().finished().reading()::Span::seconds == entry.timing().finished().reading()::Span::seconds {
                 leases[0].publish(entry, revision);
             }
     }

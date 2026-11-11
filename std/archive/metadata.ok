@@ -152,12 +152,12 @@ test "archive metadata retains calendar and comment with explicit absence" {
 
 test "archive epoch conversion preserves negative fractional seconds" {
     let time = ArchiveModificationFromEpoch(rat(-1, 2)).value();
-    test.is(time.date().year(), 1969);
-    test.is(time.date().month(), 12);
-    test.is(time.date().day(), 31);
-    test.is(time.time().hour(), 23);
-    test.is(time.time().second(), 59);
-    test.is(time.time().nanosecond(), 500000000);
+    test.is(time.date()::Calendar::year, 1969);
+    test.is(time.date()::Calendar::month, 12);
+    test.is(time.date()::Calendar::day, 31);
+    test.is(time.time()::Clock::hour, 23);
+    test.is(time.time()::Clock::second, 59);
+    test.is(time.time()::Clock::nanosecond, 500000000);
     test.throws(Error) {
         ArchiveModificationFromEpoch(rat(1, 3));
     };

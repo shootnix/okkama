@@ -28,9 +28,9 @@ object Rfc3339 {
     has offset is Duration;
 
     Rfc3339(origin is Instant, offset is Duration) {
-        confirm offset.seconds().denominator() == "1"
+        confirm offset::Span::seconds.denominator() == "1"
             else throw InvalidRfc3339Offset.because("RFC 3339 offset must contain whole seconds");
-        let seconds is int = offset.seconds().int();
+        let seconds is int = offset::Span::seconds.int();
         confirm seconds % 60 == 0
             else throw InvalidRfc3339Offset.because("RFC 3339 offset must contain whole minutes");
         confirm seconds > -86400 && seconds < 86400
@@ -111,7 +111,7 @@ object Rfc3339 {
         let local is LocalDateTime = epoch
             .plus(origin.unix_duration())
             .plus(offset);
-        let seconds is int = offset.seconds().int();
+        let seconds is int = offset::Span::seconds.int();
         let suffix is string = if seconds == 0 {
             "Z";
         }
@@ -151,7 +151,7 @@ test "RFC 3339 text reads an instant and keeps its offset" {
         offset: Duration(value: 0.rat(), unit: DurationUnit.second)
     );
     test.is(utc.string(), "2026-08-11T07:30:45.125Z");
-    test.is(Rfc3339("1970-01-01T00:00:00Z").instant().unix_duration().seconds().string(), "0");
+    test.is(Rfc3339("1970-01-01T00:00:00Z").instant().unix_duration()::Span::seconds.string(), "0");
     for ["2026-08-11t12:30:45Z", "2026-08-11T12:30:45", "2026-08-11T12:30:45+5:00"] -> bad {
         test.is(
             try {

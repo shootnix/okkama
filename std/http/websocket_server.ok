@@ -36,7 +36,7 @@ object WebSocketUpgrade {
         self.protocols = WebSocketProtocols(protocols);
         self.limits = limits;
         self.access = access;
-        confirm deadline.seconds() > 0.rat()
+        confirm deadline::Span::seconds > 0.rat()
             else throw WebSocketFailure.because("positive server upgrade deadline required");
         self.deadline = deadline;
     }

@@ -60,7 +60,7 @@ object ManualClock does Timing {
 
     advance(duration is Duration) is void {
         CheckContext().verify();
-        confirm duration.seconds() >= 0.rat()
+        confirm duration::Span::seconds >= 0.rat()
             else throw InvalidManualClock.because("negative advance");
         let old = self.open();
         confirm !old.dispatching()
@@ -97,10 +97,10 @@ object ManualClock does Timing {
 
     async wait(duration is Duration) is void {
         CheckContext().verify();
-        confirm duration.seconds() >= 0.rat()
+        confirm duration::Span::seconds >= 0.rat()
             else throw InvalidManualClock.because("negative wait");
         let old = self.open();
-        if duration.seconds() == 0.rat() {
+        if duration::Span::seconds == 0.rat() {
             return;
         }
         confirm old.waiters().size() < 1024 && old.serial() < 2000000000
@@ -260,5 +260,5 @@ test "manual clock changes no host clock" {
     let clock = ManualClock(Instant(Duration(value: 0.rat(), unit: DurationUnit.second)));
     defer clock.close();
     clock.advance(Duration(value: 2.rat(), unit: DurationUnit.second));
-    test.is(clock.monotonic_instant().reading().seconds(), 2.rat());
+    test.is(clock.monotonic_instant().reading()::Span::seconds, 2.rat());
 }

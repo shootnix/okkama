@@ -384,6 +384,23 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     `FrequencyTally`/`Building`/`Revision`, and the replacement tokens of
     regex. The objects people use return them as roles (`Cursor<T>`,
     `Iterating<T>`), so no call changes.
+  - Stored parts are read through caps (the owner, 2026-11-11: «date
+    calendar делаем. Идеально»). A cap holds ready scalars only; anything
+    that needs work stays an action. 308 reads in std, conformance and the
+    examples were rewritten, and the accessors are gone:
+
+    | before | now |
+    |---|---|
+    | `date.year()`, `.month()`, `.day()` | `date::Calendar::year`, `::month`, `::day` |
+    | `time.hour()`, `.minute()`, `.second()`, `.nanosecond()` | `time::Clock::hour`, … |
+    | `duration.seconds()` | `duration::Span::seconds` |
+    | `range.start()`, `.end()`, `.length()` | `range::Bounds::start`, `::end`, `::length` |
+    | `regex.expression()`, `.flags()` | `regex::Source::expression`, `::flags` |
+    | `capture.index()`, `.name()` | `capture::Group::index`, `::name` |
+
+    The compiler's runtime helpers for `Within` and `Before` read
+    `Duration::Span::seconds`; a helper entry `Cap::field` now names a cap
+    field.
   - Constructors of several values are called with named arguments
     everywhere (the owner, 2026-11-11: «да»; `docs/std-principles.md` §2):
     341 calls in std, conformance and the Book, and 46 in the okkama-docs

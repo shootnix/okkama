@@ -16,7 +16,7 @@ object CacheResponseTiming {
         started is MonotonicInstant,
         finished is MonotonicInstant
     ) {
-        confirm finished.minus(started).seconds() >= 0.rat() else throw InvalidCacheTiming.invalid;
+        confirm finished.minus(started)::Span::seconds >= 0.rat() else throw InvalidCacheTiming.invalid;
         self.received = received;
         self.started = started;
         self.finished = finished;
@@ -43,14 +43,14 @@ object CacheFreshness {
     CacheFreshness(headers is Headers, timing is CacheResponseTiming) {
         self.timing = timing;
         let metadata = CacheFreshnessMetadata(headers, timing.received());
-        let apparent = timing.received().minus(metadata.date()).seconds();
+        let apparent = timing.received().minus(metadata.date())::Span::seconds;
         let nonnegative = if apparent > 0.rat() {
             apparent;
         }
         else {
             0.rat();
         };
-        let corrected = metadata.age().rat() + timing.delay().seconds();
+        let corrected = metadata.age().rat() + timing.delay()::Span::seconds;
         initial = Duration(
             value: if nonnegative > corrected {
                 nonnegative;
@@ -66,7 +66,7 @@ object CacheFreshness {
 
     age(now is MonotonicInstant) is Duration {
         let resident = now.minus(timing.finished());
-        confirm resident.seconds() >= 0.rat() else throw InvalidCacheTiming.invalid;
+        confirm resident::Span::seconds >= 0.rat() else throw InvalidCacheTiming.invalid;
         initial.plus(resident);
     }
 
@@ -80,7 +80,7 @@ object CacheFreshness {
 
     fresh(now is MonotonicInstant) is bool {
         let current = self.age(now);
-        reusable && current.seconds() < lifetime.seconds();
+        reusable && current::Span::seconds < lifetime::Span::seconds;
     }
 }
 
@@ -162,7 +162,7 @@ object CacheFreshnessObservations {
             let expires = headers.values(HeaderName("Expires"));
             confirm expires.size() <= 1 else throw InvalidCacheMetadata.invalid;
             if expires.size() == 1 {
-                let difference = ParsedHttpDate(expires.item(0), received).value().minus(observed).seconds();
+                let difference = ParsedHttpDate(expires.item(0), received).value().minus(observed)::Span::seconds;
                 if difference > 0.rat() {
                     difference;
                 }
@@ -204,5 +204,5 @@ test "cache age includes monotonic response delay" {
     let began = MonotonicInstant(Duration(value: 0.rat(), unit: DurationUnit.second));
     let ended = began.plus(Duration(value: 2.rat(), unit: DurationUnit.second));
     let value = CacheFreshness(Headers([]), CacheResponseTiming(received, began, ended));
-    test.is(value.age(ended).seconds(), 2.rat());
+    test.is(value.age(ended)::Span::seconds, 2.rat());
 }

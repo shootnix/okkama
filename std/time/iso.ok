@@ -26,9 +26,9 @@ object IsoDate {
     }
 
     string() is string {
-        let year is string = origin.year().string();
-        let month is string = origin.month().string();
-        let day is string = origin.day().string();
+        let year is string = origin::Calendar::year.string();
+        let month is string = origin::Calendar::month.string();
+        let day is string = origin::Calendar::day.string();
         ("0000" + year).slice(year.length(), year.length() + 4) +
             "-" +
             ("00" + month).slice(month.length(), month.length() + 2) +
@@ -46,14 +46,14 @@ object IsoLocalDateTime {
 
     string() is string {
         let time is TimeOfDay = origin.time();
-        let hour is string = time.hour().string();
-        let minute is string = time.minute().string();
-        let second is string = time.second().string();
-        let fraction is string = if time.nanosecond() == 0 {
+        let hour is string = time::Clock::hour.string();
+        let minute is string = time::Clock::minute.string();
+        let second is string = time::Clock::second.string();
+        let fraction is string = if time::Clock::nanosecond == 0 {
             "";
         }
         else {
-            "." + IsoFraction(origin: time.nanosecond()).string();
+            "." + IsoFraction(origin: time::Clock::nanosecond).string();
         };
         IsoDate(origin: origin.date()).string() +
             "T" +

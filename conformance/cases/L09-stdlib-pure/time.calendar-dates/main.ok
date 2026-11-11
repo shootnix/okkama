@@ -13,8 +13,8 @@ main() is int {
     c = c.same_int("first ordinal", GregorianDay(Date(year: 1, month: 1, day: 1)).number(), 1);
     c = c.same_int("ordinal 2026-01-01", GregorianDay(Date(year: 2026, month: 1, day: 1)).number(), 739617);
     c = c.same_bool("day one is Monday", Date(year: 1, month: 1, day: 1).weekday() == Weekday.monday, true);
-    c = c.same_text("invalid date", try { let probe = Date(year: 2023, month: 2, day: 29).day(); "no error"; } catch e is InvalidDate { "InvalidDate"; }, "InvalidDate");
+    c = c.same_text("invalid date", try { let probe = Date(year: 2023, month: 2, day: 29)::Calendar::day; "no error"; } catch e is InvalidDate { "InvalidDate"; }, "InvalidDate");
     c = c.same_text("iso parse", IsoDate(origin: IsoText("2026-08-11").date()).string(), "2026-08-11");
-    c = c.same_text("iso strict", try { let probe = (IsoText("2026-8-11").date()).day(); "no error"; } catch e is InvalidIsoDate { "InvalidIsoDate"; }, "InvalidIsoDate");
+    c = c.same_text("iso strict", try { let probe = (IsoText("2026-8-11").date())::Calendar::day; "no error"; } catch e is InvalidIsoDate { "InvalidIsoDate"; }, "InvalidIsoDate");
     c.done();
 }

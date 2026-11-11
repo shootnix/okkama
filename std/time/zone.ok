@@ -45,17 +45,17 @@ object Zone does TimeZone {
 
     offset(at is Instant) is Duration {
         Duration(
-            value: timezone_offset(origin, at.unix_duration().seconds()).rat(),
+            value: timezone_offset(origin, at.unix_duration()::Span::seconds).rat(),
             unit: DurationUnit.second,
         );
     }
 
     daylight_saving(at is Instant) is bool {
-        timezone_daylight(origin, at.unix_duration().seconds());
+        timezone_daylight(origin, at.unix_duration()::Span::seconds);
     }
 
     abbreviation(at is Instant) is string {
-        timezone_abbreviation(origin, at.unix_duration().seconds());
+        timezone_abbreviation(origin, at.unix_duration()::Span::seconds);
     }
 
     instant(local is LocalDateTime, fold is Fold) is Instant {
@@ -63,25 +63,25 @@ object Zone does TimeZone {
         let time is TimeOfDay = local.time();
         confirm timezone_local_candidates(
             origin,
-            date.year(),
-            date.month(),
-            date.day(),
-            time.hour(),
-            time.minute(),
-            time.second(),
-            time.nanosecond(),
+            date::Calendar::year,
+            date::Calendar::month,
+            date::Calendar::day,
+            time::Clock::hour,
+            time::Clock::minute,
+            time::Clock::second,
+            time::Clock::nanosecond,
         ) > 0
             else throw MissingLocalTime.zone(origin);
         Instant(origin: Duration(
             value: timezone_local_instant(
                 origin,
-                date.year(),
-                date.month(),
-                date.day(),
-                time.hour(),
-                time.minute(),
-                time.second(),
-                time.nanosecond(),
+                date::Calendar::year,
+                date::Calendar::month,
+                date::Calendar::day,
+                time::Clock::hour,
+                time::Clock::minute,
+                time::Clock::second,
+                time::Clock::nanosecond,
                 fold == Fold.later,
             ),
             unit: DurationUnit.second,
@@ -96,9 +96,9 @@ object FixedZone does TimeZone {
     FixedZone(name is string, offset is Duration) {
         confirm name.length() > 0
             else throw InvalidTimeZone.because("fixed time-zone name must not be empty");
-        confirm offset.seconds().denominator() == "1"
+        confirm offset::Span::seconds.denominator() == "1"
             else throw InvalidTimeZone.because("time-zone offset must contain whole seconds");
-        confirm offset.seconds() > -86400.rat() && offset.seconds() < 86400.rat()
+        confirm offset::Span::seconds > -86400.rat() && offset::Span::seconds < 86400.rat()
             else throw InvalidTimeZone.because("time-zone offset must be within one day");
         zone_name = name;
         zone_offset = offset;
@@ -214,7 +214,7 @@ test "local times resolve to instants through a named zone" {
             time: TimeOfDay(hour: hour, minute: minute, second: 0, nanosecond: 0),
         );
     };
-    let unix = (instant is Instant) is rat { instant.unix_duration().seconds(); };
+    let unix = (instant is Instant) is rat { instant.unix_duration()::Span::seconds; };
     let york = Zone("America/New_York");
     test.is(unix(Zoned(local: at(2026, 7, 1, 12, 0), zone: york, fold: Fold.earlier).instant()), 1782921600.rat());
     let berlin = Zone("Europe/Berlin");
@@ -240,13 +240,13 @@ test "a zone shows an instant as local time with its offset" {
     let berlin = Zone("Europe/Berlin");
     test.is(berlin.name(), "Europe/Berlin");
     let before = ZonedDateTime(instant: summer, zone: berlin);
-    test.is(before.local_datetime().time().hour(), 2);
-    test.is(before.offset().seconds(), 7200.rat());
+    test.is(before.local_datetime().time()::Clock::hour, 2);
+    test.is(before.offset()::Span::seconds, 7200.rat());
     test.is(ZoneObservation(origin: before).abbreviation(), "CEST");
     test.ok(ZoneObservation(origin: before).daylight_saving());
     let after = ZonedDateTime(instant: winter, zone: berlin);
-    test.is(after.local_datetime().time().hour(), 2);
-    test.is(after.offset().seconds(), 3600.rat());
+    test.is(after.local_datetime().time()::Clock::hour, 2);
+    test.is(after.offset()::Span::seconds, 3600.rat());
     test.is(berlin.abbreviation(winter), "CET");
     test.ok(!berlin.daylight_saving(winter));
     test.is(TimeZoneDatabaseVersion().string(), "2026c");
@@ -255,10 +255,10 @@ test "a zone shows an instant as local time with its offset" {
 test "fixed zones have one offset and refuse bad ones" {
     let plus_five = FixedZone(name: "UTC+5", offset: Duration(value: 5.rat(), unit: DurationUnit.hour));
     let instant = Instant(origin: Duration(value: 0.rat(), unit: DurationUnit.second));
-    test.is(plus_five.offset(instant).seconds(), 18000.rat());
+    test.is(plus_five.offset(instant)::Span::seconds, 18000.rat());
     test.is(plus_five.abbreviation(instant), "UTC+5");
     test.ok(!plus_five.daylight_saving(instant));
-    test.is(ZonedDateTime(instant: instant, zone: plus_five).local_datetime().time().hour(), 5);
+    test.is(ZonedDateTime(instant: instant, zone: plus_five).local_datetime().time()::Clock::hour, 5);
     test.is(
         try {
             FixedZone(name: "far", offset: Duration(value: 25.rat(), unit: DurationUnit.hour)).name();

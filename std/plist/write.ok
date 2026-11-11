@@ -406,7 +406,7 @@ object PlistWireValue does PlistWriting {
 
     date(value is Instant) is void {
         self.begin();
-        let seconds = value.unix_duration().seconds();
+        let seconds = value.unix_duration()::Span::seconds;
         confirm seconds >= (-62135596800).rat() && seconds < 253402300800.rat()
             else throw UnsupportedPlistValue.because("date outside UTC years 0001..9999");
         if session.xml() {

@@ -254,7 +254,7 @@ object TarMemberHeader {
         catch absent is MissingArchiveOwnership {
             ArchiveOwnership("", "", BigInt("0"), BigInt("0"));
         };
-        let seconds = metadata.modification().minus(ArchiveModificationFromEpoch(0.rat()).value()).seconds();
+        let seconds = metadata.modification().minus(ArchiveModificationFromEpoch(0.rat()).value())::Span::seconds;
         let ordinary_time = seconds >= 0.rat()
             && seconds <= 8589934591.rat()
             && seconds == seconds.int().rat();

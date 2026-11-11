@@ -165,7 +165,7 @@ object TestResult {
         failures is Sequencing<TestFailure>,
         output is TestOutput
     ) {
-        confirm name.length() > 0 && name.length() <= 4096 && duration.seconds() >= 0.rat()
+        confirm name.length() > 0 && name.length() <= 4096 && duration::Span::seconds >= 0.rat()
             else throw InvalidTestResult.because("test name/duration");
         let count = failures.size();
         confirm count >= 0 && count <= 1024 else throw InvalidTestResult.because("failure count");
@@ -192,7 +192,7 @@ object TestResult {
     ) {
         confirm skip_reason.length() <= 4096 && (skip_reason == "" || status != TestStatus.passed)
             else throw InvalidTestResult.because("skip reason");
-        confirm name.length() > 0 && name.length() <= 4096 && duration.seconds() >= 0.rat()
+        confirm name.length() > 0 && name.length() <= 4096 && duration::Span::seconds >= 0.rat()
             else throw InvalidTestResult.because("test name/duration");
         let count = failures.size();
         confirm count >= 0 && count <= 1024 else throw InvalidTestResult.because("failure count");
@@ -275,7 +275,7 @@ object TestReport {
         seed is int,
         results is Sequencing<TestResult>
     ) {
-        confirm duration.seconds() >= 0.rat()
+        confirm duration::Span::seconds >= 0.rat()
             else throw InvalidTestResult.because("negative report duration");
         let size = results.size();
         confirm size >= 0 && size <= 4096 else throw InvalidTestResult.because("result count");

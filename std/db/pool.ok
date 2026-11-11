@@ -35,9 +35,9 @@ object PoolOptions {
             && maximum > 0
             && maximum <= 64
             && minimum <= maximum
-            && idle_timeout.seconds() >= 0.rat()
-            && lifetime.seconds() >= 0.rat()
-            && acquisition_timeout.seconds() > 0.rat()
+            && idle_timeout::Span::seconds >= 0.rat()
+            && lifetime::Span::seconds >= 0.rat()
+            && acquisition_timeout::Span::seconds > 0.rat()
             else throw InvalidPoolOptions.invalid;
         self.minimum = minimum;
         self.maximum = maximum;
@@ -371,11 +371,11 @@ object DbPoolState {
             let owned = Event();
             let anchor = DbUnpublishedPhysical(self, physical, connection, owned);
             defer await anchor.close();
-            let expired = (options.lifetime().seconds() > 0.rat()
-                && clock.monotonic_instant().minus(physical.born()).seconds() >= options.lifetime().seconds())
+            let expired = (options.lifetime()::Span::seconds > 0.rat()
+                && clock.monotonic_instant().minus(physical.born())::Span::seconds >= options.lifetime()::Span::seconds)
                 || (candidates.size() > 0
-                && options.idle_timeout().seconds() > 0.rat()
-                && clock.monotonic_instant().minus(previous[0].since()).seconds() >= options.idle_timeout().seconds());
+                && options.idle_timeout()::Span::seconds > 0.rat()
+                && clock.monotonic_instant().minus(previous[0].since())::Span::seconds >= options.idle_timeout()::Span::seconds);
             if expired || connection.closed() || !(await health.healthy(connection)) {
                 self.discard(physical, connection);
                 await connection.settled();
@@ -489,8 +489,8 @@ object DbPoolState {
     }
 
     recycle(physical is DbPhysical, connection is DbConnection) is void {
-        let expired = options.lifetime().seconds() > 0.rat()
-            && clock.monotonic_instant().minus(physical.born()).seconds() >= options.lifetime().seconds();
+        let expired = options.lifetime()::Span::seconds > 0.rat()
+            && clock.monotonic_instant().minus(physical.born())::Span::seconds >= options.lifetime()::Span::seconds;
         if self.closed() || connection.closed() || expired {
             self.discard(physical, connection);
         }

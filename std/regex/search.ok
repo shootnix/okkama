@@ -157,17 +157,17 @@ object RegexMatches does Iterating<RegexMatching> {
     }
 
     cursor() is Cursor<RegexMatching> {
-        confirm selected.end() <= source.length()
+        confirm selected::Bounds::end <= source.length()
             else throw RegexRangeOutsideInput.range(
-                selected.start(),
-                selected.end(),
+                selected::Bounds::start,
+                selected::Bounds::end,
                 source.length()
             );
         RegexMatchCursor(
             origin: source,
             regex: pattern,
-            position: selected.start(),
-            end: selected.end(),
+            position: selected::Bounds::start,
+            end: selected::Bounds::end,
             exhausted: false,
         );
     }
@@ -217,23 +217,23 @@ hidden object RegexMatchCursor does Cursor<RegexMatching> {
     successor() is Cursor<RegexMatching> {
         confirm self.available() else throw IterationEnded.ended;
         let range = observation.match().range();
-        let empty = range.start() == range.end();
+        let empty = range::Bounds::start == range::Bounds::end;
         RegexMatchCursor(
             origin: source,
             regex: pattern,
             position: if empty {
-                if range.end() == limit {
+                if range::Bounds::end == limit {
                     limit;
                 }
                 else {
-                    range.end() + 1;
+                    range::Bounds::end + 1;
                 }
             }
             else {
-                range.end();
+                range::Bounds::end;
             },
             end: limit,
-            exhausted: empty && range.end() == limit,
+            exhausted: empty && range::Bounds::end == limit,
         );
     }
 }
@@ -242,8 +242,8 @@ test "first, prefix and entire searches" {
     let digits = Regex("\\d+");
     let first = FirstRegexMatch(origin: "one 22 three", regex: digits);
     test.is(first.text(), "22");
-    test.is(first.range().start(), 4);
-    test.is(first.range().end(), 6);
+    test.is(first.range()::Bounds::start, 4);
+    test.is(first.range()::Bounds::end, 6);
     test.is(PrefixRegexMatch(origin: "22 three", regex: digits).text(), "22");
     test.is(EntireRegexMatch(origin: "22", regex: digits).text(), "22");
     test.ok(!RegexMatches(origin: "22x", regex: Regex("^\\d+$")).found());
@@ -257,7 +257,7 @@ test "first, prefix and entire searches" {
         "none"
     );
     // Offsets count Unicode scalars: the digit after "a😀я" is at 3.
-    test.is(FirstRegexMatch(origin: "a😀я1", regex: Regex("\\d"), range: RegexRange(1, 4)).range().start(), 3);
+    test.is(FirstRegexMatch(origin: "a😀я1", regex: Regex("\\d"), range: RegexRange(1, 4)).range()::Bounds::start, 3);
 }
 
 test "captures and named groups" {
@@ -290,11 +290,11 @@ test "captures and named groups" {
 
 test "matches walk every non-overlapping match" {
     test.is(RegexMatches(origin: "a1 b22 c", regex: Regex("\\d+")).map() -> found {
-        found.text() + "@" + found.range().start().string();
+        found.text() + "@" + found.range()::Bounds::start.string();
     }.join(","), "1@1,22@4");
     // An empty match advances by one scalar.
     test.is(RegexMatches(origin: "abc", regex: Regex("x*")).map() -> found {
-        found.range().start().string();
+        found.range()::Bounds::start.string();
     }.join(","), "0,1,2,3");
     test.ok(RegexMatches(origin: "abc", regex: Regex("b")).found());
     test.is(RegexMatches(origin: "abc", regex: Regex("\\d")).map() -> found {

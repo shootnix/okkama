@@ -43,36 +43,39 @@ object TimeOfDay does Comparing<TimeOfDay> {
         nanosecond_value = nanosecond;
     }
 
-    hour() is int {
-        hour_value;
-    }
+    // The parts of the time, already checked by the constructor.
+    cap Clock {
+        hour is int {
+            hour_value;
+        }
 
-    minute() is int {
-        minute_value;
-    }
+        minute is int {
+            minute_value;
+        }
 
-    second() is int {
-        second_value;
-    }
+        second is int {
+            second_value;
+        }
 
-    nanosecond() is int {
-        nanosecond_value;
+        nanosecond is int {
+            nanosecond_value;
+        }
     }
 
     order(other is TimeOfDay) is Order {
-        if hour_value != other.hour() {
-            hour_value.order(other.hour());
+        if hour_value != other::Clock::hour {
+            hour_value.order(other::Clock::hour);
         }
         else {
-            if minute_value != other.minute() {
-                minute_value.order(other.minute());
+            if minute_value != other::Clock::minute {
+                minute_value.order(other::Clock::minute);
             }
             else {
-                if second_value != other.second() {
-                    second_value.order(other.second());
+                if second_value != other::Clock::second {
+                    second_value.order(other::Clock::second);
                 }
                 else {
-                    nanosecond_value.order(other.nanosecond());
+                    nanosecond_value.order(other::Clock::nanosecond);
                 }
             }
         }
@@ -83,13 +86,13 @@ enum InvalidTimeOfDay is Error = (because(message is string));
 
 test "times of day are checked and ordered" {
     let noon = TimeOfDay(hour: 12, minute: 0, second: 0, nanosecond: 0);
-    test.is(noon.hour(), 12);
+    test.is(noon::Clock::hour, 12);
     test.is(noon.order(TimeOfDay(hour: 12, minute: 0, second: 0, nanosecond: 1)), Order.less);
-    test.is(TimeOfDay(hour: 23, minute: 59, second: 59, nanosecond: 999999999).nanosecond(), 999999999);
+    test.is(TimeOfDay(hour: 23, minute: 59, second: 59, nanosecond: 999999999)::Clock::nanosecond, 999999999);
     for [[24, 0, 0, 0], [0, 60, 0, 0], [0, 0, 60, 0], [0, 0, 0, 1000000000], [-1, 0, 0, 0]] -> parts {
         test.is(
             try {
-                TimeOfDay(hour: parts[0], minute: parts[1], second: parts[2], nanosecond: parts[3]).hour();
+                TimeOfDay(hour: parts[0], minute: parts[1], second: parts[2], nanosecond: parts[3])::Clock::hour;
             }
             catch error is InvalidTimeOfDay {
                 -1;

@@ -272,9 +272,9 @@ object ImapSearchDate {
             "Nov",
             "Dec"
         ];
-        let year = origin.year().string();
+        let year = origin::Calendar::year.string();
         let padding = "0000".slice(0, 4 - year.length());
-        origin.day().string() + "-" + months[origin.month() - 1] + "-" + padding + year;
+        origin::Calendar::day.string() + "-" + months[origin::Calendar::month - 1] + "-" + padding + year;
     }
 }
 

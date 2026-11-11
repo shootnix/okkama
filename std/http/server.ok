@@ -720,7 +720,7 @@ object HttpServerDeadline<T> {
     has waiting is Future<T>;
 
     HttpServerDeadline(waiting is Future<T>, limit is Duration, clock is Timing) {
-        if limit.seconds() == 0.rat() {
+        if limit::Span::seconds == 0.rat() {
             self.waiting = waiting;
         }
         else {
@@ -823,7 +823,7 @@ object ServerDrain {
     has clock is Timing;
 
     ServerDrain(server is HttpServer, limit is Duration, clock is Timing) {
-        confirm limit.seconds() >= 0.rat() else throw BadRequest.because("negative drain deadline");
+        confirm limit::Span::seconds >= 0.rat() else throw BadRequest.because("negative drain deadline");
         self.server = server;
         self.limit = limit;
         self.clock = clock;

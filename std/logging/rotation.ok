@@ -44,14 +44,14 @@ object IntervalRotating does Rotating {
     has zone is TimeZone;
 
     IntervalRotating(interval is Duration, zone is TimeZone) {
-        confirm interval.seconds() > 0.rat()
+        confirm interval::Span::seconds > 0.rat()
             else throw InvalidLogRotation.because("interval must be positive");
         self.interval = interval;
         self.zone = zone;
     }
 
     needed(size is BigInt, opened is Instant, now is Instant) is bool {
-        now.minus(opened).seconds() >= interval.seconds();
+        now.minus(opened)::Span::seconds >= interval::Span::seconds;
     }
 
     suffix(now is Instant, index is int) is string {

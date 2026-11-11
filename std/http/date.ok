@@ -15,7 +15,7 @@ object HttpDate does Comparing<HttpDate> {
     has origin is Instant;
 
     HttpDate(origin is Instant) {
-        let seconds = origin.unix_duration().seconds();
+        let seconds = origin.unix_duration()::Span::seconds;
         confirm seconds >= (-62135596800).rat() && seconds < 253402300800.rat()
             else throw InvalidHttpDate.because("instant outside years 1..9999");
         let truncated = seconds.int();
@@ -56,7 +56,7 @@ object HttpDate does Comparing<HttpDate> {
         let weekday = weekdays[(GregorianDay(local.date()).number() - 1) % 7];
         weekday + ", " + FormattedLocalDateTime(
             origin: local,
-            pattern: "%d " + months[local.date().month() - 1] + " %Y %H:%M:%S GMT"
+            pattern: "%d " + months[local.date()::Calendar::month - 1] + " %Y %H:%M:%S GMT"
         ).string();
     }
 }
@@ -129,11 +129,11 @@ object ParsedHttpDate {
         let time = HttpDateClock(body.slice(10, 18)).value();
         confirm references.size() == 1 else throw HttpDateReferenceRequired.required;
         let reference = HttpDateLocal(HttpDate(references[0]).value()).value();
-        let latest = reference.date().year() + 50;
+        let latest = reference.date()::Calendar::year + 50;
         let candidate = (latest / 100).int() * 100 + short;
-        let suffix = month * 100000000 + day * 1000000 + time.hour() * 10000 + time.minute() * 100 + time.second();
-        let current = reference.date().month() * 100000000 + reference.date().day() * 1000000 +
-            reference.time().hour() * 10000 + reference.time().minute() * 100 + reference.time().second();
+        let suffix = month * 100000000 + day * 1000000 + time::Clock::hour * 10000 + time::Clock::minute * 100 + time::Clock::second;
+        let current = reference.date()::Calendar::month * 100000000 + reference.date()::Calendar::day * 1000000 +
+            reference.time()::Clock::hour * 10000 + reference.time()::Clock::minute * 100 + reference.time()::Clock::second;
         let year = if candidate > latest || (candidate == latest && suffix > current) {
             candidate - 100;
         }
@@ -288,5 +288,5 @@ enum HttpDateReferenceRequired is Error = (required);
 test "HTTP dates are whole seconds in GMT" {
     let parsed = ParsedHttpDate("Thu, 01 Jan 1970 00:00:00 GMT").value();
     test.is(HttpDate(parsed).string(), "Thu, 01 Jan 1970 00:00:00 GMT");
-    test.is(parsed.unix_duration().seconds(), 0.rat());
+    test.is(parsed.unix_duration()::Span::seconds, 0.rat());
 }

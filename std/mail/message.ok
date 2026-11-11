@@ -173,9 +173,9 @@ object MailDatePrinting {
 
     string() is string {
         let offset = origin.offset();
-        let raw = offset.seconds();
+        let raw = offset::Span::seconds;
         let elapsed = origin.instant().unix_duration();
-        confirm elapsed.seconds().denominator() == "1"
+        confirm elapsed::Span::seconds.denominator() == "1"
             else throw InvalidMail.located(0, "mail time must contain whole seconds");
         confirm raw.denominator() == "1"
             else throw InvalidMail.located(0, "mail offset must contain whole seconds");
@@ -196,7 +196,7 @@ object MailDatePrinting {
         let date = local.date();
         let time = local.time();
         let calendar = MailCalendar();
-        confirm date.year() >= 1900 && time.nanosecond() == 0
+        confirm date::Calendar::year >= 1900 && time::Clock::nanosecond == 0
             else throw InvalidMail.located(
                 0,
                 "mail dates require years 1900..9999 and whole seconds"
@@ -213,11 +213,11 @@ object MailDatePrinting {
         else {
             "+";
         };
-        calendar.weekday(date.weekday()) + ", " + calendar.padded(date.day()) + " " + calendar.month(
-            date.month()
-        ) + " " + date.year().string() + " " +
-            calendar.padded(time.hour()) + ":" + calendar.padded(time.minute()) + ":" + calendar.padded(
-                time.second()
+        calendar.weekday(date.weekday()) + ", " + calendar.padded(date::Calendar::day) + " " + calendar.month(
+            date::Calendar::month
+        ) + " " + date::Calendar::year.string() + " " +
+            calendar.padded(time::Clock::hour) + ":" + calendar.padded(time::Clock::minute) + ":" + calendar.padded(
+                time::Clock::second
             ) + " " +
             sign + calendar.padded((magnitude / 3600).int()) + calendar.padded(
                 ((magnitude % 3600) / 60).int()

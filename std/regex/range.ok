@@ -29,16 +29,18 @@ object RegexRange {
         limit = end;
     }
 
-    start() is int {
-        first;
-    }
+    cap Bounds {
+        start is int {
+            first;
+        }
 
-    end() is int {
-        limit;
-    }
+        end is int {
+            limit;
+        }
 
-    length() is int {
-        limit - first;
+        length is int {
+            limit - first;
+        }
     }
 }
 
@@ -46,14 +48,14 @@ enum InvalidRegexRange is Error = (detailed(start is int, end is int));
 
 test "ranges are half-open and never reversed" {
     let range = RegexRange(start: 2, end: 5);
-    test.is(range.start(), 2);
-    test.is(range.end(), 5);
-    test.is(range.length(), 3);
-    test.is(RegexRange(start: 4, end: 4).length(), 0);
+    test.is(range::Bounds::start, 2);
+    test.is(range::Bounds::end, 5);
+    test.is(range::Bounds::length, 3);
+    test.is(RegexRange(start: 4, end: 4)::Bounds::length, 0);
     for [[3, 2], [-1, 2]] -> bounds {
         test.is(
             try {
-                RegexRange(start: bounds[0], end: bounds[1]).length();
+                RegexRange(start: bounds[0], end: bounds[1])::Bounds::length;
             }
             catch InvalidRegexRange.detailed(start, end) {
                 -100;

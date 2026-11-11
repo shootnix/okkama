@@ -390,7 +390,7 @@ object CookieAttributeReading {
         }
         else {
             if expiry.persistent()
-                && expiry.instant().unix_duration().seconds() > cap.unix_duration().seconds() {
+                && expiry.instant().unix_duration()::Span::seconds > cap.unix_duration()::Span::seconds {
                     CookieExpiry(cap);
                 }
                 else {
@@ -502,5 +502,5 @@ test "Set-Cookie keeps explicit context and precedence" {
         Instant(Duration(value: 0.rat(), unit: DurationUnit.second))
     ).value();
     test.ok(cookie.attributes().path() == "/a");
-    test.ok(cookie.attributes().expiry().instant().unix_duration().seconds() == 10.rat());
+    test.ok(cookie.attributes().expiry().instant().unix_duration()::Span::seconds == 10.rat());
 }

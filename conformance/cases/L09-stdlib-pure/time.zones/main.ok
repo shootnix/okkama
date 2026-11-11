@@ -21,7 +21,7 @@ main() is int {
     c = c.same_text("fold later", resolved("2026-10-25T02:30:00", Fold.later), "2026-10-25T01:30:00Z");
     c = c.same_text("gap", try { resolved("2026-03-29T02:30:00", Fold.earlier); } catch MissingLocalTime.zone(name) { "MissingLocalTime " + name; }, "MissingLocalTime Europe/Berlin");
     c = c.same_text("summer local view", IsoLocalDateTime(origin: ZonedDateTime(instant: summer, zone: berlin).local_datetime()).string(), "2026-10-25T02:30:00");
-    c = c.same_text("summer offset", ZonedDateTime(instant: summer, zone: berlin).offset().seconds().string(), "7200");
+    c = c.same_text("summer offset", ZonedDateTime(instant: summer, zone: berlin).offset()::Span::seconds.string(), "7200");
     c = c.same_text("summer abbreviation", ZoneObservation(origin: ZonedDateTime(instant: summer, zone: berlin)).abbreviation(), "CEST");
     c = c.same_text("winter abbreviation", berlin.abbreviation(winter), "CET");
     c = c.same_text("winter is not daylight saving", berlin.daylight_saving(winter).string(), "false");

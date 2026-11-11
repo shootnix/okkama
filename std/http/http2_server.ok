@@ -256,7 +256,7 @@ object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier, Http2B
         defer await opening_cleanup.close();
         let preface = Http2ServerPreface(input, output_origin, local).result();
         let timeout = policy.timeouts().headers_timeout();
-        let selected = if timeout.seconds() > 0.rat() {
+        let selected = if timeout::Span::seconds > 0.rat() {
             let bounded is Within<Http2PeerSettings> = Within(origin: preface, limit: timeout, clock: clock);
             bounded.outcome();
         }
@@ -339,7 +339,7 @@ object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier, Http2B
             }
             let signal = changed.value();
             let pending = signal.wait();
-            let waiting = if interval.seconds() > 0.rat()
+            let waiting = if interval::Span::seconds > 0.rat()
                 && active.value().size() == 0
                 && !reading_busy.value() {
                     let deadline is Within<Event> = Within(origin: pending, limit: interval, clock: clock);
@@ -766,7 +766,7 @@ object Http2ServerStream {
             else {
                 let pending = owner.handling().handling(request, context);
                 let timeout = owner.policy().timeouts().handling_timeout();
-                let bounded = if timeout.seconds() > 0.rat() {
+                let bounded = if timeout::Span::seconds > 0.rat() {
                     let deadline is Within<HandlingResult> = Within(origin: pending, limit: timeout, clock: owner.clock());
                     deadline.outcome();
                 }
@@ -1072,7 +1072,7 @@ object Http2ServerBodyReading does BodyReading {
     async bytes(limit is int) is @byte {
         await entry.continue_request();
         let reading = origin.bytes(limit);
-        let pending = if timeout.seconds() > 0.rat() {
+        let pending = if timeout::Span::seconds > 0.rat() {
             let deadline is Within<@byte> = Within(origin: reading, limit: timeout, clock: clock);
             deadline.outcome();
         }
@@ -1194,7 +1194,7 @@ object Http2ServerWireInput does AsyncReading, Http2ReadBoundary {
         let reading = origin.bytes(count);
         let pending = if !first && kind.value() == 0 && remaining.value() > 0 {
             let interval = owner.policy().timeouts().body_idle_timeout();
-            if interval.seconds() > 0.rat() {
+            if interval::Span::seconds > 0.rat() {
                 let idle is Within<@byte> = Within(origin: reading, limit: interval, clock: owner.clock());
                 idle.outcome();
             }
@@ -1222,7 +1222,7 @@ object Http2ServerWireInput does AsyncReading, Http2ReadBoundary {
             between.replace(false);
             owner.busy(true);
             let interval = owner.policy().timeouts().headers_timeout();
-            if interval.seconds() > 0.rat() {
+            if interval::Span::seconds > 0.rat() {
                 deadlines.replace([owner.clock().monotonic_instant().plus(interval)]);
             }
         }

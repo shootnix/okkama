@@ -172,7 +172,7 @@ object CookieDateDecimal {
 enum InvalidCookieDate is Error = (because(reason is string));
 
 test "cookie date does not validate weekday" {
-    test.ok(ParsedCookieDate("Sun 01 Jan 70 0:0:0").value().unix_duration().seconds() == 0.rat());
+    test.ok(ParsedCookieDate("Sun 01 Jan 70 0:0:0").value().unix_duration()::Span::seconds == 0.rat());
     test.ok(try {
         ParsedCookieDate("29 Feb 2023 0:0:0").value();
         false;

@@ -492,7 +492,7 @@ object MatchingRegex does Checking {
     check() is void {
         CheckContext().verify();
         if !RegexMatches(origin: origin, regex: pattern).found() {
-            test.fail("text does not match regex " + data_dump(pattern.expression()));
+            test.fail("text does not match regex " + data_dump(pattern::Source::expression));
         }
     }
 }
@@ -503,7 +503,7 @@ object Eventually does AsyncChecking {
     has timeout, interval is Duration;
 
     Eventually(condition is () is bool, clock is Timing, timeout is Duration, interval is Duration) {
-        confirm timeout.seconds() >= 0.rat() && interval.seconds() > 0.rat()
+        confirm timeout::Span::seconds >= 0.rat() && interval::Span::seconds > 0.rat()
             else throw InvalidCheck.because("timeout must be nonnegative and interval positive");
         self.condition = condition;
         self.clock = clock;
@@ -545,7 +545,7 @@ object AsyncEventually does AsyncChecking {
         timeout is Duration,
         interval is Duration
     ) {
-        confirm timeout.seconds() >= 0.rat() && interval.seconds() > 0.rat()
+        confirm timeout::Span::seconds >= 0.rat() && interval::Span::seconds > 0.rat()
             else throw InvalidCheck.because("timeout must be nonnegative and interval positive");
         self.condition = condition;
         self.clock = clock;

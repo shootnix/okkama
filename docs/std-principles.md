@@ -39,9 +39,22 @@ So:
 - **An object reveals itself through a cap** (the owner, 2026-11-11: «объект
   раскрывает себя с помощью публичного апи и только так, как он хочет»). What
   callers may see of an object is a cap of synchronous computed fields, named
-  for the part it shows: `page::Head::status`, `request::Head::method`,
-  `redirects::Rules::limit`. A view or an opening to read stays an action,
+  for the part it shows: `page::Head::status`, `date::Calendar::year`,
+  `range::Bounds::start`. A view or an opening to read stays an action,
   because it is work: `file.text()`, `response.body()`, `page.reading()`.
+- **What goes in a cap** (the owner, wave-2 review). A cap holds fields that
+  are already computed, or computable statically and trivially: a
+  concatenation, a multiplication. It does no runtime work and calls no
+  other object. Preferably it exposes no field that is another object: a
+  part made of objects stays an action. Parsed scalar parts are the ideal
+  case: a query string, a URL's host, a date's year. Anything that needs
+  work stays a method.
+- **Constructors do no outside work** (the owner, wave-2 review). A
+  constructor binds its fields. It may also use builtins, `confirm` its
+  arguments, create its own runtime state and run an explicit parse of its
+  own. It must not call methods of other objects or cause external effects.
+  Work of that kind belongs to an action: `Number(text).int()`,
+  `ParsedUrl(text).parts()`.
 - **No mutators.** A successor or a "with" action that changes one field is
   a mutator in disguise. Prefer an action that does the operation the change
   was for (`money.plus(other)`, not `money.with_cents(…)`).

@@ -169,7 +169,7 @@ object XmlRpcDateTime does XmlRpcValue {
     has origin is LocalDateTime;
 
     XmlRpcDateTime(value is LocalDateTime) {
-        confirm value.time().nanosecond() == 0
+        confirm value.time()::Clock::nanosecond == 0
             else throw InvalidXmlRpc.because("whole local seconds required");
         origin = value;
     }
@@ -744,13 +744,13 @@ object XmlRpcDateText {
     string() is string {
         let date = origin.date();
         let time = origin.time();
-        XmlRpcPadded(date.year(), 4).string() + XmlRpcPadded(date.month(), 2).string() + XmlRpcPadded(
-            date.day(),
+        XmlRpcPadded(date::Calendar::year, 4).string() + XmlRpcPadded(date::Calendar::month, 2).string() + XmlRpcPadded(
+            date::Calendar::day,
             2
-        ).string() + "T" + XmlRpcPadded(time.hour(), 2).string() + ":" + XmlRpcPadded(
-            time.minute(),
+        ).string() + "T" + XmlRpcPadded(time::Clock::hour, 2).string() + ":" + XmlRpcPadded(
+            time::Clock::minute,
             2
-        ).string() + ":" + XmlRpcPadded(time.second(), 2).string();
+        ).string() + ":" + XmlRpcPadded(time::Clock::second, 2).string();
     }
 }
 

@@ -148,7 +148,7 @@ object EventRetry {
     has milliseconds is int;
 
     EventRetry(origin is Duration) {
-        let value = origin.seconds() * 1000.rat();
+        let value = origin::Span::seconds * 1000.rat();
         confirm value.denominator() == "1"
             else throw InvalidServerEvent.because("retry requires integral milliseconds");
         let amount = BigInt(value.numerator());
@@ -729,7 +729,7 @@ test "event retry is explicit and negative delays clamp to zero" {
         true;
     });
     test.is(
-        ServerEvent("x", "message", "", Duration(value: (-1).rat(), unit: DurationUnit.second)).retry().seconds(),
+        ServerEvent("x", "message", "", Duration(value: (-1).rat(), unit: DurationUnit.second)).retry()::Span::seconds,
         0.rat()
     );
 }
