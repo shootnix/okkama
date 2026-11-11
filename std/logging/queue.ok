@@ -110,11 +110,11 @@ object LogQueueState {
             if options.overflow() == LogOverflow.drop_newest {
                 return false;
             }
-            queued.replace(items.front().remainder());
+            queued.replace(items.tail());
         }
         let sequence = (accepted.value() + BigInt("1"));
         accepted.replace(sequence);
-        queued.replace(queued.value().back().addition(QueuedLogRecord(record, sequence)));
+        queued.replace(queued.value().suffix(QueuedLogRecord(record, sequence)));
         self.signal();
         true;
     }
@@ -146,8 +146,8 @@ object LogQueueState {
                     await wake.wait();
                 }
                 else {
-                    let ticket = items.front().value();
-                    queued.replace(items.front().remainder());
+                    let ticket = items.first();
+                    queued.replace(items.tail());
                     inflight.replace([ticket]);
                     let work = origin.deliver(ticket.record());
                     delivery.replace([work]);
@@ -183,7 +183,7 @@ object LogQueueState {
             let items = queued.value();
             let working = current.size() > 0 && current[0].sequence().order(target) != Order.greater;
             let pending = items.size() > 0
-                && items.front().value().sequence().order(target) != Order.greater;
+                && items.first().sequence().order(target) != Order.greater;
             last if !working && !pending;
             let wake = changed.value();
             await wake.wait();

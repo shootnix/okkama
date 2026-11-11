@@ -319,7 +319,7 @@ object WeightedTokenLookup {
 
     value() is @CodingPreference {
         let probe = CodingPreference(token, Quality(0.rat()), 0);
-        let at = LowerBound(origin: origin, item: probe).value();
+        let at = LowerBound(origin: origin, item: probe).index();
         if at < origin.size() && origin.item(at).token() == token {
             return [origin.item(at)];
         }

@@ -128,16 +128,16 @@ object Chained<T> does Iterating<T> {
     Chained(:origins);
 
     cursor() is Cursor<T> {
-        ChainedCursorSearch(origins: origins.cursor()).result();
+        ChainedCursorSearch(origins: origins.cursor()).cursor();
     }
 }
 
-object ChainedCursorSearch<T> {
+hidden object ChainedCursorSearch<T> {
     has origins is Cursor<Iterating<T>>;
 
     ChainedCursorSearch(:origins);
 
-    result() is Cursor<T> {
+    cursor() is Cursor<T> {
         if !origins.available() {
             ExhaustedChainedCursor(origins: origins);
         }
@@ -245,7 +245,7 @@ object ChainedItemCursor<T> does Cursor<T> {
             ChainedItemCursor(current: following, remaining: remaining);
         }
         else {
-            ChainedCursorSearch(origins: remaining).result();
+            ChainedCursorSearch(origins: remaining).cursor();
         }
     }
 }

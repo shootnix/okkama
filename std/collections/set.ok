@@ -117,7 +117,12 @@ object OrderedSet<T> does Set<T>, Iterating<T>, Sizing {
     }
 
     membership(value is T) is bool {
-        SetMembership(origin: self, value: value).result();
+        for origin -> item {
+            if item == value {
+                return true;
+            }
+        }
+        false;
     }
 
     addition(value is T) is Set<T> {
@@ -146,7 +151,9 @@ object Union<T> does Set<T>, Iterating<T>, Sizing {
     }
 
     size() is int {
-        SetSize(origin: self).result();
+        self.reduce(0) -> amount, item {
+            amount + 1;
+        };
     }
 
     membership(value is T) is bool {
@@ -176,7 +183,9 @@ object Intersection<T> does Set<T>, Iterating<T>, Sizing {
     }
 
     size() is int {
-        SetSize(origin: self).result();
+        self.reduce(0) -> amount, item {
+            amount + 1;
+        };
     }
 
     membership(value is T) is bool {
@@ -206,7 +215,9 @@ object Difference<T> does Set<T>, Iterating<T>, Sizing {
     }
 
     size() is int {
-        SetSize(origin: self).result();
+        self.reduce(0) -> amount, item {
+            amount + 1;
+        };
     }
 
     membership(value is T) is bool {
@@ -242,7 +253,9 @@ object SymmetricDifference<T> does Set<T>, Iterating<T>, Sizing {
     }
 
     size() is int {
-        SetSize(origin: self).result();
+        self.reduce(0) -> amount, item {
+            amount + 1;
+        };
     }
 
     membership(value is T) is bool {
@@ -403,38 +416,6 @@ object ConcatenatedSetCursor<T> does Cursor<T> {
     }
 }
 
-object SetMembership<T> {
-    has origin is Iterating<T>;
-    has value is T;
-
-    SetMembership(:origin, :value);
-
-    result() is bool {
-        let cursor = origin.cursor();
-        if !cursor.available() {
-            false;
-        }
-        else {
-            for CursorItems(cursor: cursor) -> candidate {
-                last true if candidate == value;
-                false;
-            }
-        }
-    }
-}
-
-object SetSize<T> {
-    has origin is Iterating<T>;
-
-    SetSize(:origin);
-
-    result() is int {
-        origin.reduce(0) -> amount, item {
-            amount + 1;
-        };
-    }
-}
-
 object AbsentFrom<T> {
     has origin is Set<T>;
 
@@ -464,7 +445,7 @@ object DistinctList<T> {
 
     list() is List<T> {
         let reversed is List<T> = origin.reduce(EmptyList()) -> items, item {
-            if SetMembership(origin: items, value: item).result() {
+            if self.contains(items, item) {
                 items;
             }
             else {
@@ -475,5 +456,14 @@ object DistinctList<T> {
             items.prefix(item);
         };
         result;
+    }
+
+    hidden contains(items is List<T>, value is T) is bool {
+        for items -> item {
+            if item == value {
+                return true;
+            }
+        }
+        false;
     }
 }

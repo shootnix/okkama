@@ -8,32 +8,24 @@ import "size" take Sizing;
 
 // An immutable persistent double-ended queue.
 //
-// Construct from any Iterating value and select an end as a capability:
-//
 //     let queue = Deque(values: jobs);
-//     let urgent = queue.front().addition(high_priority);
-//     let ordinary = urgent.back().addition(low_priority);
-//     let next = ordinary.front().value();
-//     let remaining = ordinary.front().remainder();
+//     let urgent = queue.prefix(high_priority);
+//     let ordinary = urgent.suffix(low_priority);
+//     let next = ordinary.first();
+//     let remaining = ordinary.tail();
 //
-// addition() and remainder() return new deques. Every earlier deque remains
-// unchanged and may share immutable list nodes with its successors.
-//
-// Deque deliberately does not implement Sequencing. first() and last() would
-// duplicate front().value() and back().value(), while exposing both endpoint
-// capabilities would push the object beyond five public actions. It remains
-// Iterating and Sizing and offers item(index) for Python-style deque indexing.
-// Middle indexing is O(n).
+// first() and last() read the ends; prefix(x) and suffix(x) add at the front
+// and the back; tail() drops the first item and body() the last. Each returns
+// a new deque: earlier deques stay unchanged and may share immutable list
+// nodes with their successors. The ends of an empty deque throw
+// EmptyDequeAccess. item(index) gives Python-style indexing with strict
+// zero-based bounds (OutOfRange); middle indexing is O(n).
 //
 // Internally the logical order is a forward list followed by the reverse of a
 // backward list. End additions are O(1). When one half grows beyond roughly
 // twice the other, construction of the returned deque rebalances both halves
 // in O(n); along a linear chain of returned deques, end operations are
 // amortized O(1). Traversal preserves insertion order.
-//
-// front() and back() are valid even for an empty deque. Calling value() or
-// remainder() on either empty endpoint throws EmptyDequeAccess. item() uses
-// strict zero-based bounds and throws OutOfRange.
 
 object Deque<T> does Iterating<T>, Sizing {
     has beginning is List<T>;
@@ -80,30 +72,8 @@ object Deque<T> does Iterating<T>, Sizing {
         }
     }
 
-    front() is DequeFront<T> {
-        DequeFront(front: beginning, back: ending, size: amount);
-    }
-
-    back() is DequeBack<T> {
-        DequeBack(front: beginning, back: ending, size: amount);
-    }
-}
-
-object DequeFront<T> {
-    has beginning is List<T>;
-    has ending is List<T>;
-    has amount is int;
-
-    DequeFront(front is List<T>, back is List<T>, size is int) {
-        confirm size >= 0 && size == front.size() + back.size()
-            else throw InvalidArgument.because("deque endpoint state is inconsistent");
-        beginning = front;
-        ending = back;
-        amount = size;
-    }
-
-    value() is T {
-        confirm amount > 0 else throw EmptyDequeAccess.operation("front value");
+    first() is T {
+        confirm amount > 0 else throw EmptyDequeAccess.operation("first");
         if beginning.size() > 0 {
             beginning.first();
         }
@@ -112,12 +82,26 @@ object DequeFront<T> {
         }
     }
 
-    addition(value is T) is Deque<T> {
+    last() is T {
+        confirm amount > 0 else throw EmptyDequeAccess.operation("last");
+        if ending.size() > 0 {
+            ending.first();
+        }
+        else {
+            beginning.first();
+        }
+    }
+
+    prefix(value is T) is Deque<T> {
         Deque(front: beginning.prefix(value), back: ending, size: amount + 1);
     }
 
-    remainder() is Deque<T> {
-        confirm amount > 0 else throw EmptyDequeAccess.operation("front remainder");
+    suffix(value is T) is Deque<T> {
+        Deque(front: beginning, back: ending.prefix(value), size: amount + 1);
+    }
+
+    tail() is Deque<T> {
+        confirm amount > 0 else throw EmptyDequeAccess.operation("tail");
         if beginning.size() > 0 {
             Deque(front: beginning.tail(), back: ending, size: amount - 1);
         }
@@ -125,37 +109,9 @@ object DequeFront<T> {
             Deque(front: beginning, back: ending.tail(), size: amount - 1);
         }
     }
-}
 
-object DequeBack<T> {
-    has beginning is List<T>;
-    has ending is List<T>;
-    has amount is int;
-
-    DequeBack(front is List<T>, back is List<T>, size is int) {
-        confirm size >= 0 && size == front.size() + back.size()
-            else throw InvalidArgument.because("deque endpoint state is inconsistent");
-        beginning = front;
-        ending = back;
-        amount = size;
-    }
-
-    value() is T {
-        confirm amount > 0 else throw EmptyDequeAccess.operation("back value");
-        if ending.size() > 0 {
-            ending.first();
-        }
-        else {
-            beginning.first();
-        }
-    }
-
-    addition(value is T) is Deque<T> {
-        Deque(front: beginning, back: ending.prefix(value), size: amount + 1);
-    }
-
-    remainder() is Deque<T> {
-        confirm amount > 0 else throw EmptyDequeAccess.operation("back remainder");
+    body() is Deque<T> {
+        confirm amount > 0 else throw EmptyDequeAccess.operation("body");
         if ending.size() > 0 {
             Deque(front: beginning, back: ending.tail(), size: amount - 1);
         }
@@ -165,7 +121,7 @@ object DequeBack<T> {
     }
 }
 
-object DequeItems<T> does Iterating<T> {
+hidden object DequeItems<T> does Iterating<T> {
     has beginning is List<T>;
     has ending is List<T>;
 
@@ -182,7 +138,7 @@ object DequeItems<T> does Iterating<T> {
     }
 }
 
-object ConcatenatedDequeCursor<T> does Cursor<T> {
+hidden object ConcatenatedDequeCursor<T> does Cursor<T> {
     has beginning is Cursor<T>;
     has ending is Cursor<T>;
 
@@ -216,7 +172,7 @@ object ConcatenatedDequeCursor<T> does Cursor<T> {
     }
 }
 
-object ArrayItems<T> does Iterating<T> {
+hidden object ArrayItems<T> does Iterating<T> {
     has origin is @T;
     has witness is Iterating<T>;
 
@@ -230,7 +186,7 @@ object ArrayItems<T> does Iterating<T> {
     }
 }
 
-object ArrayCursor<T> does Cursor<T> {
+hidden object ArrayCursor<T> does Cursor<T> {
     has origin is @T;
     has position is int;
     has witness is Iterating<T>;
@@ -258,7 +214,7 @@ object ArrayCursor<T> does Cursor<T> {
     }
 }
 
-object ForwardList<T> {
+hidden object ForwardList<T> {
     has origin is Iterating<T>;
 
     ForwardList(values is Iterating<T>) {
@@ -276,7 +232,7 @@ object ForwardList<T> {
     }
 }
 
-object ReversedList<T> {
+hidden object ReversedList<T> {
     has origin is Iterating<T>;
 
     ReversedList(values is Iterating<T>) {
@@ -291,7 +247,7 @@ object ReversedList<T> {
     }
 }
 
-object DequeParts<T> {
+hidden object DequeParts<T> {
     has beginning is List<T>;
     has ending is List<T>;
     has amount is int;
@@ -317,7 +273,7 @@ object DequeParts<T> {
     }
 }
 
-object BalancedDeque<T> {
+hidden object BalancedDeque<T> {
     has origin is @T;
     has witness is Iterating<T>;
 
@@ -344,7 +300,7 @@ object BalancedDeque<T> {
     }
 }
 
-object NormalizedDeque<T> {
+hidden object NormalizedDeque<T> {
     has beginning is List<T>;
     has ending is List<T>;
     has amount is int;
@@ -377,3 +333,41 @@ object NormalizedDeque<T> {
 }
 
 enum EmptyDequeAccess is Error = (operation(operation is string));
+
+test "a deque reads, adds and drops at both ends" {
+    let deque = Deque(values: [1, 2, 3]);
+    test.is(deque.first(), 1);
+    test.is(deque.last(), 3);
+    test.is(deque.prefix(0).first(), 0);
+    test.is(deque.suffix(4).last(), 4);
+    test.is(deque.tail().first(), 2);
+    test.is(deque.body().last(), 2);
+    test.is(deque.first(), 1);
+    let drained = deque.tail().tail().tail();
+    test.is(drained.size(), 0);
+    test.is(
+        try {
+            drained.first();
+            "no error";
+        }
+        catch EmptyDequeAccess.operation(name) {
+            name;
+        },
+        "first"
+    );
+    test.is(
+        try {
+            drained.body();
+            "no error";
+        }
+        catch EmptyDequeAccess.operation(name) {
+            name;
+        },
+        "body"
+    );
+    let grown = (0..50).reduce(Deque(values: [0])) -> items, n {
+        items.suffix(n + 1);
+    };
+    test.is(grown.item(25), 25);
+    test.is(grown.body().last(), 49);
+}

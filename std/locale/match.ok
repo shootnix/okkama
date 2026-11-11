@@ -196,7 +196,7 @@ object LocaleRangeIndex {
             -1;
         }
         else {
-            let index = LowerBound(names, prefix).value();
+            let index = LowerBound(names, prefix).index();
             if index < names.size() && names[index] == prefix {
                 priorities[index];
             }
@@ -427,8 +427,8 @@ object LocaleAvailableIndex {
             -1;
         }
         else {
-            let start = LowerBound(names, prefix).value();
-            let stop = LowerBound(names, prefix + ".").value();
+            let start = LowerBound(names, prefix).index();
+            let stop = LowerBound(names, prefix + ".").index();
             positions[0].earliest(start, stop);
         }
     }

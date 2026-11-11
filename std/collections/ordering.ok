@@ -139,6 +139,7 @@ object Ranked<T, K: Comparing<K>> does Comparing<Ranked<T, K>> {
     }
 }
 
+// The index of an item in a sorted sequence; MissingItem when it is absent.
 object PositionOf<T: Comparing<T>> {
     has origin is Sequencing<T>;
     has sought is T;
@@ -148,8 +149,8 @@ object PositionOf<T: Comparing<T>> {
         sought = item;
     }
 
-    value() is int {
-        let position = LowerBound(origin: origin, item: sought).value();
+    index() is int {
+        let position = LowerBound(origin: origin, item: sought).index();
         confirm position < origin.size()
             && origin.item(position).order(sought) == Order.equal
             else throw MissingItem.missing;
@@ -157,6 +158,7 @@ object PositionOf<T: Comparing<T>> {
     }
 }
 
+// The first index in a sorted sequence whose item is not less than `item`.
 object LowerBound<T: Comparing<T>> {
     has origin is Sequencing<T>;
     has sought is T;
@@ -166,16 +168,27 @@ object LowerBound<T: Comparing<T>> {
         sought = item;
     }
 
-    value() is int {
-        LowerSearching(
-            origin: origin,
-            item: sought,
-            start: 0,
-            stop: origin.size(),
-        ).value();
+    index() is int {
+        self.search(0, origin.size());
+    }
+
+    hidden search(start is int, stop is int) is int {
+        if start >= stop {
+            start;
+        }
+        else {
+            let middle = start + ((stop - start) / 2).int();
+            if origin.item(middle).order(sought) == Order.less {
+                self.search(middle + 1, stop);
+            }
+            else {
+                self.search(start, middle);
+            }
+        }
     }
 }
 
+// The first index in a sorted sequence whose item is greater than `item`.
 object UpperBound<T: Comparing<T>> {
     has origin is Sequencing<T>;
     has sought is T;
@@ -185,103 +198,21 @@ object UpperBound<T: Comparing<T>> {
         sought = item;
     }
 
-    value() is int {
-        UpperSearching(
-            origin: origin,
-            item: sought,
-            start: 0,
-            stop: origin.size(),
-        ).value();
-    }
-}
-
-object LowerSearching<T: Comparing<T>> {
-    has origin is Sequencing<T>;
-    has sought is T;
-    has beginning is int;
-    has ending is int;
-
-    LowerSearching(
-        origin is Sequencing<T>,
-        item is T,
-        start is int,
-        stop is int,
-    ) {
-        confirm start >= 0 && start <= stop && stop <= origin.size()
-            else throw InvalidArgument.because("lower-bound search range is invalid");
-        self.origin = origin;
-        sought = item;
-        beginning = start;
-        ending = stop;
+    index() is int {
+        self.search(0, origin.size());
     }
 
-    value() is int {
-        if beginning >= ending {
-            beginning;
+    hidden search(start is int, stop is int) is int {
+        if start >= stop {
+            start;
         }
         else {
-            let middle = beginning + ((ending - beginning) / 2).int();
-            if origin.item(middle).order(sought) == Order.less {
-                LowerSearching(
-                    origin: origin,
-                    item: sought,
-                    start: middle + 1,
-                    stop: ending,
-                ).value();
-            }
-            else {
-                LowerSearching(
-                    origin: origin,
-                    item: sought,
-                    start: beginning,
-                    stop: middle,
-                ).value();
-            }
-        }
-    }
-}
-
-object UpperSearching<T: Comparing<T>> {
-    has origin is Sequencing<T>;
-    has sought is T;
-    has beginning is int;
-    has ending is int;
-
-    UpperSearching(
-        origin is Sequencing<T>,
-        item is T,
-        start is int,
-        stop is int,
-    ) {
-        confirm start >= 0 && start <= stop && stop <= origin.size()
-            else throw InvalidArgument.because("upper-bound search range is invalid");
-        self.origin = origin;
-        sought = item;
-        beginning = start;
-        ending = stop;
-    }
-
-    value() is int {
-        if beginning >= ending {
-            beginning;
-        }
-        else {
-            let middle = beginning + ((ending - beginning) / 2).int();
+            let middle = start + ((stop - start) / 2).int();
             if origin.item(middle).order(sought) == Order.greater {
-                UpperSearching(
-                    origin: origin,
-                    item: sought,
-                    start: beginning,
-                    stop: middle,
-                ).value();
+                self.search(start, middle);
             }
             else {
-                UpperSearching(
-                    origin: origin,
-                    item: sought,
-                    start: middle + 1,
-                    stop: ending,
-                ).value();
+                self.search(middle + 1, stop);
             }
         }
     }

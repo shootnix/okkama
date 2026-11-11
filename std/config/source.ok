@@ -167,7 +167,7 @@ object SettingKeyIndex {
     }
 
     position(key is SettingKey) is int {
-        let at = LowerBound(ordered, key).value();
+        let at = LowerBound(ordered, key).index();
         if at < ordered.size() && ordered[at].order(key) == Order.equal {
             positions[at];
         }

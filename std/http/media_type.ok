@@ -119,7 +119,7 @@ object HttpMediaParameters {
         let key = self.key(name);
         // Parameter ordering compares names only. The valid probe value is not
         // a missing-value sentinel and is never observed as a field parameter.
-        let at = LowerBound(origin: origin, item: HttpMediaParameter(key, "probe")).value();
+        let at = LowerBound(origin: origin, item: HttpMediaParameter(key, "probe")).index();
         if at < origin.size() && origin[at].name() == key {
             return [origin[at]];
         }

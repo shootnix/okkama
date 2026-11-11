@@ -25,9 +25,9 @@ main() is int {
     c = c.same_int("heap top", Heap(values: [7, 2, 5]).top(), 2);
     c = c.same_int("heap remainder top", Heap(values: [7, 2, 5]).remainder().top(), 5);
     c = c.same_int("heap persistence", Heaps().original_top(), 3);
-    c = c.same_int("deque front", Deque(values: [1, 2, 3]).front().value(), 1);
-    c = c.same_int("deque back after addition", Deque(values: [1, 2, 3]).back().addition(4).back().value(), 4);
-    c = c.same_int("deque item", Deque(values: [1, 2, 3]).front().addition(0).item(1), 1);
-    c = c.same_text("empty deque access", try { let probe = Deque(values: Heaps().no_ints()).front().value(); "no error"; } catch e is EmptyDequeAccess { "EmptyDequeAccess"; }, "EmptyDequeAccess");
+    c = c.same_int("deque front", Deque(values: [1, 2, 3]).first(), 1);
+    c = c.same_int("deque back after addition", Deque(values: [1, 2, 3]).suffix(4).last(), 4);
+    c = c.same_int("deque item", Deque(values: [1, 2, 3]).prefix(0).item(1), 1);
+    c = c.same_text("empty deque access", try { let probe = Deque(values: Heaps().no_ints()).first(); "no error"; } catch e is EmptyDequeAccess { "EmptyDequeAccess"; }, "EmptyDequeAccess");
     c.done();
 }

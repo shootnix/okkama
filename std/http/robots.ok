@@ -340,8 +340,8 @@ object RobotsPolicy {
             if index > 0 && selected[index - 1] == id {
                 next;
             }
-            let start = LowerBound(rule_groups, id).value();
-            let stop = LowerBound(rule_groups, id + 1).value();
+            let start = LowerBound(rule_groups, id).index();
+            let stop = LowerBound(rule_groups, id + 1).index();
             for (start..stop) -> at {
                 let entry = rules[at];
                 if entry.matches(target) {
@@ -367,8 +367,8 @@ object RobotsPolicy {
             if index > 0 && ids[index - 1] == id {
                 next;
             }
-            let start = LowerBound(delay_groups, id).value();
-            let stop = LowerBound(delay_groups, id + 1).value();
+            let start = LowerBound(delay_groups, id).index();
+            let stop = LowerBound(delay_groups, id + 1).index();
             for (start..stop) -> at {
                 found.replace(true);
                 let value = delays[at].delay().seconds();

@@ -32,19 +32,19 @@ import "size" take Sizing;
 //     let batches = Chunked(origin: rows, size: 100);
 //     let rows_again = Flattened(origin: batches);
 //
-// Accumulated is a running fold and includes the initial value. Reduced emits
-// only the final fold result and supports constructor projection:
+// Accumulated is a running fold and includes the initial value. Reduced gives
+// only the final fold result:
 //
 //     let totals = Accumulated(
 //         origin: prices,
 //         initial: 0,
 //         action: (total is int, price is int) is int { total + price; },
 //     );
-//     let total is int = value Reduced(
+//     let total is int = Reduced(
 //         origin: prices,
 //         initial: 0,
 //         action: (sum is int, price is int) is int { sum + price; },
-//     );
+//     ).total();
 //
 // Sliced follows itertools.islice semantics: start and stop are non-negative,
 // stop is exclusive, and step is positive. Reverse traversal belongs to
@@ -114,17 +114,17 @@ object Mapped<A, B> does Iterating<B> {
     Mapped(:origin, :mapping);
 
     cursor() is Cursor<B> {
-        MappedCursorSearch(origin: origin.cursor(), mapping: mapping).result();
+        MappedCursorSearch(origin: origin.cursor(), mapping: mapping).cursor();
     }
 }
 
-object MappedCursorSearch<A, B> {
+hidden object MappedCursorSearch<A, B> {
     has origin is Cursor<A>;
     has mapping is (A) is B;
 
     MappedCursorSearch(:origin, :mapping);
 
-    result() is Cursor<B> {
+    cursor() is Cursor<B> {
         if origin.available() {
             MappedCursor(
                 value: mapping(origin.item()),
@@ -158,7 +158,7 @@ object MappedCursor<A, B> does Cursor<B> {
     }
 
     successor() is Cursor<B> {
-        MappedCursorSearch(origin: remaining, mapping: mapping).result();
+        MappedCursorSearch(origin: remaining, mapping: mapping).cursor();
     }
 }
 
@@ -188,17 +188,17 @@ object Filtered<T> does Iterating<T> {
     Filtered(:origin, :condition);
 
     cursor() is Cursor<T> {
-        FilteredCursorSearch(origin: origin.cursor(), condition: condition).result();
+        FilteredCursorSearch(origin: origin.cursor(), condition: condition).cursor();
     }
 }
 
-object FilteredCursorSearch<T> {
+hidden object FilteredCursorSearch<T> {
     has origin is Cursor<T>;
     has condition is (T) is bool;
 
     FilteredCursorSearch(:origin, :condition);
 
-    result() is Cursor<T> {
+    cursor() is Cursor<T> {
         if !origin.available() {
             EmptyFilteredCursor(origin: origin, condition: condition);
         }
@@ -229,7 +229,7 @@ object FilteredCursor<T> does Cursor<T> {
     }
 
     successor() is Cursor<T> {
-        FilteredCursorSearch(origin: origin.successor(), condition: condition).result();
+        FilteredCursorSearch(origin: origin.successor(), condition: condition).cursor();
     }
 }
 
@@ -304,11 +304,11 @@ object Dropped<T> does Iterating<T> {
     }
 
     cursor() is Cursor<T> {
-        DroppedCursorSearch(origin: origin.cursor(), count: amount).result();
+        DroppedCursorSearch(origin: origin.cursor(), count: amount).cursor();
     }
 }
 
-object DroppedCursorSearch<T> {
+hidden object DroppedCursorSearch<T> {
     has origin is Cursor<T>;
     has amount is int;
 
@@ -318,7 +318,7 @@ object DroppedCursorSearch<T> {
         amount = count;
     }
 
-    result() is Cursor<T> {
+    cursor() is Cursor<T> {
         if amount == 0 || !origin.available() {
             origin;
         }
@@ -339,17 +339,17 @@ object TakenWhile<T> does Iterating<T> {
     TakenWhile(:origin, :condition);
 
     cursor() is Cursor<T> {
-        TakenWhileCursorSearch(origin: origin.cursor(), condition: condition).result();
+        TakenWhileCursorSearch(origin: origin.cursor(), condition: condition).cursor();
     }
 }
 
-object TakenWhileCursorSearch<T> {
+hidden object TakenWhileCursorSearch<T> {
     has origin is Cursor<T>;
     has condition is (T) is bool;
 
     TakenWhileCursorSearch(:origin, :condition);
 
-    result() is Cursor<T> {
+    cursor() is Cursor<T> {
         if origin.available() && condition(origin.item()) {
             TakenWhileCursor(origin: origin, condition: condition);
         }
@@ -374,7 +374,7 @@ object TakenWhileCursor<T> does Cursor<T> {
     }
 
     successor() is Cursor<T> {
-        TakenWhileCursorSearch(origin: origin.successor(), condition: condition).result();
+        TakenWhileCursorSearch(origin: origin.successor(), condition: condition).cursor();
     }
 }
 
@@ -404,17 +404,17 @@ object DroppedWhile<T> does Iterating<T> {
     DroppedWhile(:origin, :condition);
 
     cursor() is Cursor<T> {
-        DroppedWhileCursorSearch(origin: origin.cursor(), condition: condition).result();
+        DroppedWhileCursorSearch(origin: origin.cursor(), condition: condition).cursor();
     }
 }
 
-object DroppedWhileCursorSearch<T> {
+hidden object DroppedWhileCursorSearch<T> {
     has origin is Cursor<T>;
     has condition is (T) is bool;
 
     DroppedWhileCursorSearch(:origin, :condition);
 
-    result() is Cursor<T> {
+    cursor() is Cursor<T> {
         if !origin.available() {
             origin;
         }
@@ -588,7 +588,7 @@ object Reduced<T, R> {
 
     Reduced(:origin, :initial, :action);
 
-    value() is R {
+    total() is R {
         for Accumulated(origin: origin, initial: initial, action: action) -> value {
             value;
         }

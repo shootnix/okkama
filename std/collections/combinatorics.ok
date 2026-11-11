@@ -1,5 +1,6 @@
 module collections/combinatorics v1.0.0;
 
+import "collections/ordering" take Sorted;
 import "collections/iteration" take Cursor, Iterating, IterationEnded;
 import "collections/sequence" take Sequencing;
 import "error" take InvalidArgument;
@@ -113,10 +114,10 @@ object CombinationCursor<T> does Cursor<@T> {
             );
         }
         else {
-            let pivot = CombinationPivot(
+            let pivot = CombinationPositions(
                 positions: positions,
                 origin_size: origin.size(),
-            ).value();
+            ).pivot();
             if pivot < 0 {
                 CombinationCursor(
                     origin: origin,
@@ -218,10 +219,10 @@ object ReplacementCombinationCursor<T> does Cursor<@T> {
             );
         }
         else {
-            let pivot = ReplacementPivot(
+            let pivot = ReplacementPositions(
                 positions: positions,
                 origin_size: origin.size(),
-            ).value();
+            ).pivot();
             if pivot < 0 {
                 ReplacementCombinationCursor(
                     origin: origin,
@@ -328,10 +329,11 @@ object PermutationCursor<T> does Cursor<@T> {
             );
         }
         else {
-            let pivot = PermutationPivot(
+            let arrangement = PermutationPositions(
                 positions: positions,
                 origin_size: origin.size(),
-            ).value();
+            );
+            let pivot = arrangement.pivot();
             if pivot < 0 {
                 PermutationCursor(
                     origin: origin,
@@ -341,12 +343,7 @@ object PermutationCursor<T> does Cursor<@T> {
                 );
             }
             else {
-                let candidate = PermutationCandidate(
-                    positions: positions,
-                    prefix: pivot,
-                    origin_size: origin.size(),
-                    start: positions[pivot] + 1,
-                ).value();
+                let candidate = arrangement.candidate(pivot, positions[pivot] + 1);
                 let following is @int = (0..amount).map() -> index {
                     if index < pivot {
                         positions[index];
@@ -356,13 +353,7 @@ object PermutationCursor<T> does Cursor<@T> {
                             candidate;
                         }
                         else {
-                            PermutationAvailableIndex(
-                                positions: positions,
-                                prefix: pivot,
-                                selected: candidate,
-                                origin_size: origin.size(),
-                                offset: index - pivot - 1,
-                            ).value();
+                            arrangement.available(pivot, candidate, index - pivot - 1);
                         }
                     }
                 };
@@ -389,8 +380,18 @@ object CartesianProduct<T> does Iterating<@T> {
         CartesianCursor(
             origins: origins,
             positions: positions,
-            active: CartesianAvailability(origins: origins).result(),
+            active: self.filled(),
         );
+    }
+
+    // Every source has an item, so the product has one.
+    hidden filled() is bool {
+        for (0..origins.size()) -> index {
+            if origins.item(index).size() == 0 {
+                return false;
+            }
+        }
+        true;
     }
 }
 
@@ -439,10 +440,10 @@ object CartesianCursor<T> does Cursor<@T> {
             );
         }
         else {
-            let pivot = CartesianPivot(
+            let pivot = CartesianPositions(
                 origins: origins,
                 positions: positions,
-            ).value();
+            ).pivot();
             if pivot < 0 {
                 CartesianCursor(
                     origins: origins,
@@ -474,7 +475,8 @@ object CartesianCursor<T> does Cursor<@T> {
     }
 }
 
-object CombinationPositions {
+// Positions of a combination: valid, and the index to advance next (-1: last).
+hidden object CombinationPositions {
     has origin is @int;
     has source_size is int;
 
@@ -484,39 +486,30 @@ object CombinationPositions {
     }
 
     valid() is bool {
-        if origin.size() == 0 {
-            true;
-        }
-        else {
-            for (0..origin.size()) -> index {
-                last false if origin[index] < 0 || origin[index] >= source_size;
-                last false if index > 0 && origin[index - 1] >= origin[index];
-                true;
+        for (0..origin.size()) -> index {
+            if origin[index] < 0 || origin[index] >= source_size {
+                return false;
+            }
+            if index > 0 && origin[index - 1] >= origin[index] {
+                return false;
             }
         }
-    }
-}
-
-object CombinationPivot {
-    has origin is @int;
-    has source_size is int;
-
-    CombinationPivot(positions is @int, origin_size is int) {
-        origin = positions;
-        source_size = origin_size;
+        true;
     }
 
-    value() is int {
+    pivot() is int {
         for (0..origin.size()) -> offset {
             let index = origin.size() - offset - 1;
-            last index if origin[index] <
-                source_size - origin.size() + index;
-            -1;
+            if origin[index] < source_size - origin.size() + index {
+                return index;
+            }
         }
+        -1;
     }
 }
 
-object ReplacementPositions {
+// Positions of a combination with replacement.
+hidden object ReplacementPositions {
     has origin is @int;
     has source_size is int;
 
@@ -526,38 +519,31 @@ object ReplacementPositions {
     }
 
     valid() is bool {
-        if origin.size() == 0 {
-            true;
-        }
-        else {
-            for (0..origin.size()) -> index {
-                last false if origin[index] < 0 || origin[index] >= source_size;
-                last false if index > 0 && origin[index - 1] > origin[index];
-                true;
+        for (0..origin.size()) -> index {
+            if origin[index] < 0 || origin[index] >= source_size {
+                return false;
+            }
+            if index > 0 && origin[index - 1] > origin[index] {
+                return false;
             }
         }
-    }
-}
-
-object ReplacementPivot {
-    has origin is @int;
-    has source_size is int;
-
-    ReplacementPivot(positions is @int, origin_size is int) {
-        origin = positions;
-        source_size = origin_size;
+        true;
     }
 
-    value() is int {
+    pivot() is int {
         for (0..origin.size()) -> offset {
             let index = origin.size() - offset - 1;
-            last index if origin[index] < source_size - 1;
-            -1;
+            if origin[index] < source_size - 1 {
+                return index;
+            }
         }
+        -1;
     }
 }
 
-object PermutationPositions {
+// Positions of a permutation: valid, the index to advance next (-1: last), the
+// next unused candidate from `start`, and the unused value of a given rank.
+hidden object PermutationPositions {
     has origin is @int;
     has source_size is int;
 
@@ -567,219 +553,80 @@ object PermutationPositions {
     }
 
     valid() is bool {
-        if origin.size() == 0 {
-            true;
-        }
-        else {
-            for (0..origin.size()) -> index {
-                last false if origin[index] < 0 || origin[index] >= source_size;
-                last false if PrefixMembership(
-                    positions: origin,
-                    stop: index,
-                    value: origin[index],
-                ).result();
-                true;
+        for (0..origin.size()) -> index {
+            if origin[index] < 0 || origin[index] >= source_size {
+                return false;
+            }
+            if self.taken(index, origin[index]) {
+                return false;
             }
         }
-    }
-}
-
-object PrefixMembership {
-    has origin is @int;
-    has ending is int;
-    has sought is int;
-
-    PrefixMembership(positions is @int, stop is int, value is int) {
-        confirm stop >= 0 && stop <= positions.size()
-            else throw InvalidArgument.because("permutation prefix is invalid");
-        origin = positions;
-        ending = stop;
-        sought = value;
+        true;
     }
 
-    result() is bool {
-        if ending == 0 {
-            false;
-        }
-        else {
-            for (0..ending) -> index {
-                last true if origin[index] == sought;
-                false;
-            }
-        }
-    }
-}
-
-object PermutationCandidate {
-    has origin is @int;
-    has ending is int;
-    has source_size is int;
-    has beginning is int;
-
-    PermutationCandidate(
-        positions is @int,
-        prefix is int,
-        origin_size is int,
-        start is int,
-    ) {
-        origin = positions;
-        ending = prefix;
-        source_size = origin_size;
-        beginning = start;
-    }
-
-    value() is int {
-        if beginning >= source_size {
-            -1;
-        }
-        else {
-            for (beginning..source_size) -> candidate {
-                last candidate if !PrefixMembership(
-                    positions: origin,
-                    stop: ending,
-                    value: candidate,
-                ).result();
-                -1;
-            }
-        }
-    }
-}
-
-object PermutationPivot {
-    has origin is @int;
-    has source_size is int;
-
-    PermutationPivot(positions is @int, origin_size is int) {
-        origin = positions;
-        source_size = origin_size;
-    }
-
-    value() is int {
+    pivot() is int {
         for (0..origin.size()) -> offset {
             let index = origin.size() - offset - 1;
-            last index if PermutationCandidate(
-                positions: origin,
-                prefix: index,
-                origin_size: source_size,
-                start: origin[index] + 1,
-            ).value() >= 0;
-            -1;
+            if self.candidate(index, origin[index] + 1) >= 0 {
+                return index;
+            }
         }
-    }
-}
-
-object PrefixBefore {
-    has origin is @int;
-    has ending is int;
-    has boundary is int;
-
-    PrefixBefore(positions is @int, stop is int, value is int) {
-        origin = positions;
-        ending = stop;
-        boundary = value;
+        -1;
     }
 
-    amount() is int {
-        if ending == 0 {
-            0;
+    candidate(prefix is int, start is int) is int {
+        for (start..source_size) -> candidate {
+            if !self.taken(prefix, candidate) {
+                return candidate;
+            }
         }
-        else {
-            (0..ending).reduce(0) -> total, index {
-                total + if origin[index] < boundary {
-                    1;
-                }
-                else {
-                    0;
-                };
-            };
-        }
-    }
-}
-
-object PermutationAvailableIndex {
-    has origin is @int;
-    has ending is int;
-    has selected is int;
-    has source_size is int;
-    has offset is int;
-
-    PermutationAvailableIndex(
-        positions is @int,
-        prefix is int,
-        selected is int,
-        origin_size is int,
-        offset is int,
-    ) {
-        origin = positions;
-        ending = prefix;
-        self.selected = selected;
-        source_size = origin_size;
-        self.offset = offset;
+        -1;
     }
 
-    value() is int {
+    available(prefix is int, selected is int, offset is int) is int {
         for (0..source_size) -> candidate {
-            let used = PrefixMembership(
-                positions: origin,
-                stop: ending,
-                value: candidate,
-            ).result();
-            let rank = candidate - PrefixBefore(
-                positions: origin,
-                stop: ending,
-                value: candidate,
-            ).amount() - if selected < candidate {
+            let rank = candidate - self.before(prefix, candidate) - if selected < candidate {
                 1;
             }
             else {
                 0;
             };
-            last candidate if !used && candidate != selected && rank == offset;
-            -1;
+            if !self.taken(prefix, candidate)
+                && candidate != selected
+                && rank == offset {
+                    return candidate;
+                }
         }
+        -1
     }
-}
 
-object CartesianAvailability<T> {
-    has origins is Sequencing<Sequencing<T>>;
-
-    CartesianAvailability(:origins);
-
-    result() is bool {
-        if origins.size() == 0 {
-            true;
-        }
-        else {
-            for (0..origins.size()) -> index {
-                last false if origins.item(index).size() == 0;
-                true;
+    // `value` is among the first `stop` positions.
+    hidden taken(stop is int, value is int) is bool {
+        confirm stop >= 0 && stop <= origin.size()
+            else throw InvalidArgument.because("permutation prefix is invalid");
+        for (0..stop) -> index {
+            if origin[index] == value {
+                return true;
             }
         }
+        false;
+    }
+
+    // How many of the first `stop` positions are below `value`.
+    hidden before(stop is int, value is int) is int {
+        (0..stop).reduce(0) -> total, index {
+            total + if origin[index] < value {
+                1;
+            }
+            else {
+                0;
+            };
+        };
     }
 }
 
-object CartesianPivot<T> {
-    has origins is Sequencing<Sequencing<T>>;
-    has positions is @int;
-
-    CartesianPivot(
-        origins is Sequencing<Sequencing<T>>,
-        positions is @int,
-    ) {
-        self.origins = origins;
-        self.positions = positions;
-    }
-
-    value() is int {
-        for (0..origins.size()) -> offset {
-            let index = origins.size() - offset - 1;
-            last index if positions[index] + 1 < origins.item(index).size();
-            -1;
-        }
-    }
-}
-
-object CartesianPositions<T> {
+// Positions in a cartesian product.
+hidden object CartesianPositions<T> {
     has origins is Sequencing<Sequencing<T>>;
     has positions is @int;
 
@@ -792,15 +639,57 @@ object CartesianPositions<T> {
     }
 
     valid() is bool {
-        if origins.size() == 0 {
-            true;
-        }
-        else {
-            for (0..origins.size()) -> index {
-                last false if positions[index] < 0
-                    || positions[index] >= origins.item(index).size();
-                true;
+        for (0..origins.size()) -> index {
+            if positions[index] < 0 || positions[index] >= origins.item(index).size() {
+                return false;
             }
         }
+        true;
     }
+
+    pivot() is int {
+        for (0..origins.size()) -> offset {
+            let index = origins.size() - offset - 1;
+            if positions[index] + 1 < origins.item(index).size() {
+                return index;
+            }
+        }
+        -1;
+    }
+}
+
+test "combinations, with replacement, permutations and products in order" {
+    let letters = ["a", "b", "c"];
+    let joined = (rows is Iterating<@string>) is string {
+        rows.map() -> row {
+            row.join("");
+        }.join(",");
+    };
+    test.is(joined(Combinations(origin: letters, size: 2)), "ab,ac,bc");
+    test.is(joined(CombinationsWithReplacement(origin: letters, size: 2)), "aa,ab,ac,bb,bc,cc");
+    test.is(joined(Permutations(origin: letters, size: 2)), "ab,ac,ba,bc,ca,cb");
+    test.is(joined(Permutations(origin: letters)), "abc,acb,bac,bca,cab,cba");
+    // Dimensions are Sequencing objects: an array of arrays cannot cross into
+    // a role of roles yet (#488).
+    let dimensions is @Sequencing<string> = [Sorted(["b", "a"]), Sorted(["y", "x"])];
+    test.is(joined(CartesianProduct(origins: dimensions)), "ax,ay,bx,by");
+}
+
+test "empty and oversized selections" {
+    let letters = ["a", "b", "c"];
+    let count = (rows is Iterating<@string>) is int {
+        rows.reduce(0) -> total, row {
+            total + 1;
+        };
+    };
+    test.is(count(Combinations(origin: letters, size: 0)), 1);
+    test.is(count(Combinations(origin: letters, size: 4)), 0);
+    test.is(count(Permutations(origin: letters, size: 4)), 0);
+    let nothing is @Sequencing<string> = [];
+    test.is(count(CartesianProduct(origins: nothing)), 1);
+    let none_left is @string = [];
+    let gap is @Sequencing<string> = [Sorted(["a"]), Sorted(none_left)];
+    test.is(count(CartesianProduct(origins: gap)), 0);
+    test.is(count(Permutations(origin: ["a", "b", "c", "d"])), 24);
+    test.is(count(Combinations(origin: ["a", "b", "c", "d", "e"], size: 3)), 10);
 }

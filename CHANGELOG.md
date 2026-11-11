@@ -300,6 +300,30 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     | `ShortestFloat(x).value()` | `ShortestFloat(x).decimal()` |
     | `IntegerFromBytes(b, s, o).value()` | `Binary(bytes: b, order: o).int(s)` |
     | `FloatFromBytes(b, w, o).value()` | `Binary(bytes: b, order: o).float(w)` |
+  - `collections`: functions dressed as objects fold into the objects whose
+    data they read.
+    - `Deque` reads and changes its own ends: `first()`, `last()`,
+      `prefix(x)`, `suffix(x)`, `tail()` and `body()`. The end views
+      `DequeFront` and `DequeBack`, which copied the whole deque, are gone.
+    - `SetMembership` and `SetSize` became each set's own `membership` and
+      `size`.
+    - The binary searches became a hidden action of `LowerBound` and
+      `UpperBound`, so no object is allocated per step. The answer is
+      `index()`, also for `PositionOf`.
+    - `Reduced` answers `total()`.
+    - In combinatorics there is one hidden `…Positions` per family:
+      `valid()`, `pivot()`, and for permutations `candidate()` and
+      `available()`. These replace eight helper objects.
+    - The cursor searches of the views are hidden.
+    - `combinatorics` and `deque` have inline tests now.
+
+    | before | now |
+    |---|---|
+    | `deque.front().value()`, `deque.back().value()` | `deque.first()`, `deque.last()` |
+    | `deque.front().addition(x)`, `deque.back().addition(x)` | `deque.prefix(x)`, `deque.suffix(x)` |
+    | `deque.front().remainder()`, `deque.back().remainder()` | `deque.tail()`, `deque.body()` |
+    | `LowerBound(xs, x).value()`, `UpperBound`, `PositionOf` | `.index()` |
+    | `Reduced(…).value()` | `Reduced(…).total()` |
 ### Fixed
 
 - Traversals own what they walk, and keep no record of what they walked
