@@ -62,7 +62,7 @@ object XmlNCName {
         confirm RegexMatchObservation(
             origin: origin,
             regex: pattern,
-            range: RegexRange(0, origin.length()),
+            range: RegexRange(start: 0, end: origin.length()),
             mode: RegexQuery.entire
         ).found()
             else throw InvalidXml.located(0, "invalid XML NCName");
@@ -70,3 +70,34 @@ object XmlNCName {
 }
 
 enum InvalidXml is Error = (located(offset is int, reason is string));
+
+test "a name is local, or bound to a namespace through a prefix" {
+    let plain = XmlName("item");
+    test.is(plain.lexical(), "item");
+    test.is(plain.namespace(), "");
+    let atom = XmlName(namespace: "http://www.w3.org/2005/Atom", local: "entry", prefix: "a");
+    test.is(atom.lexical(), "a:entry");
+    test.is(atom.local_name(), "entry");
+    test.is(atom.prefix(), "a");
+    let default = XmlName(namespace: "urn:x", local: "doc", prefix: "");
+    test.is(default.lexical(), "doc");
+    test.is(XmlName("été").lexical(), "été");
+}
+
+test "bad names and reserved bindings are refused" {
+    for ["", "1st", "a b", "a:b", "-x"] -> bad {
+        test.throws(InvalidXml) {
+            XmlName(bad);
+        };
+    }
+    test.throws(InvalidXml) {
+        XmlName(namespace: "", local: "x", prefix: "p");
+    };
+    test.throws(InvalidXml) {
+        XmlName(namespace: "urn:x", local: "x", prefix: "xmlns");
+    };
+    test.throws(InvalidXml) {
+        XmlName(namespace: "urn:x", local: "x", prefix: "xml");
+    };
+    test.is(XmlName(namespace: "http://www.w3.org/XML/1998/namespace", local: "lang", prefix: "xml").lexical(), "xml:lang");
+}

@@ -44,3 +44,26 @@ object EscapedXml {
         text;
     }
 }
+
+test "text and attribute escaping differ only in quotes and whitespace" {
+    test.is(EscapedXml(origin: "a<b & c>\"d\"", attribute: false).string(), "a&lt;b &amp; c&gt;\"d\"");
+    test.is(EscapedXml(origin: "a<b & c>\"d\"", attribute: true).string(), "a&lt;b &amp; c&gt;&quot;d&quot;");
+    test.is(EscapedXml(origin: "x\ty\nz\r", attribute: true).string(), "x&#9;y&#10;z&#13;");
+    test.is(EscapedXml(origin: "x\ty\nz\r", attribute: false).string(), "x\ty\nz&#13;");
+    test.is(EscapedXml(origin: "", attribute: false).string(), "");
+}
+
+test "characters XML 1.0 forbids are refused with their offset" {
+    test.ok(try {
+        XmlCharacters("ok\u{1}");
+        false;
+    }
+    catch InvalidXml.located(offset, reason) {
+        offset == 2 && reason == "character forbidden by XML 1.0";
+    });
+    test.throws(InvalidXml) {
+        EscapedXml(origin: "\u{FFFE}", attribute: false);
+    };
+    XmlCharacters("tab\tnewline\n é ✓");
+    test.ok(true);
+}

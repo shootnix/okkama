@@ -323,7 +323,7 @@ object JUnitTestReport {
                 0;
             });
         };
-        let properties = XmlElement(XmlName("properties"), [
+        let properties = XmlElement(name: XmlName("properties"), children: [
             self.property("seed", origin.seed().string()),
             self.property("start_unix_ns", origin.start().unix_duration().nanoseconds().string()),
             self.property("captured-output-encoding", "base64")
@@ -337,8 +337,8 @@ object JUnitTestReport {
             }
         };
         XmlDocument(XmlElement(
-            XmlName("testsuite"),
-            [
+            name: XmlName("testsuite"),
+            attributes: [
                 XmlAttribute(XmlName("name"), JUnitReportText(suite).string()),
                 XmlAttribute(XmlName("tests"), counts.total().string()),
                 XmlAttribute(XmlName("failures"), failed.string()),
@@ -346,15 +346,15 @@ object JUnitTestReport {
                 XmlAttribute(XmlName("skipped"), counts.skips().string()),
                 XmlAttribute(XmlName("time"), JUnitSeconds(origin.duration()).string())
             ],
-            children
+            children: children
         )).xml();
     }
 
     hidden property(name is string, value is string) is XmlElement {
         XmlElement(
-            XmlName("property"),
-            [XmlAttribute(XmlName("name"), name), XmlAttribute(XmlName("value"), value)],
-            []
+            name: XmlName("property"),
+            attributes: [XmlAttribute(XmlName("name"), name), XmlAttribute(XmlName("value"), value)],
+            children: []
         );
     }
 
@@ -378,14 +378,14 @@ object JUnitTestReport {
             if status == TestStatus.skipped {
                 [
                     XmlElement(
-                        XmlName("skipped"),
-                        [
+                        name: XmlName("skipped"),
+                        attributes: [
                             XmlAttribute(
                                 XmlName("message"),
                                 JUnitReportText(result.skip_reason()).string()
                             )
                         ],
-                        []
+                        children: []
                     )
                 ];
             }
@@ -399,9 +399,9 @@ object JUnitTestReport {
                 };
                 [
                     XmlElement(
-                        XmlName(tag),
-                        [XmlAttribute(XmlName("type"), label)],
-                        [XmlText(if messages.size() == 0 {
+                        name: XmlName(tag),
+                        attributes: [XmlAttribute(XmlName("type"), label)],
+                        children: [XmlText(if messages.size() == 0 {
                             label;
                         }
                         else {
@@ -414,16 +414,16 @@ object JUnitTestReport {
         let output = result.output();
         let capture is @XmlNode = [
             XmlElement(
-                XmlName("properties"),
-                [self.property("captured-output-truncated", if output.truncated() {
+                name: XmlName("properties"),
+                children: [self.property("captured-output-truncated", if output.truncated() {
                     "true";
                 }
                 else {
                     "false";
                 })]
             ),
-            XmlElement(XmlName("system-out"), [XmlText(Base64Encoded(output.output()).string())]),
-            XmlElement(XmlName("system-err"), [XmlText(Base64Encoded(output.errors()).string())])
+            XmlElement(name: XmlName("system-out"), children: [XmlText(Base64Encoded(output.output()).string())]),
+            XmlElement(name: XmlName("system-err"), children: [XmlText(Base64Encoded(output.errors()).string())])
         ];
         let children is @XmlNode = (0..terminal.size() + capture.size()).map() -> index {
             if index < terminal.size() {
@@ -434,13 +434,13 @@ object JUnitTestReport {
             }
         };
         XmlElement(
-            XmlName("testcase"),
-            [
+            name: XmlName("testcase"),
+            attributes: [
                 XmlAttribute(XmlName("name"), JUnitReportText(result.name()).string()),
                 XmlAttribute(XmlName("classname"), JUnitReportText(suite).string()),
                 XmlAttribute(XmlName("time"), JUnitSeconds(result.duration()).string())
             ],
-            children
+            children: children
         );
     }
 }

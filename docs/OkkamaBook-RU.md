@@ -3903,6 +3903,17 @@ CommandCapture(origin:, limit:).completion()` собирает вывод: че�
 `PlistDictionary.value(name)`. `EncodedPlist(origin:, format:).bytes()`
 записывает его.
 
+`xml` строит XML 1.0 и записывает его, но не разбирает.
+`XmlElement(name: XmlName(…), attributes: […], children: […])` принимает
+`XmlText`, `XmlComment`, `XmlProcessingInstruction` и другие элементы.
+`XmlName(namespace:, local:, prefix:)` связывает пространство имён. Узел
+отказывает плохим именам и символам при создании, а элемент записывает себя
+при первом `xml()`. `XmlDocument(root).xml()` добавляет объявление.
+`html/events` читает HTML потоком событий (`for HtmlEvents(origin: page) ->
+event`), а `event.dispatch(handler)` отдаёт каждое в его `handle`. Текст,
+комментарии и объявления отвечают `text()`. `EscapedHtml` и `UnescapedHtml`
+занимаются ссылками на символы.
+
 `http/client` отправляет запросы через `HttpClient()`. По умолчанию он берёт системные DNS и доверенные корни, ходит только на публичные адреса и говорит по HTTP/1.1. Всё остальное задаётся именованными аргументами: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)`, `cookies: MemoryCookieJar()`. Для каждого REST-метода есть шорткат: `get(url)`, `head`, `options`, `delete`, а также `post(url:, body:)`, `put`, `patch` с `Content`, например `JsonBody(json)`. Любой другой запрос пишется как `client.response(Request(url:, method:, headers:, body:))`. Ответ показывает голову через cap `Head` (`page::Head::status`, `::class`, `::headers`) и читает тело через `await page.text()`, `bytes()`, `json()` или `reading()`. `Status` и `Method` — enum'ы: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` и `MethodName` переводят их в числа и токены протокола и обратно. Каждая задача показана программой в `examples/http/client/`.
 
 `strings/parse` читает текст как тип, который у него просят: `Number("42").int()`,

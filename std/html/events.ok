@@ -2,6 +2,7 @@ module html/events v1.0.0;
 
 import "collections/iteration" take Cursor, Iterating, IterationEnded;
 import "collections/sequence" take Sequencing;
+import "async/atomic" take Atomic;
 import "error" take InvalidArgument;
 import "runtime/html" take HtmlEventsState, html_events, html_event_count, html_event_kind,
     html_event_name, html_event_value, html_event_target, html_event_data, html_event_self_closing,
@@ -70,15 +71,15 @@ role EndingHtmlTag {
 }
 
 role ContainingHtmlText {
-    value() is string;
+    text() is string;
 }
 
 role ContainingHtmlComment {
-    value() is string;
+    text() is string;
 }
 
 role DeclaringHtml {
-    value() is string;
+    text() is string;
 }
 
 role ProcessingHtmlInstruction {
@@ -169,7 +170,7 @@ object HtmlText does HtmlEvent, ContainingHtmlText {
         HtmlEventKind.text;
     }
 
-    value() is string {
+    text() is string {
         origin;
     }
 
@@ -189,7 +190,7 @@ object HtmlComment does HtmlEvent, ContainingHtmlComment {
         HtmlEventKind.comment;
     }
 
-    value() is string {
+    text() is string {
         origin;
     }
 
@@ -209,7 +210,7 @@ object HtmlDeclaration does HtmlEvent, DeclaringHtml {
         HtmlEventKind.declaration;
     }
 
-    value() is string {
+    text() is string {
         origin;
     }
 
@@ -260,7 +261,7 @@ object HtmlEvents does Iterating<HtmlEvent> {
     }
 }
 
-object HtmlEventCursor does Cursor<HtmlEvent> {
+hidden object HtmlEventCursor does Cursor<HtmlEvent> {
     has origin is HtmlEventsState;
     has position is int;
     has amount is int;
@@ -321,4 +322,85 @@ object HtmlEventCursor does Cursor<HtmlEvent> {
             amount: amount,
         );
     }
+}
+
+object EventLog does HandlingHtmlEvent {
+    has seen is Atomic<@string>;
+
+    EventLog() {
+        let empty is @string = [];
+        seen = Atomic(empty);
+    }
+
+    handle(event is StartingHtmlTag) is void {
+        let names is @string = event.attributes().map() -> attribute {
+            if attribute.valued() {
+                attribute.name() + "=" + attribute.value();
+            }
+            else {
+                attribute.name();
+            }
+        };
+        seen.replace(@string(seen.value()..., "<" + event.name() + "[" + names.join(",") + "]"
+            + if event.self_closing() { "/>"; } else { ">"; }));
+    }
+
+    handle(event is EndingHtmlTag) is void {
+        seen.replace(@string(seen.value()..., "</" + event.name() + ">"));
+    }
+
+    handle(event is ContainingHtmlText) is void {
+        seen.replace(@string(seen.value()..., "text:" + event.text()));
+    }
+
+    handle(event is ContainingHtmlComment) is void {
+        seen.replace(@string(seen.value()..., "comment:" + event.text()));
+    }
+
+    handle(event is DeclaringHtml) is void {
+        seen.replace(@string(seen.value()..., "declaration:" + event.text()));
+    }
+
+    handle(event is ProcessingHtmlInstruction) is void {
+        seen.replace(@string(seen.value()..., "pi:" + event.target() + ":" + event.data()));
+    }
+
+    events() is @string {
+        seen.value();
+    }
+}
+
+test "events come in source order, names lowercased, references decoded" {
+    let log = EventLog();
+    for HtmlEvents(origin: "<!DOCTYPE html><P Class='a &amp; b' hidden>Fish &amp; chips<br/><!-- c --></p>") -> event {
+        event.dispatch(log);
+    }
+    test.is(log.events(), [
+        "declaration:DOCTYPE html",
+        "<p[class=a & b,hidden]>",
+        "text:Fish & chips",
+        "<br[]/>",
+        "comment: c ",
+        "</p>",
+    ]);
+}
+
+test "script content stays raw; kinds tell the events apart" {
+    let kinds is @HtmlEventKind = HtmlEvents(origin: "<script>if (a < b) { x = '&amp;'; }</script>").map() -> event {
+        event.kind();
+    };
+    test.is(kinds, [HtmlEventKind.start_tag, HtmlEventKind.text, HtmlEventKind.end_tag]);
+    let log = EventLog();
+    for HtmlEvents(origin: "<script>a < b &amp;</script>") -> event {
+        event.dispatch(log);
+    }
+    test.is(log.events()[1], "text:a < b &amp;");
+}
+
+test "an attribute without a value has none" {
+    let bare = HtmlAttribute(name: "hidden", valued: false, value: "");
+    test.ok(!bare.valued());
+    test.throws(InvalidArgument) {
+        HtmlAttribute(name: "title", valued: false, value: "x");
+    };
 }

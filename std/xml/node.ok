@@ -10,19 +10,20 @@ role XmlNode {
 }
 
 object XmlText does XmlNode {
-    has origin, fragment is string;
+    has origin is string;
 
     XmlText(value is string) {
+        XmlCharacters(value);
         origin = value;
-        fragment = EscapedXml(value, false).string();
     }
 
-    value() is string {
+    text() is string {
         origin;
     }
 
     xml() is string {
-        fragment;
+        memo let escaped = EscapedXml(origin: origin, attribute: false).string();
+        escaped;
     }
 
     depth() is int {
@@ -42,7 +43,7 @@ object XmlComment does XmlNode {
         origin = value;
     }
 
-    value() is string {
+    text() is string {
         origin;
     }
 
@@ -93,15 +94,15 @@ object XmlProcessingInstruction does XmlNode {
 
 object XmlAttribute {
     has name is XmlName;
-    has value, fragment is string;
+    has value is string;
 
     XmlAttribute(name is XmlName, value is string) {
         confirm (name.namespace() == "" || name.prefix() != "")
             && !(name.namespace() == "" && name.local_name() == "xmlns")
             else throw InvalidXml.located(0, "attribute namespace requires an explicit prefix");
+        XmlCharacters(value);
         self.name = name;
         self.value = value;
-        fragment = name.lexical() + "=\"" + EscapedXml(value, true).string() + "\"";
     }
 
     name() is XmlName {
@@ -113,24 +114,23 @@ object XmlAttribute {
     }
 
     xml() is string {
-        fragment;
+        memo let pair = name.lexical() + "=\"" + EscapedXml(origin: value, attribute: true).string() + "\"";
+        pair;
     }
 }
 
+// An element keeps its attributes and children as given, checked for limits
+// and name conflicts when made. Its text and depth are computed on the first
+// question, and a tree that is too deep or too large is refused then.
 object XmlElement does XmlNode {
     has name is XmlName;
     has attributes is @XmlAttribute;
     has children is @XmlNode;
-    has fragment is string;
-    has depth is int;
 
     XmlElement(name is XmlName, children is Sequencing<XmlNode>) {
         self.name = name;
         self.attributes = [];
-        self.children = XmlChildren(children).values();
-        let content = XmlElementContent(name, self.attributes, self.children);
-        fragment = content.xml();
-        depth = content.depth();
+        self.children = XmlChildren(source: children).values();
     }
 
     XmlElement(
@@ -139,11 +139,8 @@ object XmlElement does XmlNode {
         children is Sequencing<XmlNode>
     ) {
         self.name = name;
-        self.attributes = XmlAttributes(name, attributes).values();
-        self.children = XmlChildren(children).values();
-        let content = XmlElementContent(name, self.attributes, self.children);
-        fragment = content.xml();
-        depth = content.depth();
+        self.attributes = XmlAttributes(element: name, source: attributes).values();
+        self.children = XmlChildren(source: children).values();
     }
 
     name() is XmlName {
@@ -159,15 +156,17 @@ object XmlElement does XmlNode {
     }
 
     xml() is string {
-        fragment;
+        memo let text = XmlElementContent(name: name, attributes: attributes, children: children).xml();
+        text;
     }
 
     depth() is int {
-        depth;
+        memo let levels = XmlElementContent(name: name, attributes: attributes, children: children).depth();
+        levels;
     }
 }
 
-object XmlChildren {
+hidden object XmlChildren {
     has values is @XmlNode;
 
     XmlChildren(source is Sequencing<XmlNode>) {
@@ -185,7 +184,7 @@ object XmlChildren {
     }
 }
 
-object XmlAttributes {
+hidden object XmlAttributes {
     has values is @XmlAttribute;
 
     XmlAttributes(element is XmlName, source is Sequencing<XmlAttribute>) {
@@ -225,11 +224,14 @@ object XmlAttributes {
     }
 }
 
-object XmlElementContent {
-    has fragment is string;
-    has depth is int;
+hidden object XmlElementContent {
+    has name is XmlName;
+    has attributes is @XmlAttribute;
+    has children is @XmlNode;
 
-    XmlElementContent(name is XmlName, attributes is @XmlAttribute, children is @XmlNode) {
+    XmlElementContent(:name, :attributes, :children);
+
+    depth() is int {
         let maximum = children.reduce(0) -> value, child {
             let depth = child.depth();
             confirm depth >= 0 && depth < 64
@@ -241,21 +243,25 @@ object XmlElementContent {
                 value;
             }
         };
-        depth = maximum + 1;
+        maximum + 1;
+    }
+
+    xml() is string {
+        self.depth();
         let namespace = " xmlns=\"" + EscapedXml(
-            if name.prefix() == "" {
+            origin: if name.prefix() == "" {
                 name.namespace();
             }
             else {
                 "";
             },
-            true
+            attribute: true
         ).string() + "\"" +
             (if name.prefix() == "" || name.prefix() == "xml" {
                 "";
             }
             else {
-                " xmlns:" + name.prefix() + "=\"" + EscapedXml(name.namespace(), true).string() + "\"";
+                " xmlns:" + name.prefix() + "=\"" + EscapedXml(origin: name.namespace(), attribute: true).string() + "\"";
             });
         let declarations is @string = (0..attributes.size()).map() -> index {
             let current = attributes[index].name();
@@ -269,7 +275,7 @@ object XmlElementContent {
                     "";
                 }
                 else {
-                    " xmlns:" + current.prefix() + "=\"" + EscapedXml(current.namespace(), true).string() + "\"";
+                    " xmlns:" + current.prefix() + "=\"" + EscapedXml(origin: current.namespace(), attribute: true).string() + "\"";
                 }
         };
         let pairs is @string = attributes.map() -> attribute {
@@ -294,32 +300,20 @@ object XmlElementContent {
         confirm total <= 33554432
             else throw InvalidXml.located(0, "XML element exceeds 32 Mi scalars");
         let opening = "<" + name.lexical() + namespace + declarations.join("") + pairs.join("");
-        fragment = if children.size() == 0 {
+        if children.size() == 0 {
             opening + "/>";
         }
         else {
             opening + ">" + parts.join("") + "</" + name.lexical() + ">";
-        };
-    }
-
-    xml() is string {
-        fragment;
-    }
-
-    depth() is int {
-        depth;
+        }
     }
 }
 
 object XmlDocument {
     has root is XmlElement;
-    has fragment is string;
 
     XmlDocument(root is XmlElement) {
-        confirm root.xml().length() + 38 <= 33554432
-            else throw InvalidXml.located(0, "XML document exceeds 32 Mi scalars");
         self.root = root;
-        fragment = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + root.xml();
     }
 
     root() is XmlElement {
@@ -327,10 +321,86 @@ object XmlDocument {
     }
 
     xml() is string {
-        fragment;
+        memo let text = XmlDeclared(root: root).xml();
+        text;
+    }
+}
+
+hidden object XmlDeclared {
+    has root is XmlElement;
+
+    XmlDeclared(:root);
+
+    xml() is string {
+        let body = root.xml();
+        confirm body.length() + 38 <= 33554432
+            else throw InvalidXml.located(0, "XML document exceeds 32 Mi scalars");
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + body;
     }
 }
 
 test "mixed XML text remains literal" {
-    test.is(XmlElement(XmlName("p"), [XmlText("a<&")]).xml(), "<p xmlns=\"\">a&lt;&amp;</p>");
+    test.is(XmlElement(name: XmlName("p"), children: [XmlText("a<&")]).xml(), "<p xmlns=\"\">a&lt;&amp;</p>");
+}
+
+test "an element writes its namespaces, attributes and children in order" {
+    let atom = "http://www.w3.org/2005/Atom";
+    let entry = XmlElement(
+        name: XmlName(namespace: atom, local: "entry", prefix: "a"),
+        attributes: [XmlAttribute(name: XmlName("id"), value: "1 & 2")],
+        children: [
+            XmlElement(name: XmlName(namespace: atom, local: "title", prefix: "a"), children: [XmlText("Hi")]),
+            XmlComment("note"),
+            XmlProcessingInstruction(target: "render", data: "fast"),
+        ],
+    );
+    test.is(
+        entry.xml(),
+        "<a:entry xmlns=\"\" xmlns:a=\"http://www.w3.org/2005/Atom\" id=\"1 &amp; 2\">"
+            + "<a:title xmlns=\"\" xmlns:a=\"http://www.w3.org/2005/Atom\">Hi</a:title>"
+            + "<!--note--><?render fast?></a:entry>",
+    );
+    test.is(entry.depth(), 2);
+    test.is(entry.xml(), entry.xml());
+    test.is(XmlElement(name: XmlName("br"), children: []).xml(), "<br xmlns=\"\"/>");
+    test.is(XmlText("a<b").text(), "a<b");
+    test.is(XmlComment("c").text(), "c");
+    test.is(XmlDocument(XmlElement(name: XmlName("r"), children: [])).xml(), "<?xml version=\"1.0\" encoding=\"UTF-8\"?><r xmlns=\"\"/>");
+}
+
+test "bad nodes are refused when made; a tree too deep when written" {
+    test.throws(InvalidXml) {
+        XmlComment("a--b");
+    };
+    test.throws(InvalidXml) {
+        XmlComment("ends-");
+    };
+    test.throws(InvalidXml) {
+        XmlProcessingInstruction(target: "XmL", data: "");
+    };
+    test.throws(InvalidXml) {
+        XmlProcessingInstruction(target: "p", data: "a?>b");
+    };
+    test.throws(InvalidXml) {
+        XmlText("\u{1}");
+    };
+    test.throws(InvalidXml) {
+        XmlElement(
+            name: XmlName("e"),
+            attributes: [XmlAttribute(name: XmlName("a"), value: "1"), XmlAttribute(name: XmlName("a"), value: "2")],
+            children: [],
+        );
+    };
+    let deep is XmlNode = (0..65).reduce(XmlText("x")) -> inner, level {
+        let wrapped is XmlNode = XmlElement(name: XmlName("d"), children: [inner]);
+        wrapped;
+    };
+    test.throws(InvalidXml) {
+        deep.xml();
+    };
+    let fits is XmlNode = (0..64).reduce(XmlText("x")) -> inner, level {
+        let wrapped is XmlNode = XmlElement(name: XmlName("d"), children: [inner]);
+        wrapped;
+    };
+    test.is(fits.depth(), 64);
 }

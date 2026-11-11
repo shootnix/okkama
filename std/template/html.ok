@@ -70,7 +70,7 @@ object HtmlTemplate {
                 let value = JsonTemplateStrings(data, 1024, output.remaining()).string(
                     instruction.text()
                 );
-                output.append(EscapedHtml(value, instruction.quotes()).string());
+                output.append(EscapedHtml(origin: value, quotes: instruction.quotes()).string());
             }
             else {
                 output.append(instruction.text());

@@ -3730,6 +3730,17 @@ which value it is: `PlistString(…).string()`, `PlistInteger.integer()`
 `PlistDictionary.value(name)`. `EncodedPlist(origin:, format:).bytes()`
 writes one.
 
+`xml` builds XML 1.0 and writes it; it does not parse.
+`XmlElement(name: XmlName(…), attributes: […], children: […])` takes
+`XmlText`, `XmlComment`, `XmlProcessingInstruction` and other elements.
+`XmlName(namespace:, local:, prefix:)` binds a namespace. A node refuses bad
+names and characters when made, and an element writes itself on the first
+`xml()`. `XmlDocument(root).xml()` adds the declaration. `html/events` reads
+HTML as a stream of events (`for HtmlEvents(origin: page) -> event`), and
+`event.dispatch(handler)` sends each to its `handle`. Text, comments and
+declarations answer `text()`. `EscapedHtml` and `UnescapedHtml` cover the
+character references.
+
 `http/client` sends requests with `HttpClient()`. By default it uses the system's DNS and trusted roots, reaches public endpoints only and speaks HTTP/1.1. Every other part is a named argument: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)` and `cookies: MemoryCookieJar()`. Every REST method has a shortcut: `get(url)`, `head`, `options`, `delete`, and `post(url:, body:)`, `put`, `patch` with a `Content` such as `JsonBody(json)`. Anything else is `client.response(Request(url:, method:, headers:, body:))`. A reply shows its head through the cap `Head` (`page::Head::status`, `::class`, `::headers`) and reads its body with `await page.text()`, `bytes()`, `json()` or `reading()`. `Status` and `Method` are enums: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` and `MethodName` turn them into wire numbers and tokens and back. `examples/http/client/` shows each task as a program.
 
 `strings/parse` reads text as the type asked for: `Number("42").int()`,

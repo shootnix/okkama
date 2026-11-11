@@ -541,6 +541,20 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
       `PlistXmlToken` and `PlistXmlText` stay public, because
       `http/xmlrpc` reads XML with them.
     - Named arguments in 50 calls.
+  - `xml` and `html`:
+    - `XmlText`, `XmlComment`, `HtmlText`, `HtmlComment` and
+      `HtmlDeclaration` answer `text()`. So do the roles
+      `ContainingHtmlText`, `ContainingHtmlComment` and `DeclaringHtml`.
+    - Constructors still refuse bad names and characters. They no longer
+      write: `XmlText`, `XmlAttribute`, `XmlElement` and `XmlDocument`
+      escape and serialize on the first `xml()`, and keep the text with
+      `memo let`. A tree deeper than 64 or larger than 32 Mi scalars is
+      now refused by `xml()`/`depth()`, not when the element is made.
+    - `XmlChildren`, `XmlAttributes`, `XmlElementContent` and
+      `HtmlEventCursor` are hidden.
+    - New inline tests for `xml/name`, `xml/write`, `xml/node` and
+      `html/events`.
+    - Named arguments in 20 calls.
 
 ### Fixed
 

@@ -86,20 +86,20 @@ test "HTML named and numeric recovery" {
 
 test "HTML decoding repeats and composes with escaping" {
     let source = "<&amp;\"'é>";
-    let value = UnescapedHtml(EscapedHtml(source, true).string());
+    let value = UnescapedHtml(EscapedHtml(origin: source, quotes: true).string());
     test.is(value.string(), source);
     test.is(value.string(), source);
 }
 
 test "HTML text and quotation policies" {
     test.is(EscapedHtml("&<>\"'").string(), "&amp;&lt;&gt;\"'");
-    test.is(EscapedHtml("&<>\"'", false).string(), "&amp;&lt;&gt;\"'");
-    test.is(EscapedHtml("&<>\"'", true).string(), "&amp;&lt;&gt;&quot;&#39;");
+    test.is(EscapedHtml(origin: "&<>\"'", quotes: false).string(), "&amp;&lt;&gt;\"'");
+    test.is(EscapedHtml(origin: "&<>\"'", quotes: true).string(), "&amp;&lt;&gt;&quot;&#39;");
 }
 
 test "HTML escaping preserves empty text Unicode and whitespace" {
     test.is(EscapedHtml("").string(), "");
-    test.is(EscapedHtml("", true).string(), "");
+    test.is(EscapedHtml(origin: "", quotes: true).string(), "");
     test.is(EscapedHtml("é é 😀\t\r\n").string(), "é é 😀\t\r\n");
 }
 

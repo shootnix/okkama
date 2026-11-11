@@ -623,7 +623,7 @@ object StaticFiles does Handling {
         let used = Atomic(text.value().length());
         for names -> name {
             let href = PercentEncoded(name, UrlComponent.data).string();
-            let row = "<li><a href=\"./" + EscapedHtml(href, true).string() + "\">" + EscapedHtml(
+            let row = "<li><a href=\"./" + EscapedHtml(origin: href, quotes: true).string() + "\">" + EscapedHtml(
                 name
             ).string() + "</a></li>";
             let width = Utf8Encoded(row).bytes().size();
