@@ -68,8 +68,8 @@ struct ObjectLayout {
     /// Типы полей по порядку: упаковка значений для дампа (`okkamaFields`).
     field_types: Vec<Type>,
     fields: Vec<(String, String)>,
-    /// Слоты `memo let` по номеру поля (#491): вне `equals`, `hashCode` и дампа.
-    memo: Vec<bool>,
+    /// Слоты `once let` по номеру поля (#491): вне `equals`, `hashCode` и дампа.
+    once: Vec<bool>,
     interfaces: Vec<usize>,
     bridges: Vec<Bridge>,
     /// Поля, через которые достижимы идентичности (обход регионов).
@@ -90,12 +90,12 @@ struct VariantLayout {
 
 impl ObjectLayout {
     /// Поля, которые сравнивают `equals`/`hashCode` и показывает дамп: все,
-    /// кроме слотов `memo let` (#491).
+    /// кроме слотов `once let` (#491).
     fn compared(&self) -> impl Iterator<Item = &(String, String)> {
         self.fields
             .iter()
             .enumerate()
-            .filter(|(index, _)| !self.memo.get(*index).copied().unwrap_or(false))
+            .filter(|(index, _)| !self.once.get(*index).copied().unwrap_or(false))
             .map(|(_, field)| field)
     }
 
@@ -480,7 +480,7 @@ fn layout(module: &ir::Module, class_name: &str, entry: Option<ir::FuncId>) -> R
             name: object.name.clone(),
             field_types: object.fields.iter().map(|field| field.ty.clone()).collect(),
             fields: Vec::new(),
-            memo: object.fields.iter().map(|field| field.memo).collect(),
+            once: object.fields.iter().map(|field| field.once).collect(),
             interfaces: Vec::new(),
             bridges: Vec::new(),
             refs: object

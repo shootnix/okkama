@@ -104,9 +104,9 @@ pub(super) struct Checker<'r, 'a> {
     /// The `try?` being checked is the operand of a fallback (`try? x else y`):
     /// with no successful path its type may come from the fallback (#307).
     pub open_try: bool,
-    /// Locals bound by `memo let`: another `memo let` may read them (#491).
-    pub memo_locals: Vec<LocalId>,
-    /// The scope depth of the action body's own statements: a `memo let`
+    /// Locals bound by `once let`: another `once let` may read them (#491).
+    pub once_locals: Vec<LocalId>,
+    /// The scope depth of the action body's own statements: a `once let`
     /// stands there, not in a nested block (#491).
     pub body_scope: Option<usize>,
 }
@@ -365,7 +365,7 @@ impl<'r, 'a> Checker<'r, 'a> {
             cap_external: false,
             barrier: None,
             open_try: false,
-            memo_locals: Vec::new(),
+            once_locals: Vec::new(),
             body_scope: None,
         }
     }
@@ -819,10 +819,10 @@ impl<'r, 'a> Checker<'r, 'a> {
                 if let Some(last) = thir.stmts.pop() {
                     let value = match last.kind {
                         StmtKind::Expr(value) => value,
-                        StmtKind::Let { local, value, memo } => {
+                        StmtKind::Let { local, value, once } => {
                             // `let` последним: значение — значение привязки.
                             thir.stmts.push(Stmt {
-                                kind: StmtKind::Let { local, value, memo },
+                                kind: StmtKind::Let { local, value, once },
                                 span: last.span,
                             });
                             let ty = self.locals[local.0].ty.clone();

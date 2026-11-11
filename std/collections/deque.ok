@@ -150,7 +150,7 @@ object Deque<T> does Iterating<T>, Sizing {
 
     // The values split into two balanced ends, once (#491).
     hidden split() is DequeParts<T> {
-        memo let parts = BalancedDeque(values: values).parts();
+        once let parts = BalancedDeque(values: values).parts();
         parts;
     }
 }

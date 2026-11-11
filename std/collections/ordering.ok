@@ -81,7 +81,7 @@ object Sorted<T: Comparing<T>> does Sequencing<T>, Iterating<T>, Sizing {
 
     // The values in order: sorted on the first question, then kept (#491).
     hidden ordered() is @T {
-        memo let sorted = BulkOrdering(values: origin.map() -> value {
+        once let sorted = BulkOrdering(values: origin.map() -> value {
             value;
         }).items();
         sorted;
@@ -126,7 +126,7 @@ object SortedBy<T, K: Comparing<K>> does Sequencing<T>, Iterating<T>, Sizing {
 
     // The values ranked by their keys, each key taken once (#491).
     hidden ranked() is @Ranked<T, K> {
-        memo let sorted = BulkOrdering(values: origin.map() -> value {
+        once let sorted = BulkOrdering(values: origin.map() -> value {
             Ranked(item: value, key: key(value));
         }).items();
         sorted;

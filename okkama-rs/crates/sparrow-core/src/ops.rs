@@ -324,7 +324,7 @@ impl Runtime {
                     .fields
                     .iter()
                     .enumerate()
-                    .filter(|(_, (name, _))| !is_memo_slot(name))
+                    .filter(|(_, (name, _))| !is_once_slot(name))
                     .all(|(index, &(_, field))| self.is_key(self.heap.field(word, index), self.kind_of(field), program.ty(field)))
             }
             _ => false,
@@ -345,7 +345,7 @@ impl Runtime {
                     .fields
                     .iter()
                     .enumerate()
-                    .filter(|(_, (name, _))| !is_memo_slot(name))
+                    .filter(|(_, (name, _))| !is_once_slot(name))
                     .map(|(index, &(_, field))| self.key(self.heap.field(word, index), self.kind_of(field), program.ty(field)))
                     .collect();
                 Key::Object(declaration, fields)
@@ -768,8 +768,8 @@ pub(crate) fn equal(runtime: &Runtime, left: Word, right: Word, ty: TypeRef) -> 
                 if a != b && seen.insert((a, b)) {
                     let fields = &program.objects[heap::payload(ha) as usize].fields;
                     for (index, (name, field)) in fields.iter().enumerate().rev() {
-                        // A `memo let` slot is a cache, not part of the value (#491).
-                        if is_memo_slot(name) {
+                        // A `once let` slot is a cache, not part of the value (#491).
+                        if is_once_slot(name) {
                             continue;
                         }
                         let (x, y) = (runtime.heap.field(a, index), runtime.heap.field(b, index));
@@ -795,10 +795,10 @@ pub(crate) fn equal(runtime: &Runtime, left: Word, right: Word, ty: TypeRef) -> 
     Ok(true)
 }
 
-/// A hidden `memo let` slot (#491): the compiler names them `$memo0`, `$memo1`, …
+/// A hidden `once let` slot (#491): the compiler names them `$once0`, `$once1`, …
 /// They cache an answer, so equality, map keys and dumps leave them out.
-pub(crate) fn is_memo_slot(name: &str) -> bool {
-    name.starts_with("$memo")
+pub(crate) fn is_once_slot(name: &str) -> bool {
+    name.starts_with("$once")
 }
 
 // ---- the helper ----

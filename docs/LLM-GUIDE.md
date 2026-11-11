@@ -291,12 +291,12 @@ of its case; the case number comes from the object's declaration (Sparrow
 needs the cases consecutive; the JVM gives each variant an abstract class with
 a `$tag` field and each case a subclass). Runtime-raised errors are the first
 case's object;
-`memo let` (#491) adds hidden `$memoN` fields of type `Maybe<T>` (marked
-`memo` in `ir::Field`), initialised to `none` by every constructor and reset
-by successors; `memo.load`/`memo.store` read and fill them. The IR runtime
-keeps filled values in the object's `extra.memo` beside the fields; Sparrow
+`once let` (#491) adds hidden `$onceN` fields of type `Maybe<T>` (marked
+`once` in `ir::Field`), initialised to `none` by every constructor and reset
+by successors; `once.load`/`once.store` read and fill them. The IR runtime
+keeps filled values in the object's `extra.once` beside the fields; Sparrow
 and the JVM store into the field, and equality, map keys and dumps skip
-`memo` fields (Tomato by the `$memo` name prefix);
+`once` fields (Tomato by the `$once` name prefix);
 resources (`destroy`) are released by cleanup regions that the compiler emits
 (`region.enter/track/adopt/leave/transfer`); plainness (`is_plain`) decides
 where regions are needed. Lowering decides it conservatively per type (a

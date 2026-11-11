@@ -2406,9 +2406,9 @@ Current boundaries are intentionally narrow:
   loop, while `throw`, `catch`, and per-invocation `defer` follow ordinary
   action rules.
 
-### 18.6 `memo let`
+### 18.6 `once let`
 
-`memo let name = value;` keeps a value the object computes once. The first
+`once let name = value;` keeps a value the object computes once. The first
 time the statement runs, the value is computed and stored in a hidden slot of
 `self`; every later run on the same object reads the slot (#491). Objects are
 immutable, so a value that depends only on them stays right:
@@ -2424,7 +2424,7 @@ object Stats {
 
     // One kept value, shared by every action that calls it.
     hidden values() is @int {
-        memo let kept = source.items();
+        once let kept = source.items();
         kept;
     }
 }
@@ -2432,11 +2432,11 @@ object Stats {
 
 The rules keep the stored value right for every later call:
 
-- `memo let` stands among the statements of an object's action, not in a
+- `once let` stands among the statements of an object's action, not in a
   nested block, a constructor, a cap, a test or `main`.
-- Its value reads only fields, `self`, constants and earlier `memo let`s. A
+- Its value reads only fields, `self`, constants and earlier `once let`s. A
   parameter or an ordinary local makes the value depend on the call:
-  `memo let cannot depend on "n"`.
+  `once let cannot depend on "n"`.
 - Its value has no effects. Natives that reach the clock, files, the
   network, processes, randomness or the environment are refused, and so are
   `Cell`, the `async` objects, `await` and `spawn`. The compiler follows

@@ -259,7 +259,7 @@ fn okkama_fields_method(pool: &mut ConstantPool, object: &ObjectLayout) -> Resul
     let add = pool.interface_method_ref(runtime::LIST, "add", "(Ljava/lang/Object;)Z")?;
     let mut asm = Asm::default();
     for (index, (name, descriptor)) in object.fields.iter().enumerate() {
-        if object.memo.get(index).copied().unwrap_or(false) {
+        if object.once.get(index).copied().unwrap_or(false) {
             continue;
         }
         let label = pool.string(name)?;

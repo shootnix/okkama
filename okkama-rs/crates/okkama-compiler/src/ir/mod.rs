@@ -386,9 +386,9 @@ pub struct Field {
     pub ty: Type,
     /// Функция `[default C.f]`, вычисляющая значение по умолчанию.
     pub default: Option<FuncId>,
-    /// Слот `memo let` (#491): `Maybe` значения, посчитанного один раз.
+    /// Слот `once let` (#491): `Maybe` значения, посчитанного один раз.
     /// Не участвует в `==`, хэше, Dumper и сохранении; наследник получает `none`.
-    pub memo: bool,
+    pub once: bool,
 }
 
 impl Module {
@@ -997,14 +997,14 @@ pub enum InstKind {
         field: usize,
         value: ValueId,
     },
-    /// Слот `memo let` (#491): `Maybe` значения; `none`, пока оно не посчитано.
-    MemoLoad {
+    /// Слот `once let` (#491): `Maybe` значения; `none`, пока оно не посчитано.
+    OnceLoad {
         object: ValueId,
         field: usize,
     },
-    /// Запомнить значение `memo let` (#491) в слоте `field` уже построенного
+    /// Запомнить значение `once let` (#491) в слоте `field` уже построенного
     /// объекта; `value` — `Maybe.some` значения.
-    MemoStore {
+    OnceStore {
         object: ValueId,
         field: usize,
         value: ValueId,
@@ -1473,7 +1473,7 @@ impl InstKind {
             | InstKind::ObjPending {
                 object: operand, ..
             }
-            | InstKind::MemoLoad {
+            | InstKind::OnceLoad {
                 object: operand, ..
             } => vec![*operand],
             InstKind::VariantNew { fields, .. } => fields.clone(),
@@ -1529,7 +1529,7 @@ impl InstKind {
                 vec![*future]
             }
             InstKind::CapMake(owner) | InstKind::CallCap { cap: owner, .. } => vec![*owner],
-            InstKind::ObjInit { object, value, .. } | InstKind::MemoStore { object, value, .. } => vec![*object, *value],
+            InstKind::ObjInit { object, value, .. } | InstKind::OnceStore { object, value, .. } => vec![*object, *value],
             InstKind::CallFn { callee, args }
             | InstKind::WorkerSpawn {
                 entry: callee,
@@ -1602,7 +1602,7 @@ impl InstKind {
             | InstKind::ObjPending {
                 object: operand, ..
             }
-            | InstKind::MemoLoad {
+            | InstKind::OnceLoad {
                 object: operand, ..
             } => vec![operand],
             InstKind::VariantNew { fields, .. } => fields.iter_mut().collect(),
@@ -1658,7 +1658,7 @@ impl InstKind {
                 vec![future]
             }
             InstKind::CapMake(owner) | InstKind::CallCap { cap: owner, .. } => vec![owner],
-            InstKind::ObjInit { object, value, .. } | InstKind::MemoStore { object, value, .. } => vec![object, value],
+            InstKind::ObjInit { object, value, .. } | InstKind::OnceStore { object, value, .. } => vec![object, value],
             InstKind::CallFn { callee, args }
             | InstKind::WorkerSpawn {
                 entry: callee,

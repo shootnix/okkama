@@ -174,12 +174,12 @@ fn keys(value: &Value) -> Vec<Value> {
     }
 }
 
-/// The fields a dump shows: all but the `memo let` slots (#491), which the
-/// compiler names `$memo0`, `$memo1`, … and which only cache an answer.
+/// The fields a dump shows: all but the `once let` slots (#491), which the
+/// compiler names `$once0`, `$once1`, … and which only cache an answer.
 fn shown(context: &Context, declaration: usize, count: usize) -> Vec<usize> {
     let names = context.objects.get(declaration).map(|(_, fields)| fields.as_slice()).unwrap_or(&[]);
     (0..count)
-        .filter(|index| !names.get(*index).is_some_and(|name| name.starts_with("$memo")))
+        .filter(|index| !names.get(*index).is_some_and(|name| name.starts_with("$once")))
         .collect()
 }
 

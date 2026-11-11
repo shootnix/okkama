@@ -85,7 +85,7 @@ object Heap<T: Comparing<T>> does Sizing {
 
     // The tree of the values, built once (#491).
     hidden planted() is HeapRepresenting<T> {
-        memo let tree = values.reduce(HeapBuilding(root: origin)) -> building, value {
+        once let tree = values.reduce(HeapBuilding(root: origin)) -> building, value {
             building.addition(value);
         }.root();
         tree;

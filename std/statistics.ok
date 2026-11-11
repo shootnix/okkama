@@ -55,7 +55,7 @@ object Sample {
     }
 
     values() is @float {
-        memo let floats is @float = FloatValues(values: given).floats();
+        once let floats is @float = FloatValues(values: given).floats();
         floats;
     }
 
@@ -186,7 +186,7 @@ object Modes<T> does Sequencing<T>, Iterating<T>, Sizing {
 
     // The most frequent values, in the order they first appear.
     hidden origin() is @T {
-        memo let modes is @T = ModeValues(values: given).values();
+        once let modes is @T = ModeValues(values: given).values();
         modes;
     }
 

@@ -23,7 +23,7 @@
 
 pub mod check;
 mod flow;
-mod memo;
+mod once;
 pub mod registry;
 pub mod thir;
 pub mod ty;
@@ -116,7 +116,7 @@ pub fn analyze_mode(
 ) -> Result<Analysis<'_>, Vec<SemanticError>> {
     let mut registry = Registry::build_mode(sources, roots, test_mode);
     let bodies = check::check_bodies(&mut registry);
-    memo::check(&mut registry, &bodies);
+    once::check(&mut registry, &bodies);
     if registry.errors.is_empty() {
         let warnings = std::mem::take(&mut registry.warnings);
         Ok(Analysis {
@@ -138,6 +138,6 @@ pub fn analyze_lenient(
 ) -> (Registry<'_>, Vec<thir::Body>) {
     let mut registry = Registry::build_mode(sources, roots, test_mode);
     let bodies = check::check_bodies(&mut registry);
-    memo::check(&mut registry, &bodies);
+    once::check(&mut registry, &bodies);
     (registry, bodies)
 }

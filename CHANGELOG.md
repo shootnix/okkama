@@ -44,23 +44,25 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   - `async` (a channel between a producer and a consumer; timeouts, races
     and waiting for all), checked in a container like the async tests.
 
-- **Language: `memo let` keeps a value computed once per object (#491).**
-  The owner, 2026-11-11: a mark on the value, not on the method.
-  `memo let kept = source.items();` in an object's action computes the value
+- **Language: `once let` keeps a value computed once per object (#491).**
+  The owner, 2026-11-11: a mark on the value, not on the method. The word
+  is `once`, «ближе к истине». It was `memo let` before the release.
+  Acceptance replaced it, so no released code needs a migration.
+  `once let kept = source.items();` in an object's action computes the value
   the first time and reads a hidden slot of `self` afterwards.
   - The compiler refuses a value that reads a parameter or a local, one that
     reaches an effect (natives of the clock, files, network, processes,
     randomness or environment; `Cell`, `async` objects, `await`, `spawn`,
-    followed through concrete objects' actions), a resource, and a `memo let`
+    followed through concrete objects' actions), a resource, and a `once let`
     outside an action body's own statements. Calls through a role or a
     function value are trusted.
   - Slots are left out of `==`, map keys and `Dumper`. A successor starts
     with empty slots, and a value that throws leaves its slot empty.
-  - IR: hidden `$memoN` fields of `Maybe<T>` marked `memo`, and the
-    instructions `memo.load` and `memo.store`. Each engine keeps the slot its
+  - IR: hidden `$onceN` fields of `Maybe<T>` marked `once`, and the
+    instructions `once.load` and `once.store`. Each engine keeps the slot its
     own way: the IR runtime beside the fields, Sparrow and the JVM in the
     field itself, skipped by equality, keys and dumps.
-  - Conformance contract `OBJ.MEMO-LET` with five cases; `t/lang/memo.ok`
+  - Conformance contract `OBJ.ONCE-LET` with five cases; `t/lang/once.ok`
     runs in every configuration. Book §18.6, Bible §13.13, VS Code
     highlighting.
 
@@ -422,7 +424,7 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     `Duration::Span::seconds`; a helper entry `Cap::field` now names a cap
     field.
   - Objects that build a representation take their input in the constructor
-    and build it on the first question, kept with `memo let` (#491):
+    and build it on the first question, kept with `once let` (#491):
     `Sorted`, `SortedBy`, `Heap`, `Deque`, `OrderedSet`, `Frequencies`,
     `KeyedFrequencies`. Their API is unchanged. As views they now compare by
     their input: `Sorted([2, 1]) == Sorted([1, 2])` is `false`, where it was
@@ -439,7 +441,7 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     text and read it in `date()` and `local_date_time()`. `GregorianDay(date)`
     counts in `number()`. `RegexMatchObservation`, and with it every search,
     prepares its query on the first question. Each answer is kept with
-    `memo let`. Still computed when made: `confirm` checks, own runtime state
+    `once let`. Still computed when made: `confirm` checks, own runtime state
     (`Regex`, buffers, PRNG), and the canonical forms equality depends on.
   - Constructors no longer call other objects (the owner's rule, see
     `docs/std-principles.md` §2). `Rfc3339(text)` keeps the text and reads
@@ -529,7 +531,7 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
       - `TomlLocalTime::Clock` holds `hour` through `nanosecond`;
       - `TomlOffset::Offset` holds `minutes` and `known`.
     - `TomlArray` and `TomlTable` still take their snapshot when made.
-      `==` depends on it, and `memo let` cannot keep a role-typed value,
+      `==` depends on it, and `once let` cannot keep a role-typed value,
       which might be a resource.
     - Named arguments in 35 calls. There is an example, `examples/toml/`.
   - `plist`:
@@ -548,7 +550,7 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     - Constructors still refuse bad names and characters. They no longer
       write: `XmlText`, `XmlAttribute`, `XmlElement` and `XmlDocument`
       escape and serialize on the first `xml()`, and keep the text with
-      `memo let`. A tree deeper than 64 or larger than 32 Mi scalars is
+      `once let`. A tree deeper than 64 or larger than 32 Mi scalars is
       now refused by `xml()`/`depth()`, not when the element is made.
     - `XmlChildren`, `XmlAttributes`, `XmlElementContent` and
       `HtmlEventCursor` are hidden.
@@ -557,7 +559,7 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     - Named arguments in 20 calls.
   - `csv`:
     - `CsvString` binds its rows and limits. It takes and checks the
-      snapshot in `string()` and keeps the text with `memo let`, so a limit
+      snapshot in `string()` and keeps the text with `once let`, so a limit
       is now refused by `string()`, not when the object is made.
     - `CsvPrefix`, `CsvSnapshot`, `CsvPrintPrefix`, `CsvPrintRecord` and
       `CsvMode` are hidden.
@@ -591,7 +593,7 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     - `FloatSample` is now `Sample`.
     - `FittedLine(slope:, intercept:)` is the line itself.
     - Constructors bind. `Sample` takes its values on first use and keeps
-      them with `memo let`, and so does `Modes` with its counts.
+      them with `once let`, and so does `Modes` with its counts.
       `ModesCursor` is hidden.
     - The module has inline tests now. There is an example,
       `examples/statistics/`.
@@ -606,7 +608,7 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     | `edit.kind()`, `text()`, `left()`, `right()` | `edit::Line::kind`, `::text`, `::left`, `::right` |
 
     - `Diff` compares on the first question and keeps the script with
-      `memo let`.
+      `once let`.
     - Hunks, ranges, spans, matching blocks, printers and the search are
       hidden.
     - New inline tests check the output against Python's difflib. There is
@@ -623,7 +625,7 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     - `role Uuid` holds `string()`, `bytes()`, `version()`, `variant()` and
       `order()`. All five makers implement it, and `Uuid4s(…).sample()`
       answers a `Uuid`.
-    - `Uuid3` and `Uuid5` hash on the first question, with `memo let`.
+    - `Uuid3` and `Uuid5` hash on the first question, with `once let`.
     - UUIDs made differently are different types:
       - `UuidText(…) == UuidBytes(…)` does not compile;
       - as `Uuid` values they compare false (the owner: role values compare,
@@ -648,7 +650,7 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
       `examples/calendar/`.
   - `message` and `parallel`:
     - `MessageHeaderName` folds its case-insensitive key on the first
-      comparison (`memo let`), not when made.
+      comparison (`once let`), not when made.
     - The header folding, unfolding, snapshot and output helpers are hidden.
       `MessageHeader` keeps `value()`, as a name/value pair.
     - `ParallelMapped(origins:, action:)` reads the processor count when a

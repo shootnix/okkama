@@ -439,16 +439,16 @@ fn write_inst(
             write_field(f, module, object_of(object), *field)?;
             write!(f, ", {value}")
         }
-        InstKind::MemoLoad { object, field } => {
-            write!(f, "memo.load {object}, ")?;
+        InstKind::OnceLoad { object, field } => {
+            write!(f, "once.load {object}, ")?;
             write_field(f, module, object_of(object), *field)
         }
-        InstKind::MemoStore {
+        InstKind::OnceStore {
             object,
             field,
             value,
         } => {
-            write!(f, "memo.store {object}, ")?;
+            write!(f, "once.store {object}, ")?;
             write_field(f, module, object_of(object), *field)?;
             write!(f, ", {value}")
         }

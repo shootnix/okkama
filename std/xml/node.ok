@@ -22,7 +22,7 @@ object XmlText does XmlNode {
     }
 
     xml() is string {
-        memo let escaped = EscapedXml(origin: origin, attribute: false).string();
+        once let escaped = EscapedXml(origin: origin, attribute: false).string();
         escaped;
     }
 
@@ -114,7 +114,7 @@ object XmlAttribute {
     }
 
     xml() is string {
-        memo let pair = name.lexical() + "=\"" + EscapedXml(origin: value, attribute: true).string() + "\"";
+        once let pair = name.lexical() + "=\"" + EscapedXml(origin: value, attribute: true).string() + "\"";
         pair;
     }
 }
@@ -156,12 +156,12 @@ object XmlElement does XmlNode {
     }
 
     xml() is string {
-        memo let text = XmlElementContent(name: name, attributes: attributes, children: children).xml();
+        once let text = XmlElementContent(name: name, attributes: attributes, children: children).xml();
         text;
     }
 
     depth() is int {
-        memo let levels = XmlElementContent(name: name, attributes: attributes, children: children).depth();
+        once let levels = XmlElementContent(name: name, attributes: attributes, children: children).depth();
         levels;
     }
 }
@@ -321,7 +321,7 @@ object XmlDocument {
     }
 
     xml() is string {
-        memo let text = XmlDeclared(root: root).xml();
+        once let text = XmlDeclared(root: root).xml();
         text;
     }
 }

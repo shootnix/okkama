@@ -1035,9 +1035,9 @@ fn lower_ctor(
         lowerer.vars[var].value = Some(typed);
         lowerer.mark_bound(field);
     }
-    // Слоты `memo let` (#491) начинаются с `none`.
-    for (_, _, field) in lowerer.ctx.objects[object.0].memos.clone() {
-        let none = lowerer.memo_none(object, field, span);
+    // Слоты `once let` (#491) начинаются с `none`.
+    for (_, _, field) in lowerer.ctx.objects[object.0].once_slots.clone() {
+        let none = lowerer.once_none(object, field, span);
         let var = lowerer.field_vars[field];
         let ty = lowerer.ctx.objects[object.0].fields[field].1.clone();
         lowerer.vars[var].value = Some(Typed { value: none, ty });
@@ -1352,33 +1352,33 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         Ok(())
     }
 
-    /// `none` слота `memo let` `field` объекта `object` (#491).
-    fn memo_none(&mut self, object: ObjectId, field: usize, span: Span) -> ValueId {
+    /// `none` слота `once let` `field` объекта `object` (#491).
+    fn once_none(&mut self, object: ObjectId, field: usize, span: Span) -> ValueId {
         let ty = self.ctx.objects[object.0].fields[field].1.clone();
         self.b.emit(InstKind::VariantNew { case: 1, fields: Vec::new() }, ty, span)
     }
 
-    /// `memo let` (#491): значение из слота `self`, если оно уже посчитано;
+    /// `once let` (#491): значение из слота `self`, если оно уже посчитано;
     /// иначе — посчитать, запомнить `some` и отдать.
-    fn memo_let(&mut self, local: thir::LocalId, value: &'r thir::Expr, span: Span) -> Result<Out> {
+    fn once_let(&mut self, local: thir::LocalId, value: &'r thir::Expr, span: Span) -> Result<Out> {
         let (Some(object), Some(receiver)) = (self.object, self.self_value) else {
-            return Err(LoweringError::invalid(span, "internal compiler error: memo let outside an object's action"));
+            return Err(LoweringError::invalid(span, "internal compiler error: once let outside an object's action"));
         };
         let BodyOwner::Method { method, .. } = self.body.owner else {
-            return Err(LoweringError::invalid(span, "internal compiler error: memo let outside an action"));
+            return Err(LoweringError::invalid(span, "internal compiler error: once let outside an action"));
         };
-        let Some(field) = self.ctx.memo_field(object, method, local) else {
-            return Err(LoweringError::invalid(span, "internal compiler error: memo let without a slot"));
+        let Some(field) = self.ctx.once_field(object, method, local) else {
+            return Err(LoweringError::invalid(span, "internal compiler error: once let without a slot"));
         };
         let slot_ty = self.ctx.objects[object.0].fields[field].1.clone();
         let ty = self.local_type(local, span)?;
         if !self.ctx.is_plain(&ty) {
             return Err(LoweringError::invalid(
                 span,
-                "memo let cannot keep a resource: its value would outlive the scope that releases it",
+                "once let cannot keep a resource: its value would outlive the scope that releases it",
             ));
         }
-        let slot = self.b.emit(InstKind::MemoLoad { object: receiver, field }, slot_ty.clone(), span);
+        let slot = self.b.emit(InstKind::OnceLoad { object: receiver, field }, slot_ty.clone(), span);
         let tag = self.b.emit(InstKind::VariantTag(slot), Type::Int, span);
         let some = self.b.emit(InstKind::Const(Constant::Int(IntValue::from_i64(0))), Type::Int, span);
         let known = self.b.emit(
@@ -1411,7 +1411,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             return Ok(Out::Value(typed));
         };
         let wrapped = self.b.emit(InstKind::VariantNew { case: 0, fields: vec![computed.value] }, slot_ty, span);
-        self.b.emit_void(InstKind::MemoStore { object: receiver, field, value: wrapped }, span);
+        self.b.emit_void(InstKind::OnceStore { object: receiver, field, value: wrapped }, span);
         self.b.terminate(TermKind::Br(Target { block: join, args: vec![computed.value] }), span);
         self.b.switch_to(join);
         let typed = Typed { value: result, ty };
@@ -1429,8 +1429,8 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         }
         let object = self.object.expect("successor belongs to an object");
         // Запомненные ответы принадлежат прежнему состоянию (#491).
-        for (_, _, field) in self.ctx.objects[object.0].memos.clone() {
-            let none = self.memo_none(object, field, span);
+        for (_, _, field) in self.ctx.objects[object.0].once_slots.clone() {
+            let none = self.once_none(object, field, span);
             updates.retain(|(known, _)| *known != field);
             updates.push((field, none));
         }
@@ -2006,7 +2006,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
     fn stmt(&mut self, stmt: &'r thir::Stmt, want: bool) -> Result<Out> {
         let span = stmt.span;
         match &stmt.kind {
-            StmtKind::Let { local, value, memo: true } => self.memo_let(*local, value, span),
+            StmtKind::Let { local, value, once: true } => self.once_let(*local, value, span),
             StmtKind::Let { local, value, .. } => {
                 let Some(typed) = self.value(value)? else {
                     return Ok(Out::Diverged);

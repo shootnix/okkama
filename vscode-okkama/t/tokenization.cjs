@@ -87,9 +87,9 @@ let checks = 0;
   check('hidden enum Stage = (created, done);', 0, 'hidden', 'storage.modifier.hidden.okkama');
   check('object Tag { has hidden is int; }', 0, 'hidden', 'storage.modifier.hidden.okkama', true);
   check('hidden const LIMIT is int = 3;', 0, 'hidden', 'storage.modifier.hidden.okkama');
-  // memo let (#491): `memo` is a modifier only right before `let`.
-  check('        memo let kept = source.items();', 0, 'memo', 'storage.modifier.memo.okkama');
-  check('    let memo = 1;', 0, 'memo', 'storage.modifier.memo.okkama', true);
+  // once let (#491): `once` is a modifier only right before `let`.
+  check('        once let kept = source.items();', 0, 'once', 'storage.modifier.once.okkama');
+  check('    let once = 1;', 0, 'once', 'storage.modifier.once.okkama', true);
   // hidden actions (#365): the modifier, and the action name stays a function
   check('    hidden secret() is int {', 0, 'hidden', 'storage.modifier.hidden.okkama');
   check('    hidden secret() is int {', 0, 'secret', 'entity.name.function.okkama');

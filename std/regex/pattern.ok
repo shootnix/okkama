@@ -165,7 +165,7 @@ object RegexMatchObservation {
 
     // The query, prepared on the first question and kept (#491).
     hidden observed() is RegexQueryObservation {
-        memo let query = pattern.observation(source, selected, mode);
+        once let query = pattern.observation(source, selected, mode);
         query;
     }
 }

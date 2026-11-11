@@ -31,7 +31,7 @@ object MessageHeaderName does Comparing<MessageHeaderName> {
     }
 
     hidden key() is string {
-        memo let folded = MessageHeaderKey(origin: spelling).string();
+        once let folded = MessageHeaderKey(origin: spelling).string();
         folded;
     }
 }

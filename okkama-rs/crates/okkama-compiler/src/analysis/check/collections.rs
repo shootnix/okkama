@@ -261,7 +261,7 @@ impl Checker<'_, '_> {
         let block = ast::Block {
             stmts: vec![
                 ast::Stmt { kind: ast::StmtKind::Let {
-                    name: temporary, ty: None, value: source.clone(), memo: false,
+                    name: temporary, ty: None, value: source.clone(), once: false,
                 }, span: source.span },
                 ast::Stmt { kind: ast::StmtKind::Expr {
                     expr: expr(ast::ExprKind::Loop { body: ast::Block { stmts: vec![matched], span } }),

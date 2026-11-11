@@ -92,13 +92,13 @@ object Frequencies<T> does Iterating<Frequency<T>>, Sizing {
     }
 
     total() is int {
-        memo let quantity = FrequencyTally(values: values).total();
+        once let quantity = FrequencyTally(values: values).total();
         quantity;
     }
 
     // One Frequency per distinct value, counted on the first question (#491).
     hidden counted() is List<Frequency<T>> {
-        memo let kept = FrequencyTally(values: values).frequencies();
+        once let kept = FrequencyTally(values: values).frequencies();
         kept;
     }
 }
@@ -132,7 +132,7 @@ object KeyedFrequencies<T> does Iterating<Frequency<T>>, Sizing {
     }
 
     total() is int {
-        memo let quantity = values.map() -> value {
+        once let quantity = values.map() -> value {
             value;
         }.size();
         quantity;
@@ -140,7 +140,7 @@ object KeyedFrequencies<T> does Iterating<Frequency<T>>, Sizing {
 
     // Each distinct value with its count, in key order (#491).
     hidden counts() is %T:int {
-        memo let kept is %T:int = values.reduce([:]) -> found, value {
+        once let kept is %T:int = values.reduce([:]) -> found, value {
             let seen = found[value] else 0;
             found + [value: seen + 1];
         };

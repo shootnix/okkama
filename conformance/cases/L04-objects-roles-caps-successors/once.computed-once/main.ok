@@ -1,7 +1,7 @@
 module app v1.0.0;
 
-// A memo let is computed once per object and kept; its input is read through
-// a role, which a memo let trusts, so the reads are counted here.
+// A once let is computed once per object and kept; its input is read through
+// a role, which a once let trusts, so the reads are counted here.
 import "io/stdout" take Stdout;
 import "async/atomic" take Atomic;
 
@@ -41,12 +41,12 @@ object Stats {
 
     // Both actions share one kept value through this hidden action.
     hidden values() is @int {
-        memo let kept = source.items();
+        once let kept = source.items();
         kept;
     }
 
     checked() is int {
-        memo let total = source.items().reduce(0) -> sum, item {
+        once let total = source.items().reduce(0) -> sum, item {
             confirm item >= 0 else throw Negative.found;
             sum + item;
         };

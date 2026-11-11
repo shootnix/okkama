@@ -983,39 +983,39 @@ impl<'a> FunctionVerifier<'a> {
                     Some(_) => Err("obj.init defines no value".to_string()),
                 };
             }
-            InstKind::MemoLoad { object, field } => {
+            InstKind::OnceLoad { object, field } => {
                 let owner = self.object_of(*object)?;
-                self.require_owner(owner, "memo.load")?;
-                let memo = self
+                self.require_owner(owner, "once.load")?;
+                let once = self
                     .module
                     .object(owner)
                     .and_then(|declared| declared.fields.get(*field))
-                    .is_some_and(|declared| declared.memo);
-                if !memo {
-                    return Err(format!("memo.load reads field #{field}, which is not a memo slot"));
+                    .is_some_and(|declared| declared.once);
+                if !once {
+                    return Err(format!("once.load reads field #{field}, which is not a once slot"));
                 }
                 self.field_type(owner, *field)?.clone()
             }
-            InstKind::MemoStore {
+            InstKind::OnceStore {
                 object,
                 field,
                 value,
             } => {
                 let owner = self.object_of(*object)?;
-                self.require_owner(owner, "memo.store")?;
-                let memo = self
+                self.require_owner(owner, "once.store")?;
+                let once = self
                     .module
                     .object(owner)
                     .and_then(|declared| declared.fields.get(*field))
-                    .is_some_and(|declared| declared.memo);
-                if !memo {
-                    return Err(format!("memo.store writes field #{field}, which is not a memo slot"));
+                    .is_some_and(|declared| declared.once);
+                if !once {
+                    return Err(format!("once.store writes field #{field}, which is not a once slot"));
                 }
                 let expected = self.field_type(owner, *field)?.clone();
                 self.expect_type(*value, &expected)?;
                 return match result {
                     None => Ok(()),
-                    Some(_) => Err("memo.store defines no value".to_string()),
+                    Some(_) => Err("once.store defines no value".to_string()),
                 };
             }
             InstKind::ObjGet { object, field } => {

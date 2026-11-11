@@ -109,7 +109,7 @@ object CsvString {
     // The rows are taken and checked against the limits when the text is
     // first asked for, and the text is kept.
     string() is string {
-        memo let text = CsvPrinted(
+        once let text = CsvPrinted(
             rows: rows,
             dialect: dialect,
             maximum_output: maximum_output,

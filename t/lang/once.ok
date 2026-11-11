@@ -1,6 +1,6 @@
 module t v1.0.0;
 
-// t/lang: memo let keeps a value once per object (#491).
+// t/lang: once let keeps a value once per object (#491).
 import "tap" take Tap;
 import "async/atomic" take Atomic;
 
@@ -8,7 +8,7 @@ role Source {
     items() is @int;
 }
 
-// Counts how often it is read: a memo let reads its input once.
+// Counts how often it is read: a once let reads its input once.
 object Counted does Source {
     has values is @int;
     has reads is Atomic<int>;
@@ -33,18 +33,18 @@ object Sheet does Measuring {
 
     // Two slots, the second built from the first.
     total() is int {
-        memo let values = source.items();
-        memo let sum = values.reduce(0) -> acc, item { acc + item; };
+        once let values = source.items();
+        once let sum = values.reduce(0) -> acc, item { acc + item; };
         sum;
     }
 
     first() is Maybe<int> {
-        memo let found = if self.total() > 0 { Maybe.some(source.items()[0]); } else { Maybe<int>.none; };
+        once let found = if self.total() > 0 { Maybe.some(source.items()[0]); } else { Maybe<int>.none; };
         found;
     }
 
     checked() is int {
-        memo let safe = source.items().reduce(0) -> acc, item {
+        once let safe = source.items().reduce(0) -> acc, item {
             confirm item >= 0 else throw Broken.negative;
             acc + item;
         };
@@ -52,7 +52,7 @@ object Sheet does Measuring {
     }
 
     pair() is Pair {
-        memo let made = Pair(left: title, right: self.total());
+        once let made = Pair(left: title, right: self.total());
         made;
     }
 
@@ -61,7 +61,7 @@ object Sheet does Measuring {
     }
 
     async later() is int {
-        memo let tripled = self.total() * 3;
+        once let tripled = self.total() * 3;
         tripled;
     }
 }
@@ -83,7 +83,7 @@ object Keep<T> {
     Keep(:value);
 
     twice() is @T {
-        memo let both = [value, value];
+        once let both = [value, value];
         both;
     }
 }
@@ -93,7 +93,7 @@ object Key {
     Key(:name);
 
     loud() is string {
-        memo let upper = name + "!";
+        once let upper = name + "!";
         upper;
     }
 }

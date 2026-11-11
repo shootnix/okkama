@@ -43,7 +43,7 @@ object Uuid3 does Uuid, Comparing<Uuid> {
 
     // The namespace bytes and the UTF-8 name, hashed with MD5.
     bytes() is @byte {
-        memo let hashed = uuid_named(namespace.bytes(), Utf8Encoded(origin: name).bytes(), 3);
+        once let hashed = uuid_named(namespace.bytes(), Utf8Encoded(origin: name).bytes(), 3);
         hashed;
     }
 
@@ -75,7 +75,7 @@ object Uuid5 does Uuid, Comparing<Uuid> {
 
     // The namespace bytes and the UTF-8 name, hashed with SHA-1.
     bytes() is @byte {
-        memo let hashed = uuid_named(namespace.bytes(), Utf8Encoded(origin: name).bytes(), 5);
+        once let hashed = uuid_named(namespace.bytes(), Utf8Encoded(origin: name).bytes(), 5);
         hashed;
     }
 

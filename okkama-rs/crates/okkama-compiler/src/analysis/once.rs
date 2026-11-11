@@ -1,8 +1,8 @@
-//! `memo let` (#491): a kept value must not depend on effects. A value that
+//! `once let` (#491): a kept value must not depend on effects. A value that
 //! reaches the clock, the file system, the network, a process, randomness or
 //! shared changing state could be wrong on the next call, so the compiler
 //! refuses it. Calls through a role or a function value are trusted: the
-//! input answering the same each time is the contract of `memo let`.
+//! input answering the same each time is the contract of `once let`.
 
 use super::registry::Registry;
 use super::thir::{self, Block, Body, BodyOwner, Callee, Expr, ExprKind, StmtKind};
@@ -37,21 +37,21 @@ const EFFECTFUL: &[&str] = &[
 /// std modules whose objects hold shared, changing state.
 const STATEFUL: &[&str] = &["cell"];
 
-/// Report every `memo let` of `bodies` whose value depends on an effect.
+/// Report every `once let` of `bodies` whose value depends on an effect.
 pub(super) fn check(reg: &mut Registry<'_>, bodies: &[Body]) {
     for body in bodies {
         if !matches!(body.owner, BodyOwner::Method { .. }) {
             continue;
         }
         for stmt in &body.block.stmts {
-            let StmtKind::Let { value, memo: true, .. } = &stmt.kind else {
+            let StmtKind::Let { value, once: true, .. } = &stmt.kind else {
                 continue;
             };
             if let Some(reason) = effect(reg, bodies, value) {
                 reg.set_module(body.module);
                 reg.error(
                     stmt.span,
-                    format!("memo let cannot depend on effects: its value {reason}"),
+                    format!("once let cannot depend on effects: its value {reason}"),
                 );
             }
         }

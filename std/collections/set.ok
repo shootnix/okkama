@@ -127,7 +127,7 @@ object OrderedSet<T> does Set<T>, Iterating<T>, Sizing {
 
     // The values without repeats, in first-occurrence order (#491).
     hidden distinct() is List<T> {
-        memo let kept = DistinctList(values: origin).list();
+        once let kept = DistinctList(values: origin).list();
         kept;
     }
 

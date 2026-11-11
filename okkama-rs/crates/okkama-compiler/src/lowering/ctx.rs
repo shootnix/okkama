@@ -41,8 +41,8 @@ pub(super) struct Instance {
     /// Номер скрытого поля `$pending`, если конструктор отдаёт `self`
     /// значением: пока создание не завершено, действия отвергаются (#271).
     pub pending: Option<usize>,
-    /// Слоты `memo let` (#491): (action, локальная, номер поля).
-    pub memos: Vec<(usize, thir::LocalId, usize)>,
+    /// Слоты `once let` (#491): (action, локальная, номер поля).
+    pub once_slots: Vec<(usize, thir::LocalId, usize)>,
     pub span: Span,
 }
 
@@ -920,7 +920,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
                 fields: Vec::new(),
                 methods: Vec::new(),
                 pending: None,
-                memos: Vec::new(),
+                once_slots: Vec::new(),
                 destroy: None,
                 does: Vec::new(),
                 span,
@@ -1117,7 +1117,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             destroy: None,
             does: Vec::new(),
             pending: None,
-            memos: Vec::new(),
+            once_slots: Vec::new(),
             span: info.decl.map_or(span, |decl| decl.span),
         });
         self.object_map.insert((decl, args), id);
@@ -1182,8 +1182,8 @@ impl<'r, 'a> Ctx<'r, 'a> {
             instance.pending = Some(instance.fields.len());
             instance.fields.push((PENDING_FIELD.to_string(), Type::Bool, None));
         }
-        // Слоты `memo let` (#491): по скрытому полю `Maybe<T>` на каждый
-        // `memo let` верхнего уровня тел действий объявления.
+        // Слоты `once let` (#491): по скрытому полю `Maybe<T>` на каждый
+        // `once let` верхнего уровня тел действий объявления.
         let mut sites = Vec::new();
         for body in self.bodies.iter() {
             let BodyOwner::Method { object, method } = body.owner else {
@@ -1193,7 +1193,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
                 continue;
             }
             for stmt in &body.block.stmts {
-                if let thir::StmtKind::Let { local, memo: true, .. } = &stmt.kind {
+                if let thir::StmtKind::Let { local, once: true, .. } = &stmt.kind {
                     sites.push((method, *local, body.locals[local.0].ty.clone(), stmt.span));
                 }
             }
@@ -1204,16 +1204,16 @@ impl<'r, 'a> Ctx<'r, 'a> {
             let slot = self.ir_type(&maybe, span)?;
             let instance = &mut self.objects[id.0];
             let field = instance.fields.len();
-            instance.fields.push((format!("$memo{}", instance.memos.len()), slot, None));
-            instance.memos.push((method, local, field));
+            instance.fields.push((format!("$once{}", instance.once_slots.len()), slot, None));
+            instance.once_slots.push((method, local, field));
         }
         Ok(())
     }
 
-    /// Поле слота `memo let` локальной `local` действия `method` (#491).
-    pub fn memo_field(&self, object: ObjectId, method: usize, local: thir::LocalId) -> Option<usize> {
+    /// Поле слота `once let` локальной `local` действия `method` (#491).
+    pub fn once_field(&self, object: ObjectId, method: usize, local: thir::LocalId) -> Option<usize> {
         self.objects[object.0]
-            .memos
+            .once_slots
             .iter()
             .find(|(m, l, _)| *m == method && *l == local)
             .map(|(_, _, field)| *field)
@@ -1533,7 +1533,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
                         name: name.clone(),
                         ty: ty.clone(),
                         default: *default,
-                        memo: object.memos.iter().any(|(_, _, field)| *field == index),
+                        once: object.once_slots.iter().any(|(_, _, field)| *field == index),
                     })
                     .collect(),
                 does: object

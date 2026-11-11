@@ -329,7 +329,7 @@ impl State {
             .map_err(|e| invalid_state(span, e.message))
     }
 
-    pub(crate) fn object_memo(
+    pub(crate) fn object_once(
         &self,
         object: &Value,
         field: usize,
@@ -337,7 +337,7 @@ impl State {
         span: Span,
     ) -> Result<(), RuntimeError> {
         self.objects
-            .memo_store(object, field, value)
+            .once_store(object, field, value)
             .map_err(|e| invalid_state(span, e.message))
     }
 

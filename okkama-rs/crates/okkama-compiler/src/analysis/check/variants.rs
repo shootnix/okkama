@@ -124,7 +124,7 @@ impl Checker<'_, '_> {
         (
             Stmt {
                 span,
-                kind: StmtKind::Let { local, value, memo: false },
+                kind: StmtKind::Let { local, value, once: false },
             },
             Self::typed(ExprKind::Local(local), ty, span),
         )
@@ -224,7 +224,7 @@ impl Checker<'_, '_> {
                         arg.span,
                     );
                     bindings.push(Stmt {
-                        kind: StmtKind::Let { local, value, memo: false },
+                        kind: StmtKind::Let { local, value, once: false },
                         span: arg.span,
                     });
                 }

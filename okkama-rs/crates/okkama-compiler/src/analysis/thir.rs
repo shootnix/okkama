@@ -86,8 +86,8 @@ pub enum StmtKind {
     Let {
         local: LocalId,
         value: Expr,
-        /// `memo let` (#491): the value is kept in a hidden slot of `self`.
-        memo: bool,
+        /// `once let` (#491): the value is kept in a hidden slot of `self`.
+        once: bool,
     },
     Expr(Expr),
     /// `stmt if condition` (постфиксное условие, `next if`, `last if`).

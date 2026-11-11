@@ -61,7 +61,7 @@ impl Checker<'_, '_> {
     ) -> (Stmt, Flow) {
         let span = stmt.span;
         let (kind, flow) = match &stmt.kind {
-            ast::StmtKind::Let { name, ty, value, memo } => self.let_stmt(name, ty.as_ref(), value, *memo),
+            ast::StmtKind::Let { name, ty, value, once } => self.let_stmt(name, ty.as_ref(), value, *once),
             ast::StmtKind::Expr {
                 expr,
                 condition: None,
@@ -223,7 +223,7 @@ impl Checker<'_, '_> {
         name: &ast::Name,
         ty: Option<&ast::TypeExpr>,
         value: &ast::Expr,
-        memo: bool,
+        once: bool,
     ) -> (StmtKind, Flow) {
         // Locals declared from here on belong to the value itself (#491).
         let mark = self.locals.len();
@@ -267,7 +267,7 @@ impl Checker<'_, '_> {
                 StmtKind::Let {
                     local,
                     value: checked,
-                    memo: false,
+                    once: false,
                 },
                 Flow::diverged(),
             );
@@ -283,15 +283,15 @@ impl Checker<'_, '_> {
         if declared.is_none() && matches!(checked.kind, ExprKind::BoundAction { .. }) {
             self.unbounded.push(local);
         }
-        if memo {
-            self.check_memo(&checked, name.span, mark);
-            self.memo_locals.push(local);
+        if once {
+            self.check_once(&checked, name.span, mark);
+            self.once_locals.push(local);
         }
         (
             StmtKind::Let {
                 local,
                 value: checked,
-                memo,
+                once,
             },
             Flow {
                 ty: Some(ty),
@@ -682,35 +682,35 @@ pub(super) enum ElsePart<'a> {
 }
 
 impl Checker<'_, '_> {
-    /// `memo let` (#491): it lives in an object's action, and its value reads
-    /// only fields, `self`, constants and earlier `memo let`s. A parameter or
+    /// `once let` (#491): it lives in an object's action, and its value reads
+    /// only fields, `self`, constants and earlier `once let`s. A parameter or
     /// an ordinary local would make the kept value wrong for the next call.
-    fn check_memo(&mut self, value: &Expr, span: Span, mark: usize) {
+    fn check_once(&mut self, value: &Expr, span: Span, mark: usize) {
         if !matches!(self.kind, Kind::Method | Kind::Successor) {
-            self.error(span, "memo let is only allowed in an object's action");
+            self.error(span, "once let is only allowed in an object's action");
             return;
         }
         if self.body_scope != Some(self.scopes.len()) {
-            self.error(span, "memo let must be a statement of the action's body, not of a nested block");
+            self.error(span, "once let must be a statement of the action's body, not of a nested block");
             return;
         }
         for id in 0..mark.min(self.locals.len()) {
             let local = LocalId(id);
-            if self.memo_locals.contains(&local) || super::super::thir::expr_mentions(value, local) == 0 {
+            if self.once_locals.contains(&local) || super::super::thir::expr_mentions(value, local) == 0 {
                 continue;
             }
             let name = self.locals[id].name.clone();
             self.error(
                 span,
                 format!(
-                    "memo let cannot depend on \"{name}\": its value may read only fields, self, constants and other memo lets"
+                    "once let cannot depend on \"{name}\": its value may read only fields, self, constants and other once lets"
                 ),
             );
             return;
         }
         let waits = |expr: &Expr| matches!(expr.kind, ExprKind::Await(_) | ExprKind::Spawn(_));
         if let Some(at) = super::super::thir::first_in(value, &waits) {
-            self.error(at, "memo let cannot await or spawn: its value is computed once and kept");
+            self.error(at, "once let cannot await or spawn: its value is computed once and kept");
         }
     }
 }
