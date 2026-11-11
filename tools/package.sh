@@ -171,7 +171,9 @@ Description: Okkama programming language
  JVM backend), the standard library, the language server, the formatter
  and the blade project tool.
 CONTROL
-            dpkg-deb --root-owner-group --build "$ROOTFS" "$OUT/$NAME.deb" >/dev/null
+            # xz, not the zstd Ubuntu's dpkg-deb picks by default: dpkg before
+            # Debian 12 cannot read zstd members (#485).
+            dpkg-deb -Zxz --root-owner-group --build "$ROOTFS" "$OUT/$NAME.deb" >/dev/null
             echo "$OUT/$NAME.deb"
             # RPM from the same tree (#313). Release binaries are built against
             # glibc 2.17 (manylinux2014, #485): every glibc distribution since

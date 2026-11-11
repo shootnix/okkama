@@ -189,13 +189,17 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   `glibc >= 2.17` (`libc6 (>= 2.17)`). glibc stays the system's own: the
   packages do not ship it.
   - The build step prints the newest glibc symbol the binaries need. It is
-    `GLIBC_2.17` for `okkama`, `sparrow`, `blade` and `libokkama_native.so`.
+    `GLIBC_2.17` for `okkama`, `sparrow`, `blade` and `libokkama_native.so`
+    on arm64, and `GLIBC_2.16` on x86_64.
+  - The `.deb` had a second fault: Ubuntu's `dpkg-deb` compresses its
+    members with zstd, and dpkg before Debian 12 cannot read zstd, so
+    Debian 10 and 11 rejected the package. The members are xz now.
   - CI installs the `.rpm` on Rocky Linux 8 and 9, Amazon Linux 2 and 2023
     and Fedora 41, and the `.deb` on Debian 11 and 12 and Ubuntu 20.04 and
     24.04. On each it runs `okkama env`, a program on the default engine and
     on Sparrow, `sparrow --version` and `blade --version`.
   - Checked locally with an arm64 build: CentOS 7 (glibc 2.17), Rocky
-    Linux 8, Amazon Linux 2, Ubuntu 18.04 and 20.04, Debian 11.
+    Linux 8, Amazon Linux 2, Ubuntu 18.04 and 20.04, Debian 10 and 11.
 
 ## [0.5.3] — 2026-11-11
 
