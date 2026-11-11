@@ -64,10 +64,10 @@ object Http1Connecting {
         let pending = Atomic(empty);
         let taken = Event();
         let cleanup = HttpAcquisitionCleanup(
-            group,
-            pending,
-            taken,
-            Http1AcquisitionDisposal().release
+            group: group,
+            pending: pending,
+            taken: taken,
+            dispose: Http1AcquisitionDisposal().release
         );
         defer await cleanup.close();
         let opening = self.acquisition();
@@ -84,7 +84,7 @@ object Http1Connecting {
         let empty is @Future<TcpConnection> = [];
         let pending = Atomic(empty);
         let taken = Event();
-        let cleanup = HttpAcquisitionCleanup(group, pending, taken, HttpTcpDisposal().release);
+        let cleanup = HttpAcquisitionCleanup(group: group, pending: pending, taken: taken, dispose: HttpTcpDisposal().release);
         defer await cleanup.close();
         let waiting = TcpRacing(
             origins: endpoints,
@@ -97,7 +97,7 @@ object Http1Connecting {
         let tcp = await waiting;
         taken.set();
         let published = Event();
-        let anchor = HttpUnpublishedTcp(tcp, published);
+        let anchor = HttpUnpublishedTcp(origin: tcp, published: published);
         defer anchor.close();
         let route_url = route.url();
         if route_url::Parts::scheme == "https" {
@@ -113,10 +113,10 @@ object Http1Connecting {
             let tls_pending = Atomic(empty_tls);
             let tls_taken = Event();
             let tls_cleanup = HttpAcquisitionCleanup(
-                tls_group,
-                tls_pending,
-                tls_taken,
-                HttpTlsDisposal().release
+                group: tls_group,
+                pending: tls_pending,
+                taken: tls_taken,
+                dispose: HttpTlsDisposal().release
             );
             defer await tls_cleanup.close();
             let upgrading = TlsClientHandshake(origin: tcp, server: identity, policy: policy, clock: clock).connection();
@@ -124,35 +124,35 @@ object Http1Connecting {
             tls_group.start(upgrading);
             let tls = await upgrading;
             tls_taken.set();
-            let tls_anchor = HttpUnpublishedTls(tls, published);
+            let tls_anchor = HttpUnpublishedTls(origin: tls, published: published);
             defer tls_anchor.close();
             Http1TlsProtocol(tls.details()::Session::protocol).version();
             let observation = HttpResponseObservation();
             let session = Http1Session(
-                observation.reading(tls.input()),
-                observation.writing(tls.output()),
-                tls,
-                limits
+                input: observation.reading(tls.input()),
+                output: observation.writing(tls.output()),
+                owner: tls,
+                limits: limits
             );
             let acquired = Http1Acquisition(
-                session,
-                ExchangeDetails(tls.details().endpoints(), HttpVersion.http_1_1, tls.details()),
-                observation
+                session: session,
+                details: ExchangeDetails(tls.details().endpoints(), HttpVersion.http_1_1, tls.details()),
+                observation: observation
             );
             published.set();
             return acquired;
         }
         let observation = HttpResponseObservation();
         let session = Http1Session(
-            observation.reading(tcp.input()),
-            observation.writing(tcp.output()),
-            tcp,
-            limits
+            input: observation.reading(tcp.input()),
+            output: observation.writing(tcp.output()),
+            owner: tcp,
+            limits: limits
         );
         let acquired = Http1Acquisition(
-            session,
-            ExchangeDetails(tcp.endpoints(), HttpVersion.http_1_1),
-            observation
+            session: session,
+            details: ExchangeDetails(tcp.endpoints(), HttpVersion.http_1_1),
+            observation: observation
         );
         published.set();
         acquired;
@@ -303,14 +303,14 @@ object HttpUnpublishedTls {
 
 test "HTTP1 opener rejects incompatible ALPN before acquisition" {
     let route = HttpEndpointSelection(
-        ParsedUrl("https://example.test/").parts(),
-        FixedResolution([]),
-        AllEndpoints()
+        url: ParsedUrl("https://example.test/").parts(),
+        resolver: FixedResolution([]),
+        access: AllEndpoints()
     );
     let versions is Set<TlsVersion> = OrderedSet([TlsVersion.tls1_3]);
     let policy = TlsClientPolicy(trust: TrustedCertificates([]), versions: versions, protocols: ["h2"]);
     test.ok(try {
-        Http1Connecting(route, policy);
+        Http1Connecting(route: route, policy: policy);
         false;
     }
     catch e is UnsupportedHttpVersion {

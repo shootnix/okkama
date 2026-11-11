@@ -86,11 +86,11 @@ object AuthenticationChallenges {
     has origin is @AuthenticationChallenge;
 
     AuthenticationChallenges(origin is string) {
-        self.origin = AuthenticationChallengeScanning(origin, 8192, 32, 32).values();
+        self.origin = AuthenticationChallengeScanning(origin: origin, budget: 8192, challenges: 32, parameters: 32).values();
     }
 
     AuthenticationChallenges(origin is string, bytes is int, challenges is int, parameters is int) {
-        self.origin = AuthenticationChallengeScanning(origin, bytes, challenges, parameters).values();
+        self.origin = AuthenticationChallengeScanning(origin: origin, budget: bytes, challenges: challenges, parameters: parameters).values();
     }
 
     values() is @AuthenticationChallenge {
@@ -132,7 +132,7 @@ hidden object AuthenticationChallengeScanning {
     }
 
     values() is @AuthenticationChallenge {
-        let position = HttpMediaPosition(self.list(0), 0);
+        let position = HttpMediaPosition(index: self.list(0), slots: 0);
         let result is HttpMediaItems<AuthenticationChallenge> = HttpMediaItems();
         loop {
             let at = position.index();
@@ -147,7 +147,7 @@ hidden object AuthenticationChallengeScanning {
                 || (boundary < width
                 && bytes[boundary].int() == 44
                 && (boundary == scheme.end() || !self.assignment(after))) {
-                    result = result.following(AuthenticationChallenge(scheme.text(), [], ""));
+                    result = result.following(AuthenticationChallenge(scheme: scheme.text(), parameters: [], token68: ""));
                     position = position.separator(after);
                     next;
                 }
@@ -155,11 +155,11 @@ hidden object AuthenticationChallengeScanning {
                 else throw InvalidAuthenticationChallenge.because("scheme separator");
             if !self.assignment(after) {
                 let token = self.token68(after);
-                result = result.following(AuthenticationChallenge(scheme.text(), [], token.text()));
+                result = result.following(AuthenticationChallenge(scheme: scheme.text(), parameters: [], token68: token.text()));
                 position = position.separator(self.separator(self.space(token.end())));
                 next;
             }
-            let cursor = HttpMediaPosition(after, 0);
+            let cursor = HttpMediaPosition(index: after, slots: 0);
             loop {
                 confirm cursor.slots() < parameter_limit
                     else throw InvalidAuthenticationChallenge.because("parameter limit");
@@ -183,7 +183,7 @@ hidden object AuthenticationChallengeScanning {
                         else throw InvalidAuthenticationChallenge.because("duplicate parameter");
                 }
                 fields = fields.following(
-                    AuthenticationParameter(name.text(), value.text(), quoted)
+                    AuthenticationParameter(name: name.text(), value: value.text(), quoted: quoted)
                 );
                 let end = self.space(value.end());
                 if end == width {
@@ -196,14 +196,14 @@ hidden object AuthenticationChallengeScanning {
                 cursor = cursor.separator(following);
                 last if following == width || !self.assignment(following);
             }
-            result = result.following(AuthenticationChallenge(scheme.text(), fields.values(), ""));
+            result = result.following(AuthenticationChallenge(scheme: scheme.text(), parameters: fields.values(), token68: ""));
             position = position.separator(cursor.index());
         }
         result.values();
     }
 
     hidden space(start is int) is int {
-        let position = HttpMediaPosition(start, 0);
+        let position = HttpMediaPosition(index: start, slots: 0);
         loop {
             let at = position.index();
             if at == width {
@@ -227,7 +227,7 @@ hidden object AuthenticationChallengeScanning {
     }
 
     hidden list(start is int) is int {
-        let position = HttpMediaPosition(self.space(start), 0);
+        let position = HttpMediaPosition(index: self.space(start), slots: 0);
         loop {
             let at = position.index();
             last if at == width || bytes[at].int() != 44;
@@ -239,7 +239,7 @@ hidden object AuthenticationChallengeScanning {
     }
 
     hidden token(start is int) is HttpMediaScanned {
-        let position = HttpMediaPosition(start, 0);
+        let position = HttpMediaPosition(index: start, slots: 0);
         loop {
             let at = position.index();
             last if at == width || !HttpMediaOctet(bytes[at].int()).token();
@@ -247,7 +247,7 @@ hidden object AuthenticationChallengeScanning {
         }
         confirm position.index() > start
             else throw InvalidAuthenticationChallenge.because("token required");
-        HttpMediaScanned(text.slice(start, position.index()), position.index());
+        HttpMediaScanned(text: text.slice(start, position.index()), end: position.index());
     }
 
     hidden assignment(start is int) is bool {
@@ -261,7 +261,7 @@ hidden object AuthenticationChallengeScanning {
     }
 
     hidden token68(start is int) is HttpMediaScanned {
-        let position = HttpMediaPosition(start, 0);
+        let position = HttpMediaPosition(index: start, slots: 0);
         loop {
             let at = position.index();
             last if at == width
@@ -291,11 +291,11 @@ hidden object AuthenticationChallengeScanning {
         }
         confirm position.index() > start
             else throw InvalidAuthenticationChallenge.because("token68 required");
-        HttpMediaScanned(text.slice(start, position.index()), position.index());
+        HttpMediaScanned(text: text.slice(start, position.index()), end: position.index());
     }
 
     hidden quoted(start is int) is HttpMediaScanned {
-        let position = HttpMediaPosition(start + 1, 0);
+        let position = HttpMediaPosition(index: start + 1, slots: 0);
         let output = ByteBuffer();
         defer output.closing().close();
         let writer = output.writing();
@@ -305,7 +305,7 @@ hidden object AuthenticationChallengeScanning {
                 else throw InvalidAuthenticationChallenge.because("unfinished quote");
             let code = bytes[at].int();
             if code == 34 {
-                return HttpMediaScanned(Latin1Decoded(output.content().bytes()).string(), at + 1);
+                return HttpMediaScanned(text: Latin1Decoded(output.content().bytes()).string(), end: at + 1);
             }
             if code == 92 {
                 confirm at + 1 < width

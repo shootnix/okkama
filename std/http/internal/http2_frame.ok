@@ -133,7 +133,7 @@ object ParsedHttp2FrameHeader {
         let stream = Binary(bytes: origin.slice(5, 9), order: ByteOrder.big).int(
             Signedness.unsigned
         ) & 2147483647;
-        Http2FrameHeader(origin[3], origin[4], stream, length);
+        Http2FrameHeader(kind: origin[3], flags: origin[4], stream: stream, length: length);
     }
 }
 
@@ -157,7 +157,7 @@ object Http2Frame {
     }
 
     bytes() is @byte {
-        HttpWireBytes([header.bytes(), payload], 9 + payload.size()).bytes();
+        HttpWireBytes(chunks: [header.bytes(), payload], maximum: 9 + payload.size()).bytes();
     }
 }
 

@@ -424,7 +424,7 @@ object XmlRpcLimits {
     }
 
     XmlRpcLimits(depth is int, values is int, text_bytes is BigInt, binary_bytes is BigInt) {
-        XmlRpcBudget(depth, values, text_bytes, binary_bytes);
+        XmlRpcBudget(depth: depth, values: values, text_bytes: text_bytes, binary_bytes: binary_bytes);
         self.depth = depth;
         self.values = values;
         self.text_bytes = Number(text_bytes.string()).int();
@@ -439,7 +439,7 @@ object XmlRpcLimits {
         binary_bytes is BigInt,
         nil_enabled is bool
     ) {
-        XmlRpcBudget(depth, values, text_bytes, binary_bytes);
+        XmlRpcBudget(depth: depth, values: values, text_bytes: text_bytes, binary_bytes: binary_bytes);
         self.depth = depth;
         self.values = values;
         self.text_bytes = Number(text_bytes.string()).int();
@@ -565,7 +565,7 @@ hidden object XmlRpcWire {
     node(value is XmlRpcValue, depth is int) is void {
         usage.node(depth);
         self.append("<value>");
-        let event = XmlRpcNodeWriting(self, depth);
+        let event = XmlRpcNodeWriting(wire: self, depth: depth);
         value.print(event);
         event.complete();
         self.append("</value>");
@@ -748,13 +748,13 @@ hidden object XmlRpcDateText {
     string() is string {
         let date = origin.date();
         let time = origin.time();
-        XmlRpcPadded(date::Calendar::year, 4).string() + XmlRpcPadded(date::Calendar::month, 2).string() + XmlRpcPadded(
-            date::Calendar::day,
-            2
-        ).string() + "T" + XmlRpcPadded(time::Clock::hour, 2).string() + ":" + XmlRpcPadded(
-            time::Clock::minute,
-            2
-        ).string() + ":" + XmlRpcPadded(time::Clock::second, 2).string();
+        XmlRpcPadded(value: date::Calendar::year, width: 4).string() + XmlRpcPadded(value: date::Calendar::month, width: 2).string() + XmlRpcPadded(
+            value: date::Calendar::day,
+            width: 2
+        ).string() + "T" + XmlRpcPadded(value: time::Clock::hour, width: 2).string() + ":" + XmlRpcPadded(
+            value: time::Clock::minute,
+            width: 2
+        ).string() + ":" + XmlRpcPadded(value: time::Clock::second, width: 2).string();
     }
 }
 
@@ -807,8 +807,8 @@ hidden object XmlRpcResultWire {
             wire.node(
                 XmlRpcStruct(
                     [
-                        XmlRpcMember("faultCode", XmlRpcInteger(fault::Fault::code)),
-                        XmlRpcMember("faultString", XmlRpcText(fault::Fault::text))
+                        XmlRpcMember(name: "faultCode", value: XmlRpcInteger(fault::Fault::code)),
+                        XmlRpcMember(name: "faultString", value: XmlRpcText(fault::Fault::text))
                     ]
                 ),
                 1
@@ -1067,7 +1067,7 @@ hidden object XmlRpcParsing {
                             self.close("member");
                             confirm collected.value().size() < 4096
                                 else throw XmlRpcLimitExceeded.kind("container_items");
-                            collected.replace(collected.value().prefix(XmlRpcMember(name, value)));
+                            collected.replace(collected.value().prefix(XmlRpcMember(name: name, value: value)));
                         }
                         self.close("struct");
                     }
@@ -1169,7 +1169,7 @@ hidden object XmlRpcParsing {
         let ordered is @XmlRpcValue = (0..reverse.size()).map() -> index {
             reverse[reverse.size() - index - 1];
         };
-        XmlRpcCall(name, ordered);
+        XmlRpcCall(method: name, parameters: ordered);
     }
 
     response() is XmlRpcResult {
@@ -1207,7 +1207,7 @@ object ParsedXmlRpcCall {
     }
 
     call() is XmlRpcCall {
-        XmlRpcParsing(bytes, limits).call();
+        XmlRpcParsing(bytes: bytes, limits: limits).call();
     }
 }
 
@@ -1221,7 +1221,7 @@ hidden object ParsedXmlRpcResult {
     }
 
     response() is XmlRpcResult {
-        XmlRpcParsing(bytes, limits).response();
+        XmlRpcParsing(bytes: bytes, limits: limits).response();
     }
 }
 
@@ -1354,7 +1354,7 @@ hidden object XmlRpcFaultCapture does XmlRpcWriting {
     fault() is XmlRpcFault {
         confirm seen.ready() && code.value().size() == 1 && message.value().size() == 1
             else throw InvalidXmlRpc.because("fault fields");
-        XmlRpcFault(code.value()[0], message.value()[0]);
+        XmlRpcFault(code: code.value()[0], message: message.value()[0]);
     }
 
     members(values is Sequencing<XmlRpcMember>) is void {
@@ -1365,7 +1365,7 @@ hidden object XmlRpcFaultCapture does XmlRpcWriting {
             let member = values.item(index);
             confirm member.name() == "faultCode" || member.name() == "faultString"
                 else throw InvalidXmlRpc.because("unknown fault member");
-            member.value().print(XmlRpcFaultScalar(member.name(), code, message));
+            member.value().print(XmlRpcFaultScalar(name: member.name(), code: code, message: message));
         }
     }
 
@@ -1476,16 +1476,16 @@ hidden object XmlRpcClient does XmlRpcCalling {
     }
 
     async result(call is XmlRpcCall) is XmlRpcResult {
-        let bytes = XmlRpcCallWire(call, limits).bytes();
+        let bytes = XmlRpcCallWire(origin: call, limits: limits).bytes();
         let request = Request(
             method: Method.post,
             target: AbsoluteTarget(endpoint),
             headers: Headers(
                 [
-                    Header(HeaderName("Content-Type"), "text/xml; charset=utf-8"),
-                    Header(HeaderName("Accept"), "text/xml"),
-                    Header(HeaderName("User-Agent"), "Okkama-XMLRPC/1.0"),
-                    Header(HeaderName("Content-Length"), bytes.size().string())
+                    Header(name: HeaderName("Content-Type"), value: "text/xml; charset=utf-8"),
+                    Header(name: HeaderName("Accept"), value: "text/xml"),
+                    Header(name: HeaderName("User-Agent"), value: "Okkama-XMLRPC/1.0"),
+                    Header(name: HeaderName("Content-Length"), value: bytes.size().string())
                 ]
             ),
             body: ByteBody(bytes)
@@ -1498,9 +1498,9 @@ hidden object XmlRpcClient does XmlRpcCalling {
         confirm StatusCode(response::Head::status).class() == StatusClass.successful
             else throw XmlRpcHttpFailed.status(StatusCode(response::Head::status).number());
         XmlRpcMedia(response::Head::headers);
-        let body = XmlRpcBodyBytes(input, limits);
+        let body = XmlRpcBodyBytes(input: input, limits: limits);
         let pending = body.bytes();
-        ParsedXmlRpcResult(await pending, limits).response();
+        ParsedXmlRpcResult(bytes: await pending, limits: limits).response();
     }
 }
 
@@ -1596,7 +1596,7 @@ hidden object XmlRpcHandling does Handling {
             return ResponseHandling(
                 Response(
                     status: Status.method_not_allowed,
-                    headers: Headers([Header(HeaderName("Allow"), "POST")])
+                    headers: Headers([Header(name: HeaderName("Allow"), value: "POST")])
                 )
             );
         }
@@ -1612,9 +1612,9 @@ hidden object XmlRpcHandling does Handling {
         }
         let source = request.body().reading();
         defer source.close();
-        let pending = XmlRpcBodyBytes(source, limits).bytes();
+        let pending = XmlRpcBodyBytes(input: source, limits: limits).bytes();
         let calls is @XmlRpcCall = try {
-            [ParsedXmlRpcCall(await pending, limits).call()];
+            [ParsedXmlRpcCall(bytes: await pending, limits: limits).call()];
         }
         catch e is InvalidXmlRpc {
             [];
@@ -1627,14 +1627,14 @@ hidden object XmlRpcHandling does Handling {
         }
         let waiting = calling.result(calls[0]);
         let result = await waiting;
-        let bytes = XmlRpcResultWire(result, limits).bytes();
+        let bytes = XmlRpcResultWire(origin: result, limits: limits).bytes();
         ResponseHandling(
             Response(
                 status: Status.ok,
                 headers: Headers(
                     [
-                        Header(HeaderName("Content-Type"), "text/xml; charset=utf-8"),
-                        Header(HeaderName("Content-Length"), bytes.size().string())
+                        Header(name: HeaderName("Content-Type"), value: "text/xml; charset=utf-8"),
+                        Header(name: HeaderName("Content-Length"), value: bytes.size().string())
                     ]
                 ),
                 body: ByteBody(bytes)

@@ -22,8 +22,8 @@ object Proxied does Exchanging, Closing {
         policy is ClientPolicy,
         clock is Timing
     ) {
-        let routing = HttpProxyRouting(proxy, resolver, tls, policy, clock);
-        client = HttpTransport(resolver, tls, policy, clock, routing);
+        let routing = HttpProxyRouting(proxy: proxy, resolver: resolver, tls: tls, client: policy, clock: clock);
+        client = HttpTransport(resolver: resolver, tls: tls, policy: policy, clock: clock, routing: routing);
     }
 
     closed() is bool {

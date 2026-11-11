@@ -146,7 +146,7 @@ object RoutePattern {
         };
         confirm raw.size() <= 128 else throw InvalidRoute.because("pattern segment budget");
         let segments is @RouteSegment = (0..raw.size()).map() -> index {
-            RouteSegment(raw[index], index + 1 == raw.size());
+            RouteSegment(origin: raw[index], final: index + 1 == raw.size());
         };
         // Segment grammar is validated before name uniqueness, as before.
         // Capture names (including the final wildcard) share one namespace.
@@ -346,7 +346,7 @@ hidden object EmptyRouteRejection does RouteRejecting {
         ResponseHandling(
             Response(
                 status: Status.method_not_allowed,
-                headers: Headers([Header(HeaderName("Allow"), allowed.join(", "))])
+                headers: Headers([Header(name: HeaderName("Allow"), value: allowed.join(", "))])
             )
         );
     }
@@ -461,7 +461,7 @@ hidden object CheckedRouteSnapshot {
             for (1..values.size() + 1) -> index {
                 if index == values.size() || keys[index] != keys[index - 1] {
                     if index - group.index() > 1 {
-                        RoutePartitionValidation(values.slice(group.index(), index), 0).validate();
+                        RoutePartitionValidation(entries: values.slice(group.index(), index), beginning: 0).validate();
                     }
                     group = group.following(index);
                 }
@@ -485,7 +485,7 @@ hidden object CheckedRouteSnapshot {
             for (1..values.size() + 1) -> index {
                 if index == values.size() || keys[index] != keys[index - 1] {
                     if index - group.index() > 1 {
-                        RoutePartitionValidation(values.slice(group.index(), index), 1).validate();
+                        RoutePartitionValidation(entries: values.slice(group.index(), index), beginning: 1).validate();
                     }
                     group = group.following(index);
                 }
@@ -569,7 +569,7 @@ hidden object RouteConflictPartition {
                 if index - group.index() > 1 {
                     output.replace(
                         output.value().prefix(
-                            RouteConflictPartition(values.slice(group.index(), index), position + 1)
+                            RouteConflictPartition(entries: values.slice(group.index(), index), beginning: position + 1)
                         )
                     );
                 }
@@ -594,7 +594,7 @@ hidden object RoutePartitionValidation {
 
     validate() is void {
         let empty is List<RouteConflictPartition> = EmptyList();
-        let pending = Atomic(empty.prefix(RouteConflictPartition(entries, beginning)));
+        let pending = Atomic(empty.prefix(RouteConflictPartition(entries: entries, beginning: beginning)));
         defer pending.close();
         loop {
             let queue = pending.value();
@@ -773,14 +773,14 @@ test "default rejection keeps empty 400 and Allow-carrying 405 responses" {
     let methods is @string = ["GET", "HEAD"];
     test.is(
         EmptyRouteRejection().disallowed(
-            Request(method: Method.put, target: ParsedRequestTarget("/a", Method.put).target()),
+            Request(method: Method.put, target: ParsedRequestTarget(origin: "/a", method: Method.put).target()),
             methods
         ).response()::Head::headers.first(HeaderName("Allow")),
         "GET, HEAD"
     );
     test.is(
         EmptyRouteRejection().malformed(
-            Request(method: Method.get, target: ParsedRequestTarget("/a", Method.get).target()),
+            Request(method: Method.get, target: ParsedRequestTarget(origin: "/a", method: Method.get).target()),
             "x"
         ).response()::Head::status,
         Status.bad_request

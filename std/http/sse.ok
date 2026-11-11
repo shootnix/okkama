@@ -218,9 +218,9 @@ hidden object EventStreamHeaders {
     headers() is Headers {
         Headers(
             [
-                Header(HeaderName("Content-Type"), "text/event-stream; charset=utf-8"),
-                Header(HeaderName("Cache-Control"), "no-cache"),
-                Header(HeaderName("X-Accel-Buffering"), "no")
+                Header(name: HeaderName("Content-Type"), value: "text/event-stream; charset=utf-8"),
+                Header(name: HeaderName("Cache-Control"), value: "no-cache"),
+                Header(name: HeaderName("X-Accel-Buffering"), value: "no")
             ]
         );
     }
@@ -360,7 +360,7 @@ object ServerEvents {
             throw EventStreamEnded.ended;
         }
         let group is FutureGroup<ServerEvent> = FutureGroup();
-        let registration = EventRegistration(operations, EventGroup(group));
+        let registration = EventRegistration(owner: operations, operation: EventGroup(group));
         defer registration.close();
         let cleanup = EventGroup(group);
         defer await cleanup.close();
@@ -371,7 +371,7 @@ object ServerEvents {
 
     async read() is ServerEvent {
         let complete = Event();
-        let cleanup = EventReadCleanup(self, complete);
+        let cleanup = EventReadCleanup(owner: self, complete: complete);
         defer cleanup.close();
         loop {
             let line = await self.line();
@@ -385,11 +385,11 @@ object ServerEvents {
                 if accumulated != "" {
                     complete.set();
                     return ServerEvent(
-                        accumulated.slice(0, accumulated.length() - 1),
-                        selected,
-                        published_identifier.value(),
-                        retry.value(),
-                        true
+                        data: accumulated.slice(0, accumulated.length() - 1),
+                        event: selected,
+                        identifier: published_identifier.value(),
+                        milliseconds: retry.value(),
+                        identifier_supplied: true
                     );
                 }
                 next;
@@ -657,7 +657,7 @@ hidden object EventBodyInput does BodyReading {
     async bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         let group is FutureGroup<@byte> = FutureGroup();
-        let registration = EventRegistration(operations, EventGroup(group));
+        let registration = EventRegistration(owner: operations, operation: EventGroup(group));
         defer registration.close();
         let cleanup = EventGroup(group);
         defer await cleanup.close();
@@ -668,7 +668,7 @@ hidden object EventBodyInput does BodyReading {
 
     async read(limit is int) is @byte {
         let complete = Event();
-        let cleanup = EventBodyCleanup(self, complete);
+        let cleanup = EventBodyCleanup(owner: self, complete: complete);
         defer cleanup.close();
         if ended.ready() {
             complete.set();
@@ -731,7 +731,7 @@ test "event retry is explicit and negative delays clamp to zero" {
         true;
     });
     test.is(
-        ServerEvent("x", "message", "", Duration(value: (-1).rat(), unit: DurationUnit.second)).retry()::Span::seconds,
+        ServerEvent(data: "x", event: "message", identifier: "", retry: Duration(value: (-1).rat(), unit: DurationUnit.second)).retry()::Span::seconds,
         0.rat()
     );
 }

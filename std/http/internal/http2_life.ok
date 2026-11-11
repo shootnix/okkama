@@ -49,7 +49,7 @@ object Http2StreamLife {
             state;
         };
         ^state = if end_stream {
-            Http2LifeEnding(current, true).state();
+            Http2LifeEnding(origin: current, local: true).state();
         }
         else {
             current;
@@ -71,7 +71,7 @@ object Http2StreamLife {
             state;
         };
         ^state = if end_stream {
-            Http2LifeEnding(current, false).state();
+            Http2LifeEnding(origin: current, local: false).state();
         }
         else {
             current;
@@ -89,7 +89,7 @@ object Http2StreamLife {
                 "local stream already ended"
             );
         ^state = if end_stream {
-            Http2LifeEnding(state, true).state();
+            Http2LifeEnding(origin: state, local: true).state();
         }
         else {
             state;
@@ -107,7 +107,7 @@ object Http2StreamLife {
                 "remote stream already ended"
             );
         ^state = if end_stream {
-            Http2LifeEnding(state, false).state();
+            Http2LifeEnding(origin: state, local: false).state();
         }
         else {
             state;

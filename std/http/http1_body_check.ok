@@ -62,10 +62,10 @@ object Http1BodyCheck {
 
 test "body contradiction is rejected by shared pre-head validation" {
     let check = Http1BodyCheck(
-        ByteBody([1.byte()]),
-        Http1BodyPlan(Http1BodyKind.fixed, BigInt("2"), true),
-        Http1Limits(),
-        true
+        body: ByteBody([1.byte()]),
+        plan: Http1BodyPlan(Http1BodyKind.fixed, BigInt("2"), true),
+        limits: Http1Limits(),
+        request: true
     );
     test.ok(try {
         check.known();

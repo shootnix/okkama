@@ -123,7 +123,7 @@ hidden object WebSocketHandshakeFields {
         let parts = joined.split(",");
         confirm parts.size() <= 32 else throw WebSocketFailure.because("handshake token count");
         let tokens is @string = parts.map() -> part {
-            let value = Header(HeaderName(name), part).value();
+            let value = Header(name: HeaderName(name), value: part).value();
             confirm value != "" else throw WebSocketFailure.because("empty handshake token");
             try {
                 HttpToken(value);
@@ -195,28 +195,28 @@ object WebSocketClientHandshake {
         confirm nonce.size() == 16 else throw WebSocketFailure.because("nonce width");
         let key = Base64Encoded(nonce).string();
         let checked = WebSocketProtocols(protocols);
-        let fields = headers.addition(Header(HeaderName("Host"), parts.authority())).addition(
-            Header(HeaderName("Upgrade"), "websocket")
-        ).addition(Header(HeaderName("Connection"), "Upgrade")).addition(
-            Header(HeaderName("Sec-WebSocket-Key"), key)
-        ).addition(Header(HeaderName("Sec-WebSocket-Version"), "13"));
+        let fields = headers.addition(Header(name: HeaderName("Host"), value: parts.authority())).addition(
+            Header(name: HeaderName("Upgrade"), value: "websocket")
+        ).addition(Header(name: HeaderName("Connection"), value: "Upgrade")).addition(
+            Header(name: HeaderName("Sec-WebSocket-Key"), value: key)
+        ).addition(Header(name: HeaderName("Sec-WebSocket-Version"), value: "13"));
         let complete = if protocols.size() == 0 {
             fields;
         }
         else {
-            fields.addition(Header(HeaderName("Sec-WebSocket-Protocol"), checked.string()));
+            fields.addition(Header(name: HeaderName("Sec-WebSocket-Protocol"), value: checked.string()));
         };
         WebSocketHandshakeFields(complete);
         request = Request(
             method: Method.get,
             target: OriginTarget(
-                if parts::Parts::path == "" {
+                path: if parts::Parts::path == "" {
                     "/";
                 }
                 else {
                     parts::Parts::path;
                 },
-                parts::Parts::query
+                query: parts::Parts::query
             ),
             headers: complete
         );
@@ -286,9 +286,9 @@ object WebSocketServerHandshake {
             else throw WebSocketFailure.because("unoffered subprotocol");
         let fields = Headers(
             [
-                Header(HeaderName("Upgrade"), "websocket"),
-                Header(HeaderName("Connection"), "Upgrade"),
-                Header(HeaderName("Sec-WebSocket-Accept"), accept.string())
+                Header(name: HeaderName("Upgrade"), value: "websocket"),
+                Header(name: HeaderName("Connection"), value: "Upgrade"),
+                Header(name: HeaderName("Sec-WebSocket-Accept"), value: accept.string())
             ]
         );
         Response(
@@ -297,7 +297,7 @@ object WebSocketServerHandshake {
                 fields;
             }
             else {
-                fields.addition(Header(HeaderName("Sec-WebSocket-Protocol"), protocol));
+                fields.addition(Header(name: HeaderName("Sec-WebSocket-Protocol"), value: protocol));
             }
         );
     }

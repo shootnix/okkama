@@ -56,12 +56,12 @@ hidden object Http1HeadOutput {
     Http1HeadOutput();
 
     request(origin is AsyncWriting, head is Http1RequestHead, limits is Http1Limits) is Future<AsyncWriting> {
-        Http1RequestFraming(head, limits).plan();
+        Http1RequestFraming(head: head, limits: limits).plan();
         let start = MethodName(head::Head::method).string() + " " + head.target().string() + " " + Http1VersionText(
             head::Head::version
         ).string();
-        let wire = Http1HeadWire(start, head.headers(), limits).bytes();
-        ParsedHttp1RequestHead(Latin1Decoded(wire).string(), limits).head();
+        let wire = Http1HeadWire(start: start, fields: head.headers(), limits: limits).bytes();
+        ParsedHttp1RequestHead(origin: Latin1Decoded(wire).string(), limits: limits).head();
         self.writing(origin, wire);
     }
 
@@ -71,17 +71,17 @@ hidden object Http1HeadOutput {
         method is Method,
         limits is Http1Limits
     ) is Future<AsyncWriting> {
-        Http1ResponseFraming(head, method, limits).plan();
+        Http1ResponseFraming(head: head, method: method, limits: limits).plan();
         let start = Http1VersionText(head::Head::version).string() + " " + StatusCode(head::Head::status).number().string() + " " + StatusCode(
             head::Head::status
         ).phrase();
-        let wire = Http1HeadWire(start, head.headers(), limits).bytes();
-        ParsedHttp1ResponseHead(Latin1Decoded(wire).string(), limits).head();
+        let wire = Http1HeadWire(start: start, fields: head.headers(), limits: limits).bytes();
+        ParsedHttp1ResponseHead(origin: Latin1Decoded(wire).string(), limits: limits).head();
         self.writing(origin, wire);
     }
 
     writing(origin is AsyncWriting, wire is @byte) is Future<AsyncWriting> {
-        let output = Http1HeadWriteOperation(origin, ByteSnapshot(wire));
+        let output = Http1HeadWriteOperation(origin: origin, source: ByteSnapshot(wire));
         let scope is FutureScope<AsyncWriting, AsyncWriting> = FutureScope(action: output.write);
         scope.outcome();
     }
@@ -149,6 +149,6 @@ hidden object Http1HeadWire {
 }
 
 test "extension response status keeps mandatory reason separator" {
-    let wire = Http1HeadWire("HTTP/1.1 299 ", Headers([]), Http1Limits()).bytes();
+    let wire = Http1HeadWire(start: "HTTP/1.1 299 ", fields: Headers([]), limits: Http1Limits()).bytes();
     test.is(Latin1Decoded(wire).string(), "HTTP/1.1 299 \r\n\r\n");
 }

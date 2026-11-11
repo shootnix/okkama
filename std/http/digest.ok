@@ -82,22 +82,22 @@ object DigestCredentials {
                 }
             }
         };
-        let original = DigestHash(a1, challenge::Challenge::algorithm).string();
+        let original = DigestHash(origin: a1, algorithm: challenge::Challenge::algorithm).string();
         let secret = if challenge.session() {
             DigestHash(
-                DigestAscii(original + ":" + challenge::Challenge::nonce + ":" + cnonce).bytes(),
-                challenge::Challenge::algorithm
+                origin: DigestAscii(original + ":" + challenge::Challenge::nonce + ":" + cnonce).bytes(),
+                algorithm: challenge::Challenge::algorithm
             ).string();
         }
         else {
             original;
         };
-        let a2 = DigestHash(DigestAscii(method + ":" + uri).bytes(), challenge::Challenge::algorithm).string();
+        let a2 = DigestHash(origin: DigestAscii(method + ":" + uri).bytes(), algorithm: challenge::Challenge::algorithm).string();
         DigestHash(
-            DigestAscii(
+            origin: DigestAscii(
                 secret + ":" + challenge::Challenge::nonce + ":" + count + ":" + cnonce + ":auth:" + a2
             ).bytes(),
-            challenge::Challenge::algorithm
+            algorithm: challenge::Challenge::algorithm
         ).string();
     }
 
@@ -152,7 +152,7 @@ object DigestChallenge {
         confirm origin.present("qop") else throw UnsupportedDigestChallenge.unsupported;
         let options = origin.parameter("qop").split(",");
         let supported = options.reduce(false) -> found, option {
-            found || Header(HeaderName("Qop"), option).value() == "auth";
+            found || Header(name: HeaderName("Qop"), value: option).value() == "auth";
         };
         confirm supported else throw UnsupportedDigestChallenge.unsupported;
         confirm origin.present("realm") && origin.present("nonce")
@@ -194,8 +194,8 @@ object DigestChallenge {
         self.opaque = opaque;
         self.opaque_present = opaque_present;
         self.utf8 = utf8;
-        userhash = DigestFlag(origin, "userhash").bool();
-        stale = DigestFlag(origin, "stale").bool();
+        userhash = DigestFlag(origin: origin, name: "userhash").bool();
+        stale = DigestFlag(origin: origin, name: "stale").bool();
     }
 
     session() is bool {
@@ -314,7 +314,7 @@ hidden object DigestAuthorization does HttpAuthorizing {
             credentials::Credentials::username;
         };
         let user = if challenge::Challenge::userhash {
-            "username=" + DigestQuoted(DigestHash(self.identity(), challenge::Challenge::algorithm).string()).string();
+            "username=" + DigestQuoted(DigestHash(origin: self.identity(), algorithm: challenge::Challenge::algorithm).string()).string();
         }
         else {
             let ascii = try {
@@ -348,11 +348,11 @@ hidden object DigestAuthorization does HttpAuthorizing {
             else {
                 "";
             };
-        Header(HeaderName("Authorization"), value);
+        Header(name: HeaderName("Authorization"), value: value);
     }
 
     proof() is DigestServerProof {
-        DigestServerProof(self.response_digest(""), cnonce, count);
+        DigestServerProof(expected: self.response_digest(""), cnonce: cnonce, count: count);
     }
 
     hidden response_digest(method is string) is string {
@@ -514,7 +514,7 @@ hidden object DigestNonces {
                 1;
             }).map() -> index {
                 if index == previous.size() || previous[index].nonce() == nonce {
-                    DigestNonce(nonce, count);
+                    DigestNonce(nonce: nonce, count: count);
                 }
                 else {
                     previous[index];
@@ -559,7 +559,7 @@ object DigestExchanging does Exchanging {
             else throw AuthenticationConflict.conflict;
         let first = await self.once(request);
         let retained = Event();
-        let cleanup = DigestResponseCleanup(first::Exchange::response, retained);
+        let cleanup = DigestResponseCleanup(origin: first::Exchange::response, retained: retained);
         defer cleanup.close();
         if !self.eligible(first, request) || !request.body().replayable() {
             retained.set();
@@ -574,7 +574,7 @@ object DigestExchanging does Exchanging {
         cleanup.close();
         let result = await self.authorized(request, selected);
         let final = Event();
-        let final_cleanup = DigestResponseCleanup(result::Exchange::response, final);
+        let final_cleanup = DigestResponseCleanup(origin: result::Exchange::response, retained: final);
         defer final_cleanup.close();
         if self.eligible(result, request) {
             let refreshing = DigestSelection(result::Head::headers).values();
@@ -600,7 +600,7 @@ object DigestExchanging does Exchanging {
     hidden async authorized(request is Request, challenge is DigestChallenge) is ClientResponse {
         let count = counts.ticket(challenge::Challenge::nonce);
         let nonce = HexEncoded(random.bytes(16)).string();
-        let authorization = DigestAuthorization(credentials, challenge, request, nonce, count);
+        let authorization = DigestAuthorization(credentials: credentials, challenge: challenge, request: request, cnonce: nonce, count: count);
         let header = authorization.header();
         let proof = authorization.proof();
         let outgoing = Request(
@@ -612,7 +612,7 @@ object DigestExchanging does Exchanging {
         );
         let result = await self.once(outgoing);
         let retained = Event();
-        let cleanup = DigestResponseCleanup(result::Exchange::response, retained);
+        let cleanup = DigestResponseCleanup(origin: result::Exchange::response, retained: retained);
         defer cleanup.close();
         confirm result::Exchange::history.size() == 0
             && result::Exchange::request::Head::target.url().string() == request::Head::target.url().string()
@@ -622,7 +622,7 @@ object DigestExchanging does Exchanging {
         let response = Response(
             status: source::Head::status,
             headers: source::Head::headers,
-            body: DigestBody(source.body(), proof),
+            body: DigestBody(origin: source.body(), proof: proof),
             version: source::Head::version
         );
         let verified = ClientResponse(
@@ -790,7 +790,7 @@ hidden object DigestBody does BodyOpening {
     }
 
     reading() is BodyReading {
-        DigestReading(origin.reading(), proof);
+        DigestReading(origin: origin.reading(), proof: proof);
     }
 }
 

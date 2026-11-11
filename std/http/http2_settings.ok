@@ -63,19 +63,19 @@ object Http2SettingsWire {
     bytes() is @byte {
         let rows is @Http2Setting = if client {
             [
-                Http2Setting(1, origin::Settings::header_table),
-                Http2Setting(2, 0),
-                Http2Setting(3, origin::Settings::streams),
-                Http2Setting(4, origin::Settings::initial_window),
-                Http2Setting(5, origin::Settings::frame_size)
+                Http2Setting(identifier: 1, value: origin::Settings::header_table),
+                Http2Setting(identifier: 2, value: 0),
+                Http2Setting(identifier: 3, value: origin::Settings::streams),
+                Http2Setting(identifier: 4, value: origin::Settings::initial_window),
+                Http2Setting(identifier: 5, value: origin::Settings::frame_size)
             ];
         }
         else {
             [
-                Http2Setting(1, origin::Settings::header_table),
-                Http2Setting(3, origin::Settings::streams),
-                Http2Setting(4, origin::Settings::initial_window),
-                Http2Setting(5, origin::Settings::frame_size)
+                Http2Setting(identifier: 1, value: origin::Settings::header_table),
+                Http2Setting(identifier: 3, value: origin::Settings::streams),
+                Http2Setting(identifier: 4, value: origin::Settings::initial_window),
+                Http2Setting(identifier: 5, value: origin::Settings::frame_size)
             ];
         };
         let chunks is @@byte = rows.map() -> row {
@@ -112,7 +112,7 @@ hidden object Http2Setting {
 enum InvalidHttp2Settings is Error = (invalid);
 
 test "zero stream/window/table caps remain explicit" {
-    let settings = Http2Settings(0, 0, 16384, 0);
+    let settings = Http2Settings(header_table: 0, initial_window: 0, frame_size: 16384, streams: 0);
     test.ok(settings::Settings::streams == 0 && settings::Settings::initial_window == 0);
-    test.ok(Http2SettingsWire(settings, true).bytes().size() == 30);
+    test.ok(Http2SettingsWire(origin: settings, client: true).bytes().size() == 30);
 }

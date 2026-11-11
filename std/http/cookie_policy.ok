@@ -357,15 +357,15 @@ hidden object CookieAttributeReading {
         let flags is Set<CookieFlag> = OrderedSet(selected);
         // Validate prefixes against supplied Domain/Path before deriving defaults
         // or applying the PSL exact-origin exception; neither may grant __Host-.
-        Cookie(name, value, CookieAttributes(domain, path, CookieExpiry(), same_site, flags));
+        Cookie(name: name, value: value, attributes: CookieAttributes(domain, path, CookieExpiry(), same_site, flags));
         confirm !secure || endpoint::Origin::secure
             else throw InvalidCookie.because("Secure cookie requires HTTPS origin");
-        let proposed = CookieAttributes(domain, path, CookieExpiry(), same_site, flags)::Attributes::domain;
+        let proposed = CookieAttributes(domain: domain, path: path, expiry: CookieExpiry(), same_site: same_site, flags: flags)::Attributes::domain;
         let target = if proposed == "" {
             "";
         }
         else {
-            confirm CookieDomainMatch(proposed, endpoint::Origin::domain, endpoint::Origin::address).matches()
+            confirm CookieDomainMatch(cookie: proposed, request: endpoint::Origin::domain, address: endpoint::Origin::address).matches()
                 else throw InvalidCookie.because("cookie Domain does not match origin");
             if !endpoint::Origin::address && PublicSuffixList().public(HostName(proposed)) {
                 confirm proposed == endpoint::Origin::domain
@@ -400,7 +400,7 @@ hidden object CookieAttributeReading {
                     expiry;
                 }
         };
-        Cookie(name, value, CookieAttributes(target, actual_path, expires, same_site, flags));
+        Cookie(name: name, value: value, attributes: CookieAttributes(target, actual_path, expires, same_site, flags));
     }
 }
 
@@ -500,9 +500,9 @@ hidden object CookieWsp {
 test "Set-Cookie keeps explicit context and precedence" {
     let url = ParsedUrl("https://example.com/a/b").parts();
     let cookie = ParsedSetCookie(
-        "id=v; Max-Age=10; Expires=01 Jan 70 0:0:0",
-        url,
-        Instant(Duration(value: 0.rat(), unit: DurationUnit.second))
+        origin: "id=v; Max-Age=10; Expires=01 Jan 70 0:0:0",
+        url: url,
+        reference: Instant(Duration(value: 0.rat(), unit: DurationUnit.second))
     ).cookie();
     test.ok(cookie.attributes()::Attributes::path == "/a");
     test.ok(cookie.attributes().expiry().instant().unix_duration()::Span::seconds == 10.rat());

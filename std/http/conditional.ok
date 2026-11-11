@@ -98,12 +98,12 @@ object EntityTags {
     }
 
     EntityTags(values is Sequencing<EntityTag>) {
-        origin = EntityTagSnapshot(values, ConditionalLimits()).values();
+        origin = EntityTagSnapshot(values: values, limits: ConditionalLimits()).values();
         wildcard = false;
     }
 
     EntityTags(values is Sequencing<EntityTag>, limits is ConditionalLimits) {
-        origin = EntityTagSnapshot(values, limits).values();
+        origin = EntityTagSnapshot(values: values, limits: limits).values();
         wildcard = false;
     }
 
@@ -168,10 +168,10 @@ object ParsedEntityTags {
         catch UnrepresentableLatin1Character.at(offset) {
             throw InvalidEntityTag.located(offset, "field is not an octet string");
         }
-        let position = ConditionalPosition(self.space(0), 1);
+        let position = ConditionalPosition(index: self.space(0), slots: 1);
         if position.index() == origin.length() {
             let empty is @EntityTag = [];
-            return EntityTags(empty, limits);
+            return EntityTags(values: empty, limits: limits);
         }
         if origin.slice(position.index(), position.index() + 1) == "*" {
             confirm self.space(position.index() + 1) == origin.length()
@@ -204,7 +204,7 @@ object ParsedEntityTags {
             confirm quote < origin.length() && origin.slice(quote, quote + 1) == "\""
                 else throw InvalidEntityTag.located(quote, "expected quoted entity tag");
             let start = quote + 1;
-            let cursor = ConditionalPosition(start, 0);
+            let cursor = ConditionalPosition(index: start, slots: 0);
             loop {
                 confirm cursor.index() < origin.length()
                     else throw InvalidEntityTag.located(quote, "unterminated entity tag");
@@ -212,7 +212,7 @@ object ParsedEntityTags {
                 cursor = cursor.following(cursor.index() + 1);
             }
             let tag = try {
-                EntityTag(origin.slice(start, cursor.index()), weak);
+                EntityTag(value: origin.slice(start, cursor.index()), weak: weak);
             }
             catch InvalidEntityTag.located(offset, reason) {
                 throw InvalidEntityTag.located(start + offset, reason);
@@ -223,11 +223,11 @@ object ParsedEntityTags {
                 || origin.slice(position.index(), position.index() + 1) == ","
                 else throw InvalidEntityTag.located(position.index(), "expected list separator");
         }
-        EntityTags(tags.values(), limits);
+        EntityTags(values: tags.values(), limits: limits);
     }
 
     hidden space(start is int) is int {
-        let position = ConditionalPosition(start, 0);
+        let position = ConditionalPosition(index: start, slots: 0);
         loop {
             let at = position.index();
             if at == origin.length() {
@@ -357,11 +357,11 @@ object ByteRanges {
     has origin is @ByteRangeSpec;
 
     ByteRanges(origin is string) {
-        self.origin = ByteRangeParsing(origin, ConditionalLimits()).values();
+        self.origin = ByteRangeParsing(origin: origin, limits: ConditionalLimits()).values();
     }
 
     ByteRanges(origin is string, limits is ConditionalLimits) {
-        self.origin = ByteRangeParsing(origin, limits).values();
+        self.origin = ByteRangeParsing(origin: origin, limits: limits).values();
     }
 
     string() is string {
@@ -471,7 +471,7 @@ hidden object ByteRangeSpec {
             else {
                 BigInt("0");
             };
-            return [ByteRange(start, end)];
+            return [ByteRange(start: start, end: end)];
         }
         let clipped = if upper.size() == 1 && upper[0].order(end) == Order.less {
             upper[0];
@@ -479,7 +479,7 @@ hidden object ByteRangeSpec {
         else {
             end;
         };
-        [ByteRange(lower[0], clipped)];
+        [ByteRange(start: lower[0], end: clipped)];
     }
 }
 
@@ -558,8 +558,8 @@ hidden object ConditionalText {
     }
 
     string() is string {
-        let left = ConditionalPosition(0, 0);
-        let right = ConditionalPosition(origin.length(), 0);
+        let left = ConditionalPosition(index: 0, slots: 0);
+        let right = ConditionalPosition(index: origin.length(), slots: 0);
         loop {
             last if left.index() == right.index();
             let char = origin.slice(left.index(), left.index() + 1);
@@ -600,7 +600,7 @@ hidden object CoalescedByteRanges {
                 else {
                     previous.end();
                 };
-                ^reversed = reversed.tail().prefix(ByteRange(previous.start(), end));
+                ^reversed = reversed.tail().prefix(ByteRange(start: previous.start(), end: end));
             }
             else {
                 ^reversed = reversed.prefix(range);
@@ -626,8 +626,8 @@ enum InvalidEntityTag is Error = (located(offset is int, reason is string));
 enum ConditionalLimitExceeded is Error = (kind(kind is string));
 
 test "entity tag comparison respects validator strength" {
-    let strong = EntityTag("version-1", false);
-    let weak = EntityTag("version-1", true);
+    let strong = EntityTag(value: "version-1", weak: false);
+    let weak = EntityTag(value: "version-1", weak: true);
     test.is(strong.strong_matches(weak), false);
     test.is(strong.weak_matches(weak), true);
     test.is(ParsedEntityTags("\"a,b\", W/\"version-1\"").tags().weak_matches(strong), true);
@@ -636,7 +636,7 @@ test "entity tag comparison respects validator strength" {
 test "entity tag list wildcard and empty list differ" {
     test.is(EntityTags().string(), "*");
     let empty is @EntityTag = [];
-    test.is(EntityTags(empty).weak_matches(EntityTag("", false)), false);
+    test.is(EntityTags(empty).weak_matches(EntityTag(value: "", weak: false)), false);
 }
 
 test "byte range plans normalize exact inclusive intervals" {

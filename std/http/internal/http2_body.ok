@@ -87,7 +87,7 @@ object Http2BodyBuffer does BodyReading {
         configured = Event();
         needs_fields = Event();
         state = buffer.buffer_state_create([]);
-        window = Atomic(Http2FlowWindow(Http2FaultScope.stream, stream, initial));
+        window = Atomic(Http2FlowWindow(scope: Http2FaultScope.stream, stream: stream, remaining: initial));
         received = Atomic(0);
         changed = Atomic(Event());
         stopped = Event();
@@ -301,7 +301,7 @@ object Http2BodyBuffer does BodyReading {
         confirm busy.compare_and_replace(false, true)
             else throw InvalidState.because("body already has pending read");
         let complete = Event();
-        let cleanup = Http2BodyReadCleanup(self, busy, complete);
+        let cleanup = Http2BodyReadCleanup(body: self, busy: busy, complete: complete);
         defer cleanup.close();
         loop {
             self.check();
@@ -410,7 +410,7 @@ object Http2BodyLength {
         let original = Atomic("");
         for (0..values.size()) -> index {
             for values.item(index).split(",") -> text {
-                let value = Header(HeaderName("content-length"), text).value();
+                let value = Header(name: HeaderName("content-length"), value: text).value();
                 let bytes = Latin1Encoded(value).bytes();
                 confirm bytes.size() > 0 && bytes.size() <= 1024
                     else throw Http2Fault.detailed(
@@ -450,7 +450,7 @@ object Http2Trailers {
     has headers is Headers;
 
     Http2Trailers(fields is @HpackField, stream is int) {
-        let section = Http2FieldSection(fields, [], false, stream);
+        let section = Http2FieldSection(origin: fields, allowed: [], request: false, stream: stream);
         let headers = section.headers();
         let rules = HttpTrailerRules([]);
         let entries = headers.entries();

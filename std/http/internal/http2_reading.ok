@@ -13,12 +13,12 @@ object Http2FrameReading {
     has waiting is Future<Http2Frame>;
 
     Http2FrameReading(origin is AsyncReading) {
-        let input = Http2FrameInput(origin, 16384);
+        let input = Http2FrameInput(origin: origin, maximum: 16384);
         waiting = input.reading();
     }
 
     Http2FrameReading(origin is AsyncReading, maximum is int) {
-        let input = Http2FrameInput(origin, maximum);
+        let input = Http2FrameInput(origin: origin, maximum: maximum);
         waiting = input.reading();
     }
 
@@ -70,7 +70,7 @@ hidden object Http2FrameInput {
             }
             header.writing().write(ByteSnapshot(chunk));
         }
-        let parsed = ParsedHttp2FrameHeader(header.content().bytes(), maximum).header();
+        let parsed = ParsedHttp2FrameHeader(origin: header.content().bytes(), maximum: maximum).header();
         try {
             Http2HeaderRules(parsed).check();
         }
@@ -105,7 +105,7 @@ hidden object Http2FrameInput {
                 );
             payload.writing().write(ByteSnapshot(chunk));
         }
-        let frame = Http2Frame(parsed, payload.content().bytes());
+        let frame = Http2Frame(header: parsed, payload: payload.content().bytes());
         Http2FrameRules(frame).check();
         frame;
     }

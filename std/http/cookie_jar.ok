@@ -102,7 +102,7 @@ object MemoryCookieJar does CookieStoring, Closing {
                 record;
             }
         };
-        cell.replace(CookieJarState(revised, counter));
+        cell.replace(CookieJarState(records: revised, counter: counter));
         values;
     }
 
@@ -116,10 +116,10 @@ object MemoryCookieJar does CookieStoring, Closing {
         let live is @CookieRecord = current.records().filter() -> record {
             !record.expired(now);
         };
-        let update = CookieJarUpdate(live, current.counter(), limits);
+        let update = CookieJarUpdate(records: live, counter: current.counter(), limits: limits);
         for (0..fields.size()) -> index {
             let parsed is @Cookie = try {
-                [ParsedSetCookie(fields.item(index), origin, now).cookie()];
+                [ParsedSetCookie(origin: fields.item(index), url: origin, reference: now).cookie()];
             }
             catch e is InvalidCookie {
                 let empty is @Cookie = [];
@@ -140,7 +140,7 @@ object MemoryCookieJar does CookieStoring, Closing {
         let live is @CookieRecord = current.records().filter() -> record {
             !record.expired(now);
         };
-        cell.replace(CookieJarState(live, current.counter()));
+        cell.replace(CookieJarState(records: live, counter: current.counter()));
         live.size();
     }
 
@@ -165,7 +165,7 @@ object MemoryCookieJar does CookieStoring, Closing {
         let records is @CookieRecord = current.records().filter() -> record {
             record.cookie().attributes().expiry().persistent() && !record.expired(now);
         };
-        CookieStoreText(CookieJarState(records, current.counter()), limits).string();
+        CookieStoreText(state: CookieJarState(records, current.counter()), limits: limits).string();
     }
 
     restored(source is string) is ^MemoryCookieJar {
@@ -183,7 +183,7 @@ object MemoryCookieJar does CookieStoring, Closing {
             !record.expired(now);
         };
         ^limits = decoded.limits();
-        ^cell = Atomic(CookieJarState(live, decoded.state().counter()));
+        ^cell = Atomic(CookieJarState(records: live, counter: decoded.state().counter()));
     }
 }
 
@@ -320,10 +320,10 @@ hidden object CookieRecord does Comparing<CookieRecord> {
             domain == endpoint::Origin::domain;
         }
         else {
-            CookieDomainMatch(domain, endpoint::Origin::domain, endpoint::Origin::address).matches();
+            CookieDomainMatch(cookie: domain, request: endpoint::Origin::domain, address: endpoint::Origin::address).matches();
         };
         if !domain_matches
-            || !CookiePathMatch(cookie.attributes()::Attributes::path, endpoint::Origin::path).matches() {
+            || !CookiePathMatch(cookie: cookie.attributes()::Attributes::path, request: endpoint::Origin::path).matches() {
                 return false;
             }
         let site = cookie.attributes()::Attributes::same_site;
@@ -338,24 +338,24 @@ hidden object CookieRecord does Comparing<CookieRecord> {
         self.secure()
             && cookie.name() == other.cookie().name()
             && partition == other.partition()
-            && (CookieDomainMatch(domain, other.domain(), false).matches()
-            || CookieDomainMatch(other.domain(), domain, false).matches())
-            && CookiePathMatch(cookie.attributes()::Attributes::path, other.cookie().attributes()::Attributes::path).matches();
+            && (CookieDomainMatch(cookie: domain, request: other.domain(), address: false).matches()
+            || CookieDomainMatch(cookie: other.domain(), request: domain, address: false).matches())
+            && CookiePathMatch(cookie: cookie.attributes()::Attributes::path, request: other.cookie().attributes()::Attributes::path).matches();
     }
 
     accessed(index is int) is CookieRecord {
-        CookieRecord(cookie, domain, partition, host_only, created, creation_order, index);
+        CookieRecord(cookie: cookie, domain: domain, partition: partition, host_only: host_only, created: created, creation_order: creation_order, access_order: index);
     }
 
     replaced(other is CookieRecord) is CookieRecord {
         CookieRecord(
-            other.cookie(),
-            domain,
-            partition,
-            host_only,
-            created,
-            creation_order,
-            other.access_order()
+            cookie: other.cookie(),
+            domain: domain,
+            partition: partition,
+            host_only: host_only,
+            created: created,
+            creation_order: creation_order,
+            access_order: other.access_order()
         );
     }
 
@@ -397,7 +397,7 @@ hidden object CookieJarUpdate {
         let index = counter + 1;
         confirm index <= 9007199254740991
             else throw InvalidCookie.because("jar revision limit exceeded");
-        let proposed = CookieRecord(cookie, endpoint, context, now, index);
+        let proposed = CookieRecord(cookie: cookie, endpoint: endpoint, context: context, created: now, index: index);
         let overlaid = if endpoint::Origin::secure {
             false;
         }
@@ -432,13 +432,13 @@ hidden object CookieJarUpdate {
                     }
                 };
             };
-            ^records = CookieJarBounded(added, limits, proposed.domain()).records();
+            ^records = CookieJarBounded(records: added, limits: limits, domain: proposed.domain()).records();
             ^counter = index;
         }
     }
 
     state() is CookieJarState {
-        CookieJarState(records, counter);
+        CookieJarState(records: records, counter: counter);
     }
 }
 
@@ -504,7 +504,7 @@ hidden object CookieJarBounded {
             let ranked is SortedBy<CookieRecord, CookieEvictionKey> = SortedBy(
                 same,
                 (record is CookieRecord) is CookieEvictionKey {
-                    CookieEvictionKey(record, true);
+                    CookieEvictionKey(origin: record, prefer_nonsecure: true);
                 }
             );
             let remaining is @CookieRecord = records.filter() -> record {
@@ -522,7 +522,7 @@ hidden object CookieJarBounded {
         let all is SortedBy<CookieRecord, CookieEvictionKey> = SortedBy(
             kept,
             (record is CookieRecord) is CookieEvictionKey {
-                CookieEvictionKey(record, false);
+                CookieEvictionKey(origin: record, prefer_nonsecure: false);
             }
         );
         let result is @CookieRecord = kept.filter() -> record {
@@ -740,14 +740,14 @@ hidden object ParsedCookieStore {
         confirm header[2] == PublicSuffixList().version()
             else throw InvalidCookieStore.because("pinned suffix policy mismatch");
         let limits = CookieLimits(
-            CookieStoreNumber(header[3]).index(),
-            CookieStoreNumber(header[4]).index()
+            total: CookieStoreNumber(header[3]).index(),
+            per_domain: CookieStoreNumber(header[4]).index()
         );
         let counter = CookieStoreNumber(header[5]).index();
         confirm lines.size() - 2 <= limits::Limits::total
             else throw InvalidCookieStore.because("record limit exceeded");
         let records is @CookieRecord = (1..lines.size() - 1).map() -> index {
-            ParsedCookieStoreRow(lines[index], counter).record();
+            ParsedCookieStoreRow(origin: lines[index], counter: counter).record();
         };
         let identities is SortedBy<CookieRecord, string> = SortedBy(
             records,
@@ -783,7 +783,7 @@ hidden object ParsedCookieStore {
         for domains -> record {
             count = count.following(record.domain());
         }
-        CookieStoreSnapshot(CookieJarState(records, counter), limits);
+        CookieStoreSnapshot(state: CookieJarState(records, counter), limits: limits);
     }
 }
 
@@ -918,19 +918,19 @@ hidden object ParsedCookieStoreRow {
         confirm fields[4] != ""
             else throw InvalidCookieStore.because("stored absolute path required");
         let attrs = CookieAttributes(
-            if host_only {
+            domain: if host_only {
                 "";
             }
             else {
                 domain;
             },
-            fields[4],
-            CookieExpiry(expiry),
-            same_site,
-            selected
+            path: fields[4],
+            expiry: CookieExpiry(expiry),
+            same_site: same_site,
+            flags: selected
         );
-        let cookie = Cookie(fields[0], fields[1], attrs);
-        CookieRecord(cookie, domain, partition, host_only, created, creation_order, access_order);
+        let cookie = Cookie(name: fields[0], value: fields[1], attributes: attrs);
+        CookieRecord(cookie: cookie, domain: domain, partition: partition, host_only: host_only, created: created, creation_order: creation_order, access_order: access_order);
     }
 }
 

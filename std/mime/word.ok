@@ -19,15 +19,15 @@ object EncodedWord {
     has maximum is int;
 
     EncodedWord(origin is string) {
-        WordText(origin, "UTF-8", 0).validate();
+        WordText(origin: origin, charset: "UTF-8", offset: 0).validate();
         self.origin = origin;
         charset = "UTF-8";
         maximum = 1048576;
     }
 
     EncodedWord(origin is string, charset is string) {
-        let label = WordCharset(charset, 0).string();
-        WordText(origin, label, 0).validate();
+        let label = WordCharset(origin: charset, offset: 0).string();
+        WordText(origin: origin, charset: label, offset: 0).validate();
         self.origin = origin;
         self.charset = label;
         maximum = 1048576;
@@ -36,8 +36,8 @@ object EncodedWord {
     EncodedWord(origin is string, charset is string, maximum_bytes is int) {
         confirm maximum_bytes >= 0
             else throw InvalidArgument.because("encoded-word limit must be nonnegative");
-        let label = WordCharset(charset, 0).string();
-        WordText(origin, label, 0).validate();
+        let label = WordCharset(origin: charset, offset: 0).string();
+        WordText(origin: origin, charset: label, offset: 0).validate();
         self.origin = origin;
         self.charset = label;
         maximum = maximum_bytes;
@@ -102,7 +102,7 @@ object DecodedWords {
         if context == EncodedWordContext.forbidden {
             return origin;
         }
-        WordText(origin, "US-ASCII", 0).validate();
+        WordText(origin: origin, charset: "US-ASCII", offset: 0).validate();
         let output = ByteBuffer();
         defer output.closing().close();
         let writer = output.writing();
@@ -135,7 +135,7 @@ object DecodedWords {
                 writer.write(ByteSnapshot(Utf8Encoded(origin.slice(space, start)).bytes()));
             }
             let text = if encoded {
-                ParsedEncodedWord(token, start).string();
+                ParsedEncodedWord(origin: token, offset: start).string();
             }
             else {
                 token;
@@ -233,7 +233,7 @@ hidden object ParsedEncodedWord {
         let fields = origin.split("?");
         confirm fields.size() == 5 && fields[0] == "=" && fields[4] == "=" && fields[3] != ""
             else throw InvalidEncodedWord.located(offset, "malformed word delimiters");
-        let charset = WordCharset(fields[1], offset).string();
+        let charset = WordCharset(origin: fields[1], offset: offset).string();
         let encoding = fields[2];
         let begin = fields[1].length() + fields[2].length() + 4;
         let bytes is @byte = if encoding == "B" || encoding == "b" {
@@ -247,7 +247,7 @@ hidden object ParsedEncodedWord {
         else {
             confirm encoding == "Q" || encoding == "q"
                 else throw InvalidEncodedWord.located(offset, "unsupported word encoding");
-            QWordBytes(fields[3], offset + begin).bytes();
+            QWordBytes(origin: fields[3], offset: offset + begin).bytes();
         };
         let text = try {
             Utf8Decoded(bytes).string();
@@ -256,7 +256,7 @@ hidden object ParsedEncodedWord {
             throw InvalidEncodedWord.located(offset, "invalid UTF-8 word");
         };
         try {
-            WordText(text, charset, 0).validate();
+            WordText(origin: text, charset: charset, offset: 0).validate();
         }
         catch failure is InvalidEncodedWord {
             throw InvalidEncodedWord.located(offset, "invalid decoded word text");
@@ -318,7 +318,7 @@ test "encoded-word UTF-8 round trip" {
 
 test "encoded words obey explicit context and reject malformed Q escapes" {
     test.is(
-        DecodedWords("=?UTF-8?Q?text?=", EncodedWordContext.forbidden).string(),
+        DecodedWords(origin: "=?UTF-8?Q?text?=", context: EncodedWordContext.forbidden).string(),
         "=?UTF-8?Q?text?="
     );
     let offset = try {

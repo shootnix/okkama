@@ -86,14 +86,14 @@ object ParsedHttp1Trailers {
         confirm latin1_representable_prefix(origin) == origin.length()
             else throw InvalidHttpMessage.because("trailer section requires octets");
         if origin == "\r\n" {
-            return Headers([], HeaderLimits(limits::Limits::fields, limits::Limits::head_bytes + limits::Limits::fields));
+            return Headers(entries: [], limits: HeaderLimits(limits::Limits::fields, limits::Limits::head_bytes + limits::Limits::fields));
         }
         let ending = origin.split("\r\n\r\n");
         confirm ending.size() == 2 && ending[1] == ""
             else throw InvalidHttpMessage.because("exact trailer CRLF framing required");
         let lines = origin.split("\r\n");
         confirm lines.size() - 2 <= limits::Limits::fields else throw Http1LimitExceeded.kind("fields");
-        let names = Http1FramingFields(head, HttpVersion.http_1_1, limits).list("Connection");
+        let names = Http1FramingFields(origin: head, version: HttpVersion.http_1_1, limits: limits).list("Connection");
         let nominated is @string = names.map() -> value {
             try {
                 HeaderName(value).lowercase();
@@ -111,7 +111,7 @@ object ParsedHttp1Trailers {
             confirm pieces.size() >= 2 && pieces[0] != ""
                 else throw InvalidHttpMessage.because("trailer field colon required");
             let entry = try {
-                Header(HeaderName(pieces[0]), line.slice(pieces[0].length() + 1, line.length()));
+                Header(name: HeaderName(pieces[0]), value: line.slice(pieces[0].length() + 1, line.length()));
             }
             catch e is InvalidHeader {
                 throw InvalidHttpMessage.because("invalid trailer field syntax");
@@ -119,11 +119,11 @@ object ParsedHttp1Trailers {
             rules.check(entry);
             entry;
         };
-        Headers(entries, HeaderLimits(limits::Limits::fields, limits::Limits::head_bytes + limits::Limits::fields));
+        Headers(entries: entries, limits: HeaderLimits(limits::Limits::fields, limits::Limits::head_bytes + limits::Limits::fields));
     }
 }
 
 test "zero chunk and empty trailers have explicit boundaries" {
     test.is(ParsedHttp1ChunkLine("0; ignored=\"safe;value\"").size().string(), "0");
-    test.is(ParsedHttp1Trailers("\r\n", Headers([])).trailers().entries().size(), 0);
+    test.is(ParsedHttp1Trailers(origin: "\r\n", head: Headers([])).trailers().entries().size(), 0);
 }

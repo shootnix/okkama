@@ -12,7 +12,7 @@ object ContentDisposition {
 
     ContentDisposition(origin is string) {
         let parsed = try {
-            MimeScanning(origin, 256, 1048576).disposition();
+            MimeScanning(origin: origin, maximum_parameters: 256, maximum_bytes: 1048576).disposition();
         }
         catch InvalidMediaType.located(offset, reason) {
             throw InvalidContentDisposition.located(offset, reason);
@@ -33,7 +33,7 @@ object ContentDisposition {
 
     ContentDisposition(origin is string, maximum_parameters is int, maximum_bytes is int) {
         let parsed = try {
-            MimeScanning(origin, maximum_parameters, maximum_bytes).disposition();
+            MimeScanning(origin: origin, maximum_parameters: maximum_parameters, maximum_bytes: maximum_bytes).disposition();
         }
         catch InvalidMediaType.located(offset, reason) {
             throw InvalidContentDisposition.located(offset, reason);

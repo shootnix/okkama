@@ -27,7 +27,7 @@ object ReplyHeaders {
             && lowered != "content-length"
             && lowered != "transfer-encoding"
             else throw InvalidReply.because(name + " is owned by the reply itself");
-        let header = Header(HeaderName(name), value);
+        let header = Header(name: HeaderName(name), value: value);
         let following is @Header = (0..origin.size() + 1).map() -> index {
             if index < origin.size() {
                 origin[index];
@@ -59,12 +59,12 @@ object ReplyResponse {
 
     response() is Response {
         let fixed is @Header = [
-            Header(HeaderName("Content-Type"), media),
-            Header(HeaderName("Content-Length"), content.size().string())
+            Header(name: HeaderName("Content-Type"), value: media),
+            Header(name: HeaderName("Content-Length"), value: content.size().string())
         ];
         Response(
             status: StatusCode(code).status(),
-            headers: Headers(ReplyFields(fixed, extra).entries()),
+            headers: Headers(ReplyFields(fixed: fixed, extra: extra).entries()),
             body: ByteBody(content)
         );
     }
@@ -87,11 +87,11 @@ object EmptyReplyResponse {
             bare;
         }
         else {
-            [Header(HeaderName("Content-Length"), "0")];
+            [Header(name: HeaderName("Content-Length"), value: "0")];
         };
         Response(
             status: StatusCode(code).status(),
-            headers: Headers(ReplyFields(fixed, extra).entries())
+            headers: Headers(ReplyFields(fixed: fixed, extra: extra).entries())
         );
     }
 }

@@ -44,12 +44,12 @@ object HttpProxyTunnel {
     }
 
     async ready() is bool {
-        let request = HttpConnectRequest(target, fields).request();
-        let sending = Http1RequestWriting(output, request, limits).output();
+        let request = HttpConnectRequest(origin: target, proxy_fields: fields).request();
+        let sending = Http1RequestWriting(origin: output, request: request, limits: limits).output();
         await sending;
-        let information = HttpMediaPosition(0, 0);
+        let information = HttpMediaPosition(index: 0, slots: 0);
         loop {
-            let pending = Http1ResponseHeadReading(input, [], limits, 1).head();
+            let pending = Http1ResponseHeadReading(origin: input, prefix: [], limits: limits, chunk_bytes: 1).head();
             let received = await pending;
             let status = received.head()::Head::status;
             let class = StatusCode(status).class();

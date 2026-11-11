@@ -65,7 +65,7 @@ object Http2ConnectionOutput does Http2ControlQueuing {
             confirm following <= byte_limit - bytes.value() else throw Http2OutputLimit.exceeded;
             following;
         };
-        let ticket = Http2OutputTicket(frames, amount, starting);
+        let ticket = Http2OutputTicket(frames: frames, amount: amount, starting: starting);
         let old = jobs.value();
         let following is @Http2OutputTicket = (0..old.size() + 1).map() -> index {
             if index < old.size() {
@@ -106,7 +106,7 @@ object Http2ConnectionOutput does Http2ControlQueuing {
     ) is Http2OutputTicket {
         confirm !stopping.ready() else throw Http2OutputStopped.stopped;
         confirm count.value() < maximum else throw Http2OutputLimit.exceeded;
-        let encoded = Http2EncodedHeaderFrames(stream, fields, budget, fragment, end_stream);
+        let encoded = Http2EncodedHeaderFrames(stream: stream, fields: fields, budget: budget, fragment: fragment, end_stream: end_stream);
         self.submit(encoded.frames(), starting);
     }
 

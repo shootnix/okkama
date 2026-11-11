@@ -40,7 +40,7 @@ object Text does HandlingResult {
     }
 
     response() is Response {
-        ReplyResponse(code, "text/plain; charset=utf-8", Utf8Encoded(content).bytes(), extra).response();
+        ReplyResponse(status: code, media: "text/plain; charset=utf-8", content: Utf8Encoded(content).bytes(), extra: extra).response();
     }
 
     websocket() is WebSocketUpgrade {
@@ -76,7 +76,7 @@ object Html does HandlingResult {
     }
 
     response() is Response {
-        ReplyResponse(code, "text/html; charset=utf-8", Utf8Encoded(content).bytes(), extra).response();
+        ReplyResponse(status: code, media: "text/html; charset=utf-8", content: Utf8Encoded(content).bytes(), extra: extra).response();
     }
 
     websocket() is WebSocketUpgrade {
@@ -112,7 +112,7 @@ object JsonReply does HandlingResult {
     }
 
     response() is Response {
-        ReplyResponse(code, "application/json", Utf8Encoded(content.string()).bytes(), extra).response();
+        ReplyResponse(status: code, media: "application/json", content: Utf8Encoded(content.string()).bytes(), extra: extra).response();
     }
 
     websocket() is WebSocketUpgrade {
@@ -148,7 +148,7 @@ object Created does HandlingResult {
     }
 
     response() is Response {
-        ReplyResponse(201, "application/json", Utf8Encoded(content.string()).bytes(), extra).response();
+        ReplyResponse(status: 201, media: "application/json", content: Utf8Encoded(content.string()).bytes(), extra: extra).response();
     }
 
     websocket() is WebSocketUpgrade {
@@ -180,7 +180,7 @@ object NoContent does HandlingResult {
     }
 
     response() is Response {
-        EmptyReplyResponse(204, extra).response();
+        EmptyReplyResponse(status: 204, extra: extra).response();
     }
 
     websocket() is WebSocketUpgrade {
@@ -217,7 +217,7 @@ object Redirect does HandlingResult {
     }
 
     response() is Response {
-        EmptyReplyResponse(code, extra).response();
+        EmptyReplyResponse(status: code, extra: extra).response();
     }
 
     websocket() is WebSocketUpgrade {
@@ -230,12 +230,12 @@ object Redirect does HandlingResult {
 }
 
 test "text reply declares its representation and keeps added fields" {
-    let response = Text(200, "Привет").header("X-Trace", "t1").response();
+    let response = Text(status: 200, text: "Привет").header("X-Trace", "t1").response();
     test.is(response::Head::status, Status.ok);
     test.is(response::Head::headers.entries().size(), 3);
     test.is(response.body().length().string(), "12");
     test.is(NoContent().response()::Head::headers.entries().size(), 0);
     test.throws(InvalidReply) {
-        Redirect(200, "/x");
+        Redirect(status: 200, location: "/x");
     };
 }

@@ -265,8 +265,8 @@ object StaticFiles does Handling {
                     status: Status.method_not_allowed,
                     headers: Headers(
                         [
-                            Header(HeaderName("Allow"), "GET, HEAD"),
-                            Header(HeaderName("Date"), HttpDate(now).string())
+                            Header(name: HeaderName("Allow"), value: "GET, HEAD"),
+                            Header(name: HeaderName("Date"), value: HttpDate(now).string())
                         ]
                     )
                 )
@@ -290,7 +290,7 @@ object StaticFiles does Handling {
         catch e is NoAcceptableValue {
             Response(
                 status: Status.not_acceptable,
-                headers: Headers([Header(HeaderName("Vary"), "Accept-Encoding")])
+                headers: Headers([Header(name: HeaderName("Vary"), value: "Accept-Encoding")])
             );
         }
         catch FileError.not_found(_), FileError.invalid_operation(_), FileError.permission_denied(_), FileError.invalid_text(
@@ -299,8 +299,8 @@ object StaticFiles does Handling {
             Response(status: Status.not_found);
         };
         let headers = ReplacedHeader(
-            response::Head::headers,
-            Header(HeaderName("Date"), HttpDate(now).string())
+            origin: response::Head::headers,
+            entry: Header(HeaderName("Date"), HttpDate(now).string())
         ).headers();
         ResponseHandling(
             Response(
@@ -316,13 +316,13 @@ object StaticFiles does Handling {
         let path = StaticPath(request);
         let coordinates = path.segments();
         let opened = root.entry(coordinates);
-        let owned = StaticSelection(opened, "");
+        let owned = StaticSelection(entry: opened, coding: "");
         defer owned.close_unclaimed();
         let metadata = opened.stat();
         if metadata::Shape::kind == FileKind.directory && !path.slash() {
             return Response(
                 status: Status.permanent_redirect,
-                headers: Headers([Header(HeaderName("Location"), path.redirect())])
+                headers: Headers([Header(name: HeaderName("Location"), value: path.redirect())])
             );
         }
         let chosen = self.index(coordinates, metadata::Shape::kind == FileKind.directory);
@@ -368,7 +368,7 @@ object StaticFiles does Handling {
             let preferences = StaticEncoding(request::Head::headers).codings();
             let rows is @StaticRepresentation = (0..companions.size() + 1).map() -> index {
                 if index == 0 {
-                    StaticRepresentation(source, "identity");
+                    StaticRepresentation(entry: source, coding: "identity");
                 }
                 else {
                     companions[index - 1];
@@ -396,7 +396,7 @@ object StaticFiles does Handling {
         confirm facts::Shape::size >= 0 && facts::Shape::size <= 9007199254740991
             else throw InvalidStaticPolicy.because("file size exceeds exact offsets");
         let size = facts::Shape::size;
-        let tag = StaticValidator(facts, owned.coding()).tag();
+        let tag = StaticValidator(facts: facts, coding: owned.coding()).tag();
         let modified = facts.times().modification();
         let date = HttpDate(if modified.order(now) == Order.greater {
             now;
@@ -407,50 +407,50 @@ object StaticFiles does Handling {
         let headers = Atomic(
             Headers(
                 [
-                    Header(HeaderName("Content-Type"), type),
-                    Header(HeaderName("Content-Length"), size.string()),
-                    Header(HeaderName("ETag"), tag.string()),
-                    Header(HeaderName("Last-Modified"), date.string()),
-                    Header(HeaderName("Accept-Ranges"), "bytes")
+                    Header(name: HeaderName("Content-Type"), value: type),
+                    Header(name: HeaderName("Content-Length"), value: size.string()),
+                    Header(name: HeaderName("ETag"), value: tag.string()),
+                    Header(name: HeaderName("Last-Modified"), value: date.string()),
+                    Header(name: HeaderName("Accept-Ranges"), value: "bytes")
                 ]
             )
         );
         if policy::Settings::precompressed {
             headers.replace(
-                ReplacedHeader(headers.value(), Header(HeaderName("Vary"), "Accept-Encoding")).headers()
+                ReplacedHeader(origin: headers.value(), entry: Header(HeaderName("Vary"), "Accept-Encoding")).headers()
             );
         }
         if owned.coding() != "" {
             headers.replace(
                 ReplacedHeader(
-                    headers.value(),
-                    Header(HeaderName("Content-Encoding"), owned.coding())
+                    origin: headers.value(),
+                    entry: Header(HeaderName("Content-Encoding"), owned.coding())
                 ).headers()
             );
         }
-        let decision = StaticPreconditions(request::Head::headers, tag, date, now).status();
+        let decision = StaticPreconditions(head: request::Head::headers, tag: tag, date: date, reference: now).status();
         if decision == 304 {
             return Response(status: Status.not_modified, headers: headers.value());
         }
         if decision == 412 {
             return Response(
                 status: Status.precondition_failed,
-                headers: Headers([Header(HeaderName("ETag"), tag.string())])
+                headers: Headers([Header(name: HeaderName("ETag"), value: tag.string())])
             );
         }
         if request::Head::method == Method.head {
             return Response(status: Status.ok, headers: headers.value());
         }
-        let range = StaticRanges(request::Head::headers, size, policy::Settings::ranges);
+        let range = StaticRanges(head: request::Head::headers, size: size, maximum: policy::Settings::ranges);
         let ranges = range.values();
-        let apply = range.present() && StaticIfRange(request::Head::headers, tag, date).allowed();
+        let apply = range.present() && StaticIfRange(head: request::Head::headers, tag: tag, date: date).allowed();
         if apply && ranges.size() == 0 {
             return Response(
                 status: Status.range_not_satisfiable,
                 headers: Headers(
                     [
-                        Header(HeaderName("Content-Range"), "bytes */" + size.string()),
-                        Header(HeaderName("ETag"), tag.string())
+                        Header(name: HeaderName("Content-Range"), value: "bytes */" + size.string()),
+                        Header(name: HeaderName("ETag"), value: tag.string())
                     ]
                 )
             );
@@ -467,8 +467,8 @@ object StaticFiles does Handling {
                 let part = ranges[0];
                 headers.replace(
                     ReplacedHeader(
-                        headers.value(),
-                        Header(
+                        origin: headers.value(),
+                        entry: Header(
                             HeaderName("Content-Range"),
                             "bytes " + part.string() + "/" + size.string()
                         )
@@ -476,8 +476,8 @@ object StaticFiles does Handling {
                 );
                 pieces = pieces.following(
                     StaticPiece(
-                        Number(part.start().string()).int(),
-                        Number(part.size().string()).int()
+                        start: Number(part.start().string()).int(),
+                        size: Number(part.size().string()).int()
                     )
                 );
             }
@@ -485,8 +485,8 @@ object StaticFiles does Handling {
                 let boundary = "okkama-" + HexEncoded(random.bytes(24)).string();
                 headers.replace(
                     ReplacedHeader(
-                        headers.value(),
-                        Header(
+                        origin: headers.value(),
+                        entry: Header(
                             HeaderName("Content-Type"),
                             "multipart/byteranges; boundary=" + boundary
                         )
@@ -500,8 +500,8 @@ object StaticFiles does Handling {
                     );
                     pieces = pieces.following(
                         StaticPiece(
-                            Number(part.start().string()).int(),
-                            Number(part.size().string()).int()
+                            start: Number(part.start().string()).int(),
+                            size: Number(part.size().string()).int()
                         )
                     );
                     pieces = pieces.following(StaticPiece("\r\n"));
@@ -510,13 +510,13 @@ object StaticFiles does Handling {
             }
         }
         else {
-            pieces = pieces.following(StaticPiece(0, size));
+            pieces = pieces.following(StaticPiece(start: 0, size: size));
         }
-        let body = StaticBody(file, pieces.values());
+        let body = StaticBody(entry: file, pieces: pieces.values());
         headers.replace(
             ReplacedHeader(
-                headers.value(),
-                Header(HeaderName("Content-Length"), body.length().string())
+                origin: headers.value(),
+                entry: Header(HeaderName("Content-Length"), body.length().string())
             ).headers()
         );
         owned.claim();
@@ -546,7 +546,7 @@ object StaticFiles does Handling {
             if candidates.size() == 1 {
                 let candidate = candidates[0];
                 if candidate.stat()::Shape::kind == FileKind.file {
-                    return [StaticIndexFile(candidate, name)];
+                    return [StaticIndexFile(entry: candidate, name: name)];
                 }
                 candidate.close();
             }
@@ -605,7 +605,7 @@ object StaticFiles does Handling {
                 let metadata = candidate.stat();
                 if metadata::Shape::kind == FileKind.file
                     && metadata.times().modification().order(facts.times().modification()) == Order.equal {
-                        return [StaticRepresentation(candidate, coding)];
+                        return [StaticRepresentation(entry: candidate, coding: coding)];
                     }
                 candidate.close();
             }
@@ -639,9 +639,9 @@ object StaticFiles does Handling {
         let bytes = Utf8Encoded(text.value() + "</ul>").bytes();
         let headers = Headers(
             [
-                Header(HeaderName("Content-Type"), "text/html; charset=utf-8"),
-                Header(HeaderName("Content-Length"), bytes.size().string()),
-                Header(HeaderName("Cache-Control"), "no-store")
+                Header(name: HeaderName("Content-Type"), value: "text/html; charset=utf-8"),
+                Header(name: HeaderName("Content-Length"), value: bytes.size().string()),
+                Header(name: HeaderName("Cache-Control"), value: "no-store")
             ]
         );
         if request::Head::method == Method.head {
@@ -783,7 +783,7 @@ hidden object StaticValidator {
 
     StaticValidator(facts is FileStat, coding is string) {
         let value = facts.identity()::Identity::device.string() + "-" + facts.identity().inode().string() + "-" + facts::Shape::size.string() + "-" + facts.times().modification().unix_duration()::Span::seconds.int().string() + "-" + facts.times().change().unix_duration()::Span::seconds.int().string() + "-" + coding;
-        tag = EntityTag(value, true);
+        tag = EntityTag(value: value, weak: true);
     }
 
     tag() is EntityTag {
@@ -818,7 +818,7 @@ hidden object StaticPreconditions {
             let fields = head.values(HeaderName("If-Unmodified-Since"));
             if fields.size() == 1 {
                 let valid is @HttpDate = try {
-                    [HttpDate(ParsedHttpDate(fields.item(0), reference).instant())];
+                    [HttpDate(ParsedHttpDate(origin: fields.item(0), reference: reference).instant())];
                 }
                 catch e is InvalidHttpDate {
                     [];
@@ -841,7 +841,7 @@ hidden object StaticPreconditions {
             let fields = head.values(HeaderName("If-Modified-Since"));
             if fields.size() == 1 {
                 let valid is @HttpDate = try {
-                    [HttpDate(ParsedHttpDate(fields.item(0), reference).instant())];
+                    [HttpDate(ParsedHttpDate(origin: fields.item(0), reference: reference).instant())];
                 }
                 catch e is InvalidHttpDate {
                     [];
@@ -880,7 +880,7 @@ hidden object StaticRanges {
         let accepted = Atomic(false);
         if fields.size() == 1 && maximum > 0 {
             let parsed is @ByteRange = try {
-                let entries = ByteRanges(fields.item(0), ConditionalLimits(8192, maximum)).ranges(
+                let entries = ByteRanges(origin: fields.item(0), limits: ConditionalLimits(8192, maximum)).ranges(
                     BigInt(size.string())
                 );
                 accepted.replace(true);
@@ -958,7 +958,7 @@ hidden object StaticBody does BodyOpening {
                 else throw InvalidStaticPolicy.because("response byte budget");
             used + piece.size();
         };
-        reading = StaticBodyReading(entry, pieces);
+        reading = StaticBodyReading(entry: entry, pieces: pieces);
         opened = Atomic(false);
     }
 
@@ -1020,7 +1020,7 @@ hidden object StaticBodyReading does BodyReading {
             return [];
         }
         let complete = Event();
-        let cleanup = StaticReadCleanup(self, complete);
+        let cleanup = StaticReadCleanup(source: self, complete: complete);
         defer cleanup.close();
         loop {
             if index.value() == pieces.size() {
@@ -1094,7 +1094,7 @@ test "static policy defaults bound ranges and disable optional file modes" {
     test.is(policy::Settings::ranges, 16);
     test.is(policy::Settings::names, 1024);
     test.ok(try {
-        StaticPolicy(["../outside"], false, false);
+        StaticPolicy(indexes: ["../outside"], listing: false, precompressed: false);
         false;
     }
     catch e is InvalidStaticPolicy {

@@ -123,7 +123,7 @@ object HpackDecoder {
     }
 
     decoded(origin is @byte, budget is HpackBudget) is HpackDecodedBlock {
-        HpackBlockInput(self, origin, budget).block();
+        HpackBlockInput(context: self, origin: origin, budget: budget).block();
     }
 }
 
@@ -183,7 +183,7 @@ hidden object HpackBlockInput {
                         0,
                         "misplaced HPACK size update"
                     );
-                let parsed = ParsedHpackInteger(origin, offset.offset(), 5);
+                let parsed = ParsedHpackInteger(origin: origin, offset: offset.offset(), prefix: 5);
                 confirm parsed.int() <= context.allowed_limit()
                     else throw Http2Fault.detailed(
                         Http2FaultScope.connection,
@@ -214,13 +214,13 @@ hidden object HpackBlockInput {
                     "missing HPACK table reduction"
                 );
             if (first & 128) != 0 {
-                let parsed = ParsedHpackInteger(origin, offset.offset(), 7);
-                let field = HpackLookup(fixed, table, parsed.int()).field();
+                let parsed = ParsedHpackInteger(origin: origin, offset: offset.offset(), prefix: 7);
+                let field = HpackLookup(fixed: fixed, dynamic: table, index: parsed.int()).field();
                 progress = progress.added(field, budget);
                 offset = offset.following(parsed.following());
             }
             else {
-                let literal = HpackLiteral(origin, offset.offset(), fixed, table);
+                let literal = HpackLiteral(origin: origin, offset: offset.offset(), fixed: fixed, table: table);
                 let field = literal.field();
                 if literal.incremental() {
                     table = table.added(field);
@@ -237,8 +237,8 @@ hidden object HpackBlockInput {
                 "missing HPACK table reduction"
             );
         HpackDecodedBlock(
-            progress.fields(),
-            HpackDecoder(fixed, table, context.allowed_limit(), required.value())
+            fields: progress.fields(),
+            context: HpackDecoder(fixed, table, context.allowed_limit(), required.value())
         );
     }
 }
@@ -317,21 +317,21 @@ hidden object HpackLiteral {
         else {
             4;
         };
-        let indexed = ParsedHpackInteger(origin, offset, prefix);
+        let indexed = ParsedHpackInteger(origin: origin, offset: offset, prefix: prefix);
         let position = HpackReadOffset(indexed.following());
         let name = if indexed.int() == 0 {
-            let literal = ParsedHpackString(origin, position.offset(), 1048576);
+            let literal = ParsedHpackString(origin: origin, offset: position.offset(), maximum: 1048576);
             position = position.following(literal.following());
             Latin1Decoded(literal.bytes()).string();
         }
         else {
-            HpackLookup(fixed, table, indexed.int()).field().name();
+            HpackLookup(fixed: fixed, dynamic: table, index: indexed.int()).field().name();
         };
-        let value = ParsedHpackString(origin, position.offset(), 1048576);
+        let value = ParsedHpackString(origin: origin, offset: position.offset(), maximum: 1048576);
         field = HpackField(
-            name,
-            Latin1Decoded(value.bytes()).string(),
-            !incremental && (first & 240) == 16
+            name: name,
+            value: Latin1Decoded(value.bytes()).string(),
+            sensitive: !incremental && (first & 240) == 16
         );
         following = value.following();
     }
@@ -390,11 +390,11 @@ object HpackEncoded {
                 fixed.exact(field);
             };
             if exact > 0 {
-                output.append(HpackInteger(exact, 7, 128).bytes());
+                output.append(HpackInteger(value: exact, prefix: 7, pattern: 128).bytes());
             }
             else {
                 let named = fixed.named(field.name());
-                output.append(HpackInteger(named, 4, if sensitive {
+                output.append(HpackInteger(value: named, prefix: 4, pattern: if sensitive {
                     16;
                 }
                 else {
@@ -453,7 +453,7 @@ hidden object HpackOutput {
 }
 
 test "stateless encoder preserves never-indexed metadata" {
-    let wire = HpackEncoded([HpackField("cookie", "a=1")], HpackBudget()).bytes();
+    let wire = HpackEncoded(origin: [HpackField("cookie", "a=1")], budget: HpackBudget()).bytes();
     let decoded = HpackDecoder().decoded(wire, HpackBudget());
     test.ok(decoded.fields()[0].sensitive());
     test.is(decoded.context().table().size(), 0);

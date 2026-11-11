@@ -29,11 +29,11 @@ object CacheControl {
     has directives is @CacheDirective;
 
     CacheControl(headers is Headers) {
-        directives = CacheControlFields(headers, 8192, 128).values();
+        directives = CacheControlFields(headers: headers, budget: 8192, entries: 128).values();
     }
 
     CacheControl(headers is Headers, bytes is int, entries is int) {
-        directives = CacheControlFields(headers, bytes, entries).values();
+        directives = CacheControlFields(headers: headers, budget: bytes, entries: entries).values();
     }
 
     present(name is string) is bool {
@@ -115,9 +115,9 @@ hidden object CacheControlFields {
             total + text.length();
         };
         let parsed is HttpMediaItems<CacheDirective> = HttpMediaItems();
-        let count = HttpMediaPosition(0, 0);
+        let count = HttpMediaPosition(index: 0, slots: 0);
         for fields -> text {
-            for CacheControlScanning(text, entries).values() -> item {
+            for CacheControlScanning(text: text, limit: entries).values() -> item {
                 confirm count.slots() < entries
                     else throw InvalidCacheControl.because("directive limit");
                 parsed = parsed.following(item);
@@ -146,7 +146,7 @@ hidden object CacheControlScanning {
     }
 
     values() is @CacheDirective {
-        let position = HttpMediaPosition(self.list(0), 0);
+        let position = HttpMediaPosition(index: self.list(0), slots: 0);
         let parsed is HttpMediaItems<CacheDirective> = HttpMediaItems();
         loop {
             let at = position.index();
@@ -156,7 +156,7 @@ hidden object CacheControlScanning {
             let name = self.token(at);
             let end = self.space(name.end());
             if end == width || bytes[end].int() == 44 {
-                parsed = parsed.following(CacheDirective(name.text(), []));
+                parsed = parsed.following(CacheDirective(name: name.text(), arguments: []));
                 position = position.separator(self.list(end));
             }
             else {
@@ -173,7 +173,7 @@ hidden object CacheControlScanning {
                 let following = self.space(value.end());
                 confirm following == width || bytes[following].int() == 44
                     else throw InvalidCacheControl.because("directive separator");
-                parsed = parsed.following(CacheDirective(name.text(), [value.text()]));
+                parsed = parsed.following(CacheDirective(name: name.text(), arguments: [value.text()]));
                 position = position.separator(self.list(following));
             }
         }
@@ -181,7 +181,7 @@ hidden object CacheControlScanning {
     }
 
     hidden space(start is int) is int {
-        let cursor = HttpMediaPosition(start, 0);
+        let cursor = HttpMediaPosition(index: start, slots: 0);
         loop {
             let at = cursor.index();
             last if at == width || (bytes[at].int() != 32 && bytes[at].int() != 9);
@@ -191,7 +191,7 @@ hidden object CacheControlScanning {
     }
 
     hidden list(start is int) is int {
-        let cursor = HttpMediaPosition(self.space(start), 0);
+        let cursor = HttpMediaPosition(index: self.space(start), slots: 0);
         loop {
             let at = cursor.index();
             last if at == width || bytes[at].int() != 44;
@@ -203,18 +203,18 @@ hidden object CacheControlScanning {
     }
 
     hidden token(start is int) is HttpMediaScanned {
-        let cursor = HttpMediaPosition(start, 0);
+        let cursor = HttpMediaPosition(index: start, slots: 0);
         loop {
             let at = cursor.index();
             last if at == width || !HttpMediaOctet(bytes[at].int()).token();
             cursor = cursor.following(at + 1);
         }
         confirm cursor.index() > start else throw InvalidCacheControl.because("token required");
-        HttpMediaScanned(text.slice(start, cursor.index()), cursor.index());
+        HttpMediaScanned(text: text.slice(start, cursor.index()), end: cursor.index());
     }
 
     hidden quoted(start is int) is HttpMediaScanned {
-        let cursor = HttpMediaPosition(start + 1, 0);
+        let cursor = HttpMediaPosition(index: start + 1, slots: 0);
         let output = ByteBuffer();
         defer output.closing().close();
         let writer = output.writing();
@@ -223,7 +223,7 @@ hidden object CacheControlScanning {
             confirm at < width else throw InvalidCacheControl.because("unfinished quote");
             let code = bytes[at].int();
             if code == 34 {
-                return HttpMediaScanned(Latin1Decoded(output.content().bytes()).string(), at + 1);
+                return HttpMediaScanned(text: Latin1Decoded(output.content().bytes()).string(), end: at + 1);
             }
             if code == 92 {
                 confirm at + 1 < width else throw InvalidCacheControl.because("unfinished escape");
@@ -241,6 +241,6 @@ hidden object CacheControlScanning {
 enum InvalidCacheControl is Error = (because(reason is string));
 
 test "cache control keeps duplicate freshness directives" {
-    let c = CacheControl(Headers([Header(HeaderName("Cache-Control"), "max-age=60,max-age=60")]));
+    let c = CacheControl(Headers([Header(name: HeaderName("Cache-Control"), value: "max-age=60,max-age=60")]));
     test.is(c.count("max-age"), 2);
 }

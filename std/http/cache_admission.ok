@@ -58,7 +58,7 @@ object CacheAdmissions {
         for current -> slot {
             if slot.key() == key {
                 slot.join();
-                return CacheAdmissionBooking(self, slot);
+                return CacheAdmissionBooking(origin: self, slot: slot);
             }
         }
         confirm current.size() < 256 else throw CacheAdmissionExceeded.exceeded;
@@ -72,7 +72,7 @@ object CacheAdmissions {
             }
         };
         entries.replace(revised);
-        CacheAdmissionBooking(self, slot);
+        CacheAdmissionBooking(origin: self, slot: slot);
     }
 
     released(slot is CacheAdmissionSlot) is void {
@@ -112,7 +112,7 @@ object CacheAdmissionSlot {
     }
 
     publish(entry is CachedHttpEntry, revision is int) is void {
-        published.replace([CacheValidatedEntry(entry, revision)]);
+        published.replace([CacheValidatedEntry(entry: entry, revision: revision)]);
         publication.replace(publication.value() + 1);
     }
 

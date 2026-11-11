@@ -65,10 +65,10 @@ object CachedHttpEntry {
         self.result = ClientResponse(
             request: snapshot,
             response: Response(
-                original::Head::status,
-                sanitized,
-                CachedByteBody(bytes, trailers),
-                original::Head::version
+                status: original::Head::status,
+                headers: sanitized,
+                body: CachedByteBody(bytes, trailers),
+                version: original::Head::version
             ),
             details: result::Exchange::details
         );
@@ -80,9 +80,9 @@ object CachedHttpEntry {
             fields;
         }
         else {
-            fields.addition(Header(HeaderName("Date"), HttpDate(timing.received()).string()));
+            fields.addition(Header(name: HeaderName("Date"), value: HttpDate(timing.received()).string()));
         };
-        freshness = CacheFreshness(dated, timing);
+        freshness = CacheFreshness(headers: dated, timing: timing);
         vary = CacheVary(fields).names();
     }
 
@@ -116,7 +116,7 @@ object CachedHttpEntry {
     dated() is Instant {
         let fields = result::Head::headers;
         try {
-            ParsedHttpDate(fields.first(HeaderName("Date")), timing.received()).instant();
+            ParsedHttpDate(origin: fields.first(HeaderName("Date")), reference: timing.received()).instant();
         }
         catch e is Error {
             timing.received();
@@ -145,12 +145,12 @@ object CachedHttpEntry {
         // are conservative even without origin Vary metadata.
         let partitions is @HeaderName = [HeaderName("Authorization"), HeaderName("Cookie")];
         for partitions -> name {
-            if !CacheFieldMatching(request::Head::headers, other::Head::headers, name).matches() {
+            if !CacheFieldMatching(left: request::Head::headers, right: other::Head::headers, name: name).matches() {
                 return false;
             }
         }
         for vary -> name {
-            if !CacheFieldMatching(request::Head::headers, other::Head::headers, name).matches() {
+            if !CacheFieldMatching(left: request::Head::headers, right: other::Head::headers, name: name).matches() {
                 return false;
             }
         }
@@ -182,25 +182,25 @@ object CachedHttpEntry {
     response(request is Request, now is MonotonicInstant) is ClientResponse {
         let current = freshness.age(now)::Span::seconds.int();
         let fields = ReplacedHeader(
-            result::Head::headers,
-            Header(HeaderName("Age"), current.string())
+            origin: result::Head::headers,
+            entry: Header(HeaderName("Age"), current.string())
         ).headers();
         let dated = if fields.membership(HeaderName("Date")) {
             fields;
         }
         else {
-            fields.addition(Header(HeaderName("Date"), HttpDate(timing.received()).string()));
+            fields.addition(Header(name: HeaderName("Date"), value: HttpDate(timing.received()).string()));
         };
         let original = result::Exchange::response;
         let body is BodyOpening = if request::Head::method == Method.head {
             EmptyBody();
         }
         else {
-            CachedByteBody(bytes, trailers);
+            CachedByteBody(bytes: bytes, trailers: trailers);
         };
         ClientResponse(
             request: request,
-            response: Response(original::Head::status, dated, body, original::Head::version),
+            response: Response(status: original::Head::status, headers: dated, body: body, version: original::Head::version),
             details: result::Exchange::details
         );
     }
@@ -285,7 +285,7 @@ object MemoryHttpCache does ResponseCaching, Closing {
         let kept is @CachedHttpEntry = old.filter() -> item {
             !item.same(entry);
         };
-        let count = CacheStorageSelection(kept, maximum - amount).offset();
+        let count = CacheStorageSelection(entries: kept, budget: maximum - amount).offset();
         let revised is @CachedHttpEntry = (count..kept.size() + 1).map() -> index {
             if index < kept.size() {
                 kept[index];
@@ -345,7 +345,7 @@ hidden object CacheStorageSelection {
         let total = entries.reduce(0) -> sum, item {
             sum + item.cost();
         };
-        let state = CacheStoragePosition(0, total);
+        let state = CacheStoragePosition(offset: 0, cost: total);
         loop {
             last if state.cost() <= budget;
             state = state.following(entries[state.offset()].cost());
@@ -385,11 +385,11 @@ hidden object CacheVary {
 
     CacheVary(headers is Headers) {
         let parsed is HttpMediaItems<HeaderName> = HttpMediaItems();
-        let count = CacheStoragePosition(0, 0);
+        let count = CacheStoragePosition(offset: 0, cost: 0);
         for headers.values(HeaderName("Vary")) -> field {
             confirm field.length() <= 8192 else throw InvalidCachedResponse.invalid;
             for field.split(",") -> raw {
-                let name = Header(HeaderName("Vary"), raw).value();
+                let name = Header(name: HeaderName("Vary"), value: raw).value();
                 if name != "" {
                     confirm count.offset() < 128 else throw InvalidCachedResponse.invalid;
                     let checked = HeaderName(name);
@@ -483,7 +483,7 @@ hidden object CachedByteBody does BodyOpening {
 
     reading() is BodyReading {
         let input = ByteBodyInput(bytes);
-        StreamBodyReading(input, input, trailers);
+        StreamBodyReading(input: input, owner: input, trailers: trailers);
     }
 }
 
@@ -517,10 +517,10 @@ object CacheStoredHeaders {
 
     CacheStoredHeaders(origin is Headers) {
         let names is HttpMediaItems<HeaderName> = HttpMediaItems();
-        let count = CacheStoragePosition(0, 0);
+        let count = CacheStoragePosition(offset: 0, cost: 0);
         for origin.values(HeaderName("Connection")) -> field {
             for field.split(",") -> raw {
-                let value = Header(HeaderName("Connection"), raw).value();
+                let value = Header(name: HeaderName("Connection"), value: raw).value();
                 confirm value != "" && count.offset() < 128
                     else throw InvalidCachedResponse.invalid;
                 names = names.following(HeaderName(value));
@@ -530,7 +530,7 @@ object CacheStoredHeaders {
         let present is @HeaderName = names.values().filter() -> name {
             origin.membership(name);
         };
-        let clean = HeadersWithout(origin, present).headers();
+        let clean = HeadersWithout(origin: origin, names: present).headers();
         let excluded is @HeaderName = [
             HeaderName("Connection"),
             HeaderName("Proxy-Connection"),
@@ -545,7 +545,7 @@ object CacheStoredHeaders {
         let selected is @HeaderName = excluded.filter() -> name {
             clean.membership(name);
         };
-        result = HeadersWithout(clean, selected).headers();
+        result = HeadersWithout(origin: clean, names: selected).headers();
     }
 
     headers() is Headers {
@@ -581,7 +581,7 @@ hidden object CacheAdmissionControl {
         ];
         for headers.values(HeaderName("Connection")) -> field {
             for field.split(",") -> raw {
-                let name = HeaderName(Header(HeaderName("Connection"), raw).value()).lowercase();
+                let name = HeaderName(Header(name: HeaderName("Connection"), value: raw).value()).lowercase();
                 let nominated = metadata.reduce(false) -> found, item {
                     found || item == name;
                 };

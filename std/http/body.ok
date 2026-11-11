@@ -43,7 +43,7 @@ object ByteBody does BodyOpening {
 
     reading() is BodyReading {
         let source = ByteBodyInput(origin);
-        StreamBodyReading(source, source, Headers([]));
+        StreamBodyReading(input: source, owner: source, trailers: Headers([]));
     }
 }
 
@@ -222,7 +222,7 @@ object StreamBodyReading does BodyReading, AsyncReading, Closing {
         }
         let complete = Event();
         let group is FutureGroup<@byte> = FutureGroup();
-        let cleanup = BodyReadCleanup(self, complete, pending, group);
+        let cleanup = BodyReadCleanup(origin: self, complete: complete, pending: pending, group: group);
         defer await cleanup.close();
         let waiting = input.bytes(limit);
         pending.replace([waiting]);

@@ -67,7 +67,7 @@ object OriginTarget does RequestTarget {
             else throw InvalidRequestTarget.because(
                 "origin coordinates cannot contain scheme, authority or fragment"
             );
-        let checked = OriginTarget(origin::Parts::path, origin::Parts::query);
+        let checked = OriginTarget(path: origin::Parts::path, query: origin::Parts::query);
         path = checked.path();
         query = checked.query();
     }
@@ -275,7 +275,7 @@ object ParsedRequestTarget {
                         else {
                             Maybe.some(origin.slice(parts[0].length() + 1, origin.length()));
                         };
-                        OriginTarget(parts[0], query);
+                        OriginTarget(path: parts[0], query: query);
                     }
                     else {
                         AbsoluteTarget(ParsedUrl(origin).parts());
@@ -286,7 +286,7 @@ object ParsedRequestTarget {
         catch e is InvalidUrl {
             throw InvalidRequestTarget.because("invalid target URL coordinates");
         };
-        confirm RequestTargetMethod(method, parsed.kind()).valid()
+        confirm RequestTargetMethod(method: method, kind: parsed.kind()).valid()
             else throw InvalidRequestTarget.because("method does not permit target form");
         parsed;
     }
@@ -307,7 +307,7 @@ object RequestTargetSnapshot {
             else throw InvalidRequestTarget.because("target byte limit exceeded");
         let checked is RequestTarget = match origin.kind() {
             case RequestTargetKind.origin {
-                OriginTarget(origin.path(), origin.query());
+                OriginTarget(path: origin.path(), query: origin.query());
             }
             case RequestTargetKind.absolute {
                 AbsoluteTarget(origin.url());
@@ -336,8 +336,8 @@ enum WrongRequestTargetKind is Error = (detailed(
 enum InvalidRequestTarget is Error = (because(reason is string));
 
 test "origin-form keeps double slash path and explicit query" {
-    let target = ParsedRequestTarget("//a/b?", Method.get).target();
+    let target = ParsedRequestTarget(origin: "//a/b?", method: Method.get).target();
     test.ok(target.kind() == RequestTargetKind.origin && target.path() == "//a/b");
     test.ok(target.query() == Maybe.some("") && target.string() == "//a/b?");
-    test.ok(!RequestTargetMethod(Method.get, RequestTargetKind.asterisk).valid());
+    test.ok(!RequestTargetMethod(method: Method.get, kind: RequestTargetKind.asterisk).valid());
 }

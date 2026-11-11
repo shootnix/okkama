@@ -47,7 +47,7 @@ object Http2Session does Closing {
         peer is Http2PeerSettings,
         limits is HttpLimits
     ) {
-        state = Http2SessionState(input, output, owner, local, peer, limits);
+        state = Http2SessionState(input: input, output: output, owner: owner, local: local, peer: peer, limits: limits);
     }
 
     closed() is bool {
@@ -67,7 +67,7 @@ object Http2Session does Closing {
     }
 
     async exchange(request is Request) is Http2Exchange {
-        let operation = Http2SessionExchange(state, request);
+        let operation = Http2SessionExchange(owner: state, request: request);
         let pending = operation.run();
         await pending;
     }
@@ -163,9 +163,9 @@ hidden object Http2SessionState does Http2ReceivingEvents, Http2BodyEvents {
         self.local = local;
         self.peer = Atomic(peer);
         self.limits = limits;
-        self.output = Http2ConnectionOutput(output, 256, 1048576);
-        sender = Http2DataScheduler(self.output, peer, 100);
-        flow = Http2ReceiveFlow(self.output, 100);
+        self.output = Http2ConnectionOutput(origin: output, maximum: 256, byte_limit: 1048576);
+        sender = Http2DataScheduler(output: self.output, peer: peer, maximum: 100);
+        flow = Http2ReceiveFlow(controls: self.output, maximum: 100);
         ids = Atomic(Http2ClientStreamIds());
         let empty is @Http2StreamHolding = [];
         entries = Atomic(empty);
@@ -207,7 +207,7 @@ hidden object Http2SessionState does Http2ReceivingEvents, Http2BodyEvents {
         else {
             local;
         };
-        HpackBudget(local, decoded, 128);
+        HpackBudget(encoded: local, decoded: decoded, fields: 128);
     }
 
     check_fields(fields is @HpackField, stream is int) is void {
@@ -245,12 +245,12 @@ hidden object Http2SessionState does Http2ReceivingEvents, Http2BodyEvents {
 
     async reading() is bool {
         let reader = Http2ConnectionInput(
-            input,
-            self,
-            output,
-            local,
-            peer.value(),
-            HpackBudget(limits.header_bytes(), limits.header_bytes(), 128)
+            origin: input,
+            receiver: self,
+            controls: output,
+            local: local,
+            peer: peer.value(),
+            budget: HpackBudget(limits.header_bytes(), limits.header_bytes(), 128)
         );
         let pending = reader.run();
         try {
@@ -331,7 +331,7 @@ hidden object Http2SessionState does Http2ReceivingEvents, Http2BodyEvents {
                 && entries.value().size() < 100
                 && entries.value().size() < capacity {
                     let stream = ids.value().next_stream();
-                    let entry = Http2StreamHolding(self, stream, request, known, declared);
+                    let entry = Http2StreamHolding(owner: self, stream: stream, request: request, known: known, declared: declared);
                     ids.replace(ids.value().allocated());
                     sender.open(stream);
                     flow.register(stream);
@@ -398,7 +398,7 @@ hidden object Http2SessionState does Http2ReceivingEvents, Http2BodyEvents {
         for self.matching(stream) -> entry {
             entry.fail(failure);
             if entry.started() && !self.closed() {
-                output.frame(Http2ResetFrame(stream, 8).frame());
+                output.frame(Http2ResetFrame(stream: stream, code: 8).frame());
             }
         }
     }
@@ -624,7 +624,7 @@ hidden object Http2StreamHolding {
     async run() is bool {
         let signal = Http2HoldingSignal(ready);
         defer signal.close();
-        let entry = Http2StreamEntry(owner, stream, request, known, declared);
+        let entry = Http2StreamEntry(owner: owner, stream: stream, request: request, known: known, declared: declared);
         let cleanup = Http2HoldingCleanup(entry);
         defer await cleanup.close();
         origin.replace([entry]);
@@ -711,7 +711,7 @@ hidden object Http2SessionExchange {
     }
 
     async run() is Http2Exchange {
-        let declared = Http2BodyLength(request::Head::headers, 1).known();
+        let declared = Http2BodyLength(origin: request::Head::headers, stream: 1).known();
         let known is @BigInt = try {
             [request.body().length()];
         }
@@ -730,24 +730,24 @@ hidden object Http2SessionExchange {
                     );
             }
         }
-        Http2RequestFields(request, 1);
+        Http2RequestFields(request: request, stream: 1);
         owner.start();
         let position = owner.queue();
-        let dequeue = Http2AdmissionCleanup(owner, position);
+        let dequeue = Http2AdmissionCleanup(owner: owner, position: position);
         defer dequeue.close();
         let waiting = owner.admit(position, request, known, declared);
         let holder = await waiting;
         let offered = holder.entry();
         let entry = await offered;
         let published = Event();
-        let release = Http2ExchangeCleanup(entry, published);
+        let release = Http2ExchangeCleanup(entry: entry, published: published);
         defer await release.close();
         await entry.ready().wait();
         entry.check();
         let head = entry.head();
         let opening = Http2SessionBody(entry);
         let response = head.response(opening);
-        let result = Http2Exchange(request, response, entry.information(), entry);
+        let result = Http2Exchange(request: request, response: response, information: entry.information(), lease: entry);
         if entry.buffer().wire_ended()
             && entry.lengths().size() == 1
             && entry.lengths()[0].sign() == 0 {
@@ -789,12 +789,12 @@ hidden object Http2StreamEntry does Closing {
         self.known = known;
         self.declared = declared;
         let incoming = Http2BodyBuffer(
-            stream,
-            owner.local_window(),
-            owner.body_limit(),
-            owner,
-            [],
-            false
+            stream: stream,
+            initial: owner.local_window(),
+            maximum: owner.body_limit(),
+            events: owner,
+            expected: [],
+            empty: false
         );
         incoming.require_fields();
         body = incoming;
@@ -929,13 +929,13 @@ hidden object Http2StreamEntry does Closing {
                     stream,
                     "trailing fields must end stream"
                 );
-            let trailers = Http2Trailers(block.fields(), stream).headers();
+            let trailers = Http2Trailers(fields: block.fields(), stream: stream).headers();
             body.ending(trailers);
             life.replace(life.value().remote_headers(true));
             return;
         }
-        let head = ParsedHttp2Response(block.fields(), stream, block.end_stream());
-        let known = Http2BodyLength(head.headers(), stream).known();
+        let head = ParsedHttp2Response(origin: block.fields(), stream: stream, end_stream: block.end_stream());
+        let known = Http2BodyLength(origin: head.headers(), stream: stream).known();
         let status = head.status();
         let class = StatusCode(status).class();
         if class == StatusClass.informational {
@@ -993,8 +993,8 @@ hidden object Http2StreamEntry does Closing {
     async write() is bool {
         try {
             let zero = known.size() == 1 && known[0].sign() == 0;
-            let starting = Http2RequestHeaderStart(self, zero);
-            let fields = Http2RequestFields(request, stream).fields();
+            let starting = Http2RequestHeaderStart(entry: self, ending: zero);
+            let fields = Http2RequestFields(request: request, stream: stream).fields();
             owner.check_fields(fields, stream);
             let head = owner.output().headers(stream, fields, owner.budget(), 16384, zero, starting);
             ticket.replace([head]);
@@ -1011,12 +1011,12 @@ hidden object Http2StreamEntry does Closing {
                 return true;
             }
             let producer = Http2RequestBodySending(
-                self,
-                owner.sender(),
-                request.body(),
-                declared,
-                known,
-                owner.body_limit()
+                entry: self,
+                sender: owner.sender(),
+                opening: request.body(),
+                declared: declared,
+                known: known,
+                maximum: owner.body_limit()
             );
             let body = producer.run();
             await body;

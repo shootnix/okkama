@@ -35,11 +35,11 @@ object HttpResponseObservation {
     }
 
     reading(origin is AsyncReading) is AsyncReading {
-        HttpObservedReading(origin, self);
+        HttpObservedReading(origin: origin, observation: self);
     }
 
     writing(origin is AsyncWriting) is AsyncWriting {
-        HttpObservedWriting(origin, self);
+        HttpObservedWriting(origin: origin, observation: self);
     }
 }
 

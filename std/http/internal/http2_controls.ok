@@ -44,8 +44,8 @@ object Http2ResetFrame {
 
     frame() is Http2Frame {
         Http2Frame(
-            Http2FrameHeader(3.byte(), 0.byte(), stream, 4),
-            IntegerBytes(value: code, size: 4, signedness: Signedness.unsigned, order: ByteOrder.big).bytes()
+            header: Http2FrameHeader(3.byte(), 0.byte(), stream, 4),
+            payload: IntegerBytes(value: code, size: 4, signedness: Signedness.unsigned, order: ByteOrder.big).bytes()
         );
     }
 }
@@ -66,7 +66,7 @@ object Http2PingReply {
             empty;
         }
         else {
-            [Http2Frame(Http2FrameHeader(6.byte(), 1.byte(), 0, 8), origin.payload())];
+            [Http2Frame(header: Http2FrameHeader(6.byte(), 1.byte(), 0, 8), payload: origin.payload())];
         }
     }
 }
@@ -129,8 +129,8 @@ object Http2GoAwayFrame {
     frame() is Http2Frame {
         let id = IntegerBytes(value: last_stream, size: 4, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
         let status = IntegerBytes(value: code, size: 4, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
-        let payload = HttpWireBytes([id, status, debug], 8 + debug.size()).bytes();
-        Http2Frame(Http2FrameHeader(7.byte(), 0.byte(), 0, payload.size()), payload);
+        let payload = HttpWireBytes(chunks: [id, status, debug], maximum: 8 + debug.size()).bytes();
+        Http2Frame(header: Http2FrameHeader(7.byte(), 0.byte(), 0, payload.size()), payload: payload);
     }
 }
 
@@ -178,7 +178,7 @@ object Http2GoAwayProgress {
 
 test "GOAWAY observation permanently stops new streams" {
     let progress = Http2GoAwayProgress();
-    progress = progress.received(Http2GoAway(Http2GoAwayFrame(1, 0, []).frame()));
+    progress = progress.received(Http2GoAway(Http2GoAwayFrame(last_stream: 1, code: 0, debug: []).frame()));
     test.ok(progress.stopping());
     test.is(progress.last_stream(), 1);
 }

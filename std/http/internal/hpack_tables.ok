@@ -78,7 +78,7 @@ object HpackStaticTable {
         let names = fixed.names();
         let values = fixed.values();
         let rows is @HpackField = (0..61).map() -> index {
-            HpackField(names[index], values[index]);
+            HpackField(name: names[index], value: values[index]);
         };
         entries = rows;
     }
@@ -149,7 +149,7 @@ object HpackDynamicTable {
 
     resized(capacity is int) is ^HpackDynamicTable {
         HpackTableBound(capacity);
-        let retained = HpackKept(entries, capacity);
+        let retained = HpackKept(origin: entries, maximum: capacity);
         ^entries = retained.entries();
         ^used = retained.used();
         ^capacity = capacity;
@@ -163,7 +163,7 @@ object HpackDynamicTable {
             ^used = 0;
         }
         else {
-            let retained = HpackKept(entries, capacity - size);
+            let retained = HpackKept(origin: entries, maximum: capacity - size);
             let rows = retained.entries();
             let following is @HpackField = (0..rows.size() + 1).map() -> index {
                 if index == 0 {

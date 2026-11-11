@@ -51,7 +51,7 @@ object BasicCredentials {
                 password[index - prefix.size()];
             }
         };
-        Header(HeaderName("Authorization"), "Basic " + Base64Encoded(value).string());
+        Header(name: HeaderName("Authorization"), value: "Basic " + Base64Encoded(value).string());
     }
 
     cap Credentials {
@@ -117,7 +117,7 @@ object BearerAuthorization does HttpAuthorizing {
                 };
         };
         confirm valid else throw InvalidAuthentication.because("bearer token syntax");
-        Header(HeaderName("Authorization"), "Bearer " + AsciiDecoded(octets).string());
+        Header(name: HeaderName("Authorization"), value: "Bearer " + AsciiDecoded(octets).string());
     }
 }
 
@@ -125,7 +125,7 @@ object BasicExchanging does Exchanging {
     has scoped is ScopedAuthorization;
 
     BasicExchanging(origin is Exchanging, scope is UrlParts, credentials is BasicCredentials) {
-        scoped = ScopedAuthorization(origin, scope, BasicAuthorization(credentials));
+        scoped = ScopedAuthorization(origin: origin, scope: scope, authorization: BasicAuthorization(credentials));
     }
 
     async response(request is Request) is ClientResponse {
@@ -137,7 +137,7 @@ object BearerExchanging does Exchanging {
     has scoped is ScopedAuthorization;
 
     BearerExchanging(origin is Exchanging, scope is UrlParts, authorization is BearerAuthorization) {
-        scoped = ScopedAuthorization(origin, scope, authorization);
+        scoped = ScopedAuthorization(origin: origin, scope: scope, authorization: authorization);
     }
 
     async response(request is Request) is ClientResponse {
@@ -155,7 +155,7 @@ object AuthenticationScope {
             else throw InvalidAuthentication.because(
                 "HTTPS scope without query or fragment required"
             );
-        HttpEndpointSelection(origin, FixedResolution([]), AllEndpoints());
+        HttpEndpointSelection(url: origin, resolver: FixedResolution([]), access: AllEndpoints());
         key = HttpClientKey(origin).string();
         let normalized = origin.normalized();
         let canonical = normalized::Parts::path;

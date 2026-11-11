@@ -109,7 +109,7 @@ object ParsedWebSocketClose {
         catch e is InvalidUtf8 {
             throw WebSocketFailure.because("invalid close UTF-8");
         };
-        WebSocketClose(code, reason);
+        WebSocketClose(code: code, reason: reason);
         WebSocketClosed.detailed(code, reason);
     }
 }

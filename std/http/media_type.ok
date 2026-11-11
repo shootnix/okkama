@@ -85,11 +85,11 @@ object HttpMediaParameters {
     has origin is @HttpMediaParameter;
 
     HttpMediaParameters(values is Sequencing<HttpMediaParameter>) {
-        origin = HttpMediaSnapshot(values, 128).values();
+        origin = HttpMediaSnapshot(values: values, maximum: 128).values();
     }
 
     HttpMediaParameters(values is Sequencing<HttpMediaParameter>, maximum is int) {
-        origin = HttpMediaSnapshot(values, maximum).values();
+        origin = HttpMediaSnapshot(values: values, maximum: maximum).values();
     }
 
     entries() is Sequencing<HttpMediaParameter> {
@@ -119,7 +119,7 @@ object HttpMediaParameters {
         let key = self.key(name);
         // Parameter ordering compares names only. The valid probe value is not
         // a missing-value sentinel and is never observed as a field parameter.
-        let at = LowerBound(origin: origin, item: HttpMediaParameter(key, "probe")).index();
+        let at = LowerBound(origin: origin, item: HttpMediaParameter(name: key, value: "probe")).index();
         if at < origin.size() && origin[at].name() == key {
             return [origin[at]];
         }
@@ -174,7 +174,7 @@ object HttpMediaType {
     has parameters is HttpMediaParameters;
 
     HttpMediaType(origin is string) {
-        let fields = HttpMediaScanning(origin, HttpMediaLimits()).media_type();
+        let fields = HttpMediaScanning(origin: origin, limits: HttpMediaLimits()).media_type();
         confirm fields.type() != "*" && fields.subtype() != "*"
             else throw InvalidHttpMediaType.located(0, "concrete media type required");
         major = fields.type();
@@ -183,7 +183,7 @@ object HttpMediaType {
     }
 
     HttpMediaType(origin is string, limits is HttpMediaLimits) {
-        let fields = HttpMediaScanning(origin, limits).media_type();
+        let fields = HttpMediaScanning(origin: origin, limits: limits).media_type();
         confirm fields.type() != "*" && fields.subtype() != "*"
             else throw InvalidHttpMediaType.located(0, "concrete media type required");
         major = fields.type();
@@ -296,7 +296,7 @@ object HttpMediaScanning {
         let minor = self.token(slash + 1);
         confirm major.text() != "*" || minor.text() == "*"
             else throw InvalidHttpMediaType.located(0, "invalid wildcard range");
-        let position = HttpMediaPosition(self.space(minor.end()), 0);
+        let position = HttpMediaPosition(index: self.space(minor.end()), slots: 0);
         let parsed is HttpMediaItems<HttpMediaWireParameter> = HttpMediaItems();
         loop {
             let at = position.index();
@@ -328,24 +328,24 @@ object HttpMediaScanning {
                 self.token(value_at);
             };
             let parameter = try {
-                HttpMediaParameter(name.text(), value.text());
+                HttpMediaParameter(name: name.text(), value: value.text());
             }
             catch InvalidHttpMediaType.located(_, reason) {
                 throw InvalidHttpMediaType.located(start, reason);
             };
-            parsed = parsed.following(HttpMediaWireParameter(parameter, quoted, start));
+            parsed = parsed.following(HttpMediaWireParameter(parameter: parameter, quoted: quoted, offset: start));
             position = position.following(self.space(value.end()));
         }
         HttpMediaFields(
-            HttpAsciiLowercase(major.text()).string(),
-            HttpAsciiLowercase(minor.text()).string(),
-            parsed.values(),
-            limits::Limits::parameters
+            type: HttpAsciiLowercase(major.text()).string(),
+            subtype: HttpAsciiLowercase(minor.text()).string(),
+            wire: parsed.values(),
+            maximum: limits::Limits::parameters
         );
     }
 
     hidden space(start is int) is int {
-        let position = HttpMediaPosition(start, 0);
+        let position = HttpMediaPosition(index: start, slots: 0);
         loop {
             let at = position.index();
             if at == width {
@@ -360,7 +360,7 @@ object HttpMediaScanning {
     }
 
     hidden token(start is int) is HttpMediaScanned {
-        let position = HttpMediaPosition(start, 0);
+        let position = HttpMediaPosition(index: start, slots: 0);
         loop {
             let at = position.index();
             last if at == width || !HttpMediaOctet(bytes[at].int()).token();
@@ -368,11 +368,11 @@ object HttpMediaScanning {
         }
         confirm position.index() > start
             else throw InvalidHttpMediaType.located(start, "HTTP token required");
-        HttpMediaScanned(origin.slice(start, position.index()), position.index());
+        HttpMediaScanned(text: origin.slice(start, position.index()), end: position.index());
     }
 
     hidden quoted(start is int) is HttpMediaScanned {
-        let position = HttpMediaPosition(start + 1, 0);
+        let position = HttpMediaPosition(index: start + 1, slots: 0);
         let output = ByteBuffer();
         defer output.closing().close();
         let writer = output.writing();
@@ -382,7 +382,7 @@ object HttpMediaScanning {
                 else throw InvalidHttpMediaType.located(start, "unterminated quoted value");
             let code = bytes[at].int();
             if code == 34 {
-                return HttpMediaScanned(Latin1Decoded(output.content().bytes()).string(), at + 1);
+                return HttpMediaScanned(text: Latin1Decoded(output.content().bytes()).string(), end: at + 1);
             }
             if code == 92 {
                 confirm at + 1 < width
@@ -415,7 +415,7 @@ object HttpMediaFields {
         major = type;
         minor = subtype;
         self.wire = wire;
-        parameters = HttpMediaParameters(values, maximum);
+        parameters = HttpMediaParameters(values: values, maximum: maximum);
     }
 
     type() is string {

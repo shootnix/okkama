@@ -191,7 +191,7 @@ object AcceptedContentCodings {
 
     AcceptedContentCodings(origin is string) {
         let budget = NegotiationLimits();
-        let entries = CodingField(origin, budget).values();
+        let entries = CodingField(origin: origin, limits: budget).values();
         limits = budget;
         self.origin = entries;
         indexed = CodingIndex(entries).index();
@@ -199,7 +199,7 @@ object AcceptedContentCodings {
     }
 
     AcceptedContentCodings(origin is string, limits is NegotiationLimits) {
-        let entries = CodingField(origin, limits).values();
+        let entries = CodingField(origin: origin, limits: limits).values();
         self.limits = limits;
         self.origin = entries;
         indexed = CodingIndex(entries).index();
@@ -212,7 +212,7 @@ object AcceptedContentCodings {
 
     values() is Sequencing<WeightedValue> {
         let values is @WeightedValue = origin.map() -> entry {
-            WeightedValue(entry.token(), entry.quality());
+            WeightedValue(value: entry.token(), quality: entry.quality());
         };
         values;
     }
@@ -220,7 +220,7 @@ object AcceptedContentCodings {
     string() is string {
         confirm present else throw MissingNegotiationField.missing;
         let parts is @string = origin.map() -> entry {
-            WeightedValue(entry.token(), entry.quality()).string();
+            WeightedValue(value: entry.token(), quality: entry.quality()).string();
         };
         parts.join(", ");
     }
@@ -245,13 +245,13 @@ object AcceptedContentCodings {
     }
 
     hidden lookup(token is string) is @CodingPreference {
-        WeightedTokenLookup(indexed, token).preferences();
+        WeightedTokenLookup(origin: indexed, token: token).preferences();
     }
 
     hidden match(coding is ContentCoding) is CodingPreference {
         let name = coding.string();
         if !present {
-            return CodingPreference(name, Quality(1.rat()), 0);
+            return CodingPreference(token: name, quality: Quality(1.rat()), position: 0);
         }
         let exact = self.lookup(name);
         if exact.size() == 1 {
@@ -262,12 +262,12 @@ object AcceptedContentCodings {
             if wildcard.size() == 1 && !wildcard[0].quality().acceptable() {
                 return wildcard[0];
             }
-            return CodingPreference(name, Quality(1.rat()), origin.size());
+            return CodingPreference(token: name, quality: Quality(1.rat()), position: origin.size());
         }
         if wildcard.size() == 1 {
             return wildcard[0];
         }
-        CodingPreference(name, Quality(0.rat()), origin.size());
+        CodingPreference(token: name, quality: Quality(0.rat()), position: origin.size());
     }
 }
 
@@ -320,7 +320,7 @@ hidden object WeightedTokenLookup {
     }
 
     preferences() is @CodingPreference {
-        let probe = CodingPreference(token, Quality(0.rat()), 0);
+        let probe = CodingPreference(token: token, quality: Quality(0.rat()), position: 0);
         let at = LowerBound(origin: origin, item: probe).index();
         if at < origin.size() && origin.item(at).token() == token {
             return [origin.item(at)];
@@ -361,7 +361,7 @@ hidden object CodingField {
     values() is @CodingPreference {
         confirm origin.length() <= limits::Limits::bytes else throw NegotiationLimitExceeded.kind("bytes");
         let field = try {
-            Header(HeaderName("Accept-Encoding"), origin).value();
+            Header(name: HeaderName("Accept-Encoding"), value: origin).value();
         }
         catch failure is InvalidHeader {
             throw InvalidNegotiation.because("invalid field octets");
@@ -374,13 +374,13 @@ hidden object CodingField {
         confirm parts.size() <= limits::Limits::entries
             else throw NegotiationLimitExceeded.kind("entries");
         let texts is @string = parts.map() -> part {
-            Header(HeaderName("Accept-Encoding"), part).value();
+            Header(name: HeaderName("Accept-Encoding"), value: part).value();
         };
         let nonempty is @string = texts.filter() -> part {
             part != "";
         };
         let values is @CodingPreference = (0..nonempty.size()).map() -> index {
-            CodingMember(nonempty[index], index).preference();
+            CodingMember(origin: nonempty[index], position: index).preference();
         };
         values;
     }
@@ -399,12 +399,12 @@ hidden object CodingMember {
         let fields = origin.split(";");
         confirm fields.size() >= 1 && fields.size() <= 2
             else throw InvalidNegotiation.because("one optional q parameter required");
-        let token = Header(HeaderName("Accept-Encoding"), fields[0]).value();
+        let token = Header(name: HeaderName("Accept-Encoding"), value: fields[0]).value();
         let quality = if fields.size() == 1 {
             Quality(1.rat());
         }
         else {
-            let weight = Header(HeaderName("Accept-Encoding"), fields[1]).value();
+            let weight = Header(name: HeaderName("Accept-Encoding"), value: fields[1]).value();
             confirm weight.length() >= 2
                 && (weight.slice(0, 2) == "q=" || weight.slice(0, 2) == "Q=")
                 else throw InvalidNegotiation.because("q parameter assignment required");
@@ -415,7 +415,7 @@ hidden object CodingMember {
                 throw InvalidNegotiation.because(reason);
             }
         };
-        CodingPreference(token, quality, position);
+        CodingPreference(token: token, quality: quality, position: position);
     }
 }
 
@@ -494,7 +494,7 @@ object AcceptedCharsets {
 
     AcceptedCharsets(origin is string) {
         let budget = NegotiationLimits();
-        let entries = CodingField(origin, budget).values();
+        let entries = CodingField(origin: origin, limits: budget).values();
         limits = budget;
         self.origin = entries;
         indexed = CodingIndex(entries).index();
@@ -502,7 +502,7 @@ object AcceptedCharsets {
     }
 
     AcceptedCharsets(origin is string, limits is NegotiationLimits) {
-        let entries = CodingField(origin, limits).values();
+        let entries = CodingField(origin: origin, limits: limits).values();
         self.limits = limits;
         self.origin = entries;
         indexed = CodingIndex(entries).index();
@@ -515,7 +515,7 @@ object AcceptedCharsets {
 
     values() is Sequencing<WeightedValue> {
         let values is @WeightedValue = origin.map() -> entry {
-            WeightedValue(entry.token(), entry.quality());
+            WeightedValue(value: entry.token(), quality: entry.quality());
         };
         values;
     }
@@ -523,7 +523,7 @@ object AcceptedCharsets {
     string() is string {
         confirm present else throw MissingNegotiationField.missing;
         let parts is @string = origin.map() -> entry {
-            WeightedValue(entry.token(), entry.quality()).string();
+            WeightedValue(value: entry.token(), quality: entry.quality()).string();
         };
         parts.join(", ");
     }
@@ -548,13 +548,13 @@ object AcceptedCharsets {
     }
 
     hidden lookup(token is string) is @CodingPreference {
-        WeightedTokenLookup(indexed, token).preferences();
+        WeightedTokenLookup(origin: indexed, token: token).preferences();
     }
 
     hidden lookup_match(charset is CharsetName) is CodingPreference {
         let name = charset.string();
         if !present {
-            return CodingPreference(name, Quality(1.rat()), 0);
+            return CodingPreference(token: name, quality: Quality(1.rat()), position: 0);
         }
         let exact = self.lookup(name);
         if exact.size() == 1 {
@@ -564,7 +564,7 @@ object AcceptedCharsets {
         if wildcard.size() == 1 {
             return wildcard[0];
         }
-        CodingPreference(name, Quality(0.rat()), origin.size());
+        CodingPreference(token: name, quality: Quality(0.rat()), position: origin.size());
     }
 }
 
@@ -640,7 +640,7 @@ object AcceptedLanguages {
 
     AcceptedLanguages(origin is string) {
         let budget = NegotiationLimits();
-        let entries = LanguageField(origin, budget).values();
+        let entries = LanguageField(origin: origin, limits: budget).values();
         limits = budget;
         self.origin = entries;
         indexed = CodingIndex(entries).index();
@@ -648,7 +648,7 @@ object AcceptedLanguages {
     }
 
     AcceptedLanguages(origin is string, limits is NegotiationLimits) {
-        let entries = LanguageField(origin, limits).values();
+        let entries = LanguageField(origin: origin, limits: limits).values();
         self.limits = limits;
         self.origin = entries;
         indexed = CodingIndex(entries).index();
@@ -661,7 +661,7 @@ object AcceptedLanguages {
 
     values() is Sequencing<WeightedLanguageRange> {
         let values is @WeightedLanguageRange = origin.map() -> entry {
-            WeightedLanguageRange(BasicLanguageRange(entry.token()), entry.quality());
+            WeightedLanguageRange(range: BasicLanguageRange(entry.token()), quality: entry.quality());
         };
         values;
     }
@@ -669,7 +669,7 @@ object AcceptedLanguages {
     string() is string {
         confirm present else throw MissingNegotiationField.missing;
         let parts is @string = origin.map() -> entry {
-            WeightedValue(entry.token(), entry.quality()).string();
+            WeightedValue(value: entry.token(), quality: entry.quality()).string();
         };
         parts.join(", ");
     }
@@ -695,27 +695,27 @@ object AcceptedLanguages {
 
     hidden lookup_match(locale is Locale) is LanguageMatch {
         if !present {
-            return LanguageMatch(WeightedLanguageRange(BasicLanguageRange("*")), 0);
+            return LanguageMatch(origin: WeightedLanguageRange(BasicLanguageRange("*")), position: 0);
         }
         for LanguagePrefixes(locale).values() -> prefix {
-            let exact = WeightedTokenLookup(indexed, prefix.string()).preferences();
+            let exact = WeightedTokenLookup(origin: indexed, token: prefix.string()).preferences();
             if exact.size() == 1 {
                 return LanguageMatch(
-                    WeightedLanguageRange(prefix, exact[0].quality()),
-                    exact[0].position()
+                    origin: WeightedLanguageRange(prefix, exact[0].quality()),
+                    position: exact[0].position()
                 );
             }
         }
-        let wildcard = WeightedTokenLookup(indexed, "*").preferences();
+        let wildcard = WeightedTokenLookup(origin: indexed, token: "*").preferences();
         if wildcard.size() == 1 {
             return LanguageMatch(
-                WeightedLanguageRange(BasicLanguageRange("*"), wildcard[0].quality()),
-                wildcard[0].position()
+                origin: WeightedLanguageRange(BasicLanguageRange("*"), wildcard[0].quality()),
+                position: wildcard[0].position()
             );
         }
         LanguageMatch(
-            WeightedLanguageRange(BasicLanguageRange("*"), Quality(0.rat())),
-            origin.size()
+            origin: WeightedLanguageRange(BasicLanguageRange("*"), Quality(0.rat())),
+            position: origin.size()
         );
     }
 }
@@ -730,7 +730,7 @@ hidden object LanguageField {
     }
 
     values() is @CodingPreference {
-        let values = CodingField(origin, limits).values();
+        let values = CodingField(origin: origin, limits: limits).values();
         for values -> entry {
             try {
                 BasicLanguageRange(entry.token());
@@ -820,11 +820,11 @@ object MediaRange {
         let empty is @HttpMediaParameter = [];
         parameters = HttpMediaParameters(empty);
         quality = Quality(1.rat());
-        specificity = MediaSpecificity(0, 0);
+        specificity = MediaSpecificity(kind: 0, parameters: 0);
     }
 
     MediaRange(origin is string) {
-        let parsed = ParsedMediaRange(origin, HttpMediaLimits()).range();
+        let parsed = ParsedMediaRange(origin: origin, limits: HttpMediaLimits()).range();
         major = parsed::Range::type;
         minor = parsed::Range::subtype;
         parameters = parsed.parameters();
@@ -833,7 +833,7 @@ object MediaRange {
     }
 
     MediaRange(origin is string, limits is HttpMediaLimits) {
-        let parsed = ParsedMediaRange(origin, limits).range();
+        let parsed = ParsedMediaRange(origin: origin, limits: limits).range();
         major = parsed::Range::type;
         minor = parsed::Range::subtype;
         parameters = parsed.parameters();
@@ -878,7 +878,7 @@ object MediaRange {
         minor = HttpAsciiLowercase(subtype_name).string();
         self.parameters = parameters;
         self.quality = quality;
-        specificity = MediaSpecificity(kind, parameters.entries().size());
+        specificity = MediaSpecificity(kind: kind, parameters: parameters.entries().size());
     }
 
     parameters() is HttpMediaParameters {
@@ -941,7 +941,7 @@ hidden object ParsedMediaRange {
 
     range() is MediaRange {
         let fields = try {
-            HttpMediaScanning(origin, limits).media_type();
+            HttpMediaScanning(origin: origin, limits: limits).media_type();
         }
         catch InvalidHttpMediaType.located(_, reason) {
             throw InvalidNegotiation.because(reason);
@@ -982,10 +982,10 @@ hidden object ParsedMediaRange {
             entry.name() != "q";
         };
         MediaRange(
-            fields.type(),
-            fields.subtype(),
-            HttpMediaParameters(kept, limits::Limits::parameters),
-            quality
+            type: fields.type(),
+            subtype: fields.subtype(),
+            parameters: HttpMediaParameters(kept, limits::Limits::parameters),
+            quality: quality
         );
     }
 }
@@ -1069,13 +1069,13 @@ object AcceptedMediaTypes {
 
     AcceptedMediaTypes(origin is string) {
         let budget = MediaNegotiationLimits();
-        self.origin = MediaField(origin, budget).values();
+        self.origin = MediaField(origin: origin, limits: budget).values();
         limits = budget;
         present = true;
     }
 
     AcceptedMediaTypes(origin is string, limits is MediaNegotiationLimits) {
-        self.origin = MediaField(origin, limits).values();
+        self.origin = MediaField(origin: origin, limits: limits).values();
         self.limits = limits;
         present = true;
     }
@@ -1117,7 +1117,7 @@ object AcceptedMediaTypes {
 
     hidden lookup_match(media is HttpMediaType) is MediaMatch {
         if !present {
-            return MediaMatch(MediaRange(), 0);
+            return MediaMatch(range: MediaRange(), position: 0);
         }
         let lookup_match = MediaMatch();
         for (0..origin.size()) -> index {
@@ -1165,7 +1165,7 @@ object MediaMatch {
 
     specificity() is MediaSpecificity {
         if selected.size() == 0 {
-            MediaSpecificity(0, 0);
+            MediaSpecificity(kind: 0, parameters: 0);
         }
         else {
             selected[0].specificity();
@@ -1218,7 +1218,7 @@ hidden object MediaField {
     values() is @MediaRange {
         confirm origin.length() <= limits::Limits::bytes else throw NegotiationLimitExceeded.kind("bytes");
         let field = try {
-            Header(HeaderName("Accept"), origin).value();
+            Header(name: HeaderName("Accept"), value: origin).value();
         }
         catch failure is InvalidHeader {
             throw InvalidNegotiation.because("invalid Accept field octets");
@@ -1227,15 +1227,15 @@ hidden object MediaField {
             let empty is @MediaRange = [];
             return empty;
         }
-        let parts = MediaMembers(field, limits::Limits::entries).values();
+        let parts = MediaMembers(origin: field, maximum: limits::Limits::entries).values();
         let texts is @string = parts.map() -> part {
-            Header(HeaderName("Accept"), part).value();
+            Header(name: HeaderName("Accept"), value: part).value();
         };
         let nonempty is @string = texts.filter() -> part {
             part != "";
         };
         let values is @MediaRange = nonempty.map() -> part {
-            MediaRange(part, HttpMediaLimits(limits::Limits::bytes, limits::Limits::parameters));
+            MediaRange(origin: part, limits: HttpMediaLimits(limits::Limits::bytes, limits::Limits::parameters));
         };
         values;
     }
@@ -1252,7 +1252,7 @@ hidden object MediaMembers {
     }
 
     values() is @string {
-        let state = MediaMemberPosition(origin, maximum);
+        let state = MediaMemberPosition(origin: origin, maximum: maximum);
         let bytes = Latin1Encoded(origin).bytes();
         for (0..bytes.size()) -> index {
             state = state.following(index, bytes[index].int());
@@ -1349,7 +1349,7 @@ test "quality is exact and zero refuses a preference" {
 
 test "weighted tokens share quality but preserve field spelling" {
     test.is(WeightedValue("GZip").string(), "GZip;q=1");
-    test.is(WeightedValue("*", Quality(0.rat())).string(), "*;q=0");
+    test.is(WeightedValue(value: "*", quality: Quality(0.rat())).string(), "*;q=0");
 }
 
 test "coding preferences exclude exact zero before wildcard" {

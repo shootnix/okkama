@@ -425,18 +425,18 @@ test "session expiry has no absolute instant" {
 
 test "cookie prefix and wire policy" {
     let attrs = CookieAttributes(
-        "",
-        "/",
-        CookieExpiry(),
-        SameSite.cross_site,
-        OrderedSet([CookieFlag.secure])
+        domain: "",
+        path: "/",
+        expiry: CookieExpiry(),
+        same_site: SameSite.cross_site,
+        flags: OrderedSet([CookieFlag.secure])
     );
     test.ok(
-        Cookie("__Host-id", "secret", attrs).string() == "__Host-id=secret; Path=/; SameSite=None; Secure"
+        Cookie(name: "__Host-id", value: "secret", attributes: attrs).string() == "__Host-id=secret; Path=/; SameSite=None; Secure"
     );
-    test.ok(Cookie("id", "secret", CookieAttributes()).diagnostic() == "cookie id=<redacted>");
+    test.ok(Cookie(name: "id", value: "secret", attributes: CookieAttributes()).diagnostic() == "cookie id=<redacted>");
     test.ok(try {
-        Cookie("__secure-id", "secret", CookieAttributes());
+        Cookie(name: "__secure-id", value: "secret", attributes: CookieAttributes());
         false;
     }
     catch e is InvalidCookie {

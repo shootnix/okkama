@@ -51,17 +51,17 @@ object Caching does Exchanging {
                 let empty is @CachedHttpEntry = [];
                 empty;
             };
-            if peek.size() == 1 && CacheRequestFreshness(request, peek[0]).usable(now) {
+            if peek.size() == 1 && CacheRequestFreshness(request: request, entry: peek[0]).usable(now) {
                 return peek[0].response(request, now);
             }
         }
         let leases is @CacheAdmissionLease = if eligible {
             let booking = admissions.booking(request);
             let acquired = Event();
-            let anchor = CacheAdmissionAnchor([booking], acquired);
+            let anchor = CacheAdmissionAnchor(leases: [booking], retained: acquired);
             defer anchor.close();
             let guard = await booking.guard();
-            let lease = CacheAdmissionLease(booking, guard);
+            let lease = CacheAdmissionLease(booking: booking, guard: guard);
             acquired.set();
             [lease];
         }
@@ -74,7 +74,7 @@ object Caching does Exchanging {
             owner;
         };
         let transferred = Event();
-        let admission = CacheAdmissionAnchor(closers, transferred);
+        let admission = CacheAdmissionAnchor(leases: closers, retained: transferred);
         defer admission.close();
         let admitted_at = clock.monotonic_instant();
         if leases.size() == 1 {
@@ -99,7 +99,7 @@ object Caching does Exchanging {
             empty;
         };
         if selected.size() == 1 {
-            if CacheRequestFreshness(request, selected[0]).usable(admitted_at) {
+            if CacheRequestFreshness(request: request, entry: selected[0]).usable(admitted_at) {
                 return selected[0].response(request, admitted_at);
             }
         }
@@ -111,7 +111,7 @@ object Caching does Exchanging {
         };
         confirm !only_cached else throw MissingCachedResponse.missing;
         let validation is @CacheValidation = if selected.size() == 1 {
-            [CacheValidation(request, selected[0])];
+            [CacheValidation(original: request, entry: selected[0])];
         }
         else {
             let empty is @CacheValidation = [];
@@ -126,7 +126,7 @@ object Caching does Exchanging {
         let revision = cache.revision();
         let started = clock.monotonic_instant();
         let result = await origin.response(outgoing);
-        let timing = CacheResponseTiming(clock.instant(), started, clock.monotonic_instant());
+        let timing = CacheResponseTiming(received: clock.instant(), started: started, finished: clock.monotonic_instant());
         let status = result::Head::status;
         let class = StatusCode(status).class();
         if status == Status.not_modified && validation.size() == 1 && validation[0].conditional() {
@@ -141,7 +141,7 @@ object Caching does Exchanging {
             if CacheResponseSelection(refreshed.response()::Head::headers).allowed()
                 && refreshed.storable() {
                     cache.conditional_store(refreshed, revision);
-                    CacheVerifiedPublication(cache, request, refreshed, revision, leases).publish();
+                    CacheVerifiedPublication(cache: cache, request: request, entry: refreshed, revision: revision, leases: leases).publish();
                 }
                 else {
                     cache.invalidate(request);
@@ -192,16 +192,16 @@ object Caching does Exchanging {
         let original = result::Exchange::response;
         let reader = original.body().reading();
         let retained = Event();
-        let anchor = CacheReaderAnchor(reader, retained);
+        let anchor = CacheReaderAnchor(reader: reader, retained: retained);
         defer anchor.close();
         let capturing = CacheBodyReading(
-            reader,
-            cache,
-            request,
-            result,
-            timing,
-            publication,
-            leases
+            origin: reader,
+            cache: cache,
+            request: request,
+            result: result,
+            timing: timing,
+            revision: publication,
+            leases: leases
         );
         let response = Response(
             status: original::Head::status,
@@ -334,7 +334,7 @@ hidden object CacheBodyReading does BodyReading {
         }
         let group is FutureGroup<@byte> = FutureGroup();
         let complete = Event();
-        let cleanup = CacheReadSettlement(self, group, complete);
+        let cleanup = CacheReadSettlement(reader: self, group: group, complete: complete);
         defer await cleanup.close();
         let waiting = origin.bytes(limit);
         pending.replace([waiting]);
@@ -360,7 +360,7 @@ hidden object CacheBodyReading does BodyReading {
             trailers.replace([ending]);
             if !overflow.ready() {
                 let entry is @CachedHttpEntry = try {
-                    [CachedHttpEntry(request, result, timing, buffer.content().bytes(), ending)];
+                    [CachedHttpEntry(request: request, result: result, timing: timing, bytes: buffer.content().bytes(), trailers: ending)];
                 }
                 catch e is Error {
                     let empty is @CachedHttpEntry = [];
@@ -369,7 +369,7 @@ hidden object CacheBodyReading does BodyReading {
                 if entry.size() == 1 {
                     try {
                         cache.conditional_store(entry[0], revision);
-                        CacheVerifiedPublication(cache, request, entry[0], revision, leases).publish();
+                        CacheVerifiedPublication(cache: cache, request: request, entry: entry[0], revision: revision, leases: leases).publish();
                     }
                     catch e is CacheClosed {}
                 }

@@ -24,7 +24,7 @@ object HttpForwardRequest {
             body: origin.body()
         );
         let checked = HttpDirectRequest(source);
-        let fields = ProxyRequestFields(checked.request()::Head::headers, proxy_fields).headers();
+        let fields = ProxyRequestFields(origin: checked.request()::Head::headers, fields: proxy_fields).headers();
         request = Request(
             method: source::Head::method,
             target: source::Head::target,
@@ -49,8 +49,8 @@ object HttpConnectRequest {
         let port = parts::Parts::port else 443;
         let authority = ParsedUrl("//" + (parts::Parts::host else "") + ":" + port.string()).parts();
         let fields = ProxyRequestFields(
-            Headers([Header(HeaderName("Host"), authority.authority())]),
-            proxy_fields
+            origin: Headers([Header(HeaderName("Host"), authority.authority())]),
+            fields: proxy_fields
         ).headers();
         request = Request(
             method: Method.connect,

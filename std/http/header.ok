@@ -46,7 +46,7 @@ object Header {
 
     Header(name is HeaderName, value is string) {
         self.name = name;
-        self.value = HttpFieldValue(name, value).string();
+        self.value = HttpFieldValue(name: name, origin: value).string();
     }
 
     name() is HeaderName {
@@ -72,7 +72,7 @@ hidden object HttpFieldValue {
     string() is string {
         let non_octet = Regex("[^\\x{0}-\\x{ff}]");
         let controls = Regex("[\\x{0}-\\x{8}\\x{a}-\\x{1f}\\x{7f}]");
-        let state = HttpFieldScan(0, false);
+        let state = HttpFieldScan(position: 0, control: false);
         loop {
             let position = state.position();
             last if position == origin.length();
@@ -98,7 +98,7 @@ hidden object HttpFieldValue {
     hidden trimmed() is string {
         let spaces = Regex("[ \\t]*");
         let ending = Regex("[\\x{0}-\\x{ff}]*[^ \\t]");
-        let range = HttpFieldRange(0, origin.length());
+        let range = HttpFieldRange(start: 0, end: origin.length());
         loop {
             let start = range.start();
             let end = range.end();
@@ -217,12 +217,12 @@ object Headers {
 
     Headers(entries is Sequencing<Header>) {
         let bounds = HeaderLimits();
-        origin = HeaderSnapshot(entries, bounds).entries();
+        origin = HeaderSnapshot(entries: entries, limits: bounds).entries();
         limits = bounds;
     }
 
     Headers(entries is Sequencing<Header>, limits is HeaderLimits) {
-        origin = HeaderSnapshot(entries, limits).entries();
+        origin = HeaderSnapshot(entries: entries, limits: limits).entries();
         self.limits = limits;
     }
 
@@ -269,7 +269,7 @@ object Headers {
                 entry;
             }
         };
-        Headers(values, limits);
+        Headers(entries: values, limits: limits);
     }
 }
 
@@ -299,7 +299,7 @@ object HeadersWithout {
             };
             !excluded;
         };
-        Headers(kept, origin.limits());
+        Headers(entries: kept, limits: origin.limits());
     }
 }
 
@@ -313,7 +313,7 @@ object ReplacedHeader {
     }
 
     headers() is Headers {
-        HeadersWithout(origin, [entry.name()]).headers().addition(entry);
+        HeadersWithout(origin: origin, names: [entry.name()]).headers().addition(entry);
     }
 }
 
@@ -349,9 +349,9 @@ object Http2Headers {
                         "HTTP/2 TE requires request trailers"
                     );
             }
-            Header(HeaderName(name), entry.value());
+            Header(name: HeaderName(name), value: entry.value());
         };
-        Headers(entries, origin.limits());
+        Headers(entries: entries, limits: origin.limits());
     }
 }
 
@@ -408,7 +408,7 @@ hidden object HeaderSnapshot {
 
 test "HTTP fields retain duplicates and compare names without case" {
     let fields = Headers(
-        [Header(HeaderName("Set-Cookie"), " a=1 "), Header(HeaderName("set-cookie"), "b=2")]
+        [Header(name: HeaderName("Set-Cookie"), value: " a=1 "), Header(name: HeaderName("set-cookie"), value: "b=2")]
     );
     test.is(fields.values(HeaderName("SET-COOKIE")).size(), 2);
     test.is(fields.first(HeaderName("set-cookie")), "a=1");

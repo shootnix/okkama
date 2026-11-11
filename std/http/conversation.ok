@@ -154,7 +154,7 @@ object Http1Conversation does HttpConversation, Closing {
             body: request.body()
         );
         let prepared = if forward {
-            HttpForwardRequest(source, proxy_fields).request();
+            HttpForwardRequest(origin: source, proxy_fields: proxy_fields).request();
         }
         else {
             HttpDirectRequest(source).request();
@@ -168,7 +168,7 @@ object Http1Conversation does HttpConversation, Closing {
         let information is @Response = (0..heads.size()).map() -> index {
             heads.item(index).response(EmptyBody());
         };
-        HttpConversationExchange(request, result.response(), information, origin);
+        HttpConversationExchange(request: request, response: result.response(), information: information, lease: origin);
     }
 }
 
@@ -213,7 +213,7 @@ object Http2Conversation does HttpConversation, Closing {
         let information is @Response = (0..heads.size()).map() -> index {
             heads.item(index);
         };
-        HttpConversationExchange(request, result.response(), information, result);
+        HttpConversationExchange(request: request, response: result.response(), information: information, lease: result);
     }
 }
 
@@ -230,10 +230,10 @@ object Http2ConversationConnecting does HttpConversationConnecting {
         let pending = Atomic(empty);
         let taken = Event();
         let cleanup = HttpAcquisitionCleanup(
-            group,
-            pending,
-            taken,
-            Http2ConversationDisposal().release
+            group: group,
+            pending: pending,
+            taken: taken,
+            dispose: Http2ConversationDisposal().release
         );
         defer await cleanup.close();
         let opening = origin.acquisition();
@@ -241,7 +241,7 @@ object Http2ConversationConnecting does HttpConversationConnecting {
         group.start(opening);
         let result = await opening;
         taken.set();
-        HttpConversationAcquisition(Http2Conversation(result.session()), result.details());
+        HttpConversationAcquisition(session: Http2Conversation(result.session()), details: result.details());
     }
 }
 

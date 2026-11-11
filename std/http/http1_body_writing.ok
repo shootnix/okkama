@@ -25,7 +25,7 @@ object Http1BodyWriting {
         plan is Http1BodyPlan,
         head is Headers
     ) {
-        pending = Http1BodyWriteOperation(origin, body, plan, head, Http1Limits(), 4096).write();
+        pending = Http1BodyWriteOperation(origin: origin, body: body, plan: plan, head: head, limits: Http1Limits(), chunk_bytes: 4096).write();
     }
 
     Http1BodyWriting(
@@ -36,7 +36,7 @@ object Http1BodyWriting {
         limits is Http1Limits,
         chunk_bytes is int
     ) {
-        pending = Http1BodyWriteOperation(origin, body, plan, head, limits, chunk_bytes).write();
+        pending = Http1BodyWriteOperation(origin: origin, body: body, plan: plan, head: head, limits: limits, chunk_bytes: chunk_bytes).write();
     }
 
     output() is Future<AsyncWriting> {
@@ -92,7 +92,7 @@ hidden object Http1BodyWriteOperation {
         if kind == Http1BodyKind.empty {
             return destination.value();
         }
-        let cleanup = Http1BodyWriteCleanup(reads, writes);
+        let cleanup = Http1BodyWriteCleanup(reads: reads, writes: writes);
         defer await cleanup.close();
         let known is @BigInt = try {
             [body.length()];
@@ -148,7 +148,7 @@ hidden object Http1BodyWriteOperation {
                 }
                 let end = reader.trailers();
                 if kind == Http1BodyKind.chunked {
-                    let wire = Http1TrailerWire(end, head, limits).bytes();
+                    let wire = Http1TrailerWire(origin: end, head: head, limits: limits).bytes();
                     confirm wire.size() <= limits::Limits::head_bytes - metadata.value()
                         else throw Http1LimitExceeded.kind("chunk_metadata_bytes");
                     let sent = await self.writing(ByteSnapshot(wire));
@@ -171,7 +171,7 @@ hidden object Http1BodyWriteOperation {
             }
             used.replace(used.value() + chunk.size());
             let wire = if kind == Http1BodyKind.chunked {
-                Http1ChunkWire(chunk, limits).bytes();
+                Http1ChunkWire(origin: chunk, limits: limits).bytes();
             }
             else {
                 chunk;
@@ -299,7 +299,7 @@ hidden object Http1HexSize {
     }
 
     string() is string {
-        let digits = Http1HexDigits(BigInt(origin.string()), "");
+        let digits = Http1HexDigits(number: BigInt(origin.string()), origin: "");
         loop {
             let value = digits.number();
             last if value.sign() == 0;
@@ -372,7 +372,7 @@ hidden object Http1TrailerWire {
         }
         writer.write(ByteSnapshot([13.byte(), 10.byte()]));
         let raw = buffer.content().bytes();
-        ParsedHttp1Trailers(Latin1Decoded(raw).string(), head, limits).trailers();
+        ParsedHttp1Trailers(origin: Latin1Decoded(raw).string(), head: head, limits: limits).trailers();
         let final = ByteBuffer([48.byte(), 13.byte(), 10.byte()]);
         defer final.closing().close();
         final.writing().write(ByteSnapshot(raw));

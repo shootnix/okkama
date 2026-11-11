@@ -37,7 +37,7 @@ object WebApplication {
 
     async server(address is string, port is int) is HttpServer {
         let listener = await TcpListening(IpEndpoint(address: IpAddress(address), port: port)).acceptance();
-        HttpServer(listener, routes.table(), policy, clock);
+        HttpServer(origin: listener, handling: routes.table(), policy: policy, clock: clock);
     }
 
     async listen(address is string, port is int) is void {

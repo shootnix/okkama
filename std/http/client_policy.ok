@@ -50,7 +50,7 @@ object HttpLimits {
         let amount = Latin1Encoded(body_bytes.string()).bytes().reduce(0) -> count, octet {
             count * 10 + octet.int() - 48;
         };
-        Http1Limits(header_bytes, line_bytes, 128, amount);
+        Http1Limits(head_bytes: header_bytes, line_bytes: line_bytes, fields: 128, body_bytes: amount);
     }
 }
 
