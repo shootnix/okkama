@@ -4107,14 +4107,15 @@ fallback:)`. Endpoint получает `WebRequest` с `path("id")`,
 `examples/web/` и `examples/http/websocket/` есть JSON-сервис и
 WebSocket-эхо.
 
-`mail` составляет, хранит и читает почту. `MailMessage(headers:
-MessageHeaders([…]), body: TextBody(origin:, charset:))` даёт байты RFC 5322
-через `bytes()`, а `ParsedMail(bytes).message()` читает их обратно.
-`Maildir(path)` и `Mbox(path)` хранят письма на диске.
-У SMTP есть части протокола (`PreparedSmtpData`, `SmtpReply`,
-`SmtpCapabilities`), но клиента пока нет. `ImapSession` выбирает ящики, ищет через
-`UnseenMail()`, `SinceMail(date)`, `AndMail` и `OrMail`, копирует и
-переносит через `CopiedMail`/`MovedMail` и следит за `MailboxEvents`.
+`mail` составляет, хранит и читает почту. `MailMessage(from:, to: […],
+subject:, text:)` добавляет Date, новый Message-ID и Content-Type и даёт байты
+RFC 5322 через `bytes()`. `ParsedMail(bytes).message()` читает их обратно.
+`Maildir(path).created()` и `Mbox(path)` хранят письма на диске. У SMTP есть
+части протокола (`PreparedSmtpData`, `SmtpReply`, `SmtpCapabilities`), но
+клиента пока нет. `ImapSession` выбирает ящики и ищет через `UnseenMail()`,
+`SinceMail(date)`, `AndMail` и `OrMail`. Выбранный ящик отвечает
+`await box.copied(uids, to:)`, `moved` и `expunged`, сессия — `created`,
+`renamed`, `deleted` и `appended`, а `MailboxEvents` следит за изменениями.
 `PopSession().mailbox()` скачивает письма. В `examples/mail/` письмо
 составляется и кладётся в Maildir.
 
