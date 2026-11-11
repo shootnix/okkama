@@ -57,7 +57,8 @@ already-settled C<Future<T>> rather than extracting its value or failure:
         origins: requests,
     );
 
-    while stream.remaining_count() > 0 {
+    loop {
+        last if stream.remaining_count() == 0;
         let completed = await stream.completion();
         try {
             let response = await completed;

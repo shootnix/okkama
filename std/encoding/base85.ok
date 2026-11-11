@@ -74,3 +74,31 @@ object Base85Decoded {
 }
 
 enum InvalidBase85 is Error = (at(offset is int));
+
+test "both base85 variants round-trip" {
+    let man = [byte(77), byte(97), byte(110), byte(32)];
+    let hi = [byte(104), byte(105)];
+    test.is(Base85Encoded(origin: man, alphabet: Base85Alphabet.ascii85).string(), "9jqo^");
+    test.is(Base85Encoded(origin: hi, alphabet: Base85Alphabet.ascii85).string(), "BP@");
+    test.is(Base85Encoded(origin: [byte(0), byte(0), byte(0), byte(0)], alphabet: Base85Alphabet.ascii85).string(), "z");
+    test.is(Base85Decoded(origin: "9jqo^BP@", alphabet: Base85Alphabet.ascii85).bytes(), man + hi);
+    test.is(Base85Encoded(origin: man, alphabet: Base85Alphabet.rfc1924).string(), "O<`^z");
+    test.is(Base85Encoded(origin: hi, alphabet: Base85Alphabet.rfc1924).string(), "XlV");
+    test.is(Base85Decoded(origin: "O<`^zXlV", alphabet: Base85Alphabet.rfc1924).bytes(), man + hi);
+}
+
+test "base85 refuses a lone final character and wrappers" {
+    let offset = (text is string, alphabet is Base85Alphabet) is int {
+        try {
+            Base85Decoded(origin: text, alphabet: alphabet).bytes();
+            -1;
+        }
+        catch InvalidBase85.at(offset) {
+            offset;
+        }
+    };
+    test.ok(offset("9jqo^B", Base85Alphabet.ascii85) >= 5);
+    // `<` is in the ascii85 alphabet; the wrapper's `~` is not.
+    test.is(offset("<~9jqo^~>", Base85Alphabet.ascii85), 1);
+    test.is(offset("9jqo^ BP@", Base85Alphabet.ascii85), 5);
+}

@@ -48,3 +48,43 @@ object QuotedPrintableDecoded {
 }
 
 enum InvalidQuotedPrintable is Error = (at(offset is int));
+
+test "quoted-printable escapes what is not plain text" {
+    let escaped = QuotedPrintableEncoded(origin: [byte(0), byte(61), byte(255)]).bytes();
+    test.is(escaped, [byte(61), byte(48), byte(48), byte(61), byte(51), byte(68), byte(61), byte(70), byte(70)]);
+    test.is(QuotedPrintableDecoded(origin: escaped).bytes(), [byte(0), byte(61), byte(255)]);
+    // Space at the end of input is escaped; inside a line it stays.
+    test.is(QuotedPrintableEncoded(origin: [byte(97), byte(32), byte(98), byte(32)]).bytes(),
+        [byte(97), byte(32), byte(98), byte(61), byte(50), byte(48)]);
+    // Lowercase hex is read too.
+    test.is(QuotedPrintableDecoded(origin: [byte(61), byte(51), byte(100)]).bytes(), [byte(61)]);
+}
+
+test "quoted-printable keeps lines within 76 bytes" {
+    let long is @byte = (0..100).map() -> index {
+        byte(97);
+    };
+    let encoded = QuotedPrintableEncoded(origin: long).bytes();
+    test.ok(encoded.size() > 100);
+    test.is(QuotedPrintableDecoded(origin: encoded).bytes(), long);
+    test.is(
+        try {
+            QuotedPrintableDecoded(origin: [byte(61), byte(71), byte(48)]).bytes();
+            -1;
+        }
+        catch InvalidQuotedPrintable.at(offset) {
+            offset;
+        },
+        0
+    );
+    test.is(
+        try {
+            QuotedPrintableDecoded(origin: long).bytes();
+            -1;
+        }
+        catch InvalidQuotedPrintable.at(offset) {
+            offset;
+        } >= 0,
+        true
+    );
+}

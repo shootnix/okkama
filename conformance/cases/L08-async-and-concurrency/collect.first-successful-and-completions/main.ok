@@ -1,0 +1,71 @@
+module app v1.0.0;
+
+// FirstSuccessful ignores failures while a success is still possible;
+// FutureCompletions hands back each input future once, already settled.
+import "io/stdout" take Stdout;
+import "async/collect" take FirstSuccessful, FutureCompletions, NoFutures;
+
+enum Broken is Error = (broken(label is string));
+
+object Attempt {
+    has label is string;
+    has works is bool;
+    Attempt(:label, :works);
+    async run() is string {
+        confirm works else throw Broken.broken(label);
+        label;
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    let mixed is @Future<string> = [
+        Attempt(label: "a", works: false).run(),
+        Attempt(label: "b", works: true).run(),
+        Attempt(label: "c", works: true).run(),
+    ];
+    out.writeln("first success: " + await FirstSuccessful(origins: mixed).outcome());
+    let failing is @Future<string> = [
+        Attempt(label: "x", works: false).run(),
+        Attempt(label: "y", works: false).run(),
+    ];
+    let primary = try {
+        await FirstSuccessful(origins: failing).outcome();
+    }
+    catch Broken.broken(label) {
+        "failed at " + label;
+    };
+    out.writeln(primary);
+    let nothing is @Future<string> = [];
+    out.writeln(try {
+        await FirstSuccessful(origins: nothing).outcome();
+    }
+    catch error is NoFutures {
+        "no futures";
+    });
+
+    let fresh is @Future<string> = [
+        Attempt(label: "d", works: false).run(),
+        Attempt(label: "e", works: true).run(),
+    ];
+    let stream is FutureCompletions<string> = FutureCompletions(origins: fresh);
+    loop {
+        last if stream.remaining_count() == 0;
+        let completed = await stream.completion();
+        let text = try {
+            await completed;
+        }
+        catch Broken.broken(label) {
+            label + "!";
+        };
+        out.writeln("completion " + text);
+    }
+    out.writeln(try {
+        await stream.completion();
+        "more";
+    }
+    catch error is NoFutures {
+        "exhausted";
+    });
+    0;
+}

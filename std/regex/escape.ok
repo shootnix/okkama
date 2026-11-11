@@ -6,7 +6,7 @@ import "runtime/regex" take regex_escape;
 // The result remains literal even when RegexFlag.verbose is selected.
 //
 //     let literal = "price: $5.00";
-//     let pattern = Regex(string EscapedRegex(literal));
+//     let pattern = Regex(EscapedRegex(literal).string());
 //     EntireRegexMatch(literal, pattern).text(); // "price: $5.00"
 object EscapedRegex {
     has source is string;
@@ -18,4 +18,10 @@ object EscapedRegex {
     string() is string {
         regex_escape(source);
     }
+}
+
+test "every metacharacter is escaped, letters are not" {
+    test.is(EscapedRegex("price: $5.00 (a|b)*").string(), "price:\\ \\$5\\.00\\ \\(a\\|b\\)\\*");
+    test.is(EscapedRegex("plain").string(), "plain");
+    test.is(EscapedRegex("").string(), "");
 }

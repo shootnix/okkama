@@ -45,3 +45,27 @@ object HexDecoded {
 }
 
 enum InvalidHex is Error = (at(offset is int));
+
+test "hex writes lowercase and reads either case" {
+    test.is(HexEncoded(origin: [byte(0), byte(171), byte(255)]).string(), "00abff");
+    test.is(HexDecoded(origin: "00ABff").bytes(), [byte(0), byte(171), byte(255)]);
+    let empty is @byte = [];
+    test.is(HexEncoded(origin: empty).string(), "");
+    test.is(HexDecoded(origin: "").bytes().size(), 0);
+}
+
+test "hex refuses prefixes, separators and odd lengths" {
+    let offset = (text is string) is int {
+        try {
+            HexDecoded(origin: text).bytes();
+            -1;
+        }
+        catch InvalidHex.at(offset) {
+            offset;
+        }
+    };
+    test.is(offset("0x00"), 1);
+    test.is(offset("00 ab"), 2);
+    test.is(offset("abc"), 3);
+    test.is(offset("zz"), 0);
+}

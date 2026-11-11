@@ -112,3 +112,25 @@ object RegexPartsCursor does Cursor<string> {
 }
 
 enum InvalidRegexSplitLimit is Error = (limit(limit is int));
+
+test "parts keep empty fields and honour a limit" {
+    let text = (parts is Iterating<string>) is string {
+        parts.map() -> part {
+            "[" + part + "]";
+        }.join("");
+    };
+    test.is(text(RegexParts(",a,,b,", Regex(","))), "[][a][][b][]");
+    test.is(text(RegexParts("one, two;three", Regex("[,;]\\s*"))), "[one][two][three]");
+    test.is(text(RegexParts("a,b,c", Regex(","), 1)), "[a][b,c]");
+    test.is(text(RegexParts("abc", Regex(","))), "[abc]");
+    test.is(text(RegexParts("", Regex(","))), "[]");
+    test.is(
+        try {
+            text(RegexParts("a,b", Regex(","), 0));
+        }
+        catch InvalidRegexSplitLimit.limit(limit) {
+            "limit " + limit.string();
+        },
+        "limit 0"
+    );
+}

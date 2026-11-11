@@ -81,3 +81,44 @@ enum UnrepresentableAsciiCharacter is Error = (at(offset is int));
 enum UnrepresentableLatin1Character is Error = (at(offset is int));
 
 enum InvalidAsciiByte is Error = (at(offset is int));
+
+test "ascii round-trips and refuses everything above 127" {
+    test.is(AsciiEncoded(origin: "hello").bytes(), [byte(104), byte(101), byte(108), byte(108), byte(111)]);
+    test.is(AsciiDecoded(origin: [byte(104), byte(105)]).string(), "hi");
+    test.is(
+        try {
+            AsciiEncoded(origin: "naïve").bytes();
+            -1;
+        }
+        catch UnrepresentableAsciiCharacter.at(offset) {
+            offset;
+        },
+        2
+    );
+    test.is(
+        try {
+            AsciiDecoded(origin: [byte(104), byte(200)]).string();
+            -1;
+        }
+        catch InvalidAsciiByte.at(offset) {
+            offset;
+        },
+        1
+    );
+}
+
+test "latin-1 decodes every byte and encodes up to U+00FF" {
+    test.is(Latin1Decoded(origin: [byte(99), byte(97), byte(102), byte(233)]).string(), "café");
+    test.is(Latin1Encoded(origin: "café").bytes(), [byte(99), byte(97), byte(102), byte(233)]);
+    test.is(Latin1Decoded(origin: [byte(128)]).string().length(), 1);
+    test.is(
+        try {
+            Latin1Encoded(origin: "a€").bytes();
+            -1;
+        }
+        catch UnrepresentableLatin1Character.at(offset) {
+            offset;
+        },
+        1
+    );
+}

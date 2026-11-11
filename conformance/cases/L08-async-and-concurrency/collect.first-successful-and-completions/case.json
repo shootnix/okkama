@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.collect.first-successful-and-completions",
+  "title": "FirstSuccessful skips failures; FutureCompletions returns each settled input once",
+  "purpose": "Observe the selectors of async/collect that no case used: success after a failure, the primary failure when all fail, NoFutures, and the completion stream to exhaustion.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "STD.ASYNC.COLLECT",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "first success: b\nfailed at x\nno futures\ncompletion d!\ncompletion e\nexhausted\n"
+    }
+  },
+  "spec_refs": [
+    "std/async/collect.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for the std review (#352): FirstSuccessful, FutureCompletions and FutureScope had no case",
+    "expected_basis": "the module documentation of std/async/collect.ok"
+  },
+  "status": "mandatory"
+}

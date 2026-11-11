@@ -1,11 +1,11 @@
 module regex/search v1.0.0;
 
 import "collections/iteration" take Cursor, Iterating, IterationEnded;
-import "regex/pattern" take Regex, RegexQuery, RegexMatchObservation, RegexRangeOutsideInput;
+import "regex/pattern" take Regex, RegexQuery, RegexMatchObservation, RegexRangeOutsideInput, NoRegexMatch;
 import "regex/range" take RegexRange;
-import "regex/match" take RegexCapture, RegexMatch, RegexMatching;
+import "regex/match" take RegexCapture, RegexMatch, RegexMatching, UnmatchedRegexCapture, MissingRegexGroup;
 
-// Mandatory searches are matches themselves; there is no projected value().
+// Mandatory searches are matches themselves: read them directly.
 // Work is lazy and memoized by an opaque query state on the first observation.
 //
 //     let first = FirstRegexMatch("one 22 three", Regex("\\d+"));
@@ -236,4 +236,68 @@ object RegexMatchCursor does Cursor<RegexMatching> {
             exhausted: empty && range.end() == limit,
         );
     }
+}
+
+test "first, prefix and entire searches" {
+    let digits = Regex("\\d+");
+    let first = FirstRegexMatch("one 22 three", digits);
+    test.is(first.text(), "22");
+    test.is(first.range().start(), 4);
+    test.is(first.range().end(), 6);
+    test.is(PrefixRegexMatch("22 three", digits).text(), "22");
+    test.is(EntireRegexMatch("22", digits).text(), "22");
+    test.ok(!RegexMatches("22x", Regex("^\\d+$")).found());
+    test.is(
+        try {
+            EntireRegexMatch("22x", digits).text();
+        }
+        catch error is NoRegexMatch {
+            "none";
+        },
+        "none"
+    );
+    // Offsets count Unicode scalars: the digit after "a😀я" is at 3.
+    test.is(FirstRegexMatch("a😀я1", Regex("\\d"), RegexRange(1, 4)).range().start(), 3);
+}
+
+test "captures and named groups" {
+    let pair = Regex("(?<key>\\w+)=(\\d+)?");
+    let found = FirstRegexMatch("x key= y", pair);
+    test.is(found.text(), "key=");
+    test.is(found.group("key").text(), "key");
+    test.is(found.capture(0).text(), "key=");
+    test.is(found.captures().size(), 2);
+    test.ok(!found.capture(2).matched());
+    test.is(
+        try {
+            found.capture(2).text();
+        }
+        catch UnmatchedRegexCapture.index(index) {
+            "unmatched " + index.string();
+        },
+        "unmatched 2"
+    );
+    test.is(
+        try {
+            found.group("nope").text();
+        }
+        catch MissingRegexGroup.name(name) {
+            "missing " + name;
+        },
+        "missing nope"
+    );
+}
+
+test "matches walk every non-overlapping match" {
+    test.is(RegexMatches("a1 b22 c", Regex("\\d+")).map() -> found {
+        found.text() + "@" + found.range().start().string();
+    }.join(","), "1@1,22@4");
+    // An empty match advances by one scalar.
+    test.is(RegexMatches("abc", Regex("x*")).map() -> found {
+        found.range().start().string();
+    }.join(","), "0,1,2,3");
+    test.ok(RegexMatches("abc", Regex("b")).found());
+    test.is(RegexMatches("abc", Regex("\\d")).map() -> found {
+        found.text();
+    }.join(","), "");
 }

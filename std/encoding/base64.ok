@@ -83,3 +83,30 @@ object Base64Decoded {
 }
 
 enum InvalidBase64 is Error = (at(offset is int));
+
+test "base64 round-trips in both alphabets" {
+    let foob = [byte(102), byte(111), byte(111), byte(98)];
+    test.is(Base64Encoded(origin: foob).string(), "Zm9vYg==");
+    test.is(Base64Decoded(origin: "Zm9vYg==").bytes(), foob);
+    let high = [byte(251), byte(255)];
+    test.is(Base64Encoded(origin: high).string(), "+/8=");
+    test.is(Base64Encoded(origin: high, alphabet: Base64Alphabet.url).string(), "-_8=");
+    test.is(Base64Decoded(origin: "-_8=", alphabet: Base64Alphabet.url).bytes(), high);
+}
+
+test "base64 refuses the other alphabet and loose padding" {
+    let offset = (text is string, alphabet is Base64Alphabet) is int {
+        try {
+            Base64Decoded(origin: text, alphabet: alphabet).bytes();
+            -1;
+        }
+        catch InvalidBase64.at(offset) {
+            offset;
+        }
+    };
+    test.is(offset("-_8=", Base64Alphabet.standard), 0);
+    test.is(offset("+/8=", Base64Alphabet.url), 0);
+    test.is(offset("Zm9vYg=", Base64Alphabet.standard), 7);
+    test.is(offset("Zm9v Yg==", Base64Alphabet.standard), 4);
+    test.is(offset("Zm9vYh==", Base64Alphabet.standard) >= 0, true);
+}

@@ -1,0 +1,54 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.scope.future-scope-and-deadlines",
+  "title": "FutureScope waits for its children; Within and Before time out",
+  "purpose": "Observe FutureScope answering after its children and failing with its body, and both deadline objects throwing TimedOut while an origin settled first wins at once.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "STD.ASYNC.SCOPE",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    },
+    {
+      "contract": "STD.ASYNC.TIMEOUT",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "child one\nchild two\nscope: 42\nscope failed\nwithin timed out\nbefore timed out\nsettled first: 7 7\n"
+    }
+  },
+  "spec_refs": [
+    "std/async/scope.ok",
+    "std/async/timeout.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for the std review (#352): FirstSuccessful, FutureCompletions and FutureScope had no case",
+    "expected_basis": "the module documentation of std/async/scope.ok and std/async/timeout.ok"
+  },
+  "status": "mandatory"
+}

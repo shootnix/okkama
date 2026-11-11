@@ -44,3 +44,36 @@ object Base32Decoded {
 }
 
 enum InvalidBase32 is Error = (at(offset is int));
+
+test "base32 round-trips with canonical padding" {
+    let foobar = [byte(102), byte(111), byte(111), byte(98), byte(97), byte(114)];
+    test.is(Base32Encoded(origin: foobar).string(), "MZXW6YTBOI======");
+    test.is(Base32Decoded(origin: "MZXW6YTBOI======").bytes(), foobar);
+    let empty is @byte = [];
+    test.is(Base32Encoded(origin: empty).string(), "");
+    test.is(Base32Decoded(origin: "").bytes().size(), 0);
+}
+
+test "base32 refuses lowercase and broken padding" {
+    for ["mzxw6===", "MZXW6==", "MZXW6=A=", "MZ XW6==="] -> invalid {
+        test.ok(
+            try {
+                Base32Decoded(origin: invalid).bytes();
+                false;
+            }
+            catch InvalidBase32.at(offset) {
+                offset >= 0 && offset <= invalid.length();
+            }
+        );
+    }
+    test.is(
+        try {
+            Base32Decoded(origin: "mZXW6===").bytes();
+            -1;
+        }
+        catch InvalidBase32.at(offset) {
+            offset;
+        },
+        0
+    );
+}

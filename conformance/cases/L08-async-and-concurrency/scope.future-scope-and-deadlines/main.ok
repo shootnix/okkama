@@ -1,0 +1,85 @@
+module app v1.0.0;
+
+// FutureScope waits for every child before it answers; a failing body is
+// primary. Within and Before throw TimedOut when time wins.
+import "io/stdout" take Stdout;
+import "async/scope" take FutureScope, Supervising;
+import "async/timeout" take Within, Before, TimedOut;
+import "async/event" take Event;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration, DurationUnit;
+
+enum Broken is Error = (broken);
+
+object Child {
+    has label is string;
+    Child(:label);
+    async run() is int {
+        Stdout().writeln("child " + label);
+        1;
+    }
+}
+
+object Batch {
+    Batch();
+    async run(group is Supervising<int>) is int {
+        group.start(Child(label: "one").run());
+        group.start(Child(label: "two").run());
+        42;
+    }
+    async broken(group is Supervising<int>) is int {
+        group.start(Quiet(result: 3).run());
+        throw Broken.broken;
+    }
+}
+
+object Quiet {
+    has result is int;
+    Quiet(:result);
+    async run() is int { result; }
+}
+
+object Forever {
+    has event is Event;
+    Forever(:event);
+    async run() is int {
+        await event.wait();
+        0;
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    let scope is FutureScope<int, int> = FutureScope(action: Batch().run);
+    out.writeln("scope: " + (await scope.outcome()).string());
+    let failing is FutureScope<int, int> = FutureScope(action: Batch().broken);
+    out.writeln(try {
+        (await failing.outcome()).string();
+    }
+    catch error is Broken {
+        "scope failed";
+    });
+
+    let clock = SystemClock();
+    let short = Duration(value: 20.rat(), unit: DurationUnit.millisecond);
+    let within is Within<int> = Within(origin: Forever(event: Event()).run(), limit: short, clock: clock);
+    out.writeln(try {
+        (await within.outcome()).string();
+    }
+    catch error is TimedOut {
+        "within timed out";
+    });
+    let before is Before<int> = Before(origin: Forever(event: Event()).run(), deadline: clock.monotonic_instant() + short, clock: clock);
+    out.writeln(try {
+        (await before.outcome()).string();
+    }
+    catch error is TimedOut {
+        "before timed out";
+    });
+    // An origin already settled wins without a clock wait, even at zero.
+    let done = Quiet(result: 7).run();
+    let seven = await done;
+    let ready is Within<int> = Within(origin: done, limit: Duration(value: 0.rat(), unit: DurationUnit.second), clock: clock);
+    out.writeln("settled first: " + (await ready.outcome()).string() + " " + seven.string());
+    0;
+}

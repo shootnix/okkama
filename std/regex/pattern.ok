@@ -194,3 +194,51 @@ object RegexQueryObservation {
         RegexMatch(source, regex_query_match(query));
     }
 }
+
+test "a regex reports its groups, flags and syntax errors" {
+    let pair = Regex("(?<key>\\w+)=(\\d+)?");
+    test.is(pair.expression(), "(?<key>\\w+)=(\\d+)?");
+    test.is(pair.group_count(), 2);
+    test.is(pair.group_names()["key"], 1);
+    test.is(Regex("ABC", [RegexFlag.ignore_case]).flags(), [RegexFlag.ignore_case]);
+    test.is(Regex("x").flags().size(), 0);
+    let offset = (expression is string) is int {
+        try {
+            Regex(expression).group_count();
+        }
+        catch InvalidRegex.located(offset, message) {
+            offset;
+        }
+    };
+    test.is(offset("a(b"), 3);
+    test.is(offset("a)"), 1);
+}
+
+test "an observation finds a match inside a range" {
+    let digits = Regex("\\d+");
+    let whole = RegexRange(start: 0, end: 12);
+    let found = RegexMatchObservation(origin: "one 22 three", regex: digits, range: whole, mode: RegexQuery.first);
+    test.ok(found.found());
+    test.is(found.match().text(), "22");
+    test.ok(!RegexMatchObservation(origin: "one 22 three", regex: digits, range: whole, mode: RegexQuery.entire).found());
+    test.ok(RegexMatchObservation(origin: "ABC", regex: Regex("abc", [RegexFlag.ignore_case]), range: RegexRange(start: 0, end: 3), mode: RegexQuery.entire).found());
+    test.is(
+        try {
+            RegexMatchObservation(origin: "abc", regex: digits, range: RegexRange(start: 0, end: 9), mode: RegexQuery.first).found();
+            "found";
+        }
+        catch RegexRangeOutsideInput.range(start, end, length) {
+            "outside " + length.string();
+        },
+        "outside 3"
+    );
+    test.is(
+        try {
+            RegexMatchObservation(origin: "abc", regex: digits, range: RegexRange(start: 0, end: 3), mode: RegexQuery.first).match().text();
+        }
+        catch error is NoRegexMatch {
+            "none";
+        },
+        "none"
+    );
+}
