@@ -10,7 +10,7 @@ enum InvalidDiff is Error = (because(reason is string));
 
 enum DiffLimitExceeded is Error = (off_budget);
 
-object DiffListValues<T> {
+hidden object DiffListValues<T> {
     has values is @T;
 
     DiffListValues(origin is List<T>, reverse is bool) {
@@ -37,7 +37,7 @@ object DiffListValues<T> {
     }
 }
 
-object DiffLines {
+hidden object DiffLines {
     has values is @string;
 
     DiffLines(origin is Sequencing<string>) {
@@ -76,24 +76,28 @@ object DiffEdit {
         self.right = right;
     }
 
-    kind() is DiffEditKind {
-        kind;
-    }
+    // One line of the comparison: kept, removed or added, with its text and
+    // its index on each side.
+    cap Line {
+        kind is DiffEditKind {
+            kind;
+        }
 
-    text() is string {
-        text;
-    }
+        text is string {
+            text;
+        }
 
-    left() is int {
-        left;
-    }
+        left is int {
+            left;
+        }
 
-    right() is int {
-        right;
+        right is int {
+            right;
+        }
     }
 }
 
-object DiffSearching {
+hidden object DiffSearching {
     has left, right is @string;
 
     DiffSearching(left is @string, right is @string) {
@@ -116,13 +120,13 @@ object DiffSearching {
             let x = script[index * 3 + 1];
             let y = script[index * 3 + 2];
             if kind == 0 {
-                DiffEdit(DiffEditKind.equal, left[x], x, y);
+                DiffEdit(kind: DiffEditKind.equal, text: left[x], left: x, right: y);
             }
             else if kind == 1 {
-                DiffEdit(DiffEditKind.removed, left[x], x, y);
+                DiffEdit(kind: DiffEditKind.removed, text: left[x], left: x, right: y);
             }
             else {
-                DiffEdit(DiffEditKind.added, right[y], x, y);
+                DiffEdit(kind: DiffEditKind.added, text: right[y], left: x, right: y);
             }
         };
         values;
@@ -131,7 +135,7 @@ object DiffSearching {
 
 enum UnavailableDiff is Error = (because(reason is string));
 
-object DiffScript {
+hidden object DiffScript {
     has left, right is @string;
     has edits is @DiffEdit;
 
@@ -140,7 +144,7 @@ object DiffScript {
         let second = DiffLines(right).values();
         self.left = first;
         self.right = second;
-        edits = DiffSearching(first, second).values();
+        edits = DiffSearching(left: first, right: second).values();
     }
 
     edits() is @DiffEdit {
@@ -156,7 +160,7 @@ object DiffScript {
     }
 }
 
-object MatchingBlock {
+hidden object MatchingBlock {
     has left, right, amount is int;
 
     MatchingBlock(left is int, right is int, size is int) {
@@ -178,39 +182,38 @@ object MatchingBlock {
     }
 }
 
-object MatchingBlocks {
+hidden object MatchingBlocks {
     has values is @MatchingBlock;
 
-    MatchingBlocks(left is Sequencing<string>, right is Sequencing<string>) {
-        let script = DiffScript(left, right);
+    MatchingBlocks(script is DiffScript) {
         let edits = script.edits();
         let empty is List<MatchingBlock> = EmptyList();
         let blocks is Cell<List<MatchingBlock>> = Cell(empty);
         for edits -> edit {
-            if edit.kind() == DiffEditKind.equal {
+            if edit::Line::kind == DiffEditKind.equal {
                 let current = blocks.value();
                 if current.size() > 0
-                    && current.first().left() + current.first().size() == edit.left()
-                    && current.first().right() + current.first().size() == edit.right() {
+                    && current.first().left() + current.first().size() == edit::Line::left
+                    && current.first().right() + current.first().size() == edit::Line::right {
                         let previous = current.first();
                         blocks.replace(
                             current.tail().prefix(
                                 MatchingBlock(
-                                    previous.left(),
-                                    previous.right(),
-                                    previous.size() + 1
+                                    left: previous.left(),
+                                    right: previous.right(),
+                                    size: previous.size() + 1
                                 )
                             )
                         );
                     }
                     else {
-                        blocks.replace(current.prefix(MatchingBlock(edit.left(), edit.right(), 1)));
+                        blocks.replace(current.prefix(MatchingBlock(left: edit::Line::left, right: edit::Line::right, size: 1)));
                     }
             }
         }
         values = DiffListValues(
-            blocks.value().prefix(MatchingBlock(script.left_size(), script.right_size(), 0)),
-            true
+            origin: blocks.value().prefix(MatchingBlock(script.left_size(), script.right_size(), 0)),
+            reverse: true
         ).values();
     }
 
@@ -219,31 +222,7 @@ object MatchingBlocks {
     }
 }
 
-object MatchingRatio {
-    has ratio is float;
-
-    MatchingRatio(left is Sequencing<string>, right is Sequencing<string>) {
-        let first = DiffLines(left).values();
-        let second = DiffLines(right).values();
-        let size = first.size() + second.size();
-        let blocks = MatchingBlocks(first, second).values();
-        let matched = (0..blocks.size()).reduce(0) -> sum, index {
-            sum + blocks.item(index).size();
-        };
-        ratio = if size == 0 {
-            1.0;
-        }
-        else {
-            (2 * matched).float() / size.float();
-        };
-    }
-
-    value() is float {
-        ratio;
-    }
-}
-
-object DiffSpan {
+hidden object DiffSpan {
     has start, end is int;
 
     DiffSpan(start is int, end is int) {
@@ -260,7 +239,7 @@ object DiffSpan {
     }
 }
 
-object DiffHunks {
+hidden object DiffHunks {
     has values is @DiffSpan;
 
     DiffHunks(edits is @DiffEdit, context is int) {
@@ -269,7 +248,7 @@ object DiffHunks {
         let empty is List<DiffSpan> = EmptyList();
         let spans is Cell<List<DiffSpan>> = Cell(empty);
         for (0..edits.size()) -> index {
-            if edits[index].kind() != DiffEditKind.equal {
+            if edits[index]::Line::kind != DiffEditKind.equal {
                 let start = if index > context {
                     index - context;
                 }
@@ -285,14 +264,14 @@ object DiffHunks {
                 let current = spans.value();
                 if current.size() > 0 && current.first().end() >= start {
                     let previous = current.first();
-                    spans.replace(current.tail().prefix(DiffSpan(previous.start(), end)));
+                    spans.replace(current.tail().prefix(DiffSpan(start: previous.start(), end: end)));
                 }
                 else {
-                    spans.replace(current.prefix(DiffSpan(start, end)));
+                    spans.replace(current.prefix(DiffSpan(start: start, end: end)));
                 }
             }
         }
-        values = DiffListValues(spans.value(), true).values();
+        values = DiffListValues(origin: spans.value(), reverse: true).values();
     }
 
     values() is @DiffSpan {
@@ -300,7 +279,7 @@ object DiffHunks {
     }
 }
 
-object DiffRange {
+hidden object DiffRange {
     has start, amount is int;
 
     DiffRange(start is int, amount is int) {
@@ -338,7 +317,7 @@ object DiffRange {
     }
 }
 
-object DiffPrinting {
+hidden object DiffPrinting {
     has script is DiffScript;
     has context is int;
 
@@ -349,14 +328,14 @@ object DiffPrinting {
 
     string(context_style is bool) is string {
         let edits = script.edits();
-        let spans = DiffHunks(edits, context).values();
+        let spans = DiffHunks(edits: edits, context: context).values();
         if spans.size() == 0 {
             return "";
         }
         let texts is @string = spans.map() -> span {
             let first = edits[span.start()];
             let left = (span.start()..span.end()).reduce(0) -> sum, index {
-                sum + (if edits[index].kind() != DiffEditKind.added {
+                sum + (if edits[index]::Line::kind != DiffEditKind.added {
                     1;
                 }
                 else {
@@ -364,23 +343,23 @@ object DiffPrinting {
                 });
             };
             let right = (span.start()..span.end()).reduce(0) -> sum, index {
-                sum + (if edits[index].kind() != DiffEditKind.removed {
+                sum + (if edits[index]::Line::kind != DiffEditKind.removed {
                     1;
                 }
                 else {
                     0;
                 });
             };
-            let old_range = DiffRange(first.left(), left);
-            let new_range = DiffRange(first.right(), right);
+            let old_range = DiffRange(start: first::Line::left, amount: left);
+            let new_range = DiffRange(start: first::Line::right, amount: right);
             if context_style {
-                let rows = DiffContextRows(edits, span).values();
+                let rows = DiffContextRows(edits: edits, span: span).values();
                 "***************\n*** " + old_range.context() + " ****\n" + rows[0] + "--- " + new_range.context() + " ----\n" + rows[1];
             }
             else {
                 let rows is @string = (span.start()..span.end()).map() -> index {
                     let edit = edits[index];
-                    (match edit.kind() {
+                    (match edit::Line::kind {
                         case DiffEditKind.equal {
                             " ";
                         }
@@ -390,7 +369,7 @@ object DiffPrinting {
                         else {
                             "+";
                         }
-                    }) + edit.text() + "\n";
+                    }) + edit::Line::text + "\n";
                 };
                 "@@ -" + old_range.unified() + " +" + new_range.unified() + " @@\n" + rows.join("");
             }
@@ -408,7 +387,7 @@ object DiffPrinting {
     }
 }
 
-object DiffContextRows {
+hidden object DiffContextRows {
     has values is @string;
 
     DiffContextRows(edits is @DiffEdit, span is DiffSpan) {
@@ -421,8 +400,8 @@ object DiffContextRows {
                 last;
             }
             let current = edits[position.value()];
-            if current.kind() == DiffEditKind.equal {
-                let text = "  " + current.text() + "\n";
+            if current::Line::kind == DiffEditKind.equal {
+                let text = "  " + current::Line::text + "\n";
                 left.replace(left.value().prefix(text));
                 right.replace(right.value().prefix(text));
                 position.replace(position.value() + 1);
@@ -431,26 +410,26 @@ object DiffContextRows {
                 let start = position.value();
                 loop {
                     if position.value() >= span.end()
-                        || edits[position.value()].kind() == DiffEditKind.equal {
+                        || edits[position.value()]::Line::kind == DiffEditKind.equal {
                             last;
                         }
                     position.replace(position.value() + 1);
                 }
                 let removed = (start..position.value()).reduce(false) -> found, index {
-                    found || edits[index].kind() == DiffEditKind.removed;
+                    found || edits[index]::Line::kind == DiffEditKind.removed;
                 };
                 let added = (start..position.value()).reduce(false) -> found, index {
-                    found || edits[index].kind() == DiffEditKind.added;
+                    found || edits[index]::Line::kind == DiffEditKind.added;
                 };
                 for (start..position.value()) -> index {
                     let edit = edits[index];
-                    if edit.kind() == DiffEditKind.removed {
+                    if edit::Line::kind == DiffEditKind.removed {
                         left.replace(left.value().prefix((if added {
                             "! ";
                         }
                         else {
                             "- ";
-                        }) + edit.text() + "\n"));
+                        }) + edit::Line::text + "\n"));
                     }
                     else {
                         right.replace(right.value().prefix((if removed {
@@ -458,14 +437,14 @@ object DiffContextRows {
                         }
                         else {
                             "+ ";
-                        }) + edit.text() + "\n"));
+                        }) + edit::Line::text + "\n"));
                     }
                 }
             }
         }
         values = [
-            DiffListValues(left.value(), true).values().join(""),
-            DiffListValues(right.value(), true).values().join("")
+            DiffListValues(origin: left.value(), reverse: true).values().join(""),
+            DiffListValues(origin: right.value(), reverse: true).values().join("")
         ];
     }
 
@@ -474,42 +453,117 @@ object DiffContextRows {
     }
 }
 
-object UnifiedDiff {
-    has text is string;
+// Diff compares two sequences of lines, once, and answers in several forms.
+//
+//     let changes = Diff(left: before, right: after);
+//     changes.unified();              // unified text, 3 lines of context
+//     changes.unified(1);
+//     changes.contextual();           // the context format
+//     changes.ratio();                // 0.0 .. 1.0, as difflib's ratio()
+//     for changes.edits() -> edit {
+//         edit::Line::kind;           // equal, removed or added
+//     }
+//
+// Equal inputs print as "". Context is 0..64 lines. A comparison that would
+// exceed the work budget throws DiffLimitExceeded.
+object Diff {
+    has left, right is Sequencing<string>;
 
-    UnifiedDiff(left is Sequencing<string>, right is Sequencing<string>) {
-        text = DiffPrinting(DiffScript(left, right), 3).string(false);
+    Diff(left is Sequencing<string>, right is Sequencing<string>) {
+        self.left = left;
+        self.right = right;
     }
 
-    UnifiedDiff(left is Sequencing<string>, right is Sequencing<string>, context is int) {
+    // Every line of both sides, in order: kept, removed or added.
+    edits() is @DiffEdit {
+        self.script().edits();
+    }
+
+    unified() is string {
+        self.unified(3);
+    }
+
+    unified(context is int) is string {
         confirm context >= 0 && context <= 64
             else throw InvalidDiff.because("context must be 0..64");
-        text = DiffPrinting(DiffScript(left, right), context).string(false);
+        DiffPrinting(script: self.script(), context: context).string(false);
     }
 
-    string() is string {
-        text;
-    }
-}
-
-object ContextDiff {
-    has text is string;
-
-    ContextDiff(left is Sequencing<string>, right is Sequencing<string>) {
-        text = DiffPrinting(DiffScript(left, right), 3).string(true);
+    contextual() is string {
+        self.contextual(3);
     }
 
-    ContextDiff(left is Sequencing<string>, right is Sequencing<string>, context is int) {
+    contextual(context is int) is string {
         confirm context >= 0 && context <= 64
             else throw InvalidDiff.because("context must be 0..64");
-        text = DiffPrinting(DiffScript(left, right), context).string(true);
+        DiffPrinting(script: self.script(), context: context).string(true);
     }
 
-    string() is string {
-        text;
+    // Twice the matched lines over all lines: 1.0 when equal, 0.0 when
+    // nothing matches.
+    ratio() is float {
+        let script = self.script();
+        let size = script.left_size() + script.right_size();
+        let blocks = MatchingBlocks(script).values();
+        let matched = (0..blocks.size()).reduce(0) -> sum, index {
+            sum + blocks.item(index).size();
+        };
+        if size == 0 {
+            1.0;
+        }
+        else {
+            (2 * matched).float() / size.float();
+        }
+    }
+
+    hidden script() is DiffScript {
+        memo let script = DiffScript(left: left, right: right);
+        script;
     }
 }
 
 test "unchanged lines have no diff" {
-    test.is(UnifiedDiff(["same"], ["same"]).string(), "");
+    test.is(Diff(left: ["same"], right: ["same"]).unified(), "");
+}
+
+test "one comparison answers in unified and context form" {
+    let changes = Diff(left: ["a", "b", "c", "d"], right: ["a", "x", "c", "d", "e"]);
+    test.is(changes.unified(), "--- left\n+++ right\n@@ -1,4 +1,5 @@\n a\n-b\n+x\n c\n d\n+e\n");
+    test.is(changes.unified(0), "--- left\n+++ right\n@@ -2 +2 @@\n-b\n+x\n@@ -4,0 +5 @@\n+e\n");
+    test.is(
+        changes.contextual(),
+        "*** left\n--- right\n***************\n*** 1,4 ****\n  a\n! b\n  c\n  d\n--- 1,5 ----\n  a\n! x\n  c\n  d\n+ e\n",
+    );
+    test.throws(InvalidDiff) {
+        changes.unified(65);
+    };
+    test.throws(InvalidDiff) {
+        changes.contextual(-1);
+    };
+}
+
+test "the ratio is twice the matched lines over all lines" {
+    test.is(Diff(left: ["a", "b", "c", "d"], right: ["a", "x", "c", "d", "e"]).ratio(), 2.0 / 3.0);
+    test.is(Diff(left: ["a"], right: ["a"]).ratio(), 1.0);
+    test.is(Diff(left: ["a"], right: ["b"]).ratio(), 0.0);
+    let nothing is @string = [];
+    test.is(Diff(left: nothing, right: nothing).ratio(), 1.0);
+    test.is(Diff(left: nothing, right: ["a"]).unified(), "--- left\n+++ right\n@@ -0,0 +1 @@\n+a\n");
+}
+
+test "edits walk both sides in order with their indexes" {
+    let edits = Diff(left: ["a", "b"], right: ["b", "c"]).edits();
+    let shown is @string = edits.map() -> edit {
+        let mark = if edit::Line::kind == DiffEditKind.equal {
+            "=";
+        }
+        else if edit::Line::kind == DiffEditKind.removed {
+            "-";
+        }
+        else {
+            "+";
+        };
+        mark + edit::Line::text + edit::Line::left.string() + edit::Line::right.string();
+    };
+    test.is(shown, ["-a00", "=b10", "+c21"]);
 }

@@ -75,6 +75,12 @@ and compares the output.
 |---|---|
 | `statistics/describe.ok` | centre, spread and quartiles of a sample; population variance; modes; a fitted line |
 
+## diff
+
+| Program | Task |
+|---|---|
+| `diff/compare.ok` | compare two versions once: unified and context patches, similarity, the list of edits |
+
 ## strings/parse
 
 | Program | Task |

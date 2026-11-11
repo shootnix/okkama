@@ -3770,6 +3770,12 @@ a `FittedLine` with `prediction(at:)` and `fit::Line::slope`. `Modes(values:)`
 lists the most frequent values in first-seen order. Too few values throw
 `StatisticsError`. `examples/statistics/` shows each.
 
+`diff` compares two sequences of lines once. `Diff(left:, right:)` answers
+`unified()` or `unified(context)`, `contextual()` (the older context format),
+`ratio()` (0.0 to 1.0, as difflib computes it) and `edits()`. Each edit
+shows `edit::Line::kind` (equal, removed or added), `::text`, and its index
+on each side. `examples/diff/` shows each.
+
 `http/client` sends requests with `HttpClient()`. By default it uses the system's DNS and trusted roots, reaches public endpoints only and speaks HTTP/1.1. Every other part is a named argument: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)` and `cookies: MemoryCookieJar()`. Every REST method has a shortcut: `get(url)`, `head`, `options`, `delete`, and `post(url:, body:)`, `put`, `patch` with a `Content` such as `JsonBody(json)`. Anything else is `client.response(Request(url:, method:, headers:, body:))`. A reply shows its head through the cap `Head` (`page::Head::status`, `::class`, `::headers`) and reads its body with `await page.text()`, `bytes()`, `json()` or `reading()`. `Status` and `Method` are enums: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` and `MethodName` turn them into wire numbers and tokens and back. `examples/http/client/` shows each task as a program.
 
 `strings/parse` reads text as the type asked for: `Number("42").int()`,

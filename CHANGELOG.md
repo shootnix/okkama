@@ -595,6 +595,22 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
       `ModesCursor` is hidden.
     - The module has inline tests now. There is an example,
       `examples/statistics/`.
+  - `diff` (B2, approved). One object for one comparison:
+
+    | before | now |
+    |---|---|
+    | `DiffScript(left, right).edits()` | `Diff(left:, right:).edits()` |
+    | `UnifiedDiff(left, right, context).string()` | `Diff(left:, right:).unified(context)` |
+    | `ContextDiff(left, right).string()` | `Diff(…).contextual()` |
+    | `MatchingRatio(left, right).value()` | `Diff(…).ratio()` |
+    | `edit.kind()`, `text()`, `left()`, `right()` | `edit::Line::kind`, `::text`, `::left`, `::right` |
+
+    - `Diff` compares on the first question and keeps the script with
+      `memo let`.
+    - Hunks, ranges, spans, matching blocks, printers and the search are
+      hidden.
+    - New inline tests check the output against Python's difflib. There is
+      an example, `examples/diff/`.
 
 ### Fixed
 

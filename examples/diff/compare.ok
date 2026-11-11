@@ -1,0 +1,30 @@
+module examples/diff/compare v1.0.0;
+
+import "diff" take Diff, DiffEditKind;
+import "io/stdout" take Stdout;
+
+// Compare two versions of a text line by line, once, and show the result in
+// the forms people read: a unified patch, the older context format, a
+// similarity ratio and the list of edits.
+
+main() is int {
+    let out = Stdout();
+    let before = ["[server]", "port = 80", "host = example.org", "workers = 4"];
+    let after = ["[server]", "port = 8080", "host = example.org", "workers = 4", "tls = on"];
+    let changes = Diff(left: before, right: after);
+
+    out.write(changes.unified());
+    out.write(changes.contextual(1));
+    out.writeln("similarity: " + changes.ratio().string());
+
+    for changes.edits() -> edit {
+        if edit::Line::kind == DiffEditKind.removed {
+            out.writeln("line " + (edit::Line::left + 1).string() + " removed: " + edit::Line::text);
+        }
+        else if edit::Line::kind == DiffEditKind.added {
+            out.writeln("line " + (edit::Line::right + 1).string() + " added: " + edit::Line::text);
+        }
+    }
+    out.writeln("unchanged prints nothing: " + (Diff(left: before, right: before).unified() == "").string());
+    0;
+}

@@ -6,7 +6,7 @@ import "regex/search" take RegexMatches;
 import "time/clock" take Timing;
 import "time/duration" take Duration;
 import "compare" take Order;
-import "diff" take UnifiedDiff, DiffLimitExceeded, InvalidDiff;
+import "diff" take Diff, DiffLimitExceeded, InvalidDiff;
 import "async/atomic" take Atomic;
 import "encoding/utf" take Utf8Encoded;
 import "encoding/hex" take HexEncoded;
@@ -196,7 +196,7 @@ object CheckTextDiff {
                     CheckValueText(line).string();
                 };
                 let rendered = try {
-                    UnifiedDiff(left, right, context).string();
+                    Diff(left: left, right: right).unified(context);
                 }
                 catch e is DiffLimitExceeded {
                     "";
@@ -209,7 +209,7 @@ object CheckTextDiff {
         let first = self.window(expected);
         let second = self.window(actual);
         let rendered = try {
-            UnifiedDiff(first, second, context).string();
+            Diff(left: first, right: second).unified(context);
         }
         catch e is DiffLimitExceeded {
             "bounded diff exceeds work budget";
