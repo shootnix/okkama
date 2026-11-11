@@ -48,7 +48,7 @@ object Repeating<T> does Iterating<T> {
     }
 }
 
-object RepeatingCursor<T> does Cursor<T> {
+hidden object RepeatingCursor<T> does Cursor<T> {
     has origin is T;
 
     RepeatingCursor(value is T) {
@@ -104,7 +104,7 @@ object Repeated<T> does Sequencing<T>, Iterating<T>, Sizing {
     }
 }
 
-object RepeatedCursor<T> does Cursor<T> {
+hidden object RepeatedCursor<T> does Cursor<T> {
     has origin is T;
     has position is int;
     has amount is int;
@@ -153,7 +153,7 @@ object Cycled<T> does Iterating<T> {
     }
 }
 
-object CycledCursor<T> does Cursor<T> {
+hidden object CycledCursor<T> does Cursor<T> {
     has origin is Sequencing<T>;
     has position is int;
 
@@ -187,7 +187,7 @@ object CycledCursor<T> does Cursor<T> {
     }
 }
 
-object EmptyCycleCursor<T> does Cursor<T> {
+hidden object EmptyCycleCursor<T> does Cursor<T> {
     has origin is Sequencing<T>;
 
     EmptyCycleCursor(origin is Sequencing<T>) {

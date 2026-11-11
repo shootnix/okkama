@@ -106,7 +106,7 @@ object LinkedList<T> does List<T>, Iterating<T>, Sizing {
     }
 }
 
-object EmptyListCursor<T> does Cursor<T> {
+hidden object EmptyListCursor<T> does Cursor<T> {
     has origin is List<T>;
 
     EmptyListCursor(:origin);
@@ -124,7 +124,7 @@ object EmptyListCursor<T> does Cursor<T> {
     }
 }
 
-object LinkedListCursor<T> does Cursor<T> {
+hidden object LinkedListCursor<T> does Cursor<T> {
     has origin is T;
     has following is List<T>;
 

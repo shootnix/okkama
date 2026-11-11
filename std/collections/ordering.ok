@@ -218,7 +218,7 @@ object UpperBound<T: Comparing<T>> {
     }
 }
 
-object OrderedCursor<T> does Cursor<T> {
+hidden object OrderedCursor<T> does Cursor<T> {
     has origin is @T;
     has position is int;
 
@@ -244,7 +244,7 @@ object OrderedCursor<T> does Cursor<T> {
     }
 }
 
-object RankedCursor<T, K: Comparing<K>> does Cursor<T> {
+hidden object RankedCursor<T, K: Comparing<K>> does Cursor<T> {
     has origin is @Ranked<T, K>;
     has position is int;
 

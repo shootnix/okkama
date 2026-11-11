@@ -53,7 +53,7 @@ import "size" take Sizing;
 //     let sample = Sliced(origin: events, start: 10, stop: 100, step: 5);
 //     let newest_first = Reversed(origin: stored_events);
 
-object CursorStep<T> {
+hidden object CursorStep<T> {
     has origin is Cursor<T>;
     has rest is Cursor<T>;
 
@@ -75,7 +75,7 @@ object CursorStep<T> {
     }
 }
 
-object CursorSteps<T> does Iterating<CursorStep<T>> {
+hidden object CursorSteps<T> does Iterating<CursorStep<T>> {
     has origin is Cursor<T>;
 
     CursorSteps(cursor is Cursor<T>) {
@@ -87,7 +87,7 @@ object CursorSteps<T> does Iterating<CursorStep<T>> {
     }
 }
 
-object CursorStepCursor<T> does Cursor<CursorStep<T>> {
+hidden object CursorStepCursor<T> does Cursor<CursorStep<T>> {
     has origin is Cursor<T>;
 
     CursorStepCursor(:origin);
@@ -138,7 +138,7 @@ hidden object MappedCursorSearch<A, B> {
     }
 }
 
-object MappedCursor<A, B> does Cursor<B> {
+hidden object MappedCursor<A, B> does Cursor<B> {
     has origin is B;
     has remaining is Cursor<A>;
     has mapping is (A) is B;
@@ -162,7 +162,7 @@ object MappedCursor<A, B> does Cursor<B> {
     }
 }
 
-object EmptyMappedCursor<A, B> does Cursor<B> {
+hidden object EmptyMappedCursor<A, B> does Cursor<B> {
     has origin is Cursor<A>;
     has mapping is (A) is B;
 
@@ -214,7 +214,7 @@ hidden object FilteredCursorSearch<T> {
     }
 }
 
-object FilteredCursor<T> does Cursor<T> {
+hidden object FilteredCursor<T> does Cursor<T> {
     has origin is Cursor<T>;
     has condition is (T) is bool;
 
@@ -233,7 +233,7 @@ object FilteredCursor<T> does Cursor<T> {
     }
 }
 
-object EmptyFilteredCursor<T> does Cursor<T> {
+hidden object EmptyFilteredCursor<T> does Cursor<T> {
     has origin is Cursor<T>;
     has condition is (T) is bool;
 
@@ -267,7 +267,7 @@ object Taken<T> does Iterating<T> {
     }
 }
 
-object TakenCursor<T> does Cursor<T> {
+hidden object TakenCursor<T> does Cursor<T> {
     has origin is Cursor<T>;
     has remaining is int;
 
@@ -359,7 +359,7 @@ hidden object TakenWhileCursorSearch<T> {
     }
 }
 
-object TakenWhileCursor<T> does Cursor<T> {
+hidden object TakenWhileCursor<T> does Cursor<T> {
     has origin is Cursor<T>;
     has condition is (T) is bool;
 
@@ -378,7 +378,7 @@ object TakenWhileCursor<T> does Cursor<T> {
     }
 }
 
-object EmptyTakenWhileCursor<T> does Cursor<T> {
+hidden object EmptyTakenWhileCursor<T> does Cursor<T> {
     has origin is Cursor<T>;
     has condition is (T) is bool;
 
@@ -442,7 +442,7 @@ object Chunked<T> does Iterating<@T> {
     }
 }
 
-object ChunkedCursor<T> does Cursor<@T> {
+hidden object ChunkedCursor<T> does Cursor<@T> {
     has origin is Cursor<T>;
     has amount is int;
 
@@ -495,7 +495,7 @@ object Pairwise<T> does Iterating<Pair<T, T>> {
     }
 }
 
-object PairwiseCursor<T> does Cursor<Pair<T, T>> {
+hidden object PairwiseCursor<T> does Cursor<Pair<T, T>> {
     has origin is Cursor<T>;
 
     PairwiseCursor(:origin);
@@ -532,7 +532,7 @@ object Accumulated<T, R> does Iterating<R> {
     }
 }
 
-object AccumulatedCursor<T, R> does Cursor<R> {
+hidden object AccumulatedCursor<T, R> does Cursor<R> {
     has origin is Cursor<T>;
     has current is R;
     has action is (R, T) is R;
@@ -561,7 +561,7 @@ object AccumulatedCursor<T, R> does Cursor<R> {
     }
 }
 
-object ExhaustedAccumulatedCursor<R> does Cursor<R> {
+hidden object ExhaustedAccumulatedCursor<R> does Cursor<R> {
     has origin is R;
 
     ExhaustedAccumulatedCursor(value is R) {
@@ -625,7 +625,7 @@ object Reversed<T> does Sequencing<T>, Iterating<T>, Sizing {
     }
 }
 
-object ReversedCursor<T> does Cursor<T> {
+hidden object ReversedCursor<T> does Cursor<T> {
     has origin is Sequencing<T>;
     has position is int;
 
@@ -677,7 +677,7 @@ object Sliced<T> does Iterating<T> {
     }
 }
 
-object SlicedCursor<T> does Cursor<T> {
+hidden object SlicedCursor<T> does Cursor<T> {
     has origin is Cursor<T>;
     has position is int;
     has stop is int;

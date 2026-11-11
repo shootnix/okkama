@@ -89,7 +89,7 @@ object PemBlocks does Iterating<PemBlock> {
 
 // One immutable source snapshot per cursor acquisition. Successor branches
 // share those sources and never reparse the enclosing PEM document.
-object PemSourcesCursor does Cursor<PemBlock> {
+hidden object PemSourcesCursor does Cursor<PemBlock> {
     has origin is @string;
     has position is int;
 
@@ -114,7 +114,7 @@ object PemSourcesCursor does Cursor<PemBlock> {
 }
 
 // Existing explicit cursor constructor retained for compatibility.
-object PemBlockCursor does Cursor<PemBlock> {
+hidden object PemBlockCursor does Cursor<PemBlock> {
     has origin is string;
     has position is int;
     has size is int;

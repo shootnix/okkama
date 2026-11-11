@@ -61,7 +61,7 @@ object Zipped<A, B> does Iterating<Pair<A, B>> {
     }
 }
 
-object ZippedCursor<A, B> does Cursor<Pair<A, B>> {
+hidden object ZippedCursor<A, B> does Cursor<Pair<A, B>> {
     has left is Cursor<A>;
     has right is Cursor<B>;
 
@@ -93,7 +93,7 @@ object StrictlyZipped<A, B> does Iterating<Pair<A, B>> {
     }
 }
 
-object StrictlyZippedCursor<A, B> does Cursor<Pair<A, B>> {
+hidden object StrictlyZippedCursor<A, B> does Cursor<Pair<A, B>> {
     has left is Cursor<A>;
     has right is Cursor<B>;
 
@@ -154,7 +154,7 @@ hidden object ChainedCursorSearch<T> {
     }
 }
 
-object ChainedCursorCandidates<T> does Iterating<ChainedCursorCandidateValue<T>> {
+hidden object ChainedCursorCandidates<T> does Iterating<ChainedCursorCandidateValue<T>> {
     has origins is Cursor<Iterating<T>>;
 
     ChainedCursorCandidates(:origins);
@@ -164,7 +164,7 @@ object ChainedCursorCandidates<T> does Iterating<ChainedCursorCandidateValue<T>>
     }
 }
 
-object ChainedCursorCandidate<T> does Cursor<ChainedCursorCandidateValue<T>> {
+hidden object ChainedCursorCandidate<T> does Cursor<ChainedCursorCandidateValue<T>> {
     has origins is Cursor<Iterating<T>>;
 
     ChainedCursorCandidate(:origins);
@@ -187,7 +187,7 @@ object ChainedCursorCandidate<T> does Cursor<ChainedCursorCandidateValue<T>> {
     }
 }
 
-object ChainedCursorCandidateValue<T> {
+hidden object ChainedCursorCandidateValue<T> {
     has source is Iterating<T>;
     has following is Cursor<Iterating<T>>;
 
@@ -205,7 +205,7 @@ object ChainedCursorCandidateValue<T> {
     }
 }
 
-object ExhaustedChainedCursor<T> does Cursor<T> {
+hidden object ExhaustedChainedCursor<T> does Cursor<T> {
     has origins is Cursor<Iterating<T>>;
 
     ExhaustedChainedCursor(:origins);
@@ -223,7 +223,7 @@ object ExhaustedChainedCursor<T> does Cursor<T> {
     }
 }
 
-object ChainedItemCursor<T> does Cursor<T> {
+hidden object ChainedItemCursor<T> does Cursor<T> {
     has current is Cursor<T>;
     has remaining is Cursor<Iterating<T>>;
 

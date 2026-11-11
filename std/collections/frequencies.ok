@@ -142,7 +142,7 @@ object KeyedFrequencies<T> does Iterating<Frequency<T>>, Sizing {
 
 // One pass over the input: distinct values in first-occurrence order, then
 // one counting scan per distinct value. No intermediate list is rebuilt.
-object FrequencyTally<T> {
+hidden object FrequencyTally<T> {
     has items is @T;
 
     FrequencyTally(values is Iterating<T>) {
@@ -202,7 +202,7 @@ object FrequencyTally<T> {
     }
 }
 
-object FrequencyBuilding<T> {
+hidden object FrequencyBuilding<T> {
     has origin is List<Frequency<T>>;
     has quantity is int;
 
@@ -243,7 +243,7 @@ object FrequencyBuilding<T> {
     }
 }
 
-object FrequencyRevision<T> {
+hidden object FrequencyRevision<T> {
     has origin is List<Frequency<T>>;
     has sought is T;
     has present is bool;

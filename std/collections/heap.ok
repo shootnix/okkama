@@ -72,7 +72,7 @@ object Heap<T: Comparing<T>> does Sizing {
     }
 }
 
-object HeapBuilding<T: Comparing<T>> {
+hidden object HeapBuilding<T: Comparing<T>> {
     has origin is HeapRepresenting<T>;
 
     HeapBuilding(root is HeapRepresenting<T>) {
@@ -103,7 +103,7 @@ role HeapRepresenting<T> {
     combination(other is HeapRepresenting<T>) is HeapRepresenting<T>;
 }
 
-object EmptyHeapTree<T: Comparing<T>> does HeapRepresenting<T> {
+hidden object EmptyHeapTree<T: Comparing<T>> does HeapRepresenting<T> {
     EmptyHeapTree();
 
     size() is int {
@@ -127,7 +127,7 @@ object EmptyHeapTree<T: Comparing<T>> does HeapRepresenting<T> {
     }
 }
 
-object HeapTreeNode<T: Comparing<T>> does HeapRepresenting<T> {
+hidden object HeapTreeNode<T: Comparing<T>> does HeapRepresenting<T> {
     has origin is T;
     has beginning is HeapRepresenting<T>;
     has ending is HeapRepresenting<T>;
@@ -182,7 +182,7 @@ object HeapTreeNode<T: Comparing<T>> does HeapRepresenting<T> {
     }
 }
 
-object HeapChildren<T> {
+hidden object HeapChildren<T> {
     has beginning is HeapRepresenting<T>;
     has ending is HeapRepresenting<T>;
 

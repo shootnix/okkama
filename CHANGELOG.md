@@ -364,6 +364,14 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     shapes, weights and distinct samples.
   - `regex/replace`: the substitution accumulator is hidden and answers
     `substitution()`.
+  - The machinery behind the public objects is hidden (the owner,
+    2026-11-11: «да»): 53 cursors, tree nodes and building steps that no
+    caller names. Among them are every `…Cursor` of collections, regex and
+    pem, `CursorStep`/`CursorSteps`, the heap's `HeapTreeNode`,
+    `EmptyHeapTree`, `HeapChildren` and `HeapBuilding`, frequencies'
+    `FrequencyTally`/`Building`/`Revision`, and the replacement tokens of
+    regex. The objects people use return them as roles (`Cursor<T>`,
+    `Iterating<T>`), so no call changes.
   - Every public object of the wave's modules has an inline test now
     (`regex/match` through `regex/search`, which alone can make a match),
     and the async selectors no case used (`FirstSuccessful`,

@@ -109,7 +109,7 @@ object ExpandedRegexReplacement does ReplacingRegexMatch {
     }
 }
 
-object ReplacementToken {
+hidden object ReplacementToken {
     has classification is string;
     has origin is string;
 
@@ -127,7 +127,7 @@ object ReplacementToken {
     }
 }
 
-object ReplacementTokens does Iterating<ReplacementToken> {
+hidden object ReplacementTokens does Iterating<ReplacementToken> {
     has origin is @string;
 
     ReplacementTokens(tokens is @string) {
@@ -139,7 +139,7 @@ object ReplacementTokens does Iterating<ReplacementToken> {
     }
 }
 
-object ReplacementTokenCursor does Cursor<ReplacementToken> {
+hidden object ReplacementTokenCursor does Cursor<ReplacementToken> {
     has origin is @string;
     has position is int;
 
@@ -293,7 +293,7 @@ hidden object RegexSubstitutionProgress {
     }
 }
 
-object RegexSubstitutionResult {
+hidden object RegexSubstitutionResult {
     has rendered is string;
     has quantity is int;
 
