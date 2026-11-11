@@ -641,6 +641,14 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     - Cursors, the layout and `WeekdayIndex` are hidden.
     - The module has inline tests now. There is an example,
       `examples/calendar/`.
+  - `message` and `parallel`:
+    - `MessageHeaderName` folds its case-insensitive key on the first
+      comparison (`memo let`), not when made.
+    - The header folding, unfolding, snapshot and output helpers are hidden.
+      `MessageHeader` keeps `value()`, as a name/value pair.
+    - `ParallelMapped(origins:, action:)` reads the processor count when a
+      run starts, not when made. Its run and progress objects are hidden.
+    - `parallel/map` has inline tests now; they need no worker process.
 
 ### Fixed
 

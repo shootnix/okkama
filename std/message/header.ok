@@ -8,7 +8,7 @@ import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument;
 
 object MessageHeaderName does Comparing<MessageHeaderName> {
-    has spelling, key is string;
+    has spelling is string;
 
     MessageHeaderName(origin is string) {
         confirm origin.length() > 0 else throw InvalidMessageHeader.located(0, "empty field name");
@@ -18,25 +18,32 @@ object MessageHeaderName does Comparing<MessageHeaderName> {
             confirm value >= 33 && value <= 126 && value != 58
                 else throw InvalidMessageHeader.located(index, "invalid field name");
         }
-        let folded is @byte = bytes.map() -> octet {
-            let value = octet.int();
-            if value >= 65 && value <= 90 {
-                (value + 32).byte();
-            }
-            else {
-                octet;
-            }
-        };
         spelling = origin;
-        key = Utf8Decoded(folded).string();
     }
 
     string() is string {
         spelling;
     }
 
+    // Names compare without regard to ASCII case.
     order(other is MessageHeaderName) is Order {
-        let folded is @byte = Utf8Encoded(other.string()).bytes().map() -> octet {
+        self.key().order(MessageHeaderKey(origin: other.string()).string());
+    }
+
+    hidden key() is string {
+        memo let folded = MessageHeaderKey(origin: spelling).string();
+        folded;
+    }
+}
+
+// A field name with ASCII letters folded to lowercase.
+hidden object MessageHeaderKey {
+    has origin is string;
+
+    MessageHeaderKey(:origin);
+
+    string() is string {
+        let folded is @byte = Utf8Encoded(origin).bytes().map() -> octet {
             let value = octet.int();
             if value >= 65 && value <= 90 {
                 (value + 32).byte();
@@ -45,7 +52,7 @@ object MessageHeaderName does Comparing<MessageHeaderName> {
                 octet;
             }
         };
-        key.order(Utf8Decoded(folded).string());
+        Utf8Decoded(folded).string();
     }
 }
 
@@ -73,12 +80,12 @@ object MessageHeaders {
 
     MessageHeaders(entries is Sequencing<MessageHeader>) {
         maximum = 1024;
-        origin = MessageHeaderSnapshot(entries, 1024).entries();
+        origin = MessageHeaderSnapshot(origin: entries, maximum: 1024).entries();
     }
 
     MessageHeaders(entries is Sequencing<MessageHeader>, maximum_entries is int) {
         maximum = maximum_entries;
-        origin = MessageHeaderSnapshot(entries, maximum_entries).entries();
+        origin = MessageHeaderSnapshot(origin: entries, maximum: maximum_entries).entries();
     }
 
     entries() is Sequencing<MessageHeader> {
@@ -120,7 +127,7 @@ object MessageHeaders {
                 entry;
             }
         };
-        MessageHeaders(entries, maximum);
+        MessageHeaders(entries: entries, maximum_entries: maximum);
     }
 }
 
@@ -143,7 +150,7 @@ object RenderedMessageHeaders {
     bytes() is @byte {
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        let output = MessageHeaderOutput(buffer, maximum);
+        let output = MessageHeaderOutput(buffer: buffer, maximum: maximum);
         let entries = origin.entries();
         for (0..entries.size()) -> index {
             FoldedMessageHeader(entries.item(index)).print(output);
@@ -160,7 +167,7 @@ enum MessageHeaderLimitExceeded is Error = (kind(kind is string));
 
 // Importable implementation collaborators; no HTTP grammar or field-specific
 // mail address/date/MIME parsing is implied by this generic layer.
-object UnfoldedMessageHeader {
+hidden object UnfoldedMessageHeader {
     has origin is string;
 
     UnfoldedMessageHeader(origin is string) {
@@ -202,7 +209,7 @@ object UnfoldedMessageHeader {
     }
 }
 
-object MessageHeaderSnapshot {
+hidden object MessageHeaderSnapshot {
     has origin is Sequencing<MessageHeader>;
     has maximum is int;
 
@@ -225,7 +232,7 @@ object MessageHeaderSnapshot {
     }
 }
 
-object MessageHeaderOutput {
+hidden object MessageHeaderOutput {
     has buffer is ByteBuffer;
     has maximum is int;
 
@@ -244,7 +251,7 @@ object MessageHeaderOutput {
     }
 }
 
-object MessageHeaderLine {
+hidden object MessageHeaderLine {
     has start, boundary is int;
 
     MessageHeaderLine() {
@@ -266,7 +273,7 @@ object MessageHeaderLine {
     }
 }
 
-object FoldedMessageHeader {
+hidden object FoldedMessageHeader {
     has origin is MessageHeader;
 
     FoldedMessageHeader(origin is MessageHeader) {
@@ -306,7 +313,7 @@ object FoldedMessageHeader {
 }
 
 test "field lookup ignores case without losing spelling" {
-    let headers = MessageHeaders([MessageHeader(MessageHeaderName("Subject"), "hello")]);
+    let headers = MessageHeaders([MessageHeader(name: MessageHeaderName("Subject"), value: "hello")]);
     test.is(headers.first(MessageHeaderName("SUBJECT")), "hello");
     test.is(headers.entries().item(0).name().string(), "Subject");
 }

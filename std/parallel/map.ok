@@ -14,7 +14,7 @@ import "runtime/system" take system_cpu_count;
 //     let values = await mapped.results();
 //
 // Construction stores the inputs and validates the positive worker bound. The
-// default comes from the runtime CPU count. Each results() call creates a fresh
+// default is the runtime CPU count, read when a run starts. Each results() call creates a fresh
 // lazy run; awaiting the same Future again reuses its completed outcome.
 //
 // A worker must be a synchronous typed bound action accepted by spawn. Receiver
@@ -41,23 +41,30 @@ object ParallelMapped<T, R> {
         bound = workers;
     }
 
+    // As many workers as the runtime has processors, counted when the run
+    // starts.
     ParallelMapped(origins is Sequencing<T>, action is (T) is R) {
-        let workers = system_cpu_count();
-        confirm workers > 0 else throw InvalidWorkerCount.workers(workers);
         self.origins = origins;
         self.action = action;
-        bound = workers;
+        bound = 0;
     }
 
     workers() is int {
-        bound;
+        if bound > 0 {
+            bound;
+        }
+        else {
+            let workers = system_cpu_count();
+            confirm workers > 0 else throw InvalidWorkerCount.workers(workers);
+            workers;
+        }
     }
 
     async results() is Sequencing<R> {
         let run is ParallelMapRun<T, R> = ParallelMapRun(
             origins: origins,
             action: action,
-            workers: bound
+            workers: self.workers()
         );
         let scope is FutureScope<R, Sequencing<R>> = FutureScope(action: run.run);
         await scope.outcome();
@@ -66,7 +73,7 @@ object ParallelMapped<T, R> {
 
 // Implementation body owned by one FutureScope. All started children remain
 // supervised even if reading or encoding a later input throws during dispatch.
-object ParallelMapRun<T, R> {
+hidden object ParallelMapRun<T, R> {
     has origins is Sequencing<T>;
     has action is (T) is R;
     has workers is int;
@@ -107,7 +114,7 @@ object ParallelMapRun<T, R> {
 }
 
 // Persistent run-local accumulator; a successor appends one ordered result.
-object ParallelMapProgress<R> {
+hidden object ParallelMapProgress<R> {
     has position is int;
     has reversed is List<R>;
 
@@ -135,3 +142,19 @@ object ParallelMapProgress<R> {
 }
 
 enum InvalidWorkerCount is Error = (workers(workers is int));
+
+object Doubling {
+    Doubling();
+
+    run(value is int) is int {
+        value * 2;
+    }
+}
+
+test "the worker bound is given or read from the runtime; zero is refused" {
+    test.is(ParallelMapped(origins: [1, 2, 3], action: Doubling().run, workers: 2).workers(), 2);
+    test.ok(ParallelMapped(origins: [1, 2, 3], action: Doubling().run).workers() > 0);
+    test.throws(InvalidWorkerCount) {
+        ParallelMapped(origins: [1], action: Doubling().run, workers: 0);
+    };
+}

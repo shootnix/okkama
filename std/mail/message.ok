@@ -101,7 +101,7 @@ object DeliveredMail does ByteSource {
             field.name().order(MessageHeaderName("Bcc")) != Order.equal
                 && field.name().order(MessageHeaderName("Resent-Bcc")) != Order.equal;
         };
-        content.part().headers(MessageHeaders(public_fields, size), content.limits()).bytes();
+        content.part().headers(MessageHeaders(entries: public_fields, maximum_entries: size), content.limits()).bytes();
     }
 }
 
@@ -639,7 +639,7 @@ object MailIdentifier {
 }
 
 test "delivery preparation retains the source message" {
-    let fields = MessageHeaders([MessageHeader(MessageHeaderName("Bcc"), "private@example.test")]);
+    let fields = MessageHeaders([MessageHeader(name: MessageHeaderName("Bcc"), value: "private@example.test")]);
     let message = MailMessage(fields, BinaryBody([]));
     test.is(DeliveredMail(message).bytes().size(), 2);
     test.is(message.headers().entries().size(), 1);

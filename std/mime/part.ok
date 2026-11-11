@@ -860,7 +860,7 @@ object MimePendingHeader {
     }
 
     header() is MessageHeader {
-        MessageHeader(MessageHeaderName(name), fragments.entries().join("\r\n"));
+        MessageHeader(name: MessageHeaderName(name), value: fragments.entries().join("\r\n"));
     }
 
     continuation(text is string) is ^MimePendingHeader {
@@ -895,7 +895,7 @@ object MimeHeaderParsing {
                     output = output.following(pending.header());
                 }
                 return MimeHeaderSection(
-                    MessageHeaders(output.entries(), limits.header_bytes()),
+                    MessageHeaders(entries: output.entries(), maximum_entries: limits.header_bytes()),
                     line.after()
                 );
             }
@@ -1145,7 +1145,7 @@ object MimeRendering {
         origin.body().validate(metadata.type());
         confirm limits.header_bytes() >= 2 else throw MimeLimitFailure.kind("header_bytes");
         let headers = try {
-            RenderedMessageHeaders(origin.headers(), limits.header_bytes() - 2).bytes();
+            RenderedMessageHeaders(origin: origin.headers(), maximum_bytes: limits.header_bytes() - 2).bytes();
         }
         catch failure is MessageHeaderLimitExceeded {
             throw MimeLimitFailure.kind("header_bytes");
