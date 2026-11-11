@@ -532,6 +532,15 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
       `==` depends on it, and `memo let` cannot keep a role-typed value,
       which might be a resource.
     - Named arguments in 35 calls. There is an example, `examples/toml/`.
+  - `plist`:
+    - `ParsedPlist(bytes).root()` replaces `.value()`.
+    - Each scalar answers with its type's noun, as json's readers do:
+      `bool()`, `integer()`, `float()`, `string()`, `bytes()`, `instant()`
+      and `number()` (a UID).
+    - Sixteen parser and writer internals are hidden. `PlistXmlSource`,
+      `PlistXmlToken` and `PlistXmlText` stay public, because
+      `http/xmlrpc` reads XML with them.
+    - Named arguments in 50 calls.
 
 ### Fixed
 

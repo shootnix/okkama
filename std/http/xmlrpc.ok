@@ -873,7 +873,7 @@ object XmlRpcXmlDecoded {
                     }
                     else {
                         try {
-                            PlistXmlSource("", 0).decoded("&" + entity + ";", 0);
+                            PlistXmlSource(source: "", base: 0).decoded("&" + entity + ";", 0);
                         }
                         catch e is Error {
                             throw InvalidXmlRpc.because("XML reference");
@@ -908,7 +908,7 @@ object XmlRpcParsing {
             decoded;
         };
         XmlRpcXmlCharacters(text);
-        source = PlistXmlSource(text, 0);
+        source = PlistXmlSource(source: text, base: 0);
         position = Atomic(0);
         usage = XmlRpcUsage(limits);
         let first = try {

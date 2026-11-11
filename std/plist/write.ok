@@ -69,7 +69,7 @@ object EncodedPlist {
     }
 
     bytes() is @byte {
-        let session = PlistWireSession(format, maximum_bytes, maximum_nodes, maximum_depth);
+        let session = PlistWireSession(format: format, maximum_bytes: maximum_bytes, maximum_nodes: maximum_nodes, maximum_depth: maximum_depth);
         let root = session.node(origin, 1);
         session.finished(root);
     }
@@ -88,7 +88,7 @@ enum InvalidPlistWriteSource is Error = (invalid);
 // Internal encoding session owns all aggregate buffers. Node counting uses a
 // bounded byte buffer; object offsets retain fixed-width checked integers. The
 // reserved suffix/table space participates in every contribution preflight.
-object PlistWireSession {
+hidden object PlistWireSession {
     has format is PlistFormat;
     has maximum_bytes, maximum_nodes, maximum_depth is int;
     has output, offsets, nodes is ByteBuffer;
@@ -150,7 +150,7 @@ object PlistWireSession {
 
     node(value is PlistValue, depth is int) is int {
         self.claim(depth);
-        let recipient = PlistWireValue(self, depth);
+        let recipient = PlistWireValue(session: self, depth: depth);
         value.print(recipient);
         recipient.result();
     }
@@ -246,10 +246,10 @@ object PlistWireSession {
         self.capacity(value.length() + 9);
         let utf8 = Utf8Encoded(value).bytes();
         if utf8.size() == value.length() {
-            return self.record(PlistWireLength(80, utf8.size()).bytes(), utf8);
+            return self.record(PlistWireLength(marker: 80, count: utf8.size()).bytes(), utf8);
         }
         let utf16 = Utf16Encoded(origin: value, order: ByteOrder.big).bytes();
-        self.record(PlistWireLength(96, (utf16.size() / 2).int()).bytes(), utf16);
+        self.record(PlistWireLength(marker: 96, count: (utf16.size() / 2).int()).bytes(), utf16);
     }
 
     key(name is string, depth is int) is int {
@@ -302,7 +302,7 @@ object PlistWireSession {
 
 // One print receiver per nominal value. The one-event gate precedes processing
 // that event, and result() verifies completion. Callback failures remain intact.
-object PlistWireValue does PlistWriting {
+hidden object PlistWireValue does PlistWriting {
     has session is PlistWireSession;
     has depth is int;
     has event, identity is ByteBuffer;
@@ -353,7 +353,7 @@ object PlistWireValue does PlistWriting {
             self.end(0);
         }
         else {
-            let number = PlistWireInteger(value, false);
+            let number = PlistWireInteger(value: value, uid: false);
             self.end(session.record([byte(16 + number.power())], number.bytes()));
         }
     }
@@ -400,7 +400,7 @@ object PlistWireValue does PlistWriting {
         }
         else {
             session.capacity(value.size() + 9);
-            self.end(session.record(PlistWireLength(64, value.size()).bytes(), value));
+            self.end(session.record(PlistWireLength(marker: 64, count: value.size()).bytes(), value));
         }
     }
 
@@ -432,7 +432,7 @@ object PlistWireValue does PlistWriting {
     uid(value is BigInt) is void {
         self.begin();
         confirm !session.xml() else throw UnsupportedPlistValue.because("XML has no UID element");
-        let number = PlistWireInteger(value, true);
+        let number = PlistWireInteger(value: value, uid: true);
         self.end(session.record([byte(128 + number.width() - 1)], number.bytes()));
     }
 
@@ -456,7 +456,7 @@ object PlistWireValue does PlistWriting {
             self.end(0);
         }
         else {
-            self.end(session.record(PlistWireLength(160, size).bytes(), refs.content().bytes()));
+            self.end(session.record(PlistWireLength(marker: 160, count: size).bytes(), refs.content().bytes()));
         }
     }
 
@@ -489,7 +489,7 @@ object PlistWireValue does PlistWriting {
         }
         else {
             keys.writing() <- refs.content().bytes();
-            self.end(session.record(PlistWireLength(208, size).bytes(), keys.content().bytes()));
+            self.end(session.record(PlistWireLength(marker: 208, count: size).bytes(), keys.content().bytes()));
         }
     }
 
@@ -510,7 +510,7 @@ object PlistWireValue does PlistWriting {
 
 // Internal persistent seen-key set for the ordered dictionary currently being
 // printed. Exact strings; quadratic duplicate detection within the node bound.
-object PlistWrittenNames {
+hidden object PlistWrittenNames {
     has origin is List<string>;
 
     PlistWrittenNames() {
@@ -528,7 +528,7 @@ object PlistWrittenNames {
 
 // Internal binary scalar encoding. Bound comparisons precede powers/division;
 // byte extraction never narrows the original arbitrary-precision integer.
-object PlistWireInteger {
+hidden object PlistWireInteger {
     has origin is BigInt;
     has size is int;
 
@@ -627,7 +627,7 @@ object PlistWireInteger {
     }
 }
 
-object PlistWireLength {
+hidden object PlistWireLength {
     has marker, count is int;
 
     PlistWireLength(marker is int, count is int) {
@@ -641,15 +641,15 @@ object PlistWireLength {
         }
         let output = ByteBuffer();
         defer output.closing().close();
-        let number = PlistWireInteger(BigInt(count.string()), false);
+        let number = PlistWireInteger(value: BigInt(count.string()), uid: false);
         output.writing() <- [byte(marker + 15), byte(16 + number.power())] <- number.bytes();
         output.content().bytes();
     }
 }
 
 test "plist binary lengths use inline counts before extended records" {
-    test.is(PlistWireLength(64, 0).bytes(), [byte(64)]);
-    test.is(PlistWireLength(160, 14).bytes(), [byte(174)]);
+    test.is(PlistWireLength(marker: 64, count: 0).bytes(), [byte(64)]);
+    test.is(PlistWireLength(marker: 160, count: 14).bytes(), [byte(174)]);
 }
 
 test "plist exact duplicate names remain distinct from case variants" {
@@ -668,12 +668,12 @@ test "plist exact duplicate names remain distinct from case variants" {
 }
 
 test "plist binary envelope and reserved suffix fit an exact byte budget" {
-    let session = PlistWireSession(PlistFormat.binary, 49, 1, 1);
+    let session = PlistWireSession(format: PlistFormat.binary, maximum_bytes: 49, maximum_nodes: 1, maximum_depth: 1);
     let root = session.record([byte(9)], []);
     test.is(session.finished(root).size(), 49);
     test.is(
         try {
-            PlistWireSession(PlistFormat.binary, 39, 1, 1);
+            PlistWireSession(format: PlistFormat.binary, maximum_bytes: 39, maximum_nodes: 1, maximum_depth: 1);
             "bad";
         }
         catch PlistWriteLimitExceeded.kind(kind) {

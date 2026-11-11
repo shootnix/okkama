@@ -68,7 +68,7 @@ object PlistBoolean does PlistValue {
         PlistKind.boolean_value;
     }
 
-    value() is bool {
+    bool() is bool {
         origin;
     }
 
@@ -88,7 +88,7 @@ object PlistInteger does PlistValue {
         PlistKind.integer_value;
     }
 
-    value() is BigInt {
+    integer() is BigInt {
         origin;
     }
 
@@ -108,7 +108,7 @@ object PlistReal does PlistValue {
         PlistKind.real_value;
     }
 
-    value() is float {
+    float() is float {
         origin;
     }
 
@@ -128,7 +128,7 @@ object PlistString does PlistValue {
         PlistKind.string_value;
     }
 
-    value() is string {
+    string() is string {
         origin;
     }
 
@@ -148,7 +148,7 @@ object PlistData does PlistValue {
         PlistKind.data_value;
     }
 
-    value() is @byte {
+    bytes() is @byte {
         origin;
     }
 
@@ -168,7 +168,7 @@ object PlistDate does PlistValue {
         PlistKind.date_value;
     }
 
-    value() is Instant {
+    instant() is Instant {
         origin;
     }
 
@@ -191,7 +191,7 @@ object PlistUid does PlistValue {
         PlistKind.uid_value;
     }
 
-    value() is BigInt {
+    number() is BigInt {
         origin;
     }
 
@@ -222,11 +222,11 @@ object PlistArray does PlistValue {
     has origin is @PlistValue;
 
     PlistArray(values is Sequencing<PlistValue>) {
-        origin = PlistArraySnapshot(values, 1024).items();
+        origin = PlistArraySnapshot(source: values, maximum: 1024).items();
     }
 
     PlistArray(values is Sequencing<PlistValue>, maximum_items is int) {
-        origin = PlistArraySnapshot(values, maximum_items).items();
+        origin = PlistArraySnapshot(source: values, maximum: maximum_items).items();
     }
 
     kind() is PlistKind {
@@ -246,11 +246,11 @@ object PlistDictionary does PlistValue {
     has origin is @PlistMember;
 
     PlistDictionary(members is Sequencing<PlistMember>) {
-        origin = PlistDictionarySnapshot(members, 1024).items();
+        origin = PlistDictionarySnapshot(source: members, maximum: 1024).items();
     }
 
     PlistDictionary(members is Sequencing<PlistMember>, maximum_items is int) {
-        origin = PlistDictionarySnapshot(members, maximum_items).items();
+        origin = PlistDictionarySnapshot(source: members, maximum: maximum_items).items();
     }
 
     kind() is PlistKind {
@@ -286,7 +286,7 @@ object PlistDictionary does PlistValue {
 
 // Internal preconstruction snapshots shared by constructor overloads. Imported
 // only as implementation collaborators; Okkama has no module-private objects.
-object PlistArraySnapshot {
+hidden object PlistArraySnapshot {
     has origin is @PlistValue;
 
     PlistArraySnapshot(source is Sequencing<PlistValue>, maximum is int) {
@@ -306,7 +306,7 @@ object PlistArraySnapshot {
     }
 }
 
-object PlistDictionarySnapshot {
+hidden object PlistDictionarySnapshot {
     has origin is @PlistMember;
 
     PlistDictionarySnapshot(source is Sequencing<PlistMember>, maximum is int) {
@@ -344,16 +344,16 @@ enum InvalidPlistContainerSize is Error = (invalid);
 enum PlistContainerLimitExceeded is Error = (exceeded);
 
 test "plist scalar payloads keep their own nominal kinds" {
-    test.ok(PlistBoolean(true).value());
+    test.ok(PlistBoolean(true).bool());
     test.ok(PlistString("text").kind() == PlistKind.string_value);
-    test.is(PlistString(" text ").value(), " text ");
-    test.is(PlistData([byte(0), byte(255)]).value().size(), 2);
-    test.is(PlistReal(1.25).value(), 1.25);
+    test.is(PlistString(" text ").string(), " text ");
+    test.is(PlistData([byte(0), byte(255)]).bytes().size(), 2);
+    test.is(PlistReal(1.25).float(), 1.25);
 }
 
 test "plist containers preserve order and exact member names" {
     let value = PlistDictionary(
-        [PlistMember("z", PlistBoolean(true)), PlistMember("", PlistString("last"))]
+        [PlistMember(name: "z", value: PlistBoolean(true)), PlistMember(name: "", value: PlistString("last"))]
     );
     test.is(value.members().item(0).name(), "z");
     test.is(value.members().item(1).name(), "");
@@ -375,7 +375,7 @@ test "plist missing duplicate and cardinality failures are typed" {
     );
     test.is(
         try {
-            PlistDictionary([PlistMember("x", PlistString("")), PlistMember("x", PlistString(""))]);
+            PlistDictionary([PlistMember(name: "x", value: PlistString("")), PlistMember(name: "x", value: PlistString(""))]);
             "bad";
         }
         catch DuplicatePlistMember.name(name) {
@@ -383,12 +383,12 @@ test "plist missing duplicate and cardinality failures are typed" {
         },
         "x"
     );
-    test.is(PlistArray([], 0).values().size(), 0);
+    test.is(PlistArray(values: [], maximum_items: 0).values().size(), 0);
     test.throws(InvalidPlistContainerLimit) {
-        PlistArray([], -1);
+        PlistArray(values: [], maximum_items: -1);
     };
     test.ok(try {
-        PlistDictionary([PlistMember("x", PlistBoolean(true))], 0);
+        PlistDictionary(members: [PlistMember("x", PlistBoolean(true))], maximum_items: 0);
         false;
     }
     catch error is PlistContainerLimitExceeded {
