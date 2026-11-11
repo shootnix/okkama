@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.path.lexical-grammar",
+  "title": "Paths join, find parents and tidy by their grammar, never the host",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.FS.PATH",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - posix child\nok 2 - windows child converts separators\nok 3 - posix parent\nok 4 - relative parent of one segment\nok 5 - posix root is its own parent\nok 6 - windows root is its own parent\nok 7 - windows parent reaches the root\nok 8 - unc share is its own parent\nok 9 - dot segments are tidied\nok 10 - repeated separators are tidied\nok 11 - dot-dot stays\nok 12 - absolute part replaces\nok 13 - drive-relative is not absolute\nok 14 - unc is absolute\nchecks: 14, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/fs/path.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #492 from the fs/path contract text",
+    "expected_basis": "fs/path: lexical paths of the posix and windows grammars; a root is its own parent, also behind a drive or a UNC share; joining tidies `.` and repeated separators and keeps `..`."
+  },
+  "status": "mandatory",
+  "notes": "C:\\ used to lose its root on every engine (#492)."
+}

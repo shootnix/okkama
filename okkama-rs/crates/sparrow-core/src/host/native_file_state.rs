@@ -18,6 +18,8 @@ use std::{
 #[derive(Debug)]
 pub(crate) struct FileState {
     pub(crate) path: PathBuf,
+    /// A temporary file's path as the program spelled it, as the IR and JVM runtimes report it.
+    pub(crate) shown: String,
     pub(crate) temporary: bool,
     pub(crate) delete_on_close: Option<PathBuf>,
     flags: i64,
@@ -61,10 +63,11 @@ impl FileState {
         }
         Ok(())
     }
-    pub(crate) fn temporary(path: PathBuf, channel: RawFile) -> Self {
+    pub(crate) fn temporary(path: PathBuf, shown: String, channel: RawFile) -> Self {
         Self {
             delete_on_close: Some(path.clone()),
             path,
+            shown,
             temporary: true,
             flags: 3,
             encoding: String::new(),
@@ -275,6 +278,7 @@ impl Heap {
                 return Err(fail(n, "unsupported", "Unsupported encoding"));
             }
             let state = FileState {
+                shown: String::new(),
                 temporary: false,
                 delete_on_close: None,
                 path: PathBuf::from(String::from_utf8_lossy(&bytes).as_ref()),

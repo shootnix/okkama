@@ -13,6 +13,8 @@ use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
 #[derive(Debug)]
 pub(crate) struct TemporaryDirectory {
     path: PathBuf,
+    /// The path as the program spelled it, as the IR and JVM runtimes report it.
+    shown: String,
     closed: bool,
 }
 pub(crate) fn handles(n: Native) -> bool {
@@ -60,13 +62,21 @@ impl Heap {
         let yes = Slot::boolean(true);
         if matches!(n, FsTemporaryFileCreate | FsTemporaryDirectoryCreate) {
             let parent = self.fs_path(n, a[0])?;
+            let spelled = String::from_utf8_lossy(&self.native_bytes(a[0])?).into_owned();
             let prefix = self.text(a[1])?.to_owned();
             for _ in 0..100 {
-                let path = parent.join(name(n, &prefix)?);
+                let leaf = name(n, &prefix)?;
+                let path = parent.join(&leaf);
+                // Tidy, as path() and child() make paths: `./t-x` is `t-x`.
+                let unix = crate::host::path_syntax::Spec::Unix;
+                let shown = unix.canonpath(&crate::host::path_syntax::joined(
+                    unix,
+                    &[spelled.clone(), leaf],
+                ));
                 if n == FsTemporaryFileCreate {
                     match RawFile::create(n, &path, 1 | 2 | 4 | 32, 0o600) {
                         Ok(channel) => {
-                            let state = FileState::temporary(path, channel);
+                            let state = FileState::temporary(path, shown, channel);
                             return Ok(Slot {
                                 tag: HANDLE,
                                 bits: self
@@ -91,6 +101,7 @@ impl Heap {
                                 bits: self.handles.allocate(Handle::TemporaryDirectory(
                                     TemporaryDirectory {
                                         path,
+                                        shown,
                                         closed: false,
                                     },
                                 ))?,
@@ -114,14 +125,13 @@ impl Heap {
                 return Err(fail(n, "invalid_input", "File is not temporary"));
             }
             if n == FsTemporaryFilePath {
-                return Ok(
-                    self.native_byte_array(state.path.to_string_lossy().as_bytes().to_vec())?
-                );
+                return Ok(self.native_byte_array(state.shown.as_bytes().to_vec())?);
             }
             if state.closed {
                 return Err(fail(n, "already_closed", "Temporary file is closed"));
             }
             let destination = self.fs_path(n, a[1])?;
+            let spelled = String::from_utf8_lossy(&self.native_bytes(a[1])?).into_owned();
             state.seal(n)?;
             match fs::hard_link(&state.path, &destination) {
                 Ok(()) => {}
@@ -152,6 +162,7 @@ impl Heap {
             }
             fs::remove_file(&state.path).map_err(|e| host(n, e))?;
             state.path = destination;
+            state.shown = spelled;
             state.delete_on_close = None;
             return Ok(yes);
         }
@@ -163,7 +174,7 @@ impl Heap {
         };
         match n {
             FsTemporaryDirectoryPath => {
-                let bytes = state.path.to_string_lossy().as_bytes().to_vec();
+                let bytes = state.shown.as_bytes().to_vec();
                 Ok(self.native_byte_array(bytes)?)
             }
             FsTemporaryDirectoryClosed => Ok(Slot::boolean(state.closed)),

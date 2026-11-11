@@ -401,13 +401,16 @@ public final class FsNatives {
             return spec.canonpath(parent.isEmpty() ? "." : parent);
         }
         List<String> segments = new ArrayList<String>(spec.splitdir(split[1]));
+        boolean rooted = segments.size() > 1 && segments.get(0).isEmpty();
         while (segments.size() > 1 && segments.get(segments.size() - 1).isEmpty()) {
             segments.remove(segments.size() - 1);
         }
         if (!segments.isEmpty()) {
             segments.remove(segments.size() - 1);
         }
-        String parent = spec.catpath(split[0], segments.isEmpty() ? "" : spec.catdir(segments), "");
+        // The parent of a root is the root itself, also behind a volume (C:\).
+        String directory = segments.isEmpty() ? (rooted ? spec.rootdir() : "") : spec.catdir(segments);
+        String parent = spec.catpath(split[0], directory, "");
         if (parent.isEmpty() && spec.absolute(path)) {
             parent = spec.rootdir();
         }
@@ -1899,7 +1902,7 @@ public final class FsNatives {
         String directory = path(directoryValue, name, 2);
         String prefix = prefix(prefixValue, name);
         for (int attempt = 0; attempt < 100; attempt++) {
-            String path = child(directory, temporaryName(prefix));
+            String path = UNIX.canonpath(child(directory, temporaryName(prefix)));
             Set<OpenOption> options = new HashSet<OpenOption>();
             options.add(StandardOpenOption.READ);
             options.add(StandardOpenOption.WRITE);
@@ -1986,7 +1989,7 @@ public final class FsNatives {
         String parent = path(parentValue, name, 2);
         String prefix = prefix(prefixValue, name);
         for (int attempt = 0; attempt < 100; attempt++) {
-            String path = child(parent, temporaryName(prefix));
+            String path = UNIX.canonpath(child(parent, temporaryName(prefix)));
             try {
                 Files.createDirectory(Host.path(path), PosixFilePermissions.asFileAttribute(permissions(0700)));
             } catch (java.nio.file.FileAlreadyExistsException exists) {

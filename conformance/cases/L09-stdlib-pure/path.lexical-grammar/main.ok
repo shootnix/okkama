@@ -1,0 +1,25 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "fs/path" take Path, PathStyle;
+
+main() is int {
+    let c = Checks();
+    let posix = PathStyle.posix;
+    let windows = PathStyle.windows;
+    c = c.same_text("posix child", Path("a", posix).child("b").string(), "a/b");
+    c = c.same_text("windows child converts separators", Path("a", windows).child("b/c").string(), "a\\b\\c");
+    c = c.same_text("posix parent", Path("/a/b/c", posix).parent().string(), "/a/b");
+    c = c.same_text("relative parent of one segment", Path("a", posix).parent().string(), ".");
+    c = c.same_text("posix root is its own parent", Path("/", posix).parent().string(), "/");
+    c = c.same_text("windows root is its own parent", Path("C:\\", windows).parent().string(), "C:\\");
+    c = c.same_text("windows parent reaches the root", Path("C:\\x", windows).parent().string(), "C:\\");
+    c = c.same_text("unc share is its own parent", Path("\\\\server\\share", windows).parent().string(), "\\\\server\\share");
+    c = c.same_text("dot segments are tidied", Path("a/./b", posix).child("c").string(), "a/b/c");
+    c = c.same_text("repeated separators are tidied", Path("a//b", posix).child("c").string(), "a/b/c");
+    c = c.same_text("dot-dot stays", Path("a/../b", posix).child("..").string(), "a/../b/..");
+    c = c.same_text("absolute part replaces", Path("a", posix).child("/b").string(), "/b");
+    c = c.same_text("drive-relative is not absolute", Path("C:x", windows).absolute().string(), "false");
+    c = c.same_text("unc is absolute", Path("\\\\server\\share", windows).absolute().string(), "true");
+    c.done();
+}

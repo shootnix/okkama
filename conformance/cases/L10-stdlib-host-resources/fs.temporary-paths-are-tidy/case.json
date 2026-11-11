@@ -1,0 +1,54 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L10.fs.temporary-paths-are-tidy",
+  "title": "Temporary paths are tidy, as the paths fs/path makes",
+  "purpose": "Observe host-resource behaviour inside the case's isolated working directory.",
+  "level": "L10",
+  "contracts": [
+    {
+      "contract": "STD.FS.TEMP",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    },
+    {
+      "contract": "STD.FS.PATH",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "filesystem"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - no leading dot segment\nok 2 - a child's parent is the directory\nok 3 - a file's parent is its directory\nok 4 - a spelled parent is tidied\nchecks: 4, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/fs/temp.ok",
+    "std/fs/path.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #352 wave 2 from the fs/temp and fs/path contract text",
+    "expected_basis": "fs/path: the paths it makes are tidied (no `.` segment, no repeated separator); a temporary path is made the same way from the parent as the program spelled it."
+  },
+  "status": "mandatory",
+  "notes": "IR and JVM used to answer `./ocs-…`, Sparrow `/cwd/./ocs-…`.",
+  "harness": true
+}

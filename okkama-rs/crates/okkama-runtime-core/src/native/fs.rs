@@ -330,12 +330,14 @@ fn path_parent(spec: Spec, path: &str) -> String {
         return spec.canonpath(if parent.is_empty() { "." } else { &parent });
     }
     let mut segments = spec.splitdir(&split[1]);
+    let rooted = segments.len() > 1 && segments[0].is_empty();
     while segments.len() > 1 && segments.last().is_some_and(String::is_empty) {
         segments.pop();
     }
     segments.pop();
+    // The parent of a root is the root itself, also behind a volume (`C:\`).
     let directory = if segments.is_empty() {
-        String::new()
+        if rooted { spec.rootdir().to_string() } else { String::new() }
     } else {
         spec.catdir(&segments)
     };
@@ -1876,7 +1878,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             let directory = path(native, &args[0])?;
             let prefix = prefix(native, string(&args[1])?)?;
             for _ in 0..100 {
-                let path = child(&directory, &temporary_name(prefix));
+                let path = Spec::Unix.canonpath(&child(&directory, &temporary_name(prefix)));
                 match open_channel(&path, READ | WRITE | CREATE | EXCLUSIVE, 0o600) {
                     Ok(channel) => {
                         return Ok(new_handle(Rc::new(RefCell::new(FileState {
@@ -1934,7 +1936,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             let prefix = prefix(native, string(&args[1])?)?;
             use std::os::unix::fs::DirBuilderExt;
             for _ in 0..100 {
-                let path = child(&parent, &temporary_name(prefix));
+                let path = Spec::Unix.canonpath(&child(&parent, &temporary_name(prefix)));
                 match std::fs::DirBuilder::new().mode(0o700).create(host::path(&path)) {
                     Ok(()) => {
                         return Ok(new_handle(TemporaryDirectory {

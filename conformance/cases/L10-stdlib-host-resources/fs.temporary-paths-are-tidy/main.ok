@@ -1,0 +1,22 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "fs/directory" take Directory;
+import "fs/path" take Path;
+import "fs/temp" take TemporaryDirectory, TemporaryFile;
+
+main() is int {
+    let c = Checks();
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "ocs-");
+    let root = scratch.path();
+    c = c.same_text("no leading dot segment", root.string().slice(0, 4), "ocs-");
+    c = c.same_text("a child's parent is the directory", root.child("x").parent().string(), root.string());
+    let file = TemporaryFile(directory: Directory(path: root), prefix: "f-");
+    c = c.same_text("a file's parent is its directory", file.path().parent().string(), root.string());
+    let nested = TemporaryDirectory(parent: Directory(path: Path("./" + root.string() + "/.")), prefix: "n-");
+    c = c.same_text("a spelled parent is tidied", nested.path().parent().string(), root.string());
+    file.close();
+    nested.close();
+    scratch.close();
+    c.done();
+}
