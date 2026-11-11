@@ -2,12 +2,11 @@ module http/server v1.0.0;
 
 import "http/http2_server" take Http2ServerSession;
 import "http/server_policy" take ServerPolicy;
-import "http/handler" take Handling, HandlingResult, HandlingKind, ResponseHandling,
-    WebSocketHandling;
+import "http/handler" take Handling, HandlingResult, HandlingKind, ResponseHandling, WebSocketHandling;
 import "http/request_context" take HttpRequestContext;
-import "http/message" take Response, InvalidHttpMessage;
+import "http/message" take Response, InvalidHttpMessage, Request;
 import "http/status" take Status, StatusCode;
-import "http/method" take Method;
+import "http/method" take Method, MethodName;
 import "http/header" take Headers, Header, HeaderName, HttpAsciiLowercase, ReplacedHeader;
 import "http/version" take HttpVersion, UnsupportedHttpVersion;
 import "http/exchange" take ExchangeDetails;
@@ -21,7 +20,7 @@ import "http/target" take RequestTargetKind;
 import "http/websocket_server" take WebSocketAccepting;
 import "http/connection" take HttpAcquisitionCleanup, HttpTcpDisposal;
 import "http/internal/websocket_output" take WebSocketOutputSettlement;
-import "net/tcp" take TcpAcceptance, TcpConnection;
+import "net/tcp" take TcpAcceptance, TcpConnection, TcpListening;
 import "net/endpoint" take IpEndpoint;
 import "net/failure" take NetworkClosed;
 import "io/stream" take AsyncReading, AsyncWriting, Closing;
@@ -31,8 +30,14 @@ import "async/event" take Event;
 import "async/scope" take FutureGroup;
 import "async/cancellation" take Cancellation;
 import "async/timeout" take Within, TimedOut;
-import "time/clock" take Timing;
-import "time/duration" take Duration;
+import "time/clock" take Timing, SystemClock;
+import "time/duration" take Duration, DurationUnit;
+import "http/body" take TextBody;
+import "http/client" take HttpClient;
+import "http/endpoint" take ListedNetworks;
+import "net/ip" take IpAddress, IpNetwork;
+import "net/dns" take FixedResolution;
+import "encoding/utf" take Utf8Decoded;
 
 // Owned plaintext listener. A single explicit protocol selects HTTP1.1 or
 // prior-knowledge H2; mixed ALPN/TLS selection remains a separate transport.
@@ -165,7 +170,7 @@ hidden object HttpServerState {
                     peer.close();
                 }
             }
-            changed.value().set();
+            self.signal();
         }
     }
 
@@ -187,7 +192,7 @@ hidden object HttpServerState {
             for peers.value() -> peer {
                 peer.close();
             }
-            changed.value().set();
+            self.signal();
         }
     }
 
@@ -208,8 +213,15 @@ hidden object HttpServerState {
         peers.replace(peers.value().filter() -> peer {
             peer.id() != id;
         });
-        changed.value().set();
+        self.signal();
+    }
+
+    // Wake every waiter once, and give later waiters a fresh event: a waiter
+    // that finds the old event already set would spin without yielding.
+    hidden signal() is void {
+        let previous = changed.value();
         changed.replace(Event());
+        previous.set();
     }
 
     async reap() is bool {
@@ -851,4 +863,58 @@ hidden object HttpServerDrainCleanup {
         server.close();
         await server.settled();
     }
+}
+
+hidden object EchoApplication does Handling {
+    EchoApplication();
+
+    async handling(request is Request, context is HttpRequestContext) is HandlingResult {
+        let target = request::Head::target.string();
+        if target == "/missing" {
+            return ResponseHandling(Response(status: Status.not_found));
+        }
+        let reading = request.body().reading();
+        let received = Atomic("");
+        loop {
+            let chunk = await reading.bytes(4096);
+            last if chunk.size() == 0;
+            received.replace(received.value() + Utf8Decoded(chunk).string());
+        }
+        reading.close();
+        let peer = context.endpoints().remote_endpoint().address().string();
+        let text = TextBody(text: MethodName(request::Head::method).string() + " " + target + " " + received.value());
+        ResponseHandling(Response(
+            status: Status.ok,
+            headers: Headers([
+                Header(name: HeaderName("Content-Type"), value: text.media_type()),
+                Header(name: HeaderName("X-Peer"), value: peer),
+            ]),
+            body: text.opening(),
+        ));
+    }
+}
+
+async test "a server answers over loopback, reads bodies, and drains" {
+    let listener = await TcpListening(IpEndpoint(address: IpAddress("127.0.0.1"), port: 0)).acceptance();
+    let clock = SystemClock();
+    let server = HttpServer(origin: listener, handling: EchoApplication(), policy: ServerPolicy(), clock: clock);
+    let workers is FutureGroup<HttpServer> = FutureGroup();
+    workers.start(server.serve());
+    let base = "http://127.0.0.1:" + server.local_endpoint()::Parts::port.string();
+    let client = HttpClient(
+        resolver: FixedResolution([]),
+        endpoints: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)])
+    );
+    let page = await client.get(base + "/hello?x=1");
+    test.is(page::Head::status, Status.ok);
+    test.is(page::Head::headers.values(HeaderName("X-Peer")).item(0), "127.0.0.1");
+    test.is(await page.text(), "GET /hello?x=1 ");
+    let missing = await client.get(base + "/missing");
+    test.is(missing::Head::status, Status.not_found);
+    let posted = await client.post(url: base + "/notes", body: TextBody(text: "héllo"));
+    test.is(await posted.text(), "POST /notes héllo");
+    client.close();
+    await ServerDrain(server: server, limit: Duration(value: 5.rat(), unit: DurationUnit.second), clock: clock).drain();
+    await workers.wait();
+    test.is(server.closed(), true);
 }
