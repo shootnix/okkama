@@ -56,6 +56,16 @@ object TemplateLibrary {
         origin = TemplateLibrarySnapshot(source: listed, maximum: 1024).items();
     }
 
+    // Templates by name: TemplateLibrary(["item": TextTemplate("- {{title}}")]).
+    TemplateLibrary(templates is %string:TextTemplate) {
+        let names = templates.keys();
+        let values = templates.values();
+        let listed is @NamedTemplate = (0..names.size()).map() -> index {
+            NamedTemplate(name: names[index], value: values[index]);
+        };
+        origin = TemplateLibrarySnapshot(source: listed, maximum: 1024).items();
+    }
+
     TemplateLibrary(values is Sequencing<NamedTemplate>, maximum_templates is int) {
         origin = TemplateLibrarySnapshot(source: values, maximum: maximum_templates).items();
     }
@@ -153,4 +163,11 @@ test "empty library permits zero and rejects negative bounds" {
     catch e is InvalidTemplateLibraryLimit {
         true;
     });
+}
+
+test "a library reads a map of templates by name" {
+    let library = TemplateLibrary(["item": TextTemplate("- {{title}}"), "head": TextTemplate("Order")]);
+    test.ok(library.membership("item"));
+    test.is(library.template("head").source(), "Order");
+    test.ok(!library.membership("tail"));
 }

@@ -1,6 +1,6 @@
 module template/model v1.0.0;
 
-import "template/path" take TemplatePath;
+import "template/path" take TemplatePath, TemplatePathFromString;
 
 import "collections/sequence" take Sequencing;
 import "compare" take Order;
@@ -63,6 +63,17 @@ object TemplateBindings does TemplateStrings {
     // The same, one argument per part: TemplateBindings(a, b).
     TemplateBindings(values is ...TemplateBinding) {
         let listed is @TemplateBinding = values...;
+        origin = TemplateBindingSnapshot(source: listed, maximum: 1024).items();
+    }
+
+    // Texts by dotted path: TemplateBindings(["user.name": "Ada"]). A segment
+    // that holds a dot needs TemplateBinding and TemplatePath.
+    TemplateBindings(texts is %string:string) {
+        let names = texts.keys();
+        let values = texts.values();
+        let listed is @TemplateBinding = (0..names.size()).map() -> index {
+            TemplateBinding(path: TemplatePathFromString(names[index]).path(), value: values[index]);
+        };
         origin = TemplateBindingSnapshot(source: listed, maximum: 1024).items();
     }
 
@@ -169,4 +180,14 @@ test "template binding errors retain path and budget contracts" {
         },
         "x"
     );
+}
+
+test "bindings read a map of dotted paths" {
+    let data = TemplateBindings(["user.name": "Ada", "user.unread": "3", "plain": ""]);
+    test.is(data.string(TemplatePath("user", "name")), "Ada");
+    test.is(data.string(TemplatePath("user", "unread")), "3");
+    test.is(data.string(TemplatePath("plain")), "");
+    test.throws(MissingTemplateValue) {
+        data.string(TemplatePath("user"));
+    };
 }

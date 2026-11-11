@@ -3866,8 +3866,9 @@ layer win key by key. Values are read by their dotted name:
 from. A value that is there but malformed throws `MalformedSetting` naming the
 key.
 
-`template` fills text. `TextTemplate("Hello, {{user.name}}")` takes bindings.
-`SectionTemplate(source:, partials:)` walks JSON with `{{#list}}`, `{{^list}}`
+`template` fills text. `TextTemplate("Hello, {{user.name}}").string(["user.name":
+"Ada"])` takes texts by dotted path. `TemplateLibrary(["item": TextTemplate(…)])`
+names templates. `SectionTemplate(source:, partials:)` walks JSON with `{{#list}}`, `{{^list}}`
 and `{{>partial}}`. `HtmlTemplate` escapes each value for where it lands and
 refuses event attributes.
 

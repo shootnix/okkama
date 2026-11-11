@@ -59,6 +59,16 @@ object HtmlTemplateLibrary {
         origin = HtmlTemplateLibrarySnapshot(source: listed, maximum: 1024).items();
     }
 
+    // Templates by name: HtmlTemplateLibrary(["card": HtmlTemplate("<p>{{.}}</p>")]).
+    HtmlTemplateLibrary(templates is %string:HtmlTemplate) {
+        let names = templates.keys();
+        let values = templates.values();
+        let listed is @NamedHtmlTemplate = (0..names.size()).map() -> index {
+            NamedHtmlTemplate(name: names[index], value: values[index]);
+        };
+        origin = HtmlTemplateLibrarySnapshot(source: listed, maximum: 1024).items();
+    }
+
     HtmlTemplateLibrary(values is Sequencing<NamedHtmlTemplate>, maximum_templates is int) {
         origin = HtmlTemplateLibrarySnapshot(source: values, maximum: maximum_templates).items();
     }
@@ -156,4 +166,10 @@ test "empty library permits zero and rejects negative bounds" {
     catch e is InvalidHtmlTemplateLibraryLimit {
         true;
     });
+}
+
+test "an HTML library reads a map of templates by name" {
+    let library = HtmlTemplateLibrary(["card": HtmlTemplate("<p>{{.}}</p>")]);
+    test.ok(library.membership("card"));
+    test.ok(!library.membership("page"));
 }
