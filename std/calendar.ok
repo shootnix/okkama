@@ -6,6 +6,7 @@ import "compare" take Comparing, Order;
 import "error" take OutOfRange;
 import "size" take Sizing;
 import "time/date" take Date, GregorianDay, Weekday;
+import "time/iso" take IsoDate;
 
 // Immutable Gregorian calendar views.
 //
@@ -26,9 +27,11 @@ import "time/date" take Date, GregorianDay, Weekday;
 //     grid.first().first(); // 2026-07-27
 //     grid.last().last();   // 2026-09-06
 //
-// ISO weeks always run from Monday through Sunday. Calendar grids and ISO
-// weeks whose complete seven-day span would leave Date's supported years
-// 1..9999 are rejected instead of returning partial weeks.
+// ISO weeks always run from Monday through Sunday; IsoWeek refuses a week its
+// year does not have when made. A calendar grid whose complete seven-day span
+// would leave Date's supported years 1..9999 is refused when it is walked or
+// measured, instead of returning partial weeks. Year(2028).leap() tells a
+// leap year.
 
 object YearMonth does Comparing<YearMonth> {
     has year_value is int;
@@ -43,20 +46,23 @@ object YearMonth does Comparing<YearMonth> {
         month_value = month;
     }
 
-    year() is int {
-        year_value;
-    }
+    // The month as given.
+    cap Calendar {
+        year is int {
+            year_value;
+        }
 
-    month() is int {
-        month_value;
+        month is int {
+            month_value;
+        }
     }
 
     order(other is YearMonth) is Order {
-        if year_value != other.year() {
-            year_value.order(other.year());
+        if year_value != other::Calendar::year {
+            year_value.order(other::Calendar::year);
         }
         else {
-            month_value.order(other.month());
+            month_value.order(other::Calendar::month);
         }
     }
 }
@@ -71,9 +77,9 @@ object MonthDates does Sequencing<Date>, Iterating<Date>, Sizing {
     }
 
     size() is int {
-        match origin.month() {
+        match origin::Calendar::month {
             case 2 {
-                if LeapYear(year: origin.year()).value() {
+                if Year(year: origin::Calendar::year).leap() {
                     29;
                 }
                 else {
@@ -93,8 +99,8 @@ object MonthDates does Sequencing<Date>, Iterating<Date>, Sizing {
         confirm index >= 0 && index < self.size()
             else throw OutOfRange.because("month date index is outside the sequence");
         Date(
-            year: origin.year(),
-            month: origin.month(),
+            year: origin::Calendar::year,
+            month: origin::Calendar::month,
             day: index + 1,
         );
     }
@@ -108,7 +114,7 @@ object MonthDates does Sequencing<Date>, Iterating<Date>, Sizing {
     }
 }
 
-object MonthDateCursor does Cursor<Date> {
+hidden object MonthDateCursor does Cursor<Date> {
     has origin is MonthDates;
     has position is int;
 
@@ -139,10 +145,6 @@ object CalendarWeek does Sequencing<Date>, Iterating<Date>, Sizing {
 
     CalendarWeek(start is Date) {
         self.first_date = start;
-        confirm (GregorianDay(start).number()) <= 3652053
-            else throw InvalidCalendarMonth.because(
-                "calendar week leaves the supported date range"
-            );
     }
 
     cursor() is Cursor<Date> {
@@ -156,7 +158,12 @@ object CalendarWeek does Sequencing<Date>, Iterating<Date>, Sizing {
     item(index is int) is Date {
         confirm index >= 0 && index < 7
             else throw OutOfRange.because("calendar week index is outside the sequence");
-        GregorianDay((GregorianDay(first_date).number()) + index).date();
+        let start is int = GregorianDay(first_date).number();
+        confirm start <= 3652053
+            else throw InvalidCalendarMonth.because(
+                "calendar week leaves the supported date range"
+            );
+        GregorianDay(start + index).date();
     }
 
     first() is Date {
@@ -168,7 +175,7 @@ object CalendarWeek does Sequencing<Date>, Iterating<Date>, Sizing {
     }
 }
 
-object CalendarWeekCursor does Cursor<Date> {
+hidden object CalendarWeekCursor does Cursor<Date> {
     has origin is CalendarWeek;
     has position is int;
 
@@ -199,11 +206,6 @@ object CalendarMonth does Sequencing<Sequencing<Date>>, Iterating<Sequencing<Dat
     has first_weekday is Weekday;
 
     CalendarMonth(origin is YearMonth, first_weekday is Weekday) {
-        let layout = CalendarMonthLayout(
-            origin: origin,
-            first_weekday: first_weekday,
-        );
-        layout.first_ordinal();
         self.origin = origin;
         self.first_weekday = first_weekday;
     }
@@ -213,10 +215,12 @@ object CalendarMonth does Sequencing<Sequencing<Date>>, Iterating<Sequencing<Dat
     }
 
     size() is int {
-        CalendarMonthLayout(
+        let layout = CalendarMonthLayout(
             origin: origin,
             first_weekday: first_weekday,
-        ).size();
+        );
+        layout.first_ordinal();
+        layout.size();
     }
 
     item(index is int) is Sequencing<Date> {
@@ -240,7 +244,7 @@ object CalendarMonth does Sequencing<Sequencing<Date>>, Iterating<Sequencing<Dat
     }
 }
 
-object CalendarMonthCursor does Cursor<Sequencing<Date>> {
+hidden object CalendarMonthCursor does Cursor<Sequencing<Date>> {
     has origin is CalendarMonth;
     has position is int;
 
@@ -266,14 +270,14 @@ object CalendarMonthCursor does Cursor<Sequencing<Date>> {
     }
 }
 
-object CalendarMonthLayout {
+hidden object CalendarMonthLayout {
     has origin is YearMonth;
     has first_weekday is Weekday;
 
     CalendarMonthLayout(:origin, :first_weekday);
 
     first_ordinal() is int {
-        let first = Date(year: origin.year(), month: origin.month(), day: 1);
+        let first = Date(year: origin::Calendar::year, month: origin::Calendar::month, day: 1);
         let lead is int = ((WeekdayIndex(origin: first.weekday()).value()) -
             (WeekdayIndex(origin: first_weekday).value()) +
             7) % 7;
@@ -286,7 +290,7 @@ object CalendarMonthLayout {
     }
 
     size() is int {
-        let first = Date(year: origin.year(), month: origin.month(), day: 1);
+        let first = Date(year: origin::Calendar::year, month: origin::Calendar::month, day: 1);
         let lead is int = ((WeekdayIndex(origin: first.weekday()).value()) -
             (WeekdayIndex(origin: first_weekday).value()) +
             7) % 7;
@@ -297,15 +301,16 @@ object CalendarMonthLayout {
 object IsoWeek does Comparing<IsoWeek> {
     has year_value is int;
     has week_value is int;
+    has start is int;
 
     IsoWeek(year is int, week is int) {
         confirm year >= 1 && year <= 9999
             else throw InvalidIsoWeek.because("ISO week year must be within 1..9999");
-        let january_first = Date(year: year, month: 1, day: 1);
-        let january_index is int = WeekdayIndex(
-            origin: january_first.weekday(),
-        ).value();
-        let leap is bool = LeapYear(year: year).value();
+        // Day numbers count from 0001-01-01, a Monday, as GregorianDay does.
+        let prior = year - 1;
+        let before is int = prior * 365 + (prior / 4).int() - (prior / 100).int() + (prior / 400).int();
+        let january_index is int = before % 7;
+        let leap is bool = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
         let maximum is int = if january_index == 3
             || (january_index == 2 && leap) {
                 53;
@@ -315,64 +320,61 @@ object IsoWeek does Comparing<IsoWeek> {
             };
         confirm week >= 1 && week <= maximum
             else throw InvalidIsoWeek.because("ISO week is outside its week-year");
-
-        let january_fourth = Date(year: year, month: 1, day: 4);
-        let first_ordinal is int = (GregorianDay(january_fourth).number()) -
-            (WeekdayIndex(origin: january_fourth.weekday()).value()) +
-            (week - 1) * 7;
+        let first_ordinal is int = before + 4 - (january_index + 3) % 7 + (week - 1) * 7;
         confirm first_ordinal >= 1 && first_ordinal + 6 <= 3652059
             else throw InvalidIsoWeek.because(
                 "ISO week leaves the supported date range"
             );
-
         year_value = year;
         week_value = week;
+        start = first_ordinal;
     }
 
-    year() is int {
-        year_value;
-    }
+    // The week as given: its week-year and its number in it.
+    cap Calendar {
+        year is int {
+            year_value;
+        }
 
-    week() is int {
-        week_value;
+        week is int {
+            week_value;
+        }
     }
 
     first() is Date {
-        let january_fourth = Date(year: year_value, month: 1, day: 4);
-        GregorianDay((GregorianDay(january_fourth).number()) -
-            (WeekdayIndex(origin: january_fourth.weekday()).value()) +
-            (week_value - 1) * 7).date();
+        GregorianDay(start).date();
     }
 
     last() is Date {
-        GregorianDay((GregorianDay(self.first()).number()) + 6).date();
+        GregorianDay(start + 6).date();
     }
 
     order(other is IsoWeek) is Order {
-        if year_value != other.year() {
-            year_value.order(other.year());
+        if year_value != other::Calendar::year {
+            year_value.order(other::Calendar::year);
         }
         else {
-            week_value.order(other.week());
+            week_value.order(other::Calendar::week);
         }
     }
 }
 
-object LeapYear {
+// A Gregorian year: Year(2028).leap().
+object Year {
     has origin is int;
 
-    LeapYear(year is int) {
+    Year(year is int) {
         confirm year >= 1 && year <= 9999
             else throw InvalidYearMonth.because("year must be within 1..9999");
         origin = year;
     }
 
-    value() is bool {
+    leap() is bool {
         origin % 4 == 0 && (origin % 100 != 0 || origin % 400 == 0);
     }
 }
 
-object WeekdayIndex {
+hidden object WeekdayIndex {
     has origin is Weekday;
 
     WeekdayIndex(:origin);
@@ -409,3 +411,73 @@ enum InvalidYearMonth is Error = (because(reason is string));
 enum InvalidCalendarMonth is Error = (because(reason is string));
 
 enum InvalidIsoWeek is Error = (because(reason is string));
+
+test "a year knows whether it is leap" {
+    test.ok(Year(2028).leap());
+    test.ok(Year(2000).leap());
+    test.ok(!Year(1900).leap());
+    test.ok(!Year(2026).leap());
+    test.throws(InvalidYearMonth) {
+        Year(0);
+    };
+    test.throws(InvalidYearMonth) {
+        Year(10000);
+    };
+}
+
+test "a month lists its own dates and compares by year, then month" {
+    let february = YearMonth(year: 2028, month: 2);
+    test.is(february::Calendar::year, 2028);
+    test.is(february::Calendar::month, 2);
+    test.is(MonthDates(origin: february).size(), 29);
+    test.is(MonthDates(origin: YearMonth(year: 2026, month: 2)).size(), 28);
+    let august = MonthDates(origin: YearMonth(year: 2026, month: 8));
+    test.is(august.size(), 31);
+    test.is(august.first()::Calendar::day, 1);
+    test.is(august.last()::Calendar::day, 31);
+    test.is(august.item(9)::Calendar::day, 10);
+    let days is @int = august.map() -> date { date::Calendar::day; };
+    test.is(days.size(), 31);
+    test.ok(YearMonth(year: 2026, month: 12).order(YearMonth(year: 2027, month: 1)) == Order.less);
+    test.ok(YearMonth(year: 2026, month: 8).order(YearMonth(year: 2026, month: 3)) == Order.greater);
+    test.throws(InvalidYearMonth) {
+        YearMonth(year: 2026, month: 13);
+    };
+    test.throws(OutOfRange) {
+        august.item(31);
+    };
+}
+
+test "a calendar month is whole weeks from the chosen first weekday" {
+    let grid = CalendarMonth(origin: YearMonth(year: 2026, month: 8), first_weekday: Weekday.monday);
+    test.is(grid.size(), 6);
+    test.is(IsoDate(origin: grid.first().first()).string(), "2026-07-27");
+    test.is(IsoDate(origin: grid.last().last()).string(), "2026-09-06");
+    let sundays = CalendarMonth(origin: YearMonth(year: 2026, month: 8), first_weekday: Weekday.sunday);
+    test.is(IsoDate(origin: sundays.first().first()).string(), "2026-07-26");
+    test.is(sundays.size(), 6);
+    let rows is @int = grid.map() -> week { week.size(); };
+    test.is(rows, [7, 7, 7, 7, 7, 7]);
+    test.is(CalendarMonth(origin: YearMonth(year: 2026, month: 2), first_weekday: Weekday.sunday).size(), 4);
+    test.throws(InvalidCalendarMonth) {
+        CalendarMonth(origin: YearMonth(year: 1, month: 1), first_weekday: Weekday.tuesday).size();
+    };
+}
+
+test "ISO weeks run Monday to Sunday and know how many a year has" {
+    let week = IsoWeek(year: 2026, week: 1);
+    test.is(IsoDate(origin: week.first()).string(), "2025-12-29");
+    test.is(IsoDate(origin: week.last()).string(), "2026-01-04");
+    test.is(week::Calendar::year, 2026);
+    test.is(week::Calendar::week, 1);
+    test.is(IsoDate(origin: IsoWeek(year: 2026, week: 53).first()).string(), "2026-12-28");
+    test.throws(InvalidIsoWeek) {
+        IsoWeek(year: 2027, week: 53);
+    };
+    test.throws(InvalidIsoWeek) {
+        IsoWeek(year: 2026, week: 0);
+    };
+    test.is(IsoDate(origin: IsoWeek(year: 1, week: 1).first()).string(), "0001-01-01");
+    test.ok(IsoWeek(year: 2026, week: 9).order(IsoWeek(year: 2026, week: 10)) == Order.less);
+    test.ok(IsoWeek(year: 2027, week: 1).order(IsoWeek(year: 2026, week: 53)) == Order.greater);
+}

@@ -87,6 +87,12 @@ and compares the output.
 |---|---|
 | `uuid/ids.ok` | read a UUID from text and bytes, derive v3/v5 from a namespace, pack v8, draw v4 |
 
+## calendar
+
+| Program | Task |
+|---|---|
+| `calendar/month.ok` | print a month as a wall calendar, Monday first; leap years; an ISO week's dates |
+
 ## strings/parse
 
 | Program | Task |

@@ -3783,6 +3783,13 @@ reads canonical text strictly, and `UuidBytes(origin:)` reads sixteen bytes.
 low:)` packs custom bits, and `Uuid4s(random:).sample()` draws a random one.
 Compare two UUIDs by `bytes()` or `order()`. `examples/uuid/` shows each.
 
+`calendar` lays out Gregorian months. `YearMonth(year:, month:)` shows
+`month::Calendar::year` and `::month`. `MonthDates(origin:)` walks the month's
+dates, and `CalendarMonth(origin:, first_weekday:)` walks whole seven-day rows
+for a wall calendar. `IsoWeek(year:, week:)` refuses a week its year does not
+have, shows `week::Calendar::week`, and answers `first()` and `last()`.
+`Year(2028).leap()` tells a leap year. `examples/calendar/` prints a month.
+
 `http/client` sends requests with `HttpClient()`. By default it uses the system's DNS and trusted roots, reaches public endpoints only and speaks HTTP/1.1. Every other part is a named argument: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)` and `cookies: MemoryCookieJar()`. Every REST method has a shortcut: `get(url)`, `head`, `options`, `delete`, and `post(url:, body:)`, `put`, `patch` with a `Content` such as `JsonBody(json)`. Anything else is `client.response(Request(url:, method:, headers:, body:))`. A reply shows its head through the cap `Head` (`page::Head::status`, `::class`, `::headers`) and reads its body with `await page.text()`, `bytes()`, `json()` or `reading()`. `Status` and `Method` are enums: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` and `MethodName` turn them into wire numbers and tokens and back. `examples/http/client/` shows each task as a program.
 
 `strings/parse` reads text as the type asked for: `Number("42").int()`,

@@ -1,0 +1,35 @@
+module examples/calendar/month v1.0.0;
+
+import "calendar" take CalendarMonth, IsoWeek, MonthDates, Year, YearMonth;
+import "io/stdout" take Stdout;
+import "time/date" take Weekday;
+import "time/iso" take IsoDate;
+
+// Print a month as a wall calendar, Monday first, with days of the
+// neighbouring months shown as dots; then ask about leap years and ISO weeks.
+
+main() is int {
+    let out = Stdout();
+    let month = YearMonth(year: 2026, month: 2);
+    out.writeln("February " + month::Calendar::year.string() + ", "
+        + MonthDates(origin: month).size().string() + " days");
+    out.writeln("Mo Tu We Th Fr Sa Su");
+    for CalendarMonth(origin: month, first_weekday: Weekday.monday) -> week {
+        let cells is @string = week.map() -> date {
+            if date::Calendar::month != month::Calendar::month {
+                " .";
+            }
+            else if date::Calendar::day < 10 {
+                " " + date::Calendar::day.string();
+            }
+            else {
+                date::Calendar::day.string();
+            }
+        };
+        out.writeln(cells.join(" "));
+    }
+    out.writeln("2028 is leap: " + Year(2028).leap().string() + ", 2100: " + Year(2100).leap().string());
+    let week = IsoWeek(year: 2026, week: 53);
+    out.writeln("2026-W53: " + IsoDate(origin: week.first()).string() + " .. " + IsoDate(origin: week.last()).string());
+    0;
+}

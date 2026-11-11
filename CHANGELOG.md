@@ -628,6 +628,19 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
       or `order()`.
     - Inline tests, with the RFC 4122 v3/v5 vectors. There is an example,
       `examples/uuid/`.
+  - `calendar`:
+    - `Year(2028).leap()` replaces `LeapYear(2028).value()`.
+    - `YearMonth::Calendar` holds `year` and `month`, and
+      `IsoWeek::Calendar` holds `year` and `week`, like wave 1's
+      `date::Calendar`.
+    - `IsoWeek` checks its week with its own arithmetic. It matches Python's
+      `isocalendar` on the edge years, and keeps the day number of its
+      Monday.
+    - `CalendarWeek` and `CalendarMonth` bind. A grid that would leave
+      years 1..9999 is refused when it is walked or measured.
+    - Cursors, the layout and `WeekdayIndex` are hidden.
+    - The module has inline tests now. There is an example,
+      `examples/calendar/`.
 
 ### Fixed
 
