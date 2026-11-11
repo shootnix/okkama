@@ -3991,7 +3991,8 @@ message)`. `Invocation` отвечает по имени:
 - Дайджест — это бегущее состояние: `Sha256(bytes).bytes()` или
   `Sha256().state(part).state(part)`, который продолжает, не меняя
   исходного. Есть SHA-2, SHA-3, SHAKE, BLAKE2, MD5 и SHA-1.
-- Ключи хранятся в `SecretBytes`. Энтропия, nonce и доверие — явные
+- Ключи хранятся в `SecretBytes`, который сравнивает себя за постоянное
+  время: `stored.matches(supplied)`. Энтропия, nonce и доверие — явные
   значения.
 - `Hmac(hash:, key:, origin:)` отвечает на `bytes()` и `matches(signature)`
   за постоянное время.

@@ -68,7 +68,7 @@ object Hmac does Digesting {
     }
 
     matches(tag is @byte) is bool {
-        ConstantTimeEqual(left: digest.bytes(), right: tag).value();
+        ConstantTimeEqual(left: digest.bytes(), right: tag).matches();
     }
 }
 

@@ -3814,7 +3814,8 @@ implementations.
 - A digest is a running state: `Sha256(bytes).bytes()`, or
   `Sha256().state(part).state(part)`, which continues without changing the
   original. SHA-2, SHA-3, SHAKE, BLAKE2, MD5 and SHA-1 are there.
-- Keys live in `SecretBytes`. Entropy, nonces and trust are explicit values.
+- Keys live in `SecretBytes`, which compares itself in constant time:
+  `stored.matches(supplied)`. Entropy, nonces and trust are explicit values.
 - `Hmac(hash:, key:, origin:)` answers `bytes()` and `matches(signature)`,
   in constant time.
 - `PasswordHash(password:, policy: Argon2Policy(), entropy:)` stores a
