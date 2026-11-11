@@ -3,6 +3,9 @@ module time/clock v1.0.0;
 import "compare" take Comparing, Order;
 import "operators" take Adding, Subtracting;
 import "time/duration" take Duration, DurationUnit;
+import "time/local_datetime" take LocalDateTime;
+import "time/date" take Date;
+import "time/day" take TimeOfDay;
 import "runtime/time" take wall_clock, monotonic_clock, clock_domain, sleep_nanoseconds;
 
 // Wall-clock and monotonic time are deliberately different nominal values.
@@ -28,6 +31,15 @@ object Instant does Comparing<Instant>, Adding<Duration, Instant>, Subtracting<D
 
     unix_duration() is Duration {
         origin;
+    }
+
+    // RFC 3339 in UTC: "2026-12-01T08:00:00Z". Rfc3339 writes other offsets.
+    string() is string {
+        let epoch = LocalDateTime(
+            date: Date(year: 1970, month: 1, day: 1),
+            time: TimeOfDay(hour: 0, minute: 0, second: 0, nanosecond: 0),
+        );
+        epoch.plus(origin).string() + "Z";
     }
 
     plus(duration is Duration) is Instant {
@@ -157,4 +169,10 @@ test "monotonic readings never mix domains" {
     let before = clock.monotonic_instant();
     test.ok(clock.monotonic_instant() >= before);
     test.ok(clock.instant().unix_duration()::Span::seconds > 1700000000.rat());
+}
+
+test "an instant writes itself in RFC 3339 UTC" {
+    test.is(Instant(origin: Duration(seconds: 0)).string(), "1970-01-01T00:00:00Z");
+    test.is(Instant(origin: Duration(seconds: -1)).string(), "1969-12-31T23:59:59Z");
+    test.is(Instant(origin: Duration(milliseconds: 1786451445125)).string(), "2026-08-11T12:30:45.125Z");
 }

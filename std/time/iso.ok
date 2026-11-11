@@ -7,8 +7,7 @@ import "strings/parse" take Number, InvalidInteger;
 
 // Strict ISO 8601 calendar and local-date-time representations.
 //
-//     IsoDate(origin: Date(year: 2026, month: 8, day: 11)).string();
-//     // "2026-08-11"
+//     Date(year: 2026, month: 8, day: 11).string();   // "2026-08-11"
 //
 //     IsoText("2026-08-11T12:30:45.125").local_date_time();
 //
@@ -26,14 +25,7 @@ object IsoDate {
     }
 
     string() is string {
-        let year is string = origin::Calendar::year.string();
-        let month is string = origin::Calendar::month.string();
-        let day is string = origin::Calendar::day.string();
-        ("0000" + year).slice(year.length(), year.length() + 4) +
-            "-" +
-            ("00" + month).slice(month.length(), month.length() + 2) +
-            "-" +
-            ("00" + day).slice(day.length(), day.length() + 2);
+        origin.string();
     }
 }
 
@@ -45,24 +37,7 @@ object IsoLocalDateTime {
     }
 
     string() is string {
-        let time is TimeOfDay = origin.time();
-        let hour is string = time::Clock::hour.string();
-        let minute is string = time::Clock::minute.string();
-        let second is string = time::Clock::second.string();
-        let fraction is string = if time::Clock::nanosecond == 0 {
-            "";
-        }
-        else {
-            "." + IsoFraction(origin: time::Clock::nanosecond).string();
-        };
-        IsoDate(origin: origin.date()).string() +
-            "T" +
-            ("00" + hour).slice(hour.length(), hour.length() + 2) +
-            ":" +
-            ("00" + minute).slice(minute.length(), minute.length() + 2) +
-            ":" +
-            ("00" + second).slice(second.length(), second.length() + 2) +
-            fraction;
+        origin.string();
     }
 }
 
@@ -121,30 +96,6 @@ object IsoText {
         }
         catch error is InvalidInteger {
             throw InvalidIsoLocalDateTime.origin(origin);
-        }
-    }
-}
-
-hidden object IsoFraction {
-    has origin is int;
-
-    IsoFraction(origin is int) {
-        self.origin = origin;
-    }
-
-    string() is string {
-        let source is string = origin.string();
-        self.digits(
-            ("000000000" + source).slice(source.length(), source.length() + 9)
-        );
-    }
-
-    hidden digits(source is string) is string {
-        if source.slice(source.length() - 1, source.length()) == "0" {
-            self.digits(source.slice(0, source.length() - 1));
-        }
-        else {
-            source;
         }
     }
 }

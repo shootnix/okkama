@@ -52,6 +52,15 @@ object Date does Comparing<Date> {
         day_value = day;
     }
 
+    // The date of a day number counted from 0001-01-01 (day 1), as
+    // day_number() answers it: Date(day_number: 739931).
+    Date(day_number is int) {
+        let found = GregorianDay(day_number).date();
+        year_value = found::Calendar::year;
+        month_value = found::Calendar::month;
+        day_value = found::Calendar::day;
+    }
+
     // The parts of the date, already checked by the constructor.
     cap Calendar {
         year is int {
@@ -65,6 +74,18 @@ object Date does Comparing<Date> {
         day is int {
             day_value;
         }
+    }
+
+    // ISO 8601: "2026-08-11".
+    string() is string {
+        let year is string = year_value.string();
+        let month is string = month_value.string();
+        let day is string = day_value.string();
+        ("0000" + year).slice(year.length(), year.length() + 4) +
+            "-" +
+            ("00" + month).slice(month.length(), month.length() + 2) +
+            "-" +
+            ("00" + day).slice(day.length(), day.length() + 2);
     }
 
     weekday() is Weekday {
@@ -105,6 +126,16 @@ object Date does Comparing<Date> {
                 day_value.order(other::Calendar::day);
             }
         }
+    }
+
+    // The day number, counted from 0001-01-01 (day 1).
+    day_number() is int {
+        GregorianDay(self).number();
+    }
+
+    // Days from this date to `other`, negative when `other` is earlier.
+    days_until(other is Date) is int {
+        GregorianDay(other).number() - GregorianDay(self).number();
     }
 
     // This date moved by `days` (negative: earlier).
@@ -256,4 +287,21 @@ test "dates shift, count days between and map to day numbers" {
     catch e is InvalidDate {
         true;
     });
+}
+
+test "a date writes itself in ISO 8601" {
+    test.is(Date(year: 2026, month: 8, day: 11).string(), "2026-08-11");
+    test.is(Date(year: 1, month: 1, day: 1).string(), "0001-01-01");
+}
+
+test "a date counts its own days" {
+    let release = Date(year: 2026, month: 11, day: 11);
+    test.is(release.days_until(release.shifted(30)), 30);
+    test.is(release.shifted(30).days_until(release), -30);
+    test.is(Date(year: 1970, month: 1, day: 1).day_number(), 719163);
+    test.ok(Date(day_number: release.day_number()) == release);
+    test.is(Date(day_number: 1).string(), "0001-01-01");
+    test.throws(InvalidDate) {
+        Date(day_number: 0);
+    };
 }

@@ -10,16 +10,19 @@ import "runtime/time_zone" take timezone_version, timezone_known, timezone_offse
 
 // Deterministic time-zone values backed only by bundled IANA tzdata 2026c.
 //
-//     let zone = Zone(name: "America/New_York");
-//     let local = ZonedDateTime(instant: clock.instant(), zone: zone)
-//         .local_datetime();
+//     let york = Zone("America/New_York");
+//     let meeting = york.instant(IsoText("2026-12-01T09:00:00").local_date_time());
+//     meeting.string();                                   // "2026-12-01T14:00:00Z"
+//     let there = ZonedDateTime(instant: meeting, zone: Zone("Europe/Berlin"));
+//     there.local_datetime().string() + " " + there.abbreviation();
+//                                                         // "2026-12-01T15:00:00 CET"
 //     TimeZoneDatabaseVersion().string(); // "2026c"
 //
 // Named zones never inspect the host's configured zone or host tzdata. Absolute
 // to local conversion is total for instants whose local date lies in 1..9999.
-// Local gaps throw MissingLocalTime; folds require an explicit earlier/later
-// choice. FixedZone has no daylight-saving state and uses its name as its
-// abbreviation.
+// Local gaps throw MissingLocalTime; an ambiguous wall time takes the earlier
+// instant unless `fold: Fold.later` asks for the other one. FixedZone has no
+// daylight-saving state and uses its name as its abbreviation.
 
 enum Fold = (earlier, later);
 
@@ -58,7 +61,7 @@ object Zone does TimeZone {
         timezone_abbreviation(origin, at.unix_duration()::Span::seconds);
     }
 
-    instant(local is LocalDateTime, fold is Fold) is Instant {
+    instant(local is LocalDateTime, fold is Fold = Fold.earlier) is Instant {
         let date is Date = local.date();
         let time is TimeOfDay = local.time();
         confirm timezone_local_candidates(
@@ -120,7 +123,7 @@ object FixedZone does TimeZone {
         zone_name;
     }
 
-    instant(local is LocalDateTime, fold is Fold) is Instant {
+    instant(local is LocalDateTime, fold is Fold = Fold.earlier) is Instant {
         let epoch is LocalDateTime = LocalDateTime(
             date: Date(year: 1970, month: 1, day: 1),
             time: TimeOfDay(hour: 0, minute: 0, second: 0, nanosecond: 0),
@@ -157,6 +160,15 @@ object ZonedDateTime {
     offset() is Duration {
         source_zone.offset(source_instant);
     }
+
+    // The zone's abbreviation at this instant: "CET", "EST".
+    abbreviation() is string {
+        source_zone.abbreviation(source_instant);
+    }
+
+    daylight_saving() is bool {
+        source_zone.daylight_saving(source_instant);
+    }
 }
 
 object ZoneObservation {
@@ -182,7 +194,7 @@ object Zoned {
     has zone is TimeZone;
     has fold is Fold;
 
-    Zoned(local is LocalDateTime, zone is TimeZone, fold is Fold) {
+    Zoned(local is LocalDateTime, zone is TimeZone, fold is Fold = Fold.earlier) {
         origin = local;
         self.zone = zone;
         self.fold = fold;
@@ -222,6 +234,9 @@ test "local times resolve to instants through a named zone" {
     // 02:30 happens twice when summer time ends, and never when it starts.
     test.is(unix(Zoned(local: at(2026, 10, 25, 2, 30), zone: berlin, fold: Fold.earlier).instant()), 1792888200.rat());
     test.is(unix(Zoned(local: at(2026, 10, 25, 2, 30), zone: berlin, fold: Fold.later).instant()), 1792891800.rat());
+    test.is(unix(berlin.instant(at(2026, 10, 25, 2, 30))), 1792888200.rat());
+    test.is(unix(berlin.instant(local: at(2026, 10, 25, 2, 30), fold: Fold.later)), 1792891800.rat());
+    test.is(berlin.instant(at(2026, 12, 1, 9, 0)).string(), "2026-12-01T08:00:00Z");
     test.is(
         try {
             Zoned(local: at(2026, 3, 29, 2, 30), zone: berlin, fold: Fold.earlier).instant();
@@ -244,6 +259,8 @@ test "a zone shows an instant as local time with its offset" {
     test.is(before.offset()::Span::seconds, 7200.rat());
     test.is(ZoneObservation(origin: before).abbreviation(), "CEST");
     test.ok(ZoneObservation(origin: before).daylight_saving());
+    test.is(before.abbreviation(), "CEST");
+    test.ok(before.daylight_saving());
     let after = ZonedDateTime(instant: winter, zone: berlin);
     test.is(after.local_datetime().time()::Clock::hour, 2);
     test.is(after.offset()::Span::seconds, 3600.rat());
