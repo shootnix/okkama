@@ -231,3 +231,36 @@ object HpackLookup {
         field;
     }
 }
+
+test "static lookups, dynamic insertion with eviction, and combined indexes" {
+    let fixed = HpackStaticTable();
+    test.is(fixed.size(), 61);
+    test.is(fixed.field(2).name(), ":method");
+    test.is(fixed.field(2).value(), "GET");
+    test.is(fixed.named(":path"), 4);
+    test.is(fixed.exact(HpackField(name: ":method", value: "POST")), 3);
+    test.is(fixed.exact(HpackField(name: ":method", value: "PUT")), 0);
+    let field = HpackField(name: "x-a", value: "1");
+    test.is(field.size(), 36);
+    let table = HpackDynamicTable(80);
+    table = table.added(field);
+    table = table.added(HpackField(name: "x-b", value: "2"));
+    test.is(table.size(), 2);
+    test.is(table.used(), 72);
+    test.is(table.field(1).name(), "x-b");
+    table = table.added(HpackField(name: "x-c", value: "3"));
+    test.is(table.size(), 2);
+    test.is(table.field(2).name(), "x-b");
+    test.is(HpackLookup(fixed: fixed, dynamic: table, index: 62).field().name(), "x-c");
+    test.is(HpackLookup(fixed: fixed, dynamic: table, index: 2).field().value(), "GET");
+    table = table.resized(0);
+    test.is(table.size(), 0);
+    test.is(table.capacity(), 0);
+    test.throws(Http2Fault) {
+        HpackLookup(fixed: fixed, dynamic: table, index: 0);
+    };
+    test.throws(Http2Fault) {
+        HpackDynamicTable(1048577);
+    };
+    test.is(HpackField(name: "authorization", value: "x", sensitive: true).sensitive(), true);
+}

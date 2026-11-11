@@ -4,6 +4,8 @@ import "http/client" take HttpStaleConnection;
 import "http/message" take Request;
 import "http/method" take MethodSemantics;
 import "http/exchange" take ClientResponse, Exchanging;
+import "http/method" take Method;
+import "async/atomic" take Atomic;
 
 // Optional one-shot retry. Only the client transport can establish the stale
 // before-response condition; ordinary errors and response failures propagate.
@@ -35,4 +37,39 @@ object Retrying does Exchanging {
         let pending = origin.response(request);
         await pending;
     }
+}
+
+hidden object StaleOnce does Exchanging {
+    has calls is Atomic<int>;
+
+    StaleOnce() {
+        calls = Atomic(0);
+    }
+
+    async response(request is Request) is ClientResponse {
+        calls.replace(calls.value() + 1);
+        if calls.value() == 1 {
+            throw HttpStaleConnection.unexplained;
+        }
+        throw RetryProbe.second_attempt;
+    }
+
+    calls() is int {
+        calls.value();
+    }
+}
+
+enum RetryProbe is Error = (second_attempt);
+
+async test "a stale connection is retried once for an idempotent, replayable request" {
+    let read = StaleOnce();
+    test.throws(RetryProbe) {
+        await Retrying(read).response(Request(url: "http://example.com/"));
+    };
+    test.is(read.calls(), 2);
+    let write = StaleOnce();
+    test.throws(HttpStaleConnection) {
+        await Retrying(write).response(Request(url: "http://example.com/", method: Method.post));
+    };
+    test.is(write.calls(), 1);
 }

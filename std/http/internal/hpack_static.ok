@@ -137,3 +137,12 @@ object HpackStaticEntries {
         ];
     }
 }
+
+test "the static table is RFC 7541 Appendix A" {
+    let entries = HpackStaticEntries();
+    test.is(entries.names().size(), 61);
+    test.is(entries.values().size(), 61);
+    test.is(entries.names()[1], ":method");
+    test.is(entries.values()[1], "GET");
+    test.is(entries.names()[60], "www-authenticate");
+}
