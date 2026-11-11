@@ -157,10 +157,8 @@ object PgFields {
         self.take(self.remaining());
     }
 
-    private:
-
     // The start of the next `count` bytes, consumed.
-    advance(count is int) is int {
+    hidden advance(count is int) is int {
         let start = position.value();
         confirm count >= 0 && start + count <= body.size()
             else throw PgWireFailure.because("message body is truncated");
@@ -242,10 +240,8 @@ object PgInput {
         PgMessage(Utf8Decoded([kind]).string(), input.take(length - 4));
     }
 
-    private:
-
     // The length of the next message, -1 when its header is not buffered.
-    length() is int {
+    hidden length() is int {
         if input.available() < 5 {
             return -1;
         }

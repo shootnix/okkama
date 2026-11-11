@@ -271,15 +271,13 @@ object MessageCatalog does Translating {
         throw InvalidMessageCatalog.because("missing other after snapshot");
     }
 
-    private:
-
-    entry(key is MessageKey) is MessageEntry {
+    hidden entry(key is MessageKey) is MessageEntry {
         let index = self.index(key, 0, entries.size());
         confirm index >= 0 else throw MissingMessage.key(key.context(), key.identity());
         entries.item(index);
     }
 
-    index(key is MessageKey, start is int, stop is int) is int {
+    hidden index(key is MessageKey, start is int, stop is int) is int {
         if start >= stop {
             return -1;
         }

@@ -213,25 +213,23 @@ object LogQueueState {
         }
     }
 
-    private:
-
-    check() is void {
+    hidden check() is void {
         if failures.value().size() > 0 {
             throw failures.value()[0];
         }
     }
 
-    signal() is void {
+    hidden signal() is void {
         let previous = changed.value();
         changed.replace(Event());
         previous.set();
     }
 
-    loss(count is int) is void {
+    hidden loss(count is int) is void {
         dropped.replace((dropped.value() + BigInt(count.string())));
     }
 
-    completed() is void {
+    hidden completed() is void {
         let empty is @QueuedLogRecord = [];
         inflight.replace(empty);
         let futures is @Future<int> = [];
@@ -239,7 +237,7 @@ object LogQueueState {
         self.signal();
     }
 
-    failed(error is Error) is void {
+    hidden failed(error is Error) is void {
         if failures.value().size() == 0 {
             failures.replace([error]);
         }

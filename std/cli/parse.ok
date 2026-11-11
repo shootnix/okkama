@@ -125,17 +125,15 @@ object CliParsing {
         Invocation(command.value(), path.value(), Settings(entries.value().entries()));
     }
 
-    private:
-
-    option_index(name is string) is int {
+    hidden option_index(name is string) is int {
         command.value().syntax().option_index(name);
     }
 
-    flag_index(name is string) is int {
+    hidden flag_index(name is string) is int {
         command.value().syntax().flag_index(name);
     }
 
-    option(token is string, at is int) is void {
+    hidden option(token is string, at is int) is void {
         if token.slice(0, 2) == "--" {
             let name = token.split("=").first();
             let option = self.option_index(name);
@@ -209,14 +207,14 @@ object CliParsing {
         }
     }
 
-    following_value(option is Option, at is int) is void {
+    hidden following_value(option is Option, at is int) is void {
         confirm at + 1 < arguments.size()
             else throw CliFailure.detailed(at, arguments[at], "missing option value");
         self.value_option(option, arguments[at + 1], at);
         position.replace(at + 2);
     }
 
-    value_option(option is Option, text is string, at is int) is void {
+    hidden value_option(option is Option, text is string, at is int) is void {
         let old = entries.value();
         if old.membership(option.key()) {
             confirm option.value().repeated()
@@ -237,13 +235,13 @@ object CliParsing {
         }
     }
 
-    flag(flag is Flag) is void {
+    hidden flag(flag is Flag) is void {
         entries.replace(
             entries.value().replaced(SettingEntry(flag.key(), [flag.present()], source))
         );
     }
 
-    operand(token is string, at is int) is void {
+    hidden operand(token is string, at is int) is void {
         let children = command.value().children();
         if children.size() > 0 {
             let found = (0..children.size()).reduce(-1) -> old, index {
@@ -282,7 +280,7 @@ object CliParsing {
         position.replace(at + 1);
     }
 
-    finish_operands() is void {
+    hidden finish_operands() is void {
         let specs = command.value().syntax().operands();
         let values = operands.value();
         let consumed = Atomic(0);

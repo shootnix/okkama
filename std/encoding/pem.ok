@@ -65,9 +65,7 @@ object PemBlock does ByteSource {
         Base64Decoded(origin: pem_block_base64(origin, 0)).bytes();
     }
 
-    private:
-
-    validation() is void {
+    hidden validation() is void {
         let offset is int = pem_invalid_offset(origin);
         confirm offset == -1 else throw InvalidPem.at(offset);
         confirm pem_block_count(origin) == 1

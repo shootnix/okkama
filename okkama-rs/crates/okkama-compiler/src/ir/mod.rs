@@ -542,8 +542,8 @@ pub enum Attr {
     /// `native`: тела нет, функцию с этим символом даёт рантайм backend
     /// (`runtime/stdio::stdout_write`, §14.1). Отказ provider — throwing.
     Extern(String),
-    /// Вызов разрешён только функциям того же владельца.
-    Private,
+    /// `hidden` (#365): вызов разрешён только функциям того же владельца.
+    Hidden,
     /// Intrinsic (§14.2): тела нет, его даёт рантайм. `objects` — объекты
     /// модуля, которые рантайм создаёт (результаты, Error std); `helpers` —
     /// функции программы, которые рантайм вызывает (действия значений
@@ -602,7 +602,7 @@ impl Function {
             | Attr::Destroy(object) => Some(*object),
             Attr::Lambda { owner, .. } => *owner,
             Attr::Entry
-            | Attr::Private
+            | Attr::Hidden
             | Attr::Extern(_)
             | Attr::Async
             | Attr::Intrinsic { .. } => None,
@@ -636,8 +636,8 @@ impl Function {
         })
     }
 
-    pub fn is_private(&self) -> bool {
-        self.attrs.contains(&Attr::Private)
+    pub fn is_hidden(&self) -> bool {
+        self.attrs.contains(&Attr::Hidden)
     }
 }
 

@@ -303,9 +303,7 @@ object WebSocketOutputTicket {
         await task;
     }
 
-    private:
-
-    operation() is Future<bool> {
+    hidden operation() is Future<bool> {
         let known = waiting.value();
         if known.size() > 0 {
             known[0];

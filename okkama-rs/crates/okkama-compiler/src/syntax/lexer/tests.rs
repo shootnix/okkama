@@ -47,7 +47,7 @@ fn string_value(token: &Token) -> (&str, StringForm) {
 #[test]
 fn active_keywords() {
     let text = "module import as take native object does role fake enum test main has allow \
-                private async await confirm else panic throw defer try catch for loop next last \
+                async await confirm else panic throw defer try catch for loop next last \
                 if match case self true false return spawn destroy";
     assert_eq!(
         kinds(text),
@@ -66,7 +66,6 @@ fn active_keywords() {
             "IDENTIFIER",
             "HAS",
             "IDENTIFIER",
-            "PRIVATE",
             "ASYNC",
             "AWAIT",
             "CONFIRM",

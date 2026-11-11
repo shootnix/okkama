@@ -290,16 +290,14 @@ object Row does RowValues {
         }
     }
 
-    private:
-
-    index(name is string) is int {
+    hidden index(name is string) is int {
         let at = schema.position(name);
         confirm at != -1 else throw MissingColumn.name(name);
         confirm at != -2 else throw AmbiguousColumn.name(name);
         at;
     }
 
-    cell(at is int) is native_db.DbCellState {
+    hidden cell(at is int) is native_db.DbCellState {
         if page.width() > 0 {
             page.cell(base + at);
         }
@@ -308,7 +306,7 @@ object Row does RowValues {
         }
     }
 
-    reader(name is string) is DbColumnReader {
+    hidden reader(name is string) is DbColumnReader {
         let at = self.index(name);
         if page.width() > 0 {
             DbColumnReader(name, page, base + at);
@@ -318,7 +316,7 @@ object Row does RowValues {
         }
     }
 
-    selected(name is string, at is int) is DbPresenceReader {
+    hidden selected(name is string, at is int) is DbPresenceReader {
         let found is Presence<DbColumnReader> = if page.width() > 0 {
             if page.kind(base + at) == 0 {
                 Presence.none;

@@ -185,9 +185,7 @@ object Http1BodyInput does AsyncReading {
         cache.content().bytes();
     }
 
-    private:
-
-    async read_step(group is Supervising<@byte>, limit is int) is @byte {
+    hidden async read_step(group is Supervising<@byte>, limit is int) is @byte {
         if kind == Http1BodyKind.empty {
             return [];
         }
@@ -292,7 +290,7 @@ object Http1BodyInput does AsyncReading {
         }
     }
 
-    async data(group is Supervising<@byte>, count is int) is @byte {
+    hidden async data(group is Supervising<@byte>, count is int) is @byte {
         if cache.content().size() > 0 {
             return cache.reading().bytes(count);
         }
@@ -310,7 +308,7 @@ object Http1BodyInput does AsyncReading {
         chunk;
     }
 
-    async line(group is Supervising<@byte>) is string {
+    hidden async line(group is Supervising<@byte>) is string {
         let line = ByteBuffer();
         defer line.closing().close();
         let tail = Http1LineTail();

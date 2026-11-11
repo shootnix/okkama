@@ -12,6 +12,42 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
 
 ### Changed
 
+- **Language: `hidden` marks an action (#365).** An action that only its own
+  object calls is written `hidden secret() is int { … }`, one by one, and
+  `hidden async` marks an async one. The rules are unchanged: such an action is
+  callable only through `self` from the same object's actions, cannot be bound
+  as a value, and cannot implement a role action. `hidden` now means one thing
+  everywhere: not part of the public contract (a module for declarations, an
+  object for actions).
+  - Only actions take `hidden` inside an object. `hidden Name(...)` is "A
+    constructor cannot be hidden", and `hidden` before a field, cap, `destroy`
+    or test is a syntax error.
+  - `private` is no longer a keyword, and the section it began is gone.
+    Migration: delete the `private:` line and write `hidden ` before each
+    action that followed it.
+  - Every program in std, conformance, t/, the tests and the examples was
+    rewritten this way: 166 sections, 310 actions, 113 files. For each file,
+    the syntax tree was checked to be the old one with each action marked
+    hidden.
+  - The CLDR generators emit `hidden` too.
+- Diagnostics follow: `Action "secret" on object "Cash" is hidden`, `Hidden
+  action "secret" cannot be used as a value`. The lint rule `unused-private`
+  is now `unused-hidden`, and IR prints the attribute as `hidden`.
+- Conformance:
+  - `GRAM.PRIVATE-SECTION` and `OBJ.PRIVATE-ACTIONS` are now
+    `GRAM.HIDDEN-ACTION` and `OBJ.HIDDEN-ACTIONS`, with their cases renamed
+    to `*.hidden*`.
+  - New cases reject a hidden constructor and a hidden field.
+  - `tools/inventory_std.py` leaves hidden objects, roles, enums and actions
+    out of the std contracts.
+- VS Code extension 0.8.0:
+  - `hidden` is highlighted before actions and `const`; `private` is no
+    longer a keyword.
+  - `make install` and `make install-pgo` now install the extension too,
+    when VS Code and npm are present. The installed 0.6.0 had never
+    highlighted `hidden`.
+  - The tokenizer test checks std modules instead of the removed `examples/`.
+
 - Every std module is formatted by `okkama fmt` (#352): 437 of 468 modules
   (the generated locale data aside) were not, 57 of them written as a few
   very long lines. Only whitespace changed; each file's syntax tree was

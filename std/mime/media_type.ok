@@ -365,9 +365,7 @@ object MimeScanning {
         MimeParsed(MimeToken(kind.text()).string(), "", self.parameters(kind.end()));
     }
 
-    private:
-
-    validate() is void {
+    hidden validate() is void {
         confirm origin.length() <= maximum_bytes
             && Utf8Encoded(origin).bytes().size() <= maximum_bytes
             else throw MimeLimitExceeded.kind("bytes");
@@ -379,7 +377,7 @@ object MimeScanning {
         }
     }
 
-    parameters(start is int) is MimeParameters {
+    hidden parameters(start is int) is MimeParameters {
         let position = MimePosition(self.space(start));
         let raw is MimeItems<MimeWireParameter> = MimeItems();
         loop {
@@ -408,7 +406,7 @@ object MimeScanning {
         MimeAssembly(raw.entries(), maximum_parameters).parameters();
     }
 
-    space(start is int) is int {
+    hidden space(start is int) is int {
         let position = MimePosition(start);
         loop {
             let index = position.index();
@@ -423,7 +421,7 @@ object MimeScanning {
         }
     }
 
-    token(start is int) is MimeScanned {
+    hidden token(start is int) is MimeScanned {
         let position = MimePosition(start);
         loop {
             let index = position.index();
@@ -436,7 +434,7 @@ object MimeScanning {
         MimeScanned(origin.slice(start, position.index()), position.index());
     }
 
-    quoted(start is int) is MimeScanned {
+    hidden quoted(start is int) is MimeScanned {
         let position = MimePosition(start + 1);
         let buffer = ByteBuffer();
         defer buffer.closing().close();

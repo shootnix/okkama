@@ -174,10 +174,6 @@ fn push_members<'a>(members: &'a [ObjectMember], block: &mut impl FnMut(&'a Bloc
                 }
             }
             ObjectMember::Action(action) => block(&action.body),
-            ObjectMember::Private(section) => section
-                .actions
-                .iter()
-                .for_each(|action| block(&action.body)),
         }
     }
 }

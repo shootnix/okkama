@@ -115,9 +115,7 @@ object HttpMediaParameters {
         parts.join("; ");
     }
 
-    private:
-
-    find(name is string) is @HttpMediaParameter {
+    hidden find(name is string) is @HttpMediaParameter {
         let key = self.key(name);
         // Parameter ordering compares names only. The valid probe value is not
         // a missing-value sentinel and is never observed as a field parameter.
@@ -129,7 +127,7 @@ object HttpMediaParameters {
         empty;
     }
 
-    key(name is string) is string {
+    hidden key(name is string) is string {
         let checked = try {
             Method(name).string();
         }
@@ -342,9 +340,7 @@ object HttpMediaScanning {
         );
     }
 
-    private:
-
-    space(start is int) is int {
+    hidden space(start is int) is int {
         let position = HttpMediaPosition(start, 0);
         loop {
             let at = position.index();
@@ -359,7 +355,7 @@ object HttpMediaScanning {
         }
     }
 
-    token(start is int) is HttpMediaScanned {
+    hidden token(start is int) is HttpMediaScanned {
         let position = HttpMediaPosition(start, 0);
         loop {
             let at = position.index();
@@ -371,7 +367,7 @@ object HttpMediaScanning {
         HttpMediaScanned(origin.slice(start, position.index()), position.index());
     }
 
-    quoted(start is int) is HttpMediaScanned {
+    hidden quoted(start is int) is HttpMediaScanned {
         let position = HttpMediaPosition(start + 1, 0);
         let output = ByteBuffer();
         defer output.closing().close();

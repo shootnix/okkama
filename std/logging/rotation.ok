@@ -253,9 +253,7 @@ object RotatingLogFile does Writing, Closing {
         self.close();
     }
 
-    private:
-
-    size() is BigInt {
+    hidden size() is BigInt {
         try {
             let metadata = fs.lstat(fs.path_encode(path.string()));
             confirm metadata["kind"] == 1
@@ -272,7 +270,7 @@ object RotatingLogFile does Writing, Closing {
         }
     }
 
-    rotate(now is Instant) is void {
+    hidden rotate(now is Instant) is void {
         let catalog = LogArchiveCatalog(path);
         let records = catalog.records();
         let generation = catalog.next(records);

@@ -165,9 +165,7 @@ object Http2ConnectionOutput does Http2ControlQueuing {
         await pending;
     }
 
-    private:
-
-    async write_loop() is bool {
+    hidden async write_loop() is bool {
         loop {
             let available = self.take();
             if available.size() == 0 {

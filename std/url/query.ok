@@ -325,9 +325,7 @@ object ParameterText {
         }
     }
 
-    private:
-
-    width(index is int) is int {
+    hidden width(index is int) is int {
         if origin[index] != byte(37) {
             return 1;
         }
@@ -338,7 +336,7 @@ object ParameterText {
         3;
     }
 
-    digit(octet is byte) is int {
+    hidden digit(octet is byte) is int {
         let value = octet.int();
         if value >= 48 && value <= 57 {
             return value - 48;

@@ -124,9 +124,7 @@ object SectionTemplate {
         ).write(nodes, data);
     }
 
-    private:
-
-    validate(nodes is @TemplateTreeNode) is void {
+    hidden validate(nodes is @TemplateTreeNode) is void {
         for nodes -> node {
             confirm node.kind() != TemplateTreeKind.partial
                 else throw UnsupportedTemplatePartial.name(node.text());
@@ -238,9 +236,7 @@ object TemplateSectionRun {
         }
     }
 
-    private:
-
-    partial(name is string, data is Json) is void {
+    hidden partial(name is string, data is Json) is void {
         confirm partial_depth < maximum_partial_depth
             else throw TemplatePartialDepthExceeded.exceeded;
         iterations.claim();
@@ -422,9 +418,7 @@ object TemplateSection {
         }
     }
 
-    private:
-
-    scalar(truth is bool, value is Json) is void {
+    hidden scalar(truth is bool, value is Json) is void {
         if node.kind() == TemplateTreeKind.inverted {
             if !truth {
                 self.body(enclosing);
@@ -437,7 +431,7 @@ object TemplateSection {
         }
     }
 
-    body(value is Json) is void {
+    hidden body(value is Json) is void {
         iterations.claim();
         run.nested().write(node.children(), value);
     }

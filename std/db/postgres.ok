@@ -2128,9 +2128,7 @@ object PgRows does RowReading, Closing {
         self.close();
     }
 
-    private:
-
-    buffered_rows() is int {
+    hidden buffered_rows() is int {
         let page = buffered.value();
         if page.width() == 0 {
             0;

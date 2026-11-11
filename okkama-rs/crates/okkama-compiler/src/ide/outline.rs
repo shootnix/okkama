@@ -177,11 +177,6 @@ fn members(members: &[ast::ObjectMember], lines: &LineIndex<'_>) -> Vec<OutlineI
             ast::ObjectMember::Destroy(_) => {}
             ast::ObjectMember::Test(test) => out.push(test_outline(test, lines)),
             ast::ObjectMember::Action(action) => out.push(action_outline(action, lines)),
-            ast::ObjectMember::Private(section) => {
-                for action in &section.actions {
-                    out.push(action_outline(action, lines));
-                }
-            }
         }
     }
     out
@@ -192,8 +187,8 @@ fn action_outline(action: &ast::ActionDecl, lines: &LineIndex<'_>) -> OutlineIte
     if action.is_async {
         detail = format!("async {detail}");
     }
-    if action.visibility == ast::Visibility::Private {
-        detail = format!("private {detail}");
+    if action.visibility == ast::Visibility::Hidden {
+        detail = format!("hidden {detail}");
     }
     item(
         lines,

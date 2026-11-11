@@ -140,9 +140,7 @@ object ArchiveReading does ReadingArchive, Closing {
         self.close();
     }
 
-    private:
-
-    usable() is void {
+    hidden usable() is void {
         confirm !self.closed() else throw InvalidState.because("archive reading is closed");
         let phase = status.content().bytes();
         confirm phase.size() == 0 || phase[0] != byte(2)
@@ -207,9 +205,7 @@ object ArchiveWriting does WritingArchive, Closing {
         self.close();
     }
 
-    private:
-
-    usable() is void {
+    hidden usable() is void {
         confirm !self.closed() else throw InvalidState.because("archive writing is closed");
         let phase = status.content().bytes();
         confirm phase.size() == 0 || phase[0] != byte(2)

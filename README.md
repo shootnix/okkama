@@ -450,9 +450,8 @@ hidden object Payment does Created, Authorized, Captured, Refunded, Declined {
     }
     // ... authorize(), refund(), reason(), id()
 
-    private:
-    approved() is ^Payment { ^stage = Stage.authorized; }     // internal transitions
-    rejected(reason is string) is ^Payment { ^stage = Stage.declined(reason); }
+    hidden approved() is ^Payment { ^stage = Stage.authorized; }     // internal transitions
+    hidden rejected(reason is string) is ^Payment { ^stage = Stage.declined(reason); }
 }
 
 // 5. Callers only ever hold views.
@@ -476,7 +475,7 @@ is rejected by `okkama check` — these are the compiler's actual messages:
 | `let p is Payment = created;` (downcast) | `Cannot initialize variable "p" of type Payment with Created` |
 | `let back is Authorized = boxed;` (via `any`) | `Cannot initialize variable "back" of type Authorized with any` |
 | `Payment(key: "x", stage: Stage.captured)` | `No constructor of "Payment" accepts (key: string, stage: Stage)` |
-| `Payment(key: "x").approved()` | `Action "approved" on object "Payment" is private` |
+| `Payment(key: "x").approved()` | `Action "approved" on object "Payment" is hidden` |
 | a `match` without the `declined` case | `Non-exhaustive match: missing declined` |
 | `payment.refund()` in the `approved` branch | `Role "Authorized" has no action "refund"` |
 | `payments.Payment(key: "x")` in another module | `Type "payments.Payment" is hidden in module "payments"` |

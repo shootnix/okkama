@@ -221,24 +221,22 @@ object LocaleSubtag {
         }
     }
 
-    private:
-
-    alphabetic() is bool {
+    hidden alphabetic() is bool {
         self.characters("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ");
     }
 
-    numeric() is bool {
+    hidden numeric() is bool {
         self.characters("0123456789");
     }
 
-    characters(alphabet is string) is bool {
+    hidden characters(alphabet is string) is bool {
         let valid = (0..origin.length()).reduce(true) -> previous, index {
             previous && alphabet.split(origin.slice(index, index + 1)).size() == 2;
         };
         origin != "" && valid;
     }
 
-    translated(from is string, to is string) is string {
+    hidden translated(from is string, to is string) is string {
         let parts is @string = (0..origin.length()).map() -> index {
             let char = origin.slice(index, index + 1);
             let split = from.split(char);
@@ -416,9 +414,7 @@ object CompleteLanguageTag {
         parsed;
     }
 
-    private:
-
-    parse(origin is string, registry is IanaLanguages, depth is int) is LanguageTagValue {
+    hidden parse(origin is string, registry is IanaLanguages, depth is int) is LanguageTagValue {
         let length_offset = if origin.length() > 255 {
             255;
         }

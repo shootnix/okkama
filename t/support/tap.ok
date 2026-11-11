@@ -95,14 +95,12 @@ object Tap {
         if failed > 0 || count != planned { 1; } else { 0; }
     }
 
-    private:
-
-    line(passed is bool, name is string) is void {
+    hidden line(passed is bool, name is string) is void {
         let verdict = if passed { "ok "; } else { "not ok "; };
         Stdout().writeln(verdict + (count + 1).string() + " - " + name);
     }
 
-    explain(passed is bool, got is string, expected is string) is void {
+    hidden explain(passed is bool, got is string, expected is string) is void {
         if !passed {
             Stdout().writeln("#      got: " + got);
             Stdout().writeln("# expected: " + expected);

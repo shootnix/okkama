@@ -635,9 +635,7 @@ object FetchedRobots {
         RobotsPolicy(decoded);
     }
 
-    private:
-
-    operation() is Future<RobotsPolicy> {
+    hidden operation() is Future<RobotsPolicy> {
         let known = pending.value();
         if known.size() > 0 {
             known[0];

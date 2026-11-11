@@ -477,9 +477,7 @@ object LocalizedZoneName {
         LocalizedGmtOffset(origin.offset(), data, table, wide).string();
     }
 
-    private:
-
-    compatible(canonical is string, metazone is string, specific is bool) is bool {
+    hidden compatible(canonical is string, metazone is string, specific is bool) is bool {
         if canonical == "Etc/UTC" || canonical == "Etc/GMT" {
             return origin.offset().seconds() == 0.rat() && !origin.daylight();
         }
@@ -496,7 +494,7 @@ object LocalizedZoneName {
         }
     }
 
-    field(table is CldrZoneNames, tags is @string, key is string, index is int) is string {
+    hidden field(table is CldrZoneNames, tags is @string, key is string, index is int) is string {
         tags.reduce("") -> chosen, tag {
             if chosen != "" {
                 chosen;
@@ -653,21 +651,19 @@ object GregorianPrinting {
         parts.join("");
     }
 
-    private:
-
-    date() is Date {
+    hidden date() is Date {
         confirm dates.size() == 1
             else throw InvalidLocalizedDateTime.because("date field requested from wall time");
         dates[0];
     }
 
-    time() is TimeOfDay {
+    hidden time() is TimeOfDay {
         confirm times.size() == 1
             else throw InvalidLocalizedDateTime.because("time field requested from date");
         times[0];
     }
 
-    field(kind is string, width is int) is string {
+    hidden field(kind is string, width is int) is string {
         match kind {
             case "G" {
                 data.era(width);

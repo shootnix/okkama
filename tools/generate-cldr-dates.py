@@ -98,7 +98,7 @@ lines=['module locale/internal/gregorian v1.0.0;','// Generated from SHA-checked
 for i,p in enumerate(profiles):lines.append('if id=='+str(i)+'{return '+literal(p)+'.split("|");}')
 lines+=['let empty is @string=[];empty;}','program(id is int) is string{']
 for i,p in enumerate(programs):lines.append('if id=='+str(i)+'{return '+literal(p)+';}')
-lines+=['"";}','private:', 'search(tag is string,start is int,stop is int) is int{if start>=stop{return -1;}let middle=start+((stop-start)/2).int();let order=tag.order(tags[middle]);if order==Order.equal{return middle;}if order==Order.less{self.search(tag,start,middle);}else{self.search(tag,middle+1,stop);}}','}']
+lines+=['"";}', 'hidden search(tag is string,start is int,stop is int) is int{if start>=stop{return -1;}let middle=start+((stop-start)/2).int();let order=tag.order(tags[middle]);if order==Order.equal{return middle;}if order==Order.less{self.search(tag,start,middle);}else{self.search(tag,middle+1,stop);}}','}']
 write('gregorian',lines)
 # Day-period boundaries are nanosecond ticks in a civil day. Exact points precede
 # intervals; wrapped intervals retain their two endpoint comparisons at runtime.
@@ -182,7 +182,6 @@ for i,chunk in enumerate(chunks):
 lines[1:1]=imports;lines+=['let empty is @string=[];empty;}}'];write('zone_names',lines)
 write('zone_name_rows',['module locale/internal/zone_name_rows v1.0.0;','import "compare" take Order;', '''object ZoneNameRows {has fields is @string;ZoneNameRows(origin is string){fields=origin.split("|");}
 row(key is string) is @string{let index=self.search(key,0,(fields.size()/5).int());if index<0{let empty is @string=[];return empty;}let values is @string=(1..5).map()->offset{fields[index*5+offset];};values;}
-private:
-search(key is string,start is int,stop is int) is int{if start>=stop{return -1;}let middle=start+((stop-start)/2).int();let order=key.order(fields[middle*5]);if order==Order.equal{return middle;}if order==Order.less{self.search(key,start,middle);}else{self.search(key,middle+1,stop);}}
+hidden search(key is string,start is int,stop is int) is int{if start>=stop{return -1;}let middle=start+((stop-start)/2).int();let order=key.order(fields[middle*5]);if order==Order.equal{return middle;}if order==Order.less{self.search(key,start,middle);}else{self.search(key,middle+1,stop);}}
 }'''])
 print(f'compiled {len(rows)} Gregorian rows, {len(profiles)} profiles, {len(programs)} programs, {len(zones)} historical zone keys, {len(chunks)} name shards')

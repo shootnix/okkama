@@ -180,9 +180,7 @@ object CacheControlScanning {
         parsed.values();
     }
 
-    private:
-
-    space(start is int) is int {
+    hidden space(start is int) is int {
         let cursor = HttpMediaPosition(start, 0);
         loop {
             let at = cursor.index();
@@ -192,7 +190,7 @@ object CacheControlScanning {
         cursor.index();
     }
 
-    list(start is int) is int {
+    hidden list(start is int) is int {
         let cursor = HttpMediaPosition(self.space(start), 0);
         loop {
             let at = cursor.index();
@@ -204,7 +202,7 @@ object CacheControlScanning {
         cursor.index();
     }
 
-    token(start is int) is HttpMediaScanned {
+    hidden token(start is int) is HttpMediaScanned {
         let cursor = HttpMediaPosition(start, 0);
         loop {
             let at = cursor.index();
@@ -215,7 +213,7 @@ object CacheControlScanning {
         HttpMediaScanned(text.slice(start, cursor.index()), cursor.index());
     }
 
-    quoted(start is int) is HttpMediaScanned {
+    hidden quoted(start is int) is HttpMediaScanned {
         let cursor = HttpMediaPosition(start + 1, 0);
         let output = ByteBuffer();
         defer output.closing().close();

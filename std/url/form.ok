@@ -26,9 +26,7 @@ object FormUrlEncoded {
         Utf8Encoded(self.string()).bytes();
     }
 
-    private:
-
-    field(text is string) is string {
+    hidden field(text is string) is string {
         PercentEncoded(text, UrlComponent.data).string().replace("%20", "+").replace("%2A", "*").replace(
             "~",
             "%7E"

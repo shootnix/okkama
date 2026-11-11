@@ -594,7 +594,7 @@ impl Inspection {
         let line_start = text[..start].rfind('\n').map_or(0, |at| at + 1);
         let declaration = matches!(
             text[line_start..start].trim(),
-            "" | "async" | "private" | "native" | "native async"
+            "" | "async" | "hidden" | "hidden async" | "native" | "native async"
         );
         // Встроенные действия (строк, массивов, …) — только позиционные.
         let mut named = !declaration;
@@ -815,7 +815,7 @@ pub fn keywords() -> Vec<Completion> {
         "let", "if", "else", "match", "case", "for", "loop", "return", "confirm", "throw", "try",
         "catch", "defer", "await", "async", "spawn", "panic", "next", "last", "true", "false",
         "is", "object", "role", "enum", "has", "does", "import", "take", "module", "test",
-        "native", "private", "destroy", "cap", "void",
+        "native", "hidden", "destroy", "cap", "void",
     ]
     .iter()
     .map(|word| keyword(word))

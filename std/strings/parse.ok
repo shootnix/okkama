@@ -142,9 +142,7 @@ object ParsedFloat {
         }
     }
 
-    private:
-
-    decimal(offset is int) is int {
+    hidden decimal(offset is int) is int {
         (offset..source.length()).reduce(-1) -> found, index {
             if source.slice(index, index + 1) == "." {
                 confirm found == -1 else throw InvalidFloat.source(source);
@@ -156,13 +154,13 @@ object ParsedFloat {
         };
     }
 
-    digits(start is int, end is int) is float {
+    hidden digits(start is int, end is int) is float {
         (start..end).reduce(0.0) -> result, index {
             result * 10.0 + self.digit(index);
         };
     }
 
-    digit(index is int) is float {
+    hidden digit(index is int) is float {
         let symbol is string = source.slice(index, index + 1);
 
         match symbol {
@@ -392,9 +390,7 @@ object ParsedByte {
         }
     }
 
-    private:
-
-    digit(index is int, base is int) is int {
+    hidden digit(index is int, base is int) is int {
         let symbol is string = source.slice(index, index + 1);
 
         let result is int = match symbol {

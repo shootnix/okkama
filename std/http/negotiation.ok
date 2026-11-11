@@ -242,13 +242,11 @@ object AcceptedContentCodings {
         chosen.value();
     }
 
-    private:
-
-    lookup(token is string) is @CodingPreference {
+    hidden lookup(token is string) is @CodingPreference {
         WeightedTokenLookup(indexed, token).value();
     }
 
-    match(coding is ContentCoding) is CodingPreference {
+    hidden match(coding is ContentCoding) is CodingPreference {
         let name = coding.string();
         if !present {
             return CodingPreference(name, Quality(1.rat()), 0);
@@ -547,13 +545,11 @@ object AcceptedCharsets {
         chosen.value();
     }
 
-    private:
-
-    lookup(token is string) is @CodingPreference {
+    hidden lookup(token is string) is @CodingPreference {
         WeightedTokenLookup(indexed, token).value();
     }
 
-    lookup_match(charset is CharsetName) is CodingPreference {
+    hidden lookup_match(charset is CharsetName) is CodingPreference {
         let name = charset.string();
         if !present {
             return CodingPreference(name, Quality(1.rat()), 0);
@@ -695,9 +691,7 @@ object AcceptedLanguages {
         chosen.value();
     }
 
-    private:
-
-    lookup_match(locale is Locale) is LanguageMatch {
+    hidden lookup_match(locale is Locale) is LanguageMatch {
         if !present {
             return LanguageMatch(WeightedLanguageRange(BasicLanguageRange("*")), 0);
         }
@@ -1115,9 +1109,7 @@ object AcceptedMediaTypes {
         selected.value();
     }
 
-    private:
-
-    lookup_match(media is HttpMediaType) is MediaMatch {
+    hidden lookup_match(media is HttpMediaType) is MediaMatch {
         if !present {
             return MediaMatch(MediaRange(), 0);
         }

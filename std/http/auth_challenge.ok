@@ -200,9 +200,7 @@ object AuthenticationChallengeScanning {
         result.values();
     }
 
-    private:
-
-    space(start is int) is int {
+    hidden space(start is int) is int {
         let position = HttpMediaPosition(start, 0);
         loop {
             let at = position.index();
@@ -217,7 +215,7 @@ object AuthenticationChallengeScanning {
         }
     }
 
-    separator(start is int) is int {
+    hidden separator(start is int) is int {
         if start == width {
             return start;
         }
@@ -226,7 +224,7 @@ object AuthenticationChallengeScanning {
         self.list(start);
     }
 
-    list(start is int) is int {
+    hidden list(start is int) is int {
         let position = HttpMediaPosition(self.space(start), 0);
         loop {
             let at = position.index();
@@ -238,7 +236,7 @@ object AuthenticationChallengeScanning {
         position.index();
     }
 
-    token(start is int) is HttpMediaScanned {
+    hidden token(start is int) is HttpMediaScanned {
         let position = HttpMediaPosition(start, 0);
         loop {
             let at = position.index();
@@ -250,7 +248,7 @@ object AuthenticationChallengeScanning {
         HttpMediaScanned(text.slice(start, position.index()), position.index());
     }
 
-    assignment(start is int) is bool {
+    hidden assignment(start is int) is bool {
         let name = self.token(start);
         let end = self.space(name.end());
         end < width
@@ -260,7 +258,7 @@ object AuthenticationChallengeScanning {
             && bytes[end + 1].int() != 44;
     }
 
-    token68(start is int) is HttpMediaScanned {
+    hidden token68(start is int) is HttpMediaScanned {
         let position = HttpMediaPosition(start, 0);
         loop {
             let at = position.index();
@@ -294,7 +292,7 @@ object AuthenticationChallengeScanning {
         HttpMediaScanned(text.slice(start, position.index()), position.index());
     }
 
-    quoted(start is int) is HttpMediaScanned {
+    hidden quoted(start is int) is HttpMediaScanned {
         let position = HttpMediaPosition(start + 1, 0);
         let output = ByteBuffer();
         defer output.closing().close();

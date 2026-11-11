@@ -351,13 +351,11 @@ object DigestAuthorization does HttpAuthorizing {
         DigestServerProof(self.response_digest(""), cnonce, count);
     }
 
-    private:
-
-    response_digest(method is string) is string {
+    hidden response_digest(method is string) is string {
         credentials.response_digest(challenge, uri, method, cnonce, count);
     }
 
-    identity() is @byte {
+    hidden identity() is @byte {
         credentials.identity(challenge);
     }
 }
@@ -588,16 +586,14 @@ object DigestExchanging does Exchanging {
         self.result(request, result);
     }
 
-    private:
-
-    eligible(result is ClientResponse, request is Request) is bool {
+    hidden eligible(result is ClientResponse, request is Request) is bool {
         result.response().status().code() == 401
             && result.history().size() == 0
             && result.request().target().url().string() == request.target().url().string()
             && scope.matches(result.request());
     }
 
-    async authorized(request is Request, challenge is DigestChallenge) is ClientResponse {
+    hidden async authorized(request is Request, challenge is DigestChallenge) is ClientResponse {
         let count = counts.ticket(challenge.nonce());
         let nonce = HexEncoded(random.bytes(16)).string();
         let authorization = DigestAuthorization(credentials, challenge, request, nonce, count);
@@ -630,12 +626,12 @@ object DigestExchanging does Exchanging {
         verified;
     }
 
-    async once(request is Request) is ClientResponse {
+    hidden async once(request is Request) is ClientResponse {
         let pending = origin.response(request);
         await pending;
     }
 
-    result(request is Request, result is ClientResponse) is ClientResponse {
+    hidden result(request is Request, result is ClientResponse) is ClientResponse {
         if result.history().size() == 0
             && result.request().target().url().string() == request.target().url().string() {
                 return ClientResponse(request, result.response(), result.details());

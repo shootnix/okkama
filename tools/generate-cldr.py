@@ -64,7 +64,7 @@ for form, index in groups.items():
     for category, rule in form:
         output.append(f'if {condition(rule)} {{return {categories.index(category)};}}')
     output.append('return 5;}')
-output.extend(['5;', '}', 'private:', '''rule_key(tag is string,rules is %string:int,parents is CldrParents,depth is int) is string {
+output.extend(['5;', '}', '''hidden rule_key(tag is string,rules is %string:int,parents is CldrParents,depth is int) is string {
 if depth>32 || tag=="root" {return "";}
 if rules.has(tag) {return tag;}
 let explicit=parents.parent(tag);let parts=tag.split("-");
@@ -99,8 +99,7 @@ object CldrLikely {
  has keys, values is @string;
  CldrLikely() {keys=''' + json.dumps('|'.join(keys)) + '''.split("|");values=''' + json.dumps('|'.join(likely[k] for k in keys)) + '''.split("|");}
  lookup(key is string) is string {self.search(key,0,keys.size());}
- private:
- search(key is string,start is int,stop is int) is string {
+ hidden search(key is string,start is int,stop is int) is string {
   if start>=stop {return "";}
   let middle=start+((stop-start)/2).int();
   let order=key.order(keys[middle]);
@@ -158,8 +157,7 @@ object CldrLists {
   if position<0 {let empty is @string=[];return empty;}
   let row=rows[position].split(",");profiles[ParsedInt(row[style]).value()].split("|");
  }
- private:
- search(key is string,start is int,stop is int) is int {
+ hidden search(key is string,start is int,stop is int) is int {
   if start>=stop {return -1;}let middle=start+((stop-start)/2).int();
   let order=key.order(keys[middle]);if order==Order.equal{return middle;}
   if order==Order.less{self.search(key,start,middle);}else{self.search(key,middle+1,stop);}

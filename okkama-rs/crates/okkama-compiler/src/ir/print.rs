@@ -762,7 +762,7 @@ fn write_function(f: &mut Formatter<'_>, module: &Module, function: &Function) -
             }
             match attr {
                 Attr::Entry => f.write_str("entry")?,
-                Attr::Private => f.write_str("private")?,
+                Attr::Hidden => f.write_str("hidden")?,
                 Attr::Async => f.write_str("async")?,
                 Attr::Intrinsic {
                     name,

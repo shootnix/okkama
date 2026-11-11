@@ -1,12 +1,12 @@
 {
   "schema": "ocs-case/1",
-  "id": "L04.private-actions.successor-external-call",
-  "title": "a private successor action cannot be called from outside the object",
-  "purpose": "Private successors keep internal transitions out of the public API.",
+  "id": "L04.hidden-actions.external-call",
+  "title": "hidden actions reject an external call",
+  "purpose": "The construct is invalid and must not complete.",
   "level": "L04",
   "contracts": [
     {
-      "contract": "OBJ.PRIVATE-ACTIONS",
+      "contract": "OBJ.HIDDEN-ACTIONS",
       "aspects": [
         "invalid"
       ]
@@ -46,8 +46,8 @@
     "timeout_s": 30
   },
   "provenance": {
-    "origin": "role-oriented typestate research (docs/research/role-oriented-typestate.md)",
-    "expected_basis": "spec 11.7: private actions, including private successors, cannot be called from outside."
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.7: hidden actions cannot be called from outside; a hidden call through a different receiver is forbidden even for the same type."
   },
   "status": "mandatory"
 }

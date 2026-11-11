@@ -497,13 +497,6 @@ impl<'s> Printer<'s> {
         self.indent += 1;
         let mut previous_has = false;
         for (index, member) in members.iter().enumerate() {
-            if let ObjectMember::Private(section) = member {
-                // The members after it are the tests written among its
-                // actions (#277), printed where they were.
-                let tests = &members[index + 1..];
-                self.line(member.span(), index == 0, index > 0, |p| p.private_section(section, tests));
-                break;
-            }
             let is_has = matches!(member, ObjectMember::Has(_));
             let blank = index > 0 && !(is_has && previous_has);
             self.line(member.span(), index == 0, blank, |p| p.member(member));
@@ -579,38 +572,6 @@ impl<'s> Printer<'s> {
             }
             ObjectMember::Test(test) => self.test(test),
             ObjectMember::Action(action) => self.action(action),
-            ObjectMember::Private(section) => self.private_section(section, &[]),
-        }
-    }
-
-    /// `private:` and its actions, with the object's `tests` that were
-    /// written among them, in source order.
-    fn private_section(&mut self, section: &PrivateSection, tests: &[ObjectMember]) {
-        self.word("private:");
-        let mut tests = tests
-            .iter()
-            .filter_map(|member| match member {
-                ObjectMember::Test(test) => Some(test),
-                _ => None,
-            })
-            .peekable();
-        let mut actions = section.actions.iter().peekable();
-        loop {
-            let (span, is_action) = match (actions.peek(), tests.peek()) {
-                (Some(action), Some(test)) if test.span.start < action.span.start => (test.span, false),
-                (Some(action), _) => (action.span, true),
-                (None, Some(test)) => (test.span, false),
-                (None, None) => break,
-            };
-            self.newline();
-            self.blank_line();
-            self.leading_comments(span.start, true);
-            if is_action {
-                self.action(actions.next().expect("the peeked action"));
-            } else {
-                self.test(tests.next().expect("the peeked test"));
-            }
-            self.trailing_comment(span.end);
         }
     }
 
@@ -656,6 +617,9 @@ impl<'s> Printer<'s> {
     }
 
     fn action(&mut self, action: &ActionDecl) {
+        if action.visibility == Visibility::Hidden {
+            self.word("hidden ");
+        }
         if action.is_async {
             self.word("async ");
         }

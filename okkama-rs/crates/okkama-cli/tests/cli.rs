@@ -282,7 +282,7 @@ fn native_run_engines_execute_source_without_java() {
 
 #[test]
 fn skipped_and_filtered_tests_report_alike_on_every_engine() {
-    // #277: a test after `private:` is an object test; `test.skip` ends its
+    // #277: a test among hidden actions is an object test; `test.skip` ends its
     // test past any `catch` and does not fail the run unless an assertion
     // failed first; `--filter` keeps the tests whose names contain a text.
     let source = TempFile::new(
@@ -291,8 +291,7 @@ fn skipped_and_filtered_tests_report_alike_on_every_engine() {
           object Account {\n\
               Account();\n\
               test \"public\" { test.ok(true); }\n\
-              private:\n\
-              helper() is int { 1; }\n\
+              hidden helper() is int { 1; }\n\
               test \"among private\" { test.ok(true); }\n\
           }\n\
           test \"skipped\" { test.skip(\"not today\"); test.ok(false); }\n\

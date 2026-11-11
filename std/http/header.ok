@@ -95,9 +95,7 @@ object HttpFieldValue {
         self.trimmed();
     }
 
-    private:
-
-    trimmed() is string {
+    hidden trimmed() is string {
         let spaces = Regex("[ \\t]*");
         let ending = Regex("[\\x{0}-\\x{ff}]*[^ \\t]");
         let range = HttpFieldRange(0, origin.length());

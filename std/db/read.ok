@@ -307,9 +307,7 @@ object DbColumnReader {
         }
     }
 
-    private:
-
-    cell() is native_db.DbCellState {
+    hidden cell() is native_db.DbCellState {
         match source {
             case DbReaderSource.cell(state) {
                 state;
@@ -323,7 +321,7 @@ object DbColumnReader {
         }
     }
 
-    kind() is DbValueKind {
+    hidden kind() is DbValueKind {
         match source {
             case DbReaderSource.cell(state) {
                 DbNativeKind(native_db.db_kind(state)).value();
@@ -337,7 +335,7 @@ object DbColumnReader {
         }
     }
 
-    require(expected is DbValueKind) is void {
+    hidden require(expected is DbValueKind) is void {
         confirm self.kind() == expected else throw WrongDbValue.detailed(expected, self.kind());
     }
 }

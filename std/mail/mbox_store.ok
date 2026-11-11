@@ -184,9 +184,7 @@ object MboxSession does Closing {
         ^view = prepared;
     }
 
-    private:
-
-    current() is void {
+    hidden current() is void {
         lease.check();
         let present = MboxFileBytes(origin.path(), origin.limits().wire_bytes()).bytes();
         confirm present == view.bytes() else throw MboxConflict.conflict;

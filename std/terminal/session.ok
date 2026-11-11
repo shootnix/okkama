@@ -206,20 +206,18 @@ object TerminalSession does Closing, TerminalModeApplying, TerminalScreenApplyin
         self.close();
     }
 
-    private:
-
-    interactive_screen() is void {
+    hidden interactive_screen() is void {
         confirm observation.capabilities().output_interactive() && observation.screen_capable()
             else throw TerminalUnavailable.because(
                 "screen control requires interactive VT-capable output"
             );
     }
 
-    control(code is string) is void {
+    hidden control(code is string) is void {
         writing.write(Utf8Decoded([27.byte()]).string() + "[" + code);
     }
 
-    restoration() is void {
+    hidden restoration() is void {
         let esc = Utf8Decoded([27.byte()]).string();
         try {
             terminal_cleanup(state, Utf8Encoded(esc + "[?25h" + esc + "[?1049l").bytes());
@@ -428,9 +426,7 @@ object TerminalInput {
         }
     }
 
-    private:
-
-    async read(limit is int) is @byte {
+    hidden async read(limit is int) is @byte {
         let pending = terminal_read(state, limit);
         defer pending.cancel();
         try {
@@ -490,9 +486,7 @@ object TerminalOutput does Writing, WritingText {
         confirm !terminal_closed(state) else throw TerminalClosed.closed;
     }
 
-    private:
-
-    write_bytes(bytes is @byte) is void {
+    hidden write_bytes(bytes is @byte) is void {
         // Keep the Stage07 source size independent of the bounded host write.
         if bytes.size() <= 65536 {
             let written = self.accepted(bytes);
@@ -527,7 +521,7 @@ object TerminalOutput does Writing, WritingText {
         }
     }
 
-    accepted(bytes is @byte) is int {
+    hidden accepted(bytes is @byte) is int {
         try {
             terminal_write(state, bytes);
         }

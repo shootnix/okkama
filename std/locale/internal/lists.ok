@@ -13,8 +13,7 @@ object CldrLists {
   if position<0 {let empty is @string=[];return empty;}
   let row=rows[position].split(",");profiles[ParsedInt(row[style]).value()].split("|");
  }
- private:
- search(key is string,start is int,stop is int) is int {
+ hidden search(key is string,start is int,stop is int) is int {
   if start>=stop {return -1;}let middle=start+((stop-start)/2).int();
   let order=key.order(keys[middle]);if order==Order.equal{return middle;}
   if order==Order.less{self.search(key,start,middle);}else{self.search(key,middle+1,stop);}

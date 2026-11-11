@@ -74,8 +74,7 @@ text.extend(['let empty is @string=[];empty;}','compact(id is int,long is bool) 
 for i,model in enumerate(models):text.append('if id=='+str(i)+'{return if long{'+mapping(model['long'])+';}else{'+mapping(model['short'])+';};}')
 text.append('[:];}')
 text.append('digits(system is string) is string{let values is %string:string='+mapping(digits)+';if values.has(system){values[system];}else{"";}}')
-text.append('''private:
-search(tag is string,start is int,stop is int) is int{
+text.append('''hidden search(tag is string,start is int,stop is int) is int{
 if start>=stop{return -1;}let middle=start+((stop-start)/2).int();let order=tag.order(keys[middle]);
 if order==Order.equal{return middle;}if order==Order.less{self.search(tag,start,middle);}else{self.search(tag,middle+1,stop);}}
 }''')

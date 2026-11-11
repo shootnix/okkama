@@ -135,9 +135,7 @@ object HumanTestReport {
         "seed=" + origin.seed().string() + "\n" + records.join("") + counts.passes().string() + " passed, " + counts.failures().string() + " failed, " + counts.skips().string() + " skipped\n";
     }
 
-    private:
-
-    line(text is string) is string {
+    hidden line(text is string) is string {
         (if text.length() > width {
             text.slice(0, width - 3) + "...";
         }
@@ -146,7 +144,7 @@ object HumanTestReport {
         }) + "\n";
     }
 
-    bytes(label is string, bytes is @byte) is string {
+    hidden bytes(label is string, bytes is @byte) is string {
         if bytes.size() == 0 {
             return "";
         }
@@ -255,9 +253,7 @@ object JsonTestReport {
         ]).string();
     }
 
-    private:
-
-    result(result is TestResult) is Json {
+    hidden result(result is TestResult) is Json {
         let failures = result.failures();
         let problems is @Json = (0..failures.size()).map() -> index {
             self.failure(failures.item(index));
@@ -274,7 +270,7 @@ object JsonTestReport {
         ]);
     }
 
-    failure(failure is TestFailure) is Json {
+    hidden failure(failure is TestFailure) is Json {
         let position is Json = if failure.located() {
             let place = failure.position();
             Json(
@@ -354,9 +350,7 @@ object JUnitTestReport {
         )).xml();
     }
 
-    private:
-
-    property(name is string, value is string) is XmlElement {
+    hidden property(name is string, value is string) is XmlElement {
         XmlElement(
             XmlName("property"),
             [XmlAttribute(XmlName("name"), name), XmlAttribute(XmlName("value"), value)],
@@ -364,7 +358,7 @@ object JUnitTestReport {
         );
     }
 
-    result(result is TestResult) is XmlElement {
+    hidden result(result is TestResult) is XmlElement {
         let status = result.status();
         let failures = result.failures();
         let messages is @string = (0..failures.size()).map() -> index {

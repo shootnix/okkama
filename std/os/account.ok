@@ -52,9 +52,7 @@ object User {
         Directory(path: Path(record["home"]));
     }
 
-    private:
-
-    record() is %string:string {
+    hidden record() is %string:string {
         if current {
             try {
                 account_current_user();
@@ -119,9 +117,7 @@ object Group {
         GroupUsers(name: selected_name);
     }
 
-    private:
-
-    record() is %string:string {
+    hidden record() is %string:string {
         confirm !selected_name.empty()
             else throw InvalidAccountName.origin(selected_name);
         try {
@@ -177,9 +173,7 @@ object GroupUsers does Sequencing<User>, Iterating<User>, Sizing {
         User(name: names[names.size() - 1]);
     }
 
-    private:
-
-    names() is @string {
+    hidden names() is @string {
         confirm !group_name.empty() else throw InvalidAccountName.origin(group_name);
         try {
             account_group_users(group_name);

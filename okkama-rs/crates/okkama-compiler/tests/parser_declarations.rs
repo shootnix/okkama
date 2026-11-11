@@ -158,7 +158,7 @@ fn object_members() {
         is(actual is any, expected is any) is void {} \
         has(expected is string) is bool { false; } \
         withdrawal() is int { 1; } \
-        private: helper() is void {} value() is int { 1; } \
+        hidden helper() is void {} hidden async value() is int { 1; } \
         }";
     let program = parse_ok(source);
     let Item::Object(object) = &program.items[0] else {
@@ -174,7 +174,6 @@ fn object_members() {
             ObjectMember::Destroy(_) => "destroy",
             ObjectMember::Test(_) => "test",
             ObjectMember::Action(_) => "action",
-            ObjectMember::Private(_) => "private",
         })
         .collect();
     assert_eq!(
@@ -190,19 +189,32 @@ fn object_members() {
             "action",
             "action",
             "action",
-            "private"
+            "action",
+            "action"
         ]
     );
-    let ObjectMember::Private(section) = &object.members[10] else {
+    let visibility: Vec<(Visibility, bool)> = object.members[7..]
+        .iter()
+        .map(|member| match member {
+            ObjectMember::Action(action) => (action.visibility, action.is_async),
+            _ => panic!(),
+        })
+        .collect();
+    assert_eq!(
+        visibility,
+        [
+            (Visibility::Public, false),
+            (Visibility::Public, false),
+            (Visibility::Public, false),
+            (Visibility::Hidden, false),
+            (Visibility::Hidden, true)
+        ]
+    );
+    // The span of a hidden action starts at `hidden`.
+    let ObjectMember::Action(helper) = &object.members[10] else {
         panic!()
     };
-    assert_eq!(section.actions.len(), 2);
-    assert!(
-        section
-            .actions
-            .iter()
-            .all(|a| a.visibility == Visibility::Private)
-    );
+    assert_eq!(&source[helper.span.start as usize..][..13], "hidden helper");
     let ObjectMember::Test(test) = &object.members[6] else {
         panic!()
     };
@@ -210,13 +222,15 @@ fn object_members() {
 }
 
 #[test]
-fn tests_among_private_actions_are_object_tests() {
-    // #277: a test after `private:` is not private; it follows the section,
-    // which still holds every private action and covers the tests.
+fn hidden_is_a_modifier_of_actions_only() {
+    // #365: `hidden` marks one action; members keep their source order, and
+    // an action may still be named `hidden`.
     let source = "module app v1.0.0; object Cash { Cash(); \
-        private: helper() is void {} \
+        hidden helper() is void {} \
         test \"first\" { test.ok(true); } \
-        value() is int { 1; } \
+        hidden() is int { 1; } \
+        hidden hidden() is int { 2; } \
+        hidden has() is bool { false; } \
         async test \"later\" { await x; } \
         }";
     for mode in [ParseMode::Full, ParseMode::Production] {
@@ -224,14 +238,28 @@ fn tests_among_private_actions_are_object_tests() {
         let Item::Object(object) = &program.items[0] else {
             panic!()
         };
-        let [_, ObjectMember::Private(section), ObjectMember::Test(first), ObjectMember::Test(later)] =
-            object.members.as_slice()
-        else {
-            panic!("{:?}", object.members)
-        };
-        assert_eq!(section.actions.len(), 2);
-        assert!(!first.is_async && later.is_async);
-        assert!(section.span.start < first.span.start && later.span.end <= section.span.end);
+        let shape: Vec<String> = object
+            .members
+            .iter()
+            .map(|member| match member {
+                ObjectMember::Action(action) => format!("{} {}", action.visibility.as_str(), action.name.text),
+                ObjectMember::Test(test) => format!("test {}", test.is_async),
+                ObjectMember::Constructor(_) => "constructor".to_string(),
+                _ => panic!(),
+            })
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                "constructor",
+                "hidden helper",
+                "test false",
+                "public hidden",
+                "hidden hidden",
+                "hidden has",
+                "test true"
+            ]
+        );
     }
 }
 
@@ -359,12 +387,36 @@ fn constructor_and_member_errors() {
             "Action directives have been removed",
         ),
         (
-            "object Box { Box(); private helper() is void {} }",
-            "Expect \":\" after \"private\".",
+            "object Box { hidden Box(); }",
+            "A constructor cannot be hidden",
         ),
         (
-            "object Box { Box(); private: has x is int; }",
-            "Expect \"(\" before action parameters.",
+            "object Box { Box(); hidden Box(value is int) {} }",
+            "A constructor cannot be hidden",
+        ),
+        (
+            "object Box { Box(); hidden has x is int; }",
+            "Inside an object only an action can be hidden",
+        ),
+        (
+            "object Box { Box(); hidden test \"t\" { } }",
+            "Inside an object only an action can be hidden",
+        ),
+        (
+            "object Box { Box(); hidden async test \"t\" { } }",
+            "Inside an object only an action can be hidden",
+        ),
+        (
+            "object Box { Box(); hidden destroy { } }",
+            "Inside an object only an action can be hidden",
+        ),
+        (
+            "object Box { Box(); hidden cap C { x is int { 1; } } }",
+            "Inside an object only an action can be hidden",
+        ),
+        (
+            "object Box { Box(); hidden native f() is int; }",
+            "Native declarations are allowed only at module scope.",
         ),
         ("object Box { 42; }", "Expect object member declaration."),
     ] {
@@ -379,7 +431,7 @@ fn with_names_are_forbidden_in_action_positions() {
         "object Box { Box(); with_value(value is int) is void {} }",
         "object Box { Box(); with() is void {} }",
         "role Boxed { with_value(value is int) is void; }",
-        "object Box { Box(); private: with_value(value is int) is void {} }",
+        "object Box { Box(); hidden with_value(value is int) is void {} }",
         "native with_value(value is int) is int;",
         "object Box { Box(); } main() is int { Box().with_value(1); }",
     ] {

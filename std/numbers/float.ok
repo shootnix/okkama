@@ -146,9 +146,7 @@ object FloatDecimalCandidate {
             && (high == Order.less || (inclusive && high == Order.equal));
     }
 
-    private:
-
-    order(other is BigRational) is Order {
+    hidden order(other is BigRational) is Order {
         (numerator * other.denominator()).order((other.numerator() * denominator));
     }
 }

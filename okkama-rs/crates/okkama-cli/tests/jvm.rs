@@ -341,8 +341,7 @@ object C {
     add(value is int) is int { n + value; }
     add(value is string) is int { n; }
     twice() is int { self.helper() * 2; }
-    private:
-    helper() is int { n; }
+    hidden helper() is int { n; }
 }
 object Pair {
     has left is C;

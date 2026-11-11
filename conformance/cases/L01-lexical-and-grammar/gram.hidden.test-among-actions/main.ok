@@ -11,18 +11,16 @@ object Account {
         self.doubled();
     }
 
-    private:
-
-    doubled() is int {
+    hidden doubled() is int {
         balance * 2;
     }
 
-    test "among private actions" {
+    test "among hidden actions" {
         test.is(Account(2).total(), 4);
         test.fail("ran");
     }
 
-    decreased() is int {
+    hidden decreased() is int {
         balance - 1;
     }
 }

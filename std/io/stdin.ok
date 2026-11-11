@@ -83,13 +83,11 @@ object Utf8Input does ReadingText, Closing {
         input_state_close(state);
     }
 
-    private:
-
-    open() is void {
+    hidden open() is void {
         confirm !self.closed() else throw ClosedInput.closed;
     }
 
-    fill_line() is void {
+    hidden fill_line() is void {
         loop {
             last if input_state_line_offset(state) != -1
                 || input_state_eof(state);
@@ -97,14 +95,14 @@ object Utf8Input does ReadingText, Closing {
         }
     }
 
-    fill_text() is void {
+    hidden fill_text() is void {
         loop {
             last if input_state_eof(state);
             self.read_more();
         }
     }
 
-    read_more() is void {
+    hidden read_more() is void {
         let chunk is @byte = origin.bytes(4096);
         if chunk.size() == 0 {
             input_state_finish(state);

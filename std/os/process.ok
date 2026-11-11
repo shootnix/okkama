@@ -212,9 +212,7 @@ object Process {
         }
     }
 
-    private:
-
-    start() is void {
+    hidden start() is void {
         if !self.started() {
             try {
                 process_state_start(
@@ -231,7 +229,7 @@ object Process {
         }
     }
 
-    started() is bool {
+    hidden started() is bool {
         try {
             process_state_started(state);
         }

@@ -191,8 +191,8 @@ fn glued_generic_close_and_assignment_split_safely() {
 }
 
 #[test]
-fn match_cases_and_private_sections_are_laid_out() {
-    let text = "module app v1.0.0;\nobject A { name() is string { match kind { case 1, 2 { \"a\"; } else { \"b\"; } } }\nprivate:\nhelper() is int { 1; } }\n";
+fn match_cases_and_hidden_actions_are_laid_out() {
+    let text = "module app v1.0.0;\nobject A { name() is string { match kind { case 1, 2 { \"a\"; } else { \"b\"; } } }\nhidden helper() is int { 1; } }\n";
     assert_eq!(
         fmt(text),
         "module app v1.0.0;
@@ -209,9 +209,7 @@ object A {
         }
     }
 
-    private:
-
-    helper() is int {
+    hidden helper() is int {
         1;
     }
 }
@@ -220,18 +218,15 @@ object A {
 }
 
 #[test]
-fn tests_among_private_actions_keep_their_place() {
-    // #277: the parser puts them after the section; they print where they
-    // were written, with their comments.
-    let text = "module app v1.0.0;\nobject A {\nA();\nprivate:\nhelper() is int { 1; }\n// checks\ntest \"t\" { test.ok(true); }\nasync test \"u\" { test.ok(true); }\nlast_one() is int { 2; }\n}\n";
+fn tests_among_hidden_actions_keep_their_place() {
+    // #277, #365: members print where they were written, with their comments.
+    let text = "module app v1.0.0;\nobject A {\nA();\nhidden helper() is int { 1; }\n// checks\ntest \"t\" { test.ok(true); }\nasync test \"u\" { test.ok(true); }\nlast_one() is int { 2; }\n}\n";
     let formatted = "module app v1.0.0;
 
 object A {
     A();
 
-    private:
-
-    helper() is int {
+    hidden helper() is int {
         1;
     }
 

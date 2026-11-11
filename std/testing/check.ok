@@ -53,9 +53,7 @@ object CloseTo does Checking {
         }
     }
 
-    private:
-
-    close() is bool {
+    hidden close() is bool {
         if actual == expected {
             return true;
         }
@@ -219,9 +217,7 @@ object CheckTextDiff {
         CheckMessageText("bounded window around scalar " + position.string() + "\n" + rendered).string();
     }
 
-    private:
-
-    window(origin is string) is @string {
+    hidden window(origin is string) is @string {
         let start = if position > 64 {
             position - 64;
         }
@@ -296,9 +292,7 @@ object TextEquals does Checking {
         );
     }
 
-    private:
-
-    mismatch(limit is int) is int {
+    hidden mismatch(limit is int) is int {
         let low = Atomic(0);
         let high = Atomic(limit + 1);
         defer low.close();
@@ -361,9 +355,7 @@ object BytesEqual does Checking {
         );
     }
 
-    private:
-
-    mismatch(limit is int) is int {
+    hidden mismatch(limit is int) is int {
         for (0..limit) -> index {
             if actual[index] != expected[index] {
                 return index;
@@ -430,9 +422,13 @@ object SequenceEquals<T> does Checking {
         }
     }
 
-    private:
-
-    difference(index is int, left is int, right is int, known_actual is @T, known_expected is @T) is void {
+    hidden difference(
+        index is int,
+        left is int,
+        right is int,
+        known_actual is @T,
+        known_expected is @T
+    ) is void {
         let start = window.start(index);
         let first_stop = window.stop(index, left);
         let second_stop = window.stop(index, right);

@@ -160,9 +160,7 @@ object CsvField {
         }
     }
 
-    private:
-
-    quoted() is bool {
+    hidden quoted() is bool {
         origin.replace(",", "") != origin
             || origin.replace("\"", "") != origin
             || origin.replace("\r", "") != origin
@@ -395,9 +393,7 @@ object CsvPrefix {
         ordered;
     }
 
-    private:
-
-    field(end is int) is string {
+    hidden field(end is int) is string {
         if quoted {
             dialect.decoded(origin.slice(beginning, end - 1));
         }
@@ -406,7 +402,7 @@ object CsvPrefix {
         }
     }
 
-    record(end is int) is @string {
+    hidden record(end is int) is @string {
         confirm fields.size() < maximum_columns else throw CsvLimitExceeded.kind(CsvLimit.columns);
         let backwards is @string = fields.prefix(self.field(end)).map() -> field {
             field;
@@ -604,9 +600,7 @@ object CsvDialect {
         encoded.join(delimiter) + line_ending;
     }
 
-    private:
-
-    quoted(value is string) is bool {
+    hidden quoted(value is string) is bool {
         value.replace(delimiter, "") != value
             || value.replace(quote, "") != value
             || value.replace("\r", "") != value

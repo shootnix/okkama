@@ -189,11 +189,6 @@ impl Rewrite {
             ast::ObjectMember::Destroy(destroy) => self.block(&mut destroy.body),
             ast::ObjectMember::Test(test) => self.test(test),
             ast::ObjectMember::Action(action) => self.action(action),
-            ast::ObjectMember::Private(section) => {
-                for action in &mut section.actions {
-                    self.action(action);
-                }
-            }
         }
     }
 

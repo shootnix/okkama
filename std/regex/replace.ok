@@ -80,9 +80,7 @@ object ExpandedRegexReplacement does ReplacingRegexMatch {
         }
     }
 
-    private:
-
-    expansion(
+    hidden expansion(
         kind is string,
         value is string,
         found is RegexMatching,
@@ -208,9 +206,7 @@ object RegexSubstitution {
         self.result().amount();
     }
 
-    private:
-
-    matches() is Iterating<RegexMatching> {
+    hidden matches() is Iterating<RegexMatching> {
         let found = RegexMatches(source, pattern);
         if maximum < 0 {
             found;
@@ -220,7 +216,7 @@ object RegexSubstitution {
         }
     }
 
-    result() is RegexSubstitutionResult {
+    hidden result() is RegexSubstitutionResult {
         if regex_substitution_ready(state) {
             RegexSubstitutionResult(
                 string: regex_substitution_string(state),
@@ -232,7 +228,7 @@ object RegexSubstitution {
         }
     }
 
-    computed() is RegexSubstitutionResult {
+    hidden computed() is RegexSubstitutionResult {
         for Accumulated(
             origin: self.matches(),
             initial: RegexSubstitutionProgress(

@@ -75,9 +75,7 @@ object DigestBlocks64 {
         final.bytes();
     }
 
-    private:
-
-    octet(index is int) is byte {
+    hidden octet(index is int) is byte {
         if index < prefix.size() {
             prefix[index];
         }
@@ -86,7 +84,7 @@ object DigestBlocks64 {
         }
     }
 
-    remainder() is @byte {
+    hidden remainder() is @byte {
         let size = prefix.size() + origin.size();
         let start = size - (size % 64);
         let result is @byte = (start..size).map() -> i {
@@ -95,7 +93,7 @@ object DigestBlocks64 {
         result;
     }
 
-    completed() is DigestCompression64 {
+    hidden completed() is DigestCompression64 {
         (0..((prefix.size() + origin.size()) / 64).int()).reduce(compression) -> current, index {
             let block is @byte = (0..64).map() -> i {
                 self.octet(index * 64 + i);

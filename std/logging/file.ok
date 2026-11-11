@@ -149,9 +149,7 @@ object LogFileState does Writing, Closing {
         self.close();
     }
 
-    private:
-
-    handle() is fs.FileHandle {
+    hidden handle() is fs.FileHandle {
         if handles.value().size() == 0 {
             let opened = self.open();
             handles.replace([opened]);
@@ -159,7 +157,7 @@ object LogFileState does Writing, Closing {
         handles.value()[0];
     }
 
-    open() is fs.FileHandle {
+    hidden open() is fs.FileHandle {
         confirm !self.closed() else throw ClosedLogFile.closed;
         let mode = options.permissions();
         let bits = LogPermissionBits(mode.owner()).value() * 64 + LogPermissionBits(mode.group()).value() * 8 + LogPermissionBits(

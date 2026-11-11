@@ -73,9 +73,7 @@ object EnvironmentProxy {
         ProxyPolicy(parsed);
     }
 
-    private:
-
-    variable(lowercase is string, uppercase is string) is @string {
+    hidden variable(lowercase is string, uppercase is string) is @string {
         if environment.membership(lowercase) {
             return [environment.variable(lowercase)];
         }

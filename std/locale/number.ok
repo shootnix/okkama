@@ -885,14 +885,12 @@ object NumberPrinting {
         NumberRendered(text, value);
     }
 
-    private:
-
-    standard(value is NumberMagnitude, pattern is NumberPattern) is NumberRendered {
+    hidden standard(value is NumberMagnitude, pattern is NumberPattern) is NumberRendered {
         let rounded = NumberQuantized(value, format.precision());
         NumberRendered(NumberMantissa(rounded, data, format, pattern, true).string(), rounded);
     }
 
-    exponential(engineering is bool) is NumberRendered {
+    hidden exponential(engineering is bool) is NumberRendered {
         let magnitude = origin.magnitude();
         let remainder = if engineering {
             let rest = ParsedInt((BigInt(magnitude.numerator()) % BigInt("3")).string()).value();
@@ -952,7 +950,7 @@ object NumberPrinting {
         NumberRendered(text, number);
     }
 
-    compacted(long is bool) is NumberRendered {
+    hidden compacted(long is bool) is NumberRendered {
         let entries = data.compact(long);
         let initial = self.bucket(entries, origin.magnitude());
         // Ordinary rounding may cross the first compact threshold, or a CLDR
@@ -1058,7 +1056,7 @@ object NumberPrinting {
         }
     }
 
-    bucket(entries is NumberCompactData, magnitude is rat) is int {
+    hidden bucket(entries is NumberCompactData, magnitude is rat) is int {
         entries.keys().reduce(-1) -> chosen, key {
             let parts = key.split(":");
             let power = ParsedInt(parts[0]).value();
@@ -1285,9 +1283,7 @@ object NumberAffixReading {
         NumberSignedText(ordinary[0], false);
     }
 
-    private:
-
-    middle(prefix is string, suffix is string) is @string {
+    hidden middle(prefix is string, suffix is string) is @string {
         if origin.length() < prefix.length() + suffix.length() {
             let empty is @string = [];
             return empty;

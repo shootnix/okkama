@@ -443,7 +443,6 @@ if tag.order("vec")!=Order.greater{return CurrencyNames25().row(tag,code);}
 if tag.order("yo-BJ")!=Order.greater{return CurrencyNames26().row(tag,code);}
 if tag.order("zu")!=Order.greater{return CurrencyNames27().row(tag,code);}
 let empty is @string=[];empty;}
-private:
-search(tag is string,start is int,stop is int) is int{if start>=stop{return -1;}let middle=start+((stop-start)/2).int();let order=tag.order(tags[middle]);if order==Order.equal{return middle;}if order==Order.less{self.search(tag,start,middle);}else{self.search(tag,middle+1,stop);}}
+hidden search(tag is string,start is int,stop is int) is int{if start>=stop{return -1;}let middle=start+((stop-start)/2).int();let order=tag.order(tags[middle]);if order==Order.equal{return middle;}if order==Order.less{self.search(tag,start,middle);}else{self.search(tag,middle+1,stop);}}
 }
 object CurrencySymbolLetters {CurrencySymbolLetters();membership(origin is string) is bool{origin.length()==1 && "ABCDEFGHIJKLMNOPQRSTUVWXYZabdefghijklmnprstuwyzÍëčłКЛМТбгдзйклмнрсчщդأجدرفلރߊߋߌߍߎߏߐߒߓߔߕߖߗߘߙߛߜߝߞߟߡߣߤߥߦअआइईउएऐकजडतदनपफबभमरलवसરಲඑරසລლርብឡイレ元𞅎𞤀𞤅𞤆𞤊𞤐𞤑𞤖𞤘".split(origin).size()>1;}}

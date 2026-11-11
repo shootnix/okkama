@@ -167,8 +167,6 @@ pub enum ObjectMember {
     Destroy(DestroyDecl),
     Test(TestDecl),
     Action(ActionDecl),
-    /// `private:` — every following member of the body is a private action.
-    Private(PrivateSection),
 }
 
 impl ObjectMember {
@@ -180,22 +178,8 @@ impl ObjectMember {
             ObjectMember::Destroy(decl) => decl.span,
             ObjectMember::Test(decl) => decl.span,
             ObjectMember::Action(decl) => decl.span,
-            ObjectMember::Private(section) => section.span,
         }
     }
-}
-
-/// `private: action() is T { } ...` up to the end of the object body.
-///
-/// The section is kept as a node (rather than only flagging the actions) so
-/// the tree shows where it starts; its actions also carry
-/// [`Visibility::Private`]. Tests written among the actions are not part of
-/// it: they are the object's [`ObjectMember::Test`] members right after it,
-/// and the section's span covers them.
-#[derive(Clone, Debug, PartialEq)]
-pub struct PrivateSection {
-    pub actions: Vec<ActionDecl>,
-    pub span: Span,
 }
 
 /// `has a, b is Type = default;` — the type and the default are optional.
@@ -279,18 +263,19 @@ pub enum TestBody {
     Skipped(Span),
 }
 
-/// Who may call an action.
+/// Who may call an action: anyone, or (`hidden`, #365) only the object's own
+/// actions through `self`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Visibility {
     Public,
-    Private,
+    Hidden,
 }
 
 impl Visibility {
     pub fn as_str(self) -> &'static str {
         match self {
             Visibility::Public => "public",
-            Visibility::Private => "private",
+            Visibility::Hidden => "hidden",
         }
     }
 }

@@ -808,7 +808,7 @@ USAGE:
 
 Checks each FILE like `okkama check` (imports included; files with tests in
 test mode) and adds the lint rules: unused-import, unused-let,
-unused-private, unreachable, snake-case. Prints
+unused-hidden, unreachable, snake-case. Prints
 `file:line:column: severity[rule]: message`; exit status 1 if anything was
 reported. A `let` whose name starts with `_` is never reported as unused.
 ";

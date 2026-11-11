@@ -6,7 +6,7 @@ use crate::syntax::ParseMode;
 use crate::syntax::ast::{
     ActionDecl, ActionSignature, CapDecl, ComputedField, ConstDecl, ConstructorDecl, ConstructorForm,
     DestroyDecl, EnumDecl, FakeBody, FakeDecl, HasDecl, Item, Name, NativeActionDecl,
-    NativeObjectDecl, ObjectDecl, ObjectMember, Param, PrivateSection, RoleDecl, RoleMember,
+    NativeObjectDecl, ObjectDecl, ObjectMember, Param, RoleDecl, RoleMember,
     TestBody, TestDecl, Visibility,
 };
 use crate::syntax::token::{TokenKind, is_type_word};
@@ -278,65 +278,47 @@ impl Parser<'_> {
         self.consume(TokenKind::LeftBrace, "Expect \"{\" before object body.")?;
         let mut members = Vec::new();
         while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
-            if self.eat(TokenKind::Private) {
-                let (section, tests) = self.private_section()?;
-                members.push(ObjectMember::Private(section));
-                // A test written among the private actions is a test of the
-                // object like any other (#277); it follows the section.
-                members.extend(tests.into_iter().map(ObjectMember::Test));
-                break;
-            }
             members.push(self.object_member(owner)?);
         }
         let close = self.consume(TokenKind::RightBrace, "Expect \"}\" after object body.")?;
         Ok((members, close.span))
     }
 
-    /// After `private`: `: action*` up to the end of the body. `private` is a
-    /// section marker, not a per-action modifier. Tests among the actions are
-    /// not private and come back separately.
-    fn private_section(&mut self) -> PResult<(PrivateSection, Vec<TestDecl>)> {
-        let keyword = self.previous().span;
-        let colon = self.consume(TokenKind::Colon, "Expect \":\" after \"private\".")?;
-        let mut actions = Vec::new();
-        let mut tests = Vec::new();
-        while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
-            if self.eat(TokenKind::Test) {
-                tests.push(self.test_block(false)?);
-                continue;
-            }
-            if self.check_async_test() {
-                tests.push(self.async_test_block()?);
-                continue;
-            }
-            self.reject_native_outside_module()?;
-            if self.eat(TokenKind::Amp) {
-                let token = self.previous().clone();
-                return Err(self.error_at(
-                    &token,
-                    "Constructor projections have been removed; use Type(args).method().",
-                ));
-            }
-            if self.eat(TokenKind::Hash) {
-                self.reject_action_directive()?;
-            }
-            actions.push(self.action_declaration(Visibility::Private)?);
+    /// `hidden` before an action (#365) is contextual: `hidden(` is an action
+    /// named `hidden`, and `hidden` before anything but an action is an error.
+    fn check_hidden_action(&self) -> bool {
+        self.check_name() && self.lexeme(self.peek()) == "hidden" && self.nth(1).kind != TokenKind::LeftParen
+    }
+
+    /// After `hidden`: the action it marks.
+    fn hidden_action(&mut self) -> PResult<ActionDecl> {
+        let start = self.advance().span;
+        self.reject_native_outside_module()?;
+        if self.check_type_name() && self.check_next(TokenKind::LeftParen) {
+            return Err(self.error_here(
+                "A constructor cannot be hidden: constructors are how the object is made, so they are always public.",
+            ));
         }
-        let end = actions
-            .last()
-            .map(|action| action.span)
-            .into_iter()
-            .chain(tests.last().map(|test| test.span))
-            .max_by_key(|span| span.end)
-            .unwrap_or(colon.span);
-        let section = PrivateSection {
-            actions,
-            span: keyword.to(end),
-        };
-        Ok((section, tests))
+        let other_member = (self.check(TokenKind::Has) && !self.check_next(TokenKind::LeftParen))
+            || self.check(TokenKind::Test)
+            || self.check_async_test()
+            || self.check(TokenKind::Destroy)
+            || (self.check(TokenKind::Async) && self.check_next(TokenKind::Destroy))
+            || self.check_cap_declaration();
+        if other_member || !(self.check_async_modifier() || self.check_name()) {
+            return Err(self.error_here(
+                "Inside an object only an action can be hidden, as in \"hidden secret() is int { ... }\".",
+            ));
+        }
+        let mut action = self.action_declaration(Visibility::Hidden)?;
+        action.span = start.to(action.span);
+        Ok(action)
     }
 
     fn object_member(&mut self, owner: Option<&Name>) -> PResult<ObjectMember> {
+        if self.check_hidden_action() {
+            return Ok(ObjectMember::Action(self.hidden_action()?));
+        }
         if self.check_name() && self.lexeme(self.peek()) == "static" && self.nth(1).kind != TokenKind::LeftParen {
             return Err(self.error_here(
                 "Okkama has no static members: shared state is an object passed in, and a helper is an action of a module-level object or a function value.",

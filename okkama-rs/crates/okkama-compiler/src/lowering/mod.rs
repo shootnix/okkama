@@ -11,7 +11,7 @@
 //! необязательным типом, вложенные блоки, `if` как оператор и выражение,
 //! `loop`, `for` по диапазону, `next`, `last`, `return`, `confirm`, `panic`;
 //! объекты с типизированными полями и defaults, полные и shorthand
-//! конструкторы, actions с перегрузкой и `private`, successor-действия,
+//! конструкторы, actions с перегрузкой и `hidden`, successor-действия,
 //! rebind, обязательство использования successor, `int/bool.string()`.
 
 mod body;

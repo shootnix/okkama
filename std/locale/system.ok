@@ -140,9 +140,7 @@ object PreferredLocalePolicy {
         [Locale("und")];
     }
 
-    private:
-
-    parsed(source is Sequencing<string>, posix is bool) is @Locale {
+    hidden parsed(source is Sequencing<string>, posix is bool) is @Locale {
         let values = self.parse(source, posix);
         if values.size() == 0 {
             [Locale("und")];
@@ -152,7 +150,7 @@ object PreferredLocalePolicy {
         }
     }
 
-    parse(source is Sequencing<string>, posix is bool) is @Locale {
+    hidden parse(source is Sequencing<string>, posix is bool) is @Locale {
         let size = source.size();
         confirm size >= 0 && size <= 64
             else throw InvalidPreferredLocales.because("preference count");

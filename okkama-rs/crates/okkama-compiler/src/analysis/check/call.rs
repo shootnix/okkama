@@ -1507,9 +1507,9 @@ impl Checker<'_, '_> {
         };
         let (method, shape) = shapes[chosen].clone();
         let info = &self.reg.objects[object.0].methods[method];
-        if info.private && !(on_self && self.object == Some(object)) {
+        if info.hidden && !(on_self && self.object == Some(object)) {
             let message = format!(
-                "Action \"{}\" on object \"{object_name}\" is private",
+                "Action \"{}\" on object \"{object_name}\" is hidden",
                 name.text
             );
             self.error(name.span, message);
@@ -1910,7 +1910,7 @@ impl Checker<'_, '_> {
                         params: method.params.iter().map(|(_, ty)| ty.subst(&env)).collect(),
                         result: method.result.as_ref().map(|ty| ty.subst(&env)),
                     },
-                    method.private,
+                    method.hidden,
                 )
             })
             .collect();
@@ -1924,7 +1924,7 @@ impl Checker<'_, '_> {
                 .collect(),
             _ => candidates.iter().collect(),
         };
-        let (method, ty, private) = match chosen.as_slice() {
+        let (method, ty, hidden) = match chosen.as_slice() {
             [one] => (*one).clone(),
             [] => {
                 let message = format!(
@@ -1943,8 +1943,8 @@ impl Checker<'_, '_> {
                 return Some(Self::poisoned(span));
             }
         };
-        if private && !on_self {
-            let message = format!("Private action \"{}\" cannot be used as a value", name.text);
+        if hidden && !on_self {
+            let message = format!("Hidden action \"{}\" cannot be used as a value", name.text);
             self.error(name.span, message);
             return Some(Self::poisoned(span));
         }

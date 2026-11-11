@@ -1,20 +1,14 @@
 {
   "schema": "ocs-case/1",
-  "id": "L01.gram.private.section",
-  "title": "actions after `private:` are private helpers",
-  "purpose": "Accept the construct and observe its result.",
-  "level": "L01",
+  "id": "L04.hidden-actions.overload",
+  "title": "hidden actions participate in overload dispatch",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
   "contracts": [
     {
-      "contract": "GRAM.PRIVATE-SECTION",
+      "contract": "OBJ.HIDDEN-ACTIONS",
       "aspects": [
-        "normal"
-      ]
-    },
-    {
-      "contract": "OBJ.PRIVATE-ACTIONS",
-      "aspects": [
-        "normal"
+        "boundary"
       ]
     }
   ],
@@ -32,11 +26,10 @@
     "outcome": "success",
     "exit_status": 0,
     "stdout": {
-      "text": "42\n"
+      "text": "int:5\ntext:x\n"
     }
   },
   "spec_refs": [
-    "docs/okkama-grammar-1.0.ebnf",
     "docs/okkama-spec-11072026.md#11.7"
   ],
   "budget": {
@@ -44,7 +37,7 @@
   },
   "provenance": {
     "origin": "authored for OCS 0.1.0 from the cited contract text",
-    "expected_basis": "spec 11.7: private actions are callable through self; 40 + 2 = 42."
+    "expected_basis": "spec 11.7: hidden actions participate in overload dispatch like public actions."
   },
   "status": "mandatory"
 }

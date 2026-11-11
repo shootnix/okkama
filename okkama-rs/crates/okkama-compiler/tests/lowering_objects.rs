@@ -17,8 +17,7 @@ object C {
     add(value is int) is int { n + value; }
     add(value is string) is int { n; }
     twice() is int { self.helper() * 2; }
-    private:
-    helper() is int { n; }
+    hidden helper() is int { n; }
 }
 ";
 
@@ -251,7 +250,7 @@ fn construction_and_access_errors_use_okkama_messages() {
         ),
         (
             "C().helper();",
-            "Action \"helper\" on object \"C\" is private",
+            "Action \"helper\" on object \"C\" is hidden",
         ),
         (
             "let c = C(); c.n;",

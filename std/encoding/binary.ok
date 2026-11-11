@@ -61,9 +61,7 @@ object IntegerFromBytes {
         binary_integer_from_bytes(origin, sign, order_name);
     }
 
-    private:
-
-    signedness_name() is string {
+    hidden signedness_name() is string {
         if signedness == Signedness.signed {
             "signed";
         }
@@ -72,7 +70,7 @@ object IntegerFromBytes {
         }
     }
 
-    order_name() is string {
+    hidden order_name() is string {
         if order == ByteOrder.big {
             "big";
         }
@@ -104,9 +102,7 @@ object IntegerBytes {
         binary_integer_bytes(origin, size, sign, self.order_name());
     }
 
-    private:
-
-    signedness_name() is string {
+    hidden signedness_name() is string {
         if signedness == Signedness.signed {
             "signed";
         }
@@ -115,7 +111,7 @@ object IntegerBytes {
         }
     }
 
-    order_name() is string {
+    hidden order_name() is string {
         if order == ByteOrder.big {
             "big";
         }
@@ -148,9 +144,7 @@ object FloatFromBytes {
         binary_float_from_bytes(origin, bits, order_name);
     }
 
-    private:
-
-    width_bits() is int {
+    hidden width_bits() is int {
         if width == FloatWidth.bits32 {
             32;
         }
@@ -159,7 +153,7 @@ object FloatFromBytes {
         }
     }
 
-    width_size() is int {
+    hidden width_size() is int {
         if width == FloatWidth.bits32 {
             4;
         }
@@ -168,7 +162,7 @@ object FloatFromBytes {
         }
     }
 
-    order_name() is string {
+    hidden order_name() is string {
         if order == ByteOrder.big {
             "big";
         }
@@ -196,9 +190,7 @@ object FloatBytes {
         binary_float_bytes(origin, bits, self.order_name());
     }
 
-    private:
-
-    width_bits() is int {
+    hidden width_bits() is int {
         if width == FloatWidth.bits32 {
             32;
         }
@@ -207,7 +199,7 @@ object FloatBytes {
         }
     }
 
-    order_name() is string {
+    hidden order_name() is string {
         if order == ByteOrder.big {
             "big";
         }

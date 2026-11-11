@@ -276,8 +276,7 @@ if ((number.relation("n",10,3,3)) && !(number.relation("n",100,13,13))) {return 
 return 5;}
 5;
 }
-private:
-rule_key(tag is string,rules is %string:int,parents is CldrParents,depth is int) is string {
+hidden rule_key(tag is string,rules is %string:int,parents is CldrParents,depth is int) is string {
 if depth>32 || tag=="root" {return "";}
 if rules.has(tag) {return tag;}
 let explicit=parents.parent(tag);let parts=tag.split("-");

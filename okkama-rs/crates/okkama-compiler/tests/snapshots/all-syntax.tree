@@ -572,31 +572,29 @@ Program
                       name: nothing
                     arguments: []
                 condition: (none)
-        - PrivateSection
-          actions:
-            - ActionDecl
-              async: false
-              visibility: private
-              name: helper
-              params: []
-              result: VoidResult
-              body: Block
-                statements: []
-            - ActionDecl
-              async: false
-              visibility: private
-              name: hidden
-              params: []
-              result: NamedType
-                path: [string]
-                args: []
-              body: Block
-                statements:
-                  - ExpressionStatement
-                    expression: StringLiteral
-                      form: quoted
-                      value: "x"
-                    condition: (none)
+        - ActionDecl
+          async: false
+          visibility: hidden
+          name: helper
+          params: []
+          result: VoidResult
+          body: Block
+            statements: []
+        - ActionDecl
+          async: false
+          visibility: hidden
+          name: hidden
+          params: []
+          result: NamedType
+            path: [string]
+            args: []
+          body: Block
+            statements:
+              - ExpressionStatement
+                expression: StringLiteral
+                  form: quoted
+                  value: "x"
+                condition: (none)
     - CapDecl
       owner: Account
       name: Audit

@@ -1717,8 +1717,8 @@ one module are forbidden. Object headers take no parameters (state is never
 declared in the header).
 
 An object body may contain: `has` and `cap` declarations, constructors, at most one
-`destroy` block, test blocks, public actions, and a `private:` section of
-private actions.
+`destroy` block, test blocks and actions; an action marked `hidden` is callable
+only through `self`.
 
 ### 16.2 Fields (`has`)
 
@@ -1739,7 +1739,7 @@ has digit, cents is int;       // several names may share one declaration
   being built.
 - **Fields are private through ordinary references.** `Cash(digit: 1).digit`
   is a runtime error; peers call public owner behavior.
-  Grants control field reads and never make private actions public. There is
+  Grants control field reads and never make hidden actions public. There is
   no setter syntax.
 - Inside the object's own code, fields are read bare (`digit`) or explicitly
   (`self.digit`). A parameter or local may shadow a bare field name; the
@@ -2046,7 +2046,7 @@ total_cents() is int {
 ```
 
 - Actions read fields directly (or as `self.field`) and call other actions
-  through `self`, including private ones.
+  through `self`, including hidden ones.
 - Parameters are typed and checked; the result is checked against the
   declared return type. Names before one type share it, as fields do:
   `full(separator, suffix is string)`. The grouping works in every
@@ -2142,9 +2142,9 @@ after that cleanup completes, before any result escapes; the Future stays
 pending meanwhile. See [runnable example](../examples/return-defer.ok) and the
 implementation checklist.
 
-### 18.2 Private actions
+### 18.2 Hidden actions
 
-A `private:` section marker starts the private actions:
+`hidden` before an action keeps it out of the object's public contract:
 
 ```okkama
 object Cash {
@@ -2156,21 +2156,29 @@ object Cash {
         self.secret();
     }
 
-    private:
-    secret() is int {
+    hidden secret() is int {
         digit;
     }
 }
 ```
 
-Private actions are callable only through `self` from the same object's
-actions. A constructor cannot call any action on its unfinished receiver,
-public, private or async, including inside `confirm`. Aliases, role references,
+`hidden` means the same thing everywhere: not part of the public contract. A
+hidden object, role, enum or const is not visible outside its module; a hidden
+action is callable only through `self` from the same object's actions. Each
+action is marked on its own, wherever it stands among the members, and
+`hidden async` marks an async action. Only actions take `hidden` inside an
+object: a constructor is how the object is made and is always public, and
+fields, caps, `destroy` and tests are not part of the contract anyway, so
+`hidden Cash(...)` and `hidden has ...` are syntax errors. An action may still
+be named `hidden`: `hidden()` is an ordinary public action.
+
+A constructor cannot call any action on its unfinished receiver,
+public, hidden or async, including inside `confirm`. Aliases, role references,
 bound actions and collaborators cannot bypass this rule. Constructors initialize
 fields and validate invariants directly with `confirm`; they may read initialized
 fields and inspect parameters or other completed objects. A captured callback
-may invoke `self` after construction finishes. Private actions cannot be exported
-as values.
+may invoke `self` after construction finishes. Hidden actions cannot be exported
+as values: `Hidden action "secret" cannot be used as a value`.
 
 The compiler rejects a direct `self.` call. A constructor may still hand `self`
 to a collaborator, and every engine rejects an action called through it while
@@ -2181,7 +2189,7 @@ If the constructor fails after `self` escaped, the escaped object never
 completes, and every later call on it fails the same way. Only objects whose
 constructor uses `self` as a value pay for the check.
 External calls fail *after* signature selection (so overload
-resolution is uniform): `Action "secret" on object "Cash" is private`.
+resolution is uniform): `Action "secret" on object "Cash" is hidden`.
 
 ### 18.3 Typed action overloads
 
@@ -2509,7 +2517,7 @@ Successor types compose with roles: `^Bottle` satisfies `^Package` when
 `Bottle does Package` (Chapter 22). A call through the role returns the new
 object as a restricted `^Package`.
 
-A successor may be private: an internal transition that only the object's own
+A successor may be hidden: an internal transition that only the object's own
 actions call through `self`. It keeps the must-use obligation and cannot
 implement a role action:
 
@@ -2519,9 +2527,8 @@ object Door {
     Door();
     toggled() is Door { if open { self.shut(); } else { self.opened(); } }
 
-    private:
-    opened() is ^Door { ^open = true; }
-    shut() is ^Door { ^open = false; }
+    hidden opened() is ^Door { ^open = true; }
+    hidden shut() is ^Door { ^open = false; }
 }
 ```
 
@@ -3031,8 +3038,8 @@ case-sensitively; repeated, the tests that contain any of the texts.
 The runner retains test/fake AST across imports but executes only tests owned
 by the root file. It does not run or require `main`. Object/role test names are
 displayed as `Owner :: name`; this is namespacing only, with no implicit
-`self` or private-access exception. A test may stand anywhere in an object's
-body, also among the actions after `private:`; it does not become private. Test names must be unique within the
+`self` or hidden-access exception. A test may stand anywhere in an object's
+body, also between hidden actions. Test names must be unique within the
 module (per owner for object/role tests); duplicates are semantic errors
 before any test runs.
 
@@ -3538,9 +3545,10 @@ object Payments {
 }
 ```
 
-`hidden` before `object`, `role` or `enum` keeps a declaration inside its
+`hidden` before `object`, `role`, `enum` or `const` keeps a declaration inside its
 module: it is visible in every file of the module, in its tests and fakes, and
-in bodies defined there — and nowhere else.
+in bodies defined there — and nowhere else. Before an action, the same word keeps
+the action inside its object (18.2): one meaning, not part of the public contract.
 
 - `take Payment` is rejected (`Import "payments" cannot take hidden
   declaration "Payment"`), and a namespace does not expose it
@@ -3552,7 +3560,7 @@ in bodies defined there — and nowhere else.
   parameters and results of public actions (including collections, `Maybe`,
   successors, async and action types), constructor parameters, role
   signatures, enum payloads, generic arguments and bounds, cap fields.
-  Private actions, fields and bodies may use hidden types.
+  Hidden actions, fields and bodies may use hidden types.
 - A public object cannot do a hidden role — the `does` list is part of its
   public contract. A hidden object may do public and hidden roles; that is how
   an implementation is hidden behind a contract.
@@ -3560,7 +3568,8 @@ in bodies defined there — and nowhere else.
   only as `Error`; `okkama lint` reports such throws from public actions
   (`hidden-error`).
 
-`hidden` is a contextual keyword: `has hidden is int` is still a field.
+`hidden` is a contextual keyword: `has hidden is int` is still a field, and
+`hidden()` is still an action named `hidden`.
 
 ### 26.3.2 Module constants
 
@@ -5892,7 +5901,7 @@ Runtime error at line 4: Undefined variable "missing"
 Runtime error at line 7: Object "Box" has no action "missing"
 Runtime error at line 10: Duplicate construction field "digit"
 Object "Cash" field "cents" was not initialized
-Action "secret" on object "Cash" is private
+Action "secret" on object "Cash" is hidden
 Cannot rebind variable "n": type "int" has no successor actions
 Cannot rebind variable "counter" of type Counter with int
 ```
@@ -5909,7 +5918,7 @@ what was meant:
 |---|---|
 | `unused-import` | a `take` name or alias is never used |
 | `unused-let` | a `let` value is never read (`_name` and objects with `destroy` are exempt) |
-| `unused-private` | a private action is never called |
+| `unused-hidden` | a hidden action is never called |
 | `unreachable` | a statement after `return`, `throw`, `next`, `last` |
 | `snake-case` | a local, parameter, field or action is not `snake_case` |
 | `non-exhaustive-match` | a `match` over a payload-free enum misses cases |
@@ -6068,9 +6077,8 @@ hidden object Payment does Created, Authorized, Captured, Refunded, Declined {
     }
     // ... authorize(), refund(), reason(), id()
 
-    private:
-    approved() is ^Payment { ^stage = Stage.authorized; }
-    rejected(reason is string) is ^Payment { ^stage = Stage.declined(reason); }
+    hidden approved() is ^Payment { ^stage = Stage.authorized; }
+    hidden rejected(reason is string) is ^Payment { ^stage = Stage.declined(reason); }
 }
 
 // 5. Callers start from a view and only ever hold views.
@@ -6096,7 +6104,7 @@ the new immutable object. What the compiler rejects:
 | `let a is Authorized = created;` | `Cannot initialize variable "a" of type Authorized with Created` |
 | a `match` without `declined` | `Non-exhaustive match: missing declined` |
 | `payments.Payment(key: "x")` in another module | `Type "payments.Payment" is hidden in module "payments"` |
-| `Payment(key: "x").approved()` | `Action "approved" on object "Payment" is private` |
+| `Payment(key: "x").approved()` | `Action "approved" on object "Payment" is hidden` |
 
 What it deliberately does not do: an old immutable state stays valid, so
 "authorize twice" is a job for durable state and idempotency, not for the type
@@ -6499,9 +6507,9 @@ and `try?` / `try!` are prefix forms written without a space.
 Keyword inventory in active use: `module`, `import`, `as`, `take`, `object`,
 `role`, `enum`, `has`, `is`, `does`, `self`, `let`, `if`, `else`, `match`,
 `case`, `for`, `loop`, `next`, `last`, `return`, `confirm`, `throw`, `panic`, `try`, `catch`, `defer`,
-`test`, `fake`, `destroy`, `private`, `native`, `async`,
+`test`, `fake`, `destroy`, `native`, `async`,
 `await`, `spawn`, `const`, `true`, `false`, `main` (contextually), `hidden`
-(contextually, before `object`, `role`, `enum` or `const`).
+(contextually, before `object`, `role`, `enum`, `const` or an action).
 
 Contextual namespace names (not ordinary identifiers) include keyword-shaped
 module path segments such as `test` in `test/more`, declared action labels such
@@ -6528,7 +6536,7 @@ Runtime-supported and covered by tests (`okkama-pl/t/interpreter`,
 - mandatory explicit constructors: full (exact arity), field shorthand
   (named-only), variadic; field defaults; object projections;
 - actions: typed parameters, named arguments, return checks, `self`
-  chaining default, private sections, typed overload resolution with
+  chaining default, hidden actions, typed overload resolution with
   specificity dominance, variadic tails with `values...` unpack;
 - anonymous action expressions, lexical capture, action-value calls, exact
   `(T, ...) is R` signatures, explicit parameter/result declarations, and
@@ -6540,7 +6548,7 @@ Runtime-supported and covered by tests (`okkama-pl/t/interpreter`,
   `else` and `fold()`, compact choices `?? … !!`;
 - error enums (`enum E is Error`), catch patterns and type lists, `try?` /
   `try!`;
-- private successor actions; `hidden` declarations with the public-signature
+- hidden successor actions; `hidden` declarations with the public-signature
   leak check;
 - enums; roles, conformance, role-typed dispatch; role fakes in test mode;
 - exact generics on objects and roles, construction inference, generic
@@ -6604,8 +6612,7 @@ object Cash {
 
     destroy { digit; }                // deterministic scope cleanup
 
-    private:
-    fee() is int { 10; }              // self.fee() only
+    hidden fee() is int { 10; }       // self.fee() only
 }
 
 // ---- contracts ----

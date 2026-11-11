@@ -142,15 +142,13 @@ object ManualClock does Timing {
         self.close();
     }
 
-    private:
-
-    open() is ManualClockFrame {
+    hidden open() is ManualClockFrame {
         let frame = cell.value();
         confirm !frame.closed() else throw ManualClockClosed.closed;
         frame;
     }
 
-    remove(id is int) is void {
+    hidden remove(id is int) is void {
         let old = cell.value();
         let remaining is @ManualClockWaiter = old.waiters().filter() -> entry {
             entry.id() != id;
@@ -167,7 +165,7 @@ object ManualClock does Timing {
         );
     }
 
-    finish_dispatch() is void {
+    hidden finish_dispatch() is void {
         let old = cell.value();
         cell.replace(
             ManualClockFrame(

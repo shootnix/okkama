@@ -333,9 +333,7 @@ object MailDateParsing {
         MailParsedDate(local, self.zone(tokens[start + 4]));
     }
 
-    private:
-
-    zone(text is string) is MailDateOffset {
+    hidden zone(text is string) is MailDateOffset {
         let calendar = MailCalendar();
         let name = calendar.lower(text);
         if text.length() == 5 && (text.slice(0, 1) == "+" || text.slice(0, 1) == "-") {
@@ -614,9 +612,7 @@ object MailIdentifier {
         }
     }
 
-    private:
-
-    atom(start is int, stop is int) is void {
+    hidden atom(start is int, stop is int) is void {
         confirm start < stop else throw InvalidMail.located(start, "empty identifier atom");
         for (start..stop) -> index {
             let scalar = origin.slice(index, index + 1);

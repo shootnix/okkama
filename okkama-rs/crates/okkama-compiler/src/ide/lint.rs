@@ -5,7 +5,7 @@
 //! | --- | --- |
 //! | `unused-import` | имя из `take` (или псевдоним `as`) не встречается в файле |
 //! | `unused-let` | значение `let` не читается (кроме имён с `_` в начале и объектов с `destroy`: их держат ради области жизни) |
-//! | `unused-private` | приватное действие объекта нигде не вызывается |
+//! | `unused-hidden` | `hidden`-действие объекта нигде не вызывается |
 //! | `unreachable` | оператор после `return`, `throw`, `next`, `last` или другого ухода управления |
 //! | `snake-case` | локальная, параметр, поле или действие не в `snake_case` |
 //! | `hidden-error` | публичное действие бросает `hidden` error enum: снаружи его не поймать по типу |
@@ -42,7 +42,7 @@ pub fn lint(
         linter.body(body);
     }
     linter.imports(registry.modules[root].program);
-    linter.private_actions(root);
+    linter.hidden_actions(root);
     linter.declarations(registry.modules[root].program);
     linter
         .out
@@ -74,7 +74,7 @@ impl Linter<'_, '_> {
         });
     }
 
-    // ---- вызовы (для unused-private) ----
+    // ---- вызовы (для unused-hidden) ----
 
     fn calls_in_block(&mut self, block: &thir::Block) {
         let mut found = Vec::new();
@@ -92,7 +92,7 @@ impl Linter<'_, '_> {
         }
     }
 
-    fn private_actions(&mut self, root: usize) {
+    fn hidden_actions(&mut self, root: usize) {
         for (id, object) in self.registry.objects.iter().enumerate() {
             if object.module != root {
                 continue;
@@ -101,12 +101,12 @@ impl Linter<'_, '_> {
                 let Some(decl) = method.decl else {
                     continue;
                 };
-                if method.private && !self.called.contains(&(id, index)) {
+                if method.hidden && !self.called.contains(&(id, index)) {
                     self.warn(
                         decl.name.span,
-                        "unused-private",
+                        "unused-hidden",
                         format!(
-                            "private action `{}` of `{}` is never called",
+                            "hidden action `{}` of `{}` is never called",
                             method.name, object.name
                         ),
                         true,
@@ -193,7 +193,7 @@ impl Linter<'_, '_> {
         };
         let registry = self.registry;
         let info = &registry.objects[object.0];
-        if info.methods[method].private || registry.modules[info.module].hidden.contains(&info.name)
+        if info.methods[method].hidden || registry.modules[info.module].hidden.contains(&info.name)
         {
             return;
         }
@@ -349,12 +349,6 @@ impl Linter<'_, '_> {
                     self.name(&action.name, "action");
                     self.params(&action.params);
                 }
-                ast::ObjectMember::Private(section) => {
-                    for action in &section.actions {
-                        self.name(&action.name, "action");
-                        self.params(&action.params);
-                    }
-                }
                 ast::ObjectMember::Constructor(ctor) => {
                     if let ast::ConstructorForm::Full { params, .. } = &ctor.form {
                         self.params(params);
@@ -445,11 +439,6 @@ fn walk_lets(item: &ast::Item, visit: &mut dyn FnMut(&ast::Name)) {
         for member in members {
             match member {
                 ast::ObjectMember::Action(action) => block(&action.body, visit),
-                ast::ObjectMember::Private(section) => {
-                    for action in &section.actions {
-                        block(&action.body, visit);
-                    }
-                }
                 ast::ObjectMember::Constructor(ctor) => match &ctor.form {
                     ast::ConstructorForm::Full { body, .. } => block(body, visit),
                     ast::ConstructorForm::Shorthand {

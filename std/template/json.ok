@@ -52,9 +52,7 @@ object JsonTemplateStrings does TemplateStrings {
         }
     }
 
-    private:
-
-    scalar(path is TemplatePath, index is int) is string {
+    hidden scalar(path is TemplatePath, index is int) is string {
         let segments = path.segments();
         let found = (index..segments.size()).reduce(origin) -> current, position {
             confirm current.kind() == JsonKind.object_value

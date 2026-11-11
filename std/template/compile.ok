@@ -355,9 +355,7 @@ object TemplateScanner {
         ^position = end + 2;
     }
 
-    private:
-
-    validate_structural_name(name is string, partial is bool) is void {
+    hidden validate_structural_name(name is string, partial is bool) is void {
         confirm name != "" else throw self.failure(position, "empty structural template name");
         confirm name.length() <= 4096
             else throw self.failure(position, "template path length exceeded");
@@ -387,7 +385,7 @@ object TemplateScanner {
         }
     }
 
-    at(start is int, width is int) is string {
+    hidden at(start is int, width is int) is string {
         if width > source.length() - start {
             "";
         }
@@ -396,7 +394,7 @@ object TemplateScanner {
         }
     }
 
-    delimiter(start is int) is int {
+    hidden delimiter(start is int) is int {
         for (start..source.length()) -> index {
             let pair = self.at(index, 2);
             if pair == "{{" || pair == "}}" {
@@ -406,7 +404,7 @@ object TemplateScanner {
         source.length();
     }
 
-    closing(start is int) is int {
+    hidden closing(start is int) is int {
         for (start..source.length()) -> index {
             if self.at(index, 2) == "}}" {
                 return index;
@@ -415,7 +413,7 @@ object TemplateScanner {
         -1;
     }
 
-    horizontal_end(start is int) is int {
+    hidden horizontal_end(start is int) is int {
         for (start..source.length()) -> index {
             let char = source.slice(index, index + 1);
             if char != " " && char != "\t" {
@@ -425,7 +423,7 @@ object TemplateScanner {
         source.length();
     }
 
-    indentation(start is int) is int {
+    hidden indentation(start is int) is int {
         // Stop on the first non-horizontal character, rather than copying the
         // complete source prefix for every comment on a long document.
         for (0..start) -> distance {
@@ -440,7 +438,7 @@ object TemplateScanner {
         start;
     }
 
-    trimmed(text is string) is string {
+    hidden trimmed(text is string) is string {
         if text.length() == 0 {
             return "";
         }
@@ -454,7 +452,7 @@ object TemplateScanner {
         }
     }
 
-    trim_start(text is string) is int {
+    hidden trim_start(text is string) is int {
         for (0..text.length()) -> index {
             let char = text.slice(index, index + 1);
             if char != " " && char != "\t" {
@@ -464,7 +462,7 @@ object TemplateScanner {
         text.length();
     }
 
-    trim_end(text is string) is int {
+    hidden trim_end(text is string) is int {
         for (0..text.length()) -> offset {
             let index = text.length() - offset - 1;
             let char = text.slice(index, index + 1);
@@ -475,11 +473,11 @@ object TemplateScanner {
         0;
     }
 
-    flushed(offset is int) is List<TemplateInstruction> {
+    hidden flushed(offset is int) is List<TemplateInstruction> {
         self.flushed_parts(literal, offset);
     }
 
-    flushed_parts(fragments is List<string>, offset is int) is List<TemplateInstruction> {
+    hidden flushed_parts(fragments is List<string>, offset is int) is List<TemplateInstruction> {
         let reversed is @string = fragments.map() -> item {
             item;
         };
@@ -495,7 +493,7 @@ object TemplateScanner {
         nodes.prefix(TemplateInstruction(text, false, "", offset));
     }
 
-    failure(offset is int, message is string) is TemplateFailure {
+    hidden failure(offset is int, message is string) is TemplateFailure {
         let lines = source.slice(0, offset).replace("\r\n", "\n").split("\n");
         TemplateFailure.located(offset, lines.size(), lines[lines.size() - 1].length() + 1, message);
     }

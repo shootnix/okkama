@@ -238,7 +238,7 @@ impl<'r, 'a> Builder<'r, 'a> {
         let mut out: Vec<Completion> = (0..info.methods.len())
             .filter(|index| {
                 let method = &info.methods[*index];
-                method.decl.is_some() && (inside || !method.private)
+                method.decl.is_some() && (inside || !method.hidden)
             })
             .map(|index| self.method_completion(object, index))
             .collect();
@@ -889,7 +889,7 @@ impl<'r, 'a> Builder<'r, 'a> {
         };
         let signature = format!(
             "{}{}{}.{}({}) is {result}",
-            if found.private { "private " } else { "" },
+            if found.hidden { "hidden " } else { "" },
             if found.is_async { "async " } else { "" },
             self.ty(&Ty::Object(
                 object,
@@ -1178,7 +1178,7 @@ impl<'r, 'a> Builder<'r, 'a> {
                 for method in info
                     .methods
                     .iter()
-                    .filter(|method| !method.private && method.decl.is_some())
+                    .filter(|method| !method.hidden && method.decl.is_some())
                 {
                     let params = self.params(&method.params, method.variadic);
                     let result = if method.successor {

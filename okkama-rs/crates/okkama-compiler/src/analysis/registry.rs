@@ -137,7 +137,8 @@ pub struct MethodInfo<'a> {
     /// `None` — `is void`; successor — `Ty::Successor`.
     pub result: Option<Ty>,
     pub successor: bool,
-    pub private: bool,
+    /// `hidden` (#365): callable only through `self` from the object's own actions.
+    pub hidden: bool,
     pub variadic: bool,
     pub is_async: bool,
     /// Системные действия (`NativeFailure.code()`) тела не имеют.
@@ -741,7 +742,7 @@ impl<'a> Registry<'a> {
             params: Vec::new(),
             result: Some(Ty::Str),
             successor: false,
-            private: false,
+            hidden: false,
             variadic: false,
             is_async: false,
             decl: None,
@@ -1758,7 +1759,7 @@ impl<'a> Registry<'a> {
                 let Some(action) = method.decl else {
                     continue;
                 };
-                if method.private {
+                if method.hidden {
                     continue;
                 }
                 let leak = method
@@ -2258,7 +2259,6 @@ impl<'a> Registry<'a> {
                 }
                 ast::ObjectMember::Constructor(ctor) => ctor_decls.push(ctor),
                 ast::ObjectMember::Action(action) => actions.push(action),
-                ast::ObjectMember::Private(section) => actions.extend(section.actions.iter()),
                 ast::ObjectMember::Destroy(block) => {
                     if destroy.is_some() {
                         self.error(
@@ -2440,7 +2440,7 @@ impl<'a> Registry<'a> {
             let (params, variadic) = self.signature_params(&action.params, &scope, None);
             let mut result = self.resolve_result(&action.result, &scope);
             let successor = matches!(action.result, ast::ResultSpec::Successor { .. });
-            let private = action.visibility == ast::Visibility::Private;
+            let hidden = action.visibility == ast::Visibility::Hidden;
             // Successor объекта — его собственная копия (§11.9); `^Role` бывает
             // только в сигнатуре роли, реализация которой возвращает `^Self`.
             if let Some(Ty::Successor(target)) = &result
@@ -2465,7 +2465,7 @@ impl<'a> Registry<'a> {
                 params,
                 result,
                 successor,
-                private,
+                hidden,
                 variadic,
                 is_async: action.is_async,
                 decl: Some(action),
@@ -2597,7 +2597,7 @@ impl<'a> Registry<'a> {
                     same_params(candidate) && self.result_conforms(id, &candidate.result, &result)
                 }) {
                     point(found);
-                    if found.private {
+                    if found.hidden {
                         Some(format!(
                             "Role \"{role_display}\" has no public implementation of action \"{}\"",
                             method.name
@@ -2773,7 +2773,7 @@ impl<'a> Registry<'a> {
             params,
             result,
             successor: false,
-            private: false,
+            hidden: false,
             variadic: false,
             is_async: false,
             decl: None,

@@ -240,8 +240,7 @@ object C {
     C() {}
     inc() is ^C { ^n = n + 1; }
     value() is int { n; }
-    private:
-    secret() is int { n; }
+    hidden secret() is int { n; }
 }
 main() is int { let d = C().inc(); d.value(); }";
 
@@ -291,7 +290,7 @@ fn calls_check_arguments_and_privacy() {
                 *func = FuncId(secret);
             }
     }
-    rejects(&module, "@C.secret is private to its object");
+    rejects(&module, "@C.secret is hidden in its object");
 
     let mut module = lowered(OBJECTS);
     let main = symbol(&module, "main");

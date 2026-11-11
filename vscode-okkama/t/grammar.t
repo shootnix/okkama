@@ -73,7 +73,7 @@ sub section_matches($section, $source) {
 
 for my $keyword (
     qw(
-        module import take as native object role does enum has is private return
+        module import take as native object role does enum has is return
         test fake destroy let async await spawn if else match case for loop
         next last try catch confirm throw panic defer self true false
     )
@@ -83,6 +83,7 @@ for my $keyword (
 }
 
 ok(!section_matches('keywords', 'allow'), 'removed grant word is an ordinary identifier');
+ok(!section_matches('keywords', 'private'), 'private is an ordinary identifier (#365)');
 
 for my $type (qw(int float rat decimal string char bool byte number any void NativeFailure)) {
     ok(section_matches('types', $type),

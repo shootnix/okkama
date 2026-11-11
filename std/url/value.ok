@@ -143,9 +143,7 @@ object UrlComponentText {
         Utf8Decoded(output.content().bytes()).string();
     }
 
-    private:
-
-    unicode_allowed(code is int) is bool {
+    hidden unicode_allowed(code is int) is bool {
         if (code >= 160 && code <= 55295)
             || (code >= 63744 && code <= 64975)
             || (code >= 65008 && code <= 65519) {

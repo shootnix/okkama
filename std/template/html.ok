@@ -652,9 +652,7 @@ object HtmlTemplateState {
         throw InvalidHtmlTemplate.because("unknown internal HTML context");
     }
 
-    private:
-
-    opened(slash is bool) is HtmlTemplateState {
+    hidden opened(slash is bool) is HtmlTemplateState {
         confirm tag != "svg" && tag != "math" && tag != "plaintext"
             else throw InvalidHtmlTemplate.because("unsupported foreign or plaintext element");
         let empty = [
@@ -717,7 +715,7 @@ object HtmlTemplateState {
         );
     }
 
-    closed() is HtmlTemplateState {
+    hidden closed() is HtmlTemplateState {
         confirm stack.size() > 0 && stack.first() == tag
             else throw InvalidHtmlTemplate.because("mismatched closing HTML tag");
         return HtmlTemplateState(

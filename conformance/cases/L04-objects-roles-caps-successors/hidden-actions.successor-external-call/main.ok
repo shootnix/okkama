@@ -6,8 +6,7 @@ object Door {
     has open is bool = false;
     Door();
     state() is string { open ?? "open" !! "closed"; }
-    private:
-    opened() is ^Door { ^open = true; }
+    hidden opened() is ^Door { ^open = true; }
 }
 
 main() is int {

@@ -118,9 +118,7 @@ object Property<T> does Checking {
         }
     }
 
-    private:
-
-    observe(value is T) is PropertyObservation {
+    hidden observe(value is T) is PropertyObservation {
         try {
             let result = condition(value);
             PropertyObservation(result, false, if result {
@@ -138,7 +136,7 @@ object Property<T> does Checking {
         }
     }
 
-    shrink(origin is Generated<T>, remaining is int) is Generated<T> {
+    hidden shrink(origin is Generated<T>, remaining is int) is Generated<T> {
         if remaining == 0 {
             return origin;
         }
@@ -231,9 +229,7 @@ object AsyncProperty<T> does AsyncChecking {
         }
     }
 
-    private:
-
-    async observe(value is T) is PropertyObservation {
+    hidden async observe(value is T) is PropertyObservation {
         try {
             let result = await condition(value);
             PropertyObservation(result, false, if result {
@@ -251,7 +247,7 @@ object AsyncProperty<T> does AsyncChecking {
         }
     }
 
-    async shrink(origin is Generated<T>, remaining is int) is Generated<T> {
+    hidden async shrink(origin is Generated<T>, remaining is int) is Generated<T> {
         let observe = (value is T) is Future<PropertyObservation> {
             self.observe(value);
         };

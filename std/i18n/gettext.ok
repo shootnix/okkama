@@ -581,16 +581,14 @@ object GettextExpressionParsing {
         values.value().first();
     }
 
-    private:
-
-    push_nested(token is GettextToken) is void {
+    hidden push_nested(token is GettextToken) is void {
         nesting.replace(nesting.value() + 1);
         confirm nesting.value() <= 64
             else throw InvalidCatalog.located(token.offset(), "plural nesting exceeds 64");
         operators.replace(operators.value().prefix(token));
     }
 
-    precedence(operation is string) is int {
+    hidden precedence(operation is string) is int {
         match operation {
             case "?", "?:" {
                 0;
@@ -622,13 +620,13 @@ object GettextExpressionParsing {
         }
     }
 
-    pop() is GettextExpression {
+    hidden pop() is GettextExpression {
         let value = values.value().first();
         values.replace(values.value().tail());
         value;
     }
 
-    apply() is void {
+    hidden apply() is void {
         let token = operators.value().first();
         operators.replace(operators.value().tail());
         let operation = token.text();
@@ -800,9 +798,7 @@ object PoComments {
         self.selected(PoCommentKind.previous);
     }
 
-    private:
-
-    selected(kind is PoCommentKind) is @string {
+    hidden selected(kind is PoCommentKind) is @string {
         let empty is List<string> = EmptyList();
         let chosen = records.reduce(empty) -> items, record {
             if record.kind() == kind {
@@ -1525,15 +1521,13 @@ object PoEntryFields {
         PoEntry(context, identity, plural, values, comments, self.seen("msgctxt"));
     }
 
-    private:
-
-    seen(name is string) is bool {
+    hidden seen(name is string) is bool {
         fields.reduce(false) -> found, field {
             found || field.name() == name;
         };
     }
 
-    text(name is string) is string {
+    hidden text(name is string) is string {
         let found = fields.reduce("") -> text, field {
             if field.name() == name {
                 field.string(charset);
@@ -1610,9 +1604,7 @@ object PoParsing {
         );
     }
 
-    private:
-
-    seen(name is string) is bool {
+    hidden seen(name is string) is bool {
         for CursorItems(fields.value().cursor()) -> field {
             if field.name() == name {
                 return true;
@@ -1621,7 +1613,7 @@ object PoParsing {
         false;
     }
 
-    finish() is void {
+    hidden finish() is void {
         confirm entries.value().size() < 4097
             else throw InvalidCatalog.located(0, "PO entry count");
         let entry = PoEntryFields(
@@ -1637,7 +1629,7 @@ object PoParsing {
         pending.replace(empty_comments);
     }
 
-    comment(kind is PoCommentKind, text is string, offset is int) is void {
+    hidden comment(kind is PoCommentKind, text is string, offset is int) is void {
         let target = if self.seen("msgstr") {
             pending;
         }
@@ -1649,7 +1641,7 @@ object PoParsing {
         target.replace(target.value().prefix(PoComment(kind, text)));
     }
 
-    line(raw is string, offset is int) is void {
+    hidden line(raw is string, offset is int) is void {
         confirm raw.length() <= 1048576 else throw InvalidCatalog.located(offset, "PO line length");
         let start = Atomic(0);
         defer start.close();
@@ -2066,9 +2058,7 @@ object GettextCatalog {
         entry.translations()[rule.index(count)];
     }
 
-    private:
-
-    key(key is MessageKey) is string {
+    hidden key(key is MessageKey) is string {
         (if key.has_context() {
             "1";
         }
@@ -2077,13 +2067,13 @@ object GettextCatalog {
         }) + key.context() + GettextControl(4).string() + key.identity();
     }
 
-    entry(key is MessageKey) is PoEntry {
+    hidden entry(key is MessageKey) is PoEntry {
         let index = self.index(self.key(key), 0, entries.size());
         confirm index >= 0 else throw MissingMessage.key(key.context(), key.identity());
         entries.item(index);
     }
 
-    index(key is string, start is int, stop is int) is int {
+    hidden index(key is string, start is int, stop is int) is int {
         if start >= stop {
             return -1;
         }

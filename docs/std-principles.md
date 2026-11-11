@@ -44,6 +44,10 @@ So:
   object that uses it.
 - **Fields stay private.** Okkama already enforces this; do not route around
   it with accessors.
+- **Helpers are `hidden`.** An action that only its own object calls is
+  marked `hidden` (#365), one by one, so the public surface is exactly the
+  unmarked actions. The same word keeps a helper object, role or enum inside
+  its module.
 
 Where data really is data — a parsed header value, a row — the object's
 actions should still be the questions callers actually ask

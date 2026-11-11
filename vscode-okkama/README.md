@@ -12,7 +12,7 @@
 
 - ошибки и предупреждения анализа по мере набора (весь файл с импортами
   проверяется заново, ~0.1 с с полной std) и линтер: `unused-import`,
-  `unused-let`, `unused-private`, `unreachable`, `snake-case`,
+  `unused-let`, `unused-hidden`, `unreachable`, `snake-case`,
   `non-exhaustive-match`, `hidden-error` (как `okkama lint`; неиспользуемое
   показывается бледным);
 - автодополнение: члены после `.`, локальные, поля, типы, natives, варианты

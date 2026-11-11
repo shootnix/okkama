@@ -902,9 +902,7 @@ object PlistBinaryDocument {
         self.read(root, 1, maximum_nodes, path).value();
     }
 
-    private:
-
-    limit(start is int) is int {
+    hidden limit(start is int) is int {
         offsets.reduce(table) -> end, position {
             if position > start && position < end {
                 position;
@@ -915,7 +913,7 @@ object PlistBinaryDocument {
         };
     }
 
-    extent(start is int, end is int) is PlistBinaryExtent {
+    hidden extent(start is int, end is int) is PlistBinaryExtent {
         let nibble = origin[start].int() % 16;
         if nibble < 15 {
             return PlistBinaryExtent(nibble, start + 1);
@@ -931,11 +929,11 @@ object PlistBinaryDocument {
         PlistBinaryExtent(count, start + 2 + width);
     }
 
-    ref(at is int, end is int) is int {
+    hidden ref(at is int, end is int) is int {
         PlistBinaryBytes(origin).uint(at, references, end, offsets.size() - 1);
     }
 
-    string(index is int) is string {
+    hidden string(index is int) is string {
         let start = offsets[index];
         let end = self.limit(start);
         let marker = origin[start].int();
@@ -973,7 +971,7 @@ object PlistBinaryDocument {
         }
     }
 
-    integer(payload is @byte, signed is bool) is BigInt {
+    hidden integer(payload is @byte, signed is bool) is BigInt {
         let value = payload.reduce(BigInt("0")) -> number, part {
             ((number * BigInt("256")) + BigInt(part.int().string()));
         };
@@ -985,7 +983,7 @@ object PlistBinaryDocument {
         }
     }
 
-    read(index is int, depth is int, remaining is int, path is List<int>) is PlistParsedNode {
+    hidden read(index is int, depth is int, remaining is int, path is List<int>) is PlistParsedNode {
         let start = offsets[index];
         let end = self.limit(start);
         let marker = origin[start].int();

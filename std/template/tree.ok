@@ -188,9 +188,7 @@ object TemplateTreeBuilder {
         stack.first().nodes();
     }
 
-    private:
-
-    failure(offset is int, message is string) is TemplateFailure {
+    hidden failure(offset is int, message is string) is TemplateFailure {
         let lines = source.slice(0, offset).replace("\r\n", "\n").split("\n");
         TemplateFailure.located(offset, lines.size(), lines[lines.size() - 1].length() + 1, message);
     }

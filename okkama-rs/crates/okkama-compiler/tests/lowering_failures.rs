@@ -184,7 +184,7 @@ fn failure_rules_use_okkama_messages() {
             "Object \"Q\" does role \"R\" but action \"go\" does not accept 1 parameter(s)",
         ),
         (
-            "role R { go() is int; } object Q does R { Q(); private: go() is int { 0; } }",
+            "role R { go() is int; } object Q does R { Q(); hidden go() is int { 0; } }",
             "Role \"R\" has no public implementation of action \"go\"",
         ),
         (

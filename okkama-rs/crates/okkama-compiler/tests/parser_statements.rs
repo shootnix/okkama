@@ -321,7 +321,7 @@ fn nested_block_statements() {
 fn reserved_words_cannot_be_bindings() {
     for keyword in [
         "else", "false", "for", "if", "true", "let", "object", "is", "as", "does", "role",
-        "import", "has", "confirm", "private", "enum", "match", "case", "defer", "try", "catch",
+        "import", "has", "confirm", "enum", "match", "case", "defer", "try", "catch",
         "finally", "next", "last", "async", "await", "panic", "self", "module", "take", "native",
         "test", "fake", "destroy", "with",
     ] {

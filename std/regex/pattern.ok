@@ -101,9 +101,7 @@ object Regex {
         RegexQueryObservation(origin, self, range, query);
     }
 
-    private:
-
-    prepare() is void {
+    hidden prepare() is void {
         let status is %string:int = try {
             regex_state_prepare(state);
         }
@@ -118,7 +116,7 @@ object Regex {
         }
     }
 
-    limit_kind(code is int) is RegexLimit {
+    hidden limit_kind(code is int) is RegexLimit {
         match code {
             case 0 {
                 RegexLimit.expression_size;

@@ -187,9 +187,7 @@ object Http2ConnectionInput {
         await pending;
     }
 
-    private:
-
-    async read_loop() is bool {
+    hidden async read_loop() is bool {
         loop {
             let eof = Event();
             let pending = Http2FrameReading(origin, local.frame_size()).result();
@@ -235,7 +233,7 @@ object Http2ConnectionInput {
         }
     }
 
-    stream_fault(failure is Http2Fault) is void {
+    hidden stream_fault(failure is Http2Fault) is void {
         if receiver.stream_fault(failure) {
             controls.frame(
                 Http2ResetFrame(Http2FaultView(failure).stream(), Http2FaultView(failure).code()).frame()
@@ -243,7 +241,7 @@ object Http2ConnectionInput {
         }
     }
 
-    async dispatch(frame is Http2Frame) is bool {
+    hidden async dispatch(frame is Http2Frame) is bool {
         let kind = frame.header().kind().int();
         if kind == 1 {
             let pending = Http2HeaderBlockReading(

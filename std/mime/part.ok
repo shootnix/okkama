@@ -633,9 +633,7 @@ object MimeParsing {
         );
     }
 
-    private:
-
-    decoded(from is int, encoding is TransferEncoding) is @byte {
+    hidden decoded(from is int, encoding is TransferEncoding) is @byte {
         try {
             TransferDecodedBody(
                 ByteSnapshot(MimeByteSlice(origin, from, stop).bytes()),

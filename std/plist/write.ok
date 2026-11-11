@@ -500,14 +500,12 @@ object PlistWireValue does PlistWriting {
         identity.closing().close();
     }
 
-    private:
-
-    begin() is void {
+    hidden begin() is void {
         confirm event.content().size() == 0 else throw InvalidPlistPrintProtocol.invalid;
         event.writing() <- [byte(1)];
     }
 
-    end(index is int) is void {
+    hidden end(index is int) is void {
         identity.writing() <- IntegerBytes(index, 8, Signedness.unsigned, ByteOrder.big).bytes();
     }
 }

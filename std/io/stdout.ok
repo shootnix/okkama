@@ -46,13 +46,11 @@ object Stdout does Writing, WritingText {
         self.write_text("\n");
     }
 
-    private:
-
-    write_text(value is string) is void {
+    hidden write_text(value is string) is void {
         self.write_bytes(Utf8Encoded(origin: value).bytes());
     }
 
-    write_bytes(value is @byte) is void {
+    hidden write_bytes(value is @byte) is void {
         let written is int = stdout_write(value);
         confirm written == value.size() else throw IncompleteWrite.after(written);
     }
@@ -82,13 +80,11 @@ object Stderr does Writing, WritingText {
         self.write_text("\n");
     }
 
-    private:
-
-    write_text(value is string) is void {
+    hidden write_text(value is string) is void {
         self.write_bytes(Utf8Encoded(origin: value).bytes());
     }
 
-    write_bytes(value is @byte) is void {
+    hidden write_bytes(value is @byte) is void {
         let written is int = stderr_write(value);
         confirm written == value.size() else throw IncompleteWrite.after(written);
     }

@@ -66,9 +66,7 @@ object EncodedWord {
         text;
     }
 
-    private:
-
-    word(text is string) is string {
+    hidden word(text is string) is string {
         "=?" + charset + "?B?" + Base64Encoded(Utf8Encoded(text).bytes()).string() + "?=";
     }
 }

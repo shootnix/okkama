@@ -1223,7 +1223,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
                             .iter()
                             .zip(&params)
                             .all(|((_, left), right)| left.subst(&env) == *right)
-                        && !candidate.private
+                        && !candidate.hidden
                 });
                 let Some(found) = found else {
                     return Err(LoweringError::unsupported(

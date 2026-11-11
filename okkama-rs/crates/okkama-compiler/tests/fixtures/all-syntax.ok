@@ -71,9 +71,8 @@ object Account<T: Comparing<T>, U> does Comparing<T>, io.Printable {
     test "object test" { test.is(1, 1); }
     async test "async object test" { await nothing(); }
 
-    private:
-    helper() is void {}
-    hidden() is string { "x"; }
+    hidden helper() is void {}
+    hidden hidden() is string { "x"; }
 }
 
 cap Account::Audit {

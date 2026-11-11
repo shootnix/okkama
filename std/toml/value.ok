@@ -307,9 +307,7 @@ object TomlTable does TomlValue {
         to.members(origin);
     }
 
-    private:
-
-    index(name is string) is int {
+    hidden index(name is string) is int {
         (0..origin.size()).reduce(-1) -> found, index {
             if origin[index].name() == name {
                 index;

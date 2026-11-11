@@ -76,9 +76,7 @@ object Checks {
         if failed == 0 { 0; } else { 1; }
     }
 
-    private:
-
-    report(label is string, passed is bool, detail is string) is int {
+    hidden report(label is string, passed is bool, detail is string) is int {
         let number = total + 1;
         if passed {
             Stdout().writeln("ok " + number.string() + " - " + label);
@@ -89,11 +87,11 @@ object Checks {
         }
     }
 
-    flag(value is bool) is string {
+    hidden flag(value is bool) is string {
         if value { "true"; } else { "false"; }
     }
 
-    ints(values is @int) is string {
+    hidden ints(values is @int) is string {
         let parts is @string = values.map() -> value { value.string(); };
         parts.join(", ");
     }

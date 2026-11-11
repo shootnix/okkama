@@ -86,13 +86,11 @@ object Command does Commanding {
             ")";
     }
 
-    private:
-
-    rendered_arguments() is string {
+    hidden rendered_arguments() is string {
         self.rendered_arguments_from(0);
     }
 
-    rendered_arguments_from(index is int) is string {
+    hidden rendered_arguments_from(index is int) is string {
         if index >= command_arguments.size() {
             "";
         }
@@ -107,7 +105,7 @@ object Command does Commanding {
         }
     }
 
-    quoted(origin is string) is string {
+    hidden quoted(origin is string) is string {
         "\"" +
             origin
             .replace("\\", "\\\\")
@@ -157,13 +155,11 @@ object InheritedCommand does Commanding {
             ")";
     }
 
-    private:
-
-    rendered_arguments() is string {
+    hidden rendered_arguments() is string {
         self.rendered_arguments_from(0);
     }
 
-    rendered_arguments_from(index is int) is string {
+    hidden rendered_arguments_from(index is int) is string {
         if index >= command_arguments.size() {
             "";
         }
@@ -178,7 +174,7 @@ object InheritedCommand does Commanding {
         }
     }
 
-    quoted(origin is string) is string {
+    hidden quoted(origin is string) is string {
         "\"" +
             origin
             .replace("\\", "\\\\")

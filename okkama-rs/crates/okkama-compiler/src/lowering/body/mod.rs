@@ -807,7 +807,7 @@ fn lower_method(
     let info = &reg.objects[decl.0].methods[method];
     let span = info.decl.map_or(Span::empty(0), |decl| decl.span);
     let result = ctx.ir_result(&info.result, &env, span)?;
-    let (successor, private, is_async) = (info.successor, info.private, info.is_async);
+    let (successor, hidden, is_async) = (info.successor, info.hidden, info.is_async);
     let kind = if successor {
         Kind::Successor
     } else {
@@ -840,8 +840,8 @@ fn lower_method(
     } else {
         ir::Attr::Method(object)
     }];
-    if private {
-        attrs.push(ir::Attr::Private);
+    if hidden {
+        attrs.push(ir::Attr::Hidden);
     }
     if is_async {
         attrs.push(ir::Attr::Async);

@@ -315,7 +315,7 @@ fn lints(text: &str) -> Vec<(String, u32)> {
 }
 
 #[test]
-fn lint_reports_unused_imports_lets_privates_and_unreachable_code() {
+fn lint_reports_unused_imports_lets_hidden_actions_and_unreachable_code() {
     let text = r#"module app v1.0.0;
 import "shop/money" take Money, Currency;
 
@@ -328,8 +328,7 @@ object Box {
         return value;
         value;
     }
-    private:
-    helper() is int { 1; }
+    hidden helper() is int { 1; }
 }
 
 main() is int {
@@ -344,7 +343,7 @@ main() is int {
             ("unused-import".to_string(), 1),
             ("unused-let".to_string(), 7),
             ("unreachable".to_string(), 10),
-            ("unused-private".to_string(), 13),
+            ("unused-hidden".to_string(), 12),
         ],
         "{found:?}"
     );
@@ -370,8 +369,7 @@ object Box {
         let all is @int = amounts.map() -> amount { amount + base + self.helper(); };
         all.size();
     }
-    private:
-    helper() is int { 1; }
+    hidden helper() is int { 1; }
 }
 
 main() is int {
@@ -379,7 +377,7 @@ main() is int {
     return Box(Money(camelName)).sum([1]);
 }
 "#;
-    assert_eq!(lints(text), [("snake-case".to_string(), 16)]);
+    assert_eq!(lints(text), [("snake-case".to_string(), 15)]);
 }
 
 #[test]

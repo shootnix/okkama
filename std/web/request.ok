@@ -169,9 +169,7 @@ object WebRequest {
         }
     }
 
-    private:
-
-    media(expected is string) is void {
+    hidden media(expected is string) is void {
         let field = HeaderName("Content-Type");
         confirm origin.headers().membership(field)
             else throw Exception.status(415, "Content-Type is required");

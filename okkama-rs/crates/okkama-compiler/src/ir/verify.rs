@@ -3,7 +3,7 @@
 //! Проверяет структуру модуля и объявлений объектов, однократное
 //! определение значений, доминирование использований, типы инструкций и
 //! терминаторов, аргументы переходов, достижимость блоков, авторитет
-//! (`obj.*` и `private` — только функциям владельца) и обязательство
+//! (`obj.*` и `hidden` — только функциям владельца) и обязательство
 //! использования successor-результатов (§8.4). Backend получают только
 //! проверенный модуль, поэтому сами повторно эти правила не проверяют.
 
@@ -281,7 +281,7 @@ fn check_witness(
             .filter_map(|param| function.value_type(*param))
             .collect();
         let matches = function.attrs.contains(&Attr::Method(object))
-            && !function.is_private()
+            && !function.is_hidden()
             && params.len() == method.params.len()
             && params
                 .iter()
@@ -315,7 +315,7 @@ fn check_signature(module: &Module, function: &Function) -> std::result::Result<
             !matches!(
                 attr,
                 Attr::Entry
-                    | Attr::Private
+                    | Attr::Hidden
                     | Attr::Extern(_)
                     | Attr::Lambda { .. }
                     | Attr::Async
@@ -1025,8 +1025,8 @@ impl<'a> FunctionVerifier<'a> {
                 if callee.attrs.contains(&Attr::Entry) {
                     return Err("the entry function cannot be called".to_string());
                 }
-                if callee.is_private() && callee.owner() != self.function.owner() {
-                    return Err(format!("@{} is private to its object", callee.symbol));
+                if callee.is_hidden() && callee.owner() != self.function.owner() {
+                    return Err(format!("@{} is hidden in its object", callee.symbol));
                 }
                 if callee.params.len() != args.len() {
                     return Err(format!(
@@ -1472,8 +1472,8 @@ impl<'a> FunctionVerifier<'a> {
                         callee.symbol
                     ));
                 }
-                if callee.is_private() && callee.owner() != self.function.owner() {
-                    return Err(format!("@{} is private to its owner", callee.symbol));
+                if callee.is_hidden() && callee.owner() != self.function.owner() {
+                    return Err(format!("@{} is hidden in its owner", callee.symbol));
                 }
                 let types: Vec<Type> = callee
                     .params

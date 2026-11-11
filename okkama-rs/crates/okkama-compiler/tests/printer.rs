@@ -81,7 +81,6 @@ const ALL_KINDS: &[&str] = &[
     "OwnerField",
     "Panic",
     "Param",
-    "PrivateSection",
     "Program",
     "OptionalFallback",
     "ThrowExpression",

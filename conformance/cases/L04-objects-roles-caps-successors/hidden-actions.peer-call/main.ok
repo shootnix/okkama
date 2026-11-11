@@ -6,13 +6,12 @@ object Vault {
     Vault();
     open() is int { self.secret(); }
     peek(other is Vault) is int { other.secret(); }
-    private:
-    secret() is int { 7; }
+    hidden secret() is int { 7; }
 }
 
 main() is int {
     let out = Stdout();
-    let x = Vault().secret();
+    let x = Vault().peek(Vault());
     out.writeln("unreachable");
     0;
 }

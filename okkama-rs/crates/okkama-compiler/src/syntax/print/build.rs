@@ -149,8 +149,6 @@ fn member_node(member: &ObjectMember) -> Node {
         }
         ObjectMember::Test(decl) => test_node(decl),
         ObjectMember::Action(decl) => action_node(decl),
-        ObjectMember::Private(section) => Node::new("PrivateSection", section.span)
-            .field("actions", list(&section.actions, action_node)),
     }
 }
 

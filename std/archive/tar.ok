@@ -181,9 +181,7 @@ object TarMemberWriting does ArchiveEntryVisitor {
         self.emit(entry, [], flag, "", entry.major(), entry.minor());
     }
 
-    private:
-
-    emit(
+    hidden emit(
         entry is ArchiveEntry,
         data is @byte,
         flag is string,
@@ -1178,9 +1176,7 @@ object TarPaxPayload {
         attributes;
     }
 
-    private:
-
-    space(at is int) is int {
+    hidden space(at is int) is int {
         for (at..origin.size()) -> i {
             if origin[i] == byte(32) {
                 return i;
@@ -1775,9 +1771,7 @@ object TarStreamInput {
         self.close();
     }
 
-    private:
-
-    padding(size is int) is void {
+    hidden padding(size is int) is void {
         let bytes = source.bytes((512 - size % 512) % 512, false);
         confirm bytes.reduce(true) -> valid, b {
             valid && b == byte(0);

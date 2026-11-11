@@ -217,23 +217,21 @@ Program
                       name: string
                     arguments: []
                 condition: (none)
-        - PrivateSection
-          actions:
-            - ActionDecl
-              async: false
-              visibility: private
-              name: unused
-              params: []
-              result: NamedType
-                path: [int]
-                args: []
-              body: Block
-                statements:
-                  - ExpressionStatement
-                    expression: IntLiteral
-                      radix: decimal
-                      digits: 0
-                    condition: (none)
+        - ActionDecl
+          async: false
+          visibility: hidden
+          name: unused
+          params: []
+          result: NamedType
+            path: [int]
+            args: []
+          body: Block
+            statements:
+              - ExpressionStatement
+                expression: IntLiteral
+                  radix: decimal
+                  digits: 0
+                condition: (none)
     - ObjectDecl
       name: Box
       generics:

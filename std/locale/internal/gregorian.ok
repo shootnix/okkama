@@ -713,6 +713,5 @@ if id==316{return "B|1||h|1||literal|0|:|m|2||literal|0|:|s|2||literal|0| [|z|1|
 if id==317{return "B|1||h|1||literal|0|:|m|2||literal|0|:|s|2|";}
 if id==318{return "B|1||h|1||literal|0|:|m|2|";}
 "";}
-private:
-search(tag is string,start is int,stop is int) is int{if start>=stop{return -1;}let middle=start+((stop-start)/2).int();let order=tag.order(tags[middle]);if order==Order.equal{return middle;}if order==Order.less{self.search(tag,start,middle);}else{self.search(tag,middle+1,stop);}}
+hidden search(tag is string,start is int,stop is int) is int{if start>=stop{return -1;}let middle=start+((stop-start)/2).int();let order=tag.order(tags[middle]);if order==Order.equal{return middle;}if order==Order.less{self.search(tag,start,middle);}else{self.search(tag,middle+1,stop);}}
 }

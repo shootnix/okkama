@@ -88,9 +88,7 @@ object PipelineCapture {
         }
     }
 
-    private:
-
-    exit_kind(status is %string:int) is ExitKind {
+    hidden exit_kind(status is %string:int) is ExitKind {
         if status["state"] == 1 {
             ExitKind.exited;
         }

@@ -401,19 +401,17 @@ object Json {
         json_node_write(node, indentation);
     }
 
-    private:
-
-    expect(expected is JsonKind) is void {
+    hidden expect(expected is JsonKind) is void {
         let actual = self.kind();
         confirm actual == expected
             else throw JsonError.wrong_kind(self.pointer(), expected, actual);
     }
 
-    wrong(expected is JsonKind) is JsonError {
+    hidden wrong(expected is JsonKind) is JsonError {
         JsonError.wrong_kind(self.pointer(), expected, self.kind());
     }
 
-    spelling() is string {
+    hidden spelling() is string {
         try {
             json_node_number(node);
         }
@@ -422,7 +420,7 @@ object Json {
         }
     }
 
-    position(name is string) is int {
+    hidden position(name is string) is int {
         try {
             json_member_position(node, name);
         }
@@ -713,9 +711,7 @@ object JsonMaybeReader {
         origin.list().fold();
     }
 
-    private:
-
-    absent(name is string) is JsonMaybeReader {
+    hidden absent(name is string) is JsonMaybeReader {
         let nothing is Presence<Json> = Presence.missing;
         JsonMaybeReader(
             origin: JsonPresenceReader(origin: nothing),

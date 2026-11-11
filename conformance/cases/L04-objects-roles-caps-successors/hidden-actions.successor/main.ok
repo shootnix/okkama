@@ -7,9 +7,8 @@ object Door {
     Door();
     toggled() is Door { if open { self.shut(); } else { self.opened(); } }
     state() is string { open ?? "open" !! "closed"; }
-    private:
-    opened() is ^Door { ^open = true; }
-    shut() is ^Door { ^open = false; }
+    hidden opened() is ^Door { ^open = true; }
+    hidden shut() is ^Door { ^open = false; }
 }
 
 main() is int {

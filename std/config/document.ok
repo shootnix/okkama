@@ -295,13 +295,11 @@ object TomlSettingVisitor does TomlVisitor {
         emission.valid();
     }
 
-    private:
-
-    once() is void {
+    hidden once() is void {
         emission.start();
     }
 
-    scalar(text is string) is void {
+    hidden scalar(text is string) is void {
         self.once();
         try {
             entries.append(SettingEntry(SettingKey(path), [text], source));
@@ -387,9 +385,7 @@ object TomlSettingScalar does TomlVisitor {
         throw InvalidSettingDocument.because("object-valued arrays are not settings");
     }
 
-    private:
-
-    scalar(text is string) is void {
+    hidden scalar(text is string) is void {
         emission.start();
         origin.replace(text);
     }

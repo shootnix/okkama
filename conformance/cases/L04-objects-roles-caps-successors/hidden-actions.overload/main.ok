@@ -6,9 +6,8 @@ object Fmt {
     Fmt();
     show(v is int) is string { self.render(v); }
     show(v is string) is string { self.render(v); }
-    private:
-    render(v is int) is string { "int:" + v.string(); }
-    render(v is string) is string { "text:" + v; }
+    hidden render(v is int) is string { "int:" + v.string(); }
+    hidden render(v is string) is string { "text:" + v; }
 }
 
 main() is int {

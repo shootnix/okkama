@@ -118,9 +118,7 @@ object ByteInput {
         }
     }
 
-    private:
-
-    consume(count is int) is void {
+    hidden consume(count is int) is void {
         confirm count >= 0 && count <= self.available()
             else throw OutOfRange.because("count is outside the buffered input");
         position.replace(position.value() + count);
@@ -128,7 +126,7 @@ object ByteInput {
 
     // Read at least one more byte (asking for wanted, at least 64 KiB) after
     // the unconsumed ones; false at the end of the source.
-    async fill(wanted is int) is bool {
+    hidden async fill(wanted is int) is bool {
         if finished.value() {
             false;
         }

@@ -1173,9 +1173,7 @@ object ParsedUrlEncodedForm {
         parameters;
     }
 
-    private:
-
-    operation() is Future<QueryParameters> {
+    hidden operation() is Future<QueryParameters> {
         let known = pending.value();
         if known.size() > 0 {
             known[0];
@@ -1231,9 +1229,7 @@ object FormFileSpooling {
         file;
     }
 
-    private:
-
-    operation() is Future<TemporaryFile> {
+    hidden operation() is Future<TemporaryFile> {
         let known = pending.value();
         if known.size() > 0 {
             known[0];
