@@ -1,10 +1,12 @@
 module http/http1_framing v1.0.0;
 
+import "http/method" take Method;
+import "http/status" take StatusCode, Status, StatusClass;
 import "http/http1_head" take Http1RequestHead, Http1ResponseHead, Http1Limits, Http1LimitExceeded,
     ParsedHttp1RequestHead;
 import "http/message" take InvalidHttpMessage;
 import "http/header" take Headers, Header, HeaderName, HttpAsciiLowercase;
-import "http/method" take Method, InvalidMethod;
+import "http/token" take HttpToken, InvalidToken;
 import "http/version" take HttpVersion;
 import "http/body" take UnknownBodyLength;
 import "numbers/bigint" take BigInt, InvalidBigInt;
@@ -97,8 +99,9 @@ object Http1ResponseFraming {
     }
 
     plan() is Http1BodyPlan {
-        let status = head.status().code();
-        if method.string() == "CONNECT" && status >= 200 && status < 300 {
+        let status = head.status();
+        let class = StatusCode(status).class();
+        if method == Method.connect && class == StatusClass.successful {
             return Http1BodyPlan(Http1BodyKind.tunnel, BigInt("0"), false);
         }
         let fields = Http1FramingFields(head.headers(), head.version(), limits);
@@ -106,15 +109,15 @@ object Http1ResponseFraming {
         let codings = fields.codings();
         confirm length.size() == 0 || codings.size() == 0
             else throw InvalidHttpMessage.because("Transfer-Encoding with Content-Length");
-        if status < 200 || status == 204 {
+        if class == StatusClass.informational || status == Status.no_content {
             confirm length.size() == 0 && codings.size() == 0
                 else throw InvalidHttpMessage.because("framing field on body-forbidden status");
-            if status == 101 {
+            if status == Status.switching_protocols {
                 return Http1BodyPlan(Http1BodyKind.upgrade, BigInt("0"), false);
             }
             return Http1BodyPlan(Http1BodyKind.empty, BigInt("0"), fields.reusable());
         }
-        if method.string() == "HEAD" || status == 304 {
+        if method == Method.head || status == Status.not_modified {
             return Http1BodyPlan(Http1BodyKind.empty, BigInt("0"), fields.reusable());
         }
         if codings.size() > 0 {
@@ -209,9 +212,9 @@ object Http1FramingFields {
             else throw InvalidHttpMessage.because("Transfer-Encoding on HTTP1.0");
         let canonical is @string = values.map() -> value {
             let token = try {
-                Method(value).string();
+                HttpToken(value).string();
             }
-            catch e is InvalidMethod {
+            catch e is InvalidToken {
                 throw InvalidHttpMessage.because("transfer coding token required");
             };
             HttpAsciiLowercase(token).string();
@@ -243,9 +246,9 @@ object Http1FramingFields {
         let values = self.list("Connection");
         let canonical is @string = values.map() -> value {
             let token = try {
-                Method(value).string();
+                HttpToken(value).string();
             }
-            catch e is InvalidMethod {
+            catch e is InvalidToken {
                 throw InvalidHttpMessage.because("Connection token required");
             };
             HttpAsciiLowercase(token).string();

@@ -1,10 +1,11 @@
 module http/websocket_handshake v1.0.0;
 
+import "http/method" take Method;
 import "http/websocket" take WebSocketFailure;
 import "http/message" take Request, Response;
 import "http/header" take Header, HeaderName, Headers, HttpAsciiLowercase;
-import "http/method" take Method, InvalidMethod;
-import "http/status" take Status;
+import "http/token" take HttpToken, InvalidToken;
+import "http/status" take Status, StatusCode;
 import "http/target" take OriginTarget, RequestTargetKind;
 import "http/version" take HttpVersion;
 import "http/http1_head" take Http1RequestHead;
@@ -47,9 +48,9 @@ object WebSocketProtocols {
             confirm value.length() > 0 && value.length() <= 256
                 else throw WebSocketFailure.because("subprotocol width");
             try {
-                Method(value);
+                HttpToken(value);
             }
-            catch e is InvalidMethod {
+            catch e is InvalidToken {
                 throw WebSocketFailure.because("subprotocol token");
             }
             for (0..index) -> prior {
@@ -125,9 +126,9 @@ object WebSocketHandshakeFields {
             let value = Header(HeaderName(name), part).value();
             confirm value != "" else throw WebSocketFailure.because("empty handshake token");
             try {
-                Method(value);
+                HttpToken(value);
             }
-            catch e is InvalidMethod {
+            catch e is InvalidToken {
                 throw WebSocketFailure.because("handshake token");
             }
             value;
@@ -210,7 +211,7 @@ object WebSocketClientHandshake {
         };
         WebSocketHandshakeFields(complete);
         request = Request(
-            Method("GET"),
+            Method.get,
             OriginTarget(
                 if parts.path() == "" {
                     "/";
@@ -231,7 +232,8 @@ object WebSocketClientHandshake {
     }
 
     selected(response is Response) is string {
-        confirm response.status().code() == 101 && response.version() == HttpVersion.http_1_1
+        confirm response.status() == Status.switching_protocols
+            && response.version() == HttpVersion.http_1_1
             else throw WebSocketFailure.because("HTTP1.1 switching response required");
         let fields = WebSocketHandshakeFields(response.headers());
         fields.upgrade();
@@ -261,7 +263,7 @@ object WebSocketServerHandshake {
     has offered is WebSocketProtocols;
 
     WebSocketServerHandshake(request is Http1RequestHead) {
-        confirm request.method().string() == "GET"
+        confirm request.method() == Method.get
             && request.version() == HttpVersion.http_1_1
             && request.target().kind() == RequestTargetKind.origin
             else throw WebSocketFailure.because("HTTP1.1 origin GET required");
@@ -292,7 +294,7 @@ object WebSocketServerHandshake {
                 Header(HeaderName("Sec-WebSocket-Accept"), accept.string())
             ]
         );
-        Response(Status(101), if protocol == "" {
+        Response(Status.switching_protocols, if protocol == "" {
             fields;
         }
         else {

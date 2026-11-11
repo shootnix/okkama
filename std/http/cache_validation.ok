@@ -1,5 +1,6 @@
 module http/cache_validation v1.0.0;
 
+import "http/status" take StatusCode, Status;
 import "http/cache_memory" take CachedHttpEntry, CacheStoredHeaders;
 import "http/cache_freshness" take CacheResponseTiming;
 import "http/message" take Request, Response;
@@ -84,7 +85,7 @@ object CacheValidation {
 
     refreshed(result is ClientResponse, timing is CacheResponseTiming) is CachedHttpEntry {
         confirm self.conditional()
-            && result.response().status().code() == 304
+            && result.response().status() == Status.not_modified
             && result.history().size() == 0
             && result.request().target().string() == request.target().string()
             else throw InvalidCacheRevalidation.invalid;

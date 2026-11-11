@@ -3,7 +3,7 @@ module http/cookie v1.0.0;
 import "time/clock" take Instant;
 import "encoding/utf" take Utf8Encoded;
 import "net/endpoint" take HostName, InvalidHostName;
-import "http/method" take Method, InvalidMethod;
+import "http/token" take HttpToken, InvalidToken;
 import "http/header" take HttpAsciiLowercase;
 import "http/date" take HttpDate, InvalidHttpDate;
 import "collections/set" take Set, OrderedSet;
@@ -210,9 +210,9 @@ object Cookie {
         confirm name != "" || value != "" else throw InvalidCookie.because("empty cookie pair");
         if name != "" {
             try {
-                Method(name);
+                HttpToken(name);
             }
-            catch failure is InvalidMethod {
+            catch failure is InvalidToken {
                 throw InvalidCookie.because("cookie name token required");
             }
         }

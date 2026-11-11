@@ -4,8 +4,8 @@ import "http/internal/hpack_tables" take HpackField;
 import "http/internal/http2_frame" take Http2Fault, Http2FaultScope;
 import "http/message" take Request, Response;
 import "http/body" take BodyOpening;
-import "http/method" take Method, InvalidMethod;
-import "http/status" take Status, InvalidStatus;
+import "http/method" take Method, MethodName, InvalidMethod;
+import "http/status" take Status, InvalidStatus, StatusCode;
 import "http/version" take HttpVersion;
 import "http/target" take RequestTarget, RequestTargetKind, AbsoluteTarget, ParsedRequestTarget,
     InvalidRequestTarget;
@@ -24,7 +24,7 @@ object Http2RequestFields {
         Http2StreamCoordinate(stream);
         let target = request.target();
         let prefix is @HpackField = if target.kind() == RequestTargetKind.authority {
-            confirm request.method().string() == "CONNECT"
+            confirm request.method() == Method.connect
                 else throw Http2Fault.detailed(
                     Http2FaultScope.stream,
                     1,
@@ -122,7 +122,7 @@ object Http2RequestControl {
             }
         };
         fields = [
-            HpackField(":method", request.method().string()),
+            HpackField(":method", MethodName(request.method()).string()),
             HpackField(":scheme", parts.scheme()),
             HpackField(":authority", authority),
             HpackField(":path", path)
@@ -205,7 +205,7 @@ object Http2ResponseFields {
 
     Http2ResponseFields(response is Response, stream is int) {
         Http2StreamCoordinate(stream);
-        confirm response.status().code() != 101
+        confirm response.status() != Status.switching_protocols
             else throw Http2Fault.detailed(
                 Http2FaultScope.stream,
                 1,
@@ -213,7 +213,7 @@ object Http2ResponseFields {
                 "101 is invalid in HTTP2"
             );
         fields = Http2JoinedFields(
-            [HpackField(":status", response.status().code().string())],
+            [HpackField(":status", StatusCode(response.status()).number().string())],
             Http2OrdinaryFields(response.headers(), false, stream).fields()
         ).fields();
     }
@@ -305,7 +305,7 @@ object ParsedHttp2Response {
                 "invalid HTTP2 informational status or end"
             );
         status = try {
-            Status(code);
+            StatusCode(code).status();
         }
         catch failure is InvalidStatus {
             throw Http2Fault.detailed(Http2FaultScope.stream, 1, stream, "invalid status range");
@@ -342,12 +342,12 @@ object ParsedHttp2Request {
         );
         let known = section.pseudos();
         let method = try {
-            Method(known.value(":method"));
+            MethodName(known.value(":method")).method();
         }
         catch failure is InvalidMethod {
             throw Http2Fault.detailed(Http2FaultScope.stream, 1, stream, "invalid method token");
         };
-        let connect = method.string() == "CONNECT";
+        let connect = method == Method.connect;
         let scheme = if connect {
             "";
         }
@@ -619,6 +619,6 @@ object Http2PseudoFields {
 
 test "response pseudo-status stays outside ordinary Headers" {
     let response = ParsedHttp2Response([HpackField(":status", "200")], 1, true);
-    test.is(response.status().code(), 200);
+    test.is(response.status(), Status.ok);
     test.is(response.headers().entries().size(), 0);
 }

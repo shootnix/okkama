@@ -1,5 +1,6 @@
 module http/robots v1.0.0;
 
+import "http/status" take StatusCode, StatusClass;
 import "url/value" take Url, UrlReference, UrlParts, UrlQuery, UrlFragment, ParsedUrl,
     UrlComponentText;
 import "url/percent" take UrlComponent;
@@ -585,7 +586,7 @@ object FetchedRobots {
 
     async fetch() is RobotsPolicy {
         let request = Request(
-            Method("GET"),
+            Method.get,
             AbsoluteTarget(destination),
             Headers(
                 [
@@ -599,14 +600,15 @@ object FetchedRobots {
         let response = exchange.response();
         let input = response.body().reading();
         defer input.close();
-        let code = response.status().code();
-        if code >= 400 && code < 500 {
+        let class = StatusCode(response.status()).class();
+        if class == StatusClass.client_error {
             return RobotsPolicy("");
         }
-        if code >= 500 {
+        if class == StatusClass.server_error {
             return RobotsPolicy("User-agent: *\nDisallow: /\n");
         }
-        confirm code >= 200 && code < 300 else throw RobotsFetchFailed.status(code);
+        confirm class == StatusClass.successful
+            else throw RobotsFetchFailed.status(StatusCode(response.status()).number());
         let text = Atomic("");
         loop {
             let remaining = 524288 - text.value().length();

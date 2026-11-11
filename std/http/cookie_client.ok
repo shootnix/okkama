@@ -151,14 +151,14 @@ enum CookieExchangeLimit is Error = (because(reason is string));
 
 test "first-party cookies use the current request site and method" {
     let request = Request(
-        Method("POST"),
+        Method.post,
         AbsoluteTarget(ParsedUrl("https://example.com/path").value()),
         Headers([])
     );
     let context = FirstPartyCookies().context(request);
     test.ok(
         context.top_level()
-            && context.method().string() == "POST"
+            && context.method() == Method.post
             && context.site().string() == "https://example.com/path"
     );
     test.ok(CookieRequestPairs([]).string() == "");

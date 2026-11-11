@@ -4,7 +4,7 @@ import "http/routing" take Routes, Route, RoutePattern, RouteRejecting;
 import "http/handler" take Handling, HandlingResult;
 import "http/request_context" take HttpRequestContext;
 import "http/message" take Request;
-import "http/method" take Method;
+import "http/method" take Method, MethodName;
 import "web/request" take WebRequest;
 import "web/exception" take Exception, Problem;
 
@@ -57,7 +57,7 @@ object Get does WebRouting {
     has origin is MethodRoute;
 
     Get(path is string, endpoint is async (WebRequest) is HandlingResult) {
-        origin = MethodRoute("GET", path, endpoint);
+        origin = MethodRoute(Method.get, path, endpoint);
     }
 
     routes(prefix is string, scopes is @ExceptionScope) is @Route {
@@ -69,7 +69,7 @@ object Post does WebRouting {
     has origin is MethodRoute;
 
     Post(path is string, endpoint is async (WebRequest) is HandlingResult) {
-        origin = MethodRoute("POST", path, endpoint);
+        origin = MethodRoute(Method.post, path, endpoint);
     }
 
     routes(prefix is string, scopes is @ExceptionScope) is @Route {
@@ -81,7 +81,7 @@ object Put does WebRouting {
     has origin is MethodRoute;
 
     Put(path is string, endpoint is async (WebRequest) is HandlingResult) {
-        origin = MethodRoute("PUT", path, endpoint);
+        origin = MethodRoute(Method.put, path, endpoint);
     }
 
     routes(prefix is string, scopes is @ExceptionScope) is @Route {
@@ -93,7 +93,7 @@ object Patch does WebRouting {
     has origin is MethodRoute;
 
     Patch(path is string, endpoint is async (WebRequest) is HandlingResult) {
-        origin = MethodRoute("PATCH", path, endpoint);
+        origin = MethodRoute(Method.patch, path, endpoint);
     }
 
     routes(prefix is string, scopes is @ExceptionScope) is @Route {
@@ -105,7 +105,7 @@ object Delete does WebRouting {
     has origin is MethodRoute;
 
     Delete(path is string, endpoint is async (WebRequest) is HandlingResult) {
-        origin = MethodRoute("DELETE", path, endpoint);
+        origin = MethodRoute(Method.delete, path, endpoint);
     }
 
     routes(prefix is string, scopes is @ExceptionScope) is @Route {
@@ -203,7 +203,7 @@ object WebRejection does RouteRejecting {
     }
 
     disallowed(request is Request, allowed is @string) is HandlingResult {
-        Problem(405, "method " + request.method().string() + " is not allowed here").header(
+        Problem(405, "method " + MethodName(request.method()).string() + " is not allowed here").header(
             "Allow",
             allowed.join(", ")
         );
@@ -211,11 +211,11 @@ object WebRejection does RouteRejecting {
 }
 
 object MethodRoute {
-    has method is string;
+    has method is Method;
     has path is string;
     has endpoint is async (WebRequest) is HandlingResult;
 
-    MethodRoute(method is string, path is string, endpoint is async (WebRequest) is HandlingResult) {
+    MethodRoute(method is Method, path is string, endpoint is async (WebRequest) is HandlingResult) {
         confirm path == "" || path.slice(0, 1) == "/"
             else throw InvalidWebRoute.because("route path must be empty or start with /: " + path);
         self.method = method;
@@ -227,7 +227,7 @@ object MethodRoute {
         let pattern = prefix + path;
         confirm pattern != ""
             else throw InvalidWebRoute.because("an empty route path is only valid inside a Scope");
-        [Route(Method(method), RoutePattern(pattern), WebEndpoint(endpoint, scopes))];
+        [Route(method, RoutePattern(pattern), WebEndpoint(endpoint, scopes))];
     }
 }
 

@@ -2,7 +2,7 @@ module http/negotiation v1.0.0;
 
 import "compare" take Comparing, Order;
 import "encoding/utf" take Utf8Encoded;
-import "http/method" take Method, InvalidMethod;
+import "http/token" take HttpToken, InvalidToken;
 import "http/header" take Header, HeaderName, InvalidHeader, HttpAsciiLowercase;
 import "http/content_coding" take ContentCoding;
 import "collections/sequence" take Sequencing;
@@ -110,9 +110,9 @@ object WeightedValue {
 
     WeightedValue(value is string) {
         token = try {
-            Method(value).string();
+            HttpToken(value).string();
         }
-        catch failure is InvalidMethod {
+        catch failure is InvalidToken {
             throw InvalidWeightedValue.because("HTTP token required");
         };
         quality = Quality(1.rat());
@@ -120,9 +120,9 @@ object WeightedValue {
 
     WeightedValue(value is string, quality is Quality) {
         token = try {
-            Method(value).string();
+            HttpToken(value).string();
         }
-        catch failure is InvalidMethod {
+        catch failure is InvalidToken {
             throw InvalidWeightedValue.because("HTTP token required");
         };
         self.quality = quality;
@@ -279,9 +279,9 @@ object CodingPreference does Comparing<CodingPreference> {
     CodingPreference(token is string, quality is Quality, position is int) {
         confirm position >= 0 else throw InvalidArgument.because("negative client coding position");
         let checked = try {
-            Method(token).string();
+            HttpToken(token).string();
         }
-        catch failure is InvalidMethod {
+        catch failure is InvalidToken {
             throw InvalidNegotiation.because("coding token required");
         };
         self.token = HttpAsciiLowercase(checked).string();
@@ -314,7 +314,7 @@ object WeightedTokenLookup {
 
     WeightedTokenLookup(origin is Sorted<CodingPreference>, token is string) {
         self.origin = origin;
-        self.token = HttpAsciiLowercase(Method(token).string()).string();
+        self.token = HttpAsciiLowercase(HttpToken(token).string()).string();
     }
 
     value() is @CodingPreference {
@@ -455,9 +455,9 @@ object CharsetName does Comparing<CharsetName> {
 
     CharsetName(origin is string) {
         let token = try {
-            Method(origin).string();
+            HttpToken(origin).string();
         }
-        catch e is InvalidMethod {
+        catch e is InvalidToken {
             throw InvalidNegotiation.because("charset token required");
         };
         confirm token != "*"
@@ -846,15 +846,15 @@ object MediaRange {
         quality is Quality
     ) {
         let type_name = try {
-            Method(type).string();
+            HttpToken(type).string();
         }
-        catch failure is InvalidMethod {
+        catch failure is InvalidToken {
             throw InvalidNegotiation.because("media type token required");
         };
         let subtype_name = try {
-            Method(subtype).string();
+            HttpToken(subtype).string();
         }
-        catch failure is InvalidMethod {
+        catch failure is InvalidToken {
             throw InvalidNegotiation.because("media subtype token required");
         };
         confirm type_name != "*" || subtype_name == "*"

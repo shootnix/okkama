@@ -3,8 +3,8 @@ module http/routing v1.0.0;
 import "http/handler" take Handling, HandlingResult, ResponseHandling;
 import "http/request_context" take HttpRequestContext;
 import "http/message" take Request, Response;
-import "http/method" take Method;
-import "http/status" take Status;
+import "http/method" take Method, MethodName;
+import "http/status" take Status, StatusCode;
 import "http/header" take Headers, Header, HeaderName;
 import "http/target" take RequestTargetKind, ParsedRequestTarget;
 import "collections/sequence" take Sequencing;
@@ -337,12 +337,15 @@ object EmptyRouteRejection does RouteRejecting {
     EmptyRouteRejection();
 
     malformed(request is Request, reason is string) is HandlingResult {
-        ResponseHandling(Response(Status(400), Headers([])));
+        ResponseHandling(Response(Status.bad_request, Headers([])));
     }
 
     disallowed(request is Request, allowed is @string) is HandlingResult {
         ResponseHandling(
-            Response(Status(405), Headers([Header(HeaderName("Allow"), allowed.join(", "))]))
+            Response(
+                Status.method_not_allowed,
+                Headers([Header(HeaderName("Allow"), allowed.join(", "))])
+            )
         );
     }
 }
@@ -357,7 +360,7 @@ object RouteConflictEntry {
     has parts is @RouteSegment;
 
     RouteConflictEntry(origin is Route) {
-        let verb = origin.method().string();
+        let verb = MethodName(origin.method()).string();
         let compiled = origin.pattern();
         let parts = compiled.parts();
         method = verb;
@@ -651,20 +654,20 @@ object Routes does Handling {
             return rejection.malformed(request, "invalid route path");
         }
         let path = sections[0];
-        let method = request.method().string();
+        let method = request.method();
         let matches is @Route = routes.filter() -> route {
             route.pattern().matches(path);
         };
         let exact is @Route = matches.filter() -> route {
-            route.method().string() == method;
+            route.method() == method;
         };
         let chosen is @Route = if exact.size() > 0 {
             exact;
         }
         else {
-            if method == "HEAD" {
+            if method == Method.head {
                 matches.filter() -> route {
-                    route.method().string() == "GET";
+                    route.method() == Method.get;
                 };
             }
             else {
@@ -710,8 +713,8 @@ object Routes does Handling {
         if matches.size() > 0 {
             let allowed = RouteMethods();
             for matches -> route {
-                allowed = allowed.added(route.method().string());
-                if route.method().string() == "GET" {
+                allowed = allowed.added(MethodName(route.method()).string());
+                if route.method() == Method.get {
                     allowed = allowed.added("HEAD");
                 }
             }
@@ -767,16 +770,16 @@ test "default rejection keeps empty 400 and Allow-carrying 405 responses" {
     let methods is @string = ["GET", "HEAD"];
     test.is(
         EmptyRouteRejection().disallowed(
-            Request(Method("PUT"), ParsedRequestTarget("/a", Method("PUT")).value(), Headers([])),
+            Request(Method.put, ParsedRequestTarget("/a", Method.put).value(), Headers([])),
             methods
         ).response().headers().first(HeaderName("Allow")),
         "GET, HEAD"
     );
     test.is(
         EmptyRouteRejection().malformed(
-            Request(Method("GET"), ParsedRequestTarget("/a", Method("GET")).value(), Headers([])),
+            Request(Method.get, ParsedRequestTarget("/a", Method.get).value(), Headers([])),
             "x"
-        ).response().status().code(),
-        400
+        ).response().status(),
+        Status.bad_request
     );
 }

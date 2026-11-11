@@ -1,7 +1,7 @@
 module http/message v1.0.0;
 
-import "http/method" take Method;
-import "http/status" take Status;
+import "http/method" take Method, MethodName;
+import "http/status" take Status, StatusCode;
 import "http/header" take Headers;
 import "http/body" take BodyOpening, EmptyBody;
 import "http/version" take HttpVersion;
@@ -119,7 +119,7 @@ object RequestCoordinates {
     has target is RequestTarget;
 
     RequestCoordinates(method is Method, target is RequestTarget) {
-        confirm method.string().length() <= 8192
+        confirm MethodName(method).string().length() <= 8192
             else throw InvalidHttpMessage.because("method source limit exceeded");
         let checked = RequestTargetSnapshot(target).value();
         confirm RequestTargetMethod(method, checked.kind()).valid()
@@ -135,7 +135,7 @@ object RequestCoordinates {
 enum InvalidHttpMessage is Error = (because(reason is string));
 
 test "message metadata does not open its empty body" {
-    let response = Response(Status(299), Headers([]));
-    test.ok(response.status().code() == 299 && response.version() == HttpVersion.http_1_1);
+    let response = Response(StatusCode(299).status(), Headers([]));
+    test.ok(response.status() == Status.other(299) && response.version() == HttpVersion.http_1_1);
     test.ok(response.body().replayable() && response.body().length().string() == "0");
 }

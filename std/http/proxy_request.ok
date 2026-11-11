@@ -50,7 +50,7 @@ object HttpConnectRequest {
             Headers([Header(HeaderName("Host"), authority.string())]),
             proxy_fields
         ).headers();
-        request = Request(Method("CONNECT"), AuthorityTarget(authority), fields);
+        request = Request(Method.connect, AuthorityTarget(authority), fields);
     }
 
     request() is Request {

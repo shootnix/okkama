@@ -1,5 +1,7 @@
 module http/cache_memory v1.0.0;
 
+import "http/status" take StatusCode, Status;
+import "http/method" take MethodName, Method;
 import "http/message" take Request, Response;
 import "http/exchange" take ClientResponse;
 import "http/header" take Headers, Header, HeaderName, ReplacedHeader, HeadersWithout;
@@ -132,7 +134,7 @@ object CachedHttpEntry {
     matches(other is Request) is bool {
         if other.target().kind() != RequestTargetKind.absolute
             || other.target().string() != self.key()
-            || other.method().string() != request.method().string() {
+            || MethodName(other.method()).string() != MethodName(request.method()).string() {
                 return false;
             }
         // Explicitly approved auth still partitions identities; Cookie partitions
@@ -153,7 +155,7 @@ object CachedHttpEntry {
 
     same(other is CachedHttpEntry) is bool {
         if self.key() != other.key()
-            || request.method().string() != other.request().method().string()
+            || MethodName(request.method()).string() != MethodName(other.request().method()).string()
             || vary.size() != other.vary().size() {
                 return false;
             }
@@ -184,7 +186,7 @@ object CachedHttpEntry {
             fields.addition(Header(HeaderName("Date"), HttpDate(timing.received()).string()));
         };
         let original = result.response();
-        let body is BodyOpening = if request.method().string() == "HEAD" {
+        let body is BodyOpening = if request.method() == Method.head {
             EmptyBody();
         }
         else {
@@ -251,7 +253,7 @@ object MemoryHttpCache does ResponseCaching, Closing {
         confirm !cell.closed() else throw CacheClosed.closed;
         let request = entry.request();
         let result = entry.result();
-        if request.method().string() != "GET"
+        if request.method() != Method.get
             || (request.headers().membership(HeaderName("Authorization")) && !authenticated) {
                 return;
             }
@@ -263,10 +265,9 @@ object MemoryHttpCache does ResponseCaching, Closing {
         catch e is Error {
             false;
         };
-        let status = result.response().status().code();
         if !accepted
             || !entry.storable()
-            || status != 200
+            || result.response().status() != Status.ok
             || result.response().headers().membership(HeaderName("Content-Range")) {
                 return;
             }

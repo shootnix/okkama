@@ -169,6 +169,34 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   now name the okkama-docs guide (`docs/std/…`) instead. The legacy `stdlib/`
   passages go as the review finishes each area.
 
+- **`http`: statuses and methods are enums (#352).** This starts the review
+  of the HTTP client, the third exemplar.
+  - `Status` has a case for each code of the IANA registry (`Status.ok`,
+    `Status.not_found`, `Status.continue`, …), and `other(code)` for a code it
+    does not name. `StatusCode` maps both ways and classifies:
+    `StatusCode(404).status()`, `StatusCode(Status.not_found).number()`,
+    `class()`, `phrase()`. `Status.other(404)` is refused
+    (`InvalidStatus.named`), so every status has one spelling.
+  - `Method` is `get, head, post, put, patch, delete, options, trace,
+    connect, other(name)`. `MethodName` maps a method to its token and back.
+    `Method.other("GET")` is refused (`InvalidMethod.standard`).
+  - New `http/token`: `HttpToken` checks the token grammar of RFC 9110. Field
+    names, codings, media types, cookie names and WebSocket tokens used to
+    borrow `Method` for that check.
+  - Status checks inside `http` read as cases and classes:
+    `status == Status.not_modified`,
+    `StatusCode(status).class() == StatusClass.successful`.
+
+    | before | now |
+    |---|---|
+    | `Status(404)` | `Status.not_found` |
+    | `Status(code)` | `StatusCode(code).status()` |
+    | `status.code()`, `.class()`, `.phrase()` | `StatusCode(status).number()`, `.class()`, `.phrase()` |
+    | `Method("GET")` | `Method.get` |
+    | `Method(token)` | `MethodName(token).method()` |
+    | `method.string()` | `MethodName(method).string()` |
+    | `Method(text).string()` as a token check | `HttpToken(text).string()` |
+    | `ProxyConnectRejected.status(int)` | `ProxyConnectRejected.status(Status)` |
 ### Fixed
 
 - Traversals own what they walk, and keep no record of what they walked

@@ -1,5 +1,7 @@
 module http/http2_session v1.0.0;
 
+import "http/method" take Method;
+import "http/status" take StatusCode, Status, StatusClass;
 import "http/message" take Request, Response, InvalidHttpMessage;
 import "http/body" take BodyOpening, BodyReading, EmptyBody, UnknownBodyLength, BodyAlreadyOpened;
 import "http/header" take Headers, HeaderName;
@@ -934,8 +936,9 @@ object Http2StreamEntry does Closing {
         }
         let head = ParsedHttp2Response(block.fields(), stream, block.end_stream());
         let known = Http2BodyLength(head.headers(), stream).known();
-        let code = head.status().code();
-        if code < 200 {
+        let status = head.status();
+        let class = StatusCode(status).class();
+        if class == StatusClass.informational {
             confirm known.size() == 0 && information.value().size() < 16
                 else throw Http2Fault.detailed(
                     Http2FaultScope.stream,
@@ -956,14 +959,16 @@ object Http2StreamEntry does Closing {
             life.replace(life.value().remote_headers(false));
             return;
         }
-        confirm !(request.method().string() == "CONNECT" && code >= 200 && code < 300)
+        confirm !(request.method() == Method.connect && class == StatusClass.successful)
             else throw Http2Fault.detailed(
                 Http2FaultScope.stream,
                 1,
                 stream,
                 "CONNECT requires tunnel owner"
             );
-        let empty = request.method().string() == "HEAD" || code == 204 || code == 304;
+        let empty = request.method() == Method.head
+            || status == Status.no_content
+            || status == Status.not_modified;
         body.configure(known, empty);
         lengths.replace(if empty || block.end_stream() {
             [BigInt("0")];

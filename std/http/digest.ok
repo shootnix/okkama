@@ -1,5 +1,7 @@
 module http/digest v1.0.0;
 
+import "http/status" take StatusCode, Status;
+import "http/method" take MethodName;
 import "http/auth" take InvalidAuthentication, HttpAuthorizing, AuthenticationScope,
     AuthenticationConflict;
 import "http/auth_challenge" take AuthenticationChallenge, AuthenticationChallenges,
@@ -288,7 +290,7 @@ object DigestAuthorization does HttpAuthorizing {
                 HttpVersion.http_1_1
             )
         ).request().target().string();
-        method = request.method().string();
+        method = MethodName(request.method()).string();
         self.cnonce = cnonce;
         self.count = HexEncoded(
             [
@@ -587,7 +589,7 @@ object DigestExchanging does Exchanging {
     }
 
     hidden eligible(result is ClientResponse, request is Request) is bool {
-        result.response().status().code() == 401
+        result.response().status() == Status.unauthorized
             && result.history().size() == 0
             && result.request().target().url().string() == request.target().url().string()
             && scope.matches(result.request());

@@ -1,42 +1,102 @@
 module http/method v1.0.0;
 
-import "encoding/utf" take Utf8Encoded;
+import "http/token" take HttpToken, InvalidToken;
 
-// An immutable HTTP method token. RFC 9110 methods are case-sensitive:
-// lowercase "get" is a distinct extension, not an alias for GET. Validation
+// An HTTP method: the methods of RFC 9110 and PATCH (RFC 5789), and
+// `other(name)` for an extension token. Methods are case-sensitive: "get" is
+// an extension, not GET.
+enum Method = (get, head, post, put, patch, delete, options, trace, connect, other(name is string));
+
+// The token of a method on the wire, and the method of a token. Validation
 // happens at construction without I/O; the later wire framer owns line limits.
-object Method {
+// A standard token always reads back as its own case, so
+// `Method.other("GET")` is refused.
+object MethodName {
     has origin is string;
 
-    Method(origin is string) {
-        confirm origin.length() > 0 else throw InvalidMethod.origin(origin);
-        for Utf8Encoded(origin).bytes() -> octet {
-            let code = octet.int();
-            confirm (code >= 48 && code <= 57)
-                || (code >= 65 && code <= 90)
-                || (code >= 97 && code <= 122)
-                || code == 33
-                || code == 35
-                || code == 36
-                || code == 37
-                || code == 38
-                || code == 39
-                || code == 42
-                || code == 43
-                || code == 45
-                || code == 46
-                || code == 94
-                || code == 95
-                || code == 96
-                || code == 124
-                || code == 126
-                else throw InvalidMethod.origin(origin);
+    MethodName(token is string) {
+        origin = try {
+            HttpToken(token).string();
         }
-        self.origin = origin;
+        catch failure is InvalidToken {
+            throw InvalidMethod.origin(token);
+        };
+    }
+
+    MethodName(method is Method) {
+        let token = match method {
+            case Method.get {
+                "GET";
+            }
+            case Method.head {
+                "HEAD";
+            }
+            case Method.post {
+                "POST";
+            }
+            case Method.put {
+                "PUT";
+            }
+            case Method.patch {
+                "PATCH";
+            }
+            case Method.delete {
+                "DELETE";
+            }
+            case Method.options {
+                "OPTIONS";
+            }
+            case Method.trace {
+                "TRACE";
+            }
+            case Method.connect {
+                "CONNECT";
+            }
+            case Method.other(name) {
+                name;
+            }
+        };
+        confirm MethodName(token).method() == method else throw InvalidMethod.standard(token);
+        origin = token;
     }
 
     string() is string {
         origin;
+    }
+
+    method() is Method {
+        match origin {
+            case "GET" {
+                Method.get;
+            }
+            case "HEAD" {
+                Method.head;
+            }
+            case "POST" {
+                Method.post;
+            }
+            case "PUT" {
+                Method.put;
+            }
+            case "PATCH" {
+                Method.patch;
+            }
+            case "DELETE" {
+                Method.delete;
+            }
+            case "OPTIONS" {
+                Method.options;
+            }
+            case "TRACE" {
+                Method.trace;
+            }
+            case "CONNECT" {
+                Method.connect;
+            }
+            else {
+                Method.other(origin);
+            }
+        }
     }
 }
 
@@ -50,20 +110,74 @@ object MethodSemantics {
     }
 
     safe() is bool {
-        let name = origin.string();
-        name == "GET" || name == "HEAD" || name == "OPTIONS" || name == "TRACE";
+        origin == Method.get
+            || origin == Method.head
+            || origin == Method.options
+            || origin == Method.trace;
     }
 
     idempotent() is bool {
-        self.safe() || origin.string() == "PUT" || origin.string() == "DELETE";
+        self.safe() || origin == Method.put || origin == Method.delete;
     }
 }
 
-enum InvalidMethod is Error = (origin(origin is string));
+// `origin`: not a token; `standard`: `Method.other` of a standard token.
+enum InvalidMethod is Error = (origin(origin is string), standard(name is string));
 
-test "method spelling determines standard semantics" {
-    test.is(Method("X-Custom").string(), "X-Custom");
-    test.ok(MethodSemantics(Method("GET")).safe());
-    test.ok(!MethodSemantics(Method("get")).safe());
-    test.ok(MethodSemantics(Method("DELETE")).idempotent());
+test "methods and their tokens map both ways" {
+    test.is(MethodName(Method.put).string(), "PUT");
+    test.is(MethodName("PUT").method(), Method.put);
+    test.is(MethodName("get").method(), Method.other("get"));
+    test.is(MethodName(Method.other("X-Custom")).string(), "X-Custom");
+    let methods = [
+        Method.get,
+        Method.head,
+        Method.post,
+        Method.put,
+        Method.patch,
+        Method.delete,
+        Method.options,
+        Method.trace,
+        Method.connect
+    ];
+    for methods -> method {
+        test.is(MethodName(MethodName(method).string()).method(), method);
+    }
+}
+
+test "bad tokens and other cases of standard methods are refused" {
+    test.is(
+        try {
+            MethodName("BAD METHOD").string();
+        }
+        catch InvalidMethod.origin(given) {
+            given;
+        },
+        "BAD METHOD"
+    );
+    test.is(
+        try {
+            MethodName("").string();
+        }
+        catch InvalidMethod.origin(given) {
+            given;
+        },
+        ""
+    );
+    test.is(
+        try {
+            MethodName(Method.other("GET")).string();
+        }
+        catch InvalidMethod.standard(given) {
+            given;
+        },
+        "GET"
+    );
+}
+
+test "method semantics follow the case" {
+    test.ok(MethodSemantics(Method.get).safe());
+    test.ok(!MethodSemantics(Method.other("get")).safe());
+    test.ok(MethodSemantics(Method.delete).idempotent());
+    test.ok(!MethodSemantics(Method.post).idempotent());
 }

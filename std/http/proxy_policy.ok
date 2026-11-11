@@ -1,5 +1,6 @@
 module http/proxy_policy v1.0.0;
 
+import "http/status" take Status;
 import "http/auth" take BasicCredentials;
 import "http/endpoint" take HttpEndpointSelection, AllEndpoints;
 import "net/dns" take FixedResolution;
@@ -63,7 +64,7 @@ enum InvalidProxy is Error = (because(reason is string));
 
 enum ProxyAuthorizationConflict is Error = (conflict);
 
-enum ProxyConnectRejected is Error = (status(status is int));
+enum ProxyConnectRejected is Error = (status(status is Status));
 
 test "proxy policy does not acquire credentials implicitly" {
     let proxy = ProxyPolicy(ParsedUrl("http://proxy.test/").value());

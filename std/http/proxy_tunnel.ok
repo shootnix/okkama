@@ -1,5 +1,6 @@
 module http/proxy_tunnel v1.0.0;
 
+import "http/status" take StatusCode, Status, StatusClass;
 import "http/proxy_request" take HttpConnectRequest;
 import "http/proxy_policy" take ProxyConnectRejected;
 import "http/http1_message_writing" take Http1RequestWriting;
@@ -50,11 +51,12 @@ object HttpProxyTunnel {
         loop {
             let pending = Http1ResponseHeadReading(input, [], limits, 1).result();
             let received = await pending;
-            let status = received.head().status().code();
-            if status >= 200 && status < 300 {
+            let status = received.head().status();
+            let class = StatusCode(status).class();
+            if class == StatusClass.successful {
                 return true;
             }
-            if status < 200 && status != 101 {
+            if class == StatusClass.informational && status != Status.switching_protocols {
                 confirm information.slots() < 16
                     else throw InvalidHttpMessage.because("proxy informational response limit");
                 information = information.separator(0);

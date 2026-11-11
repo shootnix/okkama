@@ -1,6 +1,6 @@
 module http/content_coding v1.0.0;
 
-import "http/method" take Method, InvalidMethod;
+import "http/token" take HttpToken, InvalidToken;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 
 // A canonical coding identity, not a compressor and not an installed-codec
@@ -11,9 +11,9 @@ object ContentCoding {
     ContentCoding(origin is string) {
         confirm origin != "*" else throw InvalidContentCoding.origin(origin);
         let checked = try {
-            Method(origin).string();
+            HttpToken(origin).string();
         }
-        catch failure is InvalidMethod {
+        catch failure is InvalidToken {
             throw InvalidContentCoding.origin(origin);
         };
         let folded is @byte = Utf8Encoded(checked).bytes().map() -> octet {

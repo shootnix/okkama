@@ -1,5 +1,6 @@
 module web/request v1.0.0;
 
+import "http/method" take MethodName;
 import "http/message" take Request;
 import "http/request_context" take HttpRequestContext;
 import "http/header" take HeaderName, MissingHeader;
@@ -43,7 +44,7 @@ object WebRequest {
     }
 
     method() is string {
-        origin.method().string();
+        MethodName(origin.method()).string();
     }
 
     // Route parameter declared by the matched pattern. A missing name means the

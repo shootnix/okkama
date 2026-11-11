@@ -1,5 +1,6 @@
 module http/http1_session v1.0.0;
 
+import "http/status" take StatusCode, Status, StatusClass;
 import "http/message" take Request, Response, InvalidHttpMessage;
 import "http/http1_head" take Http1Limits, Http1LimitExceeded, Http1RequestHead, Http1ResponseHead;
 import "http/http1_reading" take Http1ResponseHeadReading, Http1HeadRead;
@@ -141,16 +142,16 @@ object Http1Session does Closing {
             let parsed = await pending;
             let head = parsed.head();
             let plan = Http1ResponseFraming(head, request.method(), limits).plan();
-            let code = head.status().code();
+            let status = head.status();
             confirm plan.kind() != Http1BodyKind.tunnel && plan.kind() != Http1BodyKind.upgrade
                 else throw InvalidHttpMessage.because(
                     "upgraded response requires dedicated protocol ownership"
                 );
-            if code < 200 {
+            if StatusCode(status).class() == StatusClass.informational {
                 confirm accumulated.entries().size() < 16
                     else throw Http1LimitExceeded.kind("informational_responses");
                 accumulated = accumulated.following(parsed);
-                if code == 100 && !continuation.body_sent() {
+                if status == Status.continue && !continuation.body_sent() {
                     let body = Http1BodyWriting(
                         writer,
                         request.body(),

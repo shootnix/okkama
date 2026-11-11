@@ -238,7 +238,7 @@ test "authentication scope uses canonical origin and path boundaries" {
     test.ok(
         scope.matches(
             Request(
-                Method("GET"),
+                Method.get,
                 AbsoluteTarget(ParsedUrl("https://example.test:443/private/a").value()),
                 Headers([])
             )
@@ -247,7 +247,7 @@ test "authentication scope uses canonical origin and path boundaries" {
     test.ok(
         !scope.matches(
             Request(
-                Method("GET"),
+                Method.get,
                 AbsoluteTarget(ParsedUrl("https://example.test/private/../public").value()),
                 Headers([])
             )

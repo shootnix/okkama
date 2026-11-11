@@ -208,11 +208,11 @@ object RequestTargetMethod {
     }
 
     valid() is bool {
-        if method.string() == "CONNECT" {
+        if method == Method.connect {
             return kind == RequestTargetKind.authority;
         }
         kind != RequestTargetKind.authority
-            && (kind != RequestTargetKind.asterisk || method.string() == "OPTIONS");
+            && (kind != RequestTargetKind.asterisk || method == Method.options);
     }
 }
 
@@ -241,7 +241,7 @@ object ParsedRequestTarget {
                 AsteriskTarget();
             }
             else {
-                if method.string() == "CONNECT" {
+                if method == Method.connect {
                     AuthorityTarget(ParsedUrlAuthority(origin).value());
                 }
                 else {
@@ -314,8 +314,8 @@ enum WrongRequestTargetKind is Error = (detailed(
 enum InvalidRequestTarget is Error = (because(reason is string));
 
 test "origin-form keeps double slash path and explicit query" {
-    let target = ParsedRequestTarget("//a/b?", Method("GET")).value();
+    let target = ParsedRequestTarget("//a/b?", Method.get).value();
     test.ok(target.kind() == RequestTargetKind.origin && target.path() == "//a/b");
     test.ok(target.query().present() && target.string() == "//a/b?");
-    test.ok(!RequestTargetMethod(Method("GET"), RequestTargetKind.asterisk).valid());
+    test.ok(!RequestTargetMethod(Method.get, RequestTargetKind.asterisk).valid());
 }

@@ -1,10 +1,11 @@
 module http/http1_writing v1.0.0;
 
+import "http/status" take StatusCode;
 import "http/http1_head" take Http1RequestHead, Http1ResponseHead, Http1Limits, Http1LimitExceeded,
     ParsedHttp1RequestHead, ParsedHttp1ResponseHead;
 import "http/http1_framing" take Http1RequestFraming, Http1ResponseFraming;
 import "http/header" take Headers;
-import "http/method" take Method;
+import "http/method" take Method, MethodName;
 import "http/version" take Http1VersionText;
 import "io/stream" take AsyncWriting, ByteSource;
 import "io/buffer" take ByteBuffer;
@@ -56,7 +57,7 @@ object Http1HeadOutput {
 
     request(origin is AsyncWriting, head is Http1RequestHead, limits is Http1Limits) is Future<AsyncWriting> {
         Http1RequestFraming(head, limits).plan();
-        let start = head.method().string() + " " + head.target().string() + " " + Http1VersionText(
+        let start = MethodName(head.method()).string() + " " + head.target().string() + " " + Http1VersionText(
             head.version()
         ).string();
         let wire = Http1HeadWire(start, head.headers(), limits).bytes();
@@ -71,7 +72,9 @@ object Http1HeadOutput {
         limits is Http1Limits
     ) is Future<AsyncWriting> {
         Http1ResponseFraming(head, method, limits).plan();
-        let start = Http1VersionText(head.version()).string() + " " + head.status().code().string() + " " + head.status().phrase();
+        let start = Http1VersionText(head.version()).string() + " " + StatusCode(head.status()).number().string() + " " + StatusCode(
+            head.status()
+        ).phrase();
         let wire = Http1HeadWire(start, head.headers(), limits).bytes();
         ParsedHttp1ResponseHead(Latin1Decoded(wire).string(), limits).value();
         self.writing(origin, wire);

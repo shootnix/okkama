@@ -1,11 +1,12 @@
 module http/redirect v1.0.0;
 
+import "http/status" take StatusCode, Status;
 import "http/client" take Exchanging, HttpClientKey;
 import "http/exchange" take ClientResponse, ExchangeHop;
 import "http/message" take Request, Response;
 import "http/header" take HeaderName, HeadersWithout;
 import "http/target" take AbsoluteTarget, RequestTargetKind;
-import "http/method" take Method;
+import "http/method" take Method, MethodName;
 import "http/body" take BodyOpening, EmptyBody;
 import "url/value" take Url, UrlParts, UrlFragment, UrlResolution, ParsedUrlReference,
     UrlDotSegments, InvalidUrl;
@@ -56,9 +57,13 @@ object Redirecting does Exchanging {
             let cleanup = RedirectResponseCleanup(result.response(), retained);
             defer cleanup.close();
             let accumulated = RedirectHistory(state.history(), result).items();
-            let code = result.response().status().code();
+            let status = result.response().status();
             let candidates = result.response().headers().values(HeaderName("Location"));
-            let redirects = code == 301 || code == 302 || code == 303 || code == 307 || code == 308;
+            let redirects = status == Status.moved_permanently
+                || status == Status.found
+                || status == Status.see_other
+                || status == Status.temporary_redirect
+                || status == Status.permanent_redirect;
             if !redirects || candidates.size() == 0 {
                 let final = ClientResponse(
                     result.request(),
@@ -79,7 +84,7 @@ object Redirecting does Exchanging {
                 candidates.item(0),
                 policy
             ).url();
-            let following = RedirectRequest(effective, destination, code).request();
+            let following = RedirectRequest(effective, destination, status).request();
             let key = RedirectKey(following).string();
             confirm !state.known(key) else throw RedirectLoop.detected;
             confirm accumulated.size() < 20 else throw TooManyRedirects.exceeded;
@@ -199,15 +204,16 @@ object RedirectDestination {
 object RedirectRequest {
     has request is Request;
 
-    RedirectRequest(origin is Request, destination is Url, status is int) {
-        let name = origin.method().string();
-        let rewritten = (status == 303 && name != "HEAD")
-            || ((status == 301 || status == 302) && name == "POST");
-        let method = if rewritten {
-            Method("GET");
+    RedirectRequest(origin is Request, destination is Url, status is Status) {
+        let method = origin.method();
+        let rewritten = (status == Status.see_other && method != Method.head)
+            || ((status == Status.moved_permanently || status == Status.found)
+            && method == Method.post);
+        let changed = if rewritten {
+            Method.get;
         }
         else {
-            origin.method();
+            method;
         };
         let body is BodyOpening = if rewritten {
             EmptyBody();
@@ -245,7 +251,7 @@ object RedirectRequest {
         else {
             payload_fields;
         };
-        request = Request(method, AbsoluteTarget(destination), fields, body, origin.version());
+        request = Request(changed, AbsoluteTarget(destination), fields, body, origin.version());
     }
 
     request() is Request {
@@ -265,7 +271,7 @@ object RedirectKey {
         else {
             UrlDotSegments(parts.path()).value();
         };
-        key = request.method().string() + " " + HttpClientKey(url).string() + path + if parts.query().present() {
+        key = MethodName(request.method()).string() + " " + HttpClientKey(url).string() + path + if parts.query().present() {
             "?" + parts.query().string();
         }
         else {

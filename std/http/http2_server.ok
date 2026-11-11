@@ -1,11 +1,12 @@
 module http/http2_server v1.0.0;
 
+import "http/method" take Method;
 import "http/handler" take Handling, HandlingResult, HandlingKind, ResponseHandling;
 import "http/request_context" take HttpRequestContext;
 import "http/server_policy" take ServerPolicy;
 import "http/exchange" take ExchangeDetails;
 import "http/message" take Request, Response, InvalidHttpMessage;
-import "http/status" take Status;
+import "http/status" take Status, StatusCode, StatusClass;
 import "http/version" take HttpVersion;
 import "http/header" take Headers, HeaderName, HttpAsciiLowercase;
 import "http/body" take BodyOpening, BodyReading, EmptyBody, UnknownBodyLength;
@@ -756,7 +757,12 @@ object Http2ServerStream {
                 || HttpAsciiLowercase(expected.item(0)).string() != "100-continue");
             let result is HandlingResult = if unsupported {
                 ResponseHandling(
-                    Response(Status(417), Headers([]), EmptyBody(), HttpVersion.http_2)
+                    Response(
+                        Status.expectation_failed,
+                        Headers([]),
+                        EmptyBody(),
+                        HttpVersion.http_2
+                    )
                 );
             }
             else {
@@ -780,12 +786,22 @@ object Http2ServerStream {
                 }
                 catch e is TimedOut {
                     ResponseHandling(
-                        Response(Status(503), Headers([]), EmptyBody(), HttpVersion.http_2)
+                        Response(
+                            Status.service_unavailable,
+                            Headers([]),
+                            EmptyBody(),
+                            HttpVersion.http_2
+                        )
                     );
                 }
                 catch e is Error {
                     ResponseHandling(
-                        Response(Status(500), Headers([]), EmptyBody(), HttpVersion.http_2)
+                        Response(
+                            Status.internal_server_error,
+                            Headers([]),
+                            EmptyBody(),
+                            HttpVersion.http_2
+                        )
                     );
                 }
             };
@@ -808,7 +824,12 @@ object Http2ServerStream {
                 }
                 await self.respond(
                     request,
-                    Response(Status(500), Headers([]), EmptyBody(), HttpVersion.http_2)
+                    Response(
+                        Status.internal_server_error,
+                        Headers([]),
+                        EmptyBody(),
+                        HttpVersion.http_2
+                    )
                 );
             }
             true;
@@ -844,15 +865,19 @@ object Http2ServerStream {
                 self.stream(),
                 "request body abandoned before response"
             );
-        let code = response.status().code();
-        confirm code >= 200 && !(request.method().string() == "CONNECT" && code < 300)
+        let status = response.status();
+        let class = StatusCode(status).class();
+        confirm class != StatusClass.informational
+            && !(request.method() == Method.connect && class == StatusClass.successful)
             else throw InvalidHttpMessage.because(
                 "unsupported server final status or CONNECT tunnel"
             );
         let fields = Http2ResponseFields(response, self.stream()).fields();
         let declared = Http2BodyLength(response.headers(), self.stream()).known();
-        let suppressed = request.method().string() == "HEAD" || code == 204 || code == 304;
-        confirm code != 204 || declared.size() == 0
+        let suppressed = request.method() == Method.head
+            || status == Status.no_content
+            || status == Status.not_modified;
+        confirm status != Status.no_content || declared.size() == 0
             else throw InvalidHttpMessage.because("204 forbids Content-Length");
         let known is @BigInt = if suppressed {
             [];

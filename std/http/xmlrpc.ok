@@ -24,7 +24,7 @@ import "http/message" take Request, Response;
 import "http/body" take BodyReading, ByteBody;
 import "http/header" take Headers, Header, HeaderName, HttpAsciiLowercase;
 import "http/method" take Method;
-import "http/status" take Status;
+import "http/status" take Status, StatusCode, StatusClass;
 import "mime/media_type" take MediaType;
 import "http/target" take AbsoluteTarget, RequestTargetKind;
 import "url/value" take Url;
@@ -1475,7 +1475,7 @@ object XmlRpcClient does XmlRpcCalling {
     async result(call is XmlRpcCall) is XmlRpcResult {
         let bytes = XmlRpcCallWire(call, limits).bytes();
         let request = Request(
-            Method("POST"),
+            Method.post,
             AbsoluteTarget(endpoint),
             Headers(
                 [
@@ -1492,8 +1492,8 @@ object XmlRpcClient does XmlRpcCalling {
         let response = exchange.response();
         let input = response.body().reading();
         defer input.close();
-        let code = response.status().code();
-        confirm code >= 200 && code < 300 else throw XmlRpcHttpFailed.status(code);
+        confirm StatusCode(response.status()).class() == StatusClass.successful
+            else throw XmlRpcHttpFailed.status(StatusCode(response.status()).number());
         XmlRpcMedia(response.headers());
         let body = XmlRpcBodyBytes(input, limits);
         let pending = body.bytes();
@@ -1586,11 +1586,11 @@ object XmlRpcHandling does Handling {
             }
         };
         if requested != path {
-            return ResponseHandling(Response(Status(404), Headers([])));
+            return ResponseHandling(Response(Status.not_found, Headers([])));
         }
-        if request.method().string() != "POST" {
+        if request.method() != Method.post {
             return ResponseHandling(
-                Response(Status(405), Headers([Header(HeaderName("Allow"), "POST")]))
+                Response(Status.method_not_allowed, Headers([Header(HeaderName("Allow"), "POST")]))
             );
         }
         let media = try {
@@ -1601,7 +1601,7 @@ object XmlRpcHandling does Handling {
             false;
         };
         if !media {
-            return ResponseHandling(Response(Status(415), Headers([])));
+            return ResponseHandling(Response(Status.unsupported_media_type, Headers([])));
         }
         let source = request.body().reading();
         defer source.close();
@@ -1613,17 +1613,17 @@ object XmlRpcHandling does Handling {
             [];
         }
         catch e is XmlRpcLimitExceeded {
-            return ResponseHandling(Response(Status(413), Headers([])));
+            return ResponseHandling(Response(Status.content_too_large, Headers([])));
         };
         if calls.size() == 0 {
-            return ResponseHandling(Response(Status(400), Headers([])));
+            return ResponseHandling(Response(Status.bad_request, Headers([])));
         }
         let waiting = calling.result(calls[0]);
         let result = await waiting;
         let bytes = XmlRpcResultWire(result, limits).bytes();
         ResponseHandling(
             Response(
-                Status(200),
+                Status.ok,
                 Headers(
                     [
                         Header(HeaderName("Content-Type"), "text/xml; charset=utf-8"),

@@ -1,6 +1,6 @@
 module http/media_type v1.0.0;
 
-import "http/method" take Method, InvalidMethod;
+import "http/token" take HttpToken, InvalidToken;
 import "http/header" take HttpAsciiLowercase;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded, UnrepresentableLatin1Character;
 import "collections/sequence" take Sequencing;
@@ -18,9 +18,9 @@ object HttpMediaParameter does Comparing<HttpMediaParameter> {
 
     HttpMediaParameter(name is string, value is string) {
         let checked = try {
-            Method(name).string();
+            HttpToken(name).string();
         }
-        catch failure is InvalidMethod {
+        catch failure is InvalidToken {
             throw InvalidHttpMediaType.located(0, "HTTP parameter name required");
         };
         let key = HttpAsciiLowercase(checked).string();
@@ -37,9 +37,9 @@ object HttpMediaParameter does Comparing<HttpMediaParameter> {
         }
         let text = if key == "charset" {
             let token = try {
-                Method(value).string();
+                HttpToken(value).string();
             }
-            catch failure is InvalidMethod {
+            catch failure is InvalidToken {
                 throw InvalidHttpMediaType.located(0, "charset token required");
             };
             HttpAsciiLowercase(token).string();
@@ -65,10 +65,10 @@ object HttpMediaParameter does Comparing<HttpMediaParameter> {
 
     string() is string {
         let token = try {
-            Method(value);
+            HttpToken(value);
             true;
         }
-        catch failure is InvalidMethod {
+        catch failure is InvalidToken {
             false;
         };
         let text = if token {
@@ -129,9 +129,9 @@ object HttpMediaParameters {
 
     hidden key(name is string) is string {
         let checked = try {
-            Method(name).string();
+            HttpToken(name).string();
         }
-        catch failure is InvalidMethod {
+        catch failure is InvalidToken {
             throw InvalidHttpMediaType.located(0, "HTTP parameter lookup name required");
         };
         HttpAsciiLowercase(checked).string();
@@ -193,15 +193,15 @@ object HttpMediaType {
 
     HttpMediaType(type is string, subtype is string, parameters is HttpMediaParameters) {
         let type_name = try {
-            Method(type).string();
+            HttpToken(type).string();
         }
-        catch failure is InvalidMethod {
+        catch failure is InvalidToken {
             throw InvalidHttpMediaType.located(0, "type token required");
         };
         let subtype_name = try {
-            Method(subtype).string();
+            HttpToken(subtype).string();
         }
-        catch failure is InvalidMethod {
+        catch failure is InvalidToken {
             throw InvalidHttpMediaType.located(0, "subtype token required");
         };
         confirm type_name != "*" && subtype_name != "*"

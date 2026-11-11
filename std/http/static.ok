@@ -1,5 +1,6 @@
 module http/static v1.0.0;
 
+import "http/method" take MethodName, Method;
 import "fs/root" take FileRoot, RootedEntry;
 import "fs/stat" take FileStat, FileKind;
 import "fs/error" take FileError;
@@ -8,7 +9,7 @@ import "mime/types" take MediaIdentifying, UnknownMediaType;
 import "http/handler" take Handling, HandlingResult, ResponseHandling;
 import "http/request_context" take HttpRequestContext;
 import "http/message" take Request, Response;
-import "http/status" take Status;
+import "http/status" take Status, StatusCode;
 import "http/target" take RequestTargetKind;
 import "http/header" take Headers, Header, HeaderName, ReplacedHeader;
 import "http/body" take BodyOpening, BodyReading, ByteBody, BodyClosed, BodyAlreadyOpened,
@@ -252,12 +253,12 @@ object StaticFiles does Handling {
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
         context.cancelling().check();
-        let method = request.method().string();
+        let method = MethodName(request.method()).string();
         let now = clock.instant();
         if method != "GET" && method != "HEAD" {
             return ResponseHandling(
                 Response(
-                    Status(405),
+                    Status.method_not_allowed,
                     Headers(
                         [
                             Header(HeaderName("Allow"), "GET, HEAD"),
@@ -271,24 +272,27 @@ object StaticFiles does Handling {
             self.response(request, now);
         }
         catch e is InvalidStaticPath {
-            Response(Status(400), Headers([]));
+            Response(Status.bad_request, Headers([]));
         }
         catch e is InvalidEntityTag {
-            Response(Status(400), Headers([]));
+            Response(Status.bad_request, Headers([]));
         }
         catch e is ConditionalLimitExceeded {
-            Response(Status(400), Headers([]));
+            Response(Status.bad_request, Headers([]));
         }
         catch e is InvalidNegotiation {
-            Response(Status(400), Headers([]));
+            Response(Status.bad_request, Headers([]));
         }
         catch e is NoAcceptableValue {
-            Response(Status(406), Headers([Header(HeaderName("Vary"), "Accept-Encoding")]));
+            Response(
+                Status.not_acceptable,
+                Headers([Header(HeaderName("Vary"), "Accept-Encoding")])
+            );
         }
         catch FileError.not_found(_), FileError.invalid_operation(_), FileError.permission_denied(_), FileError.invalid_text(
             _
         ) {
-            Response(Status(404), Headers([]));
+            Response(Status.not_found, Headers([]));
         };
         let headers = ReplacedHeader(
             response.headers(),
@@ -305,13 +309,16 @@ object StaticFiles does Handling {
         defer owned.close_unclaimed();
         let metadata = opened.stat();
         if metadata.kind() == FileKind.directory && !path.slash() {
-            return Response(Status(308), Headers([Header(HeaderName("Location"), path.redirect())]));
+            return Response(
+                Status.permanent_redirect,
+                Headers([Header(HeaderName("Location"), path.redirect())])
+            );
         }
         let chosen = self.index(coordinates, metadata.kind() == FileKind.directory);
         if metadata.kind() == FileKind.directory {
             if chosen.size() == 0 {
                 if !policy.listing() {
-                    return Response(Status(403), Headers([]));
+                    return Response(Status.forbidden, Headers([]));
                 }
                 return self.listing(opened, request);
             }
@@ -320,7 +327,7 @@ object StaticFiles does Handling {
         else {
             confirm metadata.kind() == FileKind.file else throw InvalidStaticPath.invalid;
             if path.slash() {
-                return Response(Status(404), Headers([]));
+                return Response(Status.not_found, Headers([]));
             }
             owned.name(if coordinates.size() > 0 {
                 coordinates[coordinates.size() - 1];
@@ -410,20 +417,23 @@ object StaticFiles does Handling {
         }
         let decision = StaticPreconditions(request.headers(), tag, date, now).status();
         if decision == 304 {
-            return Response(Status(304), headers.value());
+            return Response(Status.not_modified, headers.value());
         }
         if decision == 412 {
-            return Response(Status(412), Headers([Header(HeaderName("ETag"), tag.string())]));
+            return Response(
+                Status.precondition_failed,
+                Headers([Header(HeaderName("ETag"), tag.string())])
+            );
         }
-        if request.method().string() == "HEAD" {
-            return Response(Status(200), headers.value());
+        if request.method() == Method.head {
+            return Response(Status.ok, headers.value());
         }
         let range = StaticRanges(request.headers(), size, policy.ranges());
         let ranges = range.values();
         let apply = range.present() && StaticIfRange(request.headers(), tag, date).allowed();
         if apply && ranges.size() == 0 {
             return Response(
-                Status(416),
+                Status.range_not_satisfiable,
                 Headers(
                     [
                         Header(HeaderName("Content-Range"), "bytes */" + size.string()),
@@ -497,7 +507,7 @@ object StaticFiles does Handling {
             ).result()
         );
         owned.claim();
-        Response(Status(status), headers.value(), body);
+        Response(StatusCode(status).status(), headers.value(), body);
     }
 
     index(coordinates is @string, directory is bool) is @StaticIndexFile {
@@ -621,11 +631,11 @@ object StaticFiles does Handling {
                 Header(HeaderName("Cache-Control"), "no-store")
             ]
         );
-        if request.method().string() == "HEAD" {
-            Response(Status(200), headers);
+        if request.method() == Method.head {
+            Response(Status.ok, headers);
         }
         else {
-            Response(Status(200), headers, ByteBody(bytes));
+            Response(Status.ok, headers, ByteBody(bytes));
         }
     }
 }

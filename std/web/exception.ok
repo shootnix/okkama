@@ -2,7 +2,7 @@ module web/exception v1.0.0;
 
 import "http/handler" take HandlingResult, HandlingKind, WebSocketHandling, WrongHandlingKind;
 import "http/message" take Response;
-import "http/status" take Status;
+import "http/status" take Status, StatusCode;
 import "http/websocket_server" take WebSocketUpgrade;
 import "json" take Json, JsonField;
 import "encoding/utf" take Utf8Encoded;
@@ -47,7 +47,7 @@ object Problem does HandlingResult {
     }
 
     title() is string {
-        let phrase = Status(code).phrase();
+        let phrase = StatusCode(code).phrase();
         if phrase == "" {
             "HTTP " + code.string();
         }

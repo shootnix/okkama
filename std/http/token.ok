@@ -1,0 +1,57 @@
+module http/token v1.0.0;
+
+import "encoding/utf" take Utf8Encoded;
+
+// A token of RFC 9110 §5.6.2: one or more `tchar`. Methods, field names,
+// codings, media types and cookie names are tokens. Checked at construction.
+object HttpToken {
+    has origin is string;
+
+    HttpToken(origin is string) {
+        confirm origin.length() > 0 else throw InvalidToken.origin(origin);
+        for Utf8Encoded(origin).bytes() -> octet {
+            let code = octet.int();
+            confirm (code >= 48 && code <= 57)
+                || (code >= 65 && code <= 90)
+                || (code >= 97 && code <= 122)
+                || code == 33
+                || code == 35
+                || code == 36
+                || code == 37
+                || code == 38
+                || code == 39
+                || code == 42
+                || code == 43
+                || code == 45
+                || code == 46
+                || code == 94
+                || code == 95
+                || code == 96
+                || code == 124
+                || code == 126
+                else throw InvalidToken.origin(origin);
+        }
+        self.origin = origin;
+    }
+
+    string() is string {
+        origin;
+    }
+}
+
+enum InvalidToken is Error = (origin(origin is string));
+
+test "tokens are tchar runs" {
+    test.is(HttpToken("X-Custom_1.v2").string(), "X-Custom_1.v2");
+    for ["", "a b", "a:b", "é", "a/b"] -> bad {
+        test.is(
+            try {
+                HttpToken(bad).string();
+            }
+            catch InvalidToken.origin(given) {
+                given;
+            },
+            bad
+        );
+    }
+}

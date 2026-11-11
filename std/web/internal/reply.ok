@@ -1,7 +1,7 @@
 module web/internal/reply v1.0.0;
 
 import "http/message" take Response;
-import "http/status" take Status;
+import "http/status" take Status, StatusCode;
 import "http/header" take Headers, Header, HeaderName, HttpAsciiLowercase;
 import "http/body" take ByteBody, EmptyBody;
 
@@ -62,7 +62,11 @@ object ReplyResponse {
             Header(HeaderName("Content-Type"), media),
             Header(HeaderName("Content-Length"), content.size().string())
         ];
-        Response(Status(code), Headers(ReplyFields(fixed, extra).entries()), ByteBody(content));
+        Response(
+            StatusCode(code).status(),
+            Headers(ReplyFields(fixed, extra).entries()),
+            ByteBody(content)
+        );
     }
 }
 
@@ -85,7 +89,11 @@ object EmptyReplyResponse {
         else {
             [Header(HeaderName("Content-Length"), "0")];
         };
-        Response(Status(code), Headers(ReplyFields(fixed, extra).entries()), EmptyBody());
+        Response(
+            StatusCode(code).status(),
+            Headers(ReplyFields(fixed, extra).entries()),
+            EmptyBody()
+        );
     }
 }
 

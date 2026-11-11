@@ -1,6 +1,6 @@
 module http/header v1.0.0;
 
-import "http/method" take Method, InvalidMethod;
+import "http/token" take HttpToken, InvalidToken;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded, UnrepresentableLatin1Character;
 import "collections/sequence" take Sequencing;
 import "compare" take Comparing, Order;
@@ -16,9 +16,9 @@ object HeaderName does Comparing<HeaderName> {
 
     HeaderName(origin is string) {
         let checked = try {
-            Method(origin).string();
+            HttpToken(origin).string();
         }
-        catch failure is InvalidMethod {
+        catch failure is InvalidToken {
             throw InvalidHeader.detailed(origin, "field name must be an HTTP token");
         };
         spelling = checked;

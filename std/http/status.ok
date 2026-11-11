@@ -3,16 +3,416 @@ module http/status v1.0.0;
 // Numeric protocol classification, independent of display phrases and wire version.
 enum StatusClass = (informational, successful, redirection, client_error, server_error);
 
-object Status {
+// An HTTP status: a case for each code of the IANA registry (snapshot
+// 2025-09-15) and `other(code)` for a code the registry does not name. Its
+// number, class and phrase come from `StatusCode`.
+enum Status = (continue, switching_protocols, processing, early_hints, upload_resumption_supported, ok, created, accepted, non_authoritative_information, no_content, reset_content, partial_content, multi_status, already_reported, im_used, multiple_choices, moved_permanently, found, see_other, not_modified, use_proxy, temporary_redirect, permanent_redirect, bad_request, unauthorized, payment_required, forbidden, not_found, method_not_allowed, not_acceptable, proxy_authentication_required, request_timeout, conflict, gone, length_required, precondition_failed, content_too_large, uri_too_long, unsupported_media_type, range_not_satisfiable, expectation_failed, misdirected_request, unprocessable_content, locked, failed_dependency, too_early, upgrade_required, precondition_required, too_many_requests, request_header_fields_too_large, unavailable_for_legal_reasons, internal_server_error, not_implemented, bad_gateway, service_unavailable, gateway_timeout, http_version_not_supported, variant_also_negotiates, insufficient_storage, loop_detected, not_extended, network_authentication_required, other(
+    code is int
+));
+
+// The number of a status, and the status of a number (100-599). A registered
+// number always reads back as its own case, so `Status.other(404)` is refused.
+object StatusCode {
     has origin is int;
 
-    Status(code is int) {
+    StatusCode(code is int) {
         confirm code >= 100 && code <= 599 else throw InvalidStatus.code(code);
         origin = code;
     }
 
-    code() is int {
+    StatusCode(status is Status) {
+        let number = match status {
+            case Status.continue {
+                100;
+            }
+            case Status.switching_protocols {
+                101;
+            }
+            case Status.processing {
+                102;
+            }
+            case Status.early_hints {
+                103;
+            }
+            case Status.upload_resumption_supported {
+                104;
+            }
+            case Status.ok {
+                200;
+            }
+            case Status.created {
+                201;
+            }
+            case Status.accepted {
+                202;
+            }
+            case Status.non_authoritative_information {
+                203;
+            }
+            case Status.no_content {
+                204;
+            }
+            case Status.reset_content {
+                205;
+            }
+            case Status.partial_content {
+                206;
+            }
+            case Status.multi_status {
+                207;
+            }
+            case Status.already_reported {
+                208;
+            }
+            case Status.im_used {
+                226;
+            }
+            case Status.multiple_choices {
+                300;
+            }
+            case Status.moved_permanently {
+                301;
+            }
+            case Status.found {
+                302;
+            }
+            case Status.see_other {
+                303;
+            }
+            case Status.not_modified {
+                304;
+            }
+            case Status.use_proxy {
+                305;
+            }
+            case Status.temporary_redirect {
+                307;
+            }
+            case Status.permanent_redirect {
+                308;
+            }
+            case Status.bad_request {
+                400;
+            }
+            case Status.unauthorized {
+                401;
+            }
+            case Status.payment_required {
+                402;
+            }
+            case Status.forbidden {
+                403;
+            }
+            case Status.not_found {
+                404;
+            }
+            case Status.method_not_allowed {
+                405;
+            }
+            case Status.not_acceptable {
+                406;
+            }
+            case Status.proxy_authentication_required {
+                407;
+            }
+            case Status.request_timeout {
+                408;
+            }
+            case Status.conflict {
+                409;
+            }
+            case Status.gone {
+                410;
+            }
+            case Status.length_required {
+                411;
+            }
+            case Status.precondition_failed {
+                412;
+            }
+            case Status.content_too_large {
+                413;
+            }
+            case Status.uri_too_long {
+                414;
+            }
+            case Status.unsupported_media_type {
+                415;
+            }
+            case Status.range_not_satisfiable {
+                416;
+            }
+            case Status.expectation_failed {
+                417;
+            }
+            case Status.misdirected_request {
+                421;
+            }
+            case Status.unprocessable_content {
+                422;
+            }
+            case Status.locked {
+                423;
+            }
+            case Status.failed_dependency {
+                424;
+            }
+            case Status.too_early {
+                425;
+            }
+            case Status.upgrade_required {
+                426;
+            }
+            case Status.precondition_required {
+                428;
+            }
+            case Status.too_many_requests {
+                429;
+            }
+            case Status.request_header_fields_too_large {
+                431;
+            }
+            case Status.unavailable_for_legal_reasons {
+                451;
+            }
+            case Status.internal_server_error {
+                500;
+            }
+            case Status.not_implemented {
+                501;
+            }
+            case Status.bad_gateway {
+                502;
+            }
+            case Status.service_unavailable {
+                503;
+            }
+            case Status.gateway_timeout {
+                504;
+            }
+            case Status.http_version_not_supported {
+                505;
+            }
+            case Status.variant_also_negotiates {
+                506;
+            }
+            case Status.insufficient_storage {
+                507;
+            }
+            case Status.loop_detected {
+                508;
+            }
+            case Status.not_extended {
+                510;
+            }
+            case Status.network_authentication_required {
+                511;
+            }
+            case Status.other(code) {
+                code;
+            }
+        };
+        confirm number >= 100 && number <= 599 else throw InvalidStatus.code(number);
+        confirm StatusCode(number).status() == status else throw InvalidStatus.named(number);
+        origin = number;
+    }
+
+    number() is int {
         origin;
+    }
+
+    status() is Status {
+        match origin {
+            case 100 {
+                Status.continue;
+            }
+            case 101 {
+                Status.switching_protocols;
+            }
+            case 102 {
+                Status.processing;
+            }
+            case 103 {
+                Status.early_hints;
+            }
+            case 104 {
+                Status.upload_resumption_supported;
+            }
+            case 200 {
+                Status.ok;
+            }
+            case 201 {
+                Status.created;
+            }
+            case 202 {
+                Status.accepted;
+            }
+            case 203 {
+                Status.non_authoritative_information;
+            }
+            case 204 {
+                Status.no_content;
+            }
+            case 205 {
+                Status.reset_content;
+            }
+            case 206 {
+                Status.partial_content;
+            }
+            case 207 {
+                Status.multi_status;
+            }
+            case 208 {
+                Status.already_reported;
+            }
+            case 226 {
+                Status.im_used;
+            }
+            case 300 {
+                Status.multiple_choices;
+            }
+            case 301 {
+                Status.moved_permanently;
+            }
+            case 302 {
+                Status.found;
+            }
+            case 303 {
+                Status.see_other;
+            }
+            case 304 {
+                Status.not_modified;
+            }
+            case 305 {
+                Status.use_proxy;
+            }
+            case 307 {
+                Status.temporary_redirect;
+            }
+            case 308 {
+                Status.permanent_redirect;
+            }
+            case 400 {
+                Status.bad_request;
+            }
+            case 401 {
+                Status.unauthorized;
+            }
+            case 402 {
+                Status.payment_required;
+            }
+            case 403 {
+                Status.forbidden;
+            }
+            case 404 {
+                Status.not_found;
+            }
+            case 405 {
+                Status.method_not_allowed;
+            }
+            case 406 {
+                Status.not_acceptable;
+            }
+            case 407 {
+                Status.proxy_authentication_required;
+            }
+            case 408 {
+                Status.request_timeout;
+            }
+            case 409 {
+                Status.conflict;
+            }
+            case 410 {
+                Status.gone;
+            }
+            case 411 {
+                Status.length_required;
+            }
+            case 412 {
+                Status.precondition_failed;
+            }
+            case 413 {
+                Status.content_too_large;
+            }
+            case 414 {
+                Status.uri_too_long;
+            }
+            case 415 {
+                Status.unsupported_media_type;
+            }
+            case 416 {
+                Status.range_not_satisfiable;
+            }
+            case 417 {
+                Status.expectation_failed;
+            }
+            case 421 {
+                Status.misdirected_request;
+            }
+            case 422 {
+                Status.unprocessable_content;
+            }
+            case 423 {
+                Status.locked;
+            }
+            case 424 {
+                Status.failed_dependency;
+            }
+            case 425 {
+                Status.too_early;
+            }
+            case 426 {
+                Status.upgrade_required;
+            }
+            case 428 {
+                Status.precondition_required;
+            }
+            case 429 {
+                Status.too_many_requests;
+            }
+            case 431 {
+                Status.request_header_fields_too_large;
+            }
+            case 451 {
+                Status.unavailable_for_legal_reasons;
+            }
+            case 500 {
+                Status.internal_server_error;
+            }
+            case 501 {
+                Status.not_implemented;
+            }
+            case 502 {
+                Status.bad_gateway;
+            }
+            case 503 {
+                Status.service_unavailable;
+            }
+            case 504 {
+                Status.gateway_timeout;
+            }
+            case 505 {
+                Status.http_version_not_supported;
+            }
+            case 506 {
+                Status.variant_also_negotiates;
+            }
+            case 507 {
+                Status.insufficient_storage;
+            }
+            case 508 {
+                Status.loop_detected;
+            }
+            case 510 {
+                Status.not_extended;
+            }
+            case 511 {
+                Status.network_authentication_required;
+            }
+            else {
+                Status.other(origin);
+            }
+        }
     }
 
     class() is StatusClass {
@@ -232,10 +632,56 @@ object Status {
     }
 }
 
-enum InvalidStatus is Error = (code(code is int));
+// `code`: outside 100-599; `named`: `Status.other` of a registered number.
+enum InvalidStatus is Error = (code(code is int), named(code is int));
+
+test "a status and its number map both ways" {
+    test.is(StatusCode(404).status(), Status.not_found);
+    test.is(StatusCode(Status.not_found).number(), 404);
+    test.is(StatusCode(Status.continue).number(), 100);
+    test.is(StatusCode(299).status(), Status.other(299));
+    test.is(StatusCode(Status.other(299)).number(), 299);
+    let round = (100..600).reduce(true) -> kept, code {
+        kept && StatusCode(StatusCode(code).status()).number() == code;
+    };
+    test.ok(round);
+}
+
+test "numbers outside the range and other cases of named codes are refused" {
+    for [99, 600] -> code {
+        test.is(
+            try {
+                StatusCode(code).number();
+            }
+            catch InvalidStatus.code(given) {
+                given;
+            },
+            code
+        );
+    }
+    test.is(
+        try {
+            StatusCode(Status.other(404)).number();
+        }
+        catch InvalidStatus.named(given) {
+            given;
+        },
+        404
+    );
+    test.is(
+        try {
+            StatusCode(Status.other(700)).number();
+        }
+        catch InvalidStatus.code(given) {
+            given;
+        },
+        700
+    );
+}
 
 test "extension status classification needs no phrase" {
-    test.is(Status(599).class(), StatusClass.server_error);
-    test.is(Status(599).phrase(), "");
-    test.is(Status(204).phrase(), "No Content");
+    test.is(StatusCode(599).class(), StatusClass.server_error);
+    test.is(StatusCode(599).phrase(), "");
+    test.is(StatusCode(Status.no_content).phrase(), "No Content");
+    test.is(StatusCode(Status.ok).class(), StatusClass.successful);
 }

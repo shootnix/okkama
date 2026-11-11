@@ -1,5 +1,7 @@
 module http/cache v1.0.0;
 
+import "http/status" take StatusCode, Status, StatusClass;
+import "http/method" take MethodName, Method;
 import "http/client" take Exchanging;
 import "http/cache_admission" take CacheAdmissions, CacheAdmissionLease, CacheAdmissionAnchor;
 import "http/cache_validation" take CacheValidation, CacheRequestFreshness,
@@ -38,7 +40,7 @@ object Caching does Exchanging {
     }
 
     async response(request is Request) is ClientResponse {
-        let eligible = request.method().string() == "GET"
+        let eligible = request.method() == Method.get
             && request.target().kind() == RequestTargetKind.absolute
             && CacheRequestSelection(request).allowed();
         if eligible {
@@ -126,8 +128,9 @@ object Caching does Exchanging {
         let started = clock.monotonic_instant();
         let result = await origin.response(outgoing);
         let timing = CacheResponseTiming(clock.instant(), started, clock.monotonic_instant());
-        let code = result.response().status().code();
-        if code == 304 && validation.size() == 1 && validation[0].conditional() {
+        let status = result.response().status();
+        let class = StatusCode(status).class();
+        if status == Status.not_modified && validation.size() == 1 && validation[0].conditional() {
             let body = result.response().body().reading();
             defer body.close();
             let empty = await body.bytes(1);
@@ -148,22 +151,21 @@ object Caching does Exchanging {
         }
 
         if request.target().kind() == RequestTargetKind.absolute
-            && request.method().string() != "GET"
-            && request.method().string() != "HEAD"
-            && request.method().string() != "OPTIONS"
-            && request.method().string() != "TRACE"
-            && code >= 200
-            && code < 400 {
+            && request.method() != Method.get
+            && request.method() != Method.head
+            && request.method() != Method.options
+            && request.method() != Method.trace
+            && (class == StatusClass.successful || class == StatusClass.redirection) {
                 cache.invalidate(request);
             }
         let direct = result.history().size() == 0
             && result.request().target().kind() == RequestTargetKind.absolute
             && result.request().target().string() == request.target().string()
-            && result.request().method().string() == request.method().string();
+            && result.request().method() == request.method();
         let publication = if selected.size() == 1
             && direct
-            && code >= 200
-            && code < 500
+            && class != StatusClass.informational
+            && class != StatusClass.server_error
             && cache.revision() == revision {
                 cache.invalidate(request);
                 cache.revision();
@@ -178,7 +180,7 @@ object Caching does Exchanging {
             result;
         };
         let allowed = eligible
-            && code == 200
+            && status == Status.ok
             && direct
             && CacheResponseSelection(result.response().headers()).allowed();
         if !allowed {

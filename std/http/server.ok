@@ -6,7 +6,7 @@ import "http/handler" take Handling, HandlingResult, HandlingKind, ResponseHandl
     WebSocketHandling;
 import "http/request_context" take HttpRequestContext;
 import "http/message" take Response, InvalidHttpMessage;
-import "http/status" take Status;
+import "http/status" take Status, StatusCode;
 import "http/method" take Method;
 import "http/header" take Headers, Header, HeaderName, HttpAsciiLowercase, ReplacedHeader;
 import "http/version" take HttpVersion, UnsupportedHttpVersion;
@@ -458,13 +458,13 @@ object HttpServerPeer {
     async failure_response(connection is TcpConnection, status is int) is bool {
         if !sent.value() && !(phase.value() == 0 && seen.value() == 0) {
             let response = Response(
-                Status(status),
+                StatusCode(status).status(),
                 Headers([Header(HeaderName("Connection"), "close")])
             );
             let pending = Http1ResponseWriting(
                 connection.output(),
                 response,
-                Method("GET"),
+                Method.get,
                 policy.limits().http1()
             ).result();
             try {
@@ -557,7 +557,7 @@ object HttpServerPeer {
                 || HttpAsciiLowercase(expectations.item(0)).string() != "100-continue"
                 || head.version() != HttpVersion.http_1_1) {
                     let response = Response(
-                        Status(417),
+                        Status.expectation_failed,
                         Headers([Header(HeaderName("Connection"), "close")])
                     );
                     let pending = Http1ResponseWriting(
@@ -617,7 +617,10 @@ object HttpServerPeer {
             }
             catch e is Error {
                 ResponseHandling(
-                    Response(Status(500), Headers([Header(HeaderName("Connection"), "close")]))
+                    Response(
+                        Status.internal_server_error,
+                        Headers([Header(HeaderName("Connection"), "close")])
+                    )
                 );
             };
             if result.kind() == HandlingKind.websocket {
@@ -795,8 +798,8 @@ object HttpServerContinueInput does AsyncReading {
             started.set();
             let sending = Http1ResponseHeadWriting(
                 output,
-                Http1ResponseHead(Status(100), Headers([]), HttpVersion.http_1_1),
-                Method("POST")
+                Http1ResponseHead(Status.continue, Headers([]), HttpVersion.http_1_1),
+                Method.post
             ).result();
             await sending;
         }

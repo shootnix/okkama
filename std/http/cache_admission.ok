@@ -1,5 +1,6 @@
 module http/cache_admission v1.0.0;
 
+import "http/method" take MethodName;
 import "http/message" take Request;
 import "http/cache_memory" take CachedHttpEntry;
 import "encoding/single_byte" take Latin1Encoded;
@@ -23,7 +24,9 @@ object CacheAdmissionKey {
         let writer = buffer.writing();
         writer.write(
             ByteSnapshot(
-                Latin1Encoded(request.method().string() + "\n" + request.target().string() + "\n").bytes()
+                Latin1Encoded(
+                    MethodName(request.method()).string() + "\n" + request.target().string() + "\n"
+                ).bytes()
             )
         );
         for request.headers().entries() -> field {

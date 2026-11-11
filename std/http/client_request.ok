@@ -60,7 +60,7 @@ enum InvalidClientRequest is Error = (because(reason is string));
 
 test "direct route adds Host and a slash without adding optional client features" {
     let request = Request(
-        Method("GET"),
+        Method.get,
         AbsoluteTarget(ParsedUrl("http://example.test").value()),
         Headers([])
     );

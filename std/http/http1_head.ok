@@ -1,9 +1,9 @@
 module http/http1_head v1.0.0;
 
 import "http/message" take Request, Response, RequestCoordinates, InvalidHttpMessage;
-import "http/method" take Method, InvalidMethod;
+import "http/method" take Method, MethodName, InvalidMethod;
 import "http/target" take RequestTarget, ParsedRequestTarget, InvalidRequestTarget;
-import "http/status" take Status, InvalidStatus;
+import "http/status" take Status, InvalidStatus, StatusCode;
 import "http/version" take HttpVersion, ParsedHttp1Version, UnsupportedHttpVersion;
 import "http/header" take Headers, Header, HeaderName, HeaderLimits, InvalidHeader;
 import "http/body" take BodyOpening;
@@ -76,7 +76,7 @@ object ParsedHttp1RequestHead {
         confirm words.size() == 3 && words[0] != "" && words[1] != "" && words[2] != ""
             else throw InvalidHttpMessage.because("strict request-line spacing required");
         let method = try {
-            Method(words[0]);
+            MethodName(words[0]).method();
         }
         catch e is InvalidMethod {
             throw InvalidHttpMessage.because("invalid request method token");
@@ -130,7 +130,7 @@ object ParsedHttp1ResponseHead {
             value * 10 + code - 48;
         };
         let status = try {
-            Status(code);
+            StatusCode(code).status();
         }
         catch e is InvalidStatus {
             throw InvalidHttpMessage.because("status outside supported range");
@@ -308,7 +308,9 @@ enum MissingHttp1Host is Error = (missing);
 
 test "strict HTTP1 head preserves extension status and duplicate fields" {
     let head = ParsedHttp1ResponseHead("HTTP/1.1 299 phrase\r\nX: 1\r\nX: 2\r\n\r\n").value();
-    test.ok(head.status().code() == 299 && head.headers().values(HeaderName("X")).size() == 2);
+    test.ok(
+        head.status() == Status.other(299) && head.headers().values(HeaderName("X")).size() == 2
+    );
     test.ok(try {
         ParsedHttp1RequestHead("GET / HTTP/1.1\r\n\r\n").value();
         false;
