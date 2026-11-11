@@ -74,7 +74,7 @@ object Http2HeaderBlockReading {
         pending = operation.reading();
     }
 
-    async result() is Http2HeaderBlock {
+    async block() is Http2HeaderBlock {
         let group is FutureGroup<Http2HeaderBlock> = FutureGroup();
         let cleanup = Http2HeaderSettlement(group);
         defer await cleanup.close();
@@ -146,7 +146,7 @@ hidden object Http2HeaderInput {
                     0,
                     "field block frame count"
                 );
-            let pending = Http2FrameReading(origin, maximum).result();
+            let pending = Http2FrameReading(origin, maximum).frame();
             let following = try {
                 await pending;
             }
@@ -246,7 +246,7 @@ object Http2HeaderBlockWriting {
         pending = operation.writing();
     }
 
-    async result() is AsyncWriting {
+    async output() is AsyncWriting {
         let group is FutureGroup<AsyncWriting> = FutureGroup();
         let cleanup = Http2HeaderSettlement(group);
         defer await cleanup.close();

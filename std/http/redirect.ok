@@ -228,7 +228,7 @@ hidden object RedirectRequest {
             confirm origin.body().replayable() else throw NonReplayableRedirect.not_replayable;
             origin.body();
         };
-        let without_host = HeadersWithout(origin::Head::headers, [HeaderName("Host")]).result();
+        let without_host = HeadersWithout(origin::Head::headers, [HeaderName("Host")]).headers();
         let payload_fields = if rewritten {
             HeadersWithout(
                 without_host,
@@ -239,7 +239,7 @@ hidden object RedirectRequest {
                     HeaderName("Content-Encoding"),
                     HeaderName("Expect")
                 ]
-            ).result();
+            ).headers();
         }
         else {
             without_host;
@@ -254,7 +254,7 @@ hidden object RedirectRequest {
                     HeaderName("Cookie"),
                     HeaderName("Proxy-Authorization")
                 ]
-            ).result();
+            ).headers();
         }
         else {
             payload_fields;

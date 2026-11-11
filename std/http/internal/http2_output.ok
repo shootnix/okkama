@@ -247,7 +247,7 @@ object Http2OutputTicket {
         }
     }
 
-    async result() is bool {
+    async delivered() is bool {
         defer self.cancel();
         await finished.wait();
         confirm !stopped.ready() else throw Http2OutputStopped.stopped;

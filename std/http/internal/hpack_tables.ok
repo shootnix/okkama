@@ -12,14 +12,14 @@ object HpackField {
     has sensitive is bool;
 
     HpackField(name is string, value is string) {
-        self.name = HpackOctetText(name).value();
-        self.value = HpackOctetText(value).value();
+        self.name = HpackOctetText(name).string();
+        self.value = HpackOctetText(value).string();
         sensitive = false;
     }
 
     HpackField(name is string, value is string, sensitive is bool) {
-        self.name = HpackOctetText(name).value();
-        self.value = HpackOctetText(value).value();
+        self.name = HpackOctetText(name).string();
+        self.value = HpackOctetText(value).string();
         self.sensitive = sensitive;
     }
 
@@ -65,7 +65,7 @@ hidden object HpackOctetText {
         self.origin = origin;
     }
 
-    value() is string {
+    string() is string {
         origin;
     }
 }

@@ -120,7 +120,7 @@ object RouteSegment {
         kind;
     }
 
-    value() is string {
+    text() is string {
         value;
     }
 }
@@ -152,7 +152,7 @@ object RoutePattern {
             segment.kind() != RouteSegmentKind.literal;
         };
         let names is @string = named.map() -> segment {
-            segment.value();
+            segment.text();
         };
         let ordered = names.ordering();
         for (0..ordered.size()) -> index {
@@ -192,7 +192,7 @@ object RoutePattern {
         }
         for (0..fixed) -> index {
             let part = parts[index];
-            if part.kind() == RouteSegmentKind.literal && part.value() != path[index] {
+            if part.kind() == RouteSegmentKind.literal && part.text() != path[index] {
                 return false;
             }
             if part.kind() == RouteSegmentKind.parameter && path[index] == "" {
@@ -215,7 +215,7 @@ object RoutePattern {
             parts[index].kind() != RouteSegmentKind.literal;
         };
         let keys is @string = positions.map() -> index {
-            parts[index].value();
+            parts[index].text();
         };
         let values is @string = positions.map() -> index {
             if parts[index].kind() == RouteSegmentKind.wildcard {
@@ -252,15 +252,15 @@ object RoutePattern {
             }
             if left.kind() == RouteSegmentKind.literal
                 && peer.kind() == RouteSegmentKind.literal
-                && left.value() != peer.value() {
+                && left.text() != peer.text() {
                     return false;
                 }
             if (left.kind() == RouteSegmentKind.parameter
                 && peer.kind() == RouteSegmentKind.literal
-                && peer.value() == "")
+                && peer.text() == "")
                 || (peer.kind() == RouteSegmentKind.parameter
                 && left.kind() == RouteSegmentKind.literal
-                && left.value() == "") {
+                && left.text() == "") {
                     return false;
                 }
         }
@@ -372,7 +372,7 @@ hidden object RouteConflictEntry {
             "";
         }
         else {
-            parts[0].value();
+            parts[0].text();
         });
     }
 
@@ -401,7 +401,7 @@ hidden object RouteConflictEntry {
     }
 
     literal(index is int) is string {
-        parts[index].value();
+        parts[index].text();
     }
 }
 
@@ -771,14 +771,14 @@ test "default rejection keeps empty 400 and Allow-carrying 405 responses" {
     let methods is @string = ["GET", "HEAD"];
     test.is(
         EmptyRouteRejection().disallowed(
-            Request(method: Method.put, target: ParsedRequestTarget("/a", Method.put).value()),
+            Request(method: Method.put, target: ParsedRequestTarget("/a", Method.put).target()),
             methods
         ).response()::Head::headers.first(HeaderName("Allow")),
         "GET, HEAD"
     );
     test.is(
         EmptyRouteRejection().malformed(
-            Request(method: Method.get, target: ParsedRequestTarget("/a", Method.get).value()),
+            Request(method: Method.get, target: ParsedRequestTarget("/a", Method.get).target()),
             "x"
         ).response()::Head::status,
         Status.bad_request

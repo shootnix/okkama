@@ -266,7 +266,7 @@ object Http1FramingFields {
 enum UnsupportedTransferCoding is Error = (unsupported);
 
 test "request body boundaries are decided before reading" {
-    let head = ParsedHttp1RequestHead("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 0\r\n\r\n").value();
+    let head = ParsedHttp1RequestHead("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 0\r\n\r\n").head();
     let plan = Http1RequestFraming(head).plan();
     test.ok(plan.kind() == Http1BodyKind.fixed && plan.length().string() == "0");
 }

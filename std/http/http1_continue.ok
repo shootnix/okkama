@@ -39,7 +39,7 @@ object Http1RequestStart {
                 || (plan.kind() == Http1BodyKind.fixed && plan.length().sign() > 0)
                 else throw InvalidHttpMessage.because("100-continue requires request content");
             let sending = Http1ContinueHead(
-                Http1RequestHeadWriting(origin, head, limits).result(),
+                Http1RequestHeadWriting(origin, head, limits).output(),
                 request.body(),
                 plan,
                 limits
@@ -50,12 +50,12 @@ object Http1RequestStart {
             pending = scope.outcome();
         }
         else {
-            pending = Http1RequestWriting(origin, request, limits).result();
+            pending = Http1RequestWriting(origin, request, limits).output();
         }
         expectation = present;
     }
 
-    result() is Future<AsyncWriting> {
+    output() is Future<AsyncWriting> {
         pending;
     }
 

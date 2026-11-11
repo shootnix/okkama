@@ -25,7 +25,7 @@ object Http2ClientPreface {
         waiting = operation.run();
     }
 
-    async result() is Http2PeerSettings {
+    async settings() is Http2PeerSettings {
         let group is FutureGroup<Http2PeerSettings> = FutureGroup();
         let cleanup = Http2PrefaceSettlement(group);
         defer await cleanup.close();
@@ -57,12 +57,12 @@ hidden object Http2PrefaceOperation {
         let prefix = HttpWireBytes([magic, frame], magic.size() + frame.size()).bytes();
         await self.emit(prefix);
         let peer = try {
-            await Http2FrameReading(input, settings.frame_size()).result();
+            await Http2FrameReading(input, settings.frame_size()).frame();
         }
         catch failure is EndOfHttp2Frames {
             throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "missing server preface");
         };
-        let received = ReceivedHttp2Settings(peer, Http2PeerSettings(), true).value();
+        let received = ReceivedHttp2Settings(peer, Http2PeerSettings(), true).settings();
         await self.emit(Http2Frame(Http2FrameHeader(4.byte(), 1.byte(), 0, 0), []).bytes());
         received;
     }
@@ -94,7 +94,7 @@ object Http2ServerPreface {
         waiting = operation.run();
     }
 
-    async result() is Http2PeerSettings {
+    async settings() is Http2PeerSettings {
         let group is FutureGroup<Http2PeerSettings> = FutureGroup();
         let cleanup = Http2PrefaceSettlement(group);
         defer await cleanup.close();
@@ -162,12 +162,12 @@ hidden object Http2ServerPrefaceOperation {
             offset.replace(offset.value() + bytes.size());
         }
         let first = try {
-            await Http2FrameReading(input, settings.frame_size()).result();
+            await Http2FrameReading(input, settings.frame_size()).frame();
         }
         catch failure is EndOfHttp2Frames {
             throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "missing client SETTINGS");
         };
-        let peer = ReceivedHttp2Settings(first, Http2PeerSettings(), false).value();
+        let peer = ReceivedHttp2Settings(first, Http2PeerSettings(), false).settings();
         await self.emit(Http2Frame(Http2FrameHeader(4.byte(), 1.byte(), 0, 0), []).bytes());
         peer;
     }

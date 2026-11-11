@@ -27,7 +27,7 @@ object Http1RequestWriting {
         pending = Http1MessageOutput().request(origin, request, limits);
     }
 
-    result() is Future<AsyncWriting> {
+    output() is Future<AsyncWriting> {
         pending;
     }
 }
@@ -48,7 +48,7 @@ object Http1ResponseWriting {
         pending = Http1MessageOutput().response(origin, response, method, limits);
     }
 
-    result() is Future<AsyncWriting> {
+    output() is Future<AsyncWriting> {
         pending;
     }
 }
@@ -65,7 +65,7 @@ hidden object Http1MessageOutput {
         );
         let plan = Http1RequestFraming(head, limits).plan();
         let writing = Http1RequestHeadWriting(origin, head, limits);
-        self.writing(writing.result(), request.body(), plan, head.headers(), limits, true);
+        self.writing(writing.output(), request.body(), plan, head.headers(), limits, true);
     }
 
     response(origin is AsyncWriting, response is Response, method is Method, limits is Http1Limits) is Future<AsyncWriting> {
@@ -76,7 +76,7 @@ hidden object Http1MessageOutput {
         );
         let plan = Http1ResponseFraming(head, method, limits).plan();
         let writing = Http1ResponseHeadWriting(origin, head, method, limits);
-        self.writing(writing.result(), response.body(), plan, head.headers(), limits, false);
+        self.writing(writing.output(), response.body(), plan, head.headers(), limits, false);
     }
 
     writing(
@@ -125,7 +125,7 @@ hidden object Http1MessageWriteOperation {
         Http1BodyCheck(body, plan, limits, request).known();
         group.start(head);
         let origin = await head;
-        let writing = Http1BodyWriting(origin, body, plan, fields, limits, 4096).result();
+        let writing = Http1BodyWriting(origin, body, plan, fields, limits, 4096).output();
         group.start(writing);
         await writing;
     }
@@ -137,9 +137,9 @@ async test "complete empty request round-trips over a borrowed stream" {
     let input = pair.second();
     defer output.close();
     defer input.close();
-    let head = ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: a\r\n\r\n").value();
-    await Http1RequestWriting(output.output(), head.request(EmptyBody())).result();
-    let parsed = await Http1RequestHeadReading(input.input()).result();
+    let head = ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: a\r\n\r\n").head();
+    await Http1RequestWriting(output.output(), head.request(EmptyBody())).output();
+    let parsed = await Http1RequestHeadReading(input.input()).head();
     test.is(parsed.head().target().string(), "/");
     test.ok(!output.closed());
 }

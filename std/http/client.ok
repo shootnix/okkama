@@ -364,7 +364,7 @@ object HttpTransport does Exchanging, Closing {
                 "headers"
             );
             let exchange = try {
-                await bounded.result();
+                await bounded.outcome();
             }
             catch gone is HttpPeerGoneBeforeResponse {
                 if lease.reused() {
@@ -454,7 +454,7 @@ object HttpTransport does Exchanging, Closing {
                 "headers"
             );
             let exchange = try {
-                await bounded.result();
+                await bounded.outcome();
             }
             catch gone is HttpPeerGoneBeforeResponse {
                 if lease.reused() {
@@ -540,7 +540,7 @@ object HttpTransport does Exchanging, Closing {
             "headers"
         );
         let exchange = try {
-            await bounded.result();
+            await bounded.outcome();
         }
         catch gone is HttpPeerGoneBeforeResponse {
             if lease.reused() {
@@ -828,7 +828,7 @@ hidden object HttpClientOperation does Closing {
             clock,
             "connection"
         );
-        let connection = await bounded.result();
+        let connection = await bounded.outcome();
         acquired.replace([connection]);
         acquisition_taken.set();
         confirm !self.closed() && !owner.closed() else throw ClientClosed.closed;
@@ -1090,7 +1090,7 @@ hidden object HttpDeadline<T> {
         self.phase = phase;
     }
 
-    async result() is T {
+    async outcome() is T {
         if limit::Span::seconds == 0.rat() {
             return await origin;
         }
@@ -1206,7 +1206,7 @@ hidden object HttpClientReading does BodyReading {
             clock,
             "body_idle"
         );
-        let pending = bounded.result();
+        let pending = bounded.outcome();
         reads.start(pending);
         let chunk = await pending;
         if chunk.size() == 0 {
@@ -1547,7 +1547,7 @@ hidden object HttpSharedClientOperation does Closing {
                 clock,
                 "connection"
             );
-            let connection = await bounded.result();
+            let connection = await bounded.outcome();
             confirm !self.closed() && !owner.closed() else throw ClientClosed.closed;
             let entering = transport.enter(entered);
             attempt.start(entering);
@@ -1964,7 +1964,7 @@ hidden object HttpSharedClientReading does BodyReading {
             clock,
             "body_idle"
         );
-        let chunk = await bounded.result();
+        let chunk = await bounded.outcome();
         if chunk.size() == 0 {
             complete.set();
             operation.finish();

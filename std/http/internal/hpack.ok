@@ -123,7 +123,7 @@ object HpackDecoder {
     }
 
     decoded(origin is @byte, budget is HpackBudget) is HpackDecodedBlock {
-        HpackBlockInput(self, origin, budget).result();
+        HpackBlockInput(self, origin, budget).block();
     }
 }
 
@@ -156,7 +156,7 @@ hidden object HpackBlockInput {
         self.budget = budget;
     }
 
-    result() is HpackDecodedBlock {
+    block() is HpackDecodedBlock {
         confirm origin.size() <= budget.encoded()
             else throw Http2Fault.detailed(
                 Http2FaultScope.connection,
@@ -171,10 +171,10 @@ hidden object HpackBlockInput {
         let updates = Atomic(0);
         let fixed = context.fixed();
         loop {
-            if offset.value() == origin.size() {
+            if offset.offset() == origin.size() {
                 last;
             }
-            let first = origin[offset.value()].int();
+            let first = origin[offset.offset()].int();
             if (first & 224) == 32 {
                 confirm progress.count() == 0 && updates.value() < 2
                     else throw Http2Fault.detailed(
@@ -183,8 +183,8 @@ hidden object HpackBlockInput {
                         0,
                         "misplaced HPACK size update"
                     );
-                let parsed = ParsedHpackInteger(origin, offset.value(), 5);
-                confirm parsed.value() <= context.allowed_limit()
+                let parsed = ParsedHpackInteger(origin, offset.offset(), 5);
+                confirm parsed.int() <= context.allowed_limit()
                     else throw Http2Fault.detailed(
                         Http2FaultScope.connection,
                         9,
@@ -192,7 +192,7 @@ hidden object HpackBlockInput {
                         "HPACK size update exceeds setting"
                     );
                 if required.value() >= 0 {
-                    confirm parsed.value() <= required.value()
+                    confirm parsed.int() <= required.value()
                         else throw Http2Fault.detailed(
                             Http2FaultScope.connection,
                             9,
@@ -201,7 +201,7 @@ hidden object HpackBlockInput {
                         );
                     required.replace(-1);
                 }
-                table = table.resized(parsed.value());
+                table = table.resized(parsed.int());
                 offset = offset.following(parsed.following());
                 updates.replace(updates.value() + 1);
                 next;
@@ -214,13 +214,13 @@ hidden object HpackBlockInput {
                     "missing HPACK table reduction"
                 );
             if (first & 128) != 0 {
-                let parsed = ParsedHpackInteger(origin, offset.value(), 7);
-                let field = HpackLookup(fixed, table, parsed.value()).field();
+                let parsed = ParsedHpackInteger(origin, offset.offset(), 7);
+                let field = HpackLookup(fixed, table, parsed.int()).field();
                 progress = progress.added(field, budget);
                 offset = offset.following(parsed.following());
             }
             else {
-                let literal = HpackLiteral(origin, offset.value(), fixed, table);
+                let literal = HpackLiteral(origin, offset.offset(), fixed, table);
                 let field = literal.field();
                 if literal.incremental() {
                     table = table.added(field);
@@ -250,7 +250,7 @@ hidden object HpackReadOffset {
         self.value = value;
     }
 
-    value() is int {
+    offset() is int {
         value;
     }
 
@@ -319,15 +319,15 @@ hidden object HpackLiteral {
         };
         let indexed = ParsedHpackInteger(origin, offset, prefix);
         let position = HpackReadOffset(indexed.following());
-        let name = if indexed.value() == 0 {
-            let literal = ParsedHpackString(origin, position.value(), 1048576);
+        let name = if indexed.int() == 0 {
+            let literal = ParsedHpackString(origin, position.offset(), 1048576);
             position = position.following(literal.following());
             Latin1Decoded(literal.bytes()).string();
         }
         else {
-            HpackLookup(fixed, table, indexed.value()).field().name();
+            HpackLookup(fixed, table, indexed.int()).field().name();
         };
-        let value = ParsedHpackString(origin, position.value(), 1048576);
+        let value = ParsedHpackString(origin, position.offset(), 1048576);
         field = HpackField(
             name,
             Latin1Decoded(value.bytes()).string(),
@@ -382,7 +382,7 @@ object HpackEncoded {
                     "encoded HPACK field list budget"
                 );
             used.replace(used.value() + field.size());
-            let sensitive is bool = HpackSensitive(field).value();
+            let sensitive is bool = HpackSensitive(field).bool();
             let exact = if sensitive {
                 0;
             }
@@ -417,7 +417,7 @@ hidden object HpackSensitive {
         self.field = field;
     }
 
-    value() is bool {
+    bool() is bool {
         let name = HttpAsciiLowercase(field.name()).string();
         field.sensitive()
             || name == "authorization"

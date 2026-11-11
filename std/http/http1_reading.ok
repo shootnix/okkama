@@ -32,7 +32,7 @@ object Http1RequestHeadReading {
         pending = Http1RequestHeadDecoding().reading(origin, prefix, limits, chunk_bytes);
     }
 
-    result() is Future<Http1HeadRead<Http1RequestHead>> {
+    head() is Future<Http1HeadRead<Http1RequestHead>> {
         pending;
     }
 }
@@ -57,7 +57,7 @@ object Http1ResponseHeadReading {
         pending = Http1ResponseHeadDecoding().reading(origin, prefix, limits, chunk_bytes);
     }
 
-    result() is Future<Http1HeadRead<Http1ResponseHead>> {
+    head() is Future<Http1HeadRead<Http1ResponseHead>> {
         pending;
     }
 }
@@ -90,7 +90,7 @@ hidden object Http1RequestHeadDecoding {
     Http1RequestHeadDecoding();
 
     decode(origin is string, tail is @byte, count is int, limits is Http1Limits) is Http1HeadRead<Http1RequestHead> {
-        let head = ParsedHttp1RequestHead(origin, limits).value();
+        let head = ParsedHttp1RequestHead(origin, limits).head();
         Http1HeadRead(head, tail, count);
     }
 
@@ -110,7 +110,7 @@ hidden object Http1ResponseHeadDecoding {
     Http1ResponseHeadDecoding();
 
     decode(origin is string, tail is @byte, count is int, limits is Http1Limits) is Http1HeadRead<Http1ResponseHead> {
-        let head = ParsedHttp1ResponseHead(origin, limits).value();
+        let head = ParsedHttp1ResponseHead(origin, limits).head();
         Http1HeadRead(head, tail, count);
     }
 

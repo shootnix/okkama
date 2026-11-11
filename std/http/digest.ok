@@ -192,8 +192,8 @@ object DigestChallenge {
         self.opaque = opaque;
         self.opaque_present = opaque_present;
         self.utf8 = utf8;
-        userhash = DigestFlag(origin, "userhash").value();
-        stale = DigestFlag(origin, "stale").value();
+        userhash = DigestFlag(origin, "userhash").bool();
+        stale = DigestFlag(origin, "stale").bool();
     }
 
     realm() is string {
@@ -252,7 +252,7 @@ hidden object DigestFlag {
         self.name = name;
     }
 
-    value() is bool {
+    bool() is bool {
         if !origin.present(name) {
             return false;
         }

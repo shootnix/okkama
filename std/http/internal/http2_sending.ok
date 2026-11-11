@@ -125,7 +125,7 @@ object Http2DataScheduler {
         confirm bytes.size() <= 1048576 && (bytes.size() > 0 || end_stream)
             else throw Http2OutputLimit.exceeded;
         let operation = Http2DataSending(self, self.slot(stream), bytes, end_stream);
-        operation.result();
+        operation.delivered();
     }
 
     reserve(slot is Http2SendingSlot, remaining is int) is @Http2DataGrant {
@@ -379,7 +379,7 @@ hidden object Http2DataSending {
         self.end_stream = end_stream;
     }
 
-    async result() is bool {
+    async delivered() is bool {
         let pending = self.run();
         await pending;
     }
@@ -431,7 +431,7 @@ hidden object Http2DataSending {
             }
             let ticket = accepted[0];
             grant.attach(ticket);
-            let pending = ticket.result();
+            let pending = ticket.delivered();
             let complete = try {
                 await pending;
             }

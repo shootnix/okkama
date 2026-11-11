@@ -205,7 +205,7 @@ object ParsedSetCookie {
         self.reference = reference;
     }
 
-    value() is Cookie {
+    cookie() is Cookie {
         confirm origin.length() <= 8192
             else throw InvalidCookie.because("Set-Cookie source limit exceeded");
         confirm Utf8Encoded(origin).bytes().reduce(true) -> valid, octet {
@@ -284,7 +284,7 @@ hidden object CookieAttributeReading {
             }
             case "expires" {
                 let parsed = try {
-                    CookieExpiry(ParsedCookieDate(value).value());
+                    CookieExpiry(ParsedCookieDate(value).instant());
                 }
                 catch e is InvalidCookieDate {
                     CookieExpiry();
@@ -499,7 +499,7 @@ test "Set-Cookie keeps explicit context and precedence" {
         "id=v; Max-Age=10; Expires=01 Jan 70 0:0:0",
         url,
         Instant(Duration(value: 0.rat(), unit: DurationUnit.second))
-    ).value();
+    ).cookie();
     test.ok(cookie.attributes().path() == "/a");
     test.ok(cookie.attributes().expiry().instant().unix_duration()::Span::seconds == 10.rat());
 }

@@ -39,7 +39,7 @@ hidden object CacheAdmissionKey {
         value = HexEncoded(native_crypto.digest("sha256", buffer.content().bytes())).string();
     }
 
-    value() is string {
+    key() is string {
         value;
     }
 }
@@ -53,7 +53,7 @@ object CacheAdmissions {
     }
 
     booking(request is Request) is CacheAdmissionBooking {
-        let key = CacheAdmissionKey(request).value();
+        let key = CacheAdmissionKey(request).key();
         let current = entries.value();
         for current -> slot {
             if slot.key() == key {

@@ -24,11 +24,11 @@ object CacheValidation {
     CacheValidation(original is Request, entry is CachedHttpEntry) {
         self.original = original;
         self.entry = entry;
-        let fields = entry.result()::Head::headers;
+        let fields = entry.response()::Head::headers;
         let etags = fields.values(HeaderName("ETag"));
         let parsed is @EntityTag = try {
             confirm etags.size() == 1 else throw InvalidCacheRevalidation.invalid;
-            let value = ParsedEntityTags(etags.item(0)).value();
+            let value = ParsedEntityTags(etags.item(0)).tags();
             confirm !value.wildcard() && value.values().size() == 1
                 else throw InvalidCacheRevalidation.invalid;
             [value.values().item(0)];
@@ -41,7 +41,7 @@ object CacheValidation {
         let dates = fields.values(HeaderName("Last-Modified"));
         let dates_checked is @string = try {
             confirm dates.size() == 1 else throw InvalidCacheRevalidation.invalid;
-            ParsedHttpDate(dates.item(0), entry.timing().received()).value();
+            ParsedHttpDate(dates.item(0), entry.timing().received()).instant();
             [dates.item(0)];
         }
         catch e is Error {
@@ -53,14 +53,14 @@ object CacheValidation {
             ReplacedHeader(
                 original::Head::headers,
                 Header(HeaderName("If-None-Match"), parsed[0].string())
-            ).result();
+            ).headers();
         }
         else {
             if dates_checked.size() == 1 {
                 ReplacedHeader(
                     original::Head::headers,
                     Header(HeaderName("If-Modified-Since"), dates_checked[0])
-                ).result();
+                ).headers();
             }
             else {
                 original::Head::headers;
@@ -93,7 +93,7 @@ object CacheValidation {
         let etags = updated.values(HeaderName("ETag"));
         confirm etags.size() <= 1 else throw InvalidCacheRevalidation.invalid;
         if etags.size() == 1 {
-            let value = ParsedEntityTags(etags.item(0)).value();
+            let value = ParsedEntityTags(etags.item(0)).tags();
             confirm !value.wildcard() && value.values().size() == 1 && tags.size() == 1
                 else throw InvalidCacheRevalidation.invalid;
             let tag = value.values().item(0);
@@ -113,17 +113,17 @@ object CacheValidation {
             confirm dates.size() <= 1 else throw InvalidCacheRevalidation.invalid;
             if dates.size() == 1 {
                 let changed = try {
-                    ParsedHttpDate(dates.item(0), timing.received()).value();
+                    ParsedHttpDate(dates.item(0), timing.received()).instant();
                 }
                 catch e is Error {
                     throw InvalidCacheRevalidation.invalid;
                 };
-                let stored = ParsedHttpDate(modified[0], entry.timing().received()).value();
+                let stored = ParsedHttpDate(modified[0], entry.timing().received()).instant();
                 confirm changed.order(stored) == Order.equal
                     else throw InvalidCacheRevalidation.invalid;
             }
         }
-        let old = entry.result()::Exchange::response;
+        let old = entry.response()::Exchange::response;
         if updated.membership(HeaderName("Content-Encoding")) {
             confirm updated.values(HeaderName("Content-Encoding")).size() == old::Head::headers.values(
                 HeaderName("Content-Encoding")
@@ -133,7 +133,7 @@ object CacheValidation {
                 )
                 else throw InvalidCacheRevalidation.invalid;
         }
-        let fields = Cache304Fields(old::Head::headers, updated, timing).result();
+        let fields = Cache304Fields(old::Head::headers, updated, timing).headers();
         let response = Response(
             status: old::Head::status,
             headers: fields,
@@ -158,9 +158,9 @@ hidden object Cache304Fields {
     has result is Headers;
 
     Cache304Fields(stored is Headers, updated is Headers, timing is CacheResponseTiming) {
-        let sanitized = CacheStoredHeaders(updated).result();
+        let sanitized = CacheStoredHeaders(updated).headers();
         let replacements = if sanitized.membership(HeaderName("Content-Length")) {
-            HeadersWithout(sanitized, [HeaderName("Content-Length")]).result();
+            HeadersWithout(sanitized, [HeaderName("Content-Length")]).headers();
         }
         else {
             sanitized;
@@ -168,23 +168,23 @@ hidden object Cache304Fields {
         let names is @HeaderName = (0..replacements.entries().size()).map() -> index {
             replacements.entries().item(index).name();
         };
-        let initial = HeadersWithout(stored, names).result();
-        let fields = CacheMergedFields(initial, replacements).result();
+        let initial = HeadersWithout(stored, names).headers();
+        let fields = CacheMergedFields(initial, replacements).headers();
         let dated = if updated.membership(HeaderName("Date")) {
             fields;
         }
         else {
-            ReplacedHeader(fields, Header(HeaderName("Date"), HttpDate(timing.received()).string())).result();
+            ReplacedHeader(fields, Header(HeaderName("Date"), HttpDate(timing.received()).string())).headers();
         };
         result = if updated.membership(HeaderName("Age")) {
             dated;
         }
         else {
-            ReplacedHeader(dated, Header(HeaderName("Age"), "0")).result();
+            ReplacedHeader(dated, Header(HeaderName("Age"), "0")).headers();
         };
     }
 
-    result() is Headers {
+    headers() is Headers {
         result;
     }
 }
@@ -197,10 +197,10 @@ hidden object CacheMergedFields {
         for updated.entries() -> field {
             state = state.following(field);
         }
-        result = state.result();
+        result = state.headers();
     }
 
-    result() is Headers {
+    headers() is Headers {
         result;
     }
 }
@@ -212,7 +212,7 @@ hidden object CacheFieldState {
         result = origin;
     }
 
-    result() is Headers {
+    headers() is Headers {
         result;
     }
 
@@ -251,7 +251,7 @@ object CacheRequestFreshness {
                     true;
                 }
                 else {
-                    let incoming = CacheControl(entry.result()::Head::headers);
+                    let incoming = CacheControl(entry.response()::Head::headers);
                     let arguments = control.arguments("max-stale");
                     control.count("max-stale") == 1
                         && arguments.size() <= 1
@@ -259,7 +259,7 @@ object CacheRequestFreshness {
                         && !incoming.present("no-cache")
                         && !incoming.present("no-store")
                         && (arguments.size() == 0
-                        || age - observed.lifetime()::Span::seconds <= CacheDeltaSeconds(arguments[0]).value().rat());
+                        || age - observed.lifetime()::Span::seconds <= CacheDeltaSeconds(arguments[0]).seconds().rat());
                 }
             }
         }

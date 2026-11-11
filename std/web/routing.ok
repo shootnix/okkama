@@ -133,10 +133,10 @@ object Scope does WebRouting {
     }
 
     routes(outer is string, scopes is @ExceptionScope) is @Route {
-        let inner = ScopeList(scopes, own).value();
+        let inner = ScopeList(scopes, own).scopes();
         let empty is @Route = [];
         routings.reduce(empty) -> all, routing {
-            RouteList(all, routing.routes(outer + prefix, inner)).value();
+            RouteList(all, routing.routes(outer + prefix, inner)).routes();
         };
     }
 }
@@ -147,7 +147,7 @@ object WebRoutes does Handling {
 
     WebRoutes(routings is @WebRouting, fallback is async (WebRequest) is HandlingResult) {
         let bare is @ExceptionScope = [];
-        origin = WebRouteTable(routings, bare, fallback).value();
+        origin = WebRouteTable(routings, bare, fallback).routes();
     }
 
     WebRoutes(
@@ -156,7 +156,7 @@ object WebRoutes does Handling {
         fallback is async (WebRequest) is HandlingResult
     ) {
         let single is @ExceptionScope = [exceptions];
-        origin = WebRouteTable(routings, single, fallback).value();
+        origin = WebRouteTable(routings, single, fallback).routes();
     }
 
     // The compiled std table. WebApplication serves it directly, which saves one
@@ -185,10 +185,10 @@ hidden object WebRouteTable {
         self.fallback = fallback;
     }
 
-    value() is Routes {
+    routes() is Routes {
         let empty is @Route = [];
         let all is @Route = routings.reduce(empty) -> collected, routing {
-            RouteList(collected, routing.routes("", scopes)).value();
+            RouteList(collected, routing.routes("", scopes)).routes();
         };
         Routes(all, WebEndpoint(fallback, scopes), WebRejection());
     }
@@ -307,7 +307,7 @@ hidden object RouteList {
         self.right = right;
     }
 
-    value() is @Route {
+    routes() is @Route {
         let joined is @Route = (0..left.size() + right.size()).map() -> index {
             if index < left.size() {
                 left[index];
@@ -329,7 +329,7 @@ hidden object ScopeList {
         self.right = right;
     }
 
-    value() is @ExceptionScope {
+    scopes() is @ExceptionScope {
         let joined is @ExceptionScope = (0..left.size() + right.size()).map() -> index {
             if index < left.size() {
                 left[index];

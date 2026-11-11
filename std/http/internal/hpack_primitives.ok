@@ -62,12 +62,12 @@ object ParsedHpackInteger {
     has number, following is int;
 
     ParsedHpackInteger(origin is @byte, offset is int, prefix is int) {
-        let parsed = HpackIntegerInput(origin, offset, prefix).result();
-        number = parsed.value();
+        let parsed = HpackIntegerInput(origin, offset, prefix).number();
+        number = parsed.int();
         following = parsed.following();
     }
 
-    value() is int {
+    int() is int {
         number;
     }
 
@@ -84,7 +84,7 @@ hidden object HpackNumber {
         self.following = following;
     }
 
-    value() is int {
+    int() is int {
         value;
     }
 
@@ -103,7 +103,7 @@ hidden object HpackIntegerInput {
         self.prefix = prefix;
     }
 
-    result() is HpackNumber {
+    number() is HpackNumber {
         confirm offset >= 0 && offset < origin.size() && prefix >= 1 && prefix <= 8
             else throw Http2Fault.detailed(
                 Http2FaultScope.connection,
@@ -173,7 +173,7 @@ object ParsedHpackString {
             );
         let length = ParsedHpackInteger(origin, offset, 7);
         let start = length.following();
-        let count = length.value();
+        let count = length.int();
         confirm count <= 1048576 && count <= origin.size() - start
             else throw Http2Fault.detailed(
                 Http2FaultScope.connection,
@@ -242,6 +242,6 @@ object HpackHuffman {
 
 test "bounded HPACK primitives preserve wire values" {
     let encoded = HpackInteger(1337, 5, 0).bytes();
-    test.is(ParsedHpackInteger(encoded, 0, 5).value(), 1337);
+    test.is(ParsedHpackInteger(encoded, 0, 5).int(), 1337);
     test.is(HpackHuffman([31.byte()], 1).bytes()[0].int(), 97);
 }

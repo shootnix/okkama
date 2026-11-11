@@ -174,7 +174,7 @@ object HttpMediaType {
     has parameters is HttpMediaParameters;
 
     HttpMediaType(origin is string) {
-        let fields = HttpMediaScanning(origin, HttpMediaLimits()).value();
+        let fields = HttpMediaScanning(origin, HttpMediaLimits()).media_type();
         confirm fields.type() != "*" && fields.subtype() != "*"
             else throw InvalidHttpMediaType.located(0, "concrete media type required");
         major = fields.type();
@@ -183,7 +183,7 @@ object HttpMediaType {
     }
 
     HttpMediaType(origin is string, limits is HttpMediaLimits) {
-        let fields = HttpMediaScanning(origin, limits).value();
+        let fields = HttpMediaScanning(origin, limits).media_type();
         confirm fields.type() != "*" && fields.subtype() != "*"
             else throw InvalidHttpMediaType.located(0, "concrete media type required");
         major = fields.type();
@@ -284,7 +284,7 @@ object HttpMediaScanning {
         self.limits = limits;
     }
 
-    value() is HttpMediaFields {
+    media_type() is HttpMediaFields {
         let major = self.token(self.space(0));
         let slash = major.end();
         confirm slash < width && bytes[slash].int() == 47

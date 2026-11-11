@@ -92,7 +92,7 @@ object CookieAttributes {
             else throw InvalidCookie.because("cookie path must be absolute or omitted");
         confirm CookieAttributeOctets(path).valid()
             else throw InvalidCookie.because("invalid cookie path octets");
-        let checked = CookieFlagSnapshot(flags).value();
+        let checked = CookieFlagSnapshot(flags).flags();
         confirm same_site != SameSite.cross_site || checked.secure()
             else throw InvalidCookie.because("SameSite=None requires Secure");
         confirm !checked.partitioned() || checked.secure()
@@ -331,7 +331,7 @@ hidden object CookieFlagSnapshot {
         self.origin = origin;
     }
 
-    value() is CookieFlagValues {
+    flags() is CookieFlagValues {
         let count = origin.size();
         confirm count >= 0 && count <= 3
             else throw InvalidCookie.because("cookie flag count must be 0..3");
@@ -339,7 +339,7 @@ hidden object CookieFlagSnapshot {
         for (0..count) -> index {
             state = state.following();
         }
-        state.value();
+        state.flags();
     }
 }
 
@@ -359,7 +359,7 @@ hidden object CookieFlagReading {
         ^cursor = cursor.successor();
     }
 
-    value() is CookieFlagValues {
+    flags() is CookieFlagValues {
         confirm !cursor.available()
             else throw InvalidCookie.because("cookie flag cursor exceeds declared size");
         values;

@@ -240,13 +240,13 @@ hidden object WebSocketOpening {
         output is AsyncWriting,
         handshake is WebSocketClientHandshake
     ) is @byte {
-        let pending = Http1RequestWriting(output, handshake.request()).result();
+        let pending = Http1RequestWriting(output, handshake.request()).output();
         await pending;
         let empty is @byte = [];
         let prefix = Atomic(empty);
         let count = Atomic(0);
         loop {
-            let pending = Http1ResponseHeadReading(input, prefix.value(), Http1Limits(), 4096).result();
+            let pending = Http1ResponseHeadReading(input, prefix.value(), Http1Limits(), 4096).head();
             let received = await pending;
             let status = received.head().status();
             if StatusCode(status).class() == StatusClass.informational

@@ -247,7 +247,7 @@ object ParsedRequestTarget {
         self.method = method;
     }
 
-    value() is RequestTarget {
+    target() is RequestTarget {
         confirm origin != "" && origin.length() <= 8192
             else throw InvalidRequestTarget.because("target source length");
         try {
@@ -301,7 +301,7 @@ object RequestTargetSnapshot {
         self.origin = origin;
     }
 
-    value() is RequestTarget {
+    target() is RequestTarget {
         let wire = origin.string();
         confirm wire != "" && wire.length() <= 8192
             else throw InvalidRequestTarget.because("target byte limit exceeded");
@@ -336,7 +336,7 @@ enum WrongRequestTargetKind is Error = (detailed(
 enum InvalidRequestTarget is Error = (because(reason is string));
 
 test "origin-form keeps double slash path and explicit query" {
-    let target = ParsedRequestTarget("//a/b?", Method.get).value();
+    let target = ParsedRequestTarget("//a/b?", Method.get).target();
     test.ok(target.kind() == RequestTargetKind.origin && target.path() == "//a/b");
     test.ok(target.query() == Maybe.some("") && target.string() == "//a/b?");
     test.ok(!RequestTargetMethod(Method.get, RequestTargetKind.asterisk).valid());

@@ -117,7 +117,7 @@ object RequestCoordinates {
     RequestCoordinates(method is Method, target is RequestTarget) {
         confirm MethodName(method).string().length() <= 8192
             else throw InvalidHttpMessage.because("method source limit exceeded");
-        let checked = RequestTargetSnapshot(target).value();
+        let checked = RequestTargetSnapshot(target).target();
         confirm RequestTargetMethod(method, checked.kind()).valid()
             else throw InvalidHttpMessage.because("method does not permit target form");
         self.target = checked;

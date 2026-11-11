@@ -117,7 +117,7 @@ object MemoryCookieJar does CookieStoring, Closing {
         let update = CookieJarUpdate(live, current.counter(), limits);
         for (0..fields.size()) -> index {
             let parsed is @Cookie = try {
-                [ParsedSetCookie(fields.item(index), origin, now).value()];
+                [ParsedSetCookie(fields.item(index), origin, now).cookie()];
             }
             catch e is InvalidCookie {
                 let empty is @Cookie = [];
@@ -168,7 +168,7 @@ object MemoryCookieJar does CookieStoring, Closing {
 
     restored(source is string) is ^MemoryCookieJar {
         let decoded = try {
-            ParsedCookieStore(source).value();
+            ParsedCookieStore(source).snapshot();
         }
         catch e is InvalidCookie {
             throw InvalidCookieStore.because("cookie policy rejected record");
@@ -547,7 +547,7 @@ object SavedCookieJar {
         self.destination = destination;
     }
 
-    result() is FileEntry {
+    file() is FileEntry {
         let text = origin.persisted_text();
         let scratch = TemporaryDirectory(parent: Directory(destination.path().parent()), prefix: "okkama-cookie-");
         defer scratch.close();
@@ -572,7 +572,7 @@ object LoadedCookieJar {
         self.clock = clock;
     }
 
-    result() is MemoryCookieJar {
+    jar() is MemoryCookieJar {
         confirm origin.stat()::Shape::size <= 67108864
             else throw InvalidCookieStore.because("file byte limit exceeded");
         let file = File(path: origin.path());
@@ -726,7 +726,7 @@ hidden object ParsedCookieStore {
         self.origin = origin;
     }
 
-    value() is CookieStoreSnapshot {
+    snapshot() is CookieStoreSnapshot {
         confirm origin.length() <= 67108864
             && origin != ""
             && origin.slice(origin.length() - 1, origin.length()) == "\n"
@@ -745,7 +745,7 @@ hidden object ParsedCookieStore {
         confirm lines.size() - 2 <= limits.total()
             else throw InvalidCookieStore.because("record limit exceeded");
         let records is @CookieRecord = (1..lines.size() - 1).map() -> index {
-            ParsedCookieStoreRow(lines[index], counter).value();
+            ParsedCookieStoreRow(lines[index], counter).record();
         };
         let identities is SortedBy<CookieRecord, string> = SortedBy(
             records,
@@ -845,13 +845,13 @@ hidden object ParsedCookieStoreRow {
         self.counter = counter;
     }
 
-    value() is CookieRecord {
+    record() is CookieRecord {
         confirm origin.length() <= 16384
             else throw InvalidCookieStore.because("record byte limit exceeded");
         let fields = origin.split("\t");
         confirm fields.size() == 14 else throw InvalidCookieStore.because("record field count");
-        let host_only = CookieStoreBoolean(fields[3]).value();
-        let partitioned = CookieStoreBoolean(fields[9]).value();
+        let host_only = CookieStoreBoolean(fields[3]).bool();
+        let partitioned = CookieStoreBoolean(fields[9]).bool();
         let domain = fields[2];
         let literal = if domain.split(":").size() > 1 {
             "[" + domain + "]";
@@ -893,10 +893,10 @@ hidden object ParsedCookieStoreRow {
         let flags is @CookieFlag = [CookieFlag.secure, CookieFlag.http_only, CookieFlag.partitioned].filter() -> flag {
             match flag {
                 case CookieFlag.secure {
-                    CookieStoreBoolean(fields[7]).value();
+                    CookieStoreBoolean(fields[7]).bool();
                 }
                 case CookieFlag.http_only {
-                    CookieStoreBoolean(fields[8]).value();
+                    CookieStoreBoolean(fields[8]).bool();
                 }
                 case CookieFlag.partitioned {
                     partitioned;
@@ -939,7 +939,7 @@ hidden object CookieStoreBoolean {
         self.origin = origin;
     }
 
-    value() is bool {
+    bool() is bool {
         confirm origin == "0" || origin == "1"
             else throw InvalidCookieStore.because("boolean field");
         origin == "1";
@@ -953,7 +953,7 @@ hidden object CookieStoreNumber {
         self.origin = origin;
     }
 
-    value() is rat {
+    rat() is rat {
         confirm origin.length() >= 1 && origin.length() <= 32
             else throw InvalidCookieStore.because("decimal field width");
         let negative = origin.slice(0, 1) == "-";
@@ -982,14 +982,14 @@ hidden object CookieStoreNumber {
     }
 
     index() is int {
-        let number = self.value();
+        let number = self.rat();
         confirm number >= 0.rat() && number <= 9007199254740991.rat()
             else throw InvalidCookieStore.because("revision/limit field bounds");
         number.int();
     }
 
     instant() is Instant {
-        Instant(Duration(value: self.value(), unit: DurationUnit.nanosecond));
+        Instant(Duration(value: self.rat(), unit: DurationUnit.nanosecond));
     }
 }
 

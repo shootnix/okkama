@@ -39,7 +39,7 @@ object Http1BodyWriting {
         pending = Http1BodyWriteOperation(origin, body, plan, head, limits, chunk_bytes).write();
     }
 
-    result() is Future<AsyncWriting> {
+    output() is Future<AsyncWriting> {
         pending;
     }
 }
@@ -372,7 +372,7 @@ hidden object Http1TrailerWire {
         }
         writer.write(ByteSnapshot([13.byte(), 10.byte()]));
         let raw = buffer.content().bytes();
-        ParsedHttp1Trailers(Latin1Decoded(raw).string(), head, limits).value();
+        ParsedHttp1Trailers(Latin1Decoded(raw).string(), head, limits).trailers();
         let final = ByteBuffer([48.byte(), 13.byte(), 10.byte()]);
         defer final.closing().close();
         final.writing().write(ByteSnapshot(raw));

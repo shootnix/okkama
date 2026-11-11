@@ -254,7 +254,7 @@ hidden object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier,
         defer await cleanup.close();
         let opening_cleanup = Http2ServerSettlement(openings);
         defer await opening_cleanup.close();
-        let preface = Http2ServerPreface(input, output_origin, local).result();
+        let preface = Http2ServerPreface(input, output_origin, local).settings();
         let timeout = policy.timeouts().headers_timeout();
         let selected = if timeout::Span::seconds > 0.rat() {
             let bounded is Within<Http2PeerSettings> = Within(origin: preface, limit: timeout, clock: clock);
@@ -373,7 +373,7 @@ hidden object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier,
                 [Http2GoAwayFrame(highest.value(), Http2FaultView(failure).code(), []).frame()]
             );
             let bounded is Within<bool> = Within(
-                origin: ticket.result(),
+                origin: ticket.delivered(),
                 limit: Duration(1.rat(), DurationUnit.second),
                 clock: clock
             );
@@ -603,7 +603,7 @@ hidden object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier,
             await signal.wait();
         }
         await self.reap();
-        let pending = goodbye.value()[0].result();
+        let pending = goodbye.value()[0].delivered();
         let group is FutureGroup<bool> = FutureGroup();
         let cleanup = Http2ServerSettlement(group);
         defer await cleanup.close();
@@ -896,7 +896,7 @@ hidden object Http2ServerStream {
         let zero = suppressed || (known.size() == 1 && known[0].sign() == 0);
         let ticket = owner.output().headers(self.stream(), fields, owner.budget(), 16384, zero);
         sent.replace(true);
-        let pending = ticket.result();
+        let pending = ticket.delivered();
         await pending;
         if zero {
             return true;
@@ -928,7 +928,7 @@ hidden object Http2ServerStream {
             16384,
             false
         );
-        let pending = ticket.result();
+        let pending = ticket.delivered();
         await pending;
     }
 }
@@ -990,7 +990,7 @@ hidden object Http2ServerBodySending {
                 let trailers = Http2OrdinaryFields(source.trailers(), false, stream).fields();
                 Http2Trailers(trailers, stream);
                 if trailers.size() > 0 {
-                    output.headers(stream, trailers, budget, 16384, true).result();
+                    output.headers(stream, trailers, budget, 16384, true).delivered();
                 }
                 else {
                     sender.data(stream, bytes, true);

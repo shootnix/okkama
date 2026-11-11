@@ -31,7 +31,7 @@ object EntityTag {
         self.weak = weak;
     }
 
-    value() is string {
+    opaque() is string {
         opaque;
     }
 
@@ -50,11 +50,11 @@ object EntityTag {
     }
 
     strong_matches(other is EntityTag) is bool {
-        !weak && !other.weak() && opaque == other.value();
+        !weak && !other.weak() && opaque == other.opaque();
     }
 
     weak_matches(other is EntityTag) is bool {
-        opaque == other.value();
+        opaque == other.opaque();
     }
 }
 
@@ -156,7 +156,7 @@ object ParsedEntityTags {
         self.limits = limits;
     }
 
-    value() is EntityTags {
+    tags() is EntityTags {
         confirm origin.length() <= limits.bytes() else throw ConditionalLimitExceeded.kind("bytes");
         try {
             Latin1Encoded(origin).bytes();
@@ -411,13 +411,13 @@ hidden object ByteRangeSpec {
             [];
         }
         else {
-            [ConditionalDecimal(fields[0]).value()];
+            [ConditionalDecimal(fields[0]).integer()];
         };
         let right is @BigInt = if fields[1] == "" {
             [];
         }
         else {
-            [ConditionalDecimal(fields[1]).value()];
+            [ConditionalDecimal(fields[1]).integer()];
         };
         if left.size() == 1 && right.size() == 1 {
             confirm right[0].order(left[0]) != Order.less
@@ -529,7 +529,7 @@ hidden object ConditionalDecimal {
         self.origin = origin;
     }
 
-    value() is BigInt {
+    integer() is BigInt {
         confirm origin.length() > 0 else throw InvalidRange.because("empty decimal coordinate");
         let bytes = try {
             Latin1Encoded(origin).bytes();
@@ -626,7 +626,7 @@ test "entity tag comparison respects validator strength" {
     let weak = EntityTag("version-1", true);
     test.is(strong.strong_matches(weak), false);
     test.is(strong.weak_matches(weak), true);
-    test.is(ParsedEntityTags("\"a,b\", W/\"version-1\"").value().weak_matches(strong), true);
+    test.is(ParsedEntityTags("\"a,b\", W/\"version-1\"").tags().weak_matches(strong), true);
 }
 
 test "entity tag list wildcard and empty list differ" {

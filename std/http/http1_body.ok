@@ -280,7 +280,7 @@ hidden object Http1BodyInput does AsyncReading {
                             Latin1Decoded(raw.content().bytes()).string(),
                             head,
                             limits
-                        ).value();
+                        ).trailers();
                         trailers.replace(fields);
                         phase.replace(4);
                         return [];

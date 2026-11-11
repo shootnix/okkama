@@ -138,7 +138,7 @@ object Caching does Exchanging {
             body.close();
             confirm cache.revision() == revision else throw InvalidCacheRevalidation.invalid;
             let refreshed = validation[0].refreshed(result, timing);
-            if CacheResponseSelection(refreshed.result()::Head::headers).allowed()
+            if CacheResponseSelection(refreshed.response()::Head::headers).allowed()
                 && refreshed.storable() {
                     cache.conditional_store(refreshed, revision);
                     CacheVerifiedPublication(cache, request, refreshed, revision, leases).publish();
@@ -501,7 +501,7 @@ hidden object CacheVerifiedPublication {
         };
         if stored.size() == 1
             && stored[0].bytes() == entry.bytes()
-            && stored[0].result()::Head::headers == entry.result()::Head::headers
+            && stored[0].response()::Head::headers == entry.response()::Head::headers
             && stored[0].timing().finished().reading()::Span::seconds == entry.timing().finished().reading()::Span::seconds {
                 leases[0].publish(entry, revision);
             }

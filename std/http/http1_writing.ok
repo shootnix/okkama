@@ -26,7 +26,7 @@ object Http1RequestHeadWriting {
         pending = Http1HeadOutput().request(origin, head, limits);
     }
 
-    result() is Future<AsyncWriting> {
+    output() is Future<AsyncWriting> {
         pending;
     }
 }
@@ -47,7 +47,7 @@ object Http1ResponseHeadWriting {
         pending = Http1HeadOutput().response(origin, head, method, limits);
     }
 
-    result() is Future<AsyncWriting> {
+    output() is Future<AsyncWriting> {
         pending;
     }
 }
@@ -61,7 +61,7 @@ hidden object Http1HeadOutput {
             head.version()
         ).string();
         let wire = Http1HeadWire(start, head.headers(), limits).bytes();
-        ParsedHttp1RequestHead(Latin1Decoded(wire).string(), limits).value();
+        ParsedHttp1RequestHead(Latin1Decoded(wire).string(), limits).head();
         self.writing(origin, wire);
     }
 
@@ -76,7 +76,7 @@ hidden object Http1HeadOutput {
             head.status()
         ).phrase();
         let wire = Http1HeadWire(start, head.headers(), limits).bytes();
-        ParsedHttp1ResponseHead(Latin1Decoded(wire).string(), limits).value();
+        ParsedHttp1ResponseHead(Latin1Decoded(wire).string(), limits).head();
         self.writing(origin, wire);
     }
 

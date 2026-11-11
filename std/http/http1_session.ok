@@ -128,7 +128,7 @@ object Http1Session does Closing {
         let published = Event();
         let cleanup = Http1SessionCleanup(lease, published);
         defer await cleanup.close();
-        let writing = sending.result();
+        let writing = sending.output();
         lease.writing().start(writing);
         let writer = await writing;
         let continuation = Http1ContinueState(sending.expectation(), clock, continue_wait);
@@ -136,7 +136,7 @@ object Http1Session does Closing {
         let accumulated = Http1SessionHeads();
         loop {
             let pending = continuation.reading(
-                Http1ResponseHeadReading(input, accumulated.prefix(), limits, 4096).result()
+                Http1ResponseHeadReading(input, accumulated.prefix(), limits, 4096).head()
             );
             lease.heads().start(pending);
             let parsed = await pending;
@@ -159,7 +159,7 @@ object Http1Session does Closing {
                         outgoing.headers(),
                         limits,
                         4096
-                    ).result();
+                    ).output();
                     lease.writing().start(body);
                     await body;
                     continuation = continuation.sending_completed();
@@ -644,7 +644,7 @@ async test "unstarted exchange cancellation leaves its explicit session owner av
     let transport = Http1UnstartedTransport();
     let session = Http1Session(transport, transport, transport);
     defer session.close();
-    let request = ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: a\r\n\r\n").value().request(
+    let request = ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: a\r\n\r\n").head().request(
         EmptyBody()
     );
     let pending = session.exchange(request);

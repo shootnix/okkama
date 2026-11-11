@@ -22,7 +22,7 @@ object Http2FrameReading {
         waiting = input.reading();
     }
 
-    async result() is Http2Frame {
+    async frame() is Http2Frame {
         let group is FutureGroup<Http2Frame> = FutureGroup();
         let cleanup = Http2FrameSettlement(group);
         defer await cleanup.close();
@@ -70,7 +70,7 @@ hidden object Http2FrameInput {
             }
             header.writing().write(ByteSnapshot(chunk));
         }
-        let parsed = ParsedHttp2FrameHeader(header.content().bytes(), maximum).value();
+        let parsed = ParsedHttp2FrameHeader(header.content().bytes(), maximum).header();
         try {
             Http2HeaderRules(parsed).check();
         }

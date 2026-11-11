@@ -190,7 +190,7 @@ object Http2ConnectionInput {
     hidden async read_loop() is bool {
         loop {
             let eof = Event();
-            let pending = Http2FrameReading(origin, local.frame_size()).result();
+            let pending = Http2FrameReading(origin, local.frame_size()).frame();
             let available is @Http2Frame = try {
                 [await pending];
             }
@@ -250,7 +250,7 @@ object Http2ConnectionInput {
                 decoder.value(),
                 budget,
                 local.frame_size()
-            ).result();
+            ).block();
             let block = await pending;
             decoder.replace(block.context());
             receiver.headers(block);

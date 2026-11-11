@@ -139,7 +139,7 @@ hidden object CacheFreshnessObservations {
         let dates = headers.values(HeaderName("Date"));
         confirm dates.size() <= 1 else throw InvalidCacheMetadata.invalid;
         let observed = if dates.size() == 1 {
-            ParsedHttpDate(dates.item(0), received).value();
+            ParsedHttpDate(dates.item(0), received).instant();
         }
         else {
             received;
@@ -148,7 +148,7 @@ hidden object CacheFreshnessObservations {
         let ages = headers.values(HeaderName("Age"));
         confirm ages.size() <= 1 else throw InvalidCacheMetadata.invalid;
         age = if ages.size() == 1 {
-            CacheDeltaSeconds(ages.item(0)).value();
+            CacheDeltaSeconds(ages.item(0)).seconds();
         }
         else {
             0;
@@ -162,7 +162,7 @@ hidden object CacheFreshnessObservations {
             let expires = headers.values(HeaderName("Expires"));
             confirm expires.size() <= 1 else throw InvalidCacheMetadata.invalid;
             if expires.size() == 1 {
-                let difference = ParsedHttpDate(expires.item(0), received).value().minus(observed)::Span::seconds;
+                let difference = ParsedHttpDate(expires.item(0), received).instant().minus(observed)::Span::seconds;
                 if difference > 0.rat() {
                     difference;
                 }

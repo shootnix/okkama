@@ -232,7 +232,7 @@ object Http2OrdinaryFields {
 
     Http2OrdinaryFields(origin is Headers, request is bool, stream is int) {
         let checked = try {
-            Http2Headers(origin, request).result();
+            Http2Headers(origin, request).headers();
         }
         catch failure is InvalidHeader {
             throw Http2Fault.detailed(
@@ -397,7 +397,7 @@ object ParsedHttp2Request {
                     "CONNECT forbids scheme and path"
                 );
             try {
-                ParsedRequestTarget(raw, method).value();
+                ParsedRequestTarget(raw, method).target();
             }
             catch failure is InvalidRequestTarget {
                 throw Http2Fault.detailed(
@@ -411,7 +411,7 @@ object ParsedHttp2Request {
         else {
             let path = known.value(":path");
             let checked = try {
-                ParsedRequestTarget(path, method).value();
+                ParsedRequestTarget(path, method).target();
             }
             catch failure is InvalidRequestTarget {
                 throw Http2Fault.detailed(Http2FaultScope.stream, 1, stream, "invalid request path");
@@ -566,7 +566,7 @@ object Http2FieldSection {
             Header(HeaderName(field.name()), field.value());
         };
         headers = try {
-            Http2Headers(Headers(entries, HeaderLimits(1024, 1048576)), request).result();
+            Http2Headers(Headers(entries, HeaderLimits(1024, 1048576)), request).headers();
         }
         catch failure is InvalidHeader {
             throw Http2Fault.detailed(

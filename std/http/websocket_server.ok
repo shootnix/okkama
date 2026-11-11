@@ -138,14 +138,14 @@ hidden object WebSocketServerOpening {
         let handshake = WebSocketServerHandshake(request);
         confirm upgrade.access().allowed(request.request(EmptyBody()), destination)
             else throw WebSocketFailure.because("Origin denied");
-        let selected = WebSocketServerProtocol(handshake.protocols(), upgrade.protocols()).value();
+        let selected = WebSocketServerProtocol(handshake.protocols(), upgrade.protocols()).protocol();
         let response = handshake.response(selected);
         let wire = Http1ResponseHead(
             response::Head::status,
             response::Head::headers,
             response::Head::version
         );
-        let pending = Http1ResponseHeadWriting(output, wire, request.method()).result();
+        let pending = Http1ResponseHeadWriting(output, wire, request.method()).output();
         await pending;
         let session = WebSocketSession(
             WebSocketPrefixedInput(input, head.remainder()),
@@ -170,7 +170,7 @@ hidden object WebSocketServerProtocol {
         self.supported = supported;
     }
 
-    value() is string {
+    protocol() is string {
         for supported -> protocol {
             if offered.reduce(false) -> found, value {
                 found || protocol == value;

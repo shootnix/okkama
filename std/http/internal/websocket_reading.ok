@@ -20,7 +20,7 @@ object WebSocketFrameReading {
         waiting = input.reading();
     }
 
-    async result() is WebSocketFrame {
+    async frame() is WebSocketFrame {
         let group is FutureGroup<WebSocketFrame> = FutureGroup();
         let cleanup = WebSocketFrameSettlement(group);
         defer await cleanup.close();
@@ -91,7 +91,7 @@ hidden object WebSocketFrameInput {
             HttpWireBytes([prefix, extended], 10).bytes(),
             masked,
             maximum
-        ).value();
+        ).header();
         let mask is @byte = if masked {
             await self.exact(4, false);
         }

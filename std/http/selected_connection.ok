@@ -176,7 +176,7 @@ object HttpConversationAdopting does HttpConversationConnecting {
                 published.set();
                 return acquired;
             }
-            let peer = await Http2ClientPreface(tls.input(), tls.output(), local).result();
+            let peer = await Http2ClientPreface(tls.input(), tls.output(), local).settings();
             let session = Http2Conversation(
                 Http2Session(tls.input(), tls.output(), tls, local, peer, limits)
             );
@@ -205,7 +205,7 @@ object HttpConversationAdopting does HttpConversationConnecting {
             published.set();
             return acquired;
         }
-        let peer = await Http2ClientPreface(tcp.input(), tcp.output(), local).result();
+        let peer = await Http2ClientPreface(tcp.input(), tcp.output(), local).settings();
         let session = Http2Conversation(
             Http2Session(tcp.input(), tcp.output(), tcp, local, peer, limits)
         );

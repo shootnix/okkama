@@ -71,7 +71,7 @@ object CookieExchanging does Exchanging {
         }
         else {
             let selected = CookieRequestPairs(jar.cookies(request::Head::target.url(), context)).string();
-            let clean = HeadersWithout(request::Head::headers, [HeaderName("Cookie")]).result();
+            let clean = HeadersWithout(request::Head::headers, [HeaderName("Cookie")]).headers();
             if selected == "" {
                 clean;
             }

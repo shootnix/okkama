@@ -286,7 +286,7 @@ object HeadersWithout {
         self.origin = origin;
     }
 
-    result() is Headers {
+    headers() is Headers {
         let source = origin.entries();
         let entries is @Header = (0..source.size()).map() -> index {
             source.item(index);
@@ -310,8 +310,8 @@ object ReplacedHeader {
         self.entry = entry;
     }
 
-    result() is Headers {
-        HeadersWithout(origin, [entry.name()]).result().addition(entry);
+    headers() is Headers {
+        HeadersWithout(origin, [entry.name()]).headers().addition(entry);
     }
 }
 
@@ -326,7 +326,7 @@ object Http2Headers {
         self.request = request;
     }
 
-    result() is Headers {
+    headers() is Headers {
         let source = origin.entries();
         let entries is @Header = (0..source.size()).map() -> index {
             let entry = source.item(index);

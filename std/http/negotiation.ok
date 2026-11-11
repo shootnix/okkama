@@ -30,7 +30,7 @@ object Quality does Comparing<Quality> {
         thousandths = whole;
     }
 
-    value() is rat {
+    weight() is rat {
         thousandths.rat() / 1000.rat();
     }
 
@@ -39,7 +39,7 @@ object Quality does Comparing<Quality> {
     }
 
     order(other is Quality) is Order {
-        self.value().order(other.value());
+        self.weight().order(other.weight());
     }
 
     string() is string {
@@ -73,7 +73,7 @@ object ParsedQuality {
         self.origin = origin;
     }
 
-    value() is Quality {
+    quality() is Quality {
         confirm origin.length() >= 1 && origin.length() <= 5
             else throw InvalidQuality.because("qvalue length");
         let prefix = origin.slice(0, 1);
@@ -192,7 +192,7 @@ object AcceptedContentCodings {
         let entries = CodingField(origin, budget).values();
         limits = budget;
         self.origin = entries;
-        indexed = CodingIndex(entries).value();
+        indexed = CodingIndex(entries).index();
         present = true;
     }
 
@@ -200,7 +200,7 @@ object AcceptedContentCodings {
         let entries = CodingField(origin, limits).values();
         self.limits = limits;
         self.origin = entries;
-        indexed = CodingIndex(entries).value();
+        indexed = CodingIndex(entries).index();
         present = true;
     }
 
@@ -239,11 +239,11 @@ object AcceptedContentCodings {
         for choices -> coding {
             chosen = chosen.following(coding, self.match(coding));
         }
-        chosen.value();
+        chosen.coding();
     }
 
     hidden lookup(token is string) is @CodingPreference {
-        WeightedTokenLookup(indexed, token).value();
+        WeightedTokenLookup(indexed, token).preferences();
     }
 
     hidden match(coding is ContentCoding) is CodingPreference {
@@ -317,7 +317,7 @@ hidden object WeightedTokenLookup {
         self.token = HttpAsciiLowercase(HttpToken(token).string()).string();
     }
 
-    value() is @CodingPreference {
+    preferences() is @CodingPreference {
         let probe = CodingPreference(token, Quality(0.rat()), 0);
         let at = LowerBound(origin: origin, item: probe).index();
         if at < origin.size() && origin.item(at).token() == token {
@@ -335,7 +335,7 @@ hidden object CodingIndex {
         self.origin = origin;
     }
 
-    value() is Sorted<CodingPreference> {
+    index() is Sorted<CodingPreference> {
         let sorted is Sorted<CodingPreference> = Sorted(origin: origin);
         for (0..sorted.size()) -> index {
             if index > 0 {
@@ -378,7 +378,7 @@ hidden object CodingField {
             part != "";
         };
         let values is @CodingPreference = (0..nonempty.size()).map() -> index {
-            CodingMember(nonempty[index], index).value();
+            CodingMember(nonempty[index], index).preference();
         };
         values;
     }
@@ -393,7 +393,7 @@ hidden object CodingMember {
         self.position = position;
     }
 
-    value() is CodingPreference {
+    preference() is CodingPreference {
         let fields = origin.split(";");
         confirm fields.size() >= 1 && fields.size() <= 2
             else throw InvalidNegotiation.because("one optional q parameter required");
@@ -407,7 +407,7 @@ hidden object CodingMember {
                 && (weight.slice(0, 2) == "q=" || weight.slice(0, 2) == "Q=")
                 else throw InvalidNegotiation.because("q parameter assignment required");
             try {
-                ParsedQuality(weight.slice(2, weight.length())).value();
+                ParsedQuality(weight.slice(2, weight.length())).quality();
             }
             catch InvalidQuality.because(reason) {
                 throw InvalidNegotiation.because(reason);
@@ -442,7 +442,7 @@ hidden object CodingChoice {
             }
     }
 
-    value() is ContentCoding {
+    coding() is ContentCoding {
         confirm selected.size() == 1 else throw NoAcceptableValue.none;
         selected[0];
     }
@@ -495,7 +495,7 @@ object AcceptedCharsets {
         let entries = CodingField(origin, budget).values();
         limits = budget;
         self.origin = entries;
-        indexed = CodingIndex(entries).value();
+        indexed = CodingIndex(entries).index();
         present = true;
     }
 
@@ -503,7 +503,7 @@ object AcceptedCharsets {
         let entries = CodingField(origin, limits).values();
         self.limits = limits;
         self.origin = entries;
-        indexed = CodingIndex(entries).value();
+        indexed = CodingIndex(entries).index();
         present = true;
     }
 
@@ -542,11 +542,11 @@ object AcceptedCharsets {
         for choices -> charset {
             chosen = chosen.following(charset, self.lookup_match(charset));
         }
-        chosen.value();
+        chosen.charset();
     }
 
     hidden lookup(token is string) is @CodingPreference {
-        WeightedTokenLookup(indexed, token).value();
+        WeightedTokenLookup(indexed, token).preferences();
     }
 
     hidden lookup_match(charset is CharsetName) is CodingPreference {
@@ -589,7 +589,7 @@ hidden object CharsetChoice {
             }
     }
 
-    value() is CharsetName {
+    charset() is CharsetName {
         confirm selected.size() == 1 else throw NoAcceptableValue.none;
         selected[0];
     }
@@ -641,7 +641,7 @@ object AcceptedLanguages {
         let entries = LanguageField(origin, budget).values();
         limits = budget;
         self.origin = entries;
-        indexed = CodingIndex(entries).value();
+        indexed = CodingIndex(entries).index();
         present = true;
     }
 
@@ -649,7 +649,7 @@ object AcceptedLanguages {
         let entries = LanguageField(origin, limits).values();
         self.limits = limits;
         self.origin = entries;
-        indexed = CodingIndex(entries).value();
+        indexed = CodingIndex(entries).index();
         present = true;
     }
 
@@ -688,7 +688,7 @@ object AcceptedLanguages {
         for choices -> locale {
             chosen = chosen.following(locale, self.lookup_match(locale));
         }
-        chosen.value();
+        chosen.locale();
     }
 
     hidden lookup_match(locale is Locale) is LanguageMatch {
@@ -696,7 +696,7 @@ object AcceptedLanguages {
             return LanguageMatch(WeightedLanguageRange(BasicLanguageRange("*")), 0);
         }
         for LanguagePrefixes(locale).values() -> prefix {
-            let exact = WeightedTokenLookup(indexed, prefix.string()).value();
+            let exact = WeightedTokenLookup(indexed, prefix.string()).preferences();
             if exact.size() == 1 {
                 return LanguageMatch(
                     WeightedLanguageRange(prefix, exact[0].quality()),
@@ -704,7 +704,7 @@ object AcceptedLanguages {
                 );
             }
         }
-        let wildcard = WeightedTokenLookup(indexed, "*").value();
+        let wildcard = WeightedTokenLookup(indexed, "*").preferences();
         if wildcard.size() == 1 {
             return LanguageMatch(
                 WeightedLanguageRange(BasicLanguageRange("*"), wildcard[0].quality()),
@@ -792,7 +792,7 @@ hidden object LanguageChoice {
             }
     }
 
-    value() is Locale {
+    locale() is Locale {
         confirm selected.size() == 1 else throw NoAcceptableValue.none;
         selected[0];
     }
@@ -822,7 +822,7 @@ object MediaRange {
     }
 
     MediaRange(origin is string) {
-        let parsed = ParsedMediaRange(origin, HttpMediaLimits()).value();
+        let parsed = ParsedMediaRange(origin, HttpMediaLimits()).range();
         major = parsed.type();
         minor = parsed.subtype();
         parameters = parsed.parameters();
@@ -831,7 +831,7 @@ object MediaRange {
     }
 
     MediaRange(origin is string, limits is HttpMediaLimits) {
-        let parsed = ParsedMediaRange(origin, limits).value();
+        let parsed = ParsedMediaRange(origin, limits).range();
         major = parsed.type();
         minor = parsed.subtype();
         parameters = parsed.parameters();
@@ -935,9 +935,9 @@ hidden object ParsedMediaRange {
         self.limits = limits;
     }
 
-    value() is MediaRange {
+    range() is MediaRange {
         let fields = try {
-            HttpMediaScanning(origin, limits).value();
+            HttpMediaScanning(origin, limits).media_type();
         }
         catch InvalidHttpMediaType.located(_, reason) {
             throw InvalidNegotiation.because(reason);
@@ -965,7 +965,7 @@ hidden object ParsedMediaRange {
         }
         else {
             try {
-                ParsedQuality(present[0]).value();
+                ParsedQuality(present[0]).quality();
             }
             catch InvalidQuality.because(reason) {
                 throw InvalidNegotiation.because(reason);
@@ -1106,7 +1106,7 @@ object AcceptedMediaTypes {
         for choices -> media {
             selected = selected.following(media, self.lookup_match(media));
         }
-        selected.value();
+        selected.media_type();
     }
 
     hidden lookup_match(media is HttpMediaType) is MediaMatch {
@@ -1194,7 +1194,7 @@ hidden object MediaChoice {
             }
     }
 
-    value() is HttpMediaType {
+    media_type() is HttpMediaType {
         confirm selected.size() == 1 else throw NoAcceptableValue.none;
         selected[0];
     }
@@ -1336,9 +1336,9 @@ enum InvalidQuality is Error = (because(reason is string));
 enum InvalidWeightedValue is Error = (because(reason is string));
 
 test "quality is exact and zero refuses a preference" {
-    test.is(ParsedQuality("0.010").value().string(), "0.01");
+    test.is(ParsedQuality("0.010").quality().string(), "0.01");
     test.is(Quality(0.rat()).acceptable(), false);
-    test.is(Quality(1.rat() / 2.rat()), ParsedQuality("0.500").value());
+    test.is(Quality(1.rat() / 2.rat()), ParsedQuality("0.500").quality());
 }
 
 test "weighted tokens share quality but preserve field spelling" {

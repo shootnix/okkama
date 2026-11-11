@@ -28,7 +28,7 @@ object HttpRequestContext {
     ) {
         self.details = details;
         self.cancellation = cancellation;
-        self.parameters = HttpContextParameters(parameters).value();
+        self.parameters = HttpContextParameters(parameters).parameters();
     }
 
     endpoints() is ConnectionEndpoints<IpEndpoint> {
@@ -52,7 +52,7 @@ object HttpRequestContext {
     }
 
     parameters(origin is %string:string) is ^HttpRequestContext {
-        ^parameters = HttpContextParameters(origin).value();
+        ^parameters = HttpContextParameters(origin).parameters();
     }
 }
 
@@ -71,7 +71,7 @@ hidden object HttpContextParameters {
         self.origin = origin;
     }
 
-    value() is %string:string {
+    parameters() is %string:string {
         origin;
     }
 }

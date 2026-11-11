@@ -80,7 +80,7 @@ object ParsedHttp1Trailers {
         self.limits = limits;
     }
 
-    value() is Headers {
+    trailers() is Headers {
         confirm origin.length() <= limits.head_bytes()
             else throw Http1LimitExceeded.kind("trailer_bytes");
         confirm latin1_representable_prefix(origin) == origin.length()
@@ -125,5 +125,5 @@ object ParsedHttp1Trailers {
 
 test "zero chunk and empty trailers have explicit boundaries" {
     test.is(ParsedHttp1ChunkLine("0; ignored=\"safe;value\"").size().string(), "0");
-    test.is(ParsedHttp1Trailers("\r\n", Headers([])).value().entries().size(), 0);
+    test.is(ParsedHttp1Trailers("\r\n", Headers([])).trailers().entries().size(), 0);
 }

@@ -45,11 +45,11 @@ object HttpProxyTunnel {
 
     async ready() is bool {
         let request = HttpConnectRequest(target, fields).request();
-        let sending = Http1RequestWriting(output, request, limits).result();
+        let sending = Http1RequestWriting(output, request, limits).output();
         await sending;
         let information = HttpMediaPosition(0, 0);
         loop {
-            let pending = Http1ResponseHeadReading(input, [], limits, 1).result();
+            let pending = Http1ResponseHeadReading(input, [], limits, 1).head();
             let received = await pending;
             let status = received.head().status();
             let class = StatusCode(status).class();

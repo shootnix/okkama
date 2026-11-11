@@ -294,7 +294,7 @@ object WebSocketOutputTicket {
         true;
     }
 
-    async result() is bool {
+    async delivered() is bool {
         let group is FutureGroup<bool> = FutureGroup();
         let cleanup = WebSocketOutputSettlement(group);
         defer await cleanup.close();

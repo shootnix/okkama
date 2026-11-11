@@ -70,7 +70,7 @@ object ParsedHttp1RequestHead {
         self.limits = limits;
     }
 
-    value() is Http1RequestHead {
+    head() is Http1RequestHead {
         let head = Http1HeadLines(origin, limits);
         let words = head.start_line().split(" ");
         confirm words.size() == 3 && words[0] != "" && words[1] != "" && words[2] != ""
@@ -82,13 +82,13 @@ object ParsedHttp1RequestHead {
             throw InvalidHttpMessage.because("invalid request method token");
         };
         let target = try {
-            ParsedRequestTarget(words[1], method).value();
+            ParsedRequestTarget(words[1], method).target();
         }
         catch e is InvalidRequestTarget {
             throw InvalidHttpMessage.because("invalid request target");
         };
         let version = try {
-            ParsedHttp1Version(words[2]).value();
+            ParsedHttp1Version(words[2]).version();
         }
         catch e is UnsupportedHttpVersion {
             throw InvalidHttpMessage.because("unsupported request wire version");
@@ -111,13 +111,13 @@ object ParsedHttp1ResponseHead {
         self.limits = limits;
     }
 
-    value() is Http1ResponseHead {
+    head() is Http1ResponseHead {
         let head = Http1HeadLines(origin, limits);
         let line = head.start_line();
         confirm line.length() >= 13 && line.slice(8, 9) == " " && line.slice(12, 13) == " "
             else throw InvalidHttpMessage.because("strict status-line spacing required");
         let version = try {
-            ParsedHttp1Version(line.slice(0, 8)).value();
+            ParsedHttp1Version(line.slice(0, 8)).version();
         }
         catch e is UnsupportedHttpVersion {
             throw InvalidHttpMessage.because("unsupported response wire version");
@@ -309,12 +309,12 @@ object Http1ResponseHead {
 enum MissingHttp1Host is Error = (missing);
 
 test "strict HTTP1 head preserves extension status and duplicate fields" {
-    let head = ParsedHttp1ResponseHead("HTTP/1.1 299 phrase\r\nX: 1\r\nX: 2\r\n\r\n").value();
+    let head = ParsedHttp1ResponseHead("HTTP/1.1 299 phrase\r\nX: 1\r\nX: 2\r\n\r\n").head();
     test.ok(
         head.status() == Status.other(299) && head.headers().values(HeaderName("X")).size() == 2
     );
     test.ok(try {
-        ParsedHttp1RequestHead("GET / HTTP/1.1\r\n\r\n").value();
+        ParsedHttp1RequestHead("GET / HTTP/1.1\r\n\r\n").head();
         false;
     }
     catch e is InvalidHttpMessage {

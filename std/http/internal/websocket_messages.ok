@@ -94,7 +94,7 @@ object ParsedWebSocketClose {
         self.from_server = from_server;
     }
 
-    value() is WebSocketClosed {
+    closure() is WebSocketClosed {
         if origin.size() == 0 {
             return WebSocketClosed.detailed(1005, "");
         }

@@ -69,7 +69,7 @@ object CacheControl {
         let values = self.arguments(name);
         confirm self.count(name) == 1 && values.size() == 1
             else throw InvalidCacheControl.because("one delta-seconds argument required");
-        CacheDeltaSeconds(values[0]).value();
+        CacheDeltaSeconds(values[0]).seconds();
     }
 }
 
@@ -80,7 +80,7 @@ object CacheDeltaSeconds {
         self.origin = origin;
     }
 
-    value() is int {
+    seconds() is int {
         confirm origin.length() > 0 && origin.length() <= 8192
             else throw InvalidCacheControl.because("delta-seconds length");
         let bytes = try {

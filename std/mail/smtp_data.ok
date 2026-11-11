@@ -154,7 +154,7 @@ object SmtpDataValue {
             else {
                 rendered;
             };
-        let declared = SmtpDataMime(mime).requires_eight_bit(ParsedMime(content, mime).result());
+        let declared = SmtpDataMime(mime).requires_eight_bit(ParsedMime(content, mime).node());
         let high = content.reduce(false) -> found, octet {
             found || octet.int() > 127;
         };
@@ -239,7 +239,7 @@ object SmtpDataMime {
             0,
             limits.parts() - 1,
             limits.body_bytes()
-        ).result();
+        ).multipart();
         let nested = parsed.children().reduce(false) -> found, child {
             let required = self.requires_eight_bit(child);
             found || required;

@@ -299,7 +299,7 @@ object StaticFiles does Handling {
         let headers = ReplacedHeader(
             response::Head::headers,
             Header(HeaderName("Date"), HttpDate(now).string())
-        ).result();
+        ).headers();
         ResponseHandling(
             Response(
                 status: response::Head::status,
@@ -363,7 +363,7 @@ object StaticFiles does Handling {
         let compression = StaticRepresentations(companions);
         defer compression.close();
         if policy.precompressed() {
-            let preferences = StaticEncoding(request::Head::headers).value();
+            let preferences = StaticEncoding(request::Head::headers).codings();
             let rows is @StaticRepresentation = (0..companions.size() + 1).map() -> index {
                 if index == 0 {
                     StaticRepresentation(source, "identity");
@@ -384,7 +384,7 @@ object StaticFiles does Handling {
             }
         }
         else {
-            confirm StaticEncoding(request::Head::headers).value().quality(
+            confirm StaticEncoding(request::Head::headers).codings().quality(
                 ContentCoding("identity")
             ).acceptable()
                 else throw NoAcceptableValue.none;
@@ -415,7 +415,7 @@ object StaticFiles does Handling {
         );
         if policy.precompressed() {
             headers.replace(
-                ReplacedHeader(headers.value(), Header(HeaderName("Vary"), "Accept-Encoding")).result()
+                ReplacedHeader(headers.value(), Header(HeaderName("Vary"), "Accept-Encoding")).headers()
             );
         }
         if owned.coding() != "" {
@@ -423,7 +423,7 @@ object StaticFiles does Handling {
                 ReplacedHeader(
                     headers.value(),
                     Header(HeaderName("Content-Encoding"), owned.coding())
-                ).result()
+                ).headers()
             );
         }
         let decision = StaticPreconditions(request::Head::headers, tag, date, now).status();
@@ -470,7 +470,7 @@ object StaticFiles does Handling {
                             HeaderName("Content-Range"),
                             "bytes " + part.string() + "/" + size.string()
                         )
-                    ).result()
+                    ).headers()
                 );
                 pieces = pieces.following(
                     StaticPiece(
@@ -488,7 +488,7 @@ object StaticFiles does Handling {
                             HeaderName("Content-Type"),
                             "multipart/byteranges; boundary=" + boundary
                         )
-                    ).result()
+                    ).headers()
                 );
                 for ranges -> part {
                     pieces = pieces.following(
@@ -515,7 +515,7 @@ object StaticFiles does Handling {
             ReplacedHeader(
                 headers.value(),
                 Header(HeaderName("Content-Length"), body.length().string())
-            ).result()
+            ).headers()
         );
         owned.claim();
         Response(status: StatusCode(status).status(), headers: headers.value(), body: body);
@@ -762,7 +762,7 @@ hidden object StaticEncoding {
         self.head = head;
     }
 
-    value() is AcceptedContentCodings {
+    codings() is AcceptedContentCodings {
         let fields = head.values(HeaderName("Accept-Encoding"));
         if fields.size() == 0 {
             AcceptedContentCodings();
@@ -808,7 +808,7 @@ hidden object StaticPreconditions {
             let strings is @string = matches.map() -> field {
                 field;
             };
-            if !ParsedEntityTags(strings.join(",")).value().strong_matches(tag) {
+            if !ParsedEntityTags(strings.join(",")).tags().strong_matches(tag) {
                 return 412;
             }
         }
@@ -816,7 +816,7 @@ hidden object StaticPreconditions {
             let fields = head.values(HeaderName("If-Unmodified-Since"));
             if fields.size() == 1 {
                 let valid is @HttpDate = try {
-                    [HttpDate(ParsedHttpDate(fields.item(0), reference).value())];
+                    [HttpDate(ParsedHttpDate(fields.item(0), reference).instant())];
                 }
                 catch e is InvalidHttpDate {
                     [];
@@ -831,7 +831,7 @@ hidden object StaticPreconditions {
             let strings is @string = none_matches.map() -> field {
                 field;
             };
-            if ParsedEntityTags(strings.join(",")).value().weak_matches(tag) {
+            if ParsedEntityTags(strings.join(",")).tags().weak_matches(tag) {
                 return 304;
             }
         }
@@ -839,7 +839,7 @@ hidden object StaticPreconditions {
             let fields = head.values(HeaderName("If-Modified-Since"));
             if fields.size() == 1 {
                 let valid is @HttpDate = try {
-                    [HttpDate(ParsedHttpDate(fields.item(0), reference).value())];
+                    [HttpDate(ParsedHttpDate(fields.item(0), reference).instant())];
                 }
                 catch e is InvalidHttpDate {
                     [];

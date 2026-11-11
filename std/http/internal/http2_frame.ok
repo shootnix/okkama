@@ -117,7 +117,7 @@ object ParsedHttp2FrameHeader {
         self.maximum = maximum;
     }
 
-    value() is Http2FrameHeader {
+    header() is Http2FrameHeader {
         confirm origin.size() == 9
             else throw Http2Fault.detailed(
                 Http2FaultScope.connection,

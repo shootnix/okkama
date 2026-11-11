@@ -68,7 +68,7 @@ object XmlRpcInteger does XmlRpcValue {
         origin = value;
     }
 
-    value() is int {
+    int() is int {
         origin;
     }
 
@@ -88,7 +88,7 @@ hidden object XmlRpcBoolean does XmlRpcValue {
         origin = value;
     }
 
-    value() is bool {
+    bool() is bool {
         origin;
     }
 
@@ -108,7 +108,7 @@ object XmlRpcText does XmlRpcValue {
         origin = value;
     }
 
-    value() is string {
+    string() is string {
         origin;
     }
 
@@ -128,7 +128,7 @@ hidden object XmlRpcFloat does XmlRpcValue {
         origin = value;
     }
 
-    value() is float {
+    float() is float {
         origin;
     }
 
@@ -152,7 +152,7 @@ hidden object XmlRpcDouble does XmlRpcValue {
         origin = value;
     }
 
-    value() is Decimal {
+    decimal() is Decimal {
         origin;
     }
 
@@ -174,7 +174,7 @@ hidden object XmlRpcDateTime does XmlRpcValue {
         origin = value;
     }
 
-    value() is LocalDateTime {
+    local_date_time() is LocalDateTime {
         origin;
     }
 
@@ -194,7 +194,7 @@ hidden object XmlRpcBinary does XmlRpcValue {
         origin = value;
     }
 
-    value() is @byte {
+    bytes() is @byte {
         origin;
     }
 
@@ -1082,7 +1082,7 @@ hidden object XmlRpcParsing {
                 }
                 case "int", "i4" {
                     let text = self.text_element(tag);
-                    XmlRpcInteger(XmlRpcIntegerText(text).value());
+                    XmlRpcInteger(XmlRpcIntegerText(text).int());
                 }
                 case "boolean" {
                     let text = self.text_element(tag);
@@ -1092,10 +1092,10 @@ hidden object XmlRpcParsing {
                 }
                 case "double" {
                     let text = self.text_element(tag);
-                    XmlRpcDouble(XmlRpcParsedDouble(text).value());
+                    XmlRpcDouble(XmlRpcParsedDouble(text).decimal());
                 }
                 case "dateTime.iso8601" {
-                    XmlRpcDateTime(XmlRpcParsedDate(self.text_element(tag)).value());
+                    XmlRpcDateTime(XmlRpcParsedDate(self.text_element(tag)).local_date_time());
                 }
                 case "base64" {
                     let text = self.text_element(tag).replace(" ", "").replace("\t", "").replace(
@@ -1168,7 +1168,7 @@ hidden object XmlRpcParsing {
         XmlRpcCall(name, ordered);
     }
 
-    result() is XmlRpcResult {
+    response() is XmlRpcResult {
         confirm self.open("methodResponse") else throw InvalidXmlRpc.because("empty response");
         let first = self.peek();
         let result is XmlRpcResult = if first.text() == "params" {
@@ -1216,8 +1216,8 @@ hidden object ParsedXmlRpcResult {
         self.limits = limits;
     }
 
-    result() is XmlRpcResult {
-        XmlRpcParsing(bytes, limits).result();
+    response() is XmlRpcResult {
+        XmlRpcParsing(bytes, limits).response();
     }
 }
 
@@ -1242,7 +1242,7 @@ hidden object XmlRpcIntegerText {
         XmlRpcInteger(self.value);
     }
 
-    value() is int {
+    int() is int {
         value;
     }
 }
@@ -1295,7 +1295,7 @@ hidden object XmlRpcParsedDouble {
         XmlRpcDouble(self.value);
     }
 
-    value() is Decimal {
+    decimal() is Decimal {
         value;
     }
 }
@@ -1329,7 +1329,7 @@ hidden object XmlRpcParsedDate {
         };
     }
 
-    value() is LocalDateTime {
+    local_date_time() is LocalDateTime {
         value;
     }
 }
@@ -1496,7 +1496,7 @@ hidden object XmlRpcClient does XmlRpcCalling {
         XmlRpcMedia(response::Head::headers);
         let body = XmlRpcBodyBytes(input, limits);
         let pending = body.bytes();
-        ParsedXmlRpcResult(await pending, limits).result();
+        ParsedXmlRpcResult(await pending, limits).response();
     }
 }
 
@@ -1647,5 +1647,5 @@ test "standard XMLRPC values do not require casts" {
     catch e is InvalidXmlRpc {
         true;
     });
-    test.is(XmlRpcInteger(-2147483648).value(), -2147483648);
+    test.is(XmlRpcInteger(-2147483648).int(), -2147483648);
 }

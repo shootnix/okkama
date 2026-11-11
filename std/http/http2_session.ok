@@ -603,7 +603,7 @@ hidden object Http2StreamHolding {
         origin.value();
     }
 
-    async value() is Http2StreamEntry {
+    async entry() is Http2StreamEntry {
         await ready.wait();
         let values = origin.value();
         if values.size() == 0 {
@@ -737,7 +737,7 @@ hidden object Http2SessionExchange {
         defer dequeue.close();
         let waiting = owner.admit(position, request, known, declared);
         let holder = await waiting;
-        let offered = holder.value();
+        let offered = holder.entry();
         let entry = await offered;
         let published = Event();
         let release = Http2ExchangeCleanup(entry, published);
@@ -998,7 +998,7 @@ hidden object Http2StreamEntry does Closing {
             owner.check_fields(fields, stream);
             let head = owner.output().headers(stream, fields, owner.budget(), 16384, zero, starting);
             ticket.replace([head]);
-            let pending = head.result();
+            let pending = head.delivered();
             let heads is FutureGroup<bool> = FutureGroup();
             let cleanup = Http2SessionSettlement(heads);
             defer await cleanup.close();

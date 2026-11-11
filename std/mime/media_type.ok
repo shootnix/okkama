@@ -113,14 +113,14 @@ object MediaType {
     has entries is MimeParameters;
 
     MediaType(origin is string) {
-        let parsed = MimeScanning(origin, 256, 1048576).value();
+        let parsed = MimeScanning(origin, 256, 1048576).media_type();
         major = parsed.type();
         minor = parsed.subtype();
         entries = parsed.parameters();
     }
 
     MediaType(origin is string, limits is MediaTypeLimits) {
-        let parsed = MimeScanning(origin, limits.parameters(), limits.bytes()).value();
+        let parsed = MimeScanning(origin, limits.parameters(), limits.bytes()).media_type();
         major = parsed.type();
         minor = parsed.subtype();
         entries = parsed.parameters();
@@ -343,7 +343,7 @@ object MimeScanning {
         self.maximum_bytes = maximum_bytes;
     }
 
-    value() is MimeParsed {
+    media_type() is MimeParsed {
         self.validate();
         let major = self.token(self.space(0));
         let slash = self.space(major.end());
@@ -610,7 +610,7 @@ hidden object MimeExtended {
         for (0..ordered.size()) -> index {
             let part = ordered[index];
             let text = if index == 0 {
-                prefix.value();
+                prefix.name();
             }
             else {
                 part.value();
@@ -691,7 +691,7 @@ hidden object MimeCharset {
         encoding;
     }
 
-    value() is string {
+    name() is string {
         text;
     }
 }

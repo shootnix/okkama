@@ -61,7 +61,7 @@ object CachedHttpEntry {
         self.request = snapshot;
         let original = result::Exchange::response;
         cacheable = CacheAdmissionControl(original::Head::headers).allowed();
-        let sanitized = CacheStoredHeaders(original::Head::headers).result();
+        let sanitized = CacheStoredHeaders(original::Head::headers).headers();
         self.result = ClientResponse(
             request: snapshot,
             response: Response(
@@ -97,7 +97,7 @@ object CachedHttpEntry {
         request;
     }
 
-    result() is ClientResponse {
+    response() is ClientResponse {
         result;
     }
 
@@ -116,7 +116,7 @@ object CachedHttpEntry {
     dated() is Instant {
         let fields = result::Head::headers;
         try {
-            ParsedHttpDate(fields.first(HeaderName("Date")), timing.received()).value();
+            ParsedHttpDate(fields.first(HeaderName("Date")), timing.received()).instant();
         }
         catch e is Error {
             timing.received();
@@ -174,9 +174,9 @@ object CachedHttpEntry {
     }
 
     cost() is int {
-        128 + self.key().length() + bytes.size() + CacheHeaderSize(request::Head::headers).value() + CacheHeaderSize(
+        128 + self.key().length() + bytes.size() + CacheHeaderSize(request::Head::headers).size() + CacheHeaderSize(
             result::Head::headers
-        ).value() + CacheHeaderSize(trailers).value();
+        ).size() + CacheHeaderSize(trailers).size();
     }
 
     response(request is Request, now is MonotonicInstant) is ClientResponse {
@@ -184,7 +184,7 @@ object CachedHttpEntry {
         let fields = ReplacedHeader(
             result::Head::headers,
             Header(HeaderName("Age"), current.string())
-        ).result();
+        ).headers();
         let dated = if fields.membership(HeaderName("Date")) {
             fields;
         }
@@ -216,7 +216,7 @@ object MemoryHttpCache does ResponseCaching, Closing {
     MemoryHttpCache(clock is Timing, maximum is BigInt) {
         let config = CacheMemoryBudget(maximum);
         self.clock = clock;
-        self.maximum = config.value();
+        self.maximum = config.bytes();
         authenticated = false;
         let empty is @CachedHttpEntry = [];
         cell = Atomic(empty);
@@ -226,7 +226,7 @@ object MemoryHttpCache does ResponseCaching, Closing {
     MemoryHttpCache(clock is Timing, maximum is BigInt, authenticated is bool) {
         let config = CacheMemoryBudget(maximum);
         self.clock = clock;
-        self.maximum = config.value();
+        self.maximum = config.bytes();
         self.authenticated = authenticated;
         let empty is @CachedHttpEntry = [];
         cell = Atomic(empty);
@@ -245,7 +245,7 @@ object MemoryHttpCache does ResponseCaching, Closing {
                 selected = selected.following(item);
             }
         }
-        selected.value();
+        selected.entry();
     }
 
     response(request is Request) is ClientResponse {
@@ -258,7 +258,7 @@ object MemoryHttpCache does ResponseCaching, Closing {
     store(entry is CachedHttpEntry) is void {
         confirm !cell.closed() else throw CacheClosed.closed;
         let request = entry.request();
-        let result = entry.result();
+        let result = entry.response();
         if request::Head::method != Method.get
             || (request::Head::headers.membership(HeaderName("Authorization")) && !authenticated) {
                 return;
@@ -441,7 +441,7 @@ hidden object CacheHeaderSize {
         self.origin = origin;
     }
 
-    value() is int {
+    size() is int {
         origin.entries().reduce(0) -> total, field {
             total + field.name().string().length() + field.value().length() + 4;
         };
@@ -459,7 +459,7 @@ hidden object CacheMemoryBudget {
         };
     }
 
-    value() is int {
+    bytes() is int {
         value;
     }
 }
@@ -500,7 +500,7 @@ hidden object CacheEntrySelection {
         selected = [];
     }
 
-    value() is CachedHttpEntry {
+    entry() is CachedHttpEntry {
         confirm selected.size() == 1 else throw MissingCachedResponse.missing;
         selected[0];
     }
@@ -530,7 +530,7 @@ object CacheStoredHeaders {
         let present is @HeaderName = names.values().filter() -> name {
             origin.membership(name);
         };
-        let clean = HeadersWithout(origin, present).result();
+        let clean = HeadersWithout(origin, present).headers();
         let excluded is @HeaderName = [
             HeaderName("Connection"),
             HeaderName("Proxy-Connection"),
@@ -545,10 +545,10 @@ object CacheStoredHeaders {
         let selected is @HeaderName = excluded.filter() -> name {
             clean.membership(name);
         };
-        result = HeadersWithout(clean, selected).result();
+        result = HeadersWithout(clean, selected).headers();
     }
 
-    result() is Headers {
+    headers() is Headers {
         result;
     }
 }

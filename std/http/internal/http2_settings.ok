@@ -115,7 +115,7 @@ object ReceivedHttp2Settings {
         self.from_server = from_server;
     }
 
-    value() is Http2PeerSettings {
+    settings() is Http2PeerSettings {
         Http2FrameRules(origin).check();
         confirm origin.header().kind().int() == 4 && (origin.header().flags().int() & 1) == 0
             else throw Http2Fault.detailed(

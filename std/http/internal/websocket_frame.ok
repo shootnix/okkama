@@ -141,7 +141,7 @@ object ParsedWebSocketFrameHeader {
         self.maximum = maximum;
     }
 
-    value() is WebSocketFrameHeader {
+    header() is WebSocketFrameHeader {
         WebSocketHeaderPrefix(origin, masked).checked();
         let first = origin[0].int();
         let second = origin[1].int();

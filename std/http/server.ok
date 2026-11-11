@@ -466,7 +466,7 @@ hidden object HttpServerPeer {
                 response,
                 Method.get,
                 policy.limits().http1()
-            ).result();
+            ).output();
             try {
                 await pending;
             }
@@ -522,7 +522,7 @@ hidden object HttpServerPeer {
                     policy.timeouts().keep_alive_timeout(),
                     clock
                 );
-                let idle_waiting = idle_deadline.result();
+                let idle_waiting = idle_deadline.outcome();
                 let first = await idle_waiting;
                 if first.size() == 0 {
                     return true;
@@ -536,13 +536,13 @@ hidden object HttpServerPeer {
                 prefix.value(),
                 policy.limits().http1(),
                 4096
-            ).result();
+            ).head();
             let deadline is HttpServerDeadline<Http1HeadRead<Http1RequestHead>> = HttpServerDeadline(
                 reading,
                 policy.timeouts().headers_timeout(),
                 clock
             );
-            let bounded = deadline.result();
+            let bounded = deadline.outcome();
             let received = await bounded;
             let head = received.head();
             confirm head.version() == HttpVersion.http_1_1
@@ -565,7 +565,7 @@ hidden object HttpServerPeer {
                         response,
                         head.method(),
                         policy.limits().http1()
-                    ).result();
+                    ).output();
                     await pending;
                     return true;
                 }
@@ -595,7 +595,7 @@ hidden object HttpServerPeer {
                 policy.timeouts().handling_timeout(),
                 clock
             );
-            let waiting = handler_deadline.result();
+            let waiting = handler_deadline.outcome();
             handlers.start(waiting);
             let result is HandlingResult = try {
                 await waiting;
@@ -654,7 +654,7 @@ hidden object HttpServerPeer {
                     headers: ReplacedHeader(
                         original::Head::headers,
                         Header(HeaderName("Connection"), "close")
-                    ).result(),
+                    ).headers(),
                     body: original.body(),
                     version: original::Head::version
                 );
@@ -667,7 +667,7 @@ hidden object HttpServerPeer {
                 response,
                 head.method(),
                 policy.limits().http1()
-            ).result();
+            ).output();
             sent.replace(true);
             await sending;
             let outgoing = Http1ResponseFraming(
@@ -729,7 +729,7 @@ hidden object HttpServerDeadline<T> {
         }
     }
 
-    result() is Future<T> {
+    outcome() is Future<T> {
         waiting;
     }
 }
@@ -751,7 +751,7 @@ hidden object HttpServerTimedInput does AsyncReading {
             limit,
             clock
         );
-        let reading = deadline.result();
+        let reading = deadline.outcome();
         try {
             await reading;
         }
@@ -807,7 +807,7 @@ hidden object HttpServerContinueInput does AsyncReading {
                 output,
                 Http1ResponseHead(Status.continue, Headers([]), HttpVersion.http_1_1),
                 Method.post
-            ).result();
+            ).output();
             await sending;
         }
         let reading = origin.bytes(limit);

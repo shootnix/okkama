@@ -209,10 +209,10 @@ hidden object WebSocketSessionState {
         defer assembly.close();
         try {
             loop {
-                let pending = WebSocketFrameReading(input, !client, limits.frame_bytes()).result();
+                let pending = WebSocketFrameReading(input, !client, limits.frame_bytes()).frame();
                 let frame = await pending;
                 if frame.opcode() == 8 {
-                    let received = ParsedWebSocketClose(frame.payload(), client).value();
+                    let received = ParsedWebSocketClose(frame.payload(), client).closure();
                     let responding = !closing.ready();
                     if responding {
                         closing.set();
@@ -222,7 +222,7 @@ hidden object WebSocketSessionState {
                     incoming.sending().close();
                     if responding {
                         let echo is Within<bool> = Within(
-                            origin: output.control(8, frame.payload()).result(),
+                            origin: output.control(8, frame.payload()).delivered(),
                             limit: close_timeout,
                             clock: clock
                         );
@@ -237,7 +237,7 @@ hidden object WebSocketSessionState {
                     return true;
                 }
                 if frame.opcode() == 9 {
-                    let pong = output.control(10, frame.payload()).result();
+                    let pong = output.control(10, frame.payload()).delivered();
                     await pong;
                     next;
                 }
@@ -272,7 +272,7 @@ hidden object WebSocketSessionState {
                         origin: output.control(
                             8,
                             IntegerBytes(1002, 2, Signedness.unsigned, ByteOrder.big).bytes()
-                        ).result(),
+                        ).delivered(),
                         limit: close_timeout,
                         clock: clock
                     );
@@ -306,13 +306,13 @@ hidden object WebSocketSessionState {
 
     async send(message is WebSocketMessage) is bool {
         confirm !self.closed() && !closing.ready() else throw failure.value();
-        let pending = output.message(message).result();
+        let pending = output.message(message).delivered();
         await pending;
     }
 
     async ping(payload is @byte) is bool {
         confirm !self.closed() && !closing.ready() else throw failure.value();
-        let pending = output.control(9, payload).result();
+        let pending = output.control(9, payload).delivered();
         await pending;
     }
 
@@ -332,7 +332,7 @@ hidden object WebSocketSessionState {
                 ],
                 125
             ).bytes();
-            let pending = output.control(8, payload).result();
+            let pending = output.control(8, payload).delivered();
             await pending;
             close_sent.set();
         }
