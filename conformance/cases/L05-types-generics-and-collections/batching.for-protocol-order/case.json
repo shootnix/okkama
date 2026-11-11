@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.batching.for-protocol-order",
+  "title": "for asks for a batch, walks it as an array, and stops at the first empty batch",
+  "purpose": "Observe type, generic and collection semantics.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.BATCHING",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "CTRL.FOR",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "batch 0\nbody 1\nbody 2\nbatch 1\nbody 3\nbatch 2\ndone\n"
+    }
+  },
+  "spec_refs": [
+    "std/collections/iteration.ok",
+    "docs/okkama-spec-11072026.md#9.9"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #465 from the cited contract text",
+    "expected_basis": "#465: for over a Batching<T> calls batch() once per batch, binds each element of the batch in order, and ends at the first [] without asking again."
+  },
+  "status": "mandatory"
+}

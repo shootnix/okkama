@@ -45,6 +45,12 @@ enum Source {
         item: usize,
         successor: usize,
     },
+    /// Поток `collections/iteration.Batching<T>`: `batch()` до пустой пачки (#465).
+    Batch {
+        source: Typed,
+        element: Type,
+        batch: usize,
+    },
 }
 
 impl Source {
@@ -54,6 +60,7 @@ impl Source {
             Source::Array { element, .. } => vec![element.clone()],
             Source::Map { key, value, .. } => vec![key.clone(), value.clone()],
             Source::Cursor { element, .. } => vec![element.clone()],
+            Source::Batch { element, .. } => vec![element.clone()],
         }
     }
 
@@ -306,7 +313,196 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 }))
             }
             thir::Source::Iterating(expr) => self.cursor_source(expr),
+            thir::Source::Batching(expr) => self.batch_source(expr),
         }
+    }
+
+    /// `Batching<T>`: значение источника; пачки берёт сам цикл.
+    fn batch_source(&mut self, expr: &'r thir::Expr) -> Result<Option<Source>> {
+        let reg = self.ctx.reg;
+        let Some(batching) = reg.standard.batching else {
+            return Err(unsupported(expr.span, "iteration without collections/iteration"));
+        };
+        let Some(crate::analysis::ty::Ty::Role(_, args)) = &expr.ty else {
+            return Err(unsupported(expr.span, "iteration over this value"));
+        };
+        let element = self.ctx.ir_type(&args[0].subst(&self.env), expr.span)?;
+        let Some(batch) = reg.roles[batching.0]
+            .methods
+            .iter()
+            .position(|method| method.name == "batch" && method.params.is_empty())
+        else {
+            return Err(unsupported(expr.span, "this iteration protocol"));
+        };
+        let Some(value) = self.value(expr)? else {
+            return Ok(None);
+        };
+        Ok(Some(Source::Batch {
+            source: value,
+            element,
+            batch,
+        }))
+    }
+
+    /// Цикл по пачкам: заголовок получает текущую пачку, индекс в ней и
+    /// состояние. Индекс в пределах пачки — итерация; иначе блок дозаправки
+    /// берёт следующую пачку и возвращается в заголовок, а пустая пачка
+    /// завершает цикл. Цикл один, поэтому `next` и `last` тела работают как в
+    /// любом `for`.
+    #[allow(clippy::too_many_arguments)]
+    fn batch_loop(
+        &mut self,
+        source: Typed,
+        element: Type,
+        slot: usize,
+        state: Vec<Typed>,
+        scanned: &thir::Block,
+        span: Span,
+        value: bool,
+        mut body: impl FnMut(&mut Self, Vec<Typed>, Vec<Typed>) -> Result<Option<Vec<ValueId>>>,
+    ) -> Result<(Out, Vec<Typed>)> {
+        let batch_type = Type::Array(Box::new(element.clone()));
+        let fetch = |lowerer: &mut Self| {
+            lowerer.emit(
+                InstKind::CallRole {
+                    receiver: source.value,
+                    slot,
+                    args: Vec::new(),
+                },
+                batch_type.clone(),
+                span,
+            )
+        };
+        // The loop starts with an empty batch, so its first step is the refill:
+        // exactly one batch() call per batch, an empty source included.
+        let first = self.emit(InstKind::ArrayNew(Vec::new()), batch_type.clone(), span);
+        let zero = self.constant(Constant::Int(IntValue::from_i64(0)), span);
+        let base = self.vars.len();
+        let carried = self.carried_vars(scanned, span)?;
+        let state_types: Vec<Type> = state.iter().map(|value| value.ty.clone()).collect();
+        let mut extra = vec![batch_type.clone(), Type::Int];
+        extra.extend(state_types.iter().cloned());
+        let (head, head_params) = self.block_for_vars(&extra, &carried);
+        let (batch, index) = (head_params[0], head_params[1]);
+        let state_params: Vec<Typed> = head_params[2..2 + state.len()]
+            .iter()
+            .zip(&state_types)
+            .map(|(value, ty)| Typed {
+                value: *value,
+                ty: ty.clone(),
+            })
+            .collect();
+        let mut args = vec![first.value, zero.value];
+        args.extend(state.iter().map(|value| value.value));
+        args.extend(self.carried_args(&carried, span));
+        self.b
+            .terminate(TermKind::Br(Target { block: head, args }), span);
+        self.b.switch_to(head);
+        self.bind_carried(&carried, &head_params[2 + state.len()..]);
+        let size = self.emit(InstKind::ArrayLen(batch), Type::Int, span);
+        let within = self.emit(
+            InstKind::IntCompare {
+                op: CompareOp::Lt,
+                left: index,
+                right: size.value,
+            },
+            Type::Bool,
+            span,
+        );
+        let iteration = self.b.new_block();
+        let refill = self.b.new_block();
+        self.b.terminate(
+            TermKind::Cond {
+                condition: within.value,
+                then_target: Target::new(iteration),
+                else_target: Target::new(refill),
+            },
+            span,
+        );
+
+        self.b.switch_to(refill);
+        let next_batch = fetch(self);
+        let next_size = self.emit(InstKind::ArrayLen(next_batch.value), Type::Int, span);
+        let none = self.constant(Constant::Int(IntValue::from_i64(0)), span);
+        let empty = self.emit(
+            InstKind::IntCompare {
+                op: CompareOp::Eq,
+                left: next_size.value,
+                right: none.value,
+            },
+            Type::Bool,
+            span,
+        );
+        let finished = self.b.new_block();
+        let reenter = self.b.new_block();
+        self.b.terminate(
+            TermKind::Cond {
+                condition: empty.value,
+                then_target: Target::new(finished),
+                else_target: Target::new(reenter),
+            },
+            span,
+        );
+        self.b.switch_to(reenter);
+        let start = self.constant(Constant::Int(IntValue::from_i64(0)), span);
+        let mut args = vec![next_batch.value, start.value];
+        args.extend(state_params.iter().map(|value| value.value));
+        args.extend(self.carried_args(&carried, span));
+        self.b
+            .terminate(TermKind::Br(Target { block: head, args }), span);
+
+        self.b.switch_to(finished);
+        let exhausted = if value {
+            let last = self.last_iteration(&state_params, span);
+            self.arm(Out::Value(last))
+        } else {
+            self.arm(Out::Unit)
+        }
+        .expect("the exhausted edge is open");
+        let (step, step_params) = self.block_for_vars(&state_types, &carried);
+
+        self.b.switch_to(iteration);
+        self.loops.push(LoopFrame {
+            next: step,
+            state: state_params.iter().map(|value| value.value).collect(),
+            carried: carried.clone(),
+            exits: vec![exhausted],
+            base,
+            depth: self.scopes.len(),
+            want: value,
+        });
+        let current = self.emit(InstKind::ArrayGet { array: batch, index }, element, span);
+        let body_out = body(self, vec![current], state_params.clone());
+        if let Ok(Some(next_state)) = &body_out
+            && self.b.is_open()
+        {
+            let mut args = next_state.clone();
+            args.extend(self.carried_args(&carried, span));
+            self.b
+                .terminate(TermKind::Br(Target { block: step, args }), span);
+        }
+        let frame = self.loops.pop().expect("loop frame pushed above");
+        body_out?;
+
+        self.b.switch_to(step);
+        self.bind_carried(&carried, &step_params[state.len()..]);
+        let one = self.constant(Constant::Int(IntValue::from_i64(1)), span);
+        let advanced = self.emit(
+            InstKind::IntBinary {
+                op: IntBinaryOp::Add,
+                left: index,
+                right: one.value,
+            },
+            Type::Int,
+            span,
+        );
+        let mut args = vec![batch, advanced.value];
+        args.extend(step_params[..state.len()].iter().copied());
+        args.extend(self.carried_args(&carried, span));
+        self.b
+            .terminate(TermKind::Br(Target { block: head, args }), span);
+        let out = self.join(frame.exits, frame.base, value, span)?;
+        Ok((out, state_params))
     }
 
     /// `Iterating<T>`: один `cursor()` перед обходом (§9.9).
@@ -595,6 +791,11 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 as_value,
                 body,
             ),
+            Source::Batch {
+                source,
+                element,
+                batch,
+            } => self.batch_loop(source, element, batch, state, scanned, span, as_value, body),
         }
     }
 

@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.batching.next-last-return",
+  "title": "next, last and return in the body leave a batched for as they leave any for",
+  "purpose": "Observe type, generic and collection semantics.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.BATCHING",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "CTRL.FOR",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "batch 0\nkept 2\nbatch 1\nbatch 0\nbatch 1\nfound 3\n"
+    }
+  },
+  "spec_refs": [
+    "std/collections/iteration.ok",
+    "docs/okkama-spec-11072026.md#9.9"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #465 from the cited contract text",
+    "expected_basis": "#465: next goes to the next element (asking for the next batch only when the current one is exhausted), last leaves the loop without asking for another batch, return leaves the action."
+  },
+  "status": "mandatory"
+}

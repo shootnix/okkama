@@ -140,6 +140,8 @@ pub enum Source {
     Varargs(LocalId),
     /// Значение `collections/iteration.Iterating<T>` (после границы роли).
     Iterating(Box<Expr>),
+    /// Значение `collections/iteration.Batching<T>`: обход пачками (#465).
+    Batching(Box<Expr>),
 }
 
 #[derive(Clone, Debug)]
@@ -667,7 +669,9 @@ fn stmt_uses_receiver(stmt: &Stmt) -> bool {
 fn source_uses_receiver(source: &Source) -> bool {
     match source {
         Source::Range { start, end, .. } => expr_uses_receiver(start) || expr_uses_receiver(end),
-        Source::Array(value) | Source::Map(value) | Source::Iterating(value) => expr_uses_receiver(value),
+        Source::Array(value) | Source::Map(value) | Source::Iterating(value) | Source::Batching(value) => {
+            expr_uses_receiver(value)
+        }
         Source::Varargs(_) => false,
     }
 }
@@ -782,7 +786,9 @@ fn stmt_mentions(stmt: &Stmt, local: LocalId) -> usize {
 fn source_mentions(source: &Source, local: LocalId) -> usize {
     match source {
         Source::Range { start, end, .. } => expr_mentions(start, local) + expr_mentions(end, local),
-        Source::Array(value) | Source::Map(value) | Source::Iterating(value) => expr_mentions(value, local),
+        Source::Array(value) | Source::Map(value) | Source::Iterating(value) | Source::Batching(value) => {
+            expr_mentions(value, local)
+        }
         Source::Varargs(varargs) => usize::from(*varargs == local),
     }
 }
@@ -942,7 +948,7 @@ fn each_source_expr<'e>(source: &'e Source, visit: &mut dyn FnMut(&'e Expr)) {
             visit(start);
             visit(end);
         }
-        Source::Array(value) | Source::Map(value) | Source::Iterating(value) => visit(value),
+        Source::Array(value) | Source::Map(value) | Source::Iterating(value) | Source::Batching(value) => visit(value),
         Source::Varargs(_) => {}
     }
 }

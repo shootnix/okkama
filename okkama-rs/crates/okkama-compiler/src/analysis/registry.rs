@@ -266,6 +266,8 @@ pub struct Standard {
     pub order: Option<EnumId>,
     pub iterating: Option<RoleId>,
     pub cursor: Option<RoleId>,
+    /// `collections/iteration.Batching<T>`: a stream walked batch by batch (#465).
+    pub batching: Option<RoleId>,
     pub sequencing: Option<RoleId>,
     pub sizing: Option<RoleId>,
     pub byte_source: Option<RoleId>,
@@ -2746,6 +2748,7 @@ impl<'a> Registry<'a> {
             },
             iterating: role(lookup(self, "collections/iteration", "Iterating")),
             cursor: role(lookup(self, "collections/iteration", "Cursor")),
+            batching: role(lookup(self, "collections/iteration", "Batching")),
             sequencing: role(lookup(self, "collections/sequence", "Sequencing")),
             sizing: role(lookup(self, "size", "Sizing")),
             byte_source: role(lookup(self, "io/stream", "ByteSource")),

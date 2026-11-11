@@ -605,5 +605,6 @@ natives! {
     PostgresPgPageFloats = 619, "runtime/postgres@1::pg_page_floats/1", "(PgPageState) -> @float";
     PostgresPgPageTexts = 620, "runtime/postgres@1::pg_page_texts/1", "(PgPageState) -> @string";
     PostgresPgPageBlobs = 621, "runtime/postgres@1::pg_page_blobs/1", "(PgPageState) -> @@byte";
+    FsFileStateReadLines = 622, "runtime/fs@1::file_state_read_lines/2", "(FileState, int) -> @string";
 }
 // retired: 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258

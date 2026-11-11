@@ -892,6 +892,19 @@ fn line_offset(buffer: &[u8], needle: &[u8]) -> Option<usize> {
         .find(|offset| buffer[*offset..*offset + unit] == *needle && offset % unit == 0)
 }
 
+/// The end of the last whole line in `buffer`, after its newline.
+fn last_line_end(buffer: &[u8], needle: &[u8]) -> Option<usize> {
+    let unit = needle.len();
+    let mut offset = buffer.len() / unit * unit;
+    while offset >= unit {
+        offset -= unit;
+        if buffer[offset..offset + unit] == *needle {
+            return Some(offset + unit);
+        }
+    }
+    None
+}
+
 fn release_lock(state: &mut FileState) {
     if let Some(lock) = state.lock.take() {
         let mut lock = lock.borrow_mut();
@@ -1603,6 +1616,30 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
                 }
                 fill(native, &mut state)?;
             }
+        }
+        "file_state_read_lines" => {
+            let state = file_state(native, &args[0])?;
+            let mut state = state.borrow_mut();
+            prepare_read(native, &mut state, true)?;
+            let target = int(&args[1])?.to_i64().map_or(1 << 26, |limit| limit.clamp(1, 1 << 26)) as usize;
+            let needle = newline(&state.encoding);
+            while state.buffer.len() < target && !state.eof {
+                fill(native, &mut state)?;
+            }
+            // The batch ends after its last whole line; a longer line is read whole.
+            let mut end = last_line_end(&state.buffer, needle);
+            while end.is_none() && !state.eof {
+                fill(native, &mut state)?;
+                end = last_line_end(&state.buffer, needle);
+            }
+            let end = end.unwrap_or(state.buffer.len());
+            if end == 0 {
+                return Ok(string_array(Vec::<String>::new()));
+            }
+            let data: Vec<u8> = state.buffer.drain(..end).collect();
+            let decoded = decode_text(native, &state, &data)?;
+            let body = decoded.strip_suffix('\n').unwrap_or(&decoded);
+            Ok(string_array(body.split('\n').map(|line| line.strip_suffix('\r').unwrap_or(line))))
         }
         "file_state_write" => {
             let state = file_state(native, &args[0])?;

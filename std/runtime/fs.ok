@@ -56,6 +56,10 @@ native file_state_read_text(state is FileState) is string;
 
 native file_state_read_line(state is FileState) is string;
 
+// The next batch of lines: whole lines up to about limit bytes (one longer
+// line whole), the final unterminated line at the end, [] when none is left.
+native file_state_read_lines(state is FileState, limit is int) is @string;
+
 native file_state_read(state is FileState, limit is int) is @byte;
 
 native file_state_write(state is FileState, value is @byte) is int;

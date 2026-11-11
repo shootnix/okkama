@@ -1268,6 +1268,25 @@ Neither the collection nor an existing cursor changes. Normal completion and
 A false `available()` is ordinary exhaustion, with no sentinel, null or
 exception. Consumable I/O streams are deliberately a separate protocol.
 
+A consumable source — a file, a socket, anything that is read as it goes —
+does `Batching<T>` from the same module (#465):
+
+```okkama
+role Batching<T> {
+    batch() is @T;      // the next batch; [] when the source is exhausted
+}
+```
+
+`for source -> item { ... }` asks for a batch, walks it with the array loop,
+and asks again until a batch is empty. `next`, `last`, `return` and `defer`
+behave as in any `for`; `last` does not ask for another batch, and an empty
+source runs no body. The protocol is nominal, like `Iterable<T>`, and a source
+that does both is walked in batches. It exists for speed: a cursor costs an
+object and three role calls per item, while a batch costs one call per batch
+and the array loop per item, about ten times less on Tomato. `file.text()`
+hands out lines and `file.binary()` bytes this way, with the batch made by the
+runtime.
+
 ### Async streams: `for await`
 
 Inside an async action, use `for await stream -> item { ... }` to consume
@@ -1343,7 +1362,7 @@ functional block, is a semantic error even in code that never runs.
 ## Chapter 13. Functional Collection Operations
 
 Arrays, ranges, typed maps, and objects nominally implementing the standard
-`Iterable<T>` role support exactly three **eager, immutable** operations,
+`Iterable<T>` or `Batching<T>` role support exactly three **eager, immutable** operations,
 written with a dedicated block syntax:
 
 ```okkama

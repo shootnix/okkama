@@ -591,7 +591,8 @@ impl<'r, 'a> Builder<'r, 'a> {
             }
             thir::Source::Array(value)
             | thir::Source::Map(value)
-            | thir::Source::Iterating(value) => self.expr(value, body, object),
+            | thir::Source::Iterating(value)
+            | thir::Source::Batching(value) => self.expr(value, body, object),
             thir::Source::Varargs(_) => {}
         }
     }

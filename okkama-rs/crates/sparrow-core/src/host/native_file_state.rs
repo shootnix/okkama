@@ -208,6 +208,7 @@ pub(crate) fn handles(n: Native) -> bool {
         FsFileStateCreate
             | FsFileStateReadText
             | FsFileStateReadLine
+            | FsFileStateReadLines
             | FsFileStateRead
             | FsFileStateWrite
             | FsFileStateWriteText
@@ -369,6 +370,37 @@ impl Heap {
                     }
                     state.fill(n, &cwd)?;
                 }
+            }
+            FsFileStateReadLines => {
+                state.prepare(n, &cwd, true, false)?;
+                let target = self.integer(a[1])?.to_i64().map_or(1 << 26, |v| v.clamp(1, 1 << 26)) as usize;
+                let needle = encode(n, "\n", &state.encoding)?;
+                let unit = needle.len();
+                while state.buffer.len() - state.start < target && !state.eof {
+                    state.fill(n, &cwd)?;
+                }
+                // The batch ends after its last whole line; a longer line is read whole.
+                let last_end = |pending: &[u8]| {
+                    pending.chunks_exact(unit).rposition(|v| v == needle).map(|i| (i + 1) * unit)
+                };
+                let mut end = last_end(&state.buffer[state.start..]);
+                while end.is_none() && !state.eof {
+                    state.fill(n, &cwd)?;
+                    end = last_end(&state.buffer[state.start..]);
+                }
+                let end = end.unwrap_or(state.buffer.len() - state.start);
+                if end == 0 {
+                    return Ok(self.allocate_array(Vec::new())?);
+                }
+                let text = decode(n, &state.buffer[state.start..state.start + end], &state.encoding);
+                state.start += end;
+                let text = text?;
+                let body = text.strip_suffix('\n').unwrap_or(&text);
+                let slots = body
+                    .split('\n')
+                    .map(|line| self.allocate_text(line.strip_suffix('\r').unwrap_or(line).to_owned()))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(self.allocate_array(slots)?)
             }
             FsFileStateWrite | FsFileStateWriteText => {
                 let textual = n == FsFileStateWriteText;

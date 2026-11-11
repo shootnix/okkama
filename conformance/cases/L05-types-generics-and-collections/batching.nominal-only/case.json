@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.batching.nominal-only",
+  "title": "an object with a batch() action that does not do Batching is no for source",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.BATCHING",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes this an error without fixing the detection stage."
+    }
+  },
+  "spec_refs": [
+    "std/collections/iteration.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #465 from the cited contract text",
+    "expected_basis": "#465: Batching is nominal, like Iterating: a matching batch() action is not enough."
+  },
+  "status": "mandatory"
+}

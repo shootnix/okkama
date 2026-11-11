@@ -1472,6 +1472,63 @@ public final class FsNatives {
         }
     }
 
+    public static List<Object> runtime_fs__file_state_read_lines(Object handle, BigInteger limit) {
+        String name = "file_state_read_lines";
+        FileState state = state(handle, name, 2);
+        FileChannel channel = prepareRead(state, true, name, 2);
+        int target = limit.signum() <= 0 ? 1
+            : limit.compareTo(BigInteger.valueOf(1 << 26)) > 0 ? 1 << 26 : limit.intValue();
+        byte[] needle = newline(state);
+        while (state.buffer.size() < target && !state.eof) {
+            fill(state, channel, name, 2);
+        }
+        // The batch ends after its last whole line; a longer line is read whole.
+        int end = lastLineEnd(state.buffer.toByteArray(), needle);
+        while (end < 0 && !state.eof) {
+            fill(state, channel, name, 2);
+            end = lastLineEnd(state.buffer.toByteArray(), needle);
+        }
+        byte[] buffer = state.buffer.toByteArray();
+        if (end < 0) {
+            end = buffer.length;
+        }
+        ArrayList<Object> lines = new ArrayList<Object>();
+        if (end == 0) {
+            return lines;
+        }
+        byte[] data = new byte[end];
+        System.arraycopy(buffer, 0, data, 0, end);
+        state.buffer.reset();
+        state.buffer.write(buffer, end, buffer.length - end);
+        String decoded = decode(state, data, name, 2);
+        String body = decoded.endsWith("\n") ? decoded.substring(0, decoded.length() - 1) : decoded;
+        int start = 0;
+        while (true) {
+            int stop = body.indexOf('\n', start);
+            String line = stop < 0 ? body.substring(start) : body.substring(start, stop);
+            lines.add(line.endsWith("\r") ? line.substring(0, line.length() - 1) : line);
+            if (stop < 0) {
+                return lines;
+            }
+            start = stop + 1;
+        }
+    }
+
+    // The end of the last whole line in buffer, after its newline; -1 when none.
+    private static int lastLineEnd(byte[] buffer, byte[] needle) {
+        int unit = needle.length;
+        outer:
+        for (int offset = buffer.length / unit * unit - unit; offset >= 0; offset -= unit) {
+            for (int index = 0; index < unit; index++) {
+                if (buffer[offset + index] != needle[index]) {
+                    continue outer;
+                }
+            }
+            return offset + unit;
+        }
+        return -1;
+    }
+
     public static BigInteger runtime_fs__file_state_write(Object handle, List<?> value) {
         FileState state = state(handle, "file_state_write", 2);
         FileChannel channel = prepareWrite(state, false, "file_state_write", 2);

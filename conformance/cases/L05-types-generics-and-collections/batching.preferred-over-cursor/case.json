@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.batching.preferred-over-cursor",
+  "title": "a source that does both Iterating and Batching is walked in batches",
+  "purpose": "Observe type, generic and collection semantics.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.BATCHING",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "COLL.ITERABLE",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "batch\n7\n8\n"
+    }
+  },
+  "spec_refs": [
+    "std/collections/iteration.ok",
+    "docs/okkama-spec-11072026.md#9.9"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #465 from the cited contract text",
+    "expected_basis": "#465: batches are cheaper than a cursor per element, so for prefers Batching when the source does both roles."
+  },
+  "status": "mandatory"
+}

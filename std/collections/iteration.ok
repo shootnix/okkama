@@ -10,6 +10,14 @@ role Iterating<T> {
     cursor() is Cursor<T>;
 }
 
+// A consumable source that hands out its items in batches: for, map, filter
+// and reduce walk each batch as an array and ask for the next one; [] ends the
+// source (#465). Files, sockets and other streams use it instead of a cursor,
+// which would allocate an object per item.
+role Batching<T> {
+    batch() is @T;
+}
+
 enum IterationEnded is Error = (ended);
 
 object CursorItems<T> does Iterating<T> {

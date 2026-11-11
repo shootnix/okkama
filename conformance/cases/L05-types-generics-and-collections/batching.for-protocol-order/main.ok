@@ -1,0 +1,40 @@
+module app v1.0.0;
+
+import "collections/iteration" take Batching, Iterating, Cursor;
+import "async/atomic" take Atomic;
+import "io/stdout" take Stdout;
+
+// Hands out the batches it was given, one per batch() call, then [] for ever,
+// and reports each call.
+object Recorded does Batching<int> {
+    has batches is @@int;
+    has served is Atomic<int>;
+    has out is Stdout;
+
+    Recorded(batches is @@int, out is Stdout) {
+        self.batches = batches;
+        self.out = out;
+        served = Atomic(0);
+    }
+
+    batch() is @int {
+        let at = served.value();
+        served.replace(at + 1);
+        out.writeln("batch " + at.string());
+        if at < batches.size() {
+            batches[at];
+        }
+        else {
+            [];
+        }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    for Recorded([[1, 2], [3]], out) -> n {
+        out.writeln("body " + n.string());
+    }
+    out.writeln("done");
+    0;
+}

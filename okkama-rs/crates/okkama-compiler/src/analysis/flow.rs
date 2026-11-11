@@ -999,7 +999,7 @@ impl<'r> Flow<'r, '_> {
                 self.expr(start, true, state)?;
                 self.expr(end, true, state)?;
             }
-            Source::Array(value) | Source::Map(value) | Source::Iterating(value) => {
+            Source::Array(value) | Source::Map(value) | Source::Iterating(value) | Source::Batching(value) => {
                 self.expr(value, true, state)?;
             }
             Source::Varargs(_) => {}

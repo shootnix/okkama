@@ -504,7 +504,10 @@ fn walk_source(source: &thir::Source, visit: &mut dyn FnMut(&thir::Expr)) {
             walk_expr(start, visit);
             walk_expr(end, visit);
         }
-        thir::Source::Array(value) | thir::Source::Map(value) | thir::Source::Iterating(value) => {
+        thir::Source::Array(value)
+        | thir::Source::Map(value)
+        | thir::Source::Iterating(value)
+        | thir::Source::Batching(value) => {
             walk_expr(value, visit)
         }
         thir::Source::Varargs(_) => {}
@@ -888,7 +891,10 @@ fn source_exprs<'b>(source: &'b thir::Source, out: &mut Vec<&'b thir::Expr>) {
             out.push(start);
             out.push(end);
         }
-        thir::Source::Array(value) | thir::Source::Map(value) | thir::Source::Iterating(value) => {
+        thir::Source::Array(value)
+        | thir::Source::Map(value)
+        | thir::Source::Iterating(value)
+        | thir::Source::Batching(value) => {
             out.push(value)
         }
         thir::Source::Varargs(_) => {}

@@ -1,0 +1,40 @@
+module app v1.0.0;
+
+import "collections/iteration" take Batching, Iterating, Cursor;
+import "async/atomic" take Atomic;
+import "io/stdout" take Stdout;
+
+// Both protocols; the batch path reports itself.
+object Both does Batching<int>, Iterating<int> {
+    has served is Atomic<bool>;
+    has out is Stdout;
+
+    Both(out is Stdout) {
+        self.out = out;
+        served = Atomic(false);
+    }
+
+    batch() is @int {
+        if served.value() {
+            [];
+        }
+        else {
+            served.replace(true);
+            out.writeln("batch");
+            [7, 8];
+        }
+    }
+
+    cursor() is Cursor<int> {
+        out.writeln("cursor");
+        [7, 8].cursor();
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    for Both(out) -> n {
+        out.writeln(n.string());
+    }
+    0;
+}

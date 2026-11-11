@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.batching.empty-and-nested",
+  "title": "an empty source runs no body; nested batched loops each keep their own batch",
+  "purpose": "Observe type, generic and collection semantics.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.BATCHING",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "batch 0\nbatch 0\nbatch 0\n11\n21\nbatch 1\nbatch 1\nbatch 0\n12\n22\nbatch 1\nbatch 2\n"
+    }
+  },
+  "spec_refs": [
+    "std/collections/iteration.ok",
+    "docs/okkama-spec-11072026.md#9.9"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #465 from the cited contract text",
+    "expected_basis": "#465: a source whose first batch is [] ends before the body; each for keeps its own current batch and index."
+  },
+  "status": "mandatory"
+}

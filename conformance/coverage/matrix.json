@@ -1185,11 +1185,13 @@
     "interaction": {
      "cases": [
       "L03.return.from-functional-block",
+      "L05.batching.functional",
       "L05.iterable.functional",
       "L05.reduce.accumulator-in-place"
      ],
      "mandatory_cases": [
       "L03.return.from-functional-block",
+      "L05.batching.functional",
       "L05.iterable.functional",
       "L05.reduce.accumulator-in-place"
      ],
@@ -1825,6 +1827,59 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L05.batching.empty-and-nested",
+      "L05.batching.next-last-return"
+     ],
+     "mandatory_cases": [
+      "L05.batching.empty-and-nested",
+      "L05.batching.next-last-return"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L05.batching.functional",
+      "L05.batching.preferred-over-cursor"
+     ],
+     "mandatory_cases": [
+      "L05.batching.functional",
+      "L05.batching.preferred-over-cursor"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [
+      "L05.batching.nominal-only"
+     ],
+     "mandatory_cases": [
+      "L05.batching.nominal-only"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L05.batching.for-protocol-order"
+     ],
+     "mandatory_cases": [
+      "L05.batching.for-protocol-order"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "COLL.BATCHING",
+   "discrepancies": [],
+   "family": "Types, generics and collections",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.9",
+    "std/collections/iteration.ok"
+   ],
+   "status": "mandatory",
+   "title": "Consumable sources are walked batch by batch through collections/iteration Batching<T>"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
       "L05.iterable.empty-and-last"
      ],
      "mandatory_cases": [
@@ -1834,9 +1889,11 @@
     },
     "interaction": {
      "cases": [
+      "L05.batching.preferred-over-cursor",
       "L05.iterable.functional"
      ],
      "mandatory_cases": [
+      "L05.batching.preferred-over-cursor",
       "L05.iterable.functional"
      ],
      "requirement": "required"
@@ -2117,19 +2174,23 @@
     "boundary": {
      "cases": [
       "L03.for.empty-and-single",
-      "L03.scope.iteration-fresh"
+      "L03.scope.iteration-fresh",
+      "L05.batching.next-last-return"
      ],
      "mandatory_cases": [
       "L03.for.empty-and-single",
-      "L03.scope.iteration-fresh"
+      "L03.scope.iteration-fresh",
+      "L05.batching.next-last-return"
      ],
      "requirement": "required"
     },
     "interaction": {
      "cases": [
+      "L05.batching.for-protocol-order",
       "L05.iterable.for-protocol-order"
      ],
      "mandatory_cases": [
+      "L05.batching.for-protocol-order",
       "L05.iterable.for-protocol-order"
      ],
      "requirement": "required"
@@ -9794,7 +9855,7 @@
     "std/collections/iteration.ok"
    ],
    "status": "mandatory",
-   "title": "std collections/iteration public contract (Cursor, CursorItems, Iterating, IterationEnded)"
+   "title": "std collections/iteration public contract (Batching, Cursor, CursorItems, Iterating, IterationEnded)"
   },
   {
    "aspects": {
@@ -32440,5 +32501,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "ce27959a05160ba039b4a688eddf8e8a1e4635504275d9d1d994642c23618ffc"
+ "suite_tree_sha256": "2b4cb58d4dd72514ae7515d17d9917f5e4463218c2360a0ffe9e852616ad5382"
 }

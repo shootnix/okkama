@@ -10,6 +10,28 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 in place: nothing leaves std (the owner, 2026-11-11), every module is kept,
 simplified or rewritten to the principles of `docs/std-principles.md`.
 
+### Added
+
+- **Language: `for`, `map`, `filter`, `reduce` and `find` walk `Batching<T>`
+  sources (#465).** `collections/iteration` gains `role Batching<T> {
+  batch() is @T; }` for sources consumed as they are read.
+  - `for source -> item` calls `batch()` once per batch and walks each batch
+    with the array loop. The first empty batch ends it.
+  - `next`, `last`, `return` and `defer` work as in any `for`, and `last`
+    asks for no further batch.
+  - A source that does both `Iterating<T>` and `Batching<T>` is walked in
+    batches.
+  - Why: a cursor costs an object and three role calls per item.
+    Reading 100 000 lines of a file with `for` over a batching source takes
+    0.09 µs per line on Tomato, against 0.76 µs for a `line()` loop and
+    1.46 µs for a cursor, and memory stays at one batch. IR and the JVM are
+    about four times faster than with `line()`.
+  - The runtime native `runtime/fs.file_state_read_lines(state, limit)`
+    cuts the next batch of whole lines in Rust (IR, Sparrow) and Java (the
+    JVM).
+  - Conformance contract `COLL.BATCHING` has six cases.
+  - Book §12.5 and §13, spec §9.9 and Bible §8.6 describe the protocol.
+
 ### Changed
 
 - **Language: `hidden` marks an action (#365).** An action that only its own
