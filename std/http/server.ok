@@ -20,7 +20,7 @@ import "http/target" take RequestTargetKind;
 import "http/websocket_server" take WebSocketAccepting;
 import "http/connection" take HttpAcquisitionCleanup, HttpTcpDisposal;
 import "http/internal/websocket_output" take WebSocketOutputSettlement;
-import "net/tcp" take TcpAcceptance, TcpConnection, TcpListening;
+import "net/tcp" take TcpListener, TcpConnection, TcpListening;
 import "net/endpoint" take IpEndpoint;
 import "net/failure" take NetworkClosed;
 import "io/stream" take AsyncReading, AsyncWriting, Closing;
@@ -47,7 +47,7 @@ object HttpServer does Closing {
     has state is HttpServerState;
 
     HttpServer(
-        origin is TcpAcceptance,
+        origin is TcpListener,
         handling is Handling,
         policy is ServerPolicy,
         clock is Timing
@@ -60,7 +60,7 @@ object HttpServer does Closing {
     }
 
     HttpServer(
-        origin is TcpAcceptance,
+        origin is TcpListener,
         handling is Handling,
         policy is ServerPolicy,
         clock is Timing,
@@ -114,7 +114,7 @@ object HttpServer does Closing {
 }
 
 hidden object HttpServerState {
-    has origin is TcpAcceptance;
+    has origin is TcpListener;
     has handling is Handling;
     has policy is ServerPolicy;
     has clock is Timing;
@@ -125,7 +125,7 @@ hidden object HttpServerState {
     has serial is Atomic<int>;
 
     HttpServerState(
-        origin is TcpAcceptance,
+        origin is TcpListener,
         handling is Handling,
         policy is ServerPolicy,
         clock is Timing,
@@ -917,7 +917,7 @@ hidden object EchoApplication does Handling {
 }
 
 async test "a server answers over loopback, reads bodies, and drains" {
-    let listener = await TcpListening(IpEndpoint(address: IpAddress("127.0.0.1"), port: 0)).acceptance();
+    let listener = await TcpListening(port: 0).listener();
     let clock = SystemClock();
     let server = HttpServer(origin: listener, handling: EchoApplication(), policy: ServerPolicy(), clock: clock);
     let workers is FutureGroup<HttpServer> = FutureGroup();
@@ -942,7 +942,7 @@ async test "a server answers over loopback, reads bodies, and drains" {
 }
 
 async test "a server speaks HTTP/2 over cleartext and multiplexes one connection" {
-    let listener = await TcpListening(IpEndpoint(address: IpAddress("127.0.0.1"), port: 0)).acceptance();
+    let listener = await TcpListening(port: 0).listener();
     let clock = SystemClock();
     let two is Set<HttpVersion> = OrderedSet([HttpVersion.http_2]);
     let policy = ServerPolicy(protocols: two, limits: HttpLimits(), timeouts: ServerTimeouts(), connections: 8, ranges: 16);

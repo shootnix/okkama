@@ -308,9 +308,9 @@ object UnixListening {
         self.backlog = backlog;
     }
 
-    async acceptance() is UnixAcceptance {
+    async listener() is UnixListener {
         try {
-            UnixAcceptance(network.unix_listen(Utf8Encoded(local.string()).bytes(), backlog));
+            UnixListener(network.unix_listen(Utf8Encoded(local.string()).bytes(), backlog));
         }
         catch failure is NativeFailure {
             let translated = UnixError(operation: NetworkOperation.listening, failure: failure);
@@ -322,11 +322,11 @@ object UnixListening {
     }
 }
 
-object UnixAcceptance {
+object UnixListener {
     has state is network.ListenerState;
     has local is UnixAddress;
 
-    UnixAcceptance(state is network.ListenerState) {
+    UnixListener(state is network.ListenerState) {
         self.state = state;
         local = try {
             UnixAddress(Path(Utf8Decoded(network.unix_listener_path(state)).string()));

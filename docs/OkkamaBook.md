@@ -3833,8 +3833,12 @@ strictly and classifies (`properties()`). `IpNetwork(address:, prefix:)`
 tests membership. `IpEndpoint(address:, port:)` shows `::Parts::port`.
 `FixedResolution`/`SystemResolution` resolve names. TCP and UDP sockets are
 async:
-- `await TcpListening(local:).acceptance()` listens;
-- `await TcpConnecting(remote:, options:).connection()` connects;
+- `await TcpListening(port: 0).listener()` listens, on loopback unless
+  `address:` is given, and `listener::Local::port` is the port it got;
+- `await TcpConnecting(host: "example.com", port: 443).connection()` resolves
+  the name and races its addresses (RFC 8305), and
+  `TcpConnecting(address:, port:, no_delay:)` connects to one address;
+- `UdpBinding(port:, broadcast:).socket()` binds a UDP socket;
 - `input()`/`output()` stream bytes.
 
 TLS connections show the agreed `details()::Session::protocol`.
@@ -4064,9 +4068,9 @@ Contract (okkama-docs `docs/std/http1-message-writing.md`),
 example (okkama-docs `examples/std-v4/http1-message-writing.ok`).
 
 
-`TcpListening(IpEndpoint(..., 0)).acceptance()` acquires a listener with an actual
-OS-selected port. `TcpConnecting(listener.local_endpoint()).connection()` acquires
-a numeric connection without DNS. The Closing owner exposes async input/output;
+`TcpListening(port: 0).listener()` acquires a listener with an actual
+OS-selected port. `TcpConnecting(address: IpAddress("127.0.0.1"), port:
+listener::Local::port).connection()` acquires a numeric connection without DNS. The Closing owner exposes async input/output;
 closing output drains started writes and shuts down only that direction. Reads
 may be short: accumulate the logical payload rather than expecting packet-sized
 reads. Ownership contract (okkama-docs `docs/std/tcp-stream.md`),

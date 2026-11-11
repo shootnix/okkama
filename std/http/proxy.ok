@@ -84,7 +84,7 @@ hidden object ProxyWire {
 }
 
 async test "a proxied exchange sends the absolute target and the proxy credentials" {
-    let listener = await TcpListening(IpEndpoint(address: IpAddress("127.0.0.1"), port: 0)).acceptance();
+    let listener = await TcpListening(port: 0).listener();
     defer listener.close();
     let clock = SystemClock();
     let proxy_url = ParsedUrl("http://127.0.0.1:" + listener.local_endpoint()::Parts::port.string()).parts();

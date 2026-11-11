@@ -60,7 +60,7 @@ object Shouting does Handling, WebSocketHandling {
 async main() is int {
     let out = Stdout();
     let clock = SystemClock();
-    let listener = await TcpListening(IpEndpoint(address: IpAddress("127.0.0.1"), port: 0)).acceptance();
+    let listener = await TcpListening(port: 0).listener();
     let site = "http://127.0.0.1:" + listener.local_endpoint()::Parts::port.string();
     let server = HttpServer(origin: listener, handling: Shouting(), policy: ServerPolicy(), clock: clock, destination: ParsedUrl(site + "/").parts());
     let serving is FutureGroup<HttpServer> = FutureGroup();

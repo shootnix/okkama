@@ -2,7 +2,7 @@ module examples/http/client/statuses v1.0.0;
 
 import "http/client" take HttpClient;
 import "http/status" take Status, StatusCode, StatusClass;
-import "net/tcp" take TcpListening, TcpAcceptance;
+import "net/tcp" take TcpListening, TcpListener;
 import "net/endpoint" take IpEndpoint;
 import "net/ip" take IpAddress, IpNetwork;
 import "net/dns" take FixedResolution;
@@ -16,7 +16,7 @@ import "strings/parse" take Number;
 // Read a status: compare it with a case, match on it, take its class.
 
 async main() is int {
-    let listener = await TcpListening(IpEndpoint(address: IpAddress("127.0.0.1"), port: 0)).acceptance();
+    let listener = await TcpListening(port: 0).listener();
     defer listener.close();
     let server = LocalServer(listener);
     // A real program writes HttpClient(); this one reaches its own local server.
@@ -54,9 +54,9 @@ async main() is int {
 // Stands in for a real server: on 127.0.0.1 it takes one request, prints its
 // first line and answers with `reply`.
 hidden object LocalServer {
-    has listener is TcpAcceptance;
+    has listener is TcpListener;
 
-    LocalServer(listener is TcpAcceptance) {
+    LocalServer(listener is TcpListener) {
         self.listener = listener;
     }
 

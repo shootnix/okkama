@@ -312,7 +312,7 @@ hidden object ShoutingEcho does Handling, WebSocketHandling {
 }
 
 async test "a WebSocket client talks to a server over loopback and closes cleanly" {
-    let listener = await TcpListening(IpEndpoint(address: IpAddress("127.0.0.1"), port: 0)).acceptance();
+    let listener = await TcpListening(port: 0).listener();
     let clock = SystemClock();
     // WebSocket upgrades need the server's own URL to check the Origin against.
     let own = ParsedUrl("http://127.0.0.1:" + listener.local_endpoint()::Parts::port.string() + "/").parts();

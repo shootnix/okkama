@@ -544,7 +544,7 @@ hidden object CountedOrigin does Handling {
 }
 
 async test "a fresh response is served from memory without reaching the origin" {
-    let listener = await TcpListening(IpEndpoint(address: IpAddress("127.0.0.1"), port: 0)).acceptance();
+    let listener = await TcpListening(port: 0).listener();
     let clock = SystemClock();
     let origin = CountedOrigin();
     let server = HttpServer(origin: listener, handling: origin, policy: ServerPolicy(), clock: clock);

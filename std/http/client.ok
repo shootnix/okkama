@@ -7,7 +7,7 @@ import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "io/decorators" take ByteSnapshot;
 import "net/ip" take IpAddress, IpNetwork;
 import "net/endpoint" take IpEndpoint;
-import "net/tcp" take TcpListening, TcpAcceptance, TcpConnection;
+import "net/tcp" take TcpListening, TcpListener, TcpConnection;
 import "http/cookie_client" take CookieExchanging, FirstPartyCookies;
 import "http/cookie_jar" take CookieStoring, MemoryCookieJar;
 import "http/redirect" take Redirects, Redirecting;
@@ -2070,7 +2070,7 @@ hidden object LoopbackRequest {
 }
 
 async test "a client gets text and posts JSON through its shortcuts" {
-    let listener is TcpAcceptance = await TcpListening(IpEndpoint(address: IpAddress("127.0.0.1"), port: 0)).acceptance();
+    let listener is TcpListener = await TcpListening(port: 0).listener();
     defer listener.close();
     let base = "http://127.0.0.1:" + listener.local_endpoint()::Parts::port.string();
     let client = HttpClient(
@@ -2126,7 +2126,7 @@ async test "a default client reaches public endpoints only" {
 }
 
 async test "a client follows redirects and carries its cookies when told" {
-    let listener is TcpAcceptance = await TcpListening(IpEndpoint(address: IpAddress("127.0.0.1"), port: 0)).acceptance();
+    let listener is TcpListener = await TcpListening(port: 0).listener();
     defer listener.close();
     let base = "http://127.0.0.1:" + listener.local_endpoint()::Parts::port.string();
     let jar = MemoryCookieJar();

@@ -4012,8 +4012,12 @@ message)`. `Invocation` отвечает по имени:
 `IpEndpoint(address:, port:)` показывает `::Parts::port`.
 `FixedResolution`/`SystemResolution` разрешают имена. Сокеты TCP и UDP
 асинхронные:
-- `await TcpListening(local:).acceptance()` слушает;
-- `await TcpConnecting(remote:, options:).connection()` подключается;
+- `await TcpListening(port: 0).listener()` слушает, на loopback, если не
+  указан `address:`, а `listener::Local::port` — полученный порт;
+- `await TcpConnecting(host: "example.com", port: 443).connection()`
+  разрешает имя и устраивает гонку его адресов (RFC 8305), а
+  `TcpConnecting(address:, port:, no_delay:)` подключается к одному адресу;
+- `UdpBinding(port:, broadcast:).socket()` привязывает UDP-сокет;
 - `input()`/`output()` передают байты.
 
 TLS-соединения показывают согласованный `details()::Session::protocol`.
@@ -4243,9 +4247,9 @@ framing и принимает явного владельца Closing. Fixed/chu
 Контракт (okkama-docs `docs/std/http1-message-writing.md`),
 пример (okkama-docs `examples/std-v4/http1-message-writing.ok`).
 
-`TcpListening(IpEndpoint(..., 0)).acceptance()` получает listener с фактическим
-портом ОС. `TcpConnecting(listener.local_endpoint()).connection()` получает
-числовое соединение без DNS. Владелец Closing предоставляет async input/output;
+`TcpListening(port: 0).listener()` получает listener с фактическим
+портом ОС. `TcpConnecting(address: IpAddress("127.0.0.1"), port:
+listener::Local::port).connection()` получает числовое соединение без DNS. Владелец Closing предоставляет async input/output;
 закрытие output дожидается запущенных записей и выключает только это направление.
 Чтение может быть коротким: логическое сообщение надо собирать из частей.
 Контракт владения (okkama-docs `docs/std/tcp-stream.md`),
