@@ -201,35 +201,19 @@ impl Engine {
         Some(plain.drain(..count).collect())
     }
 
-    fn return_plain(&self, bytes: Vec<u8>) {
-        let mut plain = self.plain.lock().expect("TLS plain lock");
-        let rest = std::mem::take(&mut *plain);
-        plain.extend(bytes);
-        plain.extend(rest);
-    }
-
     /// Принять следующий открытый текст в буфер `plain`; `false` —
-    /// `close_notify` пира. Принятое кладётся в буфер под замком читателя:
-    /// чтение, брошенное отменой, ничего не теряет, даже если следующее
-    /// возьмёт замок раньше, чем главный поток узнает, что первое брошено.
+    /// `close_notify` пира. Рабочий поток только добавляет в буфер, целиком и
+    /// под замком читателя, а берёт из него лишь главный поток: чтение,
+    /// брошенное отменой, ничего не теряет, и никто не застанет буфер
+    /// опустевшим, пока брошенный поток держит его данные у себя (#486).
     fn receive_into_plain(&self, limit: usize) -> Result<bool, Result<std::io::Error, Truncated>> {
         let _gate = self.reader.lock().expect("TLS reader lock");
-        let bytes = self.receive(limit)?;
-        if bytes.is_empty() {
-            return Ok(false);
-        }
-        self.return_plain(bytes);
-        Ok(true)
-    }
-
-    /// Следующий открытый текст; пусто — `close_notify` пира. Вызывается под
-    /// замком читателя.
-    fn receive(&self, limit: usize) -> Result<Vec<u8>, Result<std::io::Error, Truncated>> {
-        if let Some(ready) = self.take_plain(limit) {
-            return Ok(ready);
+        // Принятое раньше ещё ждёт чтения: новое принимать незачем.
+        if !self.plain.lock().expect("TLS plain lock").is_empty() {
+            return Ok(true);
         }
         if self.eof.load(Ordering::SeqCst) {
-            return Ok(Vec::new());
+            return Ok(false);
         }
         loop {
             {
@@ -238,18 +222,15 @@ impl Engine {
                 match connection.reader().read(&mut buffer) {
                     Ok(0) => {
                         self.eof.store(true, Ordering::SeqCst);
-                        return Ok(Vec::new());
+                        return Ok(false);
                     }
                     Ok(count) => {
                         buffer.truncate(count);
-                        // Остаток записи — в буфер открытого текста, как у JVM.
-                        let mut rest = Vec::new();
-                        let _ = connection.reader().read_to_end(&mut rest);
+                        // Остаток записи — туда же, вслед за прочитанным, как у JVM.
+                        let _ = connection.reader().read_to_end(&mut buffer);
                         drop(connection);
-                        if !rest.is_empty() {
-                            self.return_plain(rest);
-                        }
-                        return Ok(buffer);
+                        self.plain.lock().expect("TLS plain lock").extend(buffer);
+                        return Ok(true);
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
                     Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Err(Err(Truncated)),

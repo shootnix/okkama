@@ -221,6 +221,15 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   - Checked locally with an arm64 build: CentOS 7 (glibc 2.17), Rocky
     Linux 8, Amazon Linux 2, Ubuntu 18.04 and 20.04, Debian 10 and 11.
 
+- IR: a TLS read that a timeout or a cancelled task abandoned could make the
+  next read return no bytes (#486). The abandoned read's worker took the
+  received plaintext out of the shared buffer and put it back, so a read
+  finishing in between found the buffer empty. Workers now only append to
+  the buffer, all at once; only the reading program takes from it. Seen once
+  in the gate under load (`L11.tls.cancelled-read-keeps-data`). A stress run
+  (240 runs, 12 at a time) passes before and after, so the race was found by
+  reading the code, not reproduced.
+
 ### Performance
 
 - A JSON object of 16 members or more finds a member by name through an
