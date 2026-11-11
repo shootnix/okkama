@@ -794,8 +794,10 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     - terminal: capability, style and screen;
     - `testing/runner`.
 
-    Terminal sessions, modes and prompts need a real terminal. They stay
-    covered by the CLI's PTY tests.
+    `db/acquisition`, `prepared` and `query` are tested through
+    `db/sqlite`, because an inline test there would import sqlite and make a
+    cycle. Terminal sessions, modes and prompts need a real terminal, and the
+    CLI's PTY tests cover them.
   - **Examples:** `examples/logging/app.ok`, `config/layers.ok`,
     `template/pages.ok`, `terminal/colors.ok`, `db/notes.ok`,
     `locale/formats.ok` and `i18n/messages.ok`. They agree on IR, Sparrow and
