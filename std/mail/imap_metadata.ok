@@ -55,7 +55,7 @@ object ImapStatusCode {
             loop {
                 last if position.index() == tokens.size();
                 let parsed = tree.item(position.index(), 0);
-                result = result.following(parsed.value());
+                result = result.following(parsed.parsed());
                 position = position.following(parsed.after());
             }
             let entries = result.entries();
@@ -199,7 +199,7 @@ object ImapUnsigned {
         value = count.index();
     }
 
-    value() is int {
+    int() is int {
         value;
     }
 }
@@ -264,9 +264,9 @@ object ImapUidRanges {
             let endpoints = part.split(":");
             confirm endpoints.size() >= 1 && endpoints.size() <= 2
                 else throw InvalidImapData.because("invalid UID range");
-            let first = ImapUnsigned(endpoints[0], true).value();
+            let first = ImapUnsigned(endpoints[0], true).int();
             let final = if endpoints.size() == 2 {
-                ImapUnsigned(endpoints[1], true).value();
+                ImapUnsigned(endpoints[1], true).int();
             }
             else {
                 first;
@@ -318,7 +318,7 @@ object ImapSearchResult {
                 let entry = values.item(index);
                 confirm entry.kind() == ImapValueKind.atom
                     else throw InvalidImapData.because("SEARCH UID is not an atom");
-                ImapUid(BigInt(ImapUnsigned(entry.string(), true).value().string()));
+                ImapUid(BigInt(ImapUnsigned(entry.string(), true).int().string()));
             };
             value = ImapUidSet(ids, limits);
         }
@@ -364,12 +364,12 @@ object ImapSearchResult {
                     if name == "COUNT" {
                         confirm count.index() == -1
                             else throw InvalidImapData.because("duplicate ESEARCH COUNT");
-                        count = count.following(ImapUnsigned(raw, false).value());
+                        count = count.following(ImapUnsigned(raw, false).int());
                     }
                     else {
                         confirm name == "MIN" || name == "MAX"
                             else throw InvalidImapData.because("unsupported ESEARCH result item");
-                        let number = ImapUnsigned(raw, true).value();
+                        let number = ImapUnsigned(raw, true).int();
                         if name == "MIN" {
                             confirm minimum.index() == -1
                                 else throw InvalidImapData.because("duplicate ESEARCH MIN");
@@ -397,7 +397,7 @@ object ImapSearchResult {
                 let smallest = MimePosition(4294967295);
                 let largest = MimePosition(0);
                 for (0..identifiers.size()) -> index {
-                    let number = ImapUnsigned(identifiers.item(index).string(), true).value();
+                    let number = ImapUnsigned(identifiers.item(index).string(), true).int();
                     if number < smallest.index() {
                         smallest = smallest.following(number);
                     }

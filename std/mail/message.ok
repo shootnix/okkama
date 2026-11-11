@@ -153,12 +153,12 @@ object ParsedMailDate {
         maximum = maximum_bytes;
     }
 
-    value() is ZonedDateTime {
-        MailDateParsing(origin, maximum).result().value();
+    date_time() is ZonedDateTime {
+        MailDateParsing(origin, maximum).parsed().date_time();
     }
 
     offset_known() is bool {
-        MailDateParsing(origin, maximum).result().offset_known();
+        MailDateParsing(origin, maximum).parsed().offset_known();
     }
 }
 
@@ -234,7 +234,7 @@ hidden object MailParsedDate {
         self.offset = offset;
     }
 
-    value() is ZonedDateTime {
+    date_time() is ZonedDateTime {
         let zone = FixedZone(name: "mail", offset: Duration(offset.seconds().rat(), DurationUnit.second));
         ZonedDateTime(instant: zone.instant(local, Fold.earlier), zone: zone);
     }
@@ -271,7 +271,7 @@ hidden object MailDateParsing {
         self.maximum = maximum;
     }
 
-    result() is MailParsedDate {
+    parsed() is MailParsedDate {
         let tokens = MailDateTokens(origin, maximum).values();
         let count = tokens.size();
         let calendar = MailCalendar();
@@ -660,7 +660,7 @@ test "message identifiers preserve case and literal spelling" {
 test "mail dates preserve unknown zero offsets" {
     let parsed = ParsedMailDate("Fri, 21 Nov 1997 09:55:06 -0000");
     test.is(
-        MailDate(parsed.value(), parsed.offset_known()).string(),
+        MailDate(parsed.date_time(), parsed.offset_known()).string(),
         "Fri, 21 Nov 1997 09:55:06 -0000"
     );
 }

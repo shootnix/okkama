@@ -211,7 +211,7 @@ hidden object ImapDataParsing {
         loop {
             last if position.index() == flat.size();
             let parsed = parser.item(position.index(), 0);
-            values = values.following(parsed.value());
+            values = values.following(parsed.parsed());
             position = position.following(parsed.after());
         }
         let result = values.entries();
@@ -343,7 +343,7 @@ object ImapDataTree {
                     else throw InvalidImapData.because("unterminated data list");
                 last if tokens[position.index()].kind() == ImapTokenKind.closing;
                 let parsed = self.item(position.index(), depth + 1);
-                values = values.following(parsed.value());
+                values = values.following(parsed.parsed());
                 position = position.following(parsed.after());
             }
             return ImapParsedValue(
@@ -381,7 +381,7 @@ object ImapParsedValue {
         self.after = after;
     }
 
-    value() is ImapValue {
+    parsed() is ImapValue {
         value;
     }
 

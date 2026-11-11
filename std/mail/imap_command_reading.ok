@@ -156,7 +156,7 @@ hidden object ImapCommandReading {
         pending = ImapCommandInput(origin, tag, prefix, limits).read();
     }
 
-    result() is Future<ImapCommandRead> {
+    read() is Future<ImapCommandRead> {
         pending;
     }
 }
@@ -279,7 +279,7 @@ object ImapCommandInput {
                 split.head(),
                 bounded,
                 limits.chunk_bytes()
-            ).result();
+            ).read();
             let response = read.response();
             used = used.following(used.index() + read.consumed());
             count = count.following(count.index() + 1);

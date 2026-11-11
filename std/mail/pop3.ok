@@ -23,7 +23,7 @@ object PopNumber {
         self.origin = origin;
     }
 
-    value() is int {
+    number() is int {
         origin;
     }
 
@@ -183,7 +183,7 @@ hidden object PopDecimal {
         self.origin = origin;
     }
 
-    value() is BigInt {
+    integer() is BigInt {
         BigInt(origin);
     }
 
@@ -235,7 +235,7 @@ object PopMailboxState {
         confirm parts.size() >= 2 else throw InvalidPopData.because("STAT requires count and size");
         let amount = PopDecimal(parts[0], limits).number();
         confirm amount <= limits.entries() else throw PopListingLimitExceeded.kind("entries");
-        let total = PopDecimal(parts[1], limits).value();
+        let total = PopDecimal(parts[1], limits).integer();
         confirm amount > 0 || total.sign() == 0
             else throw InvalidPopData.because("empty maildrop reports nonzero size");
         count = amount;
@@ -264,12 +264,12 @@ object PopListing {
             confirm parts.size() >= 2
                 else throw InvalidPopData.because("LIST requires number and size");
             let number = PopNumber(PopDecimal(parts[0], limits).number());
-            PopMessage(number, PopDecimal(parts[1], limits).value(), []);
+            PopMessage(number, PopDecimal(parts[1], limits).integer(), []);
         };
         for values -> message {
-            confirm !seen.membership(message.number().value())
+            confirm !seen.membership(message.number().number())
                 else throw InvalidPopData.because("duplicate LIST number");
-            seen = seen.following(message.number().value());
+            seen = seen.following(message.number().number());
         }
         if identifiers.size() == 0 {
             entries = values;
@@ -285,7 +285,7 @@ object PopListing {
                 PopMessage(number, BigInt("0"), [PopIdentifier(parts[1])]);
             };
             for identified -> message {
-                let number = message.number().value();
+                let number = message.number().number();
                 confirm seen.membership(number) && !numbers.membership(number)
                     else throw InvalidPopData.because("UIDL number mismatch or duplicate");
                 numbers = numbers.following(number);
@@ -294,7 +294,7 @@ object PopListing {
                 else throw InvalidPopData.because("LIST/UIDL number sets differ");
             let joined is @PopMessage = values.map() -> message {
                 let matching is @PopMessage = identified.filter() -> entry {
-                    entry.number().value() == message.number().value();
+                    entry.number().number() == message.number().number();
                 };
                 PopMessage(message.number(), message.size(), [matching[0].identifier()]);
             };
@@ -314,7 +314,7 @@ enum PopListingLimitExceeded is Error = (kind(kind is string));
 enum MissingPopIdentifier is Error = (missing);
 
 test "POP3 number and opaque identifier have different identities" {
-    test.is(PopNumber(7).value(), 7);
+    test.is(PopNumber(7).number(), 7);
     test.is(PopIdentifier("7").string(), "7");
     let absent = PopMessage(PopNumber(7), BigInt("0"), []);
     test.is(absent.identified(), false);

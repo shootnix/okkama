@@ -102,7 +102,7 @@ object ImapSession does Closing {
             [],
             false
         );
-        let read = reply.result();
+        let read = reply.read();
         read.require_success();
         let source = read.responses();
         let boxes is MimeItems<ImapMailbox> = MimeItems();
@@ -140,7 +140,7 @@ object ImapSession does Closing {
         else {
             ImapMailboxCommand.select;
         };
-        let result = await origin.request(ImapCommand(operation: action, mailbox: name)).result();
+        let result = await origin.request(ImapCommand(operation: action, mailbox: name)).read();
         if !result.successful() {
             await states.sending().send(state);
             completed.set();
@@ -232,7 +232,7 @@ object ImapSession does Closing {
             completed.set();
             throw;
         }
-        let result = await origin.request(command).result();
+        let result = await origin.request(command).read();
         let responses = result.responses();
         for (0..responses.size()) -> index {
             state = state.observed(responses.item(index));
@@ -259,7 +259,7 @@ object ImapSession does Closing {
         if slot.active() {
             slot.task().stop();
             try {
-                await slot.task().result();
+                await slot.task().outcome();
             }
             catch failure is Error {
                 if self.closed() {
@@ -293,7 +293,7 @@ object ImapSession does Closing {
         if slot.active() {
             slot.task().stop();
             try {
-                await slot.task().result();
+                await slot.task().outcome();
             }
             catch failure is Error {
                 if self.closed() {
@@ -504,7 +504,7 @@ object ImapSessionReply {
         self.selection = selection;
     }
 
-    result() is ImapCommandRead {
+    read() is ImapCommandRead {
         result;
     }
 
@@ -555,7 +555,7 @@ hidden object ImapSearching {
         let before = await origin.state();
         let epoch = before.uid_validity();
         let reply = await origin.session().run(command, [origin.context()], [epoch], false);
-        let result = reply.result();
+        let result = reply.read();
         result.require_success();
         // Do not relabel identifiers with a new epoch if UIDVALIDITY changed
         // while the server was producing this SEARCH result.
@@ -652,7 +652,7 @@ hidden object ImapFetching {
             [uids.validity()],
             writable
         );
-        let result = reply.result();
+        let result = reply.read();
         result.require_success();
         uids.checked(origin.name(), reply.state().uid_validity(), origin.session().account());
         let responses = result.responses();
@@ -701,7 +701,7 @@ object MailboxEvent {
         }
         if response.name() == "EXPUNGE" {
             let values = ParsedImapData(response).entries();
-            return ImapSequence(ImapUnsigned(values.item(1).string(), true).value());
+            return ImapSequence(ImapUnsigned(values.item(1).string(), true).int());
         }
         throw MissingImapDatum.name("sequence");
     }
@@ -774,7 +774,7 @@ object MailboxEvents {
         if self.closed() {
             if begun.ready() {
                 let task = await activation;
-                await task.result();
+                await task.outcome();
             }
             throw MailboxEventsClosed.closed;
         }
@@ -791,7 +791,7 @@ object MailboxEvents {
             await events.receiving().item();
         }
         catch failure is ChannelClosed {
-            await task.result();
+            await task.outcome();
             throw MailboxEventsClosed.closed;
         }
     }
@@ -809,7 +809,7 @@ object MailboxEvents {
             return self;
         }
         let task = await activation;
-        await task.result();
+        await task.outcome();
         self;
     }
 
@@ -854,7 +854,7 @@ object ImapIdleTask {
         stop.set();
     }
 
-    result() is Future<int> {
+    outcome() is Future<int> {
         pending;
     }
 }

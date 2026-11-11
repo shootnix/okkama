@@ -109,7 +109,7 @@ hidden object ImapSelectionProgress {
                 let values = ParsedImapData(response).entries();
                 confirm values.size() == 3 && values.item(1).kind() == ImapValueKind.atom
                     else throw InvalidImapData.because("invalid numeric mailbox update");
-                let number = ImapUnsigned(values.item(1).string(), name == "EXPUNGE").value();
+                let number = ImapUnsigned(values.item(1).string(), name == "EXPUNGE").int();
                 if name == "EXISTS" {
                     confirm count < 0 || number >= count
                         else throw InvalidImapData.because("EXISTS cannot decrease without EXPUNGE");
@@ -129,12 +129,12 @@ hidden object ImapSelectionProgress {
                             ^recent = -1;
                         }
                         if unseen.size() > 0 {
-                            if unseen[0].value() == number {
+                            if unseen[0].number() == number {
                                 ^unseen = [];
                             }
                             else {
-                                if unseen[0].value() > number {
-                                    ^unseen = [ImapSequence(unseen[0].value() - 1)];
+                                if unseen[0].number() > number {
+                                    ^unseen = [ImapSequence(unseen[0].number() - 1)];
                                 }
                             }
                         }
@@ -164,7 +164,7 @@ hidden object ImapSelectionProgress {
                         confirm arguments.size() == 1
                             && arguments.item(0).kind() == ImapValueKind.atom
                             else throw InvalidImapData.because("invalid numeric response code");
-                        let number = ImapUnsigned(arguments.item(0).string(), true).value();
+                        let number = ImapUnsigned(arguments.item(0).string(), true).int();
                         if key == "UIDVALIDITY" {
                             if validity.size() > 0 && validity[0].string() != number.string() {
                                 ^following_uid = [];
@@ -202,7 +202,7 @@ hidden object ImapSelectionProgress {
             else throw InvalidImapData.because("selection requires EXISTS, FLAGS and UIDVALIDITY");
         confirm recent < 0 || recent <= count
             else throw InvalidImapData.because("RECENT exceeds EXISTS");
-        confirm unseen.size() == 0 || unseen[0].value() <= count
+        confirm unseen.size() == 0 || unseen[0].number() <= count
             else throw InvalidImapData.because("first unseen sequence exceeds EXISTS");
     }
 

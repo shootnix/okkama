@@ -316,7 +316,7 @@ hidden object MboxSeparatorBytes {
         self.stop = stop;
     }
 
-    value() is MboxSeparator {
+    separator() is MboxSeparator {
         confirm stop - start <= 998
             else throw InvalidMbox.located(start, "separator exceeds 998 bytes");
         for (start..stop) -> index {
@@ -373,7 +373,7 @@ hidden object MboxParsing {
         }
         confirm limits.messages() > 0 else throw MboxLimitExceeded.kind("messages");
         let first = MboxLine(origin, 0).end();
-        let current = MboxRecordStart(first + 1, MboxSeparatorBytes(origin, 0, first).value());
+        let current = MboxRecordStart(first + 1, MboxSeparatorBytes(origin, 0, first).separator());
         let position = MimePosition(first + 1);
         loop {
             let start = position.index();
@@ -387,11 +387,11 @@ hidden object MboxParsing {
                         start,
                         current.separator(),
                         limits.mime()
-                    ).value()
+                    ).record()
                 );
                 confirm records.size() < limits.messages()
                     else throw MboxLimitExceeded.kind("messages");
-                current = current.following(end + 1, MboxSeparatorBytes(origin, start, end).value());
+                current = current.following(end + 1, MboxSeparatorBytes(origin, start, end).separator());
             }
             position = position.following(end + 1);
         }
@@ -402,7 +402,7 @@ hidden object MboxParsing {
                 origin.size(),
                 current.separator(),
                 limits.mime()
-            ).value()
+            ).record()
         );
         records.entries();
     }
@@ -428,7 +428,7 @@ hidden object MboxDecodedRecord {
         self.limits = limits;
     }
 
-    value() is MboxRecord {
+    record() is MboxRecord {
         confirm stop - start >= 2 && origin[stop - 1].int() == 10 && origin[stop - 2].int() == 10
             else throw InvalidMbox.located(stop, "record requires an extra empty delimiter line");
         let buffer = ByteBuffer();

@@ -332,7 +332,7 @@ hidden object PopWire does Closing {
     async read(command is PopCommand) is PopReply {
         confirm !self.closed() else throw PopSessionClosed.closed;
         await output.write(ByteSnapshot(command.bytes()));
-        let result = await PopReplyReading(input, command.mode(), prefix.value(), limits, 4096).result();
+        let result = await PopReplyReading(input, command.mode(), prefix.value(), limits, 4096).read();
         confirm !self.closed() else throw PopSessionClosed.closed;
         prefix.replace(result.remainder());
         result.reply();

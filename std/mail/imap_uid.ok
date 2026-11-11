@@ -19,7 +19,7 @@ object ImapUid does Comparing<ImapUid> {
         value = origin;
     }
 
-    value() is BigInt {
+    number() is BigInt {
         value;
     }
 
@@ -28,7 +28,7 @@ object ImapUid does Comparing<ImapUid> {
     }
 
     order(other is ImapUid) is Order {
-        value.order(other.value());
+        value.order(other.number());
     }
 }
 
@@ -40,7 +40,7 @@ object ImapUidValidity does Comparing<ImapUidValidity> {
         value = origin;
     }
 
-    value() is BigInt {
+    number() is BigInt {
         value;
     }
 
@@ -49,7 +49,7 @@ object ImapUidValidity does Comparing<ImapUidValidity> {
     }
 
     order(other is ImapUidValidity) is Order {
-        value.order(other.value());
+        value.order(other.number());
     }
 }
 
@@ -62,7 +62,7 @@ object ImapSequence does Comparing<ImapSequence> {
         value = origin;
     }
 
-    value() is int {
+    number() is int {
         value;
     }
 
@@ -71,7 +71,7 @@ object ImapSequence does Comparing<ImapSequence> {
     }
 
     order(other is ImapSequence) is Order {
-        value.order(other.value());
+        value.order(other.number());
     }
 }
 

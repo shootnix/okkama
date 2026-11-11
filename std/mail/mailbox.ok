@@ -191,14 +191,14 @@ object MailFlags does Set<MailFlag>, Sequencing<MailFlag>, Iterating<MailFlag> {
     }
 
     membership(value is MailFlag) is bool {
-        let key = MailFlagName(MailFlagSnapshot(value).value().string()).key();
+        let key = MailFlagName(MailFlagSnapshot(value).flag().string()).key();
         entries.reduce(false) -> found, entry {
             found || MailFlagName(entry.string()).key() == key;
         };
     }
 
     addition(value is MailFlag) is Set<MailFlag> {
-        let snapshot = MailFlagSnapshot(value).value();
+        let snapshot = MailFlagSnapshot(value).flag();
         if self.membership(snapshot) {
             return self;
         }
@@ -215,7 +215,7 @@ object MailFlags does Set<MailFlag>, Sequencing<MailFlag>, Iterating<MailFlag> {
     }
 
     difference(value is MailFlag) is Set<MailFlag> {
-        let key = MailFlagName(MailFlagSnapshot(value).value().string()).key();
+        let key = MailFlagName(MailFlagSnapshot(value).flag().string()).key();
         let following is @MailFlag = entries.filter() -> entry {
             MailFlagName(entry.string()).key() != key;
         };
@@ -230,7 +230,7 @@ hidden object MailFlagSnapshot {
         self.origin = origin;
     }
 
-    value() is MailFlag {
+    flag() is MailFlag {
         if origin.kind() == MailFlagKind.system {
             SystemFlag(origin.system());
         }
@@ -258,7 +258,7 @@ hidden object MailFlagEntries {
         confirm size <= maximum else throw MailboxLimitExceeded.kind("flags");
         let result is MimeItems<MailFlag> = MimeItems();
         for (0..size) -> index {
-            let flag = MailFlagSnapshot(origin.item(index)).value();
+            let flag = MailFlagSnapshot(origin.item(index)).flag();
             let key = MailFlagName(flag.string()).key();
             let present = result.entries().reduce(false) -> found, entry {
                 found || MailFlagName(entry.string()).key() == key;
@@ -287,7 +287,7 @@ hidden object MailSetEntries {
         for (0..size) -> index {
             confirm cursor.available()
                 else throw InvalidMailbox.located(index, "flag set ended before declared size");
-            result = result.following(MailFlagSnapshot(cursor.item()).value());
+            result = result.following(MailFlagSnapshot(cursor.item()).flag());
             cursor = cursor.following();
         }
         confirm !cursor.available()
@@ -705,7 +705,7 @@ object ChangedMaildirFlags {
         name = target;
     }
 
-    result() is StoredMail {
+    mail() is StoredMail {
         let access = MaildirAccess(origin.path(), FileLockMode.exclusive);
         defer access.close();
         let limits = origin.limits();
