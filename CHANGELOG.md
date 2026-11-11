@@ -166,6 +166,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   few hundred concatenations of a program they cost up to half more).
   Builders and literals stay `ArrayList`; only steps of a chain become
   `okkama.rt.Vec`. `OKKAMA_ARRAYS=flat` keeps every result a copy.
+- The JVM makes large maps persistent, as Tomato has since 0.4.3 (#336,
+  maps): a write that versions a map of more than 64 entries makes a
+  persistent B+ tree (`okkama.rt.PMap`) whose versions share every node off
+  the path the write copied, and branches off one `TreeMap` share its
+  persistent form. `m + [k: v]` and `m - [k: v]` at 100 000 entries cost
+  6–8 µs instead of 0.77–0.89 ms, a merge of a small map into a large one 11 µs
+  instead of 9 ms, and chains of puts and removals at 100 000 finish where
+  they did not. Merges that add much (two maps of equal size) are copied as
+  before, and lookups, iteration, builders and literals cost what they did.
+  `OKKAMA_MAPS=btree` keeps every version a copy.
 - The IR engine makes a map persistent, as Tomato has since 0.4.3 (#335,
   maps): a write that makes a version of a map of more than 64 entries turns
   that map into a persistent B+ tree in place, and it and its versions share

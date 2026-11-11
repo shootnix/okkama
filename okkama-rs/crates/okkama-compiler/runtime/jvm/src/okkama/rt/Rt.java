@@ -1003,6 +1003,11 @@ public final class Rt {
 
     /** {@code a + b + ...} over maps: entries of every part; a repeated key takes the rightmost value. */
     public static Map<Object, Object> merge(Object[] parts) {
+        // A version of a large map shares its nodes (#336).
+        Map<Object, Object> shared = PMap.merge(parts);
+        if (shared != null) {
+            return shared;
+        }
         Map<Object, Object> result = newMap();
         for (Object part : parts) {
             result.putAll((Map<?, ?>) part);
@@ -1012,6 +1017,10 @@ public final class Rt {
 
     /** {@code a - b - ...} over maps: entries of {@code map} whose keys are in none of the removed maps. */
     public static Map<Object, Object> without(Map<?, ?> map, Object[] removed) {
+        Map<Object, Object> shared = PMap.without(map, removed);
+        if (shared != null) {
+            return shared;
+        }
         Map<Object, Object> result = newMap();
         result.putAll(map);
         for (Object part : removed) {
