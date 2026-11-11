@@ -194,9 +194,9 @@ container.
 
 ## http/client
 
-Each program starts a stand-in server on 127.0.0.1 (`LocalServer`, at the
-end of the file) and talks to it, so it opens loopback sockets but needs no
-network. A real program writes `HttpClient()` and a real URL.
+Each program starts a small `HttpServer` on 127.0.0.1 with a handler, talks
+to it and drains it, so it opens loopback sockets but needs no network. A real
+program writes `HttpClient()` and a real URL.
 
 | Program | Task |
 |---|---|

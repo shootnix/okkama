@@ -1,36 +1,46 @@
 module examples/http/client/statuses v1.0.0;
 
 import "http/client" take HttpClient;
+import "http/server" take HttpServer;
+import "http/handler" take Handling, HandlingResult, ResponseHandling;
+import "http/request_context" take HttpRequestContext;
+import "http/message" take Request, Response;
+import "http/method" take MethodName;
 import "http/status" take Status, StatusCode, StatusClass;
-import "net/tcp" take TcpListening, TcpListener;
-import "net/endpoint" take IpEndpoint;
+import "http/endpoint" take ListedNetworks;
+import "net/tcp" take TcpListening;
 import "net/ip" take IpAddress, IpNetwork;
 import "net/dns" take FixedResolution;
-import "http/endpoint" take ListedNetworks;
+import "async/scope" take FutureGroup;
+import "time/duration" take Duration, DurationUnit;
 import "io/stdout" take Stdout;
-import "io/decorators" take ByteSnapshot;
-import "encoding/utf" take Utf8Encoded, Utf8Decoded;
-import "async/atomic" take Atomic;
-import "strings/parse" take Number;
 
-// Read a status: compare it with a case, match on it, take its class.
+// Read a status: compare it with a case, match on it, take its class, its
+// number and its phrase. The server is a small one on 127.0.0.1 that knows
+// no pages at all.
+
+object NoPages does Handling {
+    NoPages();
+
+    async handling(request is Request, context is HttpRequestContext) is HandlingResult {
+        Stdout().writeln("server got: " + MethodName(request::Head::method).string() + " " + request::Head::target.path());
+        ResponseHandling(Response(status: Status.not_found));
+    }
+}
 
 async main() is int {
     let listener = await TcpListening(port: 0).listener();
-    defer listener.close();
-    let server = LocalServer(listener);
-    // A real program writes HttpClient(); this one reaches its own local server.
+    let base = "http://127.0.0.1:" + listener::Local::port.string();
+    let server = HttpServer(listener: listener, handling: NoPages());
+    let serving is FutureGroup<HttpServer> = FutureGroup();
+    serving.start(server.serve());
+    // A real program writes HttpClient(); this one may reach 127.0.0.1.
     let client = HttpClient(
         resolver: FixedResolution([]),
         endpoints: ListedNetworks([IpNetwork(address: IpAddress("127.0.0.0"), prefix: 8)])
     );
-    defer client.close();
-    let answer is async (string) is bool = server.answer;
-    let serving = spawn answer(
-        "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-    );
 
-    let reply = await client.get(server.url("/missing"));
+    let reply = await client.get(base + "/missing");
     let status = reply::Head::status;
     let said = match status {
         case Status.ok {
@@ -47,51 +57,8 @@ async main() is int {
     Stdout().writeln("client error: " + (reply::Head::class == StatusClass.client_error).string());
     Stdout().writeln(StatusCode(status).number().string() + " " + StatusCode(status).phrase());
 
-    await serving;
+    client.close();
+    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
+    await serving.wait();
     0;
-}
-
-// Stands in for a real server: on 127.0.0.1 it takes one request, prints its
-// first line and answers with `reply`.
-hidden object LocalServer {
-    has listener is TcpListener;
-
-    LocalServer(listener is TcpListener) {
-        self.listener = listener;
-    }
-
-    url(path is string) is string {
-        "http://127.0.0.1:" + listener.local_endpoint()::Parts::port.string() + path;
-    }
-
-    async answer(reply is string) is bool {
-        let connection = await listener.connection();
-        defer connection.close();
-        let received = Atomic("");
-        loop {
-            let chunk = await connection.input().bytes(4096);
-            if chunk.size() == 0 {
-                last;
-            }
-            received.replace(received.value() + Utf8Decoded(chunk).string());
-            let parts = received.value().split("\r\n\r\n");
-            if parts.size() >= 2 {
-                let sizes = parts[0].split("\r\n").filter() -> line {
-                    line.lower().starts_with("content-length:");
-                };
-                let expected = if sizes.size() == 1 {
-                    Number(sizes[0].split(":")[1].trim()).int();
-                }
-                else {
-                    0;
-                };
-                if received.value().length() >= parts[0].length() + 4 + expected {
-                    last;
-                }
-            }
-        }
-        Stdout().writeln("server got: " + received.value().split("\r\n")[0]);
-        await connection.output().write(ByteSnapshot(Utf8Encoded(reply).bytes()));
-        true;
-    }
 }

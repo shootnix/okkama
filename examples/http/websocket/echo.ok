@@ -58,7 +58,7 @@ async main() is int {
     let out = Stdout();
     let clock = SystemClock();
     let listener = await TcpListening(port: 0).listener();
-    let site = "http://127.0.0.1:" + listener.local_endpoint()::Parts::port.string();
+    let site = "http://127.0.0.1:" + listener::Local::port.string();
     let server = HttpServer(listener: listener, handling: Shouting(), url: ParsedUrl(site + "/").parts());
     let serving is FutureGroup<HttpServer> = FutureGroup();
     serving.start(server.serve());

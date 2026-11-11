@@ -22,7 +22,7 @@ main() is int {
     let rows is @@string = CsvRows(text).map() -> row { row; };
     out.writeln("same text again: " + (CsvString(rows).string() == text).string());
 
-    let semicolons = CsvDialect(";", "'", "\n");
+    let semicolons = CsvDialect(delimiter: ";", quote: "'", line_ending: "\n");
     out.write(CsvString(rows: [["a;b", "c"], ["d", "it's"]], dialect: semicolons).string());
     out.write(CsvRecord(fields: ["one", "two words", "3,5"]).string());
 

@@ -29,7 +29,7 @@ main() is int {
     out.writeln("failures: " + failures.string());
 
     // A whole string, case-insensitively.
-    let code = Regex("[a-z]{3}-\\d{4}", [RegexFlag.ignore_case]);
+    let code = Regex(expression: "[a-z]{3}-\\d{4}", flags: [RegexFlag.ignore_case]);
     for ["ABC-1234", "abc-12345"] -> text {
         let verdict = try {
             EntireRegexMatch(origin: text, regex: code).text() + " is a code";
