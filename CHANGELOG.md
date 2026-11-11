@@ -433,6 +433,14 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     - Measured: 100 000 binary searches over a `Sorted` of 100 000 values
       take 0.15 s on Tomato and 0.36 s on the JVM before and after, and 1.68 s
       → 1.84 s on the IR engine (one more call per `item()`).
+  - More constructors only bind (the owner: «максимальное количество
+    конструкторов очистить от различных вычислений»).
+    `FormattedDate(text:, pattern:)` and `FormattedLocalDateTime` keep the
+    text and read it in `date()` and `local_date_time()`. `GregorianDay(date)`
+    counts in `number()`. `RegexMatchObservation`, and with it every search,
+    prepares its query on the first question. Each answer is kept with
+    `memo let`. Still computed when made: `confirm` checks, own runtime state
+    (`Regex`, buffers, PRNG), and the canonical forms equality depends on.
   - Constructors no longer call other objects (the owner's rule, see
     `docs/std-principles.md` §2). `Rfc3339(text)` keeps the text and reads
     it in `instant()` and `string()`. `Joined` walks its values in

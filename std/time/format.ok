@@ -27,14 +27,40 @@ import "runtime/time_format" take time_pattern_invalid_offset, time_format_date,
 object FormattedDate {
     has origin is Date;
     has pattern is string;
+    has source is string;
+    has reading is bool;
 
     FormattedDate(origin is Date, pattern is string) {
         self.origin = origin;
         self.pattern = pattern;
+        source = "";
+        reading = false;
     }
 
-    // Reads `text` written in `pattern`.
+    // Keeps `text` written in `pattern`; date() reads it.
     FormattedDate(text is string, pattern is string) {
+        origin = Date(year: 1, month: 1, day: 1);
+        self.pattern = pattern;
+        source = text;
+        reading = true;
+    }
+
+    date() is Date {
+        if reading {
+            self.parsed();
+        }
+        else {
+            origin;
+        }
+    }
+
+    // The date the text spells, read once (#491).
+    hidden parsed() is Date {
+        memo let read = self.read();
+        read;
+    }
+
+    hidden read() is Date {
         let pattern_offset is int = time_pattern_invalid_offset(
             pattern,
             false,
@@ -43,28 +69,24 @@ object FormattedDate {
         confirm pattern_offset == -1
             else throw InvalidTimePattern.located(pattern, pattern_offset);
         let source_offset is int = time_parse_invalid_offset(
-            text,
+            source,
             pattern,
             false,
         );
         confirm source_offset == -1
-            else throw InvalidFormattedDate.located(text, source_offset);
-        let parts is @int = time_parse_parts(text, pattern, false);
-        origin = Date(year: parts[0], month: parts[1], day: parts[2]);
-        self.pattern = pattern;
-    }
-
-    date() is Date {
-        origin;
+            else throw InvalidFormattedDate.located(source, source_offset);
+        let parts is @int = time_parse_parts(source, pattern, false);
+        Date(year: parts[0], month: parts[1], day: parts[2]);
     }
 
     string() is string {
         let invalid is int = time_pattern_invalid_offset(pattern, false, false);
         confirm invalid == -1 else throw InvalidTimePattern.located(pattern, invalid);
+        let date = self.date();
         time_format_date(
-            origin::Calendar::year,
-            origin::Calendar::month,
-            origin::Calendar::day,
+            date::Calendar::year,
+            date::Calendar::month,
+            date::Calendar::day,
             pattern,
         );
     }
@@ -73,14 +95,43 @@ object FormattedDate {
 object FormattedLocalDateTime {
     has origin is LocalDateTime;
     has pattern is string;
+    has source is string;
+    has reading is bool;
 
     FormattedLocalDateTime(origin is LocalDateTime, pattern is string) {
         self.origin = origin;
         self.pattern = pattern;
+        source = "";
+        reading = false;
     }
 
-    // Reads `text` written in `pattern`.
+    // Keeps `text` written in `pattern`; local_date_time() reads it.
     FormattedLocalDateTime(text is string, pattern is string) {
+        origin = LocalDateTime(
+            date: Date(year: 1, month: 1, day: 1),
+            time: TimeOfDay(hour: 0, minute: 0, second: 0, nanosecond: 0),
+        );
+        self.pattern = pattern;
+        source = text;
+        reading = true;
+    }
+
+    local_date_time() is LocalDateTime {
+        if reading {
+            self.parsed();
+        }
+        else {
+            origin;
+        }
+    }
+
+    // The date and time the text spells, read once (#491).
+    hidden parsed() is LocalDateTime {
+        memo let read = self.read();
+        read;
+    }
+
+    hidden read() is LocalDateTime {
         let pattern_offset is int = time_pattern_invalid_offset(
             pattern,
             true,
@@ -89,14 +140,14 @@ object FormattedLocalDateTime {
         confirm pattern_offset == -1
             else throw InvalidTimePattern.located(pattern, pattern_offset);
         let source_offset is int = time_parse_invalid_offset(
-            text,
+            source,
             pattern,
             true,
         );
         confirm source_offset == -1
-            else throw InvalidFormattedLocalDateTime.located(text, source_offset);
-        let parts is @int = time_parse_parts(text, pattern, true);
-        origin = LocalDateTime(
+            else throw InvalidFormattedLocalDateTime.located(source, source_offset);
+        let parts is @int = time_parse_parts(source, pattern, true);
+        LocalDateTime(
             date: Date(year: parts[0], month: parts[1], day: parts[2]),
             time: TimeOfDay(
                 hour: parts[3],
@@ -105,18 +156,14 @@ object FormattedLocalDateTime {
                 nanosecond: parts[6],
             ),
         );
-        self.pattern = pattern;
-    }
-
-    local_date_time() is LocalDateTime {
-        origin;
     }
 
     string() is string {
         let invalid is int = time_pattern_invalid_offset(pattern, true, false);
         confirm invalid == -1 else throw InvalidTimePattern.located(pattern, invalid);
-        let date is Date = origin.date();
-        let time is TimeOfDay = origin.time();
+        let local is LocalDateTime = self.local_date_time();
+        let date is Date = local.date();
+        let time is TimeOfDay = local.time();
         time_format_local(
             date::Calendar::year,
             date::Calendar::month,

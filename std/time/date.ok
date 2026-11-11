@@ -140,8 +140,38 @@ enum InvalidDate is Error = (because(message is string));
 //     GregorianDay(719163).date();                              // 1970-01-01
 object GregorianDay {
     has origin is int;
+    has given is Maybe<Date>;
 
     GregorianDay(date is Date) {
+        origin = 0;
+        given = Maybe.some(date);
+    }
+
+    GregorianDay(number is int) {
+        confirm number >= 1 && number <= 3652059
+            else throw InvalidDate.because("day number is outside years 1..9999");
+        origin = number;
+        given = Maybe<Date>.none;
+    }
+
+    number() is int {
+        memo let counted = self.counted();
+        counted;
+    }
+
+    // The day number: given, or counted from the date.
+    hidden counted() is int {
+        match given {
+            case Maybe.some(date) {
+                self.count(date);
+            }
+            else {
+                origin;
+            }
+        }
+    }
+
+    hidden count(date is Date) is int {
         let year is int = date::Calendar::year;
         let month is int = date::Calendar::month;
         let previous_year is int = year - 1;
@@ -158,7 +188,7 @@ object GregorianDay {
                 -2;
             }
         };
-        origin = previous_year * 365 +
+        previous_year * 365 +
             (previous_year / 4).int() -
             (previous_year / 100).int() +
             (previous_year / 400).int() +
@@ -167,18 +197,8 @@ object GregorianDay {
             date::Calendar::day;
     }
 
-    GregorianDay(number is int) {
-        confirm number >= 1 && number <= 3652059
-            else throw InvalidDate.because("day number is outside years 1..9999");
-        origin = number;
-    }
-
-    number() is int {
-        origin;
-    }
-
     date() is Date {
-        let shifted is int = origin + 305;
+        let shifted is int = self.number() + 305;
         let era is int = (shifted / 146097).int();
         let day_of_era is int = shifted - era * 146097;
         let year_of_era is int = ((day_of_era -

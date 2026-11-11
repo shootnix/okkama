@@ -143,18 +143,30 @@ enum RegexLimitExceeded is Error = (detailed(kind is RegexLimit, limit is int));
 enum RegexQuery = (first, prefix, entire);
 
 object RegexMatchObservation {
-    has origin is RegexQueryObservation;
+    has source is string;
+    has pattern is Regex;
+    has selected is RegexRange;
+    has mode is RegexQuery;
 
     RegexMatchObservation(origin is string, regex is Regex, range is RegexRange, mode is RegexQuery) {
-        self.origin = regex.observation(origin, range, mode);
+        source = origin;
+        pattern = regex;
+        selected = range;
+        self.mode = mode;
     }
 
     found() is bool {
-        origin.found();
+        self.observed().found();
     }
 
     match() is RegexMatching {
-        origin.match();
+        self.observed().match();
+    }
+
+    // The query, prepared on the first question and kept (#491).
+    hidden observed() is RegexQueryObservation {
+        memo let query = pattern.observation(source, selected, mode);
+        query;
     }
 }
 

@@ -49,12 +49,18 @@ So:
   part made of objects stays an action. Parsed scalar parts are the ideal
   case: a query string, a URL's host, a date's year. Anything that needs
   work stays a method.
-- **Constructors do no outside work** (the owner, wave-2 review). A
-  constructor binds its fields. It may also use builtins, `confirm` its
-  arguments, create its own runtime state and run an explicit parse of its
-  own. It must not call methods of other objects or cause external effects.
-  Work of that kind belongs to an action: `Number(text).int()`,
-  `ParsedUrl(text).parts()`.
+- **Constructors bind; actions compute** (the owner, wave-2 review). A
+  constructor binds its fields and does no computation that an action can
+  do instead: building, sorting, parsing and counting move into a hidden
+  action whose `memo let` keeps the answer (#491). `Sorted(xs)` binds `xs`
+  and sorts on the first question; `FormattedDate(text:, pattern:)` keeps
+  the text and reads it in `date()`. A constructor never calls methods of
+  other objects or causes external effects. Three things stay in it:
+  `confirm` checks of the arguments, so an invalid object never exists;
+  the object's own runtime state (a buffer, a PRNG, an `Atomic`); and a
+  canonical form that `==` depends on (a reduced `BigRational`, the
+  canonical text of `Decimal` and `BigInt`, a `Duration` in seconds),
+  because `memo` slots are not part of equality.
 - **No mutators.** A successor or a "with" action that changes one field is
   a mutator in disguise. Prefer an action that does the operation the change
   was for (`money.plus(other)`, not `money.with_cents(…)`).
