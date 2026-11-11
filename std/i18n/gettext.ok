@@ -1991,7 +1991,7 @@ object ParsedMo {
     }
 }
 
-object GettextCatalog {
+object GettextCatalog does Translating {
     has locale is Locale;
     has document is PoDocument;
     has entries is SortedBy<PoEntry, string>;
@@ -2056,6 +2056,10 @@ object GettextCatalog {
         entry::Entry::translations[0];
     }
 
+    plural(key is MessageKey, count is PluralNumber) is string {
+        self.plural(key, count.number());
+    }
+
     plural(key is MessageKey, count is Decimal) is string {
         let entry = self.entry(key);
         confirm entry::Entry::plural != "" else throw WrongMessageEntry.detailed(true, false);
@@ -2095,7 +2099,7 @@ object GettextCatalog {
     }
 }
 
-object GettextTranslation does Translating {
+hidden object GettextTranslation does Translating {
     has origin is GettextCatalog;
 
     GettextTranslation(origin is GettextCatalog) {
