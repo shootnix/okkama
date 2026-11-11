@@ -36,6 +36,20 @@ final class Vec extends AbstractList<Object> implements RandomAccess {
 
     private static final byte APPENDED = 1;
     private static final byte PREPENDED = 2;
+    /** A copy made by {@code replaced}: the next replacement starts a trie. */
+    private static final byte REPLACED = 3;
+
+    /** Arrays shorter than this are copied by {@code replaced} (Tomato's {@code TRIE_MIN}). */
+    static final int TRIE_MIN = 64;
+
+    /**
+     * Tries for chains of {@code replaced} only with {@code OKKAMA_ARRAYS=trie}
+     * (#336): they replace 3.4 times faster at 100 000 elements, but a trie read
+     * by a pass flattens itself, and the JIT takes some fifteen passes of
+     * deoptimization to read the flat array as fast as before, which the
+     * decision's gate (read-heavy work within 10%) does not allow by default.
+     */
+    static final boolean TRIES = "trie".equals(System.getenv("OKKAMA_ARRAYS"));
 
     /** The written range {@code front .. back} of a shared buffer. */
     private static final class Frontier {
@@ -48,7 +62,8 @@ final class Vec extends AbstractList<Object> implements RandomAccess {
         }
     }
 
-    private final Object[] slots;
+    /** Null for a trie not flattened yet. */
+    private Object[] slots;
     private final int start;
     private final int len;
     /** Null for a marked copy, which owns {@code slots} exactly. */
@@ -61,6 +76,12 @@ final class Vec extends AbstractList<Object> implements RandomAccess {
      * size. Representation only; no version sees it.
      */
     private boolean extended;
+    /** A version of a chain of {@code replaced} (#250): replacements copy a path. */
+    private final Trie trie;
+    /** The trie a marked copy of {@code replaced} turned into, which its branches share. */
+    private Trie replacedInto;
+    /** Reads of a trie since it was made: a pass of them flattens it. */
+    private int reads;
 
     private Vec(Object[] slots, int start, int len, Frontier frontier, byte chain) {
         this.slots = slots;
@@ -68,12 +89,55 @@ final class Vec extends AbstractList<Object> implements RandomAccess {
         this.len = len;
         this.frontier = frontier;
         this.chain = chain;
+        this.trie = null;
+    }
+
+    private Vec(Trie trie) {
+        this.slots = null;
+        this.start = 0;
+        this.len = trie.len;
+        this.frontier = null;
+        this.chain = 0;
+        this.trie = trie;
     }
 
     @Override
     public Object get(int index) {
         Objects.checkIndex(index, len);
-        return slots[start + index];
+        // On a final field: the branch a trie's first pass takes is not the
+        // one its later, flat reads take (#336).
+        if (trie == null) {
+            return slots[start + index];
+        }
+        // A flattened trie reads flat; the path read stays out of line, so
+        // that this method stays small enough to inline.
+        Object[] flat = slots;
+        return flat != null ? flat[index] : trieGet(index);
+    }
+
+    /**
+     * An element of a trie by its path. Read rather than changed, a trie is
+     * flattened after a pass of reads, as many as a copy costs; every version
+     * stays as it was, since the flat copy is of this version only.
+     */
+    private Object trieGet(int index) {
+        Object item = trie.get(index);
+        if (++reads >= len) {
+            slots = trie.toArray();
+        }
+        return item;
+    }
+
+    /**
+     * The elements in a new array, whatever the representation. A trie asked
+     * for all of them has been read whole: it flattens now, so that the next
+     * request copies flat.
+     */
+    private Object[] items() {
+        if (slots == null) {
+            slots = trie.toArray();
+        }
+        return Arrays.copyOfRange(slots, start, start + len);
     }
 
     @Override
@@ -83,11 +147,37 @@ final class Vec extends AbstractList<Object> implements RandomAccess {
 
     @Override
     public Object[] toArray() {
-        return Arrays.copyOfRange(slots, start, start + len);
+        return items();
     }
 
     private boolean continuesChain() {
-        return frontier != null || chain != 0;
+        return frontier != null || chain == APPENDED || chain == PREPENDED;
+    }
+
+    /**
+     * {@code items.replaced(at, value)} on a large array (Tomato's #250): a copy
+     * marked replaced, from whose next replacement on a trie, which copies one
+     * path. A marked copy turns into a trie once, and its branches share it.
+     * Null for an array under {@link #TRIE_MIN}, copied as before.
+     */
+    static List<Object> replaced(List<?> array, int index, Object value) {
+        if (!TRIES || array.size() < TRIE_MIN) {
+            return null;
+        }
+        if (array instanceof Vec vec) {
+            if (vec.trie != null) {
+                return new Vec(vec.trie.set(index, value));
+            }
+            if (vec.chain == REPLACED) {
+                if (vec.replacedInto == null) {
+                    vec.replacedInto = Trie.of(vec.slots, vec.start, vec.len);
+                }
+                return new Vec(vec.replacedInto.set(index, value));
+            }
+        }
+        Object[] copy = array instanceof Vec vec ? vec.items() : array.toArray();
+        copy[index] = value;
+        return new Vec(copy, 0, copy.length, null, REPLACED);
     }
 
     /**
@@ -101,6 +191,10 @@ final class Vec extends AbstractList<Object> implements RandomAccess {
         int len = to - from;
         if (!SHARED || len < CHAIN_MIN) {
             return null;
+        }
+        if (array instanceof Vec vec && vec.slots == null) {
+            Object[] all = vec.trie.toArray();
+            return new Vec(2 * len >= all.length ? all : Arrays.copyOfRange(all, from, to), 2 * len >= all.length ? from : 0, len, null, (byte) 0);
         }
         if (array instanceof Vec vec) {
             if (2 * len >= vec.slots.length) {
@@ -227,7 +321,9 @@ final class Vec extends AbstractList<Object> implements RandomAccess {
 
     private static int copy(List<?> part, Object[] all, int at) {
         int n = part.size();
-        if (part instanceof Vec vec) {
+        if (part instanceof Vec vec && vec.slots == null) {
+            System.arraycopy(vec.trie.toArray(), 0, all, at, n);
+        } else if (part instanceof Vec vec) {
             System.arraycopy(vec.slots, vec.start, all, at, n);
         } else if (at == 0) {
             // Straight into place (it may null the slot after it, which a

@@ -480,6 +480,11 @@ public final class Rt {
         if (!inBounds(array, index)) {
             throw trap("Array index out of bounds");
         }
+        // A chain of replacements in a large array copies a path (#336).
+        List<Object> shared = Vec.replaced(array, index.intValue(), value);
+        if (shared != null) {
+            return shared;
+        }
         List<Object> copy = new ArrayList<Object>(array);
         copy.set(index.intValue(), value);
         return copy;

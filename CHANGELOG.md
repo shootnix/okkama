@@ -170,7 +170,10 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   list is copied once into a `Vec` that its own slices then share: a loop of
   `drop(1)` costs 69 ns a step at 100 000 instead of 16.6 µs, and a slice of
   half an array 20 µs instead of 36. `OKKAMA_ARRAYS=flat` keeps every result
-  a copy.
+  a copy. Tries for chains of `replaced` are built but off by default on the
+  JVM (`OKKAMA_ARRAYS=trie` turns them on): they replace 3.4 times faster at
+  100 000 elements, but the JIT takes some fifteen passes to read a flattened
+  trie as fast as before.
 - The JVM makes large maps persistent, as Tomato has since 0.4.3 (#336,
   maps): a write that versions a map of more than 64 entries makes a
   persistent B+ tree (`okkama.rt.PMap`) whose versions share every node off
