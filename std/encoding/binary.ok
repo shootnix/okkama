@@ -15,11 +15,11 @@ import "runtime/binary" take binary_integer_fits, binary_integer_bytes,
 //         order: ByteOrder.big,
 //     ).bytes(); // [255, 254]
 //
-//     let measurement is float = FloatFromBytes(
-//         origin: [byte(64), byte(32), byte(0), byte(0)],
-//         width: FloatWidth.bits32,
+//     let measurement is float = Binary(
+//         bytes: [byte(64), byte(32), byte(0), byte(0)],
 //         order: ByteOrder.big,
-//     ).value(); // 2.5
+//     ).float(FloatWidth.bits32); // 2.5
+//     let port is int = Binary(bytes: header, order: ByteOrder.big).int(Signedness.unsigned);
 //
 // Signed integers use two's complement; unsigned integers use ordinary
 // magnitude. Encoding is exact and never truncates, wraps or saturates.
@@ -40,34 +40,47 @@ enum Signedness = (signed, unsigned);
 
 enum FloatWidth = (bits32, bits64);
 
-object IntegerFromBytes {
+// Bytes read as a number in a byte order: an integer of their width, or an
+// IEEE 754 float of the width given.
+object Binary {
     has origin is @byte;
-    has signedness is Signedness;
     has order is ByteOrder;
 
-    IntegerFromBytes(origin is @byte, signedness is Signedness, order is ByteOrder) {
-        self.origin = origin;
-        self.signedness = signedness;
+    Binary(bytes is @byte, order is ByteOrder) {
+        origin = bytes;
         self.order = order;
     }
 
-    value() is int {
+    int(signedness is Signedness) is int {
         confirm origin.size() > 0
             else throw InvalidArgument.because("integer input width must be positive");
-        let sign is string = self.signedness_name();
+        let sign is string = if signedness == Signedness.signed {
+            "signed";
+        }
+        else {
+            "unsigned";
+        };
         let order_name is string = self.order_name();
         confirm binary_integer_from_bytes_fits(origin, sign, order_name)
             else throw InvalidArgument.because("decoded integer is outside the int range");
         binary_integer_from_bytes(origin, sign, order_name);
     }
 
-    hidden signedness_name() is string {
-        if signedness == Signedness.signed {
-            "signed";
+    float(width is FloatWidth) is float {
+        let bits is int = if width == FloatWidth.bits32 {
+            32;
         }
         else {
-            "unsigned";
-        }
+            64;
+        };
+        confirm origin.size() * 8 == bits
+            else throw InvalidArgument.because(
+                "floating-point input width does not match FloatWidth"
+            );
+        let order_name is string = self.order_name();
+        confirm binary_float_finite(origin, bits, order_name)
+            else throw InvalidArgument.because("binary floating-point value must be finite");
+        binary_float_from_bytes(origin, bits, order_name);
     }
 
     hidden order_name() is string {
@@ -108,57 +121,6 @@ object IntegerBytes {
         }
         else {
             "unsigned";
-        }
-    }
-
-    hidden order_name() is string {
-        if order == ByteOrder.big {
-            "big";
-        }
-        else {
-            "little";
-        }
-    }
-}
-
-object FloatFromBytes {
-    has origin is @byte;
-    has width is FloatWidth;
-    has order is ByteOrder;
-
-    FloatFromBytes(origin is @byte, width is FloatWidth, order is ByteOrder) {
-        self.origin = origin;
-        self.width = width;
-        self.order = order;
-    }
-
-    value() is float {
-        let bits is int = self.width_bits();
-        confirm origin.size() == self.width_size()
-            else throw InvalidArgument.because(
-                "floating-point input width does not match FloatWidth"
-            );
-        let order_name is string = self.order_name();
-        confirm binary_float_finite(origin, bits, order_name)
-            else throw InvalidArgument.because("binary floating-point value must be finite");
-        binary_float_from_bytes(origin, bits, order_name);
-    }
-
-    hidden width_bits() is int {
-        if width == FloatWidth.bits32 {
-            32;
-        }
-        else {
-            64;
-        }
-    }
-
-    hidden width_size() is int {
-        if width == FloatWidth.bits32 {
-            4;
-        }
-        else {
-            8;
         }
     }
 

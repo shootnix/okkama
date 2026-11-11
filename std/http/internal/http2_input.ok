@@ -11,7 +11,7 @@ import "http/internal/http2_flow" take Http2DataPayload, Http2WindowIncrement;
 import "http/internal/http2_controls" take Http2Reset, Http2ResetFrame, Http2PingReply, Http2GoAway,
     Http2GoAwayProgress;
 import "io/stream" take AsyncReading;
-import "encoding/binary" take IntegerFromBytes, Signedness;
+import "encoding/binary" take Binary, Signedness;
 import "encoding/utf" take ByteOrder;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
@@ -301,16 +301,13 @@ object Http2ConnectionInput {
             let payload = frame.payload();
             for (0..(payload.size() / 6).int()) -> row {
                 let offset = row * 6;
-                let id = IntegerFromBytes(
-                    payload.slice(offset, offset + 2),
-                    Signedness.unsigned,
-                    ByteOrder.big
-                ).value();
-                let value = IntegerFromBytes(
-                    payload.slice(offset + 2, offset + 6),
-                    Signedness.unsigned,
-                    ByteOrder.big
-                ).value();
+                let id = Binary(bytes: payload.slice(offset, offset + 2), order: ByteOrder.big).int(
+                    Signedness.unsigned
+                );
+                let value = Binary(
+                    bytes: payload.slice(offset + 2, offset + 6),
+                    order: ByteOrder.big
+                ).int(Signedness.unsigned);
                 let previous = peer.value();
                 let following = previous.setting(id, value, from_server);
                 receiver.settings(previous, following);

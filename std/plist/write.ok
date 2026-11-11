@@ -7,7 +7,7 @@ import "numbers/bigint" take BigInt;
 import "compare" take Order;
 import "strings/parse" take Number;
 import "encoding/utf" take Utf8Encoded, Utf16Encoded, Utf32Encoded, ByteOrder;
-import "encoding/binary" take IntegerBytes, IntegerFromBytes, FloatBytes, FloatWidth, Signedness;
+import "encoding/binary" take IntegerBytes, Binary, FloatBytes, FloatWidth, Signedness;
 import "encoding/base64" take Base64Encoded;
 import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
@@ -198,11 +198,9 @@ object PlistWireSession {
         self.capacity(value.length());
         let scalars = Utf32Encoded(value, ByteOrder.big).bytes();
         for (0..value.length()) -> index {
-            let code = IntegerFromBytes(
-                scalars.slice(index * 4, index * 4 + 4),
-                Signedness.unsigned,
-                ByteOrder.big
-            ).value();
+            let code = Binary(bytes: scalars.slice(index * 4, index * 4 + 4), order: ByteOrder.big).int(
+                Signedness.unsigned
+            );
             confirm code == 9
                 || code == 10
                 || code == 13
@@ -319,7 +317,7 @@ object PlistWireValue does PlistWriting {
     result() is int {
         confirm event.content().size() == 1 && identity.content().size() == 8
             else throw InvalidPlistPrintProtocol.invalid;
-        IntegerFromBytes(identity.content().bytes(), Signedness.unsigned, ByteOrder.big).value();
+        Binary(bytes: identity.content().bytes(), order: ByteOrder.big).int(Signedness.unsigned);
     }
 
     boolean(value is bool) is void {

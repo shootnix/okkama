@@ -4,7 +4,7 @@ import "random/source" take Randomizing;
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "collections/combining" take UnequalSizes;
-import "math/constants" take Pi, Tau;
+import "math/constants" take PI, TAU;
 import "runtime/random_distribution" take distribution_uniform, distribution_log, distribution_exp,
     distribution_sqrt, distribution_cos, distribution_acos, distribution_power, distribution_angle;
 
@@ -114,7 +114,7 @@ object StandardNormal {
         let radius is float = distribution_sqrt(
             -2.0 * distribution_log(1.0 - random.float())
         );
-        let angle is float = (Tau().value()) * random.float();
+        let angle is float = TAU * random.float();
         radius * distribution_cos(angle);
     }
 }
@@ -328,7 +328,7 @@ object VonMisesDistribution does Distribution<float> {
 
     sample() is float {
         if concentration <= 0.000001 {
-            distribution_angle(center + (Tau().value()) * random.float());
+            distribution_angle(center + TAU * random.float());
         }
         else {
             VonMisesSample(
@@ -384,7 +384,7 @@ object VonMisesCandidate {
 
     value() is float {
         let cosine is float = distribution_cos(
-            (Pi().value()) * random.float()
+            PI * random.float()
         );
         let delta is float = cosine / (ratio + cosine);
         let uniform is float = random.float();

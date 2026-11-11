@@ -9,30 +9,31 @@ import "runtime/math_aggregate" take aggregate_square_root;
 // One-pass aggregates over Iterating values. Plain arrays are Iterating, so
 // no wrapper object is needed:
 //
-//     let smallest is int = value Minimum(values: numbers);
-//     let largest is int = value Maximum(values: [3, 9, 4]);
-//     let total is float = value AccurateSum(values: measurements);
-//     let length is float = value Hypotenuse(values: coordinates);
-//     let gap is float = value Distance(left: first, right: second);
+//     let smallest is int = Extremes(numbers).minimum();
+//     let largest is int = Extremes([3, 9, 4]).maximum();
+//     let total is float = Numbers(measurements).accurate_sum();
+//     let length is float = Numbers(coordinates).hypotenuse();
+//     let gap is float = Vectors(left: first, right: second).distance();
 //
-// Minimum and Maximum use intrinsic Comparing<T> and throw EmptySequence for an
-// empty source. Sum, AccurateSum and SumOfProducts return 0.0 for empty input;
-// Product returns 1.0; Hypotenuse returns 0.0.
+// Extremes uses intrinsic Comparing<T> and throws EmptySequence for an empty
+// source. sum, accurate_sum and dot return 0.0 for empty input; product
+// returns 1.0; hypotenuse returns 0.0.
 //
-// Sum is a plain left fold. AccurateSum uses Neumaier compensation and is the
-// default when cancellation accuracy matters. Hypotenuse and Distance use a
-// scaled sum of squares, avoiding direct x*x overflow and underflow.
-// SumOfProducts traverses both inputs once and throws UnequalSizes when only
-// one ends. Distance checks its sequencing sizes before reading either value.
+// sum is a plain left fold. accurate_sum uses Neumaier compensation and is the
+// default when cancellation accuracy matters. hypotenuse and distance use a
+// scaled sum of squares, avoiding direct x*x overflow and underflow. dot
+// traverses both inputs once and throws UnequalSizes when only one ends;
+// distance checks the sizes before reading either value.
 
-object Minimum<T: Comparing<T>> {
+// The least and the greatest item of a source.
+object Extremes<T: Comparing<T>> {
     has origin is Iterating<T>;
 
-    Minimum(values is Iterating<T>) {
+    Extremes(values is Iterating<T>) {
         origin = values;
     }
 
-    value() is T {
+    minimum() is T {
         let cursor = origin.cursor();
         confirm cursor.available() else throw EmptySequence.empty;
         CursorItems(cursor: cursor.successor()).reduce(cursor.item()) -> minimum, item {
@@ -44,16 +45,8 @@ object Minimum<T: Comparing<T>> {
             }
         };
     }
-}
 
-object Maximum<T: Comparing<T>> {
-    has origin is Iterating<T>;
-
-    Maximum(values is Iterating<T>) {
-        origin = values;
-    }
-
-    value() is T {
+    maximum() is T {
         let cursor = origin.cursor();
         confirm cursor.available() else throw EmptySequence.empty;
         CursorItems(cursor: cursor.successor()).reduce(cursor.item()) -> maximum, item {
@@ -67,44 +60,74 @@ object Maximum<T: Comparing<T>> {
     }
 }
 
-object Sum {
+// Sums, the product and the Euclidean length of floats.
+object Numbers {
     has origin is Iterating<float>;
 
-    Sum(values is Iterating<float>) {
+    Numbers(values is Iterating<float>) {
         origin = values;
     }
 
-    value() is float {
+    sum() is float {
         origin.reduce(0.0) -> total, item {
             total + item;
         };
     }
-}
 
-object AccurateSum {
-    has origin is Iterating<float>;
-
-    AccurateSum(values is Iterating<float>) {
-        origin = values;
-    }
-
-    value() is float {
-        origin.reduce(AccurateTotal(sum: 0.0, correction: 0.0)) -> total, item {
+    accurate_sum() is float {
+        origin.reduce(RunningSum(sum: 0.0, correction: 0.0)) -> total, item {
             total.addition(item);
-        }.value();
+        }.sum();
+    }
+
+    product() is float {
+        origin.reduce(1.0) -> product, item {
+            product * item;
+        };
+    }
+
+    hypotenuse() is float {
+        origin.reduce(RunningNorm(scale: 0.0, squares: 1.0)) -> state, item {
+            state.addition(item);
+        }.norm();
     }
 }
 
-object AccurateTotal {
+// Two vectors of floats: their dot product and the distance between them.
+object Vectors {
+    has left is Sequencing<float>;
+    has right is Sequencing<float>;
+
+    Vectors(left is Sequencing<float>, right is Sequencing<float>) {
+        self.left = left;
+        self.right = right;
+    }
+
+    dot() is float {
+        StrictlyZipped(left: left, right: right).reduce(0.0) -> total, pair {
+            total + pair.first() * pair.second();
+        };
+    }
+
+    distance() is float {
+        confirm left.size() == right.size() else throw UnequalSizes.unequal;
+        (0..left.size()).reduce(RunningNorm(scale: 0.0, squares: 1.0)) -> state, index {
+            state.addition(left.item(index) - right.item(index));
+        }.norm();
+    }
+}
+
+// A Neumaier-compensated running sum.
+hidden object RunningSum {
     has total is float;
     has correction is float;
 
-    AccurateTotal(sum is float, correction is float) {
+    RunningSum(sum is float, correction is float) {
         total = sum;
         self.correction = correction;
     }
 
-    addition(value is float) is AccurateTotal {
+    addition(value is float) is RunningSum {
         let revised is float = total + value;
         let error is float = if self.magnitude(total) >= self.magnitude(value) {
             (total - revised) + value;
@@ -112,10 +135,10 @@ object AccurateTotal {
         else {
             (value - revised) + total;
         };
-        AccurateTotal(sum: revised, correction: correction + error);
+        RunningSum(sum: revised, correction: correction + error);
     }
 
-    value() is float {
+    sum() is float {
         total + correction;
     }
 
@@ -129,77 +152,17 @@ object AccurateTotal {
     }
 }
 
-object Product {
-    has origin is Iterating<float>;
-
-    Product(values is Iterating<float>) {
-        origin = values;
-    }
-
-    value() is float {
-        origin.reduce(1.0) -> product, item {
-            product * item;
-        };
-    }
-}
-
-object SumOfProducts {
-    has left is Iterating<float>;
-    has right is Iterating<float>;
-
-    SumOfProducts(left is Iterating<float>, right is Iterating<float>) {
-        self.left = left;
-        self.right = right;
-    }
-
-    value() is float {
-        StrictlyZipped(left: left, right: right).reduce(0.0) -> total, pair {
-            total + pair.first() * pair.second();
-        };
-    }
-}
-
-object Hypotenuse {
-    has origin is Iterating<float>;
-
-    Hypotenuse(values is Iterating<float>) {
-        origin = values;
-    }
-
-    value() is float {
-        origin.reduce(ScaledSquares(scale: 0.0, squares: 1.0)) -> state, item {
-            state.addition(item);
-        }.value();
-    }
-}
-
-object Distance {
-    has left is Sequencing<float>;
-    has right is Sequencing<float>;
-
-    Distance(left is Sequencing<float>, right is Sequencing<float>) {
-        self.left = left;
-        self.right = right;
-    }
-
-    value() is float {
-        confirm left.size() == right.size() else throw UnequalSizes.unequal;
-        (0..left.size()).reduce(ScaledSquares(scale: 0.0, squares: 1.0)) -> state, index {
-            state.addition(left.item(index) - right.item(index));
-        }.value();
-    }
-}
-
-object ScaledSquares {
+// A running scaled sum of squares, read as the Euclidean norm.
+hidden object RunningNorm {
     has scaling is float;
     has total is float;
 
-    ScaledSquares(scale is float, squares is float) {
+    RunningNorm(scale is float, squares is float) {
         scaling = scale;
         total = squares;
     }
 
-    addition(value is float) is ScaledSquares {
+    addition(value is float) is RunningNorm {
         let magnitude is float = if value < 0.0 {
             -value;
         }
@@ -211,21 +174,21 @@ object ScaledSquares {
         }
         else if scaling < magnitude {
             let ratio is float = scaling / magnitude;
-            ScaledSquares(
+            RunningNorm(
                 scale: magnitude,
                 squares: 1.0 + total * ratio * ratio,
             );
         }
         else {
             let ratio is float = magnitude / scaling;
-            ScaledSquares(
+            RunningNorm(
                 scale: scaling,
                 squares: total + ratio * ratio,
             );
         }
     }
 
-    value() is float {
+    norm() is float {
         if scaling == 0.0 {
             0.0;
         }
@@ -233,4 +196,48 @@ object ScaledSquares {
             scaling * aggregate_square_root(total);
         }
     }
+}
+
+test "extremes of a source, and an empty one is refused" {
+    test.is(Extremes([3, 9, 4]).minimum(), 3);
+    test.is(Extremes([3, 9, 4]).maximum(), 9);
+    test.is(Extremes(["pear", "apple"]).minimum(), "apple");
+    let empty is @int = [];
+    test.ok(try {
+        Extremes(empty).minimum();
+        false;
+    }
+    catch e is EmptySequence {
+        true;
+    });
+}
+
+test "sums, product and hypotenuse of floats" {
+    test.is(Numbers([1.0, 2.0, 3.5]).sum(), 6.5);
+    test.is(Numbers([1.0e16, 1.0, -1.0e16]).accurate_sum(), 1.0);
+    test.is(Numbers([2.0, 3.0, 0.5]).product(), 3.0);
+    test.is(Numbers([3.0, 4.0]).hypotenuse(), 5.0);
+    let empty is @float = [];
+    test.is(Numbers(empty).sum(), 0.0);
+    test.is(Numbers(empty).product(), 1.0);
+    test.is(Numbers(empty).hypotenuse(), 0.0);
+}
+
+test "dot product and distance of two vectors" {
+    test.is(Vectors(left: [1.0, 2.0, 3.0], right: [4.0, 5.0, 6.0]).dot(), 32.0);
+    test.is(Vectors(left: [0.0, 0.0], right: [3.0, 4.0]).distance(), 5.0);
+    test.ok(try {
+        Vectors(left: [1.0], right: [1.0, 2.0]).distance();
+        false;
+    }
+    catch e is UnequalSizes {
+        true;
+    });
+    test.ok(try {
+        Vectors(left: [1.0], right: [1.0, 2.0]).dot();
+        false;
+    }
+    catch e is UnequalSizes {
+        true;
+    });
 }

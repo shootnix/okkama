@@ -6,8 +6,8 @@ import "encoding/utf" take Utf8Encoded;
 
 main() is int {
     let c = Checks();
-    c = c.same_int("Wikipedia", Adler32(Utf8Encoded(origin: "Wikipedia").bytes()).value(), 300286872);
-    c = c.same_int("chunked", Adler32(Utf8Encoded(origin: "Wiki").bytes()).state(Utf8Encoded(origin: "pedia").bytes()).value(), 300286872);
-    c = c.same_int("empty", Adler32().value(), 1);
+    c = c.same_int("Wikipedia", Adler32(Utf8Encoded(origin: "Wikipedia").bytes()).checksum(), 300286872);
+    c = c.same_int("chunked", Adler32(Utf8Encoded(origin: "Wiki").bytes()).state(Utf8Encoded(origin: "pedia").bytes()).checksum(), 300286872);
+    c = c.same_int("empty", Adler32().checksum(), 1);
     c.done();
 }

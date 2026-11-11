@@ -2,7 +2,7 @@ module http/internal/http2_controls v1.0.0;
 
 import "http/internal/http2_frame" take Http2Frame, Http2FrameHeader, Http2FrameRules, Http2Fault,
     Http2FaultScope;
-import "encoding/binary" take IntegerBytes, IntegerFromBytes, Signedness;
+import "encoding/binary" take IntegerBytes, Binary, Signedness;
 import "encoding/utf" take ByteOrder;
 import "http/internal/wire_bytes" take HttpWireBytes;
 
@@ -14,7 +14,7 @@ object Http2Reset {
             else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "RST_STREAM required");
         Http2FrameRules(frame).check();
         stream = frame.header().stream();
-        code = IntegerFromBytes(frame.payload(), Signedness.unsigned, ByteOrder.big).value();
+        code = Binary(bytes: frame.payload(), order: ByteOrder.big).int(Signedness.unsigned);
     }
 
     stream() is int {
@@ -80,8 +80,10 @@ object Http2GoAway {
             else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "GOAWAY required");
         Http2FrameRules(frame).check();
         let payload = frame.payload();
-        last_stream = IntegerFromBytes(payload.slice(0, 4), Signedness.unsigned, ByteOrder.big).value() & 2147483647;
-        code = IntegerFromBytes(payload.slice(4, 8), Signedness.unsigned, ByteOrder.big).value();
+        last_stream = Binary(bytes: payload.slice(0, 4), order: ByteOrder.big).int(
+            Signedness.unsigned
+        ) & 2147483647;
+        code = Binary(bytes: payload.slice(4, 8), order: ByteOrder.big).int(Signedness.unsigned);
         debug = payload.slice(8, payload.size());
     }
 

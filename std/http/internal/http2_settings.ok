@@ -1,7 +1,7 @@
 module http/internal/http2_settings v1.0.0;
 
 import "http/internal/http2_frame" take Http2Frame, Http2FrameRules, Http2Fault, Http2FaultScope;
-import "encoding/binary" take IntegerFromBytes, Signedness;
+import "encoding/binary" take Binary, Signedness;
 import "encoding/utf" take ByteOrder;
 
 // Peer advertisements are observations, not local allocation requests.
@@ -128,16 +128,12 @@ object ReceivedHttp2Settings {
         let state = previous;
         for (0..(payload.size() / 6).int()) -> row {
             let offset = row * 6;
-            let identifier = IntegerFromBytes(
-                payload.slice(offset, offset + 2),
-                Signedness.unsigned,
-                ByteOrder.big
-            ).value();
-            let value = IntegerFromBytes(
-                payload.slice(offset + 2, offset + 6),
-                Signedness.unsigned,
-                ByteOrder.big
-            ).value();
+            let identifier = Binary(bytes: payload.slice(offset, offset + 2), order: ByteOrder.big).int(
+                Signedness.unsigned
+            );
+            let value = Binary(bytes: payload.slice(offset + 2, offset + 6), order: ByteOrder.big).int(
+                Signedness.unsigned
+            );
             state = state.setting(identifier, value, from_server);
         }
         state;

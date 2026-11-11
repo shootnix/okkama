@@ -8,8 +8,7 @@ import "math/decimal" take Decimal, InvalidDecimal;
 import "compare" take Order;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded, Utf16Decoded, Utf32Decoded, Utf32Encoded,
     ByteOrder, InvalidUtf8, InvalidUtf16;
-import "encoding/binary" take IntegerBytes, IntegerFromBytes, Signedness, FloatFromBytes,
-    FloatWidth;
+import "encoding/binary" take IntegerBytes, Binary, Signedness, FloatWidth;
 import "encoding/base64" take Base64Decoded, InvalidBase64;
 import "time/rfc3339" take InstantFromRfc3339;
 import "time/clock" take Instant;
@@ -296,11 +295,9 @@ object PlistXmlSource {
     checked(text is string, at is int) is string {
         let bytes = Utf32Encoded(text, ByteOrder.big).bytes();
         for (0..text.length()) -> index {
-            let scalar = IntegerFromBytes(
-                bytes.slice(index * 4, index * 4 + 4),
-                Signedness.unsigned,
-                ByteOrder.big
-            ).value();
+            let scalar = Binary(bytes: bytes.slice(index * 4, index * 4 + 4), order: ByteOrder.big).int(
+                Signedness.unsigned
+            );
             confirm PlistXmlCharacter(scalar).valid()
                 else throw self.failure(at + index, "invalid XML character");
         }
@@ -1084,16 +1081,15 @@ object PlistBinaryDocument {
                         };
                         confirm marker == 34 || marker == 35 || marker == 51
                             else throw InvalidPlist.located(start, "unsupported float width");
-                        let number = FloatFromBytes(
-                            bytes.span(start + 1, width, end),
-                            if width == 4 {
-                                FloatWidth.bits32;
-                            }
-                            else {
-                                FloatWidth.bits64;
-                            },
-                            ByteOrder.big
-                        ).value();
+                        let number = Binary(
+                            bytes: bytes.span(start + 1, width, end),
+                            order: ByteOrder.big
+                        ).float(if width == 4 {
+                            FloatWidth.bits32;
+                        }
+                        else {
+                            FloatWidth.bits64;
+                        });
                         if marker == 51 {
                             PlistDate(
                                 Instant(

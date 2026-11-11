@@ -1,15 +1,13 @@
 module math/constants v1.0.0;
 
-// Finite mathematical constants as immutable projected values.
+// Finite mathematical constants, as module constants (#153):
 //
-//     let circle is float = value Pi();
-//     let turn is float = value Tau();
-//     let growth is float = value Euler();
+//     let circle is float = PI * radius * radius;
+//     let turn is float = TAU;
+//     let growth is float = E;
 //
-// Okkama does not yet have immutable module-level value declarations, so each
-// constant is represented by a stateless value object. The projection returns
-// the nearest builtin float. Tau is defined from Pi to keep their relationship
-// explicit.
+// Each is the nearest builtin float; TAU is defined from PI to keep their
+// relationship explicit.
 //
 // Infinity and NaN deliberately do not live here. Builtin float is finite by
 // contract, and introducing symbolic substitutes would not make them usable by
@@ -17,26 +15,13 @@ module math/constants v1.0.0;
 // that must be a language-wide numeric-model decision rather than a stdlib
 // constant leaking through the existing boundary.
 
-object Pi {
-    Pi();
+const PI = 3.141592653589793;
 
-    value() is float {
-        3.141592653589793;
-    }
-}
+const TAU = PI * 2.0;
 
-object Tau {
-    Tau();
+const E = 2.718281828459045;
 
-    value() is float {
-        (Pi().value()) * 2.0;
-    }
-}
-
-object Euler {
-    Euler();
-
-    value() is float {
-        2.718281828459045;
-    }
+test "constants keep their relationship" {
+    test.is(TAU, PI * 2.0);
+    test.ok(E > 2.718 && E < 2.719);
 }

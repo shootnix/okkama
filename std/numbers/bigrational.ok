@@ -4,6 +4,10 @@ import "compare" take Comparing, Order;
 import "numbers/bigint" take BigInt;
 
 // Canonical exact ratio: positive denominator, gcd=1, unique zero 0/1.
+//
+//     let third = BigRational(numerator: BigInt("1"), denominator: BigInt("3"));
+//     third.plus(third).string();    // "2/3"
+//     third.divided(third).string(); // "1/1"
 object BigRational does Comparing<BigRational> {
     has upper, lower is BigInt;
 
@@ -37,61 +41,33 @@ object BigRational does Comparing<BigRational> {
     string() is string {
         upper.string() + "/" + lower.string();
     }
-}
 
-object BigRationalSum {
-    has left, right is BigRational;
-
-    BigRationalSum(:left, :right);
-
-    value() is BigRational {
-        let first = (left.numerator() * right.denominator());
-        let second = (right.numerator() * left.denominator());
+    plus(other is BigRational) is BigRational {
         BigRational(
-            numerator: (first + second),
-            denominator: (left.denominator() * right.denominator())
+            numerator: (upper * other.denominator() + other.numerator() * lower),
+            denominator: (lower * other.denominator())
         );
     }
-}
 
-object BigRationalDifference {
-    has left, right is BigRational;
-
-    BigRationalDifference(:left, :right);
-
-    value() is BigRational {
-        let first = (left.numerator() * right.denominator());
-        let second = (right.numerator() * left.denominator());
+    minus(other is BigRational) is BigRational {
         BigRational(
-            numerator: (first - second),
-            denominator: (left.denominator() * right.denominator())
+            numerator: (upper * other.denominator() - other.numerator() * lower),
+            denominator: (lower * other.denominator())
         );
     }
-}
 
-object BigRationalProduct {
-    has left, right is BigRational;
-
-    BigRationalProduct(:left, :right);
-
-    value() is BigRational {
+    times(other is BigRational) is BigRational {
         BigRational(
-            numerator: (left.numerator() * right.numerator()),
-            denominator: (left.denominator() * right.denominator())
+            numerator: (upper * other.numerator()),
+            denominator: (lower * other.denominator())
         );
     }
-}
 
-object BigRationalQuotient {
-    has left, right is BigRational;
-
-    BigRationalQuotient(:left, :right);
-
-    value() is BigRational {
-        confirm right.numerator().sign() != 0 else throw BigRationalDivisionByZero.by_zero;
+    divided(other is BigRational) is BigRational {
+        confirm other.numerator().sign() != 0 else throw BigRationalDivisionByZero.by_zero;
         BigRational(
-            numerator: (left.numerator() * right.denominator()),
-            denominator: (left.denominator() * right.numerator())
+            numerator: (upper * other.denominator()),
+            denominator: (lower * other.numerator())
         );
     }
 }
@@ -99,3 +75,21 @@ object BigRationalQuotient {
 enum ZeroBigRationalDenominator is Error = (zero);
 
 enum BigRationalDivisionByZero is Error = (by_zero);
+
+test "rationals add, subtract, multiply and divide exactly" {
+    let half = BigRational(numerator: BigInt("1"), denominator: BigInt("2"));
+    let third = BigRational(numerator: BigInt("1"), denominator: BigInt("3"));
+    test.is(half.plus(third).string(), "5/6");
+    test.is(half.minus(third).string(), "1/6");
+    test.is(third.minus(half).string(), "-1/6");
+    test.is(half.times(third).string(), "1/6");
+    test.is(half.divided(third).string(), "3/2");
+    let zero = BigRational(numerator: BigInt("0"), denominator: BigInt("5"));
+    test.ok(try {
+        half.divided(zero);
+        false;
+    }
+    catch e is BigRationalDivisionByZero {
+        true;
+    });
+}

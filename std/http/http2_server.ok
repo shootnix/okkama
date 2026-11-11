@@ -42,7 +42,7 @@ import "async/timeout" take Within, Before, TimedOut;
 import "time/clock" take Timing, MonotonicInstant;
 import "time/duration" take Duration, DurationUnit;
 import "error" take InvalidState;
-import "encoding/binary" take IntegerFromBytes, Signedness;
+import "encoding/binary" take Binary, Signedness;
 import "encoding/utf" take ByteOrder;
 
 // Adopts one explicitly selected H2 transport, never guesses ALPN/prior
@@ -1163,7 +1163,7 @@ object Http2ServerWireInput does AsyncReading, Http2ReadBoundary {
         if following.size() == 9 {
             kind.replace(following[3].int());
             remaining.replace(
-                IntegerFromBytes(following.slice(0, 3), Signedness.unsigned, ByteOrder.big).value()
+                Binary(bytes: following.slice(0, 3), order: ByteOrder.big).int(Signedness.unsigned)
             );
             if remaining.value() == 0 {
                 header.replace([]);

@@ -75,7 +75,7 @@ object ByteRange {
     }
 
     // The range, 1 to 8 bytes, read as one fixed-width integer, as
-    // IntegerFromBytes(range.bytes(), signedness, order).value() reads it.
+    // Binary(bytes: range.bytes(), order: order).int(signedness) reads it.
     integer(signedness is Signedness, order is ByteOrder) is int {
         confirm end > start && end - start <= 8
             else throw InvalidArgument.because("integer input width must be 1 to 8 bytes");
@@ -285,7 +285,7 @@ test "byte ranges read ASCII decimals" {
     test.is(ByteRange(large, 0, 20).decimal(), 99999999999999999999);
 }
 
-test "byte ranges read fixed-width integers like IntegerFromBytes" {
+test "byte ranges read fixed-width integers like Binary.int" {
     let source is @byte = [byte(0), byte(1), byte(2), byte(255), byte(254)];
     test.is(ByteRange(source, 1, 3).integer(Signedness.unsigned, ByteOrder.big), 258);
     test.is(ByteRange(source, 1, 3).integer(Signedness.unsigned, ByteOrder.little), 513);

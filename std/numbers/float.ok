@@ -1,6 +1,6 @@
 module numbers/float v1.0.0;
 
-import "encoding/binary" take FloatBytes, IntegerFromBytes, FloatWidth, Signedness;
+import "encoding/binary" take FloatBytes, Binary, FloatWidth, Signedness;
 import "encoding/utf" take ByteOrder;
 import "runtime/format" take sprintf_values;
 import "numbers/bigint" take BigInt;
@@ -28,14 +28,14 @@ object ShortestFloat {
                 bytes[index];
             }
         };
-        bits = IntegerFromBytes(magnitude, Signedness.unsigned, ByteOrder.big).value();
+        bits = Binary(bytes: magnitude, order: ByteOrder.big).int(Signedness.unsigned);
     }
 
     negative() is bool {
         negative;
     }
 
-    value() is Decimal {
+    decimal() is Decimal {
         if bits == 0 {
             return Decimal("0");
         }
@@ -54,21 +54,22 @@ object ShortestFloat {
     }
 }
 
-object Binary64RoundingInterval {
-    has lower, upper is BigRational;
+hidden object Binary64RoundingInterval {
+    has coefficient, shift is int;
+    has narrow is bool;
 
     Binary64RoundingInterval(bits is int) {
         confirm bits > 0 && bits < 9218868437227405312
             else throw InvalidFloatRepresentation.invalid;
         let exponent = (bits / 4503599627370496).int();
         let fraction = bits % 4503599627370496;
-        let coefficient = fraction + (if exponent == 0 {
+        coefficient = fraction + (if exponent == 0 {
             0;
         }
         else {
             4503599627370496;
         });
-        let shift = if exponent == 0 {
+        shift = if exponent == 0 {
             -1074;
         }
         else {
@@ -77,45 +78,35 @@ object Binary64RoundingInterval {
         // At a normal power of two, except the smallest normal, the preceding
         // binade has half the spacing. The maximum-finite upper boundary uses
         // the same exact formula; its odd significand excludes the overflow tie.
-        lower = if fraction == 0 && exponent > 1 {
-            BinaryPowerRatio(4 * coefficient - 1, shift - 2).value();
-        }
-        else {
-            BinaryPowerRatio(2 * coefficient - 1, shift - 1).value();
-        };
-        upper = BinaryPowerRatio(2 * coefficient + 1, shift - 1).value();
+        narrow = fraction == 0 && exponent > 1;
     }
 
     lower() is BigRational {
-        lower;
+        if narrow {
+            self.ratio(4 * coefficient - 1, shift - 2);
+        }
+        else {
+            self.ratio(2 * coefficient - 1, shift - 1);
+        }
     }
 
     upper() is BigRational {
-        upper;
-    }
-}
-
-object BinaryPowerRatio {
-    has coefficient, shift is int;
-
-    BinaryPowerRatio(coefficient is int, shift is int) {
-        self.coefficient = coefficient;
-        self.shift = shift;
+        self.ratio(2 * coefficient + 1, shift - 1);
     }
 
-    value() is BigRational {
-        let numerator = BigInt(coefficient.string());
-        if shift >= 0 {
-            let power = BigInt("2").power(shift, 1100);
-            BigRational((numerator * power), BigInt("1"));
+    // numerator · 2^power, exactly.
+    hidden ratio(numerator is int, power is int) is BigRational {
+        let whole = BigInt(numerator.string());
+        if power >= 0 {
+            BigRational((whole * BigInt("2").power(power, 1100)), BigInt("1"));
         }
         else {
-            BigRational(numerator, BigInt("2").power(-shift, 1100));
+            BigRational(whole, BigInt("2").power(-power, 1100));
         }
     }
 }
 
-object FloatDecimalCandidate {
+hidden object FloatDecimalCandidate {
     has numerator, denominator is BigInt;
 
     FloatDecimalCandidate(origin is Decimal) {
@@ -154,5 +145,5 @@ object FloatDecimalCandidate {
 enum InvalidFloatRepresentation is Error = (invalid);
 
 test "binary64 tenth has a one-digit decimal representative" {
-    test.is(ShortestFloat(0.1).value().string(), "1e-1");
+    test.is(ShortestFloat(0.1).decimal().string(), "1e-1");
 }

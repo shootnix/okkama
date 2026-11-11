@@ -8,7 +8,7 @@ import "template/json" take JsonTemplateStrings, TemplateJsonLimitExceeded;
 import "json" take Json, JsonKind;
 import "io/buffer" take ByteBuffer;
 import "encoding/utf" take Utf8Decoded, ByteOrder;
-import "encoding/binary" take IntegerBytes, IntegerFromBytes, Signedness;
+import "encoding/binary" take IntegerBytes, Binary, Signedness;
 import "io/stream" take WritingText;
 import "io/text" take Utf8Output;
 import "runtime/template" take template_output_size;
@@ -268,7 +268,9 @@ object TemplateOutputMeter {
     }
 
     remaining() is int {
-        maximum - IntegerFromBytes(count.content().bytes(), Signedness.unsigned, ByteOrder.big).value();
+        maximum - Binary(bytes: count.content().bytes(), order: ByteOrder.big).int(
+            Signedness.unsigned
+        );
     }
 
     claim(value is string) is void {

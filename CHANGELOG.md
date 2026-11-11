@@ -272,6 +272,34 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     | `ParsedFloat(t).value()`, `ParsedRat(t).value()` | `Number(t).float()`, `Number(t).rat()` |
     | `ParsedByte(t, 2).value()` | `Number(t).byte(2)` |
     | `ParsedBool(t).value()` | `Truth(t).bool()` |
+  - `checksum`: the role `Checksumming` answers `checksum()`, so
+    `Crc32(bytes).checksum()`.
+  - `math/constants`: `PI`, `TAU` and `E` are module constants.
+  - `math/aggregate`: aggregates are grouped by what they are about.
+    - `Extremes(xs)`: `minimum()`, `maximum()`.
+    - `Numbers(xs)`: `sum()`, `accurate_sum()`, `product()`, `hypotenuse()`.
+    - `Vectors(left:, right:)`: `dot()`, `distance()`.
+
+    The module has inline tests now.
+  - `numbers/bigrational`: `a.plus(b)`, `a.minus(b)`, `a.times(b)` and
+    `a.divided(b)` replace the four operation objects.
+  - `numbers/float`: `ShortestFloat(x).decimal()`. Its helpers became
+    hidden; `BinaryPowerRatio`, a function dressed as an object, is now an
+    action of the rounding interval.
+  - `encoding/binary`: `Binary(bytes:, order:)` reads `.int(signedness)` or
+    `.float(width)`. `IntegerBytes` and `FloatBytes` still write.
+
+    | before | now |
+    |---|---|
+    | `Crc32(b).value()` | `Crc32(b).checksum()` |
+    | `Pi().value()`, `Tau().value()`, `Euler().value()` | `PI`, `TAU`, `E` |
+    | `Minimum(xs).value()`, `Maximum(xs).value()` | `Extremes(xs).minimum()`, `.maximum()` |
+    | `Sum`, `AccurateSum`, `Product`, `Hypotenuse` `(xs).value()` | `Numbers(xs).sum()`, `.accurate_sum()`, `.product()`, `.hypotenuse()` |
+    | `SumOfProducts(a, b).value()`, `Distance(a, b).value()` | `Vectors(left: a, right: b).dot()`, `.distance()` |
+    | `BigRationalSum(left: a, right: b).value()`, … | `a.plus(b)`, `a.minus(b)`, `a.times(b)`, `a.divided(b)` |
+    | `ShortestFloat(x).value()` | `ShortestFloat(x).decimal()` |
+    | `IntegerFromBytes(b, s, o).value()` | `Binary(bytes: b, order: o).int(s)` |
+    | `FloatFromBytes(b, w, o).value()` | `Binary(bytes: b, order: o).float(w)` |
 ### Fixed
 
 - Traversals own what they walk, and keep no record of what they walked

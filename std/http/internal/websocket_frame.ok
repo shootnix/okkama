@@ -1,7 +1,7 @@
 module http/internal/websocket_frame v1.0.0;
 
 import "http/websocket" take WebSocketFailure;
-import "encoding/binary" take IntegerBytes, IntegerFromBytes, Signedness;
+import "encoding/binary" take IntegerBytes, Binary, Signedness;
 import "encoding/utf" take ByteOrder;
 import "http/internal/wire_bytes" take HttpWireBytes;
 import "runtime/binary" take binary_masked_slice;
@@ -167,7 +167,7 @@ object ParsedWebSocketFrameHeader {
             indicator;
         }
         else {
-            IntegerFromBytes(origin.slice(2, 2 + width), Signedness.unsigned, ByteOrder.big).value();
+            Binary(bytes: origin.slice(2, 2 + width), order: ByteOrder.big).int(Signedness.unsigned);
         };
         confirm (indicator != 126 || length >= 126) && (indicator != 127 || length >= 65536)
             else throw WebSocketFailure.because("nonminimal payload length");

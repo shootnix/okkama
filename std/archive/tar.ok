@@ -13,7 +13,7 @@ import "archive/limits" take ArchiveLimits, ArchiveBudget, ArchiveLimitExceeded;
 import "io/stream" take Writing, Reading, Closing;
 import "io/buffer" take ByteBuffer;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8, ByteOrder;
-import "encoding/binary" take IntegerBytes, IntegerFromBytes, Signedness;
+import "encoding/binary" take IntegerBytes, Binary, Signedness;
 import "numbers/bigint" take BigInt;
 import "compare" take Order;
 import "strings/parse" take Number;
@@ -1929,11 +1929,9 @@ object TarStreamCounts {
     restored(origin is @byte) is ^TarStreamCounts {
         confirm origin.size() == 32 else throw InvalidTar.because("invalid internal counter width");
         let values = (0..4).map() -> index {
-            IntegerFromBytes(
-                origin.slice(index * 8, index * 8 + 8),
-                Signedness.unsigned,
-                ByteOrder.big
-            ).value();
+            Binary(bytes: origin.slice(index * 8, index * 8 + 8), order: ByteOrder.big).int(
+                Signedness.unsigned
+            );
         };
         confirm values[0] <= maximum_entries
             && values[1] <= maximum_total

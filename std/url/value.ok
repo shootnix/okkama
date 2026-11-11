@@ -2,7 +2,7 @@ module url/value v1.0.0;
 
 import "url/percent" take PercentEncoded, PercentDecoded, UrlComponent, InvalidPercentEncoding;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded, Utf32Encoded, ByteOrder, InvalidUtf8;
-import "encoding/binary" take IntegerFromBytes, Signedness;
+import "encoding/binary" take Binary, Signedness;
 import "io/buffer" take ByteBuffer;
 import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument;
@@ -124,11 +124,10 @@ object UrlComponentText {
                             );
                     }
                     else {
-                        let code = IntegerFromBytes(
-                            Utf32Encoded(scalar, ByteOrder.big).bytes(),
-                            Signedness.unsigned,
-                            ByteOrder.big
-                        ).value();
+                        let code = Binary(
+                            bytes: Utf32Encoded(scalar, ByteOrder.big).bytes(),
+                            order: ByteOrder.big
+                        ).int(Signedness.unsigned);
                         confirm self.unicode_allowed(code)
                             else throw InvalidUrl.located(
                                 index,

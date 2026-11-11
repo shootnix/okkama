@@ -2,7 +2,7 @@ module http/internal/http2_flow v1.0.0;
 
 import "http/internal/http2_frame" take Http2Frame, Http2FrameHeader, Http2FrameRules, Http2Fault,
     Http2FaultScope;
-import "encoding/binary" take IntegerBytes, IntegerFromBytes, Signedness;
+import "encoding/binary" take IntegerBytes, Binary, Signedness;
 import "encoding/utf" take ByteOrder;
 
 // Pure window accounting, not an async scheduler. Connection owns the two
@@ -198,7 +198,7 @@ object Http2WindowIncrement {
             );
         Http2FrameRules(frame).check();
         stream = frame.header().stream();
-        amount = IntegerFromBytes(frame.payload(), Signedness.unsigned, ByteOrder.big).value() & 2147483647;
+        amount = Binary(bytes: frame.payload(), order: ByteOrder.big).int(Signedness.unsigned) & 2147483647;
     }
 
     stream() is int {

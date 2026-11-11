@@ -1,6 +1,6 @@
 module http/internal/http2_frame v1.0.0;
 
-import "encoding/binary" take IntegerBytes, IntegerFromBytes, Signedness;
+import "encoding/binary" take IntegerBytes, Binary, Signedness;
 import "encoding/utf" take ByteOrder;
 import "http/internal/wire_bytes" take HttpWireBytes;
 
@@ -125,10 +125,14 @@ object ParsedHttp2FrameHeader {
                 0,
                 "exact frame header required"
             );
-        let length = IntegerFromBytes(origin.slice(0, 3), Signedness.unsigned, ByteOrder.big).value();
+        let length = Binary(bytes: origin.slice(0, 3), order: ByteOrder.big).int(
+            Signedness.unsigned
+        );
         confirm length <= maximum
             else throw Http2Fault.detailed(Http2FaultScope.connection, 6, 0, "receive frame limit");
-        let stream = IntegerFromBytes(origin.slice(5, 9), Signedness.unsigned, ByteOrder.big).value() & 2147483647;
+        let stream = Binary(bytes: origin.slice(5, 9), order: ByteOrder.big).int(
+            Signedness.unsigned
+        ) & 2147483647;
         Http2FrameHeader(origin[3], origin[4], stream, length);
     }
 }
@@ -258,7 +262,7 @@ object Http2FrameRules {
         let data = origin.payload();
         let length = data.size();
         if kind == 8 {
-            let increment = IntegerFromBytes(data, Signedness.unsigned, ByteOrder.big).value() & 2147483647;
+            let increment = Binary(bytes: data, order: ByteOrder.big).int(Signedness.unsigned) & 2147483647;
             let scope = if stream == 0 {
                 Http2FaultScope.connection;
             }

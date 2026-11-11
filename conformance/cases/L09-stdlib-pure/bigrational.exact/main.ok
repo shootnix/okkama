@@ -2,11 +2,11 @@ module app v1.0.0;
 
 import "conformance/check" take Checks;
 import "numbers/bigint" take BigInt, BigDivisionByZero, InvalidBigInt;
-import "numbers/bigrational" take BigRational, BigRationalSum, ZeroBigRationalDenominator;
+import "numbers/bigrational" take BigRational, ZeroBigRationalDenominator;
 
 main() is int {
     let c = Checks();
-    c = c.same_text("sum", (BigRationalSum(left: BigRational(numerator: BigInt("1"), denominator: BigInt("3")), right: BigRational(numerator: BigInt("1"), denominator: BigInt("6"))).value()).string(), "1/2");
+    c = c.same_text("sum", (BigRational(numerator: BigInt("1"), denominator: BigInt("3")).plus(BigRational(numerator: BigInt("1"), denominator: BigInt("6")))).string(), "1/2");
     c = c.same_text("negative denominator normalised", BigRational(numerator: BigInt("2"), denominator: BigInt("-4")).denominator().string(), "2");
     c.done();
 }

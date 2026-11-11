@@ -2,7 +2,7 @@ module checksum/crc v1.0.0;
 
 import "checksum/state" take Checksumming, InvalidChecksumInitial;
 
-// Immutable CRC values over byte chunks. Both objects compute lazily in value()
+// Immutable CRC values over byte chunks. Both objects compute lazily in checksum()
 // without mutation or memoization. state(bytes) computes the receiver's value,
 // then returns a successor retaining only the new chunk and resulting seed.
 // Input arrays and earlier states remain unchanged; branches and repeats are
@@ -12,7 +12,7 @@ import "checksum/state" take Checksumming, InvalidChecksumInitial;
 //
 //     let first = Crc32([byte(49), byte(50), byte(51), byte(52)]);
 //     let whole = first.state([byte(53), byte(54), byte(55), byte(56), byte(57)]);
-//     whole.value(); // 3421780262 ("123456789")
+//     whole.checksum(); // 3421780262 ("123456789")
 //
 // Crc32 is CRC-32/ISO-HDLC: width 32, polynomial 0x04C11DB7, reflected input
 // and output, init register 0xFFFFFFFF, xorout 0xFFFFFFFF. The public seed is
@@ -40,7 +40,7 @@ object Crc32 does Checksumming {
         self.initial = initial;
     }
 
-    value() is int {
+    checksum() is int {
         let result = origin.reduce(initial ^ 0xFFFFFFFF) -> checksum, octet {
             (0..8).reduce(checksum ^ octet.int()) -> bits, index {
                 if (bits & 1) != 0 {
@@ -55,7 +55,7 @@ object Crc32 does Checksumming {
     }
 
     state(origin is @byte) is ^Crc32 {
-        ^initial = self.value();
+        ^initial = self.checksum();
         ^origin = origin;
     }
 }
@@ -85,7 +85,7 @@ object Crc16Ccitt does Checksumming {
         self.initial = initial;
     }
 
-    value() is int {
+    checksum() is int {
         origin.reduce(initial) -> checksum, octet {
             (0..8).reduce(checksum ^ (octet.int() << 8)) -> bits, index {
                 if (bits & 0x8000) != 0 {
@@ -99,14 +99,14 @@ object Crc16Ccitt does Checksumming {
     }
 
     state(origin is @byte) is ^Crc16Ccitt {
-        ^initial = self.value();
+        ^initial = self.checksum();
         ^origin = origin;
     }
 }
 
 test "CRC-32 empty and 123456789 independent reference vectors" {
-    test.is(Crc32().value(), 0);
-    test.is(Crc32([], 4294967295).value(), 4294967295);
+    test.is(Crc32().checksum(), 0);
+    test.is(Crc32([], 4294967295).checksum(), 4294967295);
     let digits = [
         byte(49),
         byte(50),
@@ -118,13 +118,13 @@ test "CRC-32 empty and 123456789 independent reference vectors" {
         byte(56),
         byte(57)
     ];
-    test.is(Crc32(digits).value(), 3421780262);
-    test.is(Crc32(digits, 305419896).value(), 32800891);
+    test.is(Crc32(digits).checksum(), 3421780262);
+    test.is(Crc32(digits, 305419896).checksum(), 32800891);
 }
 
 test "CRC-16 specifies seed reflection and final xor" {
-    test.is(Crc16Ccitt(65535).value(), 65535);
-    test.is(Crc16Ccitt([], 0).value(), 0);
+    test.is(Crc16Ccitt(65535).checksum(), 65535);
+    test.is(Crc16Ccitt([], 0).checksum(), 0);
     let digits = [
         byte(49),
         byte(50),
@@ -136,27 +136,27 @@ test "CRC-16 specifies seed reflection and final xor" {
         byte(56),
         byte(57)
     ];
-    test.is(Crc16Ccitt(digits, 0).value(), 12739);
-    test.is(Crc16Ccitt(digits, 65535).value(), 10673);
+    test.is(Crc16Ccitt(digits, 0).checksum(), 12739);
+    test.is(Crc16Ccitt(digits, 65535).checksum(), 10673);
 }
 
 test "CRC branches preserve origin states and empty chunks" {
     let a = Crc32([byte(1), byte(2)]);
     let b = Crc16Ccitt([byte(1), byte(2)], 65535);
-    test.is(a.state([byte(3)]).value(), 1438416925);
-    test.is(a.state([byte(4)]).value(), 3419936190);
-    test.is(a.value(), 3066839698);
-    test.is(a.state([]).value(), 3066839698);
-    test.is(b.state([byte(3)]).value(), 44461);
-    test.is(b.state([byte(4)]).value(), 56650);
-    test.is(b.value(), 3708);
-    test.is(b.state([]).value(), 3708);
+    test.is(a.state([byte(3)]).checksum(), 1438416925);
+    test.is(a.state([byte(4)]).checksum(), 3419936190);
+    test.is(a.checksum(), 3066839698);
+    test.is(a.state([]).checksum(), 3066839698);
+    test.is(b.state([byte(3)]).checksum(), 44461);
+    test.is(b.state([byte(4)]).checksum(), 56650);
+    test.is(b.checksum(), 3708);
+    test.is(b.state([]).checksum(), 3708);
 }
 
 test "CRC treats high-bit bytes as unsigned" {
-    test.is(Crc32([byte(255)]).value(), 4278190080);
-    test.is(Crc16Ccitt([byte(128)], 0).value(), 37256);
-    test.is(Crc16Ccitt([byte(255)], 65535).value(), 65280);
+    test.is(Crc32([byte(255)]).checksum(), 4278190080);
+    test.is(Crc16Ccitt([byte(128)], 0).checksum(), 37256);
+    test.is(Crc16Ccitt([byte(255)], 65535).checksum(), 65280);
 }
 
 test "CRC rejects negative and oversized initial values" {
