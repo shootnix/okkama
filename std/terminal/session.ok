@@ -53,10 +53,10 @@ object OpenedStandardTerminal {
             await terminal_standard(kind);
         }
         catch e is NativeFailure {
-            throw TerminalProblem(e).value();
+            throw TerminalProblem(e).error();
         };
         try {
-            TerminalSession(state, policy, environment);
+            TerminalSession(state: state, policy: policy, environment: environment);
         }
         catch e is Error {
             terminal_close(state);
@@ -84,10 +84,10 @@ object OpenedControllingTerminal {
             await terminal_controlling();
         }
         catch e is NativeFailure {
-            throw TerminalProblem(e).value();
+            throw TerminalProblem(e).error();
         };
         try {
-            TerminalSession(state, policy, environment);
+            TerminalSession(state: state, policy: policy, environment: environment);
         }
         catch e is Error {
             terminal_close(state);
@@ -106,9 +106,9 @@ object TerminalSession does Closing, TerminalModeApplying, TerminalScreenApplyin
 
     TerminalSession(state is TerminalState, policy is ColorPolicy, environment is Environment) {
         self.state = state;
-        observation = TerminalObservation(state, policy, environment);
-        reading = TerminalInput(state, self.observation);
-        writing = TerminalOutput(state, self.observation);
+        observation = TerminalObservation(state: state, policy: policy, environment: environment);
+        reading = TerminalInput(state: state, observation: self.observation);
+        writing = TerminalOutput(state: state, observation: self.observation);
     }
 
     input() is TerminalInput {
@@ -128,7 +128,7 @@ object TerminalSession does Closing, TerminalModeApplying, TerminalScreenApplyin
     }
 
     apply(mode is TerminalMode) is TerminalModeLease {
-        TerminalModeLease(state, mode);
+        TerminalModeLease(origin: state, mode: mode);
     }
 
     clear(region is ClearRegion) is void {
@@ -184,7 +184,7 @@ object TerminalSession does Closing, TerminalModeApplying, TerminalScreenApplyin
             await terminal_resize_open(state);
         }
         catch e is NativeFailure {
-            throw TerminalProblem(e).value();
+            throw TerminalProblem(e).error();
         };
         TerminalResizeReader(opened);
     }
@@ -198,7 +198,7 @@ object TerminalSession does Closing, TerminalModeApplying, TerminalScreenApplyin
             terminal_close(state);
         }
         catch e is NativeFailure {
-            throw TerminalProblem(e).value();
+            throw TerminalProblem(e).error();
         }
     }
 
@@ -223,7 +223,7 @@ object TerminalSession does Closing, TerminalModeApplying, TerminalScreenApplyin
             terminal_cleanup(state, Utf8Encoded(esc + "[?25h" + esc + "[?1049l").bytes());
         }
         catch e is NativeFailure {
-            throw TerminalProblem(e).value();
+            throw TerminalProblem(e).error();
         }
     }
 }
@@ -239,7 +239,7 @@ object TerminalObservation {
             terminal_metadata(state);
         }
         catch e is NativeFailure {
-            throw TerminalProblem(e).value();
+            throw TerminalProblem(e).error();
         };
         let depth = match fields["colors"] {
             case 1 {
@@ -256,14 +256,14 @@ object TerminalObservation {
             }
         };
         initial = DetectedTerminalCapabilities(
-            fields["input"] == 1,
-            fields["output"] == 1,
-            depth,
-            fields["columns"],
-            fields["rows"],
-            environment,
-            policy
-        ).value();
+            input: fields["input"] == 1,
+            output: fields["output"] == 1,
+            native_depth: depth,
+            columns: fields["columns"],
+            rows: fields["rows"],
+            environment: environment,
+            policy: policy
+        ).capabilities();
         self.state = state;
         self.environment = environment;
         self.policy = policy;
@@ -274,22 +274,22 @@ object TerminalObservation {
             terminal_metadata(state);
         }
         catch e is NativeFailure {
-            throw TerminalProblem(e).value();
+            throw TerminalProblem(e).error();
         };
         let geometry = DetectedTerminalCapabilities(
-            initial.input_interactive(),
-            initial.output_interactive(),
-            initial.colors(),
-            fields["columns"],
-            fields["rows"],
-            environment,
-            policy
-        ).value().size();
+            input: initial.input_interactive(),
+            output: initial.output_interactive(),
+            native_depth: initial.colors(),
+            columns: fields["columns"],
+            rows: fields["rows"],
+            environment: environment,
+            policy: policy
+        ).capabilities().size();
         TerminalCapabilities(
-            initial.input_interactive(),
-            initial.output_interactive(),
-            initial.colors(),
-            geometry
+            input_interactive: initial.input_interactive(),
+            output_interactive: initial.output_interactive(),
+            colors: initial.colors(),
+            size: geometry
         );
     }
 
@@ -298,7 +298,7 @@ object TerminalObservation {
             terminal_metadata(state)["controlling"] == 1;
         }
         catch e is NativeFailure {
-            throw TerminalProblem(e).value();
+            throw TerminalProblem(e).error();
         }
     }
 
@@ -307,7 +307,7 @@ object TerminalObservation {
             terminal_metadata(state)["colors"] > 0;
         }
         catch e is NativeFailure {
-            throw TerminalProblem(e).value();
+            throw TerminalProblem(e).error();
         }
     }
 }
@@ -433,7 +433,7 @@ object TerminalInput {
             await pending;
         }
         catch e is NativeFailure {
-            throw TerminalProblem(e).value();
+            throw TerminalProblem(e).error();
         }
     }
 }
@@ -526,14 +526,14 @@ object TerminalOutput does Writing, WritingText {
             terminal_write(state, bytes);
         }
         catch e is NativeFailure {
-            throw TerminalProblem(e).value();
+            throw TerminalProblem(e).error();
         }
     }
 }
 
 // Console output converts whole Unicode scalar slices, never arbitrary byte
 // slices: a 64 KiB byte boundary must not split a UTF-8 scalar for WriteConsoleW.
-object TerminalTextChunks {
+hidden object TerminalTextChunks {
     has origin is string;
 
     TerminalTextChunks(bytes is @byte) {

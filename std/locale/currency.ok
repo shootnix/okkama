@@ -91,7 +91,7 @@ object CurrencyDataVersion {
     }
 }
 
-object CurrencyLocaleData {
+hidden object CurrencyLocaleData {
     has table is CldrCurrencies;
     has fields, translations is @string;
     has profile is int;
@@ -208,7 +208,7 @@ object CurrencyLocaleData {
 
 // The alpha variant depends on the symbol character facing the numeric body,
 // not on whether some other character in the symbol is a letter (US$ vs KWD).
-object CurrencyAlphabeticBoundary {
+hidden object CurrencyAlphabeticBoundary {
     has value is bool;
 
     CurrencyAlphabeticBoundary(label is string, pattern is NumberPattern) {
@@ -219,28 +219,28 @@ object CurrencyAlphabeticBoundary {
             && prefix.slice(prefix.length() - marker.length(), prefix.length()) == marker;
         let before = suffix.length() >= marker.length()
             && suffix.slice(0, marker.length()) == marker;
-        value = (after && CurrencyLetter(label.slice(label.length() - 1, label.length())).value())
-            || (before && CurrencyLetter(label.slice(0, 1)).value());
+        value = (after && CurrencyLetter(label.slice(label.length() - 1, label.length())).matches())
+            || (before && CurrencyLetter(label.slice(0, 1)).matches());
     }
 
-    value() is bool {
+    found() is bool {
         value;
     }
 }
 
-object CurrencyLetter {
+hidden object CurrencyLetter {
     has value is bool;
 
     CurrencyLetter(origin is string) {
         value = CurrencySymbolLetters().membership(origin);
     }
 
-    value() is bool {
+    matches() is bool {
         value;
     }
 }
 
-object CurrencyNumberData does NumberRenderingData {
+hidden object CurrencyNumberData does NumberRenderingData {
     has numbers is NumberLocaleData;
     has currency is CurrencyLocaleData;
     has label is string;
@@ -256,7 +256,7 @@ object CurrencyNumberData does NumberRenderingData {
         self.currency = currency;
         self.label = label;
         self.accounting = accounting;
-        alpha = CurrencyAlphabeticBoundary(label, currency.pattern(accounting, false)).value();
+        alpha = CurrencyAlphabeticBoundary(label: label, pattern: currency.pattern(accounting, false)).found();
     }
 
     symbol(index is int) is string {
@@ -282,12 +282,12 @@ object CurrencyNumberData does NumberRenderingData {
 
     compact(long is bool) is NumberCompactData {
         CurrencyCompacts(
-            currency.compact(),
-            numbers.compact(long),
-            currency.pattern(false, alpha),
-            currency.pattern(accounting, alpha),
-            long || accounting,
-            alpha
+            short: currency.compact(),
+            long_data: numbers.compact(long),
+            ordinary: currency.pattern(false, alpha),
+            frame: currency.pattern(accounting, alpha),
+            long: long || accounting,
+            alpha: alpha
         );
     }
 
@@ -303,7 +303,7 @@ object CurrencyNumberData does NumberRenderingData {
 // A compact pattern carries its own affix frame, including currency placement.
 // Long notation and accounting compose decimal compact units with the explicit
 // currency frame; CLDR has no independent compact-accounting pattern family.
-object CurrencyCompacts does NumberCompactData {
+hidden object CurrencyCompacts does NumberCompactData {
     has short is %string:string;
     has long_data is NumberCompactData;
     has ordinary, frame is NumberPattern;
@@ -402,7 +402,7 @@ object CurrencyCompacts does NumberCompactData {
     }
 }
 
-object CurrencyPluralCategory {
+hidden object CurrencyPluralCategory {
     has value is int;
 
     CurrencyPluralCategory(number is NumberRendered, locale is Locale, minimum_fraction is int) {
@@ -411,7 +411,7 @@ object CurrencyPluralCategory {
             else throw InvalidLocalizedNumber.because(
                 "currency plural operand exceeds 1024 scalars"
             );
-        value = match PluralCategoryOf(PluralNumber(spelling), locale, PluralKind.cardinal).value() {
+        value = match PluralCategoryOf(origin: PluralNumber(spelling), locale: locale, kind: PluralKind.cardinal).category() {
             case PluralCategory.zero {
                 0;
             }
@@ -433,7 +433,7 @@ object CurrencyPluralCategory {
         };
     }
 
-    value() is int {
+    index() is int {
         value;
     }
 }
@@ -461,18 +461,18 @@ object LocalizedCurrency {
         let source = policy.precision();
         let precision = if format.currency_digits() {
             let digits = currency.digits();
-            NumberPrecision(source.minimum_integer(), digits, digits, source.rounding());
+            NumberPrecision(minimum_integer: source.minimum_integer(), minimum_fraction: digits, maximum_fraction: digits, rounding: source.rounding());
         }
         else {
             source;
         };
-        let numbers = NumberFormat(policy.notation(), policy.grouping(), policy.sign(), precision);
+        let numbers = NumberFormat(notation: policy.notation(), grouping: policy.grouping(), sign: policy.sign(), precision: precision);
         let base = NumberLocaleData(locale);
-        let data = CurrencyLocaleData(locale, currency, base);
-        let magnitude = DecimalNumberMagnitude(amount, 0, false).value();
+        let data = CurrencyLocaleData(locale: locale, currency: currency, numbers: base);
+        let magnitude = DecimalNumberMagnitude(origin: amount, shift: 0, negative_zero: false).magnitude();
         if format.display() == CurrencyDisplay.name {
-            let rendered = NumberPrinting(magnitude, locale, numbers, false, false, base).rendering();
-            let category = CurrencyPluralCategory(rendered, locale, precision.minimum_fraction()).value();
+            let rendered = NumberPrinting(origin: magnitude, locale: locale, format: numbers, percent: false, per_mille: false, data: base).rendering();
+            let category = CurrencyPluralCategory(number: rendered, locale: locale, minimum_fraction: precision.minimum_fraction()).index();
             let unit = data.unit(category);
             let parts = unit.split("{0}");
             confirm parts.size() == 2
@@ -493,8 +493,8 @@ object LocalizedCurrency {
             return text;
         }
         let label = data.symbol(format.display());
-        let representation = CurrencyNumberData(base, data, label, format.accounting());
-        NumberPrinting(magnitude, locale, numbers, false, false, representation).string();
+        let representation = CurrencyNumberData(numbers: base, currency: data, label: label, accounting: format.accounting());
+        NumberPrinting(origin: magnitude, locale: locale, format: numbers, percent: false, per_mille: false, data: representation).string();
     }
 }
 

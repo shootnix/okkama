@@ -158,7 +158,7 @@ object PluralMessage does MessageEntry {
     }
 }
 
-object PluralFormSnapshot {
+hidden object PluralFormSnapshot {
     has values is @PluralForm;
 
     PluralFormSnapshot(source is Sequencing<PluralForm>) {
@@ -167,7 +167,7 @@ object PluralFormSnapshot {
             else throw InvalidMessageCatalog.because("expected 1..6 plural forms");
         let values is @PluralForm = (0..size).map() -> index {
             let form = source.item(index);
-            PluralForm(form.category(), form.text());
+            PluralForm(category: form.category(), text: form.text());
         };
         for (0..size) -> index {
             for (0..index) -> prior {
@@ -203,12 +203,12 @@ object MessageCatalog does Translating {
         let snapshot is @MessageEntry = (0..size).map() -> index {
             let entry = entries.item(index);
             let key = entry.key();
-            let copied = MessageKey(key.context(), key.identity(), key.has_context());
+            let copied = MessageKey(context: key.context(), identity: key.identity(), has_context: key.has_context());
             if entry.plural() {
-                PluralMessage(copied, entry.forms(), entry.kind());
+                PluralMessage(key: copied, forms: entry.forms(), kind: entry.kind());
             }
             else {
-                SingularMessage(copied, entry.text());
+                SingularMessage(key: copied, text: entry.text());
             }
         };
         let sorted is SortedBy<MessageEntry, MessageKey> = SortedBy(
@@ -255,7 +255,7 @@ object MessageCatalog does Translating {
     plural(key is MessageKey, count is PluralNumber) is string {
         let entry = self.entry(key);
         let forms = entry.forms();
-        let category = PluralCategoryOf(count, locale, entry.kind()).value();
+        let category = PluralCategoryOf(origin: count, locale: locale, kind: entry.kind()).category();
         for (0..forms.size()) -> index {
             let form = forms.item(index);
             if form.category() == category {
@@ -333,6 +333,6 @@ enum WrongMessageEntry is Error = (detailed(expected_plural is bool, actual_plur
 enum InvalidMessageCatalog is Error = (because(reason is string));
 
 test "catalog retains exact translation including empty text" {
-    let key = MessageKey("", "hello");
-    test.is(MessageCatalog(Locale("en"), [SingularMessage(key, "")]).text(key), "");
+    let key = MessageKey(context: "", identity: "hello");
+    test.is(MessageCatalog(locale: Locale("en"), entries: [SingularMessage(key, "")]).text(key), "");
 }

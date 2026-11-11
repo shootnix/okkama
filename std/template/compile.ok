@@ -46,7 +46,7 @@ object TextTemplate {
 
     TextTemplate(origin is string) {
         self.origin = origin;
-        program = TemplateProgram(origin, 1048576, 10000);
+        program = TemplateProgram(source: origin, maximum_input: 1048576, maximum_nodes: 10000);
         maximum_output = 1048576;
     }
 
@@ -59,7 +59,7 @@ object TextTemplate {
         confirm maximum_input >= 0 && maximum_nodes >= 0 && maximum_output >= 0
             else throw InvalidTemplateLimits.invalid;
         self.origin = origin;
-        program = TemplateProgram(origin, maximum_input, maximum_nodes);
+        program = TemplateProgram(source: origin, maximum_input: maximum_input, maximum_nodes: maximum_nodes);
         self.maximum_output = maximum_output;
     }
 
@@ -75,7 +75,7 @@ object TextTemplate {
                 text;
             }
             else {
-                data.string(TemplatePathFromString(text).value());
+                data.string(TemplatePathFromString(text).path());
             };
             parts.following(value);
         };
@@ -95,7 +95,7 @@ object TextTemplate {
                 text;
             }
             else {
-                data.string(TemplatePathFromString(text).value());
+                data.string(TemplatePathFromString(text).path());
             };
             budget = budget.following(value);
             for (0..((value.length() >> 10) + 1)) -> chunk {
@@ -181,7 +181,7 @@ object TemplateProgram {
     instructions() is @TemplateInstruction {
         confirm source.length() <= maximum_input
             else throw TemplateFailure.located(0, 1, 1, "template input limit exceeded");
-        let scanner = TemplateScanner(source, maximum_nodes, structured);
+        let scanner = TemplateScanner(source: source, maximum: maximum_nodes, structured: structured);
         loop {
             last if !scanner.more();
             scanner = scanner.following();
@@ -193,7 +193,7 @@ object TemplateProgram {
 // Each successor consumes a literal run, escaped delimiter or tag. Lists retain
 // fragments without repeatedly copying an expanding literal. Only a completed
 // validated instruction sequence is returned, before any user data observation.
-object TemplateScanner {
+hidden object TemplateScanner {
     has source is string;
     has maximum, position is int;
     has structured is bool = false;
@@ -313,7 +313,7 @@ object TemplateScanner {
             let completed = self.flushed_parts(fragments, position);
             confirm completed.size() < maximum
                 else throw self.failure(position, "template node limit exceeded");
-            ^nodes = completed.prefix(TemplateInstruction(path, false, first, position));
+            ^nodes = completed.prefix(TemplateInstruction(text: path, variable: false, tag: first, offset: position));
             let empty is List<string> = EmptyList();
             ^literal = empty;
             ^position = if standalone {
@@ -349,7 +349,7 @@ object TemplateScanner {
         let completed = self.flushed(position);
         confirm completed.size() < maximum
             else throw self.failure(position, "template node limit exceeded");
-        ^nodes = completed.prefix(TemplateInstruction(name, true, "", position));
+        ^nodes = completed.prefix(TemplateInstruction(text: name, variable: true, tag: "", offset: position));
         let empty is List<string> = EmptyList();
         ^literal = empty;
         ^position = end + 2;
@@ -490,7 +490,7 @@ object TemplateScanner {
         }
         confirm nodes.size() < maximum
             else throw self.failure(offset, "template node limit exceeded");
-        nodes.prefix(TemplateInstruction(text, false, "", offset));
+        nodes.prefix(TemplateInstruction(text: text, variable: false, tag: "", offset: offset));
     }
 
     hidden failure(offset is int, message is string) is TemplateFailure {
@@ -502,7 +502,7 @@ object TemplateScanner {
 // Internal immutable output accumulator. UTF-8 size is computed without
 // allocating a byte array before retaining another part.
 // List tails are shared by revisions; final concatenation is bounded.
-object TemplateTextParts {
+hidden object TemplateTextParts {
     has budget is TemplateByteBudget;
     has parts is List<string>;
 
@@ -531,7 +531,7 @@ object TemplateTextParts {
 
 // Internal shared immutable byte-budget revision. No fragments are retained,
 // so the streaming path uses memory independent of total already-written text.
-object TemplateByteBudget {
+hidden object TemplateByteBudget {
     has maximum is int;
     has used is int = 0;
 
@@ -563,12 +563,12 @@ enum TemplateOutputLimitExceeded is Error = (exceeded);
 // these local tests cover lazy construction, grammar and byte budgets directly.
 test "plain template construction retains source without parsing" {
     test.is(TextTemplate("{{invalid").source(), "{{invalid");
-    test.is(TextTemplate("", 0, 0, 0).source(), "");
+    test.is(TextTemplate(origin: "", maximum_input: 0, maximum_nodes: 0, maximum_output: 0).source(), "");
 }
 
 test "plain templates validate syntax and byte bounds" {
     test.ok(try {
-        TemplateProgram("{{", 2, 1).instructions();
+        TemplateProgram(source: "{{", maximum_input: 2, maximum_nodes: 1).instructions();
         false;
     }
     catch e is TemplateFailure {
@@ -582,7 +582,7 @@ test "plain templates validate syntax and byte bounds" {
         true;
     });
     test.ok(try {
-        TextTemplate("", -1, 0, 0);
+        TextTemplate(origin: "", maximum_input: -1, maximum_nodes: 0, maximum_output: 0);
         false;
     }
     catch e is InvalidTemplateLimits {
@@ -591,27 +591,27 @@ test "plain templates validate syntax and byte bounds" {
 }
 
 test "Okkama template program yields immutable ordered instructions" {
-    let nodes = TemplateProgram("é{{ x }}!", 20, 3).instructions();
+    let nodes = TemplateProgram(source: "é{{ x }}!", maximum_input: 20, maximum_nodes: 3).instructions();
     test.is(nodes.size(), 3);
     test.is(nodes[0].text(), "é");
     test.is(nodes[0].variable(), false);
     test.is(nodes[1].text(), "x");
     test.ok(nodes[1].variable());
     test.is(nodes[2].text(), "!");
-    test.is(TemplateProgram("", 0, 0).instructions().size(), 0);
+    test.is(TemplateProgram(source: "", maximum_input: 0, maximum_nodes: 0).instructions().size(), 0);
 }
 
 test "Okkama template program standalone comments and escapes" {
-    let nodes = TemplateProgram("a\n {{! multi\nline }} \t\r\nb{{{{x}}}}", 100, 1).instructions();
+    let nodes = TemplateProgram(source: "a\n {{! multi\nline }} \t\r\nb{{{{x}}}}", maximum_input: 100, maximum_nodes: 1).instructions();
     test.is(nodes.size(), 1);
     test.is(nodes[0].text(), "a\nb{{x}}");
-    test.is(TemplateProgram(" {{!only}}", 20, 0).instructions().size(), 0);
+    test.is(TemplateProgram(source: " {{!only}}", maximum_input: 20, maximum_nodes: 0).instructions().size(), 0);
 }
 
 test "Okkama template program preserves failure coordinates and bounds" {
     test.is(
         try {
-            TemplateProgram("é\r\n{{", 20, 3).instructions();
+            TemplateProgram(source: "é\r\n{{", maximum_input: 20, maximum_nodes: 3).instructions();
             [0, 0, 0];
         }
         catch TemplateFailure.located(offset, line, column, _) {
@@ -621,7 +621,7 @@ test "Okkama template program preserves failure coordinates and bounds" {
     );
     test.is(
         try {
-            TemplateProgram("x", 1, 0).instructions();
+            TemplateProgram(source: "x", maximum_input: 1, maximum_nodes: 0).instructions();
             "bad";
         }
         catch TemplateFailure.located(_, _, _, message) {
@@ -631,7 +631,7 @@ test "Okkama template program preserves failure coordinates and bounds" {
     );
     test.is(
         try {
-            TemplateProgram("x", 0, 1).instructions();
+            TemplateProgram(source: "x", maximum_input: 0, maximum_nodes: 1).instructions();
             "bad";
         }
         catch TemplateFailure.located(_, _, _, message) {
@@ -642,14 +642,14 @@ test "Okkama template program preserves failure coordinates and bounds" {
 }
 
 test "Okkama template program delimiter and comment boundaries" {
-    test.is(TemplateProgram("{{{{{{x}}}}}}", 100, 3).instructions().size(), 3);
-    test.is(TemplateProgram("{{{{{{x}}}}}}", 100, 3).instructions()[2].text(), "}}");
-    test.is(TemplateProgram("a{{!inline}}b", 100, 1).instructions()[0].text(), "ab");
-    test.is(TemplateProgram(" {{!a}}\n\t{{!b}}\r\n", 100, 0).instructions().size(), 0);
-    test.is(TemplateProgram("a\r{{!b}}\nc", 100, 1).instructions()[0].text(), "a\r\nc");
+    test.is(TemplateProgram(source: "{{{{{{x}}}}}}", maximum_input: 100, maximum_nodes: 3).instructions().size(), 3);
+    test.is(TemplateProgram(source: "{{{{{{x}}}}}}", maximum_input: 100, maximum_nodes: 3).instructions()[2].text(), "}}");
+    test.is(TemplateProgram(source: "a{{!inline}}b", maximum_input: 100, maximum_nodes: 1).instructions()[0].text(), "ab");
+    test.is(TemplateProgram(source: " {{!a}}\n\t{{!b}}\r\n", maximum_input: 100, maximum_nodes: 0).instructions().size(), 0);
+    test.is(TemplateProgram(source: "a\r{{!b}}\nc", maximum_input: 100, maximum_nodes: 1).instructions()[0].text(), "a\r\nc");
     for ["{{}}", "{{ }}", "{{.}}", "{{a..b}}", "{{#a}}", "}}", "{{{x}}}"] -> text {
         test.ok(try {
-            TemplateProgram(text, 100, 10).instructions();
+            TemplateProgram(source: text, maximum_input: 100, maximum_nodes: 10).instructions();
             false;
         }
         catch e is TemplateFailure {

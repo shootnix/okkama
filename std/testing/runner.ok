@@ -19,17 +19,17 @@ object RecordedTestReport {
         let entries = document.get("results").items();
         confirm entries.size() <= 4096 else throw InvalidTestResult.because("runner case budget");
         let results is @TestResult = entries.map() -> entry {
-            RecordedTestResult(entry).value();
+            RecordedTestResult(entry).outcome();
         };
         report = TestReport(
-            Instant(Duration(value: Number(document.text("start_ns")).rat(), unit: DurationUnit.nanosecond)),
-            Duration(value: Number(document.text("duration_ns")).rat(), unit: DurationUnit.nanosecond),
-            document.int("seed"),
-            results
+            start: Instant(Duration(value: Number(document.text("start_ns")).rat(), unit: DurationUnit.nanosecond)),
+            duration: Duration(value: Number(document.text("duration_ns")).rat(), unit: DurationUnit.nanosecond),
+            seed: document.int("seed"),
+            results: results
         );
     }
 
-    value() is TestReport {
+    report() is TestReport {
         report;
     }
 }
@@ -78,9 +78,9 @@ object RecordedTestResult {
                         && position.get("column").kind() == JsonKind.number_value {
                             [
                                 TestPosition(
-                                    position.text("source_name"),
-                                    position.int("line"),
-                                    position.int("column")
+                                    source: position.text("source_name"),
+                                    line: position.int("line"),
+                                    column: position.int("column")
                                 )
                             ];
                         }
@@ -92,24 +92,24 @@ object RecordedTestResult {
                     [];
                 };
             let causes is @TestFailure = if index < details.size() && details[index].has("cause") {
-                [RecordedTestCause(details[index].get("cause"), 0).value()];
+                [RecordedTestCause(origin: details[index].get("cause"), depth: 0).failure()];
             }
             else {
                 [];
             };
-            TestFailure(message, positions, causes);
+            TestFailure(message: message, positions: positions, causes: causes);
         };
         let output = Base64Decoded(entry.text("stdout_base64")).bytes();
         let errors = Base64Decoded(entry.text("stderr_base64")).bytes();
         confirm output.size() + errors.size() <= 1048576
             else throw InvalidTestResult.because("runner output budget");
         result = TestResult(
-            entry.text("name"),
-            status,
-            Duration(value: Number(entry.text("duration_ns")).rat(), unit: DurationUnit.nanosecond),
-            failures,
-            TestOutput(output, errors, entry.boolean("truncated")),
-            if entry.has("skip_reason") {
+            name: entry.text("name"),
+            status: status,
+            duration: Duration(value: Number(entry.text("duration_ns")).rat(), unit: DurationUnit.nanosecond),
+            failures: failures,
+            output: TestOutput(output, errors, entry.boolean("truncated")),
+            skip_reason: if entry.has("skip_reason") {
                 entry.text("skip_reason");
             }
             else {
@@ -118,7 +118,7 @@ object RecordedTestResult {
         );
     }
 
-    value() is TestResult {
+    outcome() is TestResult {
         result;
     }
 }
@@ -130,19 +130,19 @@ object RecordedTestCause {
         confirm depth >= 0 && depth < 31 else throw InvalidTestResult.because("runner cause depth");
         let positions is @TestPosition = [];
         let causes is @TestFailure = if origin.has("cause") {
-            [RecordedTestCause(origin.get("cause"), depth + 1).value()];
+            [RecordedTestCause(origin: origin.get("cause"), depth: depth + 1).failure()];
         }
         else {
             [];
         };
         failure = TestFailure(
-            origin.text("type") + ": " + origin.text("message"),
-            positions,
-            causes
+            message: origin.text("type") + ": " + origin.text("message"),
+            positions: positions,
+            causes: causes
         );
     }
 
-    value() is TestFailure {
+    failure() is TestFailure {
         failure;
     }
 }

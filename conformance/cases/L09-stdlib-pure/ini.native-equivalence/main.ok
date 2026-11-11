@@ -13,7 +13,7 @@ object Outcome {
     Outcome();
     of(text is string, input is int, sections is int, entries is int) is string {
         try {
-            let document = ParsedIni(text, input, sections, entries).value();
+            let document = ParsedIni(origin: text, maximum_input: input, maximum_sections: sections, maximum_entries: entries).document();
             let parts is @string = document.sections().map() -> section {
                 let bindings is @string = section.entries().map() -> entry { entry.name() + "=" + entry.value(); };
                 "[" + section.name() + "]" + bindings.join("|");

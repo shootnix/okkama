@@ -11,7 +11,7 @@ import "time/duration" take Duration, DurationUnit;
 import "xml/name" take XmlName;
 import "xml/node" take XmlNode, XmlText, XmlAttribute, XmlElement, XmlDocument;
 
-object TestStatusName {
+hidden object TestStatusName {
     has origin is TestStatus;
 
     TestStatusName(origin is TestStatus) {
@@ -459,7 +459,7 @@ object JUnitReportText {
     }
 }
 
-object JUnitSeconds {
+hidden object JUnitSeconds {
     has origin is Duration;
 
     JUnitSeconds(origin is Duration) {
@@ -486,7 +486,7 @@ object JUnitSeconds {
 test "empty TAP report carries an explicit skipped plan" {
     let duration = Duration(value: 0.rat(), unit: DurationUnit.second);
     test.is(
-        TapTestReport(TestReport(Instant(duration), duration, 0, [])).string(),
+        TapTestReport(TestReport(start: Instant(duration), duration: duration, seed: 0, results: [])).string(),
         "TAP version 13\n1..0 # SKIP empty report\n# seed=0\n"
     );
 }

@@ -40,8 +40,8 @@ async main() is int {
     let name="Ada'); DROP TABLE users; --";
     let nick=Maybe<string>.none;
     let parameters=[Param(7),Param(name),Param(nick),Param(false),Param(@byte(0.byte(),255.byte()))];
-    await connection.execution(Statement("INSERT INTO users VALUES(?,?,?,?,?)",parameters));
-    let row=await Query(connection,Statement("SELECT * FROM users WHERE id=?",[Param(7)])).one();
+    await connection.execution(Statement(text: "INSERT INTO users VALUES(?,?,?,?,?)",values: parameters));
+    let row=await Query(connection,Statement(text: "SELECT * FROM users WHERE id=?",values: [Param(7)])).one();
     c=c.ok("bound integer",row.int("id")==7);
     c=c.ok("SQL syntax stays data",row.text("name")==name);
     c=c.ok("bound NULL",row.maybe("nick").text() ?? .none: true !! _: false);
@@ -55,7 +55,7 @@ async main() is int {
     c=c.ok("prepared int",prepared_row.int("id")==8);
     c=c.ok("prepared empty text",prepared_row.text("name")=="");
     c=c.ok("prepared NULL",prepared_row.maybe("nick").text() ?? .none: true !! _: false);
-    c=c.ok("parameter count limit preserved",try { Statement("SELECT ?",[Param(1)],DbLimits(0,10,100));false; } catch e is DbBoundaryLimit { true; });
-    c=c.ok("UTF8 byte limit preserved",try { Statement("SELECT ?",[Param("é")],DbLimits(1,1,100));false; } catch e is DbBoundaryLimit { true; });
+    c=c.ok("parameter count limit preserved",try { Statement(text: "SELECT ?",values: [Param(1)],limits: DbLimits(0,10,100));false; } catch e is DbBoundaryLimit { true; });
+    c=c.ok("UTF8 byte limit preserved",try { Statement(text: "SELECT ?",values: [Param("é")],limits: DbLimits(1,1,100));false; } catch e is DbBoundaryLimit { true; });
     c.done();
 }

@@ -31,7 +31,7 @@ object ScalarSetting {
         self.key = key;
     }
 
-    value() is string {
+    text() is string {
         let values = origin.entry(key).values();
         confirm values.size() == 1
             else throw NonScalarSetting.detailed(key.string(), values.size());
@@ -54,9 +54,9 @@ object ScalarSettingOr {
         self.fallback = fallback;
     }
 
-    value() is string {
+    text() is string {
         if origin.membership(key) {
-            ScalarSetting(origin, key).value();
+            ScalarSetting(origin: origin, key: key).text();
         }
         else {
             fallback;
@@ -68,7 +68,7 @@ object ScalarSettingOr {
             origin.entry(key).source();
         }
         else {
-            SettingSource(SettingSourceKind.defaults, "fallback");
+            SettingSource(kind: SettingSourceKind.defaults, name: "fallback");
         }
     }
 }

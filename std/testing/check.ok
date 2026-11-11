@@ -93,7 +93,7 @@ object CloseTo does Checking {
     }
 }
 
-object CheckWindow {
+hidden object CheckWindow {
     has origin is int;
 
     CheckWindow(origin is int) {
@@ -125,7 +125,7 @@ object CheckWindow {
     }
 }
 
-object CheckValueText {
+hidden object CheckValueText {
     has origin is string;
 
     CheckValueText(origin is string) {
@@ -156,7 +156,7 @@ object CheckValueText {
     }
 }
 
-object CheckMessageText {
+hidden object CheckMessageText {
     has origin is string;
 
     CheckMessageText(origin is string) {
@@ -173,7 +173,7 @@ object CheckMessageText {
     }
 }
 
-object CheckTextDiff {
+hidden object CheckTextDiff {
     has actual, expected is string;
     has position, context is int;
 
@@ -287,7 +287,7 @@ object TextEquals does Checking {
                     expected.slice(start, window.stop(mismatch, expected.length()))
                 ).string() + ", got " + CheckValueText(
                     actual.slice(start, window.stop(mismatch, actual.length()))
-                ).string() + "\n" + CheckTextDiff(actual, expected, mismatch, window.size()).string()
+                ).string() + "\n" + CheckTextDiff(actual: actual, expected: expected, position: mismatch, context: window.size()).string()
             ).string()
         );
     }
@@ -468,7 +468,7 @@ object SequenceEquals<T> does Checking {
     }
 }
 
-object CheckItemRendering<T> {
+hidden object CheckItemRendering<T> {
     has rendering is (T) is string;
 
     CheckItemRendering(rendering is (T) is string) {
@@ -577,7 +577,7 @@ object AsyncEventually does AsyncChecking {
 }
 
 test "reusable comparisons pass through the current test context" {
-    TextEquals("same", "same").check();
-    BytesEqual([byte(0)], [byte(0)]).check();
-    CloseTo(1.0, 1.001, 0.01, 0.0).check();
+    TextEquals(actual: "same", expected: "same").check();
+    BytesEqual(actual: [byte(0)], expected: [byte(0)]).check();
+    CloseTo(actual: 1.0, expected: 1.001, relative: 0.01, absolute: 0.0).check();
 }

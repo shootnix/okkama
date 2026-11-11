@@ -108,18 +108,18 @@ object DetectedTerminalCapabilities {
             columns;
         }
         else {
-            TerminalFallback(environment, "COLUMNS").value();
+            TerminalFallback(environment: environment, name: "COLUMNS").size();
         };
         let height = if rows > 0 {
             rows;
         }
         else {
-            TerminalFallback(environment, "LINES").value();
+            TerminalFallback(environment: environment, name: "LINES").size();
         };
-        origin = TerminalCapabilities(input, output, depth, TerminalSize(width, height));
+        origin = TerminalCapabilities(input_interactive: input, output_interactive: output, colors: depth, size: TerminalSize(width, height));
     }
 
-    value() is TerminalCapabilities {
+    capabilities() is TerminalCapabilities {
         origin;
     }
 }
@@ -133,7 +133,7 @@ object TerminalFallback {
         self.name = name;
     }
 
-    value() is int {
+    size() is int {
         if environment.membership(name) {
             let text = environment.variable(name);
             let parsed = try {

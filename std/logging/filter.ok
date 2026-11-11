@@ -50,7 +50,7 @@ object LevelThresholds does LogAllowing {
     }
 
     allowed(name is LogName, level is LogLevel) is bool {
-        let choice = overrides.reduce(LogThresholdChoice(fallback, 0)) -> old, override {
+        let choice = overrides.reduce(LogThresholdChoice(level: fallback, size: 0)) -> old, override {
             let prefix = override.name().segments();
             let actual = name.segments();
             let matches = if prefix.size() > actual.size() {
@@ -62,17 +62,17 @@ object LevelThresholds does LogAllowing {
                 };
             };
             if matches && prefix.size() > old.size() {
-                LogThresholdChoice(override.level(), prefix.size());
+                LogThresholdChoice(level: override.level(), size: prefix.size());
             }
             else {
                 old;
             }
         };
-        LogLevelOrder(level, choice.level()).value() != Order.less;
+        LogLevelOrder(left: level, right: choice.level()).order() != Order.less;
     }
 }
 
-object LogThresholdChoice {
+hidden object LogThresholdChoice {
     has level is LogLevel;
     has size is int;
 
@@ -106,7 +106,7 @@ object AllowedLogs does LogWriting {
     }
 }
 
-object EnabledLog {
+hidden object EnabledLog {
     has origin is LogAllowing;
     has name is LogName;
     has level is LogLevel;
@@ -117,7 +117,7 @@ object EnabledLog {
         self.level = level;
     }
 
-    value() is bool {
+    enabled() is bool {
         origin.allowed(name, level);
     }
 }

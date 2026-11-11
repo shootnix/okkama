@@ -105,7 +105,7 @@ object SqliteDatabase {
     }
 
     async connection() is SqliteConnection {
-        await SqliteOpening(path_encode(path.string()), false, options).connection();
+        await SqliteOpening(path: path_encode(path.string()), memory: false, options: options).connection();
     }
 }
 
@@ -125,7 +125,7 @@ object SqliteMemory {
     }
 
     async connection() is SqliteConnection {
-        await SqliteOpening([], true, options).connection();
+        await SqliteOpening(path: [], memory: true, options: options).connection();
     }
 }
 
@@ -152,7 +152,7 @@ object SqliteAcquiring does DbAcquiring {
 
     async acquisition() is DbAcquisition {
         let connection = await origin.connection();
-        DbAcquisition(connection, connection, connection);
+        DbAcquisition(connection: connection, preparation: connection, transactions: connection);
     }
 }
 
@@ -203,13 +203,13 @@ object SqliteOpening {
             );
         }
         catch e is NativeFailure {
-            throw SqliteNativeError(e, DbOperation.connecting).value();
+            throw SqliteNativeError(origin: e, operation: DbOperation.connecting).failure();
         };
         let published = Event();
-        let anchor = SqliteUnpublished(state, published);
+        let anchor = SqliteUnpublished(state: state, published: published);
         defer await anchor.close();
         let group is FutureGroup<sqlite.SqliteReplyState> = FutureGroup();
-        let cleanup = SqliteTaskCleanup(group, state);
+        let cleanup = SqliteTaskCleanup(group: group, state: state);
         defer await cleanup.close();
         let waiting = sqlite.sqlite_connect(state);
         group.start(waiting);
@@ -217,17 +217,17 @@ object SqliteOpening {
             await waiting;
         }
         catch e is NativeFailure {
-            throw SqliteNativeError(e, DbOperation.connecting).value();
+            throw SqliteNativeError(origin: e, operation: DbOperation.connecting).failure();
         };
-        let frame = SqliteFrame(reply, DbOperation.connecting);
+        let frame = SqliteFrame(state: reply, operation: DbOperation.connecting);
         defer frame.close();
-        let connection = SqliteConnection(SqliteSession(state, options.read_only()));
+        let connection = SqliteConnection(SqliteSession(state: state, read_only: options.read_only()));
         published.set();
         connection;
     }
 }
 
-object SqliteUnpublished {
+hidden object SqliteUnpublished {
     has state is sqlite.SqliteState;
     has published is Event;
 
@@ -273,7 +273,7 @@ hidden object SqliteTaskCleanup<T> {
                 await sqlite.sqlite_settled(state);
             }
             catch e is NativeFailure {
-                throw SqliteNativeError(e, DbOperation.closing).value();
+                throw SqliteNativeError(origin: e, operation: DbOperation.closing).failure();
             }
         }
     }
@@ -304,7 +304,7 @@ object SqliteConnection does DbConnection, DbExecuting, DbPreparing, DbPreparedO
 
     async prepared_transaction(options is TransactionOptions) is DbPreparedTransaction {
         let transaction = await origin.begin(options, SqliteTransactionMode.deferred);
-        DbPreparedTransaction(transaction, transaction);
+        DbPreparedTransaction(origin: transaction, preparation: transaction);
     }
 
     async opened_blob(
@@ -387,7 +387,7 @@ object SqliteSession does Closing {
             await sqlite.sqlite_settled(state);
         }
         catch e is NativeFailure {
-            throw SqliteNativeError(e, DbOperation.closing).value();
+            throw SqliteNativeError(origin: e, operation: DbOperation.closing).failure();
         }
     }
 
@@ -429,7 +429,7 @@ object SqliteSession does Closing {
         let id = frame.identifier();
         let shape = self.shaped(frame);
         reader.replace(id);
-        let rows = SqliteRows(self, id, shape, token);
+        let rows = SqliteRows(owner: self, id: id, shape: shape, token: token);
         rows.primed(frame);
         rows;
     }
@@ -462,7 +462,7 @@ object SqliteSession does Closing {
             };
             transaction_prepared.replace(all);
         }
-        SqlitePrepared(self, id, token);
+        SqlitePrepared(owner: self, id: id, token: token);
     }
 
     async prepared_execution(id is int, values is Sequencing<DbValue>, token is int) is Execution {
@@ -500,7 +500,7 @@ object SqliteSession does Closing {
         let cursor = frame.identifier();
         reader.replace(cursor);
         reader_prepared.replace(id);
-        let rows = SqliteRows(self, cursor, self.shaped(frame), source_closed, token);
+        let rows = SqliteRows(owner: self, id: cursor, shape: self.shaped(frame), source_closed: source_closed, token: token);
         rows.primed(frame);
         rows;
     }
@@ -516,9 +516,9 @@ object SqliteSession does Closing {
         }
         else {
             let columns is @Column = (0..names.size()).map() -> index {
-                Column(index, names[index], declarations[index]);
+                Column(index: index, name: names[index], declaration: declarations[index]);
             };
-            let made = SqliteShape(names, declarations, columns, DbRowSchema(columns, DbLimits()));
+            let made = SqliteShape(names: names, declarations: declarations, columns: columns, schema: DbRowSchema(columns, DbLimits()));
             shape.replace([made]);
             made;
         }
@@ -557,13 +557,13 @@ object SqliteSession does Closing {
         }
         catch e is NativeFailure {
             await self.barrier();
-            throw SqliteNativeError(e, operation).value();
+            throw SqliteNativeError(origin: e, operation: operation).failure();
         }
         catch e is Cancelled {
             await self.barrier();
             throw;
         };
-        SqliteFrame(reply, operation);
+        SqliteFrame(state: reply, operation: operation);
     }
 
     async barrier() is void {
@@ -571,7 +571,7 @@ object SqliteSession does Closing {
             await sqlite.sqlite_settled(state);
         }
         catch e is NativeFailure {
-            throw SqliteNativeError(e, DbOperation.closing).value();
+            throw SqliteNativeError(origin: e, operation: DbOperation.closing).failure();
         }
     }
 
@@ -595,7 +595,7 @@ object SqliteSession does Closing {
         defer frame.close();
         let id = frame.identifier();
         blob.replace(id);
-        SqliteBlobHandle(self, id, frame.size(), writable, token);
+        SqliteBlobHandle(owner: self, id: id, size: frame.size(), writable: writable, token: token);
     }
 
     blob_active(id is int, token is int) is bool {
@@ -671,7 +671,7 @@ object SqliteSession does Closing {
         let opened = await self.reply(opening.outcome(), DbOperation.backing_up);
         defer opened.close();
         let id = opened.identifier();
-        let cleanup = SqliteBackupCleanup(self, id);
+        let cleanup = SqliteBackupCleanup(owner: self, id: id);
         defer cleanup.close();
         loop {
             confirm clock.monotonic_instant().order(deadline) == Order.less
@@ -684,7 +684,7 @@ object SqliteSession does Closing {
             let frame = await self.reply(request.outcome(), DbOperation.backing_up);
             defer frame.close();
             if frame.done() {
-                return BackupReport(frame.copies(), frame.total());
+                return BackupReport(copies: frame.copies(), total: frame.total());
             }
             await clock.wait(Duration(
                 value: if frame.busy() {
@@ -737,7 +737,7 @@ object SqliteSession does Closing {
         confirm reader.value() == 0 && blob.value() == 0 else throw DbBusy.busy;
         let published = Event();
         let token = Atomic(0);
-        let rollback = SqliteBeginCleanup(self, token, published);
+        let rollback = SqliteBeginCleanup(owner: self, token: token, published: published);
         defer rollback.close();
         let name = match mode {
             case SqliteTransactionMode.deferred {
@@ -759,7 +759,7 @@ object SqliteSession does Closing {
         transaction.replace(id);
         token.replace(id);
         published.set();
-        SqliteTransaction(self, id);
+        SqliteTransaction(owner: self, token: id);
     }
 
     async control(sql is string, operation is DbOperation) is bool {
@@ -786,7 +786,7 @@ object SqliteSession does Closing {
         }
         confirm reader.value() == 0 && blob.value() == 0 else throw DbBusy.busy;
         let confirmed = Event();
-        let cleanup = SqliteFinishCleanup(self, token, commit, outcome, confirmed);
+        let cleanup = SqliteFinishCleanup(owner: self, token: token, commit: commit, outcome: outcome, confirmed: confirmed);
         defer cleanup.close();
         if !commit {
             await self.settled();
@@ -903,7 +903,7 @@ object SqliteShape {
     }
 }
 
-object SqliteRows does RowReading, Closing {
+hidden object SqliteRows does RowReading, Closing {
     has schema is DbRowSchema;
     has owner is SqliteSession;
     has id, token is int;
@@ -1013,7 +1013,7 @@ object SqliteRows does RowReading, Closing {
             failure.replace(clean);
             self.close();
             throw DbFailure.detailed(
-                SqliteFailureKind(deferred[0]).value(),
+                SqliteFailureKind(deferred[0]).kind(),
                 DbOperation.fetching,
                 deferred[1],
                 "SQLite operation rejected"
@@ -1024,7 +1024,7 @@ object SqliteRows does RowReading, Closing {
                 throw RowsEnded.ended;
             }
             let complete = Event();
-            let cleanup = SqliteRowsCleanup(self, complete);
+            let cleanup = SqliteRowsCleanup(owner: self, complete: complete);
             defer cleanup.close();
             let frame = await owner.batch(id, if position.value() == 0 {
                 8;
@@ -1074,7 +1074,7 @@ hidden object SqliteRowsCleanup {
     }
 }
 
-object SqliteBindings {
+hidden object SqliteBindings {
     has cells is @native_db.DbCellState;
 
     SqliteBindings(values is Sequencing<DbValue>) {
@@ -1113,7 +1113,7 @@ object SqliteBindings {
     }
 }
 
-object SqliteBoundValue {
+hidden object SqliteBoundValue {
     has kind is int;
     has bytes is @byte;
 
@@ -1198,7 +1198,7 @@ object SqliteFrame {
             sqlite.sqlite_reply_close(state);
             self.stopped.set();
             throw DbFailure.detailed(
-                SqliteFailureKind(fields["kind"]).value(),
+                SqliteFailureKind(fields["kind"]).kind(),
                 operation,
                 fields["code"],
                 "SQLite operation rejected"
@@ -1287,7 +1287,7 @@ object SqliteFrame {
         let names = sqlite.sqlite_reply_names(state);
         let declarations = sqlite.sqlite_reply_declarations(state);
         let columns is @Column = (0..names.size()).map() -> index {
-            Column(index, names[index], declarations[index]);
+            Column(index: index, name: names[index], declaration: declarations[index]);
         };
         columns;
     }
@@ -1303,29 +1303,29 @@ object SqliteFrame {
             confirm sqlite.sqlite_reply_row_bytes(state) <= DbLimits().bytes()
                 else throw DbBoundaryLimit.kind("value bytes");
             let page = DbPage(
-                schema.size(),
-                sqlite.sqlite_reply_kinds(state),
-                sqlite.sqlite_reply_values(state),
-                sqlite.sqlite_reply_floats(state),
-                sqlite.sqlite_reply_texts(state),
-                sqlite.sqlite_reply_blobs(state)
+                width: schema.size(),
+                kinds: sqlite.sqlite_reply_kinds(state),
+                values: sqlite.sqlite_reply_values(state),
+                floats: sqlite.sqlite_reply_floats(state),
+                texts: sqlite.sqlite_reply_texts(state),
+                blobs: sqlite.sqlite_reply_blobs(state)
             );
             let rows is @Row = (0..count).map() -> index {
-                Row(DbRowData(schema, page, index));
+                Row(DbRowData(schema: schema, page: page, row: index));
             };
             rows;
         }
     }
 }
 
-object SqliteFailureKind {
+hidden object SqliteFailureKind {
     has origin is string;
 
     SqliteFailureKind(origin is string) {
         self.origin = origin;
     }
 
-    value() is DbFailureKind {
+    kind() is DbFailureKind {
         match origin {
             case "connection" {
                 DbFailureKind.connection;
@@ -1361,7 +1361,7 @@ object SqliteFailureKind {
     }
 }
 
-object SqliteNativeError {
+hidden object SqliteNativeError {
     has origin is NativeFailure;
     has operation is DbOperation;
 
@@ -1370,7 +1370,7 @@ object SqliteNativeError {
         self.operation = operation;
     }
 
-    value() is DbFailure {
+    failure() is DbFailure {
         let kind = match origin.code() {
             case "unsupported" {
                 DbFailureKind.unsupported;
@@ -1396,7 +1396,7 @@ enum InvalidSqliteOptions is Error = (invalid);
 
 enum SqliteTransactionMode = (deferred, immediate, exclusive);
 
-object SqliteOrigin {
+hidden object SqliteOrigin {
     has origin is SqliteConnection;
 
     SqliteOrigin(connection is SqliteConnection) {
@@ -1516,7 +1516,7 @@ object SqliteTransaction does Transaction, DbExecuting, DbPreparing, SqliteBlobO
     }
 }
 
-object SqlitePrepared does PreparedStatement, Closing {
+hidden object SqlitePrepared does PreparedStatement, Closing {
     has owner is SqliteSession;
     has id, token is int;
     has stopped is Event;
@@ -1554,7 +1554,7 @@ object SqlitePrepared does PreparedStatement, Closing {
     }
 }
 
-object SqliteBlobHandle does SqliteBlob, Closing {
+hidden object SqliteBlobHandle does SqliteBlob, Closing {
     has owner is SqliteSession;
     has id, size, token is int;
     has writable is bool;
@@ -1676,11 +1676,11 @@ test "SQLite defaults are explicit and foreign keys remain enabled" {
 test "SQLite rejects contradictory flags and sub-millisecond busy timeouts" {
     test.ok(try {
         SqliteOptions(
-            true,
-            true,
-            true,
-            Duration(value: 0.rat(), unit: DurationUnit.second),
-            SqliteJournal.default_mode
+            read_only: true,
+            create: true,
+            foreign_keys: true,
+            busy_timeout: Duration(value: 0.rat(), unit: DurationUnit.second),
+            journal: SqliteJournal.default_mode
         );
         false;
     }
@@ -1689,11 +1689,11 @@ test "SQLite rejects contradictory flags and sub-millisecond busy timeouts" {
     });
     test.ok(try {
         SqliteOptions(
-            false,
-            true,
-            true,
-            Duration(value: 1.rat() / 2000.rat(), unit: DurationUnit.second),
-            SqliteJournal.default_mode
+            read_only: false,
+            create: true,
+            foreign_keys: true,
+            busy_timeout: Duration(value: 1.rat() / 2000.rat(), unit: DurationUnit.second),
+            journal: SqliteJournal.default_mode
         );
         false;
     }

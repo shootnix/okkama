@@ -48,7 +48,7 @@ object LogStyles {
     }
 
     style(level is LogLevel) is TextStyle {
-        origin.reduce(TextStyle(DefaultColor(), DefaultColor(), [])) -> old, entry {
+        origin.reduce(TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: [])) -> old, entry {
             if entry.level() == level {
                 entry.style();
             }
@@ -71,7 +71,7 @@ object TextStreamLogs does LogWriting {
     }
 
     write(record is LogRecord) is void {
-        let line = TextLogLine(record, zone).string();
+        let line = TextLogLine(origin: record, zone: zone).string();
         origin.write(ByteSnapshot(Utf8Encoded(line + "\n").bytes()));
     }
 }
@@ -101,7 +101,7 @@ object TextTerminalLogs does LogWriting {
     }
 
     write(record is LogRecord) is void {
-        origin.writeln(StyledText(TextLogLine(record, zone).string(), styles.style(record.level())));
+        origin.writeln(StyledText(origin: TextLogLine(record, zone).string(), style: styles.style(record.level())));
     }
 }
 
@@ -115,6 +115,6 @@ object JsonTerminalLogs does LogWriting {
     }
 
     write(record is LogRecord) is void {
-        origin.writeln(StyledText(JsonLogLine(record).string(), styles.style(record.level())));
+        origin.writeln(StyledText(origin: JsonLogLine(record).string(), style: styles.style(record.level())));
     }
 }

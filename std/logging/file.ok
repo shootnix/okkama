@@ -30,14 +30,14 @@ object FileLogOptions {
     }
 }
 
-object LogPermissionBits {
+hidden object LogPermissionBits {
     has origin is Permissions;
 
     LogPermissionBits(origin is Permissions) {
         self.origin = origin;
     }
 
-    value() is int {
+    bits() is int {
         (if origin::Access::readable {
             4;
         }
@@ -160,9 +160,9 @@ object LogFileState does Writing, Closing {
     hidden open() is fs.FileHandle {
         confirm !self.closed() else throw ClosedLogFile.closed;
         let mode = options.permissions();
-        let bits = LogPermissionBits(mode.owner()).value() * 64 + LogPermissionBits(mode.group()).value() * 8 + LogPermissionBits(
+        let bits = LogPermissionBits(mode.owner()).bits() * 64 + LogPermissionBits(mode.group()).bits() * 8 + LogPermissionBits(
             mode.others()
-        ).value() + mode.special() * 512;
+        ).bits() + mode.special() * 512;
         try {
             fs.open(fs.path_encode(path.string()), 22, bits);
         }
@@ -176,7 +176,7 @@ object LogFile does Writing, Closing {
     has state is LogFileState;
 
     LogFile(path is Path, options is FileLogOptions) {
-        state = LogFileState(path, options);
+        state = LogFileState(path: path, options: options);
     }
 
     write(source is ByteSource) is void {

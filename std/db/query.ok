@@ -16,11 +16,11 @@ object Query {
     has source is QueryOpening;
 
     Query(origin is DbExecuting, statement is Statement) {
-        source = StatementQueryOpening(origin, statement);
+        source = StatementQueryOpening(origin: origin, statement: statement);
     }
 
     Query(prepared is PreparedStatement, values is Sequencing<DbValue>) {
-        source = PreparedQueryOpening(prepared, values);
+        source = PreparedQueryOpening(origin: prepared, values: values);
     }
 
     async rows() is QueryRows {
@@ -144,7 +144,7 @@ object QueryRows {
 
 // Prefix in O(1), then materialize in source order without repeated array copies.
 // Rows in reverse order and their count (a list's size walks it).
-object QueryRowsCollected {
+hidden object QueryRowsCollected {
     has origin is List<Row>;
     has count is int;
 
@@ -187,7 +187,7 @@ role QueryOpening {
     async rows() is RowReading;
 }
 
-object StatementQueryOpening does QueryOpening {
+hidden object StatementQueryOpening does QueryOpening {
     has origin is DbExecuting;
     has statement is Statement;
 
@@ -201,13 +201,13 @@ object StatementQueryOpening does QueryOpening {
     }
 }
 
-object PreparedQueryOpening does QueryOpening {
+hidden object PreparedQueryOpening does QueryOpening {
     has origin is PreparedStatement;
     has values is @DbValue;
 
     PreparedQueryOpening(origin is PreparedStatement, values is Sequencing<DbValue>) {
         self.origin = origin;
-        self.values = DbValueSnapshot(values, DbLimits()).values();
+        self.values = DbValueSnapshot(values: values, limits: DbLimits()).values();
     }
 
     async rows() is RowReading {

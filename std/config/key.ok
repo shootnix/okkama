@@ -64,7 +64,7 @@ object SettingKeyFromString {
         self.separator = separator;
     }
 
-    value() is SettingKey {
+    key() is SettingKey {
         confirm separator != "" else throw InvalidSettingKey.because("empty key separator");
         confirm origin.length() <= 4096
             else throw InvalidSettingKey.because("key exceeds 4096 scalars");

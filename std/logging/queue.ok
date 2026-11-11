@@ -52,7 +52,7 @@ object SynchronousLogDelivery does LogDelivering {
     }
 }
 
-object QueuedLogRecord {
+hidden object QueuedLogRecord {
     has record is LogRecord;
     has sequence is BigInt;
 
@@ -70,7 +70,7 @@ object QueuedLogRecord {
     }
 }
 
-object LogQueueState {
+hidden object LogQueueState {
     has origin is LogDelivering;
     has options is LogQueueOptions;
     has queued is Atomic<Deque<QueuedLogRecord>>;
@@ -114,7 +114,7 @@ object LogQueueState {
         }
         let sequence = (accepted.value() + BigInt("1"));
         accepted.replace(sequence);
-        queued.replace(queued.value().suffix(QueuedLogRecord(record, sequence)));
+        queued.replace(queued.value().suffix(QueuedLogRecord(record: record, sequence: sequence)));
         self.signal();
         true;
     }
@@ -256,12 +256,12 @@ object QueuedLogs does LogWriting, LogDraining, Closing {
         overflow is LogOverflow,
         scope is Supervising<int>
     ) {
-        state = LogQueueState(SynchronousLogDelivery(origin), LogQueueOptions(capacity, overflow));
+        state = LogQueueState(origin: SynchronousLogDelivery(origin), options: LogQueueOptions(capacity, overflow));
         self.scope = scope;
     }
 
     QueuedLogs(origin is LogDelivering, options is LogQueueOptions, scope is Supervising<int>) {
-        state = LogQueueState(origin, options);
+        state = LogQueueState(origin: origin, options: options);
         self.scope = scope;
     }
 

@@ -314,7 +314,7 @@ object TestReport {
         self.duration = duration;
         self.seed = seed;
         self.results = snapshot;
-        counts = TestCounts(passed, size - passed - skipped, skipped);
+        counts = TestCounts(passes: passed, failures: size - passed - skipped, skips: skipped);
     }
 
     start() is Instant {
@@ -353,5 +353,5 @@ enum InvalidTestResult is Error = (because(reason is string));
 
 test "empty reports have successful exit status" {
     let duration = Duration(value: 0.rat(), unit: DurationUnit.second);
-    test.is(TestReport(Instant(duration), duration, 42, []).exit_status(), 0);
+    test.is(TestReport(start: Instant(duration), duration: duration, seed: 42, results: []).exit_status(), 0);
 }

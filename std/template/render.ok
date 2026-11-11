@@ -37,9 +37,9 @@ object TemplateOutput {
 test "streamed template command repeats and borrows destination" {
     let out = ByteBuffer();
     let command = TemplateOutput(
-        TextTemplate("Hello {{name}}"),
-        TemplateStrings.fake(),
-        Utf8Output(origin: out.writing())
+        origin: TextTemplate("Hello {{name}}"),
+        data: TemplateStrings.fake(),
+        destination: Utf8Output(origin: out.writing())
     );
     command.write();
     command.write();
@@ -50,9 +50,9 @@ test "streamed template command repeats and borrows destination" {
 test "empty streamed template has no implicit newline" {
     let out = ByteBuffer();
     TemplateOutput(
-        TextTemplate("", 0, 0, 0),
-        TemplateBindings([]),
-        Utf8Output(origin: out.writing())
+        origin: TextTemplate("", 0, 0, 0),
+        data: TemplateBindings([]),
+        destination: Utf8Output(origin: out.writing())
     ).write();
     test.is(out.content().size(), 0);
 }

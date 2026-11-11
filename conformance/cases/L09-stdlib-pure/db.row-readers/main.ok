@@ -27,17 +27,17 @@ object BrokenPrinter does DbValue {
 object EscapedSchemaRow {
     EscapedSchemaRow();
     value() is Row {
-        let columns=[Column(0,"saved","INTEGER")];
-        Row(columns,[DbInteger(BigInt("7"))]);
+        let columns=[Column(index: 0,name: "saved",declaration: "INTEGER")];
+        Row(columns: columns,values: [DbInteger(BigInt("7"))]);
     }
 }
 main() is int {
     let c = Checks();
-    let row = Row([Column(0,"nil",""), Column(1,"empty",""), Column(2,"zero",""), Column(3,"one",""), Column(4,"two",""), Column(5,"flag",""), Column(6,"amount",""), Column(7,"ratio",""), Column(8,"data",""), Column(9,"big",""), Column(10,"min",""), Column(11,"max","")], [DbNull(), DbText(""), DbInteger(BigInt("0")), DbInteger(BigInt("1")), DbInteger(BigInt("2")), DbBoolean(false), DbDecimal(Decimal("1.25")), DbFloating(1.5), DbBytes([]), DbInteger(BigInt("9223372036854775808")), DbInteger(BigInt("-9223372036854775808")), DbInteger(BigInt("9223372036854775807"))]);
-    let duplicate = Row([Column(0,"x",""),Column(1,"x","")], [DbNull(),DbNull()]);
-    c = c.ok("value NULL", row.maybe("nil").value() ?? .none: true !! _: false);
-    c = c.ok("value missing", row.presence("absent").value() ?? .missing: true !! _: false);
-    c = c.ok("value presence NULL", row.presence("nil").value() ?? .none: true !! _: false);
+    let row = Row(columns: [Column(0,"nil",""), Column(1,"empty",""), Column(2,"zero",""), Column(3,"one",""), Column(4,"two",""), Column(5,"flag",""), Column(6,"amount",""), Column(7,"ratio",""), Column(8,"data",""), Column(9,"big",""), Column(10,"min",""), Column(11,"max","")], values: [DbNull(), DbText(""), DbInteger(BigInt("0")), DbInteger(BigInt("1")), DbInteger(BigInt("2")), DbBoolean(false), DbDecimal(Decimal("1.25")), DbFloating(1.5), DbBytes([]), DbInteger(BigInt("9223372036854775808")), DbInteger(BigInt("-9223372036854775808")), DbInteger(BigInt("9223372036854775807"))]);
+    let duplicate = Row(columns: [Column(0,"x",""),Column(1,"x","")], values: [DbNull(),DbNull()]);
+    c = c.ok("value NULL", row.maybe("nil").cell() ?? .none: true !! _: false);
+    c = c.ok("value missing", row.presence("absent").cell() ?? .missing: true !! _: false);
+    c = c.ok("value presence NULL", row.presence("nil").cell() ?? .none: true !! _: false);
     c = c.ok("int NULL", row.maybe("nil").int() ?? .none: true !! _: false);
     c = c.ok("int missing", row.presence("absent").int() ?? .missing: true !! _: false);
     c = c.ok("int presence NULL", row.presence("nil").int() ?? .none: true !! _: false);
@@ -112,23 +112,23 @@ main() is int {
     c = c.ok("ambiguous duplicate.presence(\"x\").text()", try { duplicate.presence("x").text(); false; } catch AmbiguousColumn.name(name) { name == "x"; });
     c = c.ok("NULL fallback", (row.maybe("nil").text() else "guest") == "guest");
     c = c.ok("legacy adapter", RowReader(row).text("empty") == "");
-    let underflow = Row([Column(0,"n","")],[DbInteger(BigInt("-9223372036854775809"))]);
+    let underflow = Row(columns: [Column(0,"n","")],values: [DbInteger(BigInt("-9223372036854775809"))]);
     c = c.ok("int underflow retains cause",try { underflow.int("n");false; } catch RowValueFailure.located(column, _, _, cause) { column=="n" && cause=="InvalidDbValue.because(\"integer outside int range\")"; });
     c = c.ok("maybe int underflow remains error",try { underflow.maybe("n").int();false; } catch RowValueFailure.located(_, expected, _, _) { expected=="int"; });
-    let canonical = Row([Column(0,"n","")],[DbInteger(BigInt("0007"))]);
+    let canonical = Row(columns: [Column(0,"n","")],values: [DbInteger(BigInt("0007"))]);
     c = c.ok("canonical integer parsing",canonical.int("n")==7);
     let source=ChangingText();
-    let snapshot=Row([Column(0,"v","")],[source]);
+    let snapshot=Row(columns: [Column(0,"v","")],values: [source]);
     let capture=DbValueCapture(DbValueKind.text);capture.text("saved");capture.finish();
     c=c.ok("external printer observed once",source.calls()==1);
     c=c.ok("native reads preserve snapshot",snapshot.text("v")=="1" && snapshot.text("v")=="1");
     c=c.ok("compatibility value preserves snapshot",ObservedDbValue(snapshot.value("v")).text()=="1" && source.calls()==1);
-    c=c.ok("omitted printer rejected",try { Row([Column(0,"v","")],[BrokenPrinter(0)]);false; } catch e is InvalidDbValue { true; });
-    c=c.ok("duplicate printer rejected",try { Row([Column(0,"v","")],[BrokenPrinter(1)]);false; } catch e is InvalidDbValue { true; });
-    c=c.ok("wrong printer kind rejected",try { Row([Column(0,"v","")],[BrokenPrinter(2)]);false; } catch e is InvalidDbValue { true; });
+    c=c.ok("omitted printer rejected",try { Row(columns: [Column(0,"v","")],values: [BrokenPrinter(0)]);false; } catch e is InvalidDbValue { true; });
+    c=c.ok("duplicate printer rejected",try { Row(columns: [Column(0,"v","")],values: [BrokenPrinter(1)]);false; } catch e is InvalidDbValue { true; });
+    c=c.ok("wrong printer kind rejected",try { Row(columns: [Column(0,"v","")],values: [BrokenPrinter(2)]);false; } catch e is InvalidDbValue { true; });
     c=c.ok("sealed printer rejected",try { capture.text("late");false; } catch e is InvalidDbValue { true; });
     c=c.ok("sealed snapshot survives attempt",capture.text_value()=="saved");
-    c=c.ok("UTF8 byte limit preserved",try { Row([Column(0,"v","")],[DbText("я")],DbLimits(1,1,10));false; } catch e is DbBoundaryLimit { true; });
+    c=c.ok("UTF8 byte limit preserved",try { Row(columns: [Column(0,"v","")],values: [DbText("я")],limits: DbLimits(1,1,10));false; } catch e is DbBoundaryLimit { true; });
     c=c.ok("direct int preserves wrong-kind details",try { row.int("empty");false; } catch RowValueFailure.located(column, expected, actual_kind, cause) { column=="empty" && expected=="int" && actual_kind==DbValueKind.text && cause=="WrongDbValue.detailed(DbValueKind.integer, DbValueKind.text)"; });
     c=c.ok("direct text preserves wrong-kind details",try { row.text("zero");false; } catch RowValueFailure.located(column, expected, actual_kind, cause) { column=="zero" && expected=="text" && actual_kind==DbValueKind.integer && cause=="WrongDbValue.detailed(DbValueKind.text, DbValueKind.integer)"; });
     c=c.ok("direct int rejects NULL",try { row.int("nil");false; } catch RowValueFailure.located(_, _, actual_kind, cause) { actual_kind==DbValueKind.null_value && cause=="WrongDbValue.detailed(DbValueKind.integer, DbValueKind.null_value)"; });
@@ -136,14 +136,14 @@ main() is int {
     c=c.ok("direct int missing column stays unwrapped",try { row.int("absent");false; } catch MissingColumn.name(name) { name=="absent"; });
     c=c.ok("direct text missing column stays unwrapped",try { row.text("absent");false; } catch MissingColumn.name(name) { name=="absent"; });
     c=c.ok("direct int ambiguous column stays unwrapped",try { duplicate.int("x");false; } catch AmbiguousColumn.name(name) { name=="x"; });
-    c=c.ok("direct text preserves Unicode",Row([Column(0,"s","")],[DbText("Ж猫")]).text("s")=="Ж猫");
+    c=c.ok("direct text preserves Unicode",Row(columns: [Column(0,"s","")],values: [DbText("Ж猫")]).text("s")=="Ж猫");
     let escaped=EscapedSchemaRow().value();
     let wide=Atomic("я");for 0..11 -> index { wide.replace(wide.value()+wide.value()); }
-    c=c.ok("schema still rejects reordered indices",try { DbColumns([Column(1,"bad","")],DbLimits());false; } catch e is InvalidRow { true; });
-    c=c.ok("schema still enforces column count limit",try { DbColumns([Column(0,"n","")],DbLimits(0,8388608,1048576));false; } catch DbBoundaryLimit.kind(kind) { kind=="column count"; });
+    c=c.ok("schema still rejects reordered indices",try { DbColumns(values: [Column(1,"bad","")],limits: DbLimits());false; } catch e is InvalidRow { true; });
+    c=c.ok("schema still enforces column count limit",try { DbColumns(values: [Column(0,"n","")],limits: DbLimits(0,8388608,1048576));false; } catch DbBoundaryLimit.kind(kind) { kind=="column count"; });
     c=c.ok("schema survives local columns scope",escaped.int("saved")==7 && escaped.columns().item(0).name()=="saved" && escaped.columns().item(0).declaration()=="INTEGER");
-    c=c.ok("column accepts UTF8 byte boundary",Column(0,wide.value(),"").name()==wide.value());
-    c=c.ok("column rejects excess UTF8 name bytes",try { Column(0,wide.value()+"x","");false; } catch e is InvalidRow { true; });
-    c=c.ok("column rejects excess declaration bytes",try { Column(0,"n",wide.value()+"x");false; } catch e is InvalidRow { true; });
+    c=c.ok("column accepts UTF8 byte boundary",Column(index: 0,name: wide.value(),declaration: "").name()==wide.value());
+    c=c.ok("column rejects excess UTF8 name bytes",try { Column(index: 0,name: wide.value()+"x",declaration: "");false; } catch e is InvalidRow { true; });
+    c=c.ok("column rejects excess declaration bytes",try { Column(index: 0,name: "n",declaration: wide.value()+"x");false; } catch e is InvalidRow { true; });
     c.done();
 }

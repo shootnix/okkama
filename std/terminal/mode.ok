@@ -48,7 +48,7 @@ object TerminalModeLease does Closing {
             terminal_mode_open(origin, code);
         }
         catch e is NativeFailure {
-            throw TerminalProblem(e).value();
+            throw TerminalProblem(e).error();
         };
         self.mode = mode;
     }
@@ -66,7 +66,7 @@ object TerminalModeLease does Closing {
             terminal_mode_close(state);
         }
         catch e is NativeFailure {
-            throw TerminalProblem(e).value();
+            throw TerminalProblem(e).error();
         }
     }
 

@@ -65,7 +65,7 @@ object DbRowSchema {
     has state is native_db.DbSchemaState;
 
     DbRowSchema(columns is Sequencing<Column>, limits is DbLimits) {
-        self.columns = DbColumns(columns, limits).values();
+        self.columns = DbColumns(values: columns, limits: limits).values();
         let names is @string = self.columns.map() -> column {
             column.name();
         };
@@ -85,7 +85,7 @@ object DbRowSchema {
     }
 }
 
-object DbRowCells {
+hidden object DbRowCells {
     has values is @native_db.DbCellState;
 
     DbRowCells(origin is Sequencing<DbValue>, limits is DbLimits) {
@@ -163,16 +163,16 @@ object Row does RowValues {
     Row(columns is Sequencing<Column>, values is Sequencing<DbValue>) {
         confirm columns.size() == values.size() else throw InvalidRow.invalid;
         let limits = DbLimits();
-        schema = DbRowSchema(columns, limits);
-        self.values = DbRowCells(values, limits).values();
+        schema = DbRowSchema(columns: columns, limits: limits);
+        self.values = DbRowCells(origin: values, limits: limits).values();
         page = DbPage();
         base = 0;
     }
 
     Row(columns is Sequencing<Column>, values is Sequencing<DbValue>, limits is DbLimits) {
         confirm columns.size() == values.size() else throw InvalidRow.invalid;
-        schema = DbRowSchema(columns, limits);
-        self.values = DbRowCells(values, limits).values();
+        schema = DbRowSchema(columns: columns, limits: limits);
+        self.values = DbRowCells(origin: values, limits: limits).values();
         page = DbPage();
         base = 0;
     }
@@ -214,7 +214,7 @@ object Row does RowValues {
                 page.integer(i);
             }
             else {
-                DbColumnReader(name, page, i).int();
+                DbColumnReader(name: name, page: page, at: i).int();
             }
         }
         else {
@@ -257,7 +257,7 @@ object Row does RowValues {
                 page.text(i);
             }
             else {
-                DbColumnReader(name, page, i).text();
+                DbColumnReader(name: name, page: page, at: i).text();
             }
         }
         else {
@@ -309,7 +309,7 @@ object Row does RowValues {
     hidden reader(name is string) is DbColumnReader {
         let at = self.index(name);
         if page.width() > 0 {
-            DbColumnReader(name, page, base + at);
+            DbColumnReader(name: name, page: page, at: base + at);
         }
         else {
             DbColumnReader(name, values[at]);
@@ -322,7 +322,7 @@ object Row does RowValues {
                 Presence.none;
             }
             else {
-                Presence.some(DbColumnReader(name, page, base + at));
+                Presence.some(DbColumnReader(name: name, page: page, at: base + at));
             }
         }
         else {

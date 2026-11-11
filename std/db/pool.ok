@@ -98,7 +98,7 @@ role DbChecking {
     async healthy(origin is DbConnection) is bool;
 }
 
-object UncheckedDbConnections does DbChecking {
+hidden object UncheckedDbConnections does DbChecking {
     UncheckedDbConnections();
 
     async healthy(origin is DbConnection) is bool {
@@ -110,11 +110,11 @@ object DbPool does Closing {
     has owner is DbPoolState;
 
     DbPool(origin is DbConnecting, options is PoolOptions, clock is Timing) {
-        owner = DbPoolState(PortableDbAcquiring(origin), options, clock, UncheckedDbConnections());
+        owner = DbPoolState(origin: PortableDbAcquiring(origin), options: options, clock: clock, health: UncheckedDbConnections());
     }
 
     DbPool(origin is DbConnecting, options is PoolOptions, clock is Timing, health is DbChecking) {
-        owner = DbPoolState(PortableDbAcquiring(origin), options, clock, health);
+        owner = DbPoolState(origin: PortableDbAcquiring(origin), options: options, clock: clock, health: health);
     }
 
     async connection() is PooledConnection {
@@ -146,7 +146,7 @@ object DbPreparedPool does Closing {
     has owner is DbPoolState;
 
     DbPreparedPool(origin is DbAcquiring, options is PoolOptions, clock is Timing) {
-        owner = DbPoolState(origin, options, clock, UncheckedDbConnections());
+        owner = DbPoolState(origin: origin, options: options, clock: clock, health: UncheckedDbConnections());
     }
 
     DbPreparedPool(
@@ -155,7 +155,7 @@ object DbPreparedPool does Closing {
         clock is Timing,
         health is DbChecking
     ) {
-        owner = DbPoolState(origin, options, clock, health);
+        owner = DbPoolState(origin: origin, options: options, clock: clock, health: health);
     }
 
     async connection() is PooledConnection {
@@ -218,7 +218,7 @@ object DbPhysical {
     }
 }
 
-object DbIdle {
+hidden object DbIdle {
     has physical is DbPhysical;
     has since is MonotonicInstant;
 
@@ -283,7 +283,7 @@ object DbPoolState {
     }
 
     snapshot() is PoolSnapshot {
-        PoolSnapshot(leases.value().size(), idle.value().size(), waiting.value(), options.maximum());
+        PoolSnapshot(acquisitions: leases.value().size(), idle: idle.value().size(), waiting: waiting.value(), capacity: options.maximum());
     }
 
     async stopping() is PooledConnection {
@@ -298,7 +298,7 @@ object DbPoolState {
         let group is FutureGroup<PooledConnection> = FutureGroup();
         let taken = Event();
         let pending = self.acquire();
-        let cleanup = DbUnclaimedLease(group, pending, taken);
+        let cleanup = DbUnclaimedLease(group: group, pending: pending, taken: taken);
         defer await cleanup.close();
         group.start(pending);
         let race is Raced<PooledConnection> = Raced(origins: [pending, self.stopping()]);
@@ -316,7 +316,7 @@ object DbPoolState {
     async acquire() is PooledConnection {
         let permit = await capacity.permit();
         let published = Event();
-        let cleanup = DbUnusedPermit(permit, published);
+        let cleanup = DbUnusedPermit(permit: permit, published: published);
         defer cleanup.close();
         confirm !self.closed() else throw DbClosed.closed;
         let guard = await acquisition_lock.guard();
@@ -340,7 +340,7 @@ object DbPoolState {
             else {
                 let id = serial.value() + 1;
                 serial.replace(id);
-                let record = DbPhysical(origin.acquisition(), clock.monotonic_instant(), id);
+                let record = DbPhysical(pending: origin.acquisition(), born: clock.monotonic_instant(), serial: id);
                 let old = records.value();
                 let all is @DbPhysical = (0..old.size() + 1).map() -> index {
                     if index < old.size() {
@@ -369,7 +369,7 @@ object DbPoolState {
                 throw;
             };
             let owned = Event();
-            let anchor = DbUnpublishedPhysical(self, physical, connection, owned);
+            let anchor = DbUnpublishedPhysical(owner: self, physical: physical, connection: connection, owned: owned);
             defer await anchor.close();
             let expired = (options.lifetime()::Span::seconds > 0.rat()
                 && clock.monotonic_instant().minus(physical.born())::Span::seconds >= options.lifetime()::Span::seconds)
@@ -384,7 +384,7 @@ object DbPoolState {
             }
             confirm !self.closed() else throw DbClosed.closed;
             await self.warm();
-            let lease = PooledConnection(self, physical, connection, permit);
+            let lease = PooledConnection(owner: self, physical: physical, origin: connection, permit: permit);
             let old = leases.value();
             let all is @PooledConnection = (0..old.size() + 1).map() -> index {
                 if index < old.size() {
@@ -408,7 +408,7 @@ object DbPoolState {
             }
             let id = serial.value() + 1;
             serial.replace(id);
-            let physical = DbPhysical(origin.acquisition(), clock.monotonic_instant(), id);
+            let physical = DbPhysical(pending: origin.acquisition(), born: clock.monotonic_instant(), serial: id);
             let old = records.value();
             let all is @DbPhysical = (0..old.size() + 1).map() -> index {
                 if index < old.size() {
@@ -467,7 +467,7 @@ object DbPoolState {
         let old is @DbRetirement = retiring.value().filter() -> record {
             !record.complete();
         };
-        let record = DbRetirement(self, pending);
+        let record = DbRetirement(owner: self, pending: pending);
         let all is @DbRetirement = (0..old.size() + 1).map() -> index {
             if index < old.size() {
                 old[index];
@@ -496,7 +496,7 @@ object DbPoolState {
         }
         else {
             let old = idle.value();
-            let entry = DbIdle(physical, clock.monotonic_instant());
+            let entry = DbIdle(physical: physical, since: clock.monotonic_instant());
             let all is @DbIdle = (0..old.size() + 1).map() -> index {
                 if index < old.size() {
                     old[index];
@@ -598,7 +598,7 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
         confirm !self.closed() else throw DbClosed.closed;
         let rows = await origin.rows(statement);
         readers.replace([rows]);
-        PooledRows(rows, stopped);
+        PooledRows(origin: rows, lease_closed: stopped);
     }
 
     async prepared(text is string) is PreparedStatement {
@@ -606,7 +606,7 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
         let preparing = await physical.preparing();
         let raw = await preparing.prepared(text);
         let published = Event();
-        let cleanup = DbUnpublishedPrepared(raw, published);
+        let cleanup = DbUnpublishedPrepared(origin: raw, published: published);
         defer cleanup.close();
         confirm !self.closed() else throw DbClosed.closed;
         let old is @PreparedStatement = preparation.value().filter() -> statement {
@@ -622,14 +622,14 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
         };
         preparation.replace(all);
         published.set();
-        PooledPrepared(raw, stopped, readers);
+        PooledPrepared(origin: raw, lease_closed: stopped, readers: readers);
     }
 
     async transaction(options is TransactionOptions) is Transaction {
         confirm !self.closed() else throw DbClosed.closed;
         let transaction = await origin.transaction(options);
         transactions.replace([transaction]);
-        PooledTransaction(transaction, stopped, readers);
+        PooledTransaction(origin: transaction, lease_closed: stopped, readers: readers);
     }
 
     async prepared_transaction(options is TransactionOptions) is PooledTransaction {
@@ -637,7 +637,7 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
         let opening = await physical.transactions();
         let transaction = await opening.prepared_transaction(options);
         transactions.replace([transaction]);
-        PooledTransaction(transaction, stopped, readers, transaction);
+        PooledTransaction(origin: transaction, lease_closed: stopped, readers: readers, preparation: transaction);
     }
 
     close() is void {
@@ -697,7 +697,7 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
     }
 }
 
-object PooledRows does RowReading, Closing {
+hidden object PooledRows does RowReading, Closing {
     has origin is RowReading;
     has lease_closed is Event;
 
@@ -766,7 +766,7 @@ object PooledTransaction does Transaction, DbExecuting, DbPreparing {
         confirm self.active() else throw TransactionEnded.ended;
         let rows = await origin.rows(statement);
         readers.replace([rows]);
-        PooledRows(rows, lease_closed);
+        PooledRows(origin: rows, lease_closed: lease_closed);
     }
 
     async prepared(text is string) is PreparedStatement {
@@ -779,7 +779,7 @@ object PooledTransaction does Transaction, DbExecuting, DbPreparing {
                 "transaction has no preparation capability"
             );
         let statement = await preparation[0].prepared(text);
-        PooledPrepared(statement, lease_closed, readers);
+        PooledPrepared(origin: statement, lease_closed: lease_closed, readers: readers);
     }
 
     async commit() is Transaction {
@@ -795,7 +795,7 @@ object PooledTransaction does Transaction, DbExecuting, DbPreparing {
     }
 }
 
-object DbUnusedPermit {
+hidden object DbUnusedPermit {
     has permit is Permit;
     has published is Event;
 
@@ -811,7 +811,7 @@ object DbUnusedPermit {
     }
 }
 
-object DbUnpublishedPhysical {
+hidden object DbUnpublishedPhysical {
     has owner is DbPoolState;
     has physical is DbPhysical;
     has connection is DbConnection;
@@ -837,7 +837,7 @@ object DbUnpublishedPhysical {
     }
 }
 
-object DbUnclaimedLease {
+hidden object DbUnclaimedLease {
     has group is FutureGroup<PooledConnection>;
     has pending is Future<PooledConnection>;
     has taken is Event;
@@ -878,7 +878,7 @@ object DbUnclaimedLease {
 
 enum InvalidPoolOptions is Error = (invalid);
 
-object DbRetirement {
+hidden object DbRetirement {
     has owner is DbPoolState;
     has pending is Future<bool>;
     has group is FutureGroup<bool>;
@@ -931,14 +931,14 @@ test "pool bounds precede physical acquisition" {
     let zero = Duration(value: 0.rat(), unit: DurationUnit.second);
     let one = Duration(value: 1.rat(), unit: DurationUnit.second);
     test.ok(try {
-        PoolOptions(2, 1, zero, zero, one);
+        PoolOptions(minimum: 2, maximum: 1, idle_timeout: zero, lifetime: zero, acquisition_timeout: one);
         false;
     }
     catch e is InvalidPoolOptions {
         true;
     });
     test.ok(try {
-        PoolOptions(0, 1, zero, zero, zero);
+        PoolOptions(minimum: 0, maximum: 1, idle_timeout: zero, lifetime: zero, acquisition_timeout: zero);
         false;
     }
     catch e is InvalidPoolOptions {
@@ -946,7 +946,7 @@ test "pool bounds precede physical acquisition" {
     });
 }
 
-object PooledPrepared does PreparedStatement, Closing {
+hidden object PooledPrepared does PreparedStatement, Closing {
     has origin is PreparedStatement;
     has lease_closed is Event;
     has readers is Atomic<@RowReading>;
@@ -978,7 +978,7 @@ object PooledPrepared does PreparedStatement, Closing {
         confirm !self.closed() else throw DbClosed.closed;
         let rows = await origin.rows(values);
         readers.replace([rows]);
-        PooledRows(rows, lease_closed);
+        PooledRows(origin: rows, lease_closed: lease_closed);
     }
 
     destroy {
@@ -986,7 +986,7 @@ object PooledPrepared does PreparedStatement, Closing {
     }
 }
 
-object DbUnpublishedPrepared {
+hidden object DbUnpublishedPrepared {
     has origin is PreparedStatement;
     has published is Event;
 

@@ -63,11 +63,11 @@ object HtmlTemplate {
     }
 
     write(data is Json, destination is WritingText) is void {
-        let instructions = HtmlTemplateProgram(origin, maximum_input, maximum_nodes).instructions();
-        let output = TemplateSectionOutput(destination, maximum_output);
+        let instructions = HtmlTemplateProgram(source: origin, maximum_input: maximum_input, maximum_nodes: maximum_nodes).instructions();
+        let output = TemplateSectionOutput(destination: destination, maximum: maximum_output);
         for instructions -> instruction {
             if instruction.variable() {
-                let value = JsonTemplateStrings(data, 1024, output.remaining()).string(
+                let value = JsonTemplateStrings(origin: data, maximum_members: 1024, maximum_output: output.remaining()).string(
                     instruction.text()
                 );
                 output.append(EscapedHtml(origin: value, quotes: instruction.quotes()).string());
@@ -82,7 +82,7 @@ object HtmlTemplate {
 // Internal verified rendering plan. HTML sees the literals after template
 // comments/escapes have been resolved; variables leave their lexical context
 // unchanged. Each instruction retains its escaping policy; no data is inspected.
-object HtmlTemplateInstruction {
+hidden object HtmlTemplateInstruction {
     has content is string;
     has named, quoted is bool;
 
@@ -105,7 +105,7 @@ object HtmlTemplateInstruction {
     }
 }
 
-object HtmlTemplateProgram {
+hidden object HtmlTemplateProgram {
     has source is string;
     has maximum_input, maximum_nodes is int;
 
@@ -116,7 +116,7 @@ object HtmlTemplateProgram {
     }
 
     instructions() is @HtmlTemplateInstruction {
-        let instructions = TemplateProgram(source, maximum_input, maximum_nodes, true).instructions();
+        let instructions = TemplateProgram(source: source, maximum_input: maximum_input, maximum_nodes: maximum_nodes, structured: true).instructions();
         confirm source.split(Utf8Decoded([byte(0)]).string()).size() == 1
             else throw InvalidHtmlTemplate.because("NUL in source");
         let plan = instructions.reduce(HtmlTemplatePlan()) -> previous, instruction {
@@ -128,7 +128,7 @@ object HtmlTemplateProgram {
 
 // Internal successor accumulation keeps immutable contexts and persistent plan
 // tails together. No mutable fields or captured accumulators are required.
-object HtmlTemplatePlan {
+hidden object HtmlTemplatePlan {
     has context is HtmlTemplateContext;
     has items is List<HtmlTemplateInstruction>;
 
@@ -159,7 +159,7 @@ object HtmlTemplatePlan {
         };
         ^context = following;
         ^items = items.prefix(
-            HtmlTemplateInstruction(instruction.text(), instruction.variable(), quotes)
+            HtmlTemplateInstruction(text: instruction.text(), variable: instruction.variable(), quotes: quotes)
         );
     }
 
@@ -175,7 +175,7 @@ object HtmlTemplatePlan {
     }
 }
 
-object HtmlTemplateContext {
+hidden object HtmlTemplateContext {
     has state is HtmlTemplateState;
 
     HtmlTemplateContext() {
@@ -198,7 +198,7 @@ object HtmlTemplateContext {
 // Internal immutable lexical context. Names are bounded at 128 ASCII scalars;
 // the stack at 64. following() returns the next context without mutating this
 // one. The full constructor is infrastructure, not an application data schema.
-object HtmlTemplateState {
+hidden object HtmlTemplateState {
     has mode, tag, attribute, quote, pending is string;
     has stack is List<string>;
 
@@ -730,7 +730,7 @@ object HtmlTemplateState {
 }
 
 // Internal ASCII lexical observations, deliberately not Unicode case folding.
-object HtmlTemplateCharacter {
+hidden object HtmlTemplateCharacter {
     has origin is string;
 
     HtmlTemplateCharacter(origin is string) {

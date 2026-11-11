@@ -48,7 +48,7 @@ object JsonTemplateStrings does TemplateStrings {
             self.scalar(TemplatePath(["."]), 1);
         }
         else {
-            self.string(TemplatePathFromString(path).value());
+            self.string(TemplatePathFromString(path).path());
         }
     }
 
@@ -136,7 +136,7 @@ test "dotted paths read scalars of a Json" {
     );
     test.is(
         try {
-            JsonTemplateStrings(data, 1, 100).string("name");
+            JsonTemplateStrings(origin: data, maximum_members: 1, maximum_output: 100).string("name");
             false;
         }
         catch e is TemplateJsonLimitExceeded {

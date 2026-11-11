@@ -45,7 +45,7 @@ object EnvironmentSettings does SettingReading {
         let entries is @SettingEntry = mapping.filter() -> binding {
             environment.membership(binding.name());
         }.map() -> binding {
-            SettingEntry(binding.key(), [environment.variable(binding.name())], source);
+            SettingEntry(key: binding.key(), values: [environment.variable(binding.name())], source: source);
         };
         origin = Settings(entries);
     }

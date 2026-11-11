@@ -21,7 +21,7 @@ role Generated<T> {
 
 // Stable reproduction text identifies a shrink candidate. Sorting cached keys
 // avoids quadratic membership scans and never reflects into arbitrary T.
-object ReductionEntry<T> {
+hidden object ReductionEntry<T> {
     has index is int;
     has text is string;
     has generated is Generated<T>;
@@ -40,12 +40,12 @@ object ReductionEntry<T> {
         text;
     }
 
-    value() is Generated<T> {
+    generated() is Generated<T> {
         generated;
     }
 }
 
-object DistinctReductions<T> does Sequencing<Generated<T>> {
+hidden object DistinctReductions<T> does Sequencing<Generated<T>> {
     has values is @Generated<T>;
 
     DistinctReductions(origin is Sequencing<Generated<T>>, parent is string) {
@@ -62,7 +62,7 @@ object DistinctReductions<T> does Sequencing<Generated<T>> {
             confirm amount <= 1048576
                 else throw InvalidGeneration.because("reduction reproduction budget");
             scalars.replace(amount);
-            ReductionEntry(index, text, value);
+            ReductionEntry(index: index, text: text, generated: value);
         };
         let sorted is SortedBy<ReductionEntry<T>, string> = SortedBy(
             origin: entries,
@@ -92,7 +92,7 @@ object DistinctReductions<T> does Sequencing<Generated<T>> {
             }
         );
         let values is @Generated<T> = (0..ordered.size()).map() -> index {
-            ordered.item(index).value();
+            ordered.item(index).generated();
         };
         self.values = values;
     }
@@ -158,7 +158,7 @@ object BooleanGeneration does Generation<bool> {
     }
 }
 
-object GeneratedBoolean does Generated<bool> {
+hidden object GeneratedBoolean does Generated<bool> {
     has origin is bool;
 
     GeneratedBoolean(origin is bool) {
@@ -229,11 +229,11 @@ object IntegerGeneration does Generation<int> {
         else {
             upper.int();
         };
-        GeneratedInteger(random.integer(start, stop), target);
+        GeneratedInteger(origin: random.integer(start, stop), target: target);
     }
 }
 
-object GeneratedInteger does Generated<int> {
+hidden object GeneratedInteger does Generated<int> {
     has origin, target is int;
 
     GeneratedInteger(origin is int, target is int) {
@@ -256,10 +256,10 @@ object GeneratedInteger does Generated<int> {
         }
         let middle = ((origin.rat() + target.rat()) / 2.rat()).int();
         if middle == origin || middle == target {
-            [GeneratedInteger(target, target)];
+            [GeneratedInteger(origin: target, target: target)];
         }
         else {
-            [GeneratedInteger(target, target), GeneratedInteger(middle, target)];
+            [GeneratedInteger(origin: target, target: target), GeneratedInteger(origin: middle, target: target)];
         }
     }
 }
@@ -287,7 +287,7 @@ object FiniteFloatGeneration does Generation<float> {
     sample(random is Randomizing, size is int) is Generated<float> {
         GenerationSize(size);
         if size == 0 || minimum == maximum {
-            return GeneratedFloat(target, target);
+            return GeneratedFloat(origin: target, target: target);
         }
         let part = random.float();
         let candidate = if minimum < 0.0 && maximum > 0.0 {
@@ -311,11 +311,11 @@ object FiniteFloatGeneration does Generation<float> {
                 sampled;
             }
         };
-        GeneratedFloat(bounded, target);
+        GeneratedFloat(origin: bounded, target: target);
     }
 }
 
-object GeneratedFloat does Generated<float> {
+hidden object GeneratedFloat does Generated<float> {
     has origin, target is float;
 
     GeneratedFloat(origin is float, target is float) {
@@ -338,10 +338,10 @@ object GeneratedFloat does Generated<float> {
         }
         let middle = origin / 2.0 + target / 2.0;
         if middle == origin || middle == target {
-            [GeneratedFloat(target, target)];
+            [GeneratedFloat(origin: target, target: target)];
         }
         else {
-            [GeneratedFloat(target, target), GeneratedFloat(middle, target)];
+            [GeneratedFloat(origin: target, target: target), GeneratedFloat(origin: middle, target: target)];
         }
     }
 }
@@ -361,11 +361,11 @@ object ElementGeneration<T> does Generation<T> {
 
     sample(random is Randomizing, size is int) is Generated<T> {
         GenerationSize(size);
-        GeneratedChoice(origin, random.integer(0, origin.size()));
+        GeneratedChoice(origin: origin, position: random.integer(0, origin.size()));
     }
 }
 
-object GeneratedChoice<T> does Generated<T> {
+hidden object GeneratedChoice<T> does Generated<T> {
     has origin is @GeneratedElement<T>;
     has position is int;
 
@@ -390,7 +390,7 @@ object GeneratedChoice<T> does Generated<T> {
             empty;
         }
         else {
-            [GeneratedChoice(origin, 0)];
+            [GeneratedChoice(origin: origin, position: 0)];
         }
     }
 }
@@ -413,14 +413,14 @@ object FilteredGeneration<T> does Generation<T> {
         for (0..attempts) -> index {
             let sample = origin.sample(random, size);
             if condition(sample.value()) {
-                return FilteredGenerated(sample, condition);
+                return FilteredGenerated(origin: sample, condition: condition);
             }
         }
         throw GenerationExhausted.attempts(attempts);
     }
 }
 
-object FilteredGenerated<T> does Generated<T> {
+hidden object FilteredGenerated<T> does Generated<T> {
     has origin is Generated<T>;
     has condition is (T) is bool;
 
@@ -439,8 +439,8 @@ object FilteredGenerated<T> does Generated<T> {
 
     reductions() is Sequencing<Generated<T>> {
         let source is DistinctReductions<T> = DistinctReductions(
-            origin.reductions(),
-            origin.string()
+            origin: origin.reductions(),
+            parent: origin.string()
         );
         let size = source.size();
         let values is @Generated<T> = (0..size).map() -> index {
@@ -450,7 +450,7 @@ object FilteredGenerated<T> does Generated<T> {
             condition(candidate.value());
         };
         let reduced is @Generated<T> = allowed.map() -> candidate {
-            FilteredGenerated(candidate, condition);
+            FilteredGenerated(origin: candidate, condition: condition);
         };
         reduced;
     }
@@ -484,12 +484,12 @@ object SequenceGeneration<T> does Generation<Sequencing<T>> {
         let items is @Generated<T> = (0..count).map() -> index {
             origin.sample(random, size);
         };
-        let generated is GeneratedSequence<T> = GeneratedSequence(items, minimum);
+        let generated is GeneratedSequence<T> = GeneratedSequence(origin: items, minimum: minimum);
         generated;
     }
 }
 
-object GeneratedSequence<T> does Generated<Sequencing<T>> {
+hidden object GeneratedSequence<T> does Generated<Sequencing<T>> {
     has origin is @Generated<T>;
     has values is @T;
     has representations is @string;
@@ -570,8 +570,8 @@ object GeneratedSequence<T> does Generated<Sequencing<T>> {
                 }
             };
             let choice is SequenceElementReduction<T> = SequenceElementReduction(
-                index,
-                replacements
+                index: index,
+                replacements: replacements
             );
             choice;
         };
@@ -579,16 +579,16 @@ object GeneratedSequence<T> does Generated<Sequencing<T>> {
             choice.available();
         };
         let reductions is SequenceReductions<T> = SequenceReductions(
-            origin,
-            minimum,
-            lengths,
-            available
+            origin: origin,
+            minimum: minimum,
+            lengths: lengths,
+            replacements: available
         );
         reductions;
     }
 }
 
-object SequenceElementReduction<T> {
+hidden object SequenceElementReduction<T> {
     has index is int;
     has replacements is @Generated<T>;
 
@@ -605,14 +605,14 @@ object SequenceElementReduction<T> {
         index;
     }
 
-    value() is Generated<T> {
+    generated() is Generated<T> {
         replacements.first();
     }
 }
 
 // Plans retain O(n) state. A requested candidate alone copies O(n) elements;
 // merely obtaining reductions never constructs a quadratic tree of sequences.
-object SequenceReductions<T> does Sequencing<Generated<Sequencing<T>>> {
+hidden object SequenceReductions<T> does Sequencing<Generated<Sequencing<T>>> {
     has origin is @Generated<T>;
     has minimum is int;
     has lengths is @int;
@@ -646,14 +646,14 @@ object SequenceReductions<T> does Sequencing<Generated<Sequencing<T>>> {
             let change = replacements[index - lengths.size()];
             (0..origin.size()).map() -> at {
                 if at == change.index() {
-                    change.value();
+                    change.generated();
                 }
                 else {
                     origin[at];
                 }
             };
         };
-        let generated is GeneratedSequence<T> = GeneratedSequence(items, minimum);
+        let generated is GeneratedSequence<T> = GeneratedSequence(origin: items, minimum: minimum);
         generated;
     }
 
@@ -666,12 +666,12 @@ object SequenceReductions<T> does Sequencing<Generated<Sequencing<T>>> {
     }
 
     cursor() is Cursor<Generated<Sequencing<T>>> {
-        let cursor is SequenceReductionCursor<T> = SequenceReductionCursor(self, 0);
+        let cursor is SequenceReductionCursor<T> = SequenceReductionCursor(origin: self, position: 0);
         cursor;
     }
 }
 
-object SequenceReductionCursor<T> does Cursor<Generated<Sequencing<T>>> {
+hidden object SequenceReductionCursor<T> does Cursor<Generated<Sequencing<T>>> {
     has origin is SequenceReductions<T>;
     has position is int;
 
@@ -691,7 +691,7 @@ object SequenceReductionCursor<T> does Cursor<Generated<Sequencing<T>>> {
 
     successor() is Cursor<Generated<Sequencing<T>>> {
         confirm self.available() else throw IterationEnded.ended;
-        SequenceReductionCursor(origin, position + 1);
+        SequenceReductionCursor(origin: origin, position: position + 1);
     }
 }
 
@@ -700,5 +700,5 @@ enum GenerationExhausted is Error = (attempts(attempts is int));
 enum InvalidGeneration is Error = (because(reason is string));
 
 test "zero complexity generates the admissible integer target" {
-    test.is(IntegerGeneration(-10, 11).sample(PcgRandom(42), 0).value(), 0);
+    test.is(IntegerGeneration(minimum: -10, maximum: 11).sample(PcgRandom(42), 0).value(), 0);
 }

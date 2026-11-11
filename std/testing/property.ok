@@ -36,7 +36,7 @@ object PropertyReproduction {
     }
 }
 
-object PropertyObservation {
+hidden object PropertyObservation {
     has passed, typed_error is bool;
     has description is string;
 
@@ -111,7 +111,7 @@ object Property<T> does Checking {
                     self.shrink(generated, shrink_limit);
                 };
                 test.fail(
-                    "property failed: " + PropertyReproduction(seed, index, size, reduced.string()).string() + " " + observation.description()
+                    "property failed: " + PropertyReproduction(seed: seed, case_index: index, size: size, value: reduced.string()).string() + " " + observation.description()
                 );
                 return;
             }
@@ -121,7 +121,7 @@ object Property<T> does Checking {
     hidden observe(value is T) is PropertyObservation {
         try {
             let result = condition(value);
-            PropertyObservation(result, false, if result {
+            PropertyObservation(passed: result, typed_error: false, description: if result {
                 "passed";
             }
             else {
@@ -132,7 +132,7 @@ object Property<T> does Checking {
             throw;
         }
         catch error is Error {
-            PropertyObservation(false, true, "typed error: " + error.text());
+            PropertyObservation(passed: false, typed_error: true, description: "typed error: " + error.text());
         }
     }
 
@@ -222,7 +222,7 @@ object AsyncProperty<T> does AsyncChecking {
                     await shrink(generated, shrink_limit);
                 };
                 test.fail(
-                    "property failed: " + PropertyReproduction(seed, index, size, reduced.string()).string() + " " + observation.description()
+                    "property failed: " + PropertyReproduction(seed: seed, case_index: index, size: size, value: reduced.string()).string() + " " + observation.description()
                 );
                 return;
             }
@@ -232,7 +232,7 @@ object AsyncProperty<T> does AsyncChecking {
     hidden async observe(value is T) is PropertyObservation {
         try {
             let result = await condition(value);
-            PropertyObservation(result, false, if result {
+            PropertyObservation(passed: result, typed_error: false, description: if result {
                 "passed";
             }
             else {
@@ -243,7 +243,7 @@ object AsyncProperty<T> does AsyncChecking {
             throw;
         }
         catch error is Error {
-            PropertyObservation(false, true, "typed error: " + error.text());
+            PropertyObservation(passed: false, typed_error: true, description: "typed error: " + error.text());
         }
     }
 
@@ -285,7 +285,7 @@ object AsyncProperty<T> does AsyncChecking {
 
 test "seeded property checks a configured invariant" {
     let check is Property<int> = Property(
-        IntegerGeneration(0, 10),
+        IntegerGeneration(minimum: 0, maximum: 10),
         42,
         10,
         10,

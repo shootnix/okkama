@@ -49,7 +49,7 @@ object RedactedLogs does LogWriting {
         else {
             [];
         };
-        origin.write(ChangedLogRecord(record, LogFields(fields), causes).value());
+        origin.write(ChangedLogRecord(origin: record, fields: LogFields(fields), causes: causes).record());
     }
 }
 
@@ -69,13 +69,13 @@ object RedactedCauseLogs does LogWriting {
         else {
             [];
         };
-        origin.write(ChangedLogRecord(record, record.context().fields(), causes).value());
+        origin.write(ChangedLogRecord(origin: record, fields: record.context().fields(), causes: causes).record());
     }
 }
 
 enum RedactedLogCause is Error = (origin(origin is string));
 
-object ChangedLogRecord {
+hidden object ChangedLogRecord {
     has origin is LogRecord;
     has fields is LogFields;
     has causes is @Error;
@@ -87,29 +87,29 @@ object ChangedLogRecord {
         self.causes = causes;
     }
 
-    value() is LogRecord {
-        let context = LogContext(origin.context().name(), fields, origin.context().process());
+    record() is LogRecord {
+        let context = LogContext(name: origin.context().name(), fields: fields, process: origin.context().process());
         if causes.size() == 0 {
-            LogRecord(origin.time(), origin.level(), origin.message(), context);
+            LogRecord(occurred: origin.time(), level: origin.level(), message: origin.message(), context: context);
         }
         else {
-            LogRecord(origin.time(), origin.level(), origin.message(), context, causes[0]);
+            LogRecord(occurred: origin.time(), level: origin.level(), message: origin.message(), context: context, cause: causes[0]);
         }
     }
 }
 
 test "redaction replaces the named members and keeps the rest in order" {
     let collected = CollectedLogs();
-    let redacted = RedactedLogs(collected, ["pass", "token"], Json("***"));
+    let redacted = RedactedLogs(origin: collected, names: ["pass", "token"], replacement: Json("***"));
     let time = Instant(Duration(value: 0.rat(), unit: DurationUnit.second));
     let fields = LogFields([JsonField("user", "ann"), JsonField("id", 7), JsonField("pass", "x")]);
-    redacted.write(LogRecord(time, LogLevel.info, "hi", LogContext(LogName(["app"]), fields, 1)));
+    redacted.write(LogRecord(occurred: time, level: LogLevel.info, message: "hi", context: LogContext(LogName(["app"]), fields, 1)));
     redacted.write(
         LogRecord(
-            time,
-            LogLevel.info,
-            "hi",
-            LogContext(LogName(["app"]), EmptyLogFields().value(), 1)
+            occurred: time,
+            level: LogLevel.info,
+            message: "hi",
+            context: LogContext(LogName(["app"]), EmptyLogFields().fields(), 1)
         )
     );
     let texts is @string = collected.records().map() -> record {

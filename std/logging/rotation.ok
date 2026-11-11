@@ -80,7 +80,7 @@ object LogArchive {
 // The prefix is reserved to this sink. Recover generation and retention after
 // restart from regular files only; never follow archive symlinks. Each rename
 // is atomic on supporting filesystems, not the entire retention transaction.
-object LogArchiveCatalog {
+hidden object LogArchiveCatalog {
     has path is Path;
 
     LogArchiveCatalog(path is Path) {
@@ -126,7 +126,7 @@ object LogArchiveCatalog {
                         else throw InvalidLogRotation.because(
                             "archive namespace contains a non-regular file"
                         );
-                    old.prefix(LogArchive(entry, BigInt(parts[0])));
+                    old.prefix(LogArchive(path: entry, generation: BigInt(parts[0])));
                 }
                 else {
                     old;
@@ -198,7 +198,7 @@ object RotatingLogFile does Writing, Closing {
         confirm backups >= 0 && backups <= 4096
             else throw InvalidLogRotation.because("backup count must be in 0..4096");
         self.path = path;
-        file = LogFileState(path, options);
+        file = LogFileState(path: path, options: options);
         self.rotation = rotation;
         self.backups = backups;
         self.clock = clock;

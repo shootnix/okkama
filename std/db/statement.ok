@@ -61,7 +61,7 @@ object DbValueSnapshot {
             value;
         };
         origin = snapshot.map() -> value {
-            value.value();
+            value.cell();
         };
         cells = snapshot.map() -> value {
             value.state();
@@ -83,22 +83,22 @@ object Statement {
     has cells is @native_db.DbCellState;
 
     Statement(text is string) {
-        self.text = DbSqlText(text, DbLimits()).string();
+        self.text = DbSqlText(origin: text, limits: DbLimits()).string();
         values = [];
         cells = [];
     }
 
     Statement(text is string, values is Sequencing<DbValue>) {
         let limits = DbLimits();
-        self.text = DbSqlText(text, limits).string();
-        let snapshot = DbValueSnapshot(values, limits);
+        self.text = DbSqlText(origin: text, limits: limits).string();
+        let snapshot = DbValueSnapshot(values: values, limits: limits);
         self.values = snapshot.values();
         cells = snapshot.cells();
     }
 
     Statement(text is string, values is Sequencing<DbValue>, limits is DbLimits) {
-        self.text = DbSqlText(text, limits).string();
-        let snapshot = DbValueSnapshot(values, limits);
+        self.text = DbSqlText(origin: text, limits: limits).string();
+        let snapshot = DbValueSnapshot(values: values, limits: limits);
         self.values = snapshot.values();
         cells = snapshot.cells();
     }
@@ -116,7 +116,7 @@ object Statement {
     }
 }
 
-object DbSqlText {
+hidden object DbSqlText {
     has origin is string;
 
     DbSqlText(origin is string, limits is DbLimits) {

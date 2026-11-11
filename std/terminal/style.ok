@@ -32,7 +32,7 @@ object NamedColor does TerminalColor {
         self.value = value;
     }
 
-    value() is BasicColor {
+    color() is BasicColor {
         value;
     }
 
@@ -80,7 +80,7 @@ object IndexedColor does TerminalColor {
         self.value = value;
     }
 
-    value() is int {
+    index() is int {
         value;
     }
 
@@ -128,7 +128,7 @@ object RgbColor does TerminalColor {
     }
 
     code(depth is TerminalColorDepth, background is bool) is string {
-        let color = ColorRgb(red.int(), green.int(), blue.int());
+        let color = ColorRgb(red: red.int(), green: green.int(), blue: blue.int());
         if depth == TerminalColorDepth.true_color {
             let prefix = if background {
                 "48;2;";
@@ -154,7 +154,7 @@ object RgbColor does TerminalColor {
     }
 }
 
-object IndexedRgb {
+hidden object IndexedRgb {
     has origin is ColorRgb;
 
     IndexedRgb(index is int) {
@@ -178,20 +178,20 @@ object IndexedRgb {
                 [0, 255, 255],
                 [255, 255, 255]
             ];
-            origin = ColorRgb(palette[index][0], palette[index][1], palette[index][2]);
+            origin = ColorRgb(red: palette[index][0], green: palette[index][1], blue: palette[index][2]);
         }
         else {
             if index < 232 {
                 let at = index - 16;
                 origin = ColorRgb(
-                    levels[(at / 36).int()],
-                    levels[((at % 36) / 6).int()],
-                    levels[at % 6]
+                    red: levels[(at / 36).int()],
+                    green: levels[((at % 36) / 6).int()],
+                    blue: levels[at % 6]
                 );
             }
             else {
                 let component = 8 + 10 * (index - 232);
-                origin = ColorRgb(component, component, component);
+                origin = ColorRgb(red: component, green: component, blue: component);
             }
         }
     }
@@ -201,7 +201,7 @@ object IndexedRgb {
     }
 }
 
-object ColorRgb {
+hidden object ColorRgb {
     has red, green, blue is int;
 
     ColorRgb(red is int, green is int, blue is int) {
@@ -221,7 +221,7 @@ object ColorRgb {
             [0, 128, 128],
             [192, 192, 192]
         ];
-        let best = (0..8).reduce(ColorDistance(0, 195076)) -> old, index {
+        let best = (0..8).reduce(ColorDistance(index: 0, distance: 195076)) -> old, index {
             old.closer(
                 index,
                 self.distance(palette[index][0], palette[index][1], palette[index][2])
@@ -231,9 +231,9 @@ object ColorRgb {
     }
 
     indexed() is int {
-        let r = ColorCubeIndex(red).value();
-        let g = ColorCubeIndex(green).value();
-        let b = ColorCubeIndex(blue).value();
+        let r = ColorCubeIndex(red).index();
+        let g = ColorCubeIndex(green).index();
+        let b = ColorCubeIndex(blue).index();
         let levels = [0, 95, 135, 175, 215, 255];
         let cube = 16 + 36 * r + 6 * g + b;
         let avg = ((red + green + blue) / 3).int();
@@ -267,7 +267,7 @@ object ColorRgb {
     }
 }
 
-object ColorCubeIndex {
+hidden object ColorCubeIndex {
     has index is int;
 
     ColorCubeIndex(component is int) {
@@ -299,12 +299,12 @@ object ColorCubeIndex {
         };
     }
 
-    value() is int {
+    index() is int {
         index;
     }
 }
 
-object ColorDistance {
+hidden object ColorDistance {
     has at, distance is int;
 
     ColorDistance(index is int, distance is int) {

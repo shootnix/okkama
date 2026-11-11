@@ -22,11 +22,11 @@ async main() is int {
     defer await connection.settled();
     defer connection.close();
     await connection.execution(Statement("CREATE TABLE users(email TEXT UNIQUE)"));
-    await connection.execution(Statement("INSERT INTO users VALUES(?)", [DbText("a@x")]));
+    await connection.execution(Statement(text: "INSERT INTO users VALUES(?)", values: [DbText("a@x")]));
     let outcome = try {
         let tx = await connection.transaction(TransactionOptions());
         defer Cleaner().fail();
-        await tx.execution(Statement("INSERT INTO users VALUES(?)", [DbText("a@x")]));
+        await tx.execution(Statement(text: "INSERT INTO users VALUES(?)", values: [DbText("a@x")]));
         let done = await tx.commit();
         "committed";
     } catch e is DbFailure {

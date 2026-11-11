@@ -199,14 +199,14 @@ enum IncompatibleCollation is Error = (incompatible);
 
 test "numeric collation is explicit" {
     let options = CollationOptions(
-        CollationStrength.tertiary,
-        CollationCaseFirst.locale_default,
-        true,
-        true
+        strength: CollationStrength.tertiary,
+        case_first: CollationCaseFirst.locale_default,
+        numeric: true,
+        normalization: true
     );
     test.is(
-        CollatedString("file2", Locale("en"), options).order(
-            CollatedString("file10", Locale("en"), options)
+        CollatedString(origin: "file2", locale: Locale("en"), options: options).order(
+            CollatedString(origin: "file10", locale: Locale("en"), options: options)
         ),
         Order.less
     );

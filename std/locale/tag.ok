@@ -12,14 +12,14 @@ object Locale does Comparing<Locale> {
     has tag is LanguageTagValue;
 
     Locale(language is string) {
-        tag = CompleteLanguageTag(language).value();
+        tag = CompleteLanguageTag(language).tag();
     }
 
     Locale(language is string, region is string) {
         confirm LocaleSubtag(language).language()
             else throw InvalidLocale.located(0, "invalid primary language");
         confirm LocaleSubtag(region).region() else throw InvalidLocale.located(0, "invalid region");
-        tag = CompleteLanguageTag(language + "-" + region).value();
+        tag = CompleteLanguageTag(language + "-" + region).tag();
     }
 
     Locale(language is string, script is string, region is string, variants is Sequencing<string>) {
@@ -46,7 +46,7 @@ object Locale does Comparing<Locale> {
         else {
             "-" + items.join("-");
         });
-        tag = CompleteLanguageTag(source).value();
+        tag = CompleteLanguageTag(source).tag();
     }
 
     language() is string {
@@ -109,14 +109,14 @@ object LocaleFromLanguageTag {
         self.origin = origin;
     }
 
-    value() is Locale {
+    locale() is Locale {
         Locale(origin);
     }
 }
 
 // Internal bounded nominal source snapshot. No cursor/first/last calls and no
 // later source reads. Duplicate comparison uses the normalized complete spelling.
-object LocaleVariantSnapshot {
+hidden object LocaleVariantSnapshot {
     has origin is @string;
 
     LocaleVariantSnapshot(source is Sequencing<string>) {
@@ -386,7 +386,7 @@ object LanguageExtension {
     }
 }
 
-object LanguageTagParts {
+hidden object LanguageTagParts {
     has values is @string;
 
     LanguageTagParts(values is @string) {
@@ -407,7 +407,7 @@ object CompleteLanguageTag {
         self.origin = origin;
     }
 
-    value() is LanguageTagValue {
+    tag() is LanguageTagValue {
         let parsed = self.parse(origin, IanaLanguages(), 0);
         confirm parsed.string().length() <= 255
             else throw InvalidLocale.located(255, "canonical tag length");
@@ -430,7 +430,7 @@ object CompleteLanguageTag {
             return self.parse(preferred, registry, depth + 1);
         }
         if registry.grandfathered(lower) {
-            return LanguageTagValue("", [], "", "", [], [], [], lower);
+            return LanguageTagValue(language: "", extlangs: [], script: "", region: "", variants: [], extensions: [], private_use: [], opaque: lower);
         }
         let parts = lower.split("-");
         let source = LanguageTagParts(parts);
@@ -442,7 +442,7 @@ object CompleteLanguageTag {
                     else throw InvalidLocale.located(source.offset(index), "private-use subtag");
                 parts[index];
             };
-            return LanguageTagValue("", [], "", "", [], [], private_use, "");
+            return LanguageTagValue(language: "", extlangs: [], script: "", region: "", variants: [], extensions: [], private_use: private_use, opaque: "");
         }
         confirm LocaleSubtag(parts[0]).language()
             else throw InvalidLocale.located(0, "primary language");
@@ -536,29 +536,29 @@ object CompleteLanguageTag {
             sorted.item(index);
         };
         LanguageTagValue(
-            LocaleSubtag(language).lower(),
-            kept,
-            if has_script {
+            language: LocaleSubtag(language).lower(),
+            extlangs: kept,
+            script: if has_script {
                 LocaleSubtag(registry.alias("script", parts[script_at])).title();
             }
             else {
                 "";
             },
-            if has_region {
+            region: if has_region {
                 LocaleSubtag(registry.alias("region", parts[region_at])).upper();
             }
             else {
                 "";
             },
-            canonical,
-            extensions,
-            suffix.private_use(),
-            ""
+            variants: canonical,
+            extensions: extensions,
+            private_use: suffix.private_use(),
+            opaque: ""
         );
     }
 }
 
-object LanguageTagSuffixValue {
+hidden object LanguageTagSuffixValue {
     has extensions is @LanguageExtension;
     has private_use is @string;
 
@@ -576,7 +576,7 @@ object LanguageTagSuffixValue {
     }
 }
 
-object LanguageTagSuffix {
+hidden object LanguageTagSuffix {
     has parts is @string;
 
     LanguageTagSuffix(parts is @string) {
@@ -585,7 +585,7 @@ object LanguageTagSuffix {
 
     parsed(start is int, seen is @string) is LanguageTagSuffixValue {
         if start == parts.size() {
-            return LanguageTagSuffixValue([], []);
+            return LanguageTagSuffixValue(extensions: [], private_use: []);
         }
         let source = LanguageTagParts(parts);
         let key = parts[start];
@@ -599,7 +599,7 @@ object LanguageTagSuffix {
                     else throw InvalidLocale.located(source.offset(index), "private-use subtag");
                 parts[index];
             };
-            return LanguageTagSuffixValue([], values);
+            return LanguageTagSuffixValue(extensions: [], private_use: values);
         }
         let duplicate = seen.reduce(false) -> found, item {
             found || item == key;
@@ -652,13 +652,13 @@ object LanguageTagSuffix {
         let tail = remaining.extensions();
         let extensions is @LanguageExtension = (0..tail.size() + 1).map() -> index {
             if index == 0 {
-                LanguageExtension(key, values);
+                LanguageExtension(key: key, values: values);
             }
             else {
                 tail[index - 1];
             }
         };
-        LanguageTagSuffixValue(extensions, remaining.private_use());
+        LanguageTagSuffixValue(extensions: extensions, private_use: remaining.private_use());
     }
 }
 
@@ -752,7 +752,7 @@ object UnicodeLocaleExtension {
             let values is @string = (at + 1..stop).map() -> position {
                 origin[position];
             };
-            UnicodeLocaleKeyword(key, values);
+            UnicodeLocaleKeyword(key: key, values: values);
         };
         let ordered is SortedBy<UnicodeLocaleKeyword, string> = SortedBy(
             origin: keywords,
@@ -819,7 +819,7 @@ object TransformedLocaleExtension {
             "";
         }
         else {
-            let tag = CompleteLanguageTag(language.join("-")).value();
+            let tag = CompleteLanguageTag(language.join("-")).tag();
             confirm tag.language() != ""
                 && tag.extensions().size() == 0
                 && tag.private_use().size() == 0
@@ -931,10 +931,10 @@ object LocaleExtensions {
 }
 
 test "locale normalizes complete coordinates and parses variants" {
-    test.is(Locale("EN", "us").string(), "en-US");
-    test.is(LocaleFromLanguageTag("sR-lATN-rs").value().string(), "sr-Latn-RS");
-    test.is(LocaleFromLanguageTag("de-1996").value().variants().item(0), "1996");
-    test.is(Locale("sl", "", "", ["ROZAJ", "BISKE"]).string(), "sl-rozaj-biske");
+    test.is(Locale(language: "EN", region: "us").string(), "en-US");
+    test.is(LocaleFromLanguageTag("sR-lATN-rs").locale().string(), "sr-Latn-RS");
+    test.is(LocaleFromLanguageTag("de-1996").locale().variants().item(0), "1996");
+    test.is(Locale(language: "sl", script: "", region: "", variants: ["ROZAJ", "BISKE"]).string(), "sl-rozaj-biske");
 }
 
 test "locale absence and duplicate spelling have typed diagnostics" {
@@ -950,7 +950,7 @@ test "locale absence and duplicate spelling have typed diagnostics" {
     );
     test.is(
         try {
-            LocaleFromLanguageTag("sl-rozaj-ROZAJ").value();
+            LocaleFromLanguageTag("sl-rozaj-ROZAJ").locale();
             -1;
         }
         catch InvalidLocale.located(offset, _) {
@@ -963,7 +963,7 @@ test "locale absence and duplicate spelling have typed diagnostics" {
 test "POSIX forms stay separate from BCP 47" {
     for ["en_US", "en.UTF-8", "de@euro"] -> source {
         test.ok(try {
-            LocaleFromLanguageTag(source).value();
+            LocaleFromLanguageTag(source).locale();
             false;
         }
         catch e is InvalidLocale {

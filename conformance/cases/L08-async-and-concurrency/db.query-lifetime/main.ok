@@ -22,13 +22,13 @@ object WaitingRows does RowReading {
     async ready() is void { await started.wait(); }
     release() is void { released.set(); }
     count() is int { closes.value(); }
-    columns() is Sequencing<Column> { [Column(0,"id","")]; }
+    columns() is Sequencing<Column> { [Column(index: 0,name: "id",declaration: "")]; }
     closed() is bool { closes.value()>0; }
     close() is void { closes.replace(closes.value()+1);if fail_close { throw CloseFailure.close_failure; } }
     async row() is Row {
         started.set();await released.wait();
         if fail_read { throw ProbeFailure.probe_failure; }
-        Row([Column(0,"id","")],[DbInteger(BigInt("1"))]);
+        Row(columns: [Column(0,"id","")],values: [DbInteger(BigInt("1"))]);
     }
 }
 object ReadTask {

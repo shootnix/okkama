@@ -60,7 +60,7 @@ object SystemLanguagePreferences does PreferredLanguageReading {
         else {
             [];
         };
-        origin = FixedLanguagePreferences(tags, owned);
+        origin = FixedLanguagePreferences(origin: tags, platform_owned: owned);
     }
 
     platform_owned() is bool {
@@ -76,11 +76,11 @@ object PreferredLocales does Sequencing<Locale> {
     has origin is @Locale;
 
     PreferredLocales(origin is Environment) {
-        self.origin = PreferredLocalePolicy(origin, SystemLanguagePreferences()).values();
+        self.origin = PreferredLocalePolicy(environment: origin, preferences: SystemLanguagePreferences()).values();
     }
 
     PreferredLocales(origin is Environment, preferences is PreferredLanguageReading) {
-        self.origin = PreferredLocalePolicy(origin, preferences).values();
+        self.origin = PreferredLocalePolicy(environment: origin, preferences: preferences).values();
     }
 
     size() is int {
@@ -115,7 +115,7 @@ object PreferredLocalePolicy {
 
     values() is @Locale {
         if preferences.platform_owned() {
-            return self.parsed(FixedLanguagePreferences(preferences.tags(), true).tags(), false);
+            return self.parsed(FixedLanguagePreferences(origin: preferences.tags(), platform_owned: true).tags(), false);
         }
         if environment.membership("LANGUAGE") {
             let text = environment.variable("LANGUAGE");
@@ -168,7 +168,7 @@ object PreferredLocalePolicy {
                 else {
                     text;
                 };
-                LocaleFromLanguageTag(tag).value().string();
+                LocaleFromLanguageTag(tag).locale().string();
             }
             catch error is InvalidLocale {
                 "";
@@ -181,13 +181,13 @@ object PreferredLocalePolicy {
             spellings[index] != "" && !duplicate;
         };
         let values is @Locale = positions.map() -> index {
-            LocaleFromLanguageTag(spellings[index]).value();
+            LocaleFromLanguageTag(spellings[index]).locale();
         };
         values;
     }
 }
 
-object PosixLanguageTag {
+hidden object PosixLanguageTag {
     has origin is string;
 
     PosixLanguageTag(origin is string) {
@@ -217,7 +217,7 @@ object PosixLanguageTag {
     }
 }
 
-object PosixLocaleSuffix {
+hidden object PosixLocaleSuffix {
     has origin is string;
 
     PosixLocaleSuffix(origin is string) {
@@ -244,6 +244,6 @@ enum PreferredLocaleUnavailable is Error = (because(reason is string));
 
 test "POSIX language preferences normalize without changing environment" {
     let env = Environment(["LANG": "en_US.UTF-8"]);
-    test.is(PreferredLocales(env, FixedLanguagePreferences([], false)).first().string(), "en-US");
+    test.is(PreferredLocales(origin: env, preferences: FixedLanguagePreferences([], false)).first().string(), "en-US");
     test.is(env.variable("LANG"), "en_US.UTF-8");
 }

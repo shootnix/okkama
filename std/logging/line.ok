@@ -73,7 +73,7 @@ object JsonLogLine {
     }
 }
 
-object BoundedLogJson {
+hidden object BoundedLogJson {
     has origin is Json;
 
     BoundedLogJson(origin is Json) {
@@ -91,7 +91,7 @@ object BoundedLogJson {
 
 // JSON already escapes C0. Escape remaining terminal controls and Unicode line
 // separators without altering quoting, so text and JSON remain one line.
-object PhysicalLogLine {
+hidden object PhysicalLogLine {
     has origin is string;
 
     PhysicalLogLine(origin is string) {

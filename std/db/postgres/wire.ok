@@ -203,7 +203,7 @@ object PgInput {
         }
         let kind = input.peek(0);
         input.skip(5);
-        [PgMessage(Utf8Decoded([kind]).string(), input.take(length - 4))];
+        [PgMessage(kind: Utf8Decoded([kind]).string(), body: input.take(length - 4))];
     }
 
     // Consecutive whole DataRow messages already buffered, raw (type byte,
@@ -224,7 +224,7 @@ object PgInput {
             end.replace(at + 1 + length);
             count.replace(count.value() + 1);
         }
-        PgDataRows(input.take(end.value()), count.value());
+        PgDataRows(bytes: input.take(end.value()), count: count.value());
     }
 
     async message() is PgMessage {
@@ -237,7 +237,7 @@ object PgInput {
         await self.ensure(length + 1);
         let kind = input.peek(0);
         input.skip(5);
-        PgMessage(Utf8Decoded([kind]).string(), input.take(length - 4));
+        PgMessage(kind: Utf8Decoded([kind]).string(), body: input.take(length - 4));
     }
 
     // The length of the next message, -1 when its header is not buffered.
@@ -306,7 +306,7 @@ enum PgWireFailure is Error = (because(reason is string));
 
 test "frames carry big-endian self-inclusive lengths" {
     test.is(
-        PgFrame("Q", PgCString("SELECT 1").bytes()).bytes().slice(0, 5),
+        PgFrame(kind: "Q", body: PgCString("SELECT 1").bytes()).bytes().slice(0, 5),
         [81.byte(), 0.byte(), 0.byte(), 0.byte(), 13.byte()]
     );
     test.is(

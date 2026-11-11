@@ -18,11 +18,11 @@ object FieldLogging does Logging {
     }
 
     log(level is LogLevel, message is string, fields is LogFields) is void {
-        origin.log(level, message, CombinedLogFields(self.fields, fields).value());
+        origin.log(level, message, CombinedLogFields(base: self.fields, added: fields).fields());
     }
 
     log(level is LogLevel, message is string, fields is LogFields, cause is Error) is void {
-        origin.log(level, message, CombinedLogFields(self.fields, fields).value(), cause);
+        origin.log(level, message, CombinedLogFields(base: self.fields, added: fields).fields(), cause);
     }
 }
 
@@ -35,7 +35,7 @@ object ChildLogging {
         self.segment = segment;
     }
 
-    value() is NamedLogging {
+    logging() is NamedLogging {
         origin.child(segment);
     }
 }

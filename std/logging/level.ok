@@ -39,7 +39,7 @@ object LogLevelFromName {
         self.origin = origin;
     }
 
-    value() is LogLevel {
+    level() is LogLevel {
         confirm origin.length() > 0 && origin.length() <= 8
             else throw InvalidLogLevel.origin(origin);
         let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -85,19 +85,19 @@ object LogLevelOrder {
         self.right = right;
     }
 
-    value() is Order {
-        LogLevelRank(left).value().order(LogLevelRank(right).value());
+    order() is Order {
+        LogLevelRank(left).rank().order(LogLevelRank(right).rank());
     }
 }
 
-object LogLevelRank {
+hidden object LogLevelRank {
     has origin is LogLevel;
 
     LogLevelRank(origin is LogLevel) {
         self.origin = origin;
     }
 
-    value() is int {
+    rank() is int {
         match origin {
             case LogLevel.debug {
                 0;
@@ -122,10 +122,10 @@ enum InvalidLogLevel is Error = (origin(origin is string));
 
 test "logging levels have canonical names and a portable severity order" {
     test.is(LogLevelName(LogLevel.info).string(), "INFO");
-    test.ok(LogLevelFromName("wArNiNg").value() == LogLevel.warning);
-    test.ok(LogLevelOrder(LogLevel.debug, LogLevel.critical).value() == Order.less);
+    test.ok(LogLevelFromName("wArNiNg").level() == LogLevel.warning);
+    test.ok(LogLevelOrder(left: LogLevel.debug, right: LogLevel.critical).order() == Order.less);
     test.ok(try {
-        LogLevelFromName("trace").value();
+        LogLevelFromName("trace").level();
         false;
     }
     catch e is InvalidLogLevel {

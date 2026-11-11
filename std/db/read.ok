@@ -168,7 +168,7 @@ object DbColumnReader {
         source = DbReaderSource.page(page, at);
     }
 
-    value() is DbValue {
+    cell() is DbValue {
         match source {
             case DbReaderSource.protocol(origin) {
                 origin;
@@ -200,7 +200,7 @@ object DbColumnReader {
 
     checked_int() is int {
         try {
-            let state = self.cell();
+            let state = self.native_cell();
             self.require(DbValueKind.integer);
             confirm native_db.db_int_valid(state)
                 else throw InvalidDbValue.because("integer outside int range");
@@ -213,7 +213,7 @@ object DbColumnReader {
 
     integer() is BigInt {
         try {
-            let state = self.cell();
+            let state = self.native_cell();
             self.require(DbValueKind.integer);
             BigInt(native_db.db_integer_value(state));
         }
@@ -224,7 +224,7 @@ object DbColumnReader {
 
     decimal() is Decimal {
         try {
-            let state = self.cell();
+            let state = self.native_cell();
             self.require(DbValueKind.decimal);
             Decimal(native_db.db_decimal_value(state));
         }
@@ -235,7 +235,7 @@ object DbColumnReader {
 
     floating() is float {
         try {
-            let state = self.cell();
+            let state = self.native_cell();
             self.require(DbValueKind.floating);
             native_db.db_floating_value(state);
         }
@@ -246,7 +246,7 @@ object DbColumnReader {
 
     boolean() is bool {
         try {
-            let state = self.cell();
+            let state = self.native_cell();
             self.require(DbValueKind.boolean);
             native_db.db_boolean_value(state);
         }
@@ -257,7 +257,7 @@ object DbColumnReader {
 
     flag() is bool {
         try {
-            let state = self.cell();
+            let state = self.native_cell();
             self.require(DbValueKind.integer);
             let exact = native_db.db_integer_value(state);
             confirm exact == "0" || exact == "1"
@@ -287,7 +287,7 @@ object DbColumnReader {
 
     checked_text() is string {
         try {
-            let state = self.cell();
+            let state = self.native_cell();
             self.require(DbValueKind.text);
             native_db.db_text_value(state);
         }
@@ -298,7 +298,7 @@ object DbColumnReader {
 
     bytes() is @byte {
         try {
-            let state = self.cell();
+            let state = self.native_cell();
             self.require(DbValueKind.bytes);
             native_db.db_bytes_value(state);
         }
@@ -307,7 +307,7 @@ object DbColumnReader {
         }
     }
 
-    hidden cell() is native_db.DbCellState {
+    hidden native_cell() is native_db.DbCellState {
         match source {
             case DbReaderSource.cell(state) {
                 state;
@@ -324,13 +324,13 @@ object DbColumnReader {
     hidden kind() is DbValueKind {
         match source {
             case DbReaderSource.cell(state) {
-                DbNativeKind(native_db.db_kind(state)).value();
+                DbNativeKind(native_db.db_kind(state)).kind();
             }
             case DbReaderSource.protocol(origin) {
                 origin.kind();
             }
             case DbReaderSource.page(page, at) {
-                DbNativeKind(page.kind(at)).value();
+                DbNativeKind(page.kind(at)).kind();
             }
         }
     }
@@ -347,10 +347,10 @@ object DbPresenceReader {
         self.origin = origin;
     }
 
-    value() is Presence<DbValue> {
+    cell() is Presence<DbValue> {
         match origin {
             case Presence.some(column) {
-                Presence.some(column.value());
+                Presence.some(column.cell());
             }
             case Presence.none {
                 Presence.none;
@@ -481,8 +481,8 @@ object DbMaybeReader {
         self.origin = origin;
     }
 
-    value() is Maybe<DbValue> {
-        origin.value().fold();
+    cell() is Maybe<DbValue> {
+        origin.cell().fold();
     }
 
     int() is Maybe<int> {

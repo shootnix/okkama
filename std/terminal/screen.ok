@@ -72,9 +72,9 @@ object TerminalResizeReader does TerminalResizeReading {
             await pending;
         }
         catch e is NativeFailure {
-            throw TerminalProblem(e).value();
+            throw TerminalProblem(e).error();
         };
-        TerminalSize(size[0], size[1]);
+        TerminalSize(columns: size[0], rows: size[1]);
     }
 
     closed() is bool {

@@ -12,7 +12,7 @@ role LogProcessReading {
     id() is int;
 }
 
-object CurrentLogProcess does LogProcessReading {
+hidden object CurrentLogProcess does LogProcessReading {
     CurrentLogProcess();
 
     id() is int {
@@ -57,7 +57,7 @@ object NamedLogging does Logging {
 
     log(level is LogLevel, message is string) is void {
         let empty is @Error = [];
-        self.emit(level, message, EmptyLogFields().value(), empty);
+        self.emit(level, message, EmptyLogFields().fields(), empty);
     }
 
     log(level is LogLevel, message is string, fields is LogFields) is void {
@@ -70,7 +70,7 @@ object NamedLogging does Logging {
     }
 
     child(segment is string) is NamedLogging {
-        NamedLogging(ChildLogName(name, segment).value(), destination, clock, fields, process);
+        NamedLogging(name: ChildLogName(name, segment).name(), destination: destination, clock: clock, fields: fields, process: process);
     }
 
     name() is LogName {
@@ -78,15 +78,15 @@ object NamedLogging does Logging {
     }
 
     hidden emit(level is LogLevel, message is string, fields is LogFields, causes is @Error) is void {
-        let merged = CombinedLogFields(self.fields, fields).value();
+        let merged = CombinedLogFields(base: self.fields, added: fields).fields();
         let at = clock.instant();
         let pid = process.id();
-        let context = LogContext(name, merged, pid);
+        let context = LogContext(name: name, fields: merged, process: pid);
         let record = if causes.size() == 0 {
-            LogRecord(at, level, message, context);
+            LogRecord(occurred: at, level: level, message: message, context: context);
         }
         else {
-            LogRecord(at, level, message, context, causes[0]);
+            LogRecord(occurred: at, level: level, message: message, context: context, cause: causes[0]);
         };
         destination.write(record);
     }
