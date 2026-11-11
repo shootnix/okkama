@@ -10,7 +10,7 @@ import "encoding/utf" take Utf8Decoded, Utf8Encoded, Utf16Decoded, Utf32Decoded,
     ByteOrder, InvalidUtf8, InvalidUtf16;
 import "encoding/binary" take IntegerBytes, Binary, Signedness, FloatWidth;
 import "encoding/base64" take Base64Decoded, InvalidBase64;
-import "time/rfc3339" take InstantFromRfc3339;
+import "time/rfc3339" take Rfc3339;
 import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
 
@@ -647,7 +647,7 @@ object PlistXmlDocument {
                     confirm scalar.length() >= 20
                         && scalar.slice(scalar.length() - 1, scalar.length()) == "Z"
                         else throw source.failure(token.start(), "UTC date required");
-                    PlistDate(InstantFromRfc3339(scalar).value());
+                    PlistDate(Rfc3339(scalar).instant());
                 }
                 else {
                     throw source.failure(token.start(), "unknown plist scalar");

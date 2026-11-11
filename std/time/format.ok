@@ -1,5 +1,6 @@
 module time/format v1.0.0;
 
+import "compare" take Order;
 import "time/date" take Date;
 import "time/day" take TimeOfDay;
 import "time/local_datetime" take LocalDateTime;
@@ -13,7 +14,7 @@ import "runtime/time_format" take time_pattern_invalid_offset, time_format_date,
 //         pattern: "%d/%m/%Y",
 //     ).string(); // "11/08/2026"
 //
-//     value DateFromFormat(origin: "11/08/2026", pattern: "%d/%m/%Y");
+//     FormattedDate(text: "11/08/2026", pattern: "%d/%m/%Y").date();
 //
 // Directives are `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%f` and `%%`.
 // Numeric fields have fixed widths 4/2/2/2/2/2/9. Date patterns reject time
@@ -32,6 +33,31 @@ object FormattedDate {
         self.pattern = pattern;
     }
 
+    // Reads `text` written in `pattern`.
+    FormattedDate(text is string, pattern is string) {
+        let pattern_offset is int = time_pattern_invalid_offset(
+            pattern,
+            false,
+            true,
+        );
+        confirm pattern_offset == -1
+            else throw InvalidTimePattern.located(pattern, pattern_offset);
+        let source_offset is int = time_parse_invalid_offset(
+            text,
+            pattern,
+            false,
+        );
+        confirm source_offset == -1
+            else throw InvalidFormattedDate.located(text, source_offset);
+        let parts is @int = time_parse_parts(text, pattern, false);
+        origin = Date(year: parts[0], month: parts[1], day: parts[2]);
+        self.pattern = pattern;
+    }
+
+    date() is Date {
+        origin;
+    }
+
     string() is string {
         let invalid is int = time_pattern_invalid_offset(pattern, false, false);
         confirm invalid == -1 else throw InvalidTimePattern.located(pattern, invalid);
@@ -44,35 +70,6 @@ object FormattedDate {
     }
 }
 
-object DateFromFormat {
-    has origin is string;
-    has pattern is string;
-
-    DateFromFormat(origin is string, pattern is string) {
-        self.origin = origin;
-        self.pattern = pattern;
-    }
-
-    value() is Date {
-        let pattern_offset is int = time_pattern_invalid_offset(
-            pattern,
-            false,
-            true,
-        );
-        confirm pattern_offset == -1
-            else throw InvalidTimePattern.located(pattern, pattern_offset);
-        let source_offset is int = time_parse_invalid_offset(
-            origin,
-            pattern,
-            false,
-        );
-        confirm source_offset == -1
-            else throw InvalidFormattedDate.located(origin, source_offset);
-        let parts is @int = time_parse_parts(origin, pattern, false);
-        Date(year: parts[0], month: parts[1], day: parts[2]);
-    }
-}
-
 object FormattedLocalDateTime {
     has origin is LocalDateTime;
     has pattern is string;
@@ -80,6 +77,39 @@ object FormattedLocalDateTime {
     FormattedLocalDateTime(origin is LocalDateTime, pattern is string) {
         self.origin = origin;
         self.pattern = pattern;
+    }
+
+    // Reads `text` written in `pattern`.
+    FormattedLocalDateTime(text is string, pattern is string) {
+        let pattern_offset is int = time_pattern_invalid_offset(
+            pattern,
+            true,
+            true,
+        );
+        confirm pattern_offset == -1
+            else throw InvalidTimePattern.located(pattern, pattern_offset);
+        let source_offset is int = time_parse_invalid_offset(
+            text,
+            pattern,
+            true,
+        );
+        confirm source_offset == -1
+            else throw InvalidFormattedLocalDateTime.located(text, source_offset);
+        let parts is @int = time_parse_parts(text, pattern, true);
+        origin = LocalDateTime(
+            date: Date(year: parts[0], month: parts[1], day: parts[2]),
+            time: TimeOfDay(
+                hour: parts[3],
+                minute: parts[4],
+                second: parts[5],
+                nanosecond: parts[6],
+            ),
+        );
+        self.pattern = pattern;
+    }
+
+    local_date_time() is LocalDateTime {
+        origin;
     }
 
     string() is string {
@@ -100,45 +130,25 @@ object FormattedLocalDateTime {
     }
 }
 
-object LocalDateTimeFromFormat {
-    has origin is string;
-    has pattern is string;
-
-    LocalDateTimeFromFormat(origin is string, pattern is string) {
-        self.origin = origin;
-        self.pattern = pattern;
-    }
-
-    value() is LocalDateTime {
-        let pattern_offset is int = time_pattern_invalid_offset(
-            pattern,
-            true,
-            true,
-        );
-        confirm pattern_offset == -1
-            else throw InvalidTimePattern.located(pattern, pattern_offset);
-        let source_offset is int = time_parse_invalid_offset(
-            origin,
-            pattern,
-            true,
-        );
-        confirm source_offset == -1
-            else throw InvalidFormattedLocalDateTime.located(origin, source_offset);
-        let parts is @int = time_parse_parts(origin, pattern, true);
-        LocalDateTime(
-            date: Date(year: parts[0], month: parts[1], day: parts[2]),
-            time: TimeOfDay(
-                hour: parts[3],
-                minute: parts[4],
-                second: parts[5],
-                nanosecond: parts[6],
-            ),
-        );
-    }
-}
-
 enum InvalidTimePattern is Error = (located(pattern is string, offset is int));
 
 enum InvalidFormattedDate is Error = (located(origin is string, offset is int));
 
 enum InvalidFormattedLocalDateTime is Error = (located(origin is string, offset is int));
+
+test "patterns format and read dates and local date-times" {
+    let date = Date(year: 2026, month: 8, day: 11);
+    test.is(FormattedDate(origin: date, pattern: "%d/%m/%Y").string(), "11/08/2026");
+    let read = FormattedDate(text: "11/08/2026", pattern: "%d/%m/%Y");
+    test.is(read.date().order(date), Order.equal);
+    test.is(read.string(), "11/08/2026");
+    let local = FormattedLocalDateTime(text: "2026-08-11 12:30:45", pattern: "%Y-%m-%d %H:%M:%S").local_date_time();
+    test.is(FormattedLocalDateTime(origin: local, pattern: "%H.%M").string(), "12.30");
+    test.ok(try {
+        FormattedDate(text: "11-08-2026", pattern: "%d/%m/%Y").date();
+        false;
+    }
+    catch e is InvalidFormattedDate {
+        true;
+    });
+}

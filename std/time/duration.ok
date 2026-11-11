@@ -87,25 +87,13 @@ object Duration does Comparing<Duration>, Adding<Duration, Duration>, Subtractin
         Duration(value: -origin, unit: DurationUnit.second);
     }
 
+    // This duration scaled by `factor`.
+    times(factor is rat) is Duration {
+        Duration(value: self.seconds() * factor, unit: DurationUnit.second);
+    }
+
     order(other is Duration) is Order {
         origin.order(other.seconds());
-    }
-}
-
-object ScaledDuration {
-    has origin is Duration;
-    has factor is rat;
-
-    ScaledDuration(origin is Duration, factor is rat) {
-        self.origin = origin;
-        self.factor = factor;
-    }
-
-    value() is Duration {
-        Duration(
-            value: origin.seconds() * factor,
-            unit: DurationUnit.second,
-        );
     }
 }
 
@@ -122,3 +110,10 @@ object DurationString {
 }
 
 enum InvalidDuration is Error = (because(message is string));
+
+test "durations scale exactly" {
+    let minute = Duration(value: 1.rat(), unit: DurationUnit.minute);
+    test.is(minute.times(rat(3, 2)).seconds().string(), "90");
+    test.is(minute.times(0.rat()).seconds().string(), "0");
+    test.is(minute.times(-2.rat()).seconds().string(), "-120");
+}

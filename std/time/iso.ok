@@ -10,7 +10,7 @@ import "strings/parse" take Number, InvalidInteger;
 //     IsoDate(origin: Date(year: 2026, month: 8, day: 11)).string();
 //     // "2026-08-11"
 //
-//     value LocalDateTimeFromIso(origin: "2026-08-11T12:30:45.125");
+//     IsoText("2026-08-11T12:30:45.125").local_date_time();
 //
 // Dates are exactly YYYY-MM-DD. Local date-times require an uppercase `T` and
 // seconds: YYYY-MM-DDTHH:MM:SS with an optional fraction of one through nine
@@ -34,31 +34,6 @@ object IsoDate {
             ("00" + month).slice(month.length(), month.length() + 2) +
             "-" +
             ("00" + day).slice(day.length(), day.length() + 2);
-    }
-}
-
-object DateFromIso {
-    has origin is string;
-
-    DateFromIso(origin is string) {
-        self.origin = origin;
-    }
-
-    value() is Date {
-        confirm origin.length() == 10
-            && origin.slice(4, 5) == "-"
-            && origin.slice(7, 8) == "-"
-            else throw InvalidIsoDate.origin(origin);
-        try {
-            Date(
-                year: Number(origin.slice(0, 4)).int(),
-                month: Number(origin.slice(5, 7)).int(),
-                day: Number(origin.slice(8, 10)).int(),
-            );
-        }
-        catch error is InvalidInteger {
-            throw InvalidIsoDate.origin(origin);
-        }
     }
 }
 
@@ -91,14 +66,32 @@ object IsoLocalDateTime {
     }
 }
 
-object LocalDateTimeFromIso {
+// Text in ISO 8601, read as a calendar date or a local date-time.
+object IsoText {
     has origin is string;
 
-    LocalDateTimeFromIso(origin is string) {
+    IsoText(origin is string) {
         self.origin = origin;
     }
 
-    value() is LocalDateTime {
+    date() is Date {
+        confirm origin.length() == 10
+            && origin.slice(4, 5) == "-"
+            && origin.slice(7, 8) == "-"
+            else throw InvalidIsoDate.origin(origin);
+        try {
+            Date(
+                year: Number(origin.slice(0, 4)).int(),
+                month: Number(origin.slice(5, 7)).int(),
+                day: Number(origin.slice(8, 10)).int(),
+            );
+        }
+        catch error is InvalidInteger {
+            throw InvalidIsoDate.origin(origin);
+        }
+    }
+
+    local_date_time() is LocalDateTime {
         let length is int = origin.length();
         let fraction is bool = length > 19;
         confirm (length == 19 || (length >= 21 && length <= 29))
@@ -117,7 +110,7 @@ object LocalDateTimeFromIso {
                 0;
             };
             LocalDateTime(
-                date: DateFromIso(origin.slice(0, 10)).value(),
+                date: IsoText(origin.slice(0, 10)).date(),
                 time: TimeOfDay(
                     hour: Number(origin.slice(11, 13)).int(),
                     minute: Number(origin.slice(14, 16)).int(),
@@ -132,7 +125,7 @@ object LocalDateTimeFromIso {
     }
 }
 
-object IsoFraction {
+hidden object IsoFraction {
     has origin is int;
 
     IsoFraction(origin is int) {
@@ -159,3 +152,33 @@ object IsoFraction {
 enum InvalidIsoDate is Error = (origin(origin is string));
 
 enum InvalidIsoLocalDateTime is Error = (origin(origin is string));
+
+test "ISO text reads dates and local date-times strictly" {
+    test.is(IsoDate(origin: IsoText("2026-08-11").date()).string(), "2026-08-11");
+    let local = IsoText("2026-08-11T12:30:45.125").local_date_time();
+    test.is(IsoLocalDateTime(origin: local).string(), "2026-08-11T12:30:45.125");
+    for ["2026-8-11", "2026-08-11 ", "20260811"] -> bad {
+        test.is(
+            try {
+                IsoText(bad).date();
+                "accepted";
+            }
+            catch InvalidIsoDate.origin(given) {
+                given;
+            },
+            bad
+        );
+    }
+    for ["2026-08-11t12:30:45", "2026-08-11T12:30", "2026-08-11T12:30:45."] -> bad {
+        test.is(
+            try {
+                IsoText(bad).local_date_time();
+                "accepted";
+            }
+            catch InvalidIsoLocalDateTime.origin(given) {
+                given;
+            },
+            bad
+        );
+    }
+}

@@ -334,6 +334,30 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     |---|---|
     | `await Within(f, limit, clock).result()`, `Before`, `FutureScope`, `FirstSuccessful` | `.outcome()` |
     | `await Raced(futures).result()` | `await Raced(futures).winner()` |
+  - `time`: readers answer with what they read, and each formatter reads its
+    own text back.
+    - `IsoText(t).date()` and `.local_date_time()`.
+    - `Rfc3339(t).instant()`; its `.string()` keeps the offset that was
+      read.
+    - `FormattedDate(text:, pattern:).date()` and
+      `FormattedLocalDateTime(text:, pattern:).local_date_time()`.
+    - `Zoned(local:, zone:, fold:).instant()`.
+    - `date.shifted(days)` and `DaysBetween(left:, right:).count()`.
+    - `duration.times(factor)`.
+    - `GregorianDay` converts a date to its day number and back. It counts
+      from 0001-01-01, not from 1970. `date`, `iso`, `format`, `rfc3339` and
+      `duration` have inline tests now.
+
+    | before | now |
+    |---|---|
+    | `DateFromIso(t).value()`, `LocalDateTimeFromIso(t).value()` | `IsoText(t).date()`, `.local_date_time()` |
+    | `InstantFromRfc3339(t).value()` | `Rfc3339(t).instant()` |
+    | `DateFromFormat(t, p).value()`, `LocalDateTimeFromFormat` | `FormattedDate(text: t, pattern: p).date()`, `FormattedLocalDateTime(…).local_date_time()` |
+    | `InstantFromLocal(dt, zone, fold).value()` | `Zoned(local: dt, zone: zone, fold: fold).instant()` |
+    | `ShiftedDate(d, n).value()` | `d.shifted(n)` |
+    | `DaysBetween(a, b).value()` | `DaysBetween(left: a, right: b).count()` |
+    | `DateOrdinal(d).value()`, `OrdinalDate(n).value()` | `GregorianDay(d).number()`, `GregorianDay(n).date()` |
+    | `ScaledDuration(d, f).value()` | `d.times(f)` |
 ### Fixed
 
 - Traversals own what they walk, and keep no record of what they walked

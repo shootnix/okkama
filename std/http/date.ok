@@ -3,7 +3,7 @@ module http/date v1.0.0;
 import "compare" take Comparing, Order;
 import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
-import "time/date" take Date, DateOrdinal, InvalidDate;
+import "time/date" take Date, GregorianDay, InvalidDate;
 import "time/day" take TimeOfDay, InvalidTimeOfDay;
 import "time/local_datetime" take LocalDateTime;
 import "time/format" take FormattedLocalDateTime;
@@ -53,7 +53,7 @@ object HttpDate does Comparing<HttpDate> {
             "Nov",
             "Dec"
         ];
-        let weekday = weekdays[(DateOrdinal(local.date()).value() - 1) % 7];
+        let weekday = weekdays[(GregorianDay(local.date()).number() - 1) % 7];
         weekday + ", " + FormattedLocalDateTime(
             local,
             "%d " + months[local.date().month() - 1] + " %Y %H:%M:%S GMT"
@@ -168,7 +168,7 @@ object HttpDateFields {
         catch failure is InvalidDate {
             throw InvalidHttpDate.because("calendar date");
         };
-        confirm (DateOrdinal(date).value() - 1) % 7 == weekday
+        confirm (GregorianDay(date).number() - 1) % 7 == weekday
             else throw InvalidHttpDate.because("weekday disagrees with date");
         local = LocalDateTime(date, time);
     }

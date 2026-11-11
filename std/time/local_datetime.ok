@@ -2,7 +2,7 @@ module time/local_datetime v1.0.0;
 
 import "compare" take Comparing, Order;
 import "time/duration" take Duration, DurationUnit;
-import "time/date" take Date, ShiftedDate, DaysBetween, DateOrdinal, InvalidDate;
+import "time/date" take Date, DaysBetween, GregorianDay, InvalidDate;
 import "time/day" take TimeOfDay;
 
 // A local calendar date and wall-clock time without an offset or time zone.
@@ -39,7 +39,7 @@ object LocalDateTime does Comparing<LocalDateTime> {
     }
 
     plus(duration is Duration) is LocalDateTime {
-        let ordinal is int = DateOrdinal(origin: date_value).value();
+        let ordinal is int = GregorianDay(date_value).number();
         let day_seconds is rat = (time_value.hour() * 3600 +
             time_value.minute() * 60 +
             time_value.second()).rat() + rat(time_value.nanosecond(), 1000000000);
@@ -69,7 +69,7 @@ object LocalDateTime does Comparing<LocalDateTime> {
         let nano is int = after_minute - second * 1000000000;
 
         LocalDateTime(
-            date: ShiftedDate(origin: date_value, days: days).value(),
+            date: date_value.shifted(days),
             time: TimeOfDay(
                 hour: hour,
                 minute: minute,
@@ -80,10 +80,7 @@ object LocalDateTime does Comparing<LocalDateTime> {
     }
 
     minus(other is LocalDateTime) is Duration {
-        let days is int = DaysBetween(
-            left: other.date(),
-            right: date_value,
-        ).value();
+        let days is int = DaysBetween(left: other.date(), right: date_value).count();
         let own_seconds is rat = (time_value.hour() * 3600 +
             time_value.minute() * 60 +
             time_value.second()).rat() + rat(time_value.nanosecond(), 1000000000);

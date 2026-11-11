@@ -6,8 +6,8 @@ import "compare" take Comparing, Order;
 //
 //     let release = Date(year: 2026, month: 8, day: 11);
 //     release.weekday(); // Weekday.tuesday
-//     let tomorrow = value ShiftedDate(origin: release, days: 1);
-//     value DaysBetween(left: release, right: tomorrow); // 1
+//     let tomorrow = release.shifted(1);
+//     DaysBetween(left: release, right: tomorrow).count(); // 1
 //
 // Supported years are 1..9999. There is no year zero, implicit time zone or
 // host calendar dependency. Date ordinals are one-based: 0001-01-01 is day 1
@@ -65,7 +65,7 @@ object Date does Comparing<Date> {
     }
 
     weekday() is Weekday {
-        match ((DateOrdinal(origin: self).value()) - 1) % 7 {
+        match (GregorianDay(self).number() - 1) % 7 {
             case 0 {
                 Weekday.monday;
             }
@@ -103,22 +103,13 @@ object Date does Comparing<Date> {
             }
         }
     }
-}
 
-object ShiftedDate {
-    has origin is Date;
-    has days is int;
-
-    ShiftedDate(origin is Date, days is int) {
-        self.origin = origin;
-        self.days = days;
-    }
-
-    value() is Date {
-        let ordinal is int = DateOrdinal(origin: origin).value();
-        confirm days >= 1 - ordinal && days <= 3652059 - ordinal
+    // This date moved by `days` (negative: earlier).
+    shifted(days is int) is Date {
+        let number is int = GregorianDay(self).number();
+        confirm days >= 1 - number && days <= 3652059 - number
             else throw InvalidDate.because("shifted date is outside years 1..9999");
-        OrdinalDate(origin: ordinal + days).value();
+        GregorianDay(number + days).date();
     }
 }
 
@@ -131,23 +122,25 @@ object DaysBetween {
         self.right = right;
     }
 
-    value() is int {
-        (DateOrdinal(origin: right).value()) -
-            (DateOrdinal(origin: left).value());
+    count() is int {
+        GregorianDay(right).number() - GregorianDay(left).number();
     }
 }
 
-// One-based Gregorian ordinal used as the shared arithmetic representation.
-object DateOrdinal {
-    has origin is Date;
+enum InvalidDate is Error = (because(message is string));
 
-    DateOrdinal(origin is Date) {
-        self.origin = origin;
-    }
+// The day number of a date in the proleptic Gregorian calendar, counted from
+// 0001-01-01 (day 1), and the date of a day number: the shared arithmetic
+// representation of dates.
+//
+//     GregorianDay(Date(year: 1970, month: 1, day: 1)).number(); // 719163
+//     GregorianDay(719163).date();                              // 1970-01-01
+object GregorianDay {
+    has origin is int;
 
-    value() is int {
-        let year is int = origin.year();
-        let month is int = origin.month();
+    GregorianDay(date is Date) {
+        let year is int = date.year();
+        let month is int = date.month();
         let previous_year is int = year - 1;
         let leap is bool = year % 4 == 0
             && (year % 100 != 0 || year % 400 == 0);
@@ -162,29 +155,26 @@ object DateOrdinal {
                 -2;
             }
         };
-
-        previous_year * 365 +
+        origin = previous_year * 365 +
             (previous_year / 4).int() -
             (previous_year / 100).int() +
             (previous_year / 400).int() +
             ((367 * month - 362) / 12).int() +
             adjustment +
-            origin.day();
-    }
-}
-
-// Exact inverse of DateOrdinal for the supported positive ordinal range.
-object OrdinalDate {
-    has origin is int;
-
-    OrdinalDate(origin is int) {
-        self.origin = origin;
+            date.day();
     }
 
-    value() is Date {
-        confirm origin >= 1 && origin <= 3652059
-            else throw InvalidDate.because("date ordinal is outside years 1..9999");
+    GregorianDay(number is int) {
+        confirm number >= 1 && number <= 3652059
+            else throw InvalidDate.because("day number is outside years 1..9999");
+        origin = number;
+    }
 
+    number() is int {
+        origin;
+    }
+
+    date() is Date {
         let shifted is int = origin + 305;
         let era is int = (shifted / 146097).int();
         let day_of_era is int = shifted - era * 146097;
@@ -217,4 +207,30 @@ object OrdinalDate {
     }
 }
 
-enum InvalidDate is Error = (because(message is string));
+test "dates shift, count days between and map to day numbers" {
+    let release = Date(year: 2026, month: 8, day: 11);
+    test.is(release.weekday(), Weekday.tuesday);
+    test.is(release.shifted(1).day(), 12);
+    test.is(release.shifted(-11).month(), 7);
+    test.is(release.shifted(143).year(), 2027);
+    test.is(DaysBetween(left: release, right: release.shifted(30)).count(), 30);
+    test.is(DaysBetween(left: release.shifted(30), right: release).count(), -30);
+    test.is(GregorianDay(Date(year: 1, month: 1, day: 1)).number(), 1);
+    test.is(GregorianDay(Date(year: 1970, month: 1, day: 1)).number(), 719163);
+    test.is(GregorianDay(719163).date().year(), 1970);
+    test.is(GregorianDay(GregorianDay(release).number()).date().order(release), Order.equal);
+    test.ok(try {
+        GregorianDay(0).date();
+        false;
+    }
+    catch e is InvalidDate {
+        true;
+    });
+    test.ok(try {
+        Date(year: 9999, month: 12, day: 31).shifted(1);
+        false;
+    }
+    catch e is InvalidDate {
+        true;
+    });
+}

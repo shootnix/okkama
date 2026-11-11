@@ -175,18 +175,20 @@ object ZoneObservation {
     }
 }
 
-object InstantFromLocal {
+// A local date-time in a time zone, read as an instant; `fold` picks the
+// earlier or later of an ambiguous wall time.
+object Zoned {
     has origin is LocalDateTime;
     has zone is TimeZone;
     has fold is Fold;
 
-    InstantFromLocal(origin is LocalDateTime, zone is TimeZone, fold is Fold) {
-        self.origin = origin;
+    Zoned(local is LocalDateTime, zone is TimeZone, fold is Fold) {
+        origin = local;
         self.zone = zone;
         self.fold = fold;
     }
 
-    value() is Instant {
+    instant() is Instant {
         zone.instant(origin, fold);
     }
 }

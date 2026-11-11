@@ -5,7 +5,7 @@ import "collections/sequence" take Sequencing;
 import "compare" take Comparing, Order;
 import "error" take OutOfRange;
 import "size" take Sizing;
-import "time/date" take Date, DateOrdinal, OrdinalDate, Weekday;
+import "time/date" take Date, GregorianDay, Weekday;
 
 // Immutable Gregorian calendar views.
 //
@@ -139,7 +139,7 @@ object CalendarWeek does Sequencing<Date>, Iterating<Date>, Sizing {
 
     CalendarWeek(start is Date) {
         self.first_date = start;
-        confirm (DateOrdinal(origin: start).value()) <= 3652053
+        confirm (GregorianDay(start).number()) <= 3652053
             else throw InvalidCalendarMonth.because(
                 "calendar week leaves the supported date range"
             );
@@ -156,9 +156,7 @@ object CalendarWeek does Sequencing<Date>, Iterating<Date>, Sizing {
     item(index is int) is Date {
         confirm index >= 0 && index < 7
             else throw OutOfRange.because("calendar week index is outside the sequence");
-        OrdinalDate(
-            origin: (DateOrdinal(origin: first_date).value()) + index,
-        ).value();
+        GregorianDay((GregorianDay(first_date).number()) + index).date();
     }
 
     first() is Date {
@@ -229,9 +227,7 @@ object CalendarMonth does Sequencing<Sequencing<Date>>, Iterating<Sequencing<Dat
             first_weekday: first_weekday,
         );
         CalendarWeek(
-            start: OrdinalDate(
-                origin: layout.first_ordinal() + index * 7,
-            ).value(),
+            start: GregorianDay(layout.first_ordinal() + index * 7).date(),
         );
     }
 
@@ -281,7 +277,7 @@ object CalendarMonthLayout {
         let lead is int = ((WeekdayIndex(origin: first.weekday()).value()) -
             (WeekdayIndex(origin: first_weekday).value()) +
             7) % 7;
-        let result is int = (DateOrdinal(origin: first).value()) - lead;
+        let result is int = (GregorianDay(first).number()) - lead;
         confirm result >= 1 && result + self.size() * 7 - 1 <= 3652059
             else throw InvalidCalendarMonth.because(
                 "calendar month leaves the supported date range"
@@ -321,7 +317,7 @@ object IsoWeek does Comparing<IsoWeek> {
             else throw InvalidIsoWeek.because("ISO week is outside its week-year");
 
         let january_fourth = Date(year: year, month: 1, day: 4);
-        let first_ordinal is int = (DateOrdinal(origin: january_fourth).value()) -
+        let first_ordinal is int = (GregorianDay(january_fourth).number()) -
             (WeekdayIndex(origin: january_fourth.weekday()).value()) +
             (week - 1) * 7;
         confirm first_ordinal >= 1 && first_ordinal + 6 <= 3652059
@@ -343,17 +339,13 @@ object IsoWeek does Comparing<IsoWeek> {
 
     first() is Date {
         let january_fourth = Date(year: year_value, month: 1, day: 4);
-        OrdinalDate(
-            origin: (DateOrdinal(origin: january_fourth).value()) -
-                (WeekdayIndex(origin: january_fourth.weekday()).value()) +
-                (week_value - 1) * 7,
-        ).value();
+        GregorianDay((GregorianDay(january_fourth).number()) -
+            (WeekdayIndex(origin: january_fourth.weekday()).value()) +
+            (week_value - 1) * 7).date();
     }
 
     last() is Date {
-        OrdinalDate(
-            origin: (DateOrdinal(origin: self.first()).value()) + 6,
-        ).value();
+        GregorianDay((GregorianDay(self.first()).number()) + 6).date();
     }
 
     order(other is IsoWeek) is Order {
