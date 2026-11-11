@@ -15,9 +15,9 @@ import "http/connection" take HttpAcquisitionCleanup, HttpTcpDisposal, HttpTlsDi
 import "http/internal/websocket_output" take WebSocketOutputSettlement;
 import "net/tcp" take TcpConnection, TcpOptions, TcpListening;
 import "net/tcp_racing" take TcpRacing;
-import "net/dns" take Resolving, FixedResolution;
+import "net/dns" take Resolving, FixedResolution, SystemResolution;
 import "net/tls" take TlsClientPolicy, TlsClientHandshake, TlsConnection;
-import "crypto/x509/trust" take CertificateIdentity, DnsCertificateIdentity, IpCertificateIdentity, TrustedCertificates;
+import "crypto/x509/trust" take CertificateIdentity, DnsCertificateIdentity, IpCertificateIdentity, TrustedCertificates, TrustStore, SystemTrustStore;
 import "url/value" take UrlParts, UrlHostKind, ParsedUrl;
 import "random/source" take SecureRandom;
 import "time/clock" take Timing, SystemClock;
@@ -27,7 +27,7 @@ import "async/event" take Event;
 import "async/scope" take FutureGroup;
 import "async/timeout" take Within;
 import "io/stream" take AsyncReading, AsyncWriting, InvalidReadLimit;
-import "http/server" take HttpServer, ServerDrain;
+import "http/server" take HttpServer;
 import "http/server_policy" take ServerPolicy;
 import "http/handler" take Handling, HandlingResult, WebSocketHandling, WebSocketHandlingResult;
 import "http/request_context" take HttpRequestContext;
@@ -85,6 +85,21 @@ object WebSocketPolicy {
 object WebSocketConnecting {
     has waiting is Future<WebSocketSession>;
 
+    // WebSocketConnecting(url: ParsedUrl("wss://example.com/chat").parts()):
+    // the system's DNS and trusted roots, no subprotocols and no extra
+    // headers unless given, as HttpClient() does.
+    WebSocketConnecting(
+        url is UrlParts,
+        protocols is @string = [],
+        headers is Headers = Headers([]),
+        resolver is Resolving = SystemResolution(),
+        trust is TrustStore = SystemTrustStore(),
+        policy is WebSocketPolicy = WebSocketPolicy(),
+        clock is Timing = SystemClock()
+    ) {
+        waiting = WebSocketStart(url: url, protocols: protocols, headers: headers, resolver: resolver, tls: TlsClientPolicy(trust), policy: policy, clock: clock).outcome();
+    }
+
     WebSocketConnecting(
         url is UrlParts,
         protocols is @string,
@@ -94,6 +109,50 @@ object WebSocketConnecting {
         policy is WebSocketPolicy,
         clock is Timing
     ) {
+        waiting = WebSocketStart(url: url, protocols: protocols, headers: headers, resolver: resolver, tls: tls, policy: policy, clock: clock).outcome();
+    }
+
+    async connection() is WebSocketConnection {
+        let group is FutureGroup<WebSocketSession> = FutureGroup();
+        let taken = Event();
+        let cleanup = WebSocketOpeningCleanup(group: group, waiting: waiting, taken: taken);
+        defer await cleanup.close();
+        group.start(waiting);
+        let session = await waiting;
+        taken.set();
+        await session.started();
+        session;
+    }
+}
+
+hidden object WebSocketStart {
+    has url is UrlParts;
+    has protocols is @string;
+    has headers is Headers;
+    has resolver is Resolving;
+    has tls is TlsClientPolicy;
+    has policy is WebSocketPolicy;
+    has clock is Timing;
+
+    WebSocketStart(
+        url is UrlParts,
+        protocols is @string,
+        headers is Headers,
+        resolver is Resolving,
+        tls is TlsClientPolicy,
+        policy is WebSocketPolicy,
+        clock is Timing
+    ) {
+        self.url = url;
+        self.protocols = protocols;
+        self.headers = headers;
+        self.resolver = resolver;
+        self.tls = tls;
+        self.policy = policy;
+        self.clock = clock;
+    }
+
+    outcome() is Future<WebSocketSession> {
         let nonce is @byte = (0..16).map() -> index {
             0.byte();
         };
@@ -124,19 +183,7 @@ object WebSocketConnecting {
             limit: policy.opening_timeout(),
             clock: clock
         );
-        waiting = bounded.outcome();
-    }
-
-    async connection() is WebSocketConnection {
-        let group is FutureGroup<WebSocketSession> = FutureGroup();
-        let taken = Event();
-        let cleanup = WebSocketOpeningCleanup(group: group, waiting: waiting, taken: taken);
-        defer await cleanup.close();
-        group.start(waiting);
-        let session = await waiting;
-        taken.set();
-        await session.started();
-        session;
+        bounded.outcome();
     }
 }
 
@@ -316,7 +363,7 @@ async test "a WebSocket client talks to a server over loopback and closes cleanl
     let clock = SystemClock();
     // WebSocket upgrades need the server's own URL to check the Origin against.
     let own = ParsedUrl("http://127.0.0.1:" + listener.local_endpoint()::Parts::port.string() + "/").parts();
-    let server = HttpServer(origin: listener, handling: ShoutingEcho(), policy: ServerPolicy(), clock: clock, destination: own);
+    let server = HttpServer(listener: listener, handling: ShoutingEcho(), policy: ServerPolicy(), clock: clock, url: own);
     let workers is FutureGroup<HttpServer> = FutureGroup();
     workers.start(server.serve());
     let url = ParsedUrl("ws://127.0.0.1:" + server.local_endpoint()::Parts::port.string() + "/echo").parts();
@@ -326,21 +373,13 @@ async test "a WebSocket client talks to a server over loopback and closes cleanl
         closing: Duration(value: 2.rat(), unit: DurationUnit.second),
         access: AllEndpoints(),
     );
-    let connection = await WebSocketConnecting(
-        url: url,
-        protocols: [],
-        headers: Headers([]),
-        resolver: FixedResolution([]),
-        tls: TlsClientPolicy(TrustedCertificates([])),
-        policy: policy,
-        clock: clock,
-    ).connection();
+    let connection = await WebSocketConnecting(url: url, resolver: FixedResolution([]), policy: policy).connection();
     await connection.send(TextWebSocketMessage("hello"));
     test.is((await connection.message()).text(), "HELLO");
     await connection.send(BinaryWebSocketMessage([1.byte(), 2.byte()]));
     test.is((await connection.message()).bytes(), [1.byte(), 2.byte(), 1.byte(), 2.byte()]);
     await connection.close(1000, "done");
     test.is(connection.closed(), true);
-    await ServerDrain(server: server, limit: Duration(value: 5.rat(), unit: DurationUnit.second), clock: clock).drain();
+    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
     await workers.wait();
 }

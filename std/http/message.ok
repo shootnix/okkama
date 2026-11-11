@@ -2,8 +2,8 @@ module http/message v1.0.0;
 
 import "http/method" take Method, MethodName;
 import "http/status" take Status, StatusCode;
-import "http/header" take Headers;
-import "http/body" take BodyOpening, EmptyBody;
+import "http/header" take Headers, Header, HeaderName;
+import "http/body" take BodyOpening, EmptyBody, Content, TextBody;
 import "http/version" take HttpVersion;
 import "http/target" take RequestTarget, RequestTargetSnapshot, RequestTargetMethod, AbsoluteTarget;
 import "url/value" take ParsedUrl;
@@ -92,6 +92,25 @@ object Response {
         self.version = version;
     }
 
+    // Response(status: Status.ok, content: TextBody(text: "hi")): the body and
+    // its Content-Type come from the content, unless headers name one.
+    Response(
+        status is Status,
+        content is Content,
+        headers is Headers = Headers([]),
+        version is HttpVersion = HttpVersion.http_1_1
+    ) {
+        self.status = status;
+        self.headers = if headers.membership(HeaderName("Content-Type")) {
+            headers;
+        }
+        else {
+            headers.addition(Header(name: HeaderName("Content-Type"), value: content.media_type()));
+        };
+        body = content.opening();
+        self.version = version;
+    }
+
     cap Head {
         status is Status {
             status;
@@ -146,4 +165,17 @@ test "a request to a URL is a GET with no fields unless told" {
     test.is(request::Head::headers.entries().size(), 0);
     let put = Request(url: "https://example.com/a", method: Method.put);
     test.is(put::Head::method, Method.put);
+}
+
+test "a response takes content and its media type" {
+    let response = Response(status: Status.ok, content: TextBody(text: "hi"));
+    test.is(response::Head::headers.values(HeaderName("Content-Type")).item(0), "text/plain; charset=utf-8");
+    test.is(response.body().length().string(), "2");
+    let typed = Response(
+        status: Status.created,
+        content: TextBody(text: "{}"),
+        headers: Headers([Header(name: HeaderName("Content-Type"), value: "application/json")]),
+    );
+    test.is(typed::Head::headers.values(HeaderName("Content-Type")).size(), 1);
+    test.is(typed::Head::headers.values(HeaderName("Content-Type")).item(0), "application/json");
 }

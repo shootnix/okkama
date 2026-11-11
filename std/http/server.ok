@@ -20,7 +20,7 @@ import "http/target" take RequestTargetKind;
 import "http/websocket_server" take WebSocketAccepting;
 import "http/connection" take HttpAcquisitionCleanup, HttpTcpDisposal;
 import "http/internal/websocket_output" take WebSocketOutputSettlement;
-import "net/tcp" take TcpListener, TcpConnection, TcpListening;
+import "net/tcp" take TcpListener, TcpConnection, TcpListening, TcpConnecting;
 import "net/endpoint" take IpEndpoint;
 import "net/failure" take NetworkClosed;
 import "io/stream" take AsyncReading, AsyncWriting, Closing;
@@ -39,33 +39,40 @@ import "net/ip" take IpAddress, IpNetwork;
 import "net/dns" take FixedResolution;
 import "http/client_policy" take HttpLimits;
 import "collections/set" take Set, OrderedSet;
-import "encoding/utf" take Utf8Decoded;
+import "encoding/utf" take Utf8Decoded, Utf8Encoded;
+import "io/decorators" take ByteSnapshot;
 
 // Owned plaintext listener. A single explicit protocol selects HTTP1.1 or
 // prior-knowledge H2; mixed ALPN/TLS selection remains a separate transport.
 object HttpServer does Closing {
     has state is HttpServerState;
 
+    // HttpServer(listener:, handling:): HTTP/1.1 under ServerPolicy() and the
+    // system clock unless policy: and clock: say otherwise.
     HttpServer(
-        origin is TcpListener,
+        listener is TcpListener,
         handling is Handling,
-        policy is ServerPolicy,
-        clock is Timing
+        policy is ServerPolicy = ServerPolicy(),
+        clock is Timing = SystemClock()
     ) {
         confirm policy.protocols().size() == 1
             && (policy.protocols().membership(HttpVersion.http_1_1)
             || policy.protocols().membership(HttpVersion.http_2))
             else throw UnsupportedHttpVersion.unsupported;
-        state = HttpServerState(origin: origin, handling: handling, policy: policy, clock: clock, destinations: []);
+        state = HttpServerState(origin: listener, handling: handling, policy: policy, clock: clock, destinations: []);
     }
 
+    // With url:, the server's own URL, it also accepts WebSocket upgrades: the
+    // Origin of an upgrade is checked against it.
     HttpServer(
-        origin is TcpListener,
+        listener is TcpListener,
         handling is Handling,
-        policy is ServerPolicy,
-        clock is Timing,
-        destination is UrlParts
+        url is UrlParts,
+        policy is ServerPolicy = ServerPolicy(),
+        clock is Timing = SystemClock()
     ) {
+        let origin = listener;
+        let destination = url;
         confirm policy.protocols().size() == 1
             && (policy.protocols().membership(HttpVersion.http_1_1)
             || policy.protocols().membership(HttpVersion.http_2))
@@ -106,6 +113,12 @@ object HttpServer does Closing {
 
     async settled() is bool {
         await state.settled();
+    }
+
+    // Stop accepting, let requests in flight finish within limit, and close.
+    async drain(limit is Duration) is HttpServer {
+        await ServerDrain(server: self, limit: limit, clock: state.clock()).drain();
+        self;
     }
 
     destroy {
@@ -161,6 +174,10 @@ hidden object HttpServerState {
     async drain_signal() is bool {
         await draining.wait();
         true;
+    }
+
+    clock() is Timing {
+        clock;
     }
 
     stop_accepting() is void {
@@ -561,8 +578,12 @@ hidden object HttpServerPeer {
             let head = received.head();
             confirm head::Head::version == HttpVersion.http_1_1
                 else throw BadRequest.because("HTTP1.1 request required");
+            // Origin form, or the absolute form a server must accept too
+            // (RFC 9112 §3.2.2); handlers read path() and query() either way.
             confirm head.target().kind() == RequestTargetKind.origin
-                else throw BadRequest.because("direct server origin target required");
+                || head.target().kind() == RequestTargetKind.absolute
+                || head.target().kind() == RequestTargetKind.asterisk
+                else throw BadRequest.because("origin, absolute or asterisk target required");
             let plan = Http1RequestFraming(head: head, limits: policy.limits().http1()).plan();
             let expectations = head.headers().values(HeaderName("Expect"));
             let expected = expectations.size() > 0;
@@ -641,8 +662,22 @@ hidden object HttpServerPeer {
                 confirm plan::Plan::kind == Http1BodyKind.empty
                     || (plan::Plan::kind == Http1BodyKind.fixed && plan.length().string() == "0")
                     else throw BadRequest.because("WebSocket request body prohibited");
-                confirm destinations.size() == 1
-                    else throw BadRequest.because("trusted WebSocket destination required");
+                if destinations.size() != 1 {
+                    let refusal = Response(
+                        status: Status.internal_server_error,
+                        content: TextBody(text: "WebSocket upgrades need the server's own URL: HttpServer(listener:, handling:, url: …)\n"),
+                        headers: Headers([Header(name: HeaderName("Connection"), value: "close")])
+                    );
+                    sent.replace(true);
+                    let refusing = Http1ResponseWriting(
+                        origin: connection.output(),
+                        response: refusal,
+                        method: head::Head::method,
+                        limits: policy.limits().http1()
+                    ).output();
+                    await refusing;
+                    return true;
+                }
                 let destination = destinations[0];
                 let connecting = WebSocketAccepting(
                     input: connection.input(),
@@ -871,21 +906,9 @@ hidden object EchoApplication does Handling {
     EchoApplication();
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
-        // HTTP/2 hands the handler an absolute target, HTTP/1.1 its origin
-        // form (#497), so the test reads both, as routing does.
-        let given = request::Head::target;
-        let path = if given.kind() == RequestTargetKind.origin {
-            given.path();
-        }
-        else {
-            given.url()::Parts::path;
-        };
-        let query = if given.kind() == RequestTargetKind.origin {
-            given.query();
-        }
-        else {
-            given.url()::Parts::query;
-        };
+        // path() and query() read the same whatever the protocol or form (#497).
+        let path = request::Head::target.path();
+        let query = request::Head::target.query();
         let target = if query == Maybe<string>.none {
             path;
         }
@@ -919,7 +942,7 @@ hidden object EchoApplication does Handling {
 async test "a server answers over loopback, reads bodies, and drains" {
     let listener = await TcpListening(port: 0).listener();
     let clock = SystemClock();
-    let server = HttpServer(origin: listener, handling: EchoApplication(), policy: ServerPolicy(), clock: clock);
+    let server = HttpServer(listener: listener, handling: EchoApplication(), policy: ServerPolicy(), clock: clock);
     let workers is FutureGroup<HttpServer> = FutureGroup();
     workers.start(server.serve());
     let base = "http://127.0.0.1:" + server.local_endpoint()::Parts::port.string();
@@ -935,8 +958,22 @@ async test "a server answers over loopback, reads bodies, and drains" {
     test.is(missing::Head::status, Status.not_found);
     let posted = await client.post(url: base + "/notes", body: TextBody(text: "héllo"));
     test.is(await posted.text(), "POST /notes héllo");
+    // A server accepts the absolute form too (RFC 9112 §3.2.2).
+    let raw = await TcpConnecting(address: IpAddress("127.0.0.1"), port: server.local_endpoint()::Parts::port).connection();
+    await raw.output().write(ByteSnapshot(Utf8Encoded(
+        "GET " + base + "/absolute?y=2 HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
+    ).bytes()));
+    let answer = Atomic("");
+    loop {
+        let chunk = await raw.input().bytes(4096);
+        last if chunk.size() == 0;
+        answer.replace(answer.value() + Utf8Decoded(chunk).string());
+    }
+    raw.close();
+    test.ok(answer.value().starts_with("HTTP/1.1 200 OK\r\n"));
+    test.ok(answer.value().ends_with("GET /absolute?y=2 "));
     client.close();
-    await ServerDrain(server: server, limit: Duration(value: 5.rat(), unit: DurationUnit.second), clock: clock).drain();
+    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
     await workers.wait();
     test.is(server.closed(), true);
 }
@@ -946,7 +983,7 @@ async test "a server speaks HTTP/2 over cleartext and multiplexes one connection
     let clock = SystemClock();
     let two is Set<HttpVersion> = OrderedSet([HttpVersion.http_2]);
     let policy = ServerPolicy(protocols: two, limits: HttpLimits(), timeouts: ServerTimeouts(), connections: 8, ranges: 16);
-    let server = HttpServer(origin: listener, handling: EchoApplication(), policy: policy, clock: clock);
+    let server = HttpServer(listener: listener, handling: EchoApplication(), policy: policy, clock: clock);
     let workers is FutureGroup<HttpServer> = FutureGroup();
     workers.start(server.serve());
     let base = "http://127.0.0.1:" + server.local_endpoint()::Parts::port.string();
@@ -967,7 +1004,7 @@ async test "a server speaks HTTP/2 over cleartext and multiplexes one connection
     test.is(await posted.text(), "POST /notes h2 body");
     test.is((await client.get(base + "/missing"))::Head::status, Status.not_found);
     client.close();
-    await ServerDrain(server: server, limit: Duration(value: 5.rat(), unit: DurationUnit.second), clock: clock).drain();
+    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
     await workers.wait();
     test.is(server.closed(), true);
 }

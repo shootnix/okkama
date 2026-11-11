@@ -128,12 +128,13 @@ object AbsoluteTarget does RequestTarget {
         origin;
     }
 
+    // The URL's path and query: an absolute target reads like an origin one.
     path() is string {
-        throw WrongRequestTargetKind.detailed(RequestTargetKind.origin, self.kind());
+        origin::Parts::path;
     }
 
     query() is Maybe<string> {
-        throw WrongRequestTargetKind.detailed(RequestTargetKind.origin, self.kind());
+        origin::Parts::query;
     }
 
     authority() is UrlParts {

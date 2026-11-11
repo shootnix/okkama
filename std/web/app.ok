@@ -1,6 +1,6 @@
 module web/app v1.0.0;
 
-import "http/server" take HttpServer, ServerDrain;
+import "http/server" take HttpServer;
 import "http/server_policy" take ServerPolicy;
 import "net/tcp" take TcpListening;
 import "net/endpoint" take IpEndpoint;
@@ -8,6 +8,7 @@ import "net/ip" take IpAddress, IpNetwork;
 import "time/clock" take Timing, SystemClock;
 import "web/routing" take WebRoutes, Get, Post, Scope;
 import "web/request" take WebRequest;
+import "http/method" take MethodName;
 import "web/reply" take Text;
 import "http/handler" take HandlingResult;
 import "http/client" take HttpClient;
@@ -25,7 +26,7 @@ import "time/duration" take Duration, DurationUnit;
 // The address is an IP literal; no name resolution happens here. listen()
 // serves until the server is closed. server() binds and returns the std
 // HttpServer without serving, for callers that own the lifetime themselves:
-// port 0 picks a free port, local_endpoint() reports it, and ServerDrain
+// port 0 picks a free port, local_endpoint() reports it, and server.drain(limit:)
 // drains it.
 
 object WebApplication {
@@ -47,7 +48,7 @@ object WebApplication {
 
     async server(address is string, port is int) is HttpServer {
         let listener = await TcpListening(port: port, address: IpAddress(address)).listener();
-        HttpServer(origin: listener, handling: routes.table(), policy: policy, clock: clock);
+        HttpServer(listener: listener, handling: routes.table(), policy: policy, clock: clock);
     }
 
     async listen(address is string, port is int) is void {
@@ -62,7 +63,7 @@ hidden object Greetings {
     Greetings();
 
     async hello(request is WebRequest) is HandlingResult {
-        Text(status: 200, text: "Hello, " + request.path("name") + request.query("mark", "") + "!");
+        Text(status: 200, text: "Hello, " + request.path("name") + (request.query("mark") else "") + "!");
     }
 
     async echo(request is WebRequest) is HandlingResult {
@@ -70,7 +71,7 @@ hidden object Greetings {
     }
 
     async missing(request is WebRequest) is HandlingResult {
-        Text(status: 404, text: "no " + request.method() + " here");
+        Text(status: 404, text: "no " + MethodName(request.method()).string() + " here");
     }
 }
 
@@ -96,6 +97,6 @@ async test "a web application routes requests over loopback and drains" {
     test.is(lost::Head::status, Status.not_found);
     test.is(await lost.text(), "no GET here");
     client.close();
-    await ServerDrain(server: server, limit: Duration(value: 5.rat(), unit: DurationUnit.second), clock: SystemClock()).drain();
+    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
     await workers.wait();
 }

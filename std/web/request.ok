@@ -1,6 +1,6 @@
 module web/request v1.0.0;
 
-import "http/method" take MethodName;
+import "http/method" take MethodName, Method;
 import "http/message" take Request;
 import "http/request_context" take HttpRequestContext;
 import "http/header" take HeaderName, MissingHeader;
@@ -43,8 +43,8 @@ object WebRequest {
         details;
     }
 
-    method() is string {
-        MethodName(origin::Head::method).string();
+    method() is Method {
+        origin::Head::method;
     }
 
     // Route parameter declared by the matched pattern. A missing name means the
@@ -55,20 +55,15 @@ object WebRequest {
         parameters[name];
     }
 
-    query(name is string) is string {
-        let parameters = self.parameters();
-        confirm parameters.membership(name)
-            else throw Exception.status(400, "missing query parameter: " + name);
-        parameters.first(name);
-    }
-
-    query(name is string, fallback is string) is string {
+    // A query parameter, or none: request.query("limit") else "10". A required
+    // one: request.query("q") else throw Exception.status(400, "q required").
+    query(name is string) is Maybe<string> {
         let parameters = self.parameters();
         if parameters.membership(name) {
-            parameters.first(name);
+            Maybe<string>.some(parameters.first(name));
         }
         else {
-            fallback;
+            Maybe<string>.none;
         }
     }
 

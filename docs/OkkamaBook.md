@@ -3902,12 +3902,15 @@ with `TransactionOptions::Mode`, blobs, scripts and an online backup
 
 `http/server` serves HTTP/1.1, or HTTP/2 by prior knowledge, on a listener.
 A `Handling` object answers `handling(request, context)` with
-`ResponseHandling(Response(status:, headers:, body:))`, or with
+`ResponseHandling(Response(status:, content: TextBody(text: "hi")))`, which
+sets the body and its Content-Type, or with
 `WebSocketHandlingResult(origin: WebSocketUpgrade(…), application:)` to switch
-to WebSocket. `HttpServer(origin: listener, handling:, policy: ServerPolicy(),
-clock:)` serves with `serve()`, and `ServerDrain(server:, limit:, clock:)`
-stops accepting, lets requests in flight finish and closes. A WebSocket server
-also takes `destination:`, its own URL, to check the `Origin` against.
+to WebSocket. `HttpServer(listener:, handling:)` serves with `serve()` under
+`ServerPolicy()` and the system clock unless `policy:` and `clock:` are given,
+and `await server.drain(limit:)` stops accepting, lets requests in flight
+finish and closes. A WebSocket server also takes `url:`, its own URL, to check
+the `Origin` against. Over HTTP/1.1 and HTTP/2 alike, a handler reads
+`request::Head::target.path()` and `query()`.
 
 `web` puts routes on top: `WebRoutes(routings: [Scope(prefix: "/api",
 routings: [Get(path: "/notes/:id", endpoint: notes.one), Post(…)])],

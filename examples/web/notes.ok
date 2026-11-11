@@ -5,7 +5,7 @@ import "web/routing" take WebRoutes, Get, Post, Scope;
 import "web/request" take WebRequest;
 import "web/reply" take Text, JsonReply;
 import "http/handler" take HandlingResult;
-import "http/server" take HttpServer, ServerDrain;
+import "http/server" take HttpServer;
 import "http/client" take HttpClient;
 import "http/endpoint" take ListedNetworks;
 import "http/body" take JsonBody;
@@ -35,7 +35,7 @@ object Notes {
     }
 
     async list(request is WebRequest) is HandlingResult {
-        let limit = Number(request.query("limit", "10")).int();
+        let limit = Number(request.query("limit") else "10").int();
         let shown is @Json = items.value().slice(0, if limit < items.value().size() { limit; } else { items.value().size(); }).map() -> text {
             Json(text);
         };
@@ -91,7 +91,7 @@ async main() is int {
     }
 
     client.close();
-    await ServerDrain(server: server, limit: Duration(value: 5.rat(), unit: DurationUnit.second), clock: SystemClock()).drain();
+    await server.drain(limit: Duration(value: 5.rat(), unit: DurationUnit.second));
     await serving.wait();
     out.writeln("drained");
     0;

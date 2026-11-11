@@ -4082,13 +4082,15 @@ SqliteMemory().connection()` открывает базу. `await db.execution(sq
 
 `http/server` обслуживает HTTP/1.1 или HTTP/2 (prior knowledge) на
 слушателе. Объект `Handling` отвечает на `handling(request, context)` через
-`ResponseHandling(Response(status:, headers:, body:))` или через
+`ResponseHandling(Response(status:, content: TextBody(text: "hi")))`, что
+задаёт тело и его Content-Type, или через
 `WebSocketHandlingResult(origin: WebSocketUpgrade(…), application:)`, чтобы
-перейти на WebSocket. `HttpServer(origin: listener, handling:, policy:
-ServerPolicy(), clock:)` обслуживает через `serve()`, а `ServerDrain(server:,
-limit:, clock:)` перестаёт принимать соединения, даёт закончить начатые
-запросы и закрывает сервер. WebSocket-серверу нужен ещё `destination:`, его
-собственный URL, чтобы сверять с ним `Origin`.
+перейти на WebSocket. `HttpServer(listener:, handling:)` обслуживает через
+`serve()` с `ServerPolicy()` и системными часами, если не заданы `policy:` и
+`clock:`, а `await server.drain(limit:)` перестаёт принимать соединения, даёт
+закончить начатые запросы и закрывает сервер. WebSocket-серверу нужен ещё
+`url:`, его собственный URL, чтобы сверять с ним `Origin`. И по HTTP/1.1, и по
+HTTP/2 обработчик читает `request::Head::target.path()` и `query()`.
 
 `web` строит маршруты поверх: `WebRoutes(routings: [Scope(prefix: "/api",
 routings: [Get(path: "/notes/:id", endpoint: notes.one), Post(…)])],
