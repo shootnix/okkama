@@ -257,6 +257,9 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   - `MemoryCookieJar()` defaults its clock and limits.
   - The client's tests talk to a loopback server: shortcuts, the default
     endpoint refusal, and a redirect that carries a cookie.
+  - `examples/http/client/` shows a GET as text, a POST of JSON and the
+    reading of a status, each against a stand-in local server. The Book
+    (§26.5) and the okkama-docs guide describe the client.
 ### Fixed
 
 - Traversals own what they walk, and keep no record of what they walked

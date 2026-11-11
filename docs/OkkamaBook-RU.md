@@ -3804,6 +3804,8 @@ Path("notes.txt"))` открывает на чтение; `for file.text() -> li
 `FileEntry` (путь на диске) живёт в `fs/entry`. `examples/fs/file/`
 показывает каждую задачу программой.
 
+`http/client` отправляет запросы через `HttpClient()`. По умолчанию он берёт системные DNS и доверенные корни, ходит только на публичные адреса и говорит по HTTP/1.1. Всё остальное задаётся именованными аргументами: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)`, `cookies: MemoryCookieJar()`. Для каждого REST-метода есть шорткат: `get(url)`, `head`, `options`, `delete`, а также `post(url:, body:)`, `put`, `patch` с `Content`, например `JsonBody(json)`. Любой другой запрос пишется как `client.response(Request(url:, method:, headers:, body:))`. Ответ показывает голову через cap `Head` (`page::Head::status`, `::class`, `::headers`) и читает тело через `await page.text()`, `bytes()`, `json()` или `reading()`. `Status` и `Method` — enum'ы: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` и `MethodName` переводят их в числа и токены протокола и обратно. Каждая задача показана программой в `examples/http/client/`.
+
 Следующие исторический перечень и примеры относятся к **прежней `stdlib/`**.
 Они исполняются с этой библиотекой, но не определяют API и готовность `std/`.
 Корень библиотеки следует выбирать явно; смешивать их модули нельзя.

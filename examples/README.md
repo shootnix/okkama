@@ -22,3 +22,15 @@ and compares the output.
 | `fs/file/bytes.ok` | bytes one by one, a piece, the rest, at an offset |
 | `fs/file/lock.ok` | lock a file without waiting, handle a busy file, read-change-write |
 | `fs/file/errors.ok` | catch the cases of `FileError` |
+
+## http/client
+
+Each program starts a stand-in server on 127.0.0.1 (`LocalServer`, at the
+end of the file) and talks to it, so it opens loopback sockets but needs no
+network. A real program writes `HttpClient()` and a real URL.
+
+| Program | Task |
+|---|---|
+| `http/client/get_text.ok` | GET a page and print it as text, decoded by its charset |
+| `http/client/post_json.ok` | POST a JSON document and read the JSON answer |
+| `http/client/statuses.ok` | compare a status with a case, match on it, take its class, number and phrase |
