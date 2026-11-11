@@ -2103,14 +2103,14 @@ panic, а не перехватываемую типизированную ош�
 результата объекта записывается обычным вызовом действия:
 
 ```okkama
-object ParsedInt {
-    has source is string;
-    ParsedInt(:source);
-    integer() is int { 42; } // сокращённый пример
+object Celsius {
+    has degrees is float;
+    Celsius(:degrees);
+    fahrenheit() is float { degrees * 9.0 / 5.0 + 32.0; }
 }
 
 // Внутри метода:
-let number = ParsedInt(source: "42").integer();
+let boiling = Celsius(degrees: 100.0).fahrenheit(); // 212.0
 ```
 
 Конструктор и его проверки завершаются до вызова действия. Тип результата
@@ -3495,7 +3495,7 @@ let bucket is Bucket<int> = Bucket(values: []); // цель задаёт T дл�
 
 Встроенные массивы являются `Iterating<T>`, `Sequencing<T>` и `Sizing`, а их
 курсоры — `Cursor<T>`, поэтому обычный массив служит свидетельством для
-параметра, типизированного ролью: `Maximum(values: [3, 9, 4])` выводит
+параметра, типизированного ролью: `Extremes([3, 9, 4])` выводит
 `T = int` из тега элементов (а для литерала без тега — из самих элементов).
 Пустой литерал без тега свидетельства по-прежнему не даёт.
 
@@ -5537,45 +5537,45 @@ destination'ов и так проставляют свой timestamp), а `JsonF
 `JsonFormatter` их кодирует — этот модуль не добавляет собственной
 проверки на дубликаты, переиспользуя уже существующую в JSON-энкодере.
 
-Верхнеуровневый модуль `random` строит доменные случайные значения без новой
-native-границы:
+Модули `random` строят случайные значения поверх одной небольшой способности,
+`Randomizing`:
 
 ```okkama
-import "random" take
-    RandomSource, Random, SeededRandom, Choice, Shuffled,
-    InvalidRandomRange;
+import "random/source" take Randomizing, PcgRandom, SecureRandom;
+import "random/distribution" take Choices, PermutationSamples;
 
 main() is int {
-    let secure is RandomSource = Random();
-    let repeatable is RandomSource = SeededRandom(42);
+    let secure is Randomizing = SecureRandom();
+    let repeatable is Randomizing = PcgRandom(42);
 
-    let roll is int = secure.int(1, 6);       // обе границы включены
-    let flag is bool = secure.bool();
+    let roll is int = secure.integer(1, 7);   // от 1 до 6: stop не входит
     let ratio is float = secure.float();      // 0.0 <= ratio < 1.0
-    let color is string = value Choice(
-        ["red", "green", "blue"],
-        repeatable,
-    );
-    let order is @int = values Shuffled([1, 2, 3, 4], repeatable);
+    let nonce is @byte = secure.bytes(24);
+    let color is string = Choices(random: repeatable,
+        values: ["red", "green", "blue"]).sample();
+    let order is @int = PermutationSamples(random: repeatable,
+        values: [1, 2, 3, 4]).sample();
     return 0;
 }
 ```
 
-`Random` реализует все экшены `RandomSource` поверх безопасных байтов.
-Целочисленная выборка unbiased и включает обе границы по всему signed 64-bit
-диапазону; границы не проходят через `float`. Равные границы не требуют
-entropy. `bool()` равновероятно выбирает false/true, а `float()` возвращает
-одно из точно представимых 53-bit значений в `[0.0, 1.0)`.
+`SecureRandom` берёт свежую энтропию операционной системы на каждый вызов и не
+имеет seed. Диапазоны целых полуоткрыты, `[start, stop)`, и не бывают пустыми.
+Выборка вне несмещённого диапазона повторяется, поэтому границы никогда не
+проходят через `float`. `float()` собирает 53 случайных бита в `[0.0, 1.0)`.
+Запрос байтов ограничен 16 MiB.
 
-`SeededRandom(seed)` намеренно не криптографичен. Это чистый query-объект, а не
-изменяемый stream: одинаковые seed, action и аргументы всегда дают одинаковое
-значение, а `bytes(4)` является префиксом `bytes(12)`. Последовательное
-состояние потребует отдельного будущего successor-контракта. `Choice<T>` и
-`Shuffled<T>` используют `Random()` по умолчанию или сохраняют явно переданный
-источник через перегрузку конструктора. Конструкторы только связывают
-состояние; выбор выполняет projection. Пустой choice и обратный диапазон
-бросают `InvalidRandomRange`, singleton choice/shuffle не обращаются к
-источнику. Shuffle создаёт новый массив и не меняет candidates.
+`PcgRandom(seed)` — это PCG-XSH-RR 64/32: воспроизводимый, но не
+криптографический. Он владеет изменяемым потоком, и копии объекта делят его.
+Точная последовательность выдачи входит в публичный контракт, поэтому один seed
+даёт одни и те же значения на всех движках.
+
+Распределения в `random/distribution` принимают источник по имени и отвечают
+`sample()`, который продвигает источник: равномерные целые и дробные, нормальное,
+экспоненциальное, гамма, бета, логнормальное, фон Мизеса, Парето и Вейбулла, а
+также `Choices`, `WeightedChoices`, `Samples` (без возвращения) и
+`PermutationSamples`. Неверные параметры бросают `InvalidDistribution`, пустой
+диапазон — `InvalidRandomRange`.
 
 Сетевые адреса становятся проверенными значениями до попадания в DNS или
 сокеты:
@@ -5649,36 +5649,39 @@ transport-neutral поиск и возвращает проверенные `Soc
 детерминированных тестов. Детали host resolver нормализуются в
 `UnresolvedHost` и `MissingReverseName`.
 
-`strings/parse` использует обычный вызов `.value()` после конструктора:
+`strings/parse` читает число или истинностное значение, записанное текстом.
+Объект называет текст, а действие — тип, который у него просят:
 
 ```okkama
 module app v1.0.0;
 
-import "strings/parse" take
-    ParsedInt, ParsedFloat, ParsedBool, ParsedByte,
-    InvalidInteger, InvalidFloat, InvalidBoolean, InvalidByte;
+import "strings/parse" take Number, Truth, InvalidInteger;
 
 main() is int {
     let count is int = Number("-42").int();
+    let mask is int = Number("ff").int(16);
     let ratio is float = Number("3.0").float();
+    let share is rat = Number("6/8").rat();     // 3/4
     let enabled is bool = Truth("true").bool();
     let octet is byte = Number("255").byte();
 
     try {
         Number(" 42").int();
     }
-    catch error is InvalidInteger {
-        error.source(); // исходная строка без изменений: " 42"
+    catch InvalidInteger.source(source) {
+        source; // исходная строка без изменений: " 42"
     }
     return 0;
 }
 ```
 
-Парсеры принимают только ASCII-запись скалярных значений:
-`-?[0-9]+` для `int`, `-?[0-9]+\.[0-9]+` для `float`, ровно `true` или
-`false` для `bool` и беззнаковое десятичное значение `0..255` для `byte`.
-Они не убирают пробелы, не принимают ведущий `+`, локальные цифры,
-экспоненциальную запись, `NaN` или `Inf`. Каждый отказ — типизированный
+Чтения принимают только ASCII-запись: `-?[0-9]+` для `int` по основанию 10,
+`-?[0-9]+\.[0-9]+` для `float`, целое или `числитель/знаменатель` с
+положительным знаменателем для `rat`, ровно `true` или `false` для `bool` и
+беззнаковое значение `0..255` для `byte`. `int` и `byte` принимают явное
+основание от 2 до 36, а основание 0 читает префиксы `0b`, `0o` и `0x`. Чтения не
+убирают пробелы, не принимают ведущий `+`, локальные цифры, экспоненциальную
+запись, `NaN` или `Inf`. Каждый отказ — типизированный
 `Error`, сохраняющий исходную строку.
 
 I/O-роли следуют правилу Elegant Objects: запрос называется возвращаемым
@@ -7505,7 +7508,7 @@ LikelyLocale сохраняет его. Контракт (okkama-docs `docs/std/
 
 
 Для Decimal, сохраняющего binary64-идентичность float, используйте
-ShortestFloat(value).value() из numbers/float; встроенный float.string()
+ShortestFloat(value).decimal() из numbers/float; встроенный float.string()
 не гарантирует такой roundtrip. negative() отдельно сохраняет отрицательный ноль.
 Контракт точного преобразования (okkama-docs `docs/std/shortest-float.md`).
 

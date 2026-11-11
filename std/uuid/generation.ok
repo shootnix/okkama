@@ -10,8 +10,8 @@ import "runtime/uuid" take uuid_named, uuid_versioned, uuid_custom;
 // RFC-compatible UUID generation that does not depend on host UUID libraries.
 //
 //     let dns = Uuid(origin: "6ba7b810-9dad-11d1-80b4-00c04fd430c8");
-//     let legacy is Uuid = value Uuid3(namespace: dns, name: "example.com");
-//     let stable is Uuid = value Uuid5(namespace: dns, name: "example.com");
+//     let legacy is Uuid = Uuid3(namespace: dns, name: "example.com").value();
+//     let stable is Uuid = Uuid5(namespace: dns, name: "example.com").value();
 //     let random is Uuid = Uuid4s(random: SecureRandom()).sample();
 //
 // UUID 3 hashes namespace bytes followed by the exact UTF-8 name with MD5.

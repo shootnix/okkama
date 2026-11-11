@@ -1839,7 +1839,7 @@ cannot unwrap the owner. Diagnostic formatting may safely name the cap type.
 This is an interface boundary with no general secrecy, purity or revocation
 promise. Other full references retain their capabilities.
 
-Object views have been removed. Roles and `#projected` keep their
+Object views and `#projected` have been removed. Roles keep their
 separate contracts. OIR Profile 0 remains int-only and explicitly refuses
 objects and caps. See the [working example](../examples/object-caps.ok) and
 [full guide](object-caps-0.0.1-ru.md).
@@ -2003,63 +2003,26 @@ including newly created field values, are released; borrowed caller-owned
 resources remain the caller's responsibility. See Chapter 15 and
 `t/interpreter/258-constructor-confirm.t`.
 
-### 17.6 Named constructor projections
+### 17.6 A plain call after the constructor
 
-An object can expose one or more actions as readable constructor projections.
-`#projected` uses the action name as the prefix; `#projected(alias)` provides a
-different prefix:
+The `#projected` directives, their aliases and prefix projections have been
+removed. Taking an object's result is an ordinary action call:
 
 ```okkama
-object ParsedInt {
-    has source is string;
-    ParsedInt(:source);
-
-    #projected(value)
-    integer() is int {
-        42; // abbreviated derivation from source
-    }
+object Celsius {
+    has degrees is float;
+    Celsius(:degrees);
+    fahrenheit() is float { degrees * 9.0 / 5.0 + 32.0; }
 }
 
-value ParsedInt(answer)                 // ParsedInt(answer).integer()
+// Inside an action:
+let boiling = Celsius(degrees: 100.0).fahrenheit(); // 212.0
 ```
 
-The prefix is resolved only after the following constructor target has been
-resolved to a concrete object. It is not a free function or a dynamic operator,
-and it cannot project variables, calls, or arbitrary parenthesized expressions.
-The projection action must be public,
-synchronous, zero-argument, explicitly typed, non-successor, and return a type
-different from the enclosing object. A generic result such as `T` is valid;
-returning the enclosing `Object<T>` is not. An object may mark several actions,
-but each effective prefix must be unique within that object.
-
-The named prefix works with every constructor surface:
-
-```okkama
-of Cash(digit: 1, cents: 25)
-value numbers.ParsedInt(answer)
-```
-
-Empty, full, shorthand, variadic, overloaded, generic, and
-namespace-qualified constructors retain their ordinary selection rules.
-Construction, including its `confirm` checks, must succeed before the projection action is called.
-Arguments evaluate exactly once, left to right, and the result can continue
-through normal postfix operations.
-
-The directive selects a declaration, not an entire action name. Other fixed
-overloads remain available:
-
-```okkama
-#projected
-value() is int { 10; }
-value(base is int) is int { base * 10; }
-```
-
-`value Object()` calls the zero-argument overload, while
-`Object().value(16)` calls the one-argument overload. The ordinary rule that
-all overloads of one name share a return type still applies. A duplicate
-zero-argument signature remains ambiguous; the projection directive is not an
-overload tie-breaker. The removed single-`&` syntax is a parse error; `&&`
-continues to mean boolean conjunction.
+The constructor and its checks complete before the action is called. The
+action's result type is explicit: `string`, `Maybe<string>` and
+`Presence<string>` are different contracts, with no automatic wrapping or
+unwrapping.
 
 ## Chapter 18. Actions
 
@@ -3383,7 +3346,7 @@ concrete values, so unrelated concrete equations remain an error.
 
 Builtin arrays are `Iterating<T>`, `Sequencing<T>` and `Sizing`, and their
 cursors are `Cursor<T>`, so a plain array is evidence for a role-typed
-generic parameter: `Maximum(values: [3, 9, 4])` infers `T = int` from the
+generic parameter: `Extremes([3, 9, 4])` infers `T = int` from the
 element tag (or, for an untagged literal, from its elements). An untagged
 empty literal still has no evidence.
 
@@ -4048,8 +4011,8 @@ deliberately UTC-only; other names throw `UnknownTimeZone` until versioned
 time-zone data is bundled rather than inherited silently from the host.
 
 Timers are live resources, not immutable values. `ScheduledTimer` and
-`ScheduledPeriodicTimer` are state-only schedule values; their `#projected timer()`
-projection acquires an owned resource. `cancel()` is an idempotent command and
+`ScheduledPeriodicTimer` are state-only schedule values; their `timer()`
+action acquires an owned resource. `cancel()` is an idempotent command and
 `cancelled()` is its query. Waiting after cancellation throws
 `CancelledTimer`. Periodic timers use an anchored fixed-rate schedule and skip
 missed ticks; destruction closes their opaque runtime handle.
@@ -5366,45 +5329,45 @@ a name surface as `encoding/json.DuplicateJsonMember` when `JsonFormatter`
 encodes them — this module adds no duplicate check of its own, reusing
 the JSON encoder's existing one instead.
 
-The top-level `random` module builds domain-level random values without
-introducing another native boundary:
+The `random` modules build random values over one small capability,
+`Randomizing`:
 
 ```okkama
-import "random" take
-    RandomSource, Random, SeededRandom, Choice, Shuffled,
-    InvalidRandomRange;
+import "random/source" take Randomizing, PcgRandom, SecureRandom;
+import "random/distribution" take Choices, PermutationSamples;
 
 main() is int {
-    let secure is RandomSource = Random();
-    let repeatable is RandomSource = SeededRandom(42);
+    let secure is Randomizing = SecureRandom();
+    let repeatable is Randomizing = PcgRandom(42);
 
-    let roll is int = secure.int(1, 6);       // both endpoints included
-    let flag is bool = secure.bool();
+    let roll is int = secure.integer(1, 7);   // 1 through 6: stop is excluded
     let ratio is float = secure.float();      // 0.0 <= ratio < 1.0
-    let color is string = value Choice(
-        ["red", "green", "blue"],
-        repeatable,
-    );
-    let order is @int = values Shuffled([1, 2, 3, 4], repeatable);
+    let nonce is @byte = secure.bytes(24);
+    let color is string = Choices(random: repeatable,
+        values: ["red", "green", "blue"]).sample();
+    let order is @int = PermutationSamples(random: repeatable,
+        values: [1, 2, 3, 4]).sample();
     return 0;
 }
 ```
 
-`Random` implements every `RandomSource` action from secure bytes. Integer
-sampling is unbiased and inclusive across the complete signed 64-bit domain;
-it does not convert bounds through `float`. Equal endpoints need no entropy.
-`bool()` selects equally between false and true, and `float()` produces one of
-the exactly representable 53-bit fractions in `[0.0, 1.0)`.
+`SecureRandom` reads fresh operating-system entropy for every call and has no
+seed. Integer ranges are half-open `[start, stop)` and never empty. A sample
+outside the unbiased range is drawn again, so the bounds never pass through
+`float`. `float()` forms 53 random bits in `[0.0, 1.0)`. A byte request is
+capped at 16 MiB.
 
-`SeededRandom(seed)` is deliberately non-cryptographic. It is a pure query
-object, not a mutable stream: the same seed, action and arguments always give
-the same value, and `bytes(4)` is the prefix of `bytes(12)`. Sequential state
-would require a future explicit successor contract. `Choice<T>` and
-`Shuffled<T>` use `Random()` by default or retain an explicit source through
-constructor overloading. Their constructors only bind state; projection does
-the selection. Empty choice and reversed ranges throw `InvalidRandomRange`,
-while singleton choice/shuffle do not query the source. Shuffling creates a
-new array and never changes the candidates.
+`PcgRandom(seed)` is PCG-XSH-RR 64/32: reproducible, not cryptographically
+secure. It owns a mutable stream, and copies of the object share it. The exact
+output sequence is part of the public contract, so a seed gives the same
+values on every engine.
+
+The distributions in `random/distribution` take the source by name and answer
+with `sample()`, which advances it: uniform integers and floats, normal,
+exponential, gamma, beta, log-normal, von Mises, Pareto and Weibull, and also
+`Choices`, `WeightedChoices`, `Samples` (without replacement) and
+`PermutationSamples`. Invalid parameters throw `InvalidDistribution`, and an
+empty range throws `InvalidRandomRange`.
 
 Network addresses are validated values before they reach DNS or sockets:
 
@@ -5477,37 +5440,40 @@ port; it does not decide TCP versus UDP. `FixedDns` holds immutable maps for
 deterministic tests. Host resolver details are normalized to `UnresolvedHost`
 and `MissingReverseName`.
 
-`strings/parse` uses object projections, so construction and conversion are
-one expression:
+`strings/parse` reads a number or a truth value written as text. The object
+names the text, and the action names the type asked for:
 
 ```okkama
 module app v1.0.0;
 
-import "strings/parse" take
-    ParsedInt, ParsedFloat, ParsedBool, ParsedByte,
-    InvalidInteger, InvalidFloat, InvalidBoolean, InvalidByte;
+import "strings/parse" take Number, Truth, InvalidInteger;
 
 main() is int {
-    let count is int = value ParsedInt("-42");
-    let ratio is float = value ParsedFloat("3.0");
-    let enabled is bool = value ParsedBool("true");
-    let octet is byte = value ParsedByte("255");
+    let count is int = Number("-42").int();
+    let mask is int = Number("ff").int(16);
+    let ratio is float = Number("3.0").float();
+    let share is rat = Number("6/8").rat();     // 3/4
+    let enabled is bool = Truth("true").bool();
+    let octet is byte = Number("255").byte();
 
     try {
-        value ParsedInt(" 42");
+        Number(" 42").int();
     }
-    catch error is InvalidInteger {
-        error.source(); // the unchanged input: " 42"
+    catch InvalidInteger.source(source) {
+        source; // the unchanged input: " 42"
     }
     return 0;
 }
 ```
 
-The parsers accept only ASCII scalar spellings: `-?[0-9]+` for `int`,
-`-?[0-9]+\.[0-9]+` for `float`, exactly `true` or `false` for `bool`, and an
-unsigned decimal value in `0..255` for `byte`. They do not trim, recognize a
-leading `+`, use locale digits, or accept exponent/`NaN`/`Inf` float forms.
-Each failure is a typed `Error` carrying the original string.
+The readings accept only ASCII spellings: `-?[0-9]+` for `int` in base 10,
+`-?[0-9]+\.[0-9]+` for `float`, an integer or `numerator/denominator` with a
+positive denominator for `rat`, exactly `true` or `false` for `bool`, and an
+unsigned value in `0..255` for `byte`. `int` and `byte` take an explicit base
+from 2 to 36, and base 0 reads the `0b`, `0o` and `0x` prefixes. The readings
+do not trim, recognize a leading `+`, use locale digits, or accept
+exponent/`NaN`/`Inf` float forms. Each failure is a typed `Error` carrying the
+original string.
 
 The I/O roles follow the Elegant Objects naming rule: a query names the value
 it returns, while a command uses a verb and exposes no infrastructure result.
@@ -7141,7 +7107,7 @@ Complete tag contract (okkama-docs `docs/std/locale-tag-guide.md`).
 
 
 When Decimal must retain a float's binary64 identity, use
-ShortestFloat(value).value() from numbers/float; the builtin float.string() does
+ShortestFloat(value).decimal() from numbers/float; the builtin float.string() does
 not guarantee that roundtrip. negative() retains negative zero separately.
 Exact conversion contract (okkama-docs `docs/std/shortest-float.md`).
 
