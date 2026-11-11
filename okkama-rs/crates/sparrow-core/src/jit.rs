@@ -147,8 +147,9 @@ pub struct Jit {
     /// instruction that has one runs through the shared slow path instead
     /// (`SPARROW_CORE_PLAIN`).
     plain: Chosen,
-    /// Functions whose stack maps Cranelift's frontend keeps, as before
-    /// #354 (`SPARROW_CORE_FRONTEND_MAPS`).
+    /// Async bodies whose stack maps Cranelift's frontend keeps, as before
+    /// #354 (`SPARROW_CORE_FRONTEND_MAPS`); synchronous functions always do
+    /// (#362).
     frontend_maps: Chosen,
     /// Allocations of each inline allocation site compiled under `--stats`:
     /// its label and the count and bytes machine code adds there (#55).
@@ -463,8 +464,12 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     };
     mark!();
     let plain = jit.plain.has(symbol);
-    // Explicit roots unless the analysis is too large (#354).
-    let root_live = (!jit.frontend_maps.has(symbol)).then(|| okkama_sparrow::live_sets(source)).flatten();
+    // Explicit roots for async bodies (#354), unless the analysis is too
+    // large: there Cranelift's reloads after every call made more than half
+    // of the code. A synchronous function keeps Cranelift's stack maps, which
+    // cost a third less in call-heavy code such as recursion (#362).
+    let explicit = source.is_async && !jit.frontend_maps.has(symbol);
+    let root_live = explicit.then(|| okkama_sparrow::live_sets(source)).flatten();
     let config = jit.module.target_config();
     let mut context = jit.module.make_context();
     context.func.signature = jit.signature(params);

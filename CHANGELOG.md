@@ -199,6 +199,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   nested in versions, of maps and of tries, drop without recursion.
   `OKKAMA_MAPS=btree` keeps every version a copy.
 
+- Tomato keeps Cranelift's stack maps for synchronous functions (#362) and
+  its own GC roots (#354) for async bodies only, where Cranelift's reloads
+  after every call made more than half of the code. In call-heavy code the
+  own roots cost a third more: the ladder's recursive `02-calls` iterates in
+  16.4 ms instead of 20.8 (15.7 with Cranelift's maps everywhere), while the
+  #328 HTTP load runs in 413 ms instead of 404 (572 before #354).
+  `SPARROW_CORE_FRONTEND_MAPS` now chooses among async bodies.
 - Tomato compiles a quarter faster (#345): release builds no longer run
   Cranelift's IR verifier, which checks the JIT's own output and took a
   quarter of the compile time. A small HTTP server and client (a loopback
