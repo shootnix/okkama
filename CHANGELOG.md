@@ -684,6 +684,34 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     - The url, http and web inline tests pass in a container (73 modules on
       IR and Sparrow). The two url conformance cases use the new names.
       There is an example, `examples/url/`.
+  - `cli` (its own card, `cards/cli.md`, approved by the owner). One module,
+    `cli/command`, replaces `cli/spec`, `cli/parse` and `cli/help`, so that
+    a command can read its own arguments.
+
+    | before | now |
+    |---|---|
+    | `CliCommand("greet", "…", CommandSyntax([Option(key, ["--name", "-n"], OptionValue("NAME", false), "…")], [Flag(key, ["--help", "-h"], "true", "…")], []), [])` | `CliCommand(name: "greet", summary: "…", options: [Option(name: "name", short: "n", value: "NAME", help: "…")], flags: [Flag(name: "help", short: "h", help: "…")])` |
+    | `ParsedCommand(command, Utf8Arguments(ProcessArguments())).value()` | `command.invocation(ProcessArguments().strings())` |
+    | `ScalarSetting(invocation.settings(), key).value()` | `call.text("name") else "world"`, `call.int("count")`, `call.texts("tag")` |
+    | `invocation.settings().membership(help)` | `call.flag("help")` |
+    | `invocation.path()` and comparing names | `call.command() == add` (the declared object) |
+    | `Usage(command, "greet", 80).string()`, `ShellCompletion(…)` | `command.usage(program: "greet")`, `command.completion(program:, shell:)` |
+    | `OperandCardinality` | `OperandCount` |
+
+    - Absent values are `Maybe` (the owner's answer 1).
+    - Typed readers delegate to `strings/parse`. A malformed value is a
+      `CliFailure` naming the option (answer 2, «по аналогии с json»).
+    - The selected subcommand is the declared object, and there are no
+      callbacks (answer 3).
+    - A `SettingKey` is optional, given as `key:` and defaulting to
+      `SettingKey([name])`.
+    - Reading an undeclared name throws `UndeclaredCliName`.
+    - `Option`, `Flag`, `Operand` and `CliCommand` show their declaration
+      through the cap `Spec`. 17 parser, validation and completion helpers
+      are hidden, and so is `Utf8Arguments`.
+    - Inline tests cover reading, typed values, subcommands, errors,
+      declaration checks, usage and completion. There is an example,
+      `examples/cli/`.
 
 ### Fixed
 

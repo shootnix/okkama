@@ -1,10 +1,10 @@
 module app v1.0.0;
 
 import "io/stdout" take Stdout;
-import "cli/arguments" take ProcessArguments, Utf8Arguments;
+import "cli/arguments" take ProcessArguments;
 
 main() is int {
-    let args = Utf8Arguments(ProcessArguments());
+    let args = ProcessArguments().strings();
     Stdout().writeln(args.size().string());
     for args -> a {
         Stdout().writeln("[" + a + "]");

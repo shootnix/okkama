@@ -3968,6 +3968,25 @@ right:)` отвечает на `unified()` или `unified(context)`, `contextua
 и отвечает на `first()` и `last()`. `Year(2028).leap()` говорит, високосный
 ли год. `examples/calendar/` печатает месяц.
 
+`cli` объявляет командную строку и читает её. `CliCommand(name:,
+summary:, options: [Option(name: "name", short: "n", value: "NAME", help:
+"…")], flags: [Flag(name: "help", short: "h")], operands: [Operand(name:
+"FILE", count: OperandCount.repeated)], commands: [ … ])` — это данные, без
+колбэков. `command.invocation(ProcessArguments().strings())` читает
+аргументы, а плохой аргумент бросает `CliFailure.detailed(index, token,
+message)`. `Invocation` отвечает по имени:
+- `call.text("name") else "world"` (отсутствие — `Maybe.none`);
+- `call.int("count")`, `float` и `bool`, где кривое значение бросает
+  `CliFailure` с именем опции;
+- `call.texts("tag")`, `call.flag("help")` и `call.operands()`;
+- `call.command()` — выбранная подкоманда, которую сравнивают как
+  объявленный объект: `if call.command() == add`.
+
+`command.usage(program:)` и `command.completion(program:, shell:)` пишут
+справку и автодополнение для bash/zsh/fish. `call.settings()` кладёт
+командную строку поверх конфигурации. `examples/cli/` показывает утилиту с
+подкомандами.
+
 `http/client` отправляет запросы через `HttpClient()`. По умолчанию он берёт системные DNS и доверенные корни, ходит только на публичные адреса и говорит по HTTP/1.1. Всё остальное задаётся именованными аргументами: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)`, `cookies: MemoryCookieJar()`. Для каждого REST-метода есть шорткат: `get(url)`, `head`, `options`, `delete`, а также `post(url:, body:)`, `put`, `patch` с `Content`, например `JsonBody(json)`. Любой другой запрос пишется как `client.response(Request(url:, method:, headers:, body:))`. Ответ показывает голову через cap `Head` (`page::Head::status`, `::class`, `::headers`) и читает тело через `await page.text()`, `bytes()`, `json()` или `reading()`. `Status` и `Method` — enum'ы: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` и `MethodName` переводят их в числа и токены протокола и обратно. Каждая задача показана программой в `examples/http/client/`.
 
 `strings/parse` читает текст как тип, который у него просят: `Number("42").int()`,
@@ -4157,8 +4176,6 @@ Stdlib намеренно узка, пока язык стабилизирует
   без блока `finally` — в грамматике языка его просто нет — за счёт того,
   что `try`/`catch` на каждый кейс полностью поглощает любую `Error` в
   `bool`, и идущий следом цикл `after()` достигается всегда;
-- `proc/args` — неизменяемый application argv с точным байтовым и строгим
-  UTF-8-представлением и индексированными ошибками;
 - `net/address` — неизменяемые проверенные IPv4/IPv6, socket endpoint и
   неразрешённые пары host/port без утечки native envelope;
 - `test/more` — stateless переиспользуемые утверждения поверх контекстной test
@@ -4241,32 +4258,6 @@ main() is int {
 запуска — это реальный, достижимый случай (а не просто defensive code),
 когда `BenchmarkCase` на основе `test/fake_clock` откатывает собственные
 часы назад.
-
-Аргументы приложения представлены отдельным stateless-объектом над
-неизменяемым snapshot рантайма:
-
-```okkama
-import "proc/args" take Args;
-
-main() is int {
-    let arguments = Args();
-    arguments.size();
-    arguments.bytes();
-
-    if arguments.size() > 0 {
-        arguments.at(0);
-    }
-    return 0;
-}
-```
-
-`bytes()` сохраняет каждый аргумент точно, включая пустые и не-UTF-8 значения.
-`strings()` строго декодирует весь snapshot и обозначает первое повреждённое
-значение как `InvalidArgumentEncoding(index)`. `at(index)` применяет ту же
-политику к одному значению и бросает `MissingArgument(index)` для
-отрицательных и верхнеграничных индексов. Путь исходника, переданный CLI, в
-argv приложения не входит. Конструктор `Args()` ничего не вызывает: защитным
-snapshot уже владеет runtime provider.
 
 Plain-шаблоны — переиспользуемые строковые объекты, а не встроенные программы
 на Okkama:

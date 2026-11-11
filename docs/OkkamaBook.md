@@ -3790,6 +3790,25 @@ for a wall calendar. `IsoWeek(year:, week:)` refuses a week its year does not
 have, shows `week::Calendar::week`, and answers `first()` and `last()`.
 `Year(2028).leap()` tells a leap year. `examples/calendar/` prints a month.
 
+`cli` declares a command line and reads it.
+`CliCommand(name:, summary:, options: [Option(name: "name", short: "n", value:
+"NAME", help: "…")], flags: [Flag(name: "help", short: "h")], operands:
+[Operand(name: "FILE", count: OperandCount.repeated)], commands: [ … ])` is
+data, with no callbacks. `command.invocation(ProcessArguments().strings())`
+reads the arguments, and a bad one throws `CliFailure.detailed(index, token,
+message)`. The `Invocation` answers by name:
+- `call.text("name") else "world"` (absent is `Maybe.none`);
+- `call.int("count")`, `float` and `bool`, where a malformed value throws a
+  `CliFailure` that names the option;
+- `call.texts("tag")`, `call.flag("help")` and `call.operands()`;
+- `call.command()`, the selected subcommand, compared as the declared
+  object: `if call.command() == add`.
+
+`command.usage(program:)` and `command.completion(program:, shell:)` write
+the help text and bash/zsh/fish completion. `call.settings()` layers the
+command line over configuration. `examples/cli/` shows a tool with
+subcommands.
+
 `http/client` sends requests with `HttpClient()`. By default it uses the system's DNS and trusted roots, reaches public endpoints only and speaks HTTP/1.1. Every other part is a named argument: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)` and `cookies: MemoryCookieJar()`. Every REST method has a shortcut: `get(url)`, `head`, `options`, `delete`, and `post(url:, body:)`, `put`, `patch` with a `Content` such as `JsonBody(json)`. Anything else is `client.response(Request(url:, method:, headers:, body:))`. A reply shows its head through the cap `Head` (`page::Head::status`, `::class`, `::headers`) and reads its body with `await page.text()`, `bytes()`, `json()` or `reading()`. `Status` and `Method` are enums: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` and `MethodName` turn them into wire numbers and tokens and back. `examples/http/client/` shows each task as a program.
 
 `strings/parse` reads text as the type asked for: `Number("42").int()`,
@@ -3975,8 +3994,6 @@ The stdlib is intentionally narrow while the language stabilizes:
   by structuring the per-case `try`/`catch` to fully absorb any `Error`
   into a `bool` first, so the `after()` loop that follows it is always
   reached;
-- `proc/args` — immutable application argv with exact byte and strict UTF-8
-  views plus indexed failures;
 - `net/address` — immutable validated IPv4/IPv6, socket endpoint and unresolved
   host/port values without exposing native endpoint envelopes;
 - `test/more` — stateless reusable assertions over the contextual test
@@ -4056,32 +4073,6 @@ are unit-tested without any clock at all. `InvalidBenchmark` covers a
 non-positive iteration count and a run whose clock reports an earlier
 instant afterward than before, which is a real, reachable case (not just
 defensive code) when a `test/fake_clock`-backed case rewinds its own clock.
-
-Application arguments use a separate stateless object over the immutable
-runtime snapshot:
-
-```okkama
-import "proc/args" take Args;
-
-main() is int {
-    let arguments = Args();
-    arguments.size();
-    arguments.bytes();
-
-    if arguments.size() > 0 {
-        arguments.at(0);
-    }
-    return 0;
-}
-```
-
-`bytes()` preserves every exact argument, including empty and non-UTF-8
-values. `strings()` decodes the complete snapshot strictly and reports the
-first malformed value as `InvalidArgumentEncoding(index)`. `at(index)` uses
-the same policy for one value and throws `MissingArgument(index)` for negative
-or upper-bound indices. The source path used by the CLI is not included.
-`Args()` performs no native work in its constructor; the runtime provider
-already owns the defensive snapshot.
 
 Plain templates are reusable string objects, not embedded Okkama programs:
 

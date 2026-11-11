@@ -99,6 +99,12 @@ and compares the output.
 |---|---|
 | `url/parts.ok` | parse a URL into parts, resolve links against it, read its query, build one from parts |
 
+## cli
+
+| Program | Task |
+|---|---|
+| `cli/todo.ok` | a tool with subcommands: declare it, read arguments, act on the selected command, report a bad argument, print usage |
+
 ## strings/parse
 
 | Program | Task |

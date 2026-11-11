@@ -1,0 +1,54 @@
+module examples/cli/todo v1.0.0;
+
+import "cli/command" take CliCommand, CliFailure, Flag, Operand, Option, OperandCount;
+import "io/stdout" take Stdout;
+
+// A command-line tool with subcommands: todo add TEXT, todo list [--all],
+// todo done ID. The declaration is data; the program reads the arguments
+// once and acts on the subcommand it got back, compared as an object.
+// Here the arguments are fixed lists; a real tool passes
+// ProcessArguments().strings().
+
+main() is int {
+    let out = Stdout();
+    let add = CliCommand(
+        name: "add",
+        summary: "Add an item",
+        options: [Option(name: "priority", short: "p", value: "N", help: "1 is urgent")],
+        operands: [Operand(name: "TEXT", count: OperandCount.repeated, help: "What to do")],
+    );
+    let list = CliCommand(name: "list", summary: "Show items", flags: [Flag(name: "all", short: "a", help: "Include done items")]);
+    let done = CliCommand(name: "done", summary: "Close an item", operands: [Operand(name: "ID")]);
+    let todo = CliCommand(
+        name: "todo",
+        summary: "A to-do list",
+        flags: [Flag(name: "help", short: "h", help: "Show this help")],
+        commands: [add, list, done],
+    );
+
+    for [["add", "-p", "1", "buy", "milk"], ["list", "--all"], ["done", "7"], ["-h", "list"], ["remove", "7"], ["add", "-p", "soon", "x"]] -> arguments {
+        out.write("$ todo " + arguments.join(" ") + "\n  ");
+        try {
+            let call = todo.invocation(arguments);
+            if call.flag("help") {
+                out.writeln("help requested for " + call.path().join(" "));
+            }
+            else if call.command() == add {
+                out.writeln("add \"" + call.operands().join(" ") + "\" with priority "
+                    + (call.int("priority") else 3).string());
+            }
+            else if call.command() == list {
+                out.writeln("list, including done: " + call.flag("all").string());
+            }
+            else {
+                out.writeln("close item " + call.operands()[0]);
+            }
+        }
+        catch CliFailure.detailed(index, token, message) {
+            out.writeln("error at argument " + index.string() + ": " + message);
+        }
+    }
+
+    out.write(todo.usage(program: "todo"));
+    0;
+}
