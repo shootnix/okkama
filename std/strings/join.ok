@@ -3,15 +3,18 @@ module strings/join v1.0.0;
 import "collections/iteration" take Iterating;
 import "collections/list" take List, EmptyList;
 
-// A bounded snapshot of strings and their literal separator.
-// Construction traverses the source once; string() observes only the snapshot.
+// Strings joined by a literal separator, within limits on the number of
+// strings and the length of the result. string() walks the source.
 object Joined {
-    has snapshot is JoinedParts;
+    has separator is string;
+    has values is Iterating<string>;
+    has maximum_items, maximum_length is int;
 
     Joined(separator is string, values is Iterating<string>) {
-        snapshot = values.reduce(JoinedParts(separator: separator, maximum_items: 10000, maximum_length: 1048576)) -> parts, value {
-            parts.following(value);
-        };
+        self.separator = separator;
+        self.values = values;
+        maximum_items = 10000;
+        maximum_length = 1048576;
     }
 
     Joined(
@@ -21,13 +24,16 @@ object Joined {
         maximum_length is int
     ) {
         confirm maximum_items >= 0 && maximum_length >= 0 else throw InvalidJoinLimits.invalid;
-        snapshot = values.reduce(JoinedParts(separator: separator, maximum_items: maximum_items, maximum_length: maximum_length)) -> parts, value {
-            parts.following(value);
-        };
+        self.separator = separator;
+        self.values = values;
+        self.maximum_items = maximum_items;
+        self.maximum_length = maximum_length;
     }
 
     string() is string {
-        snapshot.string();
+        values.reduce(JoinedParts(separator: separator, maximum_items: maximum_items, maximum_length: maximum_length)) -> parts, value {
+            parts.following(value);
+        }.string();
     }
 }
 

@@ -26,6 +26,8 @@ import "strings/parse" take Number, InvalidInteger;
 object Rfc3339 {
     has origin is Instant;
     has offset is Duration;
+    has source is string;
+    has reading is bool;
 
     Rfc3339(origin is Instant, offset is Duration) {
         confirm offset::Span::seconds.denominator() == "1"
@@ -39,71 +41,31 @@ object Rfc3339 {
             );
         self.origin = origin;
         self.offset = offset;
+        source = "";
+        reading = false;
     }
 
-    // Reads a timestamp; its offset is kept for string().
+    // Keeps a timestamp to read; instant() and string() read it.
     Rfc3339(text is string) {
-        let length is int = text.length();
-        confirm length >= 20 else throw InvalidRfc3339.origin(text);
-
-        let utc is bool = text.slice(length - 1, length) == "Z";
-        let numeric is bool = length >= 25
-            && (text.slice(length - 6, length - 5) == "+"
-            || text.slice(length - 6, length - 5) == "-")
-            && text.slice(length - 3, length - 2) == ":";
-        confirm utc || numeric else throw InvalidRfc3339.origin(text);
-
-        let local_source is string = if utc {
-            text.slice(0, length - 1);
-        }
-        else {
-            text.slice(0, length - 6);
-        };
-        let local is LocalDateTime = try {
-            IsoText(local_source).local_date_time();
-        }
-        catch error is InvalidIsoLocalDateTime {
-            throw InvalidRfc3339.origin(text);
-        };
-
-        let offset is Duration = if utc {
-            Duration(value: 0.rat(), unit: DurationUnit.second);
-        }
-        else {
-            try {
-                let hour is int = Number(text.slice(length - 5, length - 3)).int();
-                let minute is int = Number(text.slice(length - 2, length)).int();
-                confirm hour <= 23 && minute <= 59
-                    else throw InvalidRfc3339.origin(text);
-                let sign is int = if text.slice(length - 6, length - 5) == "-" {
-                    -1;
-                }
-                else {
-                    1;
-                };
-                Duration(
-                    value: (sign * (hour * 3600 + minute * 60)).rat(),
-                    unit: DurationUnit.second,
-                );
-            }
-            catch error is InvalidInteger {
-                throw InvalidRfc3339.origin(text);
-            }
-        };
-
-        let epoch is LocalDateTime = LocalDateTime(
-            date: Date(year: 1970, month: 1, day: 1),
-            time: TimeOfDay(hour: 0, minute: 0, second: 0, nanosecond: 0),
-        );
-        self.origin = Instant(origin: local.minus(epoch).minus(offset));
-        self.offset = offset;
+        origin = Instant(origin: Duration(value: 0.rat(), unit: DurationUnit.second));
+        offset = Duration(value: 0.rat(), unit: DurationUnit.second);
+        source = text;
+        reading = true;
     }
 
     instant() is Instant {
-        origin;
+        if reading {
+            self.parsed().instant();
+        }
+        else {
+            origin;
+        }
     }
 
     string() is string {
+        if reading {
+            return self.parsed().string();
+        }
         let epoch is LocalDateTime = LocalDateTime(
             date: Date(year: 1970, month: 1, day: 1),
             time: TimeOfDay(hour: 0, minute: 0, second: 0, nanosecond: 0),
@@ -136,6 +98,63 @@ object Rfc3339 {
                 ("00" + minute).slice(minute.length(), minute.length() + 2);
         };
         IsoLocalDateTime(origin: local).string() + suffix;
+    }
+
+    // The formatter of the timestamp read from the source.
+    hidden parsed() is Rfc3339 {
+        let length is int = source.length();
+        confirm length >= 20 else throw InvalidRfc3339.origin(source);
+
+        let utc is bool = source.slice(length - 1, length) == "Z";
+        let numeric is bool = length >= 25
+            && (source.slice(length - 6, length - 5) == "+"
+            || source.slice(length - 6, length - 5) == "-")
+            && source.slice(length - 3, length - 2) == ":";
+        confirm utc || numeric else throw InvalidRfc3339.origin(source);
+
+        let local_source is string = if utc {
+            source.slice(0, length - 1);
+        }
+        else {
+            source.slice(0, length - 6);
+        };
+        let local is LocalDateTime = try {
+            IsoText(local_source).local_date_time();
+        }
+        catch error is InvalidIsoLocalDateTime {
+            throw InvalidRfc3339.origin(source);
+        };
+
+        let offset is Duration = if utc {
+            Duration(value: 0.rat(), unit: DurationUnit.second);
+        }
+        else {
+            try {
+                let hour is int = Number(source.slice(length - 5, length - 3)).int();
+                let minute is int = Number(source.slice(length - 2, length)).int();
+                confirm hour <= 23 && minute <= 59
+                    else throw InvalidRfc3339.origin(source);
+                let sign is int = if source.slice(length - 6, length - 5) == "-" {
+                    -1;
+                }
+                else {
+                    1;
+                };
+                Duration(
+                    value: (sign * (hour * 3600 + minute * 60)).rat(),
+                    unit: DurationUnit.second,
+                );
+            }
+            catch error is InvalidInteger {
+                throw InvalidRfc3339.origin(source);
+            }
+        };
+
+        let epoch is LocalDateTime = LocalDateTime(
+            date: Date(year: 1970, month: 1, day: 1),
+            time: TimeOfDay(hour: 0, minute: 0, second: 0, nanosecond: 0),
+        );
+        Rfc3339(origin: Instant(origin: local.minus(epoch).minus(offset)), offset: offset);
     }
 }
 

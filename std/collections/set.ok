@@ -274,16 +274,14 @@ object SymmetricDifference<T> does Set<T>, Iterating<T>, Sizing {
 object SetWith<T> does Set<T>, Iterating<T>, Sizing {
     has origin is Set<T>;
     has value is T;
-    has present is bool;
 
     SetWith(origin is Set<T>, value is T) {
         self.origin = origin;
         self.value = value;
-        present = origin.membership(value);
     }
 
     cursor() is Cursor<T> {
-        if present {
+        if origin.membership(value) {
             origin.cursor();
         }
         else {
@@ -292,7 +290,7 @@ object SetWith<T> does Set<T>, Iterating<T>, Sizing {
     }
 
     size() is int {
-        origin.size() + if present {
+        origin.size() + if origin.membership(value) {
             0;
         }
         else {
@@ -316,12 +314,10 @@ object SetWith<T> does Set<T>, Iterating<T>, Sizing {
 object SetWithout<T> does Set<T>, Iterating<T>, Sizing {
     has origin is Set<T>;
     has value is T;
-    has present is bool;
 
     SetWithout(origin is Set<T>, value is T) {
         self.origin = origin;
         self.value = value;
-        present = origin.membership(value);
     }
 
     cursor() is Cursor<T> {
@@ -332,7 +328,7 @@ object SetWithout<T> does Set<T>, Iterating<T>, Sizing {
     }
 
     size() is int {
-        origin.size() - if present {
+        origin.size() - if origin.membership(value) {
             1;
         }
         else {

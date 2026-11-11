@@ -401,6 +401,12 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     The compiler's runtime helpers for `Within` and `Before` read
     `Duration::Span::seconds`; a helper entry `Cap::field` now names a cap
     field.
+  - Constructors no longer call other objects (the owner's rule, see
+    `docs/std-principles.md` §2). `Rfc3339(text)` keeps the text and reads
+    it in `instant()` and `string()`. `Joined` walks its values in
+    `string()`. `ShortestFloat` takes the float's bits in its actions.
+    `Permutations` and `SetWith`/`SetWithout` ask their origin when walked.
+    `LinkedList` is hidden; `prefix()` gives each node its size.
   - Constructors of several values are called with named arguments
     everywhere (the owner, 2026-11-11: «да»; `docs/std-principles.md` §2):
     341 calls in std, conformance and the Book, and 46 in the okkama-docs

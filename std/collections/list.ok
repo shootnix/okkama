@@ -70,19 +70,19 @@ object EmptyList<T> does List<T>, Iterating<T>, Sizing {
     }
 
     prefix(value is T) is List<T> {
-        LinkedList(value: value, following: self);
+        LinkedList(value: value, following: self, size: 1);
     }
 }
 
-object LinkedList<T> does List<T>, Iterating<T>, Sizing {
+hidden object LinkedList<T> does List<T>, Iterating<T>, Sizing {
     has origin is T;
     has following is List<T>;
     has amount is int;
 
-    LinkedList(value is T, following is List<T>) {
+    LinkedList(value is T, following is List<T>, size is int) {
         origin = value;
         self.following = following;
-        amount = following.size() + 1;
+        amount = size;
     }
 
     cursor() is Cursor<T> {
@@ -102,7 +102,7 @@ object LinkedList<T> does List<T>, Iterating<T>, Sizing {
     }
 
     prefix(value is T) is List<T> {
-        LinkedList(value: value, following: self);
+        LinkedList(value: value, following: self, size: amount + 1);
     }
 }
 
@@ -161,7 +161,7 @@ test "a list is built by prefixing and shares its tail" {
     test.is(two.map() -> name {
         name;
     }.join(","), "two,one");
-    test.is(LinkedList(value: "x", following: empty).first(), "x");
+    test.is(LinkedList(value: "x", following: empty, size: 1).first(), "x");
     test.is(
         try {
             empty.first();

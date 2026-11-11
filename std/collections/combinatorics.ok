@@ -257,7 +257,7 @@ object Permutations<T> does Iterating<@T> {
 
     Permutations(origin is Sequencing<T>) {
         self.origin = origin;
-        amount = origin.size();
+        amount = -1;
     }
 
     Permutations(origin is Sequencing<T>, size is int) {
@@ -268,14 +268,21 @@ object Permutations<T> does Iterating<@T> {
     }
 
     cursor() is Cursor<@T> {
-        let positions is @int = (0..amount).map() -> index {
+        // Without a size, a permutation takes every item.
+        let count is int = if amount < 0 {
+            origin.size();
+        }
+        else {
+            amount;
+        };
+        let positions is @int = (0..count).map() -> index {
             index;
         };
         PermutationCursor(
             origin: origin,
             positions: positions,
-            size: amount,
-            active: amount <= origin.size(),
+            size: count,
+            active: count <= origin.size(),
         );
     }
 }

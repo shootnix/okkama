@@ -13,13 +13,23 @@ import "compare" take Order;
 // Perl stringification decides that boundary. Zero's sign is a separate identity.
 object ShortestFloat {
     has origin is float;
-    has bits is int;
-    has negative is bool;
 
     ShortestFloat(origin is float) {
         self.origin = origin;
-        let bytes = FloatBytes(value: origin, width: FloatWidth.bits64, order: ByteOrder.big).bytes();
-        negative = bytes[0].int() >= 128;
+    }
+
+    negative() is bool {
+        self.binary()[0].int() >= 128;
+    }
+
+    // The IEEE 754 binary64 bytes, most significant first.
+    hidden binary() is @byte {
+        FloatBytes(value: origin, width: FloatWidth.bits64, order: ByteOrder.big).bytes();
+    }
+
+    // The magnitude's bits: the binary64 pattern without its sign.
+    hidden bits() is int {
+        let bytes = self.binary();
         let magnitude is @byte = (0..8).map() -> index {
             if index == 0 {
                 (bytes[0].int() & 127).byte();
@@ -28,14 +38,11 @@ object ShortestFloat {
                 bytes[index];
             }
         };
-        bits = Binary(bytes: magnitude, order: ByteOrder.big).int(Signedness.unsigned);
-    }
-
-    negative() is bool {
-        negative;
+        Binary(bytes: magnitude, order: ByteOrder.big).int(Signedness.unsigned);
     }
 
     decimal() is Decimal {
+        let bits is int = self.bits();
         if bits == 0 {
             return Decimal("0");
         }
