@@ -542,6 +542,10 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         let Some(value) = self.value(expr)? else {
             return Ok(None);
         };
+        // The scope of the loop owns its source, as a `let` owns its value
+        // (#483): what the source reaches then outlives every cursor, while
+        // each cursor stays free and lives one step.
+        self.adopt_into(self.cleanups.len() - 1, &value, expr.span);
         let cursor = self.emit(
             InstKind::CallRole {
                 receiver: value.value,
@@ -574,11 +578,6 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         value: bool,
         mut body: impl FnMut(&mut Self, Vec<Typed>, Vec<Typed>) -> Result<Option<Vec<ValueId>>>,
     ) -> Result<(Out, Vec<Typed>)> {
-        // The scope of the loop owns its cursors, as a `let` owns its value:
-        // a free cursor would be taken by the first action it is passed to
-        // and destroyed, with what it reaches, when that action returns.
-        let scope = self.cleanups.len() - 1;
-        self.adopt_into(scope, &start, span);
         let base = self.vars.len();
         let carried = self.carried_vars(scanned, span)?;
         let state_types: Vec<Type> = state.iter().map(|value| value.ty.clone()).collect();
@@ -671,7 +670,6 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             start.ty.clone(),
             span,
         );
-        self.adopt_into(scope, &advanced, span);
         let mut args = vec![advanced.value];
         args.extend(step_params[..state.len()].iter().copied());
         args.extend(self.carried_args(&carried, span));

@@ -71,7 +71,8 @@ actions should still be the questions callers actually ask
   object with twenty-five actions is no better.
 - **Constructors take named arguments** in std, in code and in docs:
   `File(path: Path("notes.txt"), mode: FileMode.appending)`. Positional
-  arguments are for actions.
+  arguments are for actions, and for a constructor of one value, where a
+  name adds nothing: `Path("notes.txt")`.
 - **Iterate with `for`, not with closures.** A sequence is walked as
   `for source -> item`; a stream does `Batching<T>` (#465). No `each(fn)`.
 - **One name, one meaning, one type.** The same action name never returns an

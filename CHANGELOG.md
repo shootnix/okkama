@@ -152,11 +152,12 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
 ### Fixed
 
 - `for` and `map`/`filter`/`reduce`/`find` over a temporary source destroyed
-  it after the first call (#483). In `for Resource().view() -> n`, the
-  cursor (and for #465 the batch source) lived in a block parameter nobody
-  owned. The first action it was passed to took it and destroyed it, with
-  everything it reached, on return. The scope of the loop now owns its
-  cursors and its source, as a `let` does.
+  it after the first call (#483). In `for Resource().view() -> n`, the source
+  was free, so the first action its cursor was passed to took the cursor and
+  destroyed it, with everything it reached, on return. The scope of the loop
+  now adopts the source once, as a `let` does; cursors still live one step,
+  and memory per step is unchanged. A cursor that reaches a `destroy` still
+  keeps about 200 bytes per step until the scope ends, as before (#484).
 - `config/document` turned a JSON number into a setting in the canonical form
   of `Decimal`, so `"port": 5432` became `"5.432e3"` while INI and the
   environment gave `5432` (#366). Numbers are now written as JSON writes
