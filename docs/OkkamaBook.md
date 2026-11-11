@@ -3641,14 +3641,13 @@ objects that need it, so its lifetime and its users stay visible.
 
 ### 26.5 Standard libraries: current std and legacy stdlib
 
-The current library is the root `std/` tree. Its contract is
-[roadmap v4](std/stdlib-roadmap-v4.md), with [design principles](std/stdlib-design-principles.md)
-and the [completion guide](std/stdlib-completion-todo-v4.md).
-`File` owns closing; `File.binary()` and `File.text()` expose separate stream roles.
-Tree deletion and temporary-file preservation are explicit void commands.
-`Formatted(pattern: "{}", values: ["Ada"]).string()` performs typed interpolation;
-`document.string()` writes a `Json` value without reflection.
-See the [migration guide](std/stdlib-v4-migration.md) for removed APIs.
+The current library is the root `std/` tree. It is being reviewed module by
+module (#352) against the [std principles](std-principles.md): objects are
+mechanisms, not records; APIs are flat; sequences are walked with `for`; and
+a computation names its answer. Each module the review has finished is
+described below. The guides for std's domains are in okkama-docs
+(`docs/std/`), and its migration guide (`docs/std/stdlib-v4-migration.md`)
+lists the removed APIs.
 
 `json` is one immutable `Json` for a value, parsed by `ParsedJson(text).root()`
 or built from `JsonField`s. Strict readers (`int("id")`, `get("customer")`)
@@ -5606,7 +5605,7 @@ resolves RFC 3986 references. Typed authority distinguishes DNS/IP/IPvFuture,
 empty hosts and absent/empty ports and userinfo. Query and fragment preserve
 absence separately from explicit emptiness. There is no DNS or transport I/O.
 HostName uses bounded UTS46/IDNA; PublicSuffixList represents pinned ICANN+PRIVATE
-policy. [Current URL contract](std/url-value.md),
+policy. Current URL contract (okkama-docs `docs/std/url-value.md`),
 [executable example](../examples/std-v4/url-resolution.ok).
 
 Cookie values remain immutable. CookieExpiry() means session, never an epoch
@@ -5643,7 +5642,7 @@ LoadedCookieJar(file,clock).result() perform explicit filesystem effects: a
 versioned private snapshot, exact deadlines/partition keys and session exclusion.
 The file is a distinct protocol boundary, without arbitrary private-field reflection.
 
-[Cookie contract](std/http-cookie.md),
+Cookie contract (okkama-docs `docs/std/http-cookie.md`),
 [persistence example](../examples/std-v4/http-cookie-persistence.ok).
 Full HTTP transport/client/server remains subsequent roadmap work; these examples
 verify policy/storage and do not perform a network request.
@@ -5652,14 +5651,14 @@ HTTP/1 heads can now be read asynchronously with
 `Http1ResponseHeadReading(stream).result()`. The result retains typed head(),
 exact binary remainder() and consumed() count. The session owns the borrowed
 stream; cancellation drains child Future cleanup. See the
-[contract](std/http1-framing.md) and [example](../examples/std-v4/http1-reading.ok).
+contract (okkama-docs `docs/std/http1-framing.md`) and [example](../examples/std-v4/http1-reading.ok).
 
 
 `Http1BodyReading(source, owner, plan, prefix, headers)` consumes the typed framing
 plan and adopts an explicit Closing owner. Fixed/chunked/close-delimited payload
 is bounded; trailers require clean EOF. `Http1IncomingBody(reader)` supplies the
 one-shot BodyOpening role. The owner closes on EOF or abort; pool reuse requires
-a separate lease. See [contract](std/http1-body-reading.md) and
+a separate lease. See contract (okkama-docs `docs/std/http1-body-reading.md`) and
 [stream example](../examples/std-v4/http1-body.ok).
 
 
@@ -5668,7 +5667,7 @@ a separate lease. See [contract](std/http1-body-reading.md) and
 messages. Known body contradictions fail before any head byte. Constructors
 leave body roles unobserved; started futures own opened-reader/sink cleanup.
 These operate on supplied streams; network connection and pooling are separate.
-[Contract](std/http1-message-writing.md),
+Contract (okkama-docs `docs/std/http1-message-writing.md`),
 [example](../examples/std-v4/http1-message-writing.ok).
 
 
@@ -5677,7 +5676,7 @@ OS-selected port. `TcpConnecting(listener.local_endpoint()).connection()` acquir
 a numeric connection without DNS. The Closing owner exposes async input/output;
 closing output drains started writes and shuts down only that direction. Reads
 may be short: accumulate the logical payload rather than expecting packet-sized
-reads. [Ownership contract](std/tcp-stream.md),
+reads. Ownership contract (okkama-docs `docs/std/tcp-stream.md`),
 [loopback example](../examples/std-v4/tcp-stream.ok).
 
 `Resolving` separates name lookup from numeric connection. `FixedResolution`
@@ -5685,27 +5684,27 @@ snapshots typed HostAddresses/AddressName records; `SystemResolution` uses async
 host-resolver workers. Both preserve first-occurrence address order and attach
 the requested port. Cancelling a system lookup stops waiting and publishing;
 a libc call already running in its worker may finish later.
-[Configured resolution](std/fixed-resolution.md),
-[system resolution](std/system-resolution.md).
+Configured resolution (okkama-docs `docs/std/fixed-resolution.md`),
+system resolution (okkama-docs `docs/std/system-resolution.md`).
 
 `Http1Session(input, output, owner).exchange(request)` owns a supplied connection.
 Its one-shot response body holds admission until verified EOF; early close or
 cancellation discards the connection. An old completed reader cannot close a
 later exchange. Empty responses release admission before publication.
-[Session contract](std/http1-session.md),
+Session contract (okkama-docs `docs/std/http1-session.md`),
 [two TCP exchanges](../examples/std-v4/http1-session.ok).
 
 With `Expect: 100-continue`, the session writes headers before opening the body.
 A 100 reply permits upload; an early final reply leaves the source unopened and
 discards reuse. One absolute waiting deadline spans intermediate replies;
-timeout/cancellation drains reading. [Contract](std/http1-continue.md),
+timeout/cancellation drains reading. Contract (okkama-docs `docs/std/http1-continue.md`),
 [TCP handshake](../examples/std-v4/http1-continue.ok).
 
 Certificate metadata keeps exact wall-clock validity and distinguishes absent CA
 path depth from present zero. Distinguished names keep ordered RDN groups and
 repeated identifiers; a flat display/hash cannot replace those coordinates.
-These values do not establish trust. [Values](std/x509-values.md),
-[grouped names](std/x509-name.md).
+These values do not establish trust. Values (okkama-docs `docs/std/x509-values.md`),
+grouped names (okkama-docs `docs/std/x509-name.md`).
 
 `ParsedCertificate(bytes).value()` now reads a bounded DER envelope and asks the
 host provider to decode the certificate/public key. Certificate retains exact
@@ -5713,25 +5712,25 @@ DER and exposes grouped subject/issuer names, wall-clock validity and PublicKey
 as complete SPKI bytes. Repeated parsing preserves structural identity; host
 pointers are freed before publication. Unsupported name encodings fail explicitly
 when observed. Parsing establishes no signature, hostname or chain trust.
-[Contract](std/x509-certificate.md), [example](../examples/std-v4/x509-certificate.ok).
+Contract (okkama-docs `docs/std/x509-certificate.md`), [example](../examples/std-v4/x509-certificate.ok).
 
 CertificateNames projects SAN DNS strings and nominal IP addresses separately,
 without CN fallback or matching. CertificateChain snapshots supplied untrusted
 certificates; TrustedCertificates/PemTrustStore select explicit roots. Empty roots
 mean no anchors and never select defaults. PEM cursor successors share a source
 snapshot. Verification and system-root acquisition remain separate operations.
-[Contract](std/certificate-observers.md), [example](../examples/std-v4/certificate-observers.ok).
+Contract (okkama-docs `docs/std/certificate-observers.md`), [example](../examples/std-v4/certificate-observers.ok).
 
 CertificateExtensions decodes CA/depth, the nine named key-usage bits and EKU
 purpose OIDs. Unknown extensions retain their identifier, critical flag and exact
 payload; unknown purposes remain OID objects. Metadata observation grants no
-verified permission. [Contract](std/certificate-extensions.md),
+verified permission. Contract (okkama-docs `docs/std/certificate-extensions.md`),
 [example](../examples/std-v4/certificate-extensions.ok).
 
 SystemTrustStore() creates a request; result() explicitly reads linked OpenSSL CA
 sources and returns an immutable TrustStore. Keep that snapshot for the lifetime
 of a client policy. Each acquisition reads actual sources again and reports typed
-failures; it does not verify a peer. [Contract](std/system-trust-store.md),
+failures; it does not verify a peer. Contract (okkama-docs `docs/std/system-trust-store.md`),
 [example](../examples/std-v4/system-trust-store.ok).
 
 VerifiedCertificateChain snapshots explicit roots and takes a nominal certificate
@@ -5740,13 +5739,13 @@ selected leaf-to-anchor sequence. DNS uses DnsCertificateIdentity(HostName), IP
 uses IpCertificateIdentity(IpAddress). Time is exact and inclusive; SAN matching,
 signatures and path constraints are verified together. Path search is bounded
 (1024 steps); ambiguous issuers past it raise CertificateLimitExceeded. Trust-anchor payload policy
-stays separate from wire-certificate syntax. [Contract](std/certificate-verification.md),
+stays separate from wire-certificate syntax. Contract (okkama-docs `docs/std/certificate-verification.md`),
 [example](../examples/std-v4/certificate-verification.ok).
 
 TlsClientPolicy keeps explicit root, TLS-version and ALPN preference snapshots.
 Defaults enable TLS 1.2/1.3 and advertise nothing. Protocol names preserve opaque
 8-bit values through Latin-1 strings; the policy never acquires roots or performs
-a handshake. [Contract](std/tls-client-policy.md),
+a handshake. Contract (okkama-docs `docs/std/tls-client-policy.md`),
 [example](../examples/std-v4/tls-client-policy.ok).
 
 TlsClientHandshake consumes supplied managed TCP when its Future starts and
@@ -5755,30 +5754,30 @@ roots, nominal DNS/IP reference and current clock instant. The connection owns
 AsyncReading/AsyncWriting halves and immutable TLS metadata. Read cancellation
 preserves the owner; cancelled partial output aborts it. Empty input requires
 close_notify. close() aborts immediately; async shutdown() performs orderly TLS
-closure and disposes the descriptor. [Contract](std/tls-client-transport.md),
+closure and disposes the descriptor. Contract (okkama-docs `docs/std/tls-client-transport.md`),
 [actual HTTPS example](../examples/std-v4/https-session.ok).
 
 Http1TlsSession adopts verified TLS only for exact http/1.1 or absent ALPN.
 h2 and other selections fail before HTTP bytes and retain caller ownership.
 Successful exchange/body leases use the existing session contract.
-[Contract](std/http1-tls-session.md).
+Contract (okkama-docs `docs/std/http1-tls-session.md`).
 
 HttpEndpointSelection validates an HTTP/HTTPS URL, resolves a name once and
 checks every exact numeric endpoint through EndpointAllowing. Numeric hosts skip
 DNS; selected ports cannot be replaced by the resolver. Explicit CIDR lists are
 immutable; PublicEndpoints uses pinned affirmative global IP properties. The
-result acquires no socket. [Contract](std/http-endpoints.md).
+result acquires no socket. Contract (okkama-docs `docs/std/http-endpoints.md`).
 
 Http1Connecting opens a conversation using only a checked route's numeric
 endpoints. HTTPS verifies that URL's DNS/IP reference and negotiated HTTP1 ALPN;
 ready unclaimed and unpublished results are disposed. Bounded connection racing is now implemented; shared pools remain separate work.
-[Contract](std/http1-connecting.md).
+Contract (okkama-docs `docs/std/http1-connecting.md`).
 
 TcpRacing removes checked-address head-of-line waiting: it interleaves families,
 staggers relative starts and advances after failure. It cancels pending attempts
 and closes ready losers before handing out a connection. Http1Connecting now
 uses it; DNS streaming and strict resolver policy remain separate.
-[Contract](std/tcp-racing.md).
+Contract (okkama-docs `docs/std/tcp-racing.md`).
 
 ## Chapter 27. The Native Runtime Boundary (Overview)
 
@@ -5836,7 +5835,7 @@ uncatchable. Filesystem diagnostics retain the failed operation, exact path
 operands and available native code/reason internally, including through cause
 chains and cleanup failures. The canonical symbol remains `native_symbol` in
 diagnostics and the result of public `operation()`. Host codes and localized OS
-messages are diagnostic only. See [filesystem errors](std/filesystem-errors.md).
+messages are diagnostic only. See filesystem errors (okkama-docs `docs/std/filesystem-errors.md`).
 
 ### 27.3 Opaque handles
 
@@ -6507,7 +6506,7 @@ a value dynamically. The runtime validates the actual action result.
 runs tests. Consecutive .ok files can form one module. Production main returns
 an exit code0..255; executable diagnostics and failed tests yield failure.
 The test runner supports report, workers, seed, filter, timeout and capture-limit
-options; see [testing](std/testing.md). Parse/AST-print modes and a usable
+options; see testing (okkama-docs `docs/std/testing.md`). Parse/AST-print modes and a usable
 interactive prompt remain future work. Source: Okkama.pm and cli/01,02,04,07 tests.
 
 ### 31.11 Functional collections, next steps
@@ -6618,7 +6617,7 @@ inspect an `any` box. Still planned: explicit `any` narrowing, decimal literal
 semantics, completeness of matches over arbitrary values, and `throws` in
 signatures (on hold). Parse/AST-print modes and the REPL exist in the Rust
 toolchain (`okkama ast`, `okkama repl`). Production/debug/test runner modes already work. Active stdlib scope
-and remaining work are tracked in the [v4 roadmap](std/stdlib-roadmap-v4.md),
+and remaining work are tracked in the v4 roadmap (okkama-docs `docs/std/stdlib-roadmap-v4.md`),
 not the historical MVP milestone.
 
 ## Appendix C. Quick Reference Card
@@ -6723,86 +6722,86 @@ invoice adapter.
 
 ### Explicit HTTP client policy
 
-HttpLimits, ClientTimeouts and ClientPolicy collect bounded reusable inputs without opening sockets. Each timeout is independent: negative rejects, zero disables. The HTTP1 protocol adapter rejects H2-only/mixed policies and incompatible ALPN before acquisition. See [contract](std/http-client-policy.md). Enforcement belongs to the consuming client.
+HttpLimits, ClientTimeouts and ClientPolicy collect bounded reusable inputs without opening sockets. Each timeout is independent: negative rejects, zero disables. The HTTP1 protocol adapter rejects H2-only/mixed policies and incompatible ALPN before acquisition. See contract (okkama-docs `docs/std/http-client-policy.md`). Enforcement belongs to the consuming client.
 
 ### A direct HTTP client owns response lifetimes
 
-HttpClient sends an absolute HTTP(S) Request through checked numeric endpoints and returns ClientResponse at final headers. HttpDirectRequest derives origin-form and Host without observing the body. Read a nonempty body to verified EOF to enable reuse; closing or dropping it discards transport. Empty responses release admission immediately. An explicit async owner retains idle sessions across caller scopes: borrowed Atomic storage alone cannot do this. Client close cancels queued requests before releasing permits. Independent deadlines cover connection acquisition, exchange through headers, and each body read; zero disables a stage. [Contract and executable HTTPS example](std/http-client.md), [example](../examples/std-v4/http-client.ok).
+HttpClient sends an absolute HTTP(S) Request through checked numeric endpoints and returns ClientResponse at final headers. HttpDirectRequest derives origin-form and Host without observing the body. Read a nonempty body to verified EOF to enable reuse; closing or dropping it discards transport. Empty responses release admission immediately. An explicit async owner retains idle sessions across caller scopes: borrowed Atomic storage alone cannot do this. Client close cancels queued requests before releasing permits. Independent deadlines cover connection acquisition, exchange through headers, and each body read; zero disables a stage. Contract and executable HTTPS example (okkama-docs `docs/std/http-client.md`), [example](../examples/std-v4/http-client.ok).
 
 ### Redirects are an explicit exchange capability
 
-Wrap HttpClient with Redirecting(client,RedirectPolicy()) to enable bounded follows. 303 changes POST to GET; 307/308 require a replayable preserved body. Each Location resolves against the effective URL; cross-origin credentials are removed and every new route is checked, even on an idle connection. Intermediate bodies are closed and their metadata appears in history; the final body remains owned by the caller. [Contract](std/http-redirect.md), [real loopback example](../examples/std-v4/http-redirect.ok).
+Wrap HttpClient with Redirecting(client,RedirectPolicy()) to enable bounded follows. 303 changes POST to GET; 307/308 require a replayable preserved body. Each Location resolves against the effective URL; cross-origin credentials are removed and every new route is checked, even on an idle connection. Intermediate bodies are closed and their metadata appears in history; the final body remains owned by the caller. Contract (okkama-docs `docs/std/http-redirect.md`), [real loopback example](../examples/std-v4/http-redirect.ok).
 
 ### Cookie policy is an explicit adapter
 
-Use Redirecting(CookieExchanging(client,jar,FirstPartyCookies()),policy) for fresh cookies on each redirect hop. FirstPartyCookies deliberately chooses top-level first-party context for the current method. A caller Cookie is rejected by default; preserve/replace are explicit policies, and duplicates never merge. Capture context once, store each Set-Cookie separately, and keep generated jar headers internal to the hop. On storage failure, dispose the acquired response body. The jar remains caller-owned. [Contract](std/http-cookie-client.md), [real loopback example](../examples/std-v4/http-cookie-client.ok).
+Use Redirecting(CookieExchanging(client,jar,FirstPartyCookies()),policy) for fresh cookies on each redirect hop. FirstPartyCookies deliberately chooses top-level first-party context for the current method. A caller Cookie is rejected by default; preserve/replace are explicit policies, and duplicates never merge. Capture context once, store each Set-Cookie separately, and keep generated jar headers internal to the hop. On storage failure, dispose the acquired response body. The jar remains caller-owned. Contract (okkama-docs `docs/std/http-cookie-client.md`), [real loopback example](../examples/std-v4/http-cookie-client.ok).
 
 ### Secret capabilities and scoped HTTP auth
 
-SecretBytes owns opaque native memory and exposes size/close metadata. ExportedSecret explicitly copies bytes and retains its owner across scopes. Ordinary byte/text/equality observations are unavailable. Basic/Bearer restrict preemptive credentials to verified HTTPS consumers and normalized origin/path. Redirecting belongs outside the auth adapter. [Secret contract](std/secret-bytes.md), [auth profile](std/http-auth.md). Full frozen-source provider regression: 672 files / 12185 assertions PASS.
+SecretBytes owns opaque native memory and exposes size/close metadata. ExportedSecret explicitly copies bytes and retains its owner across scopes. Ordinary byte/text/equality observations are unavailable. Basic/Bearer restrict preemptive credentials to verified HTTPS consumers and normalized origin/path. Redirecting belongs outside the auth adapter. Secret contract (okkama-docs `docs/std/secret-bytes.md`), auth profile (okkama-docs `docs/std/http-auth.md`). Full frozen-source provider regression: 672 files / 12185 assertions PASS.
 
 ### HTTP2 starts at a bounded wire boundary
 
-Http2Settings describes local advertised table/window/frame/stream capacities; zero window/table/streams is meaningful. Internal framing checks a nine-byte header before requesting payload. Connection faults abort immediately; stream faults consume their bounded payload so the following frame remains aligned. A memoized frame reader borrows transport and drains cancelled reads with one group at a time. [Contract](std/http2-wire-foundation.md). The negotiated H2 engine and HPACK remain open.
+Http2Settings describes local advertised table/window/frame/stream capacities; zero window/table/streams is meaningful. Internal framing checks a nine-byte header before requesting payload. Connection faults abort immediately; stream faults consume their bounded payload so the following frame remains aligned. A memoized frame reader borrows transport and drains cancelled reads with one group at a time. Contract (okkama-docs `docs/std/http2-wire-foundation.md`). The negotiated H2 engine and HPACK remain open.
 
 ### HTTP2 preface and peer settings
 
-[Client preface and peer SETTINGS](std/http2-preface.md) verified with lazy exact wire emission, sequential peer observations, ACK, cancellation cleanup and one real loopback TCP example. Focused 477/478/479: six/ten/three assertions. Std-only; no repeat full regression. Public H2 exchanges, live streams/HPACK/flow and outgoing settings ACK tracking remain open.
+Client preface and peer SETTINGS (okkama-docs `docs/std/http2-preface.md`) verified with lazy exact wire emission, sequential peer observations, ACK, cancellation cleanup and one real loopback TCP example. Focused 477/478/479: six/ten/three assertions. Std-only; no repeat full regression. Public H2 exchanges, live streams/HPACK/flow and outgoing settings ACK tracking remain open.
 
 ### HPACK bounded wire primitives
 
-[Integer/string/Huffman primitives](std/hpack-primitives.md) verified with all RFC octet codes and provider bounds: 480/runtime53 eight/thirteen assertions, inline/example PASS. Measured slow per-bit std decoding moved to a narrow native bulk provider (PERF-22). Full regression PASS: 680 files / 12,266 assertions / 1084 seconds; table/block/header semantics remain the next slice.
+Integer/string/Huffman primitives (okkama-docs `docs/std/hpack-primitives.md`) verified with all RFC octet codes and provider bounds: 480/runtime53 eight/thirteen assertions, inline/example PASS. Measured slow per-bit std decoding moved to a narrow native bulk provider (PERF-22). Full regression PASS: 680 files / 12,266 assertions / 1084 seconds; table/block/header semantics remain the next slice.
 
 ### HPACK tables and compression contexts
 
-[Bounded tables and blocks](std/hpack-blocks.md) verified: complete static/dynamic decoding, exact context across RFC request/response sequences, minimum table shrink and conservative never-indexed encoder. 481/482 four/ten assertions; combined compatibility thirty-five PASS, inline/example PASS. Std-only after native full gate; no repeat full run. Live H2 transport remains open.
+Bounded tables and blocks (okkama-docs `docs/std/hpack-blocks.md`) verified: complete static/dynamic decoding, exact context across RFC request/response sequences, minimum table shrink and conservative never-indexed encoder. 481/482 four/ten assertions; combined compatibility thirty-five PASS, inline/example PASS. Std-only after native full gate; no repeat full run. Live H2 transport remains open.
 
 ### HTTP2 HEADERS and typed field metadata
 
-[Block and field mapping](std/http2-headers.md) verified: exact continuation sequence, cancellation, preflighted fragmentation, pseudo-field validation and normalized Host/authority agreement on input/output without body observations. 483/484/485 nine/nine/three assertions; combined 480..485 six files / forty-three PASS, inline/real TCP example PASS. Std-only; no repeat full gate. Live flow/streams/ALPN remain open.
+Block and field mapping (okkama-docs `docs/std/http2-headers.md`) verified: exact continuation sequence, cancellation, preflighted fragmentation, pseudo-field validation and normalized Host/authority agreement on input/output without body observations. 483/484/485 nine/nine/three assertions; combined 480..485 six files / forty-three PASS, inline/real TCP example PASS. Std-only; no repeat full gate. Live flow/streams/ALPN remain open.
 
 ### HTTP2 flow accounting
 
-[Signed window/DATA accounting](std/http2-flow.md) verified: padded payload charge, negative SETTINGS credit, scoped overflow, dual-window send preflight and retained connection charge on stream error. 486 eight cases; compatibility twenty-one PASS, inline/example PASS. Std-only, no full rerun. Async credit/scheduler/deadlock prevention remain open.
+Signed window/DATA accounting (okkama-docs `docs/std/http2-flow.md`) verified: padded payload charge, negative SETTINGS credit, scoped overflow, dual-window send preflight and retained connection charge on stream error. 486 eight cases; compatibility twenty-one PASS, inline/example PASS. Std-only, no full rerun. Async credit/scheduler/deadlock prevention remain open.
 
 ### HTTP2 control values
 
-[Reset/PING/GOAWAY metadata](std/http2-controls.md) verified: exact unknown codes, no ACK echo loop, monotone admission stop and explicitly opaque diagnostics. 487 five cases; compatibility twelve PASS, inline/example PASS. Std-only, no full rerun. Live stream/connection effects and retry remain open.
+Reset/PING/GOAWAY metadata (okkama-docs `docs/std/http2-controls.md`) verified: exact unknown codes, no ACK echo loop, monotone admission stop and explicitly opaque diagnostics. 487 five cases; compatibility twelve PASS, inline/example PASS. Std-only, no full rerun. Live stream/connection effects and retry remain open.
 
 ### HTTP wire byte serialization
 
-[Bounded internal bulk joins](std/http-wire-bytes.md) replace per-byte maps through the existing buffer provider; exact 16 KiB DATA/HPACK payloads verified. PERF-23 records about 2.59x fixture improvement with residual VM traversal open. Std-only; no full rerun.
+Bounded internal bulk joins (okkama-docs `docs/std/http-wire-bytes.md`) replace per-byte maps through the existing buffer provider; exact 16 KiB DATA/HPACK payloads verified. PERF-23 records about 2.59x fixture improvement with residual VM traversal open. Std-only; no full rerun.
 
 ### HTTP2 stream lifecycle
 
-[Half-close/reset/ID state](std/http2-stream-life.md) verified: independent stream states, final accepted payload distinction, minimal late-frame processing and odd uint31 exhaustion. 489 five cases; compatibility ten PASS, inline/example PASS. Std-only, no full rerun. Actual multiplexing/sibling physical reset remains open.
+Half-close/reset/ID state (okkama-docs `docs/std/http2-stream-life.md`) verified: independent stream states, final accepted payload distinction, minimal late-frame processing and odd uint31 exhaustion. 489 five cases; compatibility ten PASS, inline/example PASS. Std-only, no full rerun. Actual multiplexing/sibling physical reset remains open.
 
 ### HTTP2 consuming connection reader
 
-[Internal input loop](std/http2-input.md) routes complete fields/DATA/control frames, retains HPACK before stream validation, tracks initial local ACK and queues replies without blocking on output. 490 eight plus 483 nine assertions PASS; nested continuation cancellation settles. Std-only, no full rerun. Owning writer/flow/public H2 client remain open.
+Internal input loop (okkama-docs `docs/std/http2-input.md`) routes complete fields/DATA/control frames, retains HPACK before stream validation, tracks initial local ACK and queues replies without blocking on output. 490 eight plus 483 nine assertions PASS; nested continuation cancellation settles. Std-only, no full rerun. Owning writer/flow/public H2 client remain open.
 
 ### HTTP2 connection writer
 
-[Bounded output and tickets](std/http2-output.md) serialize whole header blocks and isolate producer cancellation from physical writes. 491 eight cases; 483/490/491 compatibility 25 PASS after common preflight refactor. Std-only, no full rerun. Fair DATA/flow scheduling and physical session integration remain open.
+Bounded output and tickets (okkama-docs `docs/std/http2-output.md`) serialize whole header blocks and isolate producer cancellation from physical writes. 491 eight cases; 483/490/491 compatibility 25 PASS after common preflight refactor. Std-only, no full rerun. Fair DATA/flow scheduling and physical session integration remain open.
 
 HTTP2 duplex: `examples/std-v4/http2-duplex.ok` verifies concurrent reader/writer, sibling responses in reverse order, padded DATA and PING ACK on one real socket. 492 three assertions PASS; live body/flow/public client still follow.
 
 ### HTTP2 outbound DATA
 
-[Sender scheduler](std/http2-sending.md) separates reservation/wire debit, waits outside the writer, queues one frame per producer, handles SETTINGS/credit notifications and retires closed slots. 493 eleven cases; flow/writer/actual TCP compatibility 30 PASS after cleanup refactor. Std-only, no full rerun. Incoming body flow and public session remain open.
+Sender scheduler (okkama-docs `docs/std/http2-sending.md`) separates reservation/wire debit, waits outside the writer, queues one frame per producer, handles SETTINGS/credit notifications and retires closed slots. 493 eleven cases; flow/writer/actual TCP compatibility 30 PASS after cleanup refactor. Std-only, no full rerun. Incoming body flow and public session remain open.
 
 ### HTTP2 incoming body buffer
 
-[Body storage/reading](std/http2-body.md) bounds storage, credits padding/consumption separately, preserves final DATA and validates length/trailers. 494 eleven PASS; shared trailer refactor compatibility 76 PASS. No runtime changes/full rerun. Aggregate receiver/session ownership follow. Fresh probe startup measured separately in PERF-24.
+Body storage/reading (okkama-docs `docs/std/http2-body.md`) bounds storage, credits padding/consumption separately, preserves final DATA and validates length/trailers. 494 eleven PASS; shared trailer refactor compatibility 76 PASS. No runtime changes/full rerun. Aggregate receiver/session ownership follow. Fresh probe startup measured separately in PERF-24.
 
 ### HTTP2 aggregate incoming flow
 
-[Receive ledger](std/http2-receiving.md) preserves connection debit on stream failure, credits discard once, separates request registration/response attachment and retires body storage at application EOF. 494/495/496: 22 PASS, including real TCP WINDOW_UPDATE after app reads. Std-only, no full rerun; full owned session/client/ALPN remain open.
+Receive ledger (okkama-docs `docs/std/http2-receiving.md`) preserves connection debit on stream failure, credits discard once, separates request registration/response attachment and retires body storage at application EOF. 494/495/496: 22 PASS, including real TCP WINDOW_UPDATE after app reads. Std-only, no full rerun; full owned session/client/ALPN remain open.
 
 
 ### Owned HTTP2 session
 
-[Owned session](std/http2-session.md): `Http2Session(input,output,owner,local,peer,limits)` performs typed exchanges on one previously selected H2 transport. Supervised stream holders preserve native bodies across reverse response arrival, per-stream cancellation/reset, GOAWAY and physical close. Completed buffered bodies remain readable until application EOF/close/drop. Final compatibility: nine files / 79 assertions PASS, including actual multiplexed TCP with PING and exact consumption credit. Interpreter cancellation races have independent red/green evidence; the required frozen-source full regression passed: 699 files / 12455 assertions, 1125 seconds, unchanged 1324-file source inventory. H2 HTTPS/opening/client policy and the remaining HTTP roadmap are still open.
+Owned session (okkama-docs `docs/std/http2-session.md`): `Http2Session(input,output,owner,local,peer,limits)` performs typed exchanges on one previously selected H2 transport. Supervised stream holders preserve native bodies across reverse response arrival, per-stream cancellation/reset, GOAWAY and physical close. Completed buffered bodies remain readable until application EOF/close/drop. Final compatibility: nine files / 79 assertions PASS, including actual multiplexed TCP with PING and exact consumption credit. Interpreter cancellation races have independent red/green evidence; the required frozen-source full regression passed: 699 files / 12455 assertions, 1125 seconds, unchanged 1324-file source inventory. H2 HTTPS/opening/client policy and the remaining HTTP roadmap are still open.
 
 
 ### Ownership after an async continuation
@@ -6812,17 +6811,17 @@ An owned result created by a nested if/match/try/functional block after await tr
 
 ### HTTP2 verified HTTPS and shared client pool
 
-[Opening](std/http2-connecting.md) verifies URL-derived certificate identity/SNI and actual h2 ALPN before preface. An explicit H2 policy in the normal [HttpClient](std/http2-client.md) enables shared physical owners, multiplexed leases, stream-local abandonment/body deadlines, checked-peer reuse and GOAWAY replacement. Final root H2 ten files /83 assertions PASS; unchanged H1 client/decorator compatibility eleven files /89 PASS. Interpreter ownership correction full gate: 700/12465 PASS; std-only client changes use focused gates. Mixed ALPN, replay-safe retry and remaining HTTP modules stay open. The recorded PERF-25 warnings were later fixed by the completion trampoline.
+Opening (okkama-docs `docs/std/http2-connecting.md`) verifies URL-derived certificate identity/SNI and actual h2 ALPN before preface. An explicit H2 policy in the normal HttpClient (okkama-docs `docs/std/http2-client.md`) enables shared physical owners, multiplexed leases, stream-local abandonment/body deadlines, checked-peer reuse and GOAWAY replacement. Final root H2 ten files /83 assertions PASS; unchanged H1 client/decorator compatibility eleven files /89 PASS. Interpreter ownership correction full gate: 700/12465 PASS; std-only client changes use focused gates. Mixed ALPN, replay-safe retry and remaining HTTP modules stay open. The recorded PERF-25 warnings were later fixed by the completion trampoline.
 
 
 ### Mixed HTTP1/H2 ALPN and shared conversation admission
 
-[Negotiation contract](std/http-alpn.md): HttpClientProtocols validates exact enabled/advertised agreement; HttpSelectedConnecting adopts one checked verified transport according to actual ALPN. HttpClient supports a mixed H1.1/H2 policy; absent ALPN selects enabled H1, ordinary cleartext uses H1, H2-only remains explicit prior knowledge. The common physical pool serializes actual H1 body leases and multiplexes H2. Unsent queued requests are re-admitted after conversation retirement; emitted requests are not replayed. Whole admission tasks are supervised so client close cancels queues before releasing references. Final H1/H2/decorator/mixed compatibility: 28 files /240 assertions PASS. Std-only; the last interpreter full gate stays 700/12465 PASS. Replay-safe stale retry and remaining HTTP modules follow.
+Negotiation contract (okkama-docs `docs/std/http-alpn.md`): HttpClientProtocols validates exact enabled/advertised agreement; HttpSelectedConnecting adopts one checked verified transport according to actual ALPN. HttpClient supports a mixed H1.1/H2 policy; absent ALPN selects enabled H1, ordinary cleartext uses H1, H2-only remains explicit prior knowledge. The common physical pool serializes actual H1 body leases and multiplexes H2. Unsent queued requests are re-admitted after conversation retirement; emitted requests are not replayed. Whole admission tasks are supervised so client close cancels queues before releasing references. Final H1/H2/decorator/mixed compatibility: 28 files /240 assertions PASS. Std-only; the last interpreter full gate stays 700/12465 PASS. Replay-safe stale retry and remaining HTTP modules follow.
 
 
 ### Replay-safe stale HTTP1 retry
 
-[Optional Retrying](std/http-retry.md) performs at most one replacement exchange for
+Optional Retrying (okkama-docs `docs/std/http-retry.md`) performs at most one replacement exchange for
 an idempotent request with a replayable body after zero-response-byte failure on
 a reused H1 conversation. Partial/1xx bytes, fresh errors, POST, one-shot bodies,
 timeout/cancellation and broad TLS failures do not qualify. Direct session errors
@@ -6834,7 +6833,7 @@ open.
 
 ### Scoped Digest SHA-256
 
-[Digest profile](std/http-digest.md) supports SHA-256/SHA-256-sess, qop=auth, userhash,
+Digest profile (okkama-docs `docs/std/http-digest.md`) supports SHA-256/SHA-256-sess, qop=auth, userhash,
 fresh secure cnonce, atomic bounded nonce counts, direct HTTPS scope, one bounded
 stale refresh and optional header/trailer rspauth verification. Generic received
 challenge parsing handles combined schemes, token68, quoted commas and bounded
@@ -6846,7 +6845,7 @@ credentials, auth-int and preemptive nonce caching remain open.
 
 ### Digest SHA-512/256 and UTF-8/NFC
 
-[Modern Digest profile](std/http-digest.md) adds SHA-512-256/-sess, explicit UTF-8
+Modern Digest profile (okkama-docs `docs/std/http-digest.md`) adds SHA-512-256/-sess, explicit UTF-8
 credential NFC normalization, userhash/username* and exact UTF-8 realm wire
 handling. Existing ASCII profiles remain covered. Correct algorithm vectors
 agree with independent OpenSSL; RFC7616's truncated-SHA-512 example has a
@@ -6866,11 +6865,11 @@ handshake follow separately. Evidence and performance finding.
 Handshake validation binds the nonce/accept and offered subprotocol. Server
 Origin approval precedes 101; compare against a trusted configured destination,
 not the caller's Host. Fragmented text is decoded only at message completion.
-[Protocol contracts](std/websocket.md); actual owned connection follows.
+Protocol contracts (okkama-docs `docs/std/websocket.md`); actual owned connection follows.
 
 ### Owned WebSocket connections
 
-[WebSocketConnecting](std/websocket.md) opens checked direct ws/wss with explicit
+WebSocketConnecting (okkama-docs `docs/std/websocket.md`) opens checked direct ws/wss with explicit
 resolver, endpoint access, trust and deadlines. Await every send/close. A single
 writer preserves fragment ordering; close releases receive backpressure, waits
 for actual wire close and peer reply, then drains tasks before socket disposal.
@@ -6879,7 +6878,7 @@ focused checks pass. Compression, H2 CONNECT and complete server remain open.
 
 ### Server handling capabilities
 
-[Server contexts and handling results](std/http-server.md) preserve observed peer/
+Server contexts and handling results (okkama-docs `docs/std/http-server.md`) preserve observed peer/
 TLS facts and restricted cancellation. Routing parameters are successors. A
 normal response and a WebSocket upgrade/application are distinct result variants.
 Zero disables a deadline, while connection/range budgets must remain positive.
@@ -6887,7 +6886,7 @@ Concrete server lifetime follows these configuration contracts.
 
 ### Serving and draining HTTP1.1
 
-[HttpServer](std/http-server.md) adopts a plaintext listener, validates request
+HttpServer (okkama-docs `docs/std/http-server.md`) adopts a plaintext listener, validates request
 framing and preserves pipeline order. Header/body-idle/keep-alive/application
 deadlines are independent. close cancels; ServerDrain closes idle peers while
 finishing active responses, then cancels at its deadline. Never drain an unsent
@@ -6898,7 +6897,7 @@ body after deciding to close. Trusted WebSocket origin is configured explicitly.
 The internal H2 server preface now verifies exact client magic/SETTINGS and acknowledges without consuming the next frame. The direction-aware reader can await owned body acquisition before DATA; foundation tests pass 35 assertions. This foundation alone does not provide a server session.
 
 
-[Http2ServerSession](std/http2-server.md) now owns independent H2 request tasks, body buffers and shared flow control. RST/EOF cancel handlers; streaming response trailers retain END_STREAM ordering. A Perl TCP peer independently verifies SETTINGS, HPACK and exact DATA. The listener/TLS/full timeout profile remains separate work.
+Http2ServerSession (okkama-docs `docs/std/http2-server.md`) now owns independent H2 request tasks, body buffers and shared flow control. RST/EOF cancel handlers; streaming response trailers retain END_STREAM ordering. A Perl TCP peer independently verifies SETTINGS, HPACK and exact DATA. The listener/TLS/full timeout profile remains separate work.
 
 
 `HttpServer` now also composes an explicit H2-only plaintext listener with `ServerDrain`; 14 listener/H1 compatibility checks pass. TLS/mixed selection and full H2 idle policy remain open.
@@ -6907,16 +6906,16 @@ The internal H2 server preface now verifies exact client magic/SETTINGS and ackn
 H2 server supervision now covers shared HEADERS/CONTINUATION deadlines, physical DATA idle budgets, inactivity after the last handler, bounded protocol GOAWAY and unexpected task failures. 11 files /47 checks pass. Normal zero-disabled deadlines remain independent; failure GOAWAY cleanup has a separate one-second bound.
 
 
-[Immutable Routes](std/http-routing.md) compile literal/named/final-wildcard patterns, reject same-method intersections, route HEAD through GET and produce405 Allow. Raw segments decode once; encoded slash remains a parameter coordinate. Successor contexts preserve transport/cancellation facts. Actual H1/H2 HEAD tests verify body suppression; PERF-31 records constructor cost.
+Immutable Routes (okkama-docs `docs/std/http-routing.md`) compile literal/named/final-wildcard patterns, reject same-method intersections, route HEAD through GET and produce405 Allow. Raw segments decode once; encoded slash remains a parameter coordinate. Successor contexts preserve transport/cancellation facts. Actual H1/H2 HEAD tests verify body suppression; PERF-31 records constructor cost.
 
 
 `runtime/collections.string_map_snapshot`: required native-change full gate 779files /13,120checks PASS; frozen2172inputs and root runtime are byte-verified. Later std-only changes use separate focused gates.
 
 
-[HTTP forms](std/http-form.md) own an HTTP-delimited body and expose one streaming part at a time. Read to EOF before advancing; early close aborts and settled joins cancellation. UTF-8 metadata uses HTTP octet headers. Text projection, bounded URL-encoded decoding and caller-selected temporary spooling are explicit; filenames never choose paths.
+HTTP forms (okkama-docs `docs/std/http-form.md`) own an HTTP-delimited body and expose one streaming part at a time. Read to EOF before advancing; early close aborts and settled joins cancellation. UTF-8 metadata uses HTTP octet headers. Text projection, bounded URL-encoded decoding and caller-selected temporary spooling are explicit; filenames never choose paths.
 
 
-[SSE](std/http-sse.md) uses one-shot EventBody over a bounded channel and owned ServerEvents parsing. Keepalive comments are explicit; incomplete EOF blocks are discarded. UTF-8 replacement, CRLF/CR/LF and persistent id/retry are tested on real H1. Metadata/size limits are explicit; reconnect remains client policy.
+SSE (okkama-docs `docs/std/http-sse.md`) uses one-shot EventBody over a bounded channel and owned ServerEvents parsing. Keepalive comments are explicit; incomplete EOF blocks are discarded. UTF-8 replacement, CRLF/CR/LF and persistent id/retry are tested on real H1. Metadata/size limits are explicit; reconnect remains client policy.
 
 
 Routing validation also partitions larger families on later common literal
@@ -6924,18 +6923,18 @@ positions, retaining exact pair checks when no safe separator exists. An explici
 worklist handles maximum depth; separate name sorting preserves capture grammar
 and original parts. These validation indexes do not reorder request dispatch.
 
-[Robots policy](std/http-robots.md) compiles bounded groups and wildcard rules, preserves reserved percent escapes and chooses allow on a specificity tie. Lazy FetchedRobots owns response reading and cancellation; redirect/cache behavior belongs to the supplied exchange. Crawl-delay is explicit coordination, never authorization.
+Robots policy (okkama-docs `docs/std/http-robots.md`) compiles bounded groups and wildcard rules, preserves reserved percent escapes and chooses allow on a specificity tie. Lazy FetchedRobots owns response reading and cancellation; redirect/cache behavior belongs to the supplied exchange. Crawl-delay is explicit coordination, never authorization.
 
 RobotsPolicy.allowed() selects indexed rule ranges for each chosen agent group; repeated selected ids do not repeat rule matching. The public selected() result keeps its original records, and wildcard budgets remain unchanged. Each agent record is scored once per selection; parsed Crawl-delay values and indexed group ranges are reused while preserving zero, maximum-delay and absence behavior. Wildcard rules use a bounded scalar star primitive with byte cursors, preserving exact retries and the original logical-step quota; literal matching retains its cached prefix/equality path.
 
 
-[XML-RPC](std/http-xmlrpc.md) passes typed values through a one-event printing capability, preserving role confinement. Immutable member sequences, typed faults, strict XML1/Base64 and explicit budgets/nil compose with supplied HTTP exchange/handler. Parsed doubles preserve decimal wire values; bodies are bounded snapshots. Real H1 and cancellation checks pass.
+XML-RPC (okkama-docs `docs/std/http-xmlrpc.md`) passes typed values through a one-event printing capability, preserving role confinement. Immutable member sequences, typed faults, strict XML1/Base64 and explicit budgets/nil compose with supplied HTTP exchange/handler. Parsed doubles preserve decimal wire values; bodies are bounded snapshots. Real H1 and cancellation checks pass.
 
-[Rooted filesystem access](std/fs-root.md) starts from an explicitly acquired directory descriptor. Each decoded coordinate is opened relative to the retained parent without following symlinks; regular-file entries own independent descriptors. This closes the path-validation/open race for static HTTP files. A descriptor remains valid after root closure, but it does not freeze mutable file contents.
+Rooted filesystem access (okkama-docs `docs/std/fs-root.md`) starts from an explicitly acquired directory descriptor. Each decoded coordinate is opened relative to the retained parent without following symlinks; regular-file entries own independent descriptors. This closes the path-validation/open race for static HTTP files. A descriptor remains valid after root closure, but it does not freeze mutable file contents.
 
-[Static HTTP files](std/http-static.md) borrow a descriptor root and hand each response its own one-shot reader. Preconditions and HEAD decide from metadata before content reads; byte ranges have exact framing. Listing and precompressed artifacts require explicit policy. The metadata ETag is weak and file contents can still change in place.
+Static HTTP files (okkama-docs `docs/std/http-static.md`) borrow a descriptor root and hand each response its own one-shot reader. Preconditions and HEAD decide from metadata before content reads; byte ranges have exact framing. Listing and precompressed artifacts require explicit policy. The metadata ETag is weak and file contents can still change in place.
 
-[Portable database values](std/db-values.md) print exactly one typed event through a confined role. NULL stays distinct; Statement snapshots bindings separately from SQL and leaves parsing to the backend. Ordered Row observations preserve duplicate names and fail ambiguous lookup. Captured printers are sealed before publishing; the [owned SQLite layer](std/db-sqlite.md) supplies asynchronous readers, transactions, prepared statements, BLOB, scripts and backup. [DbPool](std/db-pool.md) supplies FIFO leases and asynchronous reset/shutdown. Domain objects need no embedded infrastructure dependency.
+Portable database values (okkama-docs `docs/std/db-values.md`) print exactly one typed event through a confined role. NULL stays distinct; Statement snapshots bindings separately from SQL and leaves parsing to the backend. Ordered Row observations preserve duplicate names and fail ambiguous lookup. Captured printers are sealed before publishing; the owned SQLite layer (okkama-docs `docs/std/db-sqlite.md`) supplies asynchronous readers, transactions, prepared statements, BLOB, scripts and backup. DbPool (okkama-docs `docs/std/db-pool.md`) supplies FIFO leases and asynchronous reset/shutdown. Domain objects need no embedded infrastructure dependency.
 
 
 ### Owned database work
@@ -6972,7 +6971,7 @@ prepared reuse, incremental BLOB, script parsing and a bounded online backup.
 
 ### Application arguments, settings and terminals
 
-The [application/CLI contract](std/application-cli.md) keeps application policy
+The application/CLI contract (okkama-docs `docs/std/application-cli.md`) keeps application policy
 in std objects. `ProcessArguments()` observes the runner's exact remaining argv;
 `Utf8Arguments` decodes each argument separately without interpreting shell text.
 `ParsedCommand` validates an explicit command tree and returns an `Invocation`.
@@ -7043,7 +7042,7 @@ line contains reserved metadata and nested application fields; terminal styling
 uses explicit LogStyle entries and ColorPolicy. Files append lazily and have
 explicit close/reopen; one record is never divided by rotation. Only one process
 may own rotation of a path. Fallback can duplicate a partially delivered record.
-See the [complete contract](std/logging.md),
+See the complete contract (okkama-docs `docs/std/logging.md`),
 [example](../examples/std-v4/logging-stack.ok) and
 measured limitations.
 
@@ -7055,7 +7054,7 @@ is reject/drop_newest/drop_oldest with a BigInt loss count. An eager scope/Event
 can run formatting or synchronous I/O in write(); the queue promises no capacity
 wait, not a caller latency bound. SyslogLogs borrows a connected UDP owner and
 reuses this lifecycle. Successful drain is local send completion, not delivery
-acknowledgment. See [logging queue and syslog](std/logging.md).
+acknowledgment. See logging queue and syslog (okkama-docs `docs/std/logging.md`).
 
 ### Locales and message catalogs
 
@@ -7084,12 +7083,12 @@ let catalog = MessageCatalog(Locale("en"), [
 catalog.plural(key, PluralNumber("1.0")); // "files"
 ```
 
-[Contract and pinned-data evidence](std/locale-i18n.md).
+Contract and pinned-data evidence (okkama-docs `docs/std/locale-i18n.md`).
 
 `LocalizedList(values,locale,ListKind.conjunction,ListStyle.long).string()`
 formats literal items through pinned CLDR list patterns. Choose disjunction/unit
 and short/narrow explicitly; regional patterns and root fallback are deterministic.
-[Contract and bounds](std/locale-list.md).
+Contract and bounds (okkama-docs `docs/std/locale-list.md`).
 
 
 ### Checks, manual time and properties
@@ -7122,13 +7121,13 @@ explicit random stream in order. Reductions shorten prefixes and simplify one
 element at a time, retaining reproduction text. Candidate sequences are built
 only when requested; use `Property<Sequencing<T>>` for sequence invariants.
 
-[Contracts, result models and TAP/JSON reports](std/testing.md).
+Contracts, result models and TAP/JSON reports (okkama-docs `docs/std/testing.md`).
 
 
 `JUnitTestReport(report,suite).string()` builds XML values and preserves exact
 nanosecond durations, case order, seed and byte captures (Base64). Timeout/crash
-are errors; failed assertions are failures. The [documented JUnit dialect](std/testing.md)
-uses suite/case properties. [XML values](std/xml-values.md) also preserve mixed
+are errors; failed assertions are failures. The documented JUnit dialect (okkama-docs `docs/std/testing.md`)
+uses suite/case properties. XML values (okkama-docs `docs/std/xml-values.md`) also preserve mixed
 content and namespace coordinates; source XML parsing remains a separate task.
 
 
@@ -7136,13 +7135,13 @@ Locale now supports complete bounded BCP 47 syntax and pinned IANA preferred
 values: Locale("iw-IL").string() is "he-IL". LocaleExtensions exposes Unicode
 attributes/keywords, transformed and private-use coordinates without discarding
 identity. CLDR fallback removes the suffix; LikelyLocale preserves it.
-[Complete tag contract](std/locale-tag-guide.md).
+Complete tag contract (okkama-docs `docs/std/locale-tag-guide.md`).
 
 
 When Decimal must retain a float's binary64 identity, use
 ShortestFloat(value).value() from numbers/float; the builtin float.string() does
 not guarantee that roundtrip. negative() retains negative zero separately.
-[Exact conversion contract](std/shortest-float.md).
+Exact conversion contract (okkama-docs `docs/std/shortest-float.md`).
 
 
 Localized numeric text represents a value together with an explicit Locale and
@@ -7151,14 +7150,14 @@ substitution; LocalizedFloat uses verified ShortestFloat and retains negative ze
 Scientific, engineering, compact and percent representations share precision/sign
 policies. LocalizedDecimalFromString and LocalizedIntegerFromString are strict
 bounded inverses for ordinary/scientific values; compact text has no inverse.
-[Contract and example](std/locale-number.md).
+Contract and example (okkama-docs `docs/std/locale-number.md`).
 
 
 Currency("USD") identifies an explicit pinned ISO currency; Locale never chooses
 it. LocalizedCurrency(amount,currency,locale,CurrencyFormat(...)) rounds Decimal
 exactly and applies CLDR symbols, names, plural rules and accounting. Undefined
 ISO minor units are typed; explicit precision can still format those identities.
-[Currency contract and example](std/locale-currency.md).
+Currency contract and example (okkama-docs `docs/std/locale-currency.md`).
 
 
 LocalizedDate/LocalizedTime/LocalizedLocalDateTime select pinned Gregorian CLDR
@@ -7166,7 +7165,7 @@ styles for immutable wall values. LocalizedInstant additionally requires an
 explicit TimeZone; Locale never supplies one. Unsupported calendars fail rather
 than changing years. Wall full/long time omits zone fields; instant output uses
 compatible localized names or localized GMT, preserving offset seconds.
-[Date/time contract and example](std/locale-date-time.md).
+Date/time contract and example (okkama-docs `docs/std/locale-date-time.md`).
 
 
 Localized ordering is explicit: wrap each string in CollatedString with Locale
@@ -7174,14 +7173,14 @@ and CollationOptions, then use its Comparing role. Numeric ordering can place
 file2 before file10 while builtin string order remains locale-independent.
 Keys compare only within the same locale, policy and pinned ICU data version;
 they are ephemeral representations, not persisted identities.
-[Collation contract and example](std/locale-collation.md).
+Collation contract and example (okkama-docs `docs/std/locale-collation.md`).
 
 
 GNU catalogs select indexed plural forms through their own parsed formula.
 GettextCatalog receives MO bytes and an explicit locale; GettextTranslation
 adapts it to Translating. ParsedPo and PoString represent ordered active source
 without installing global translation functions. MessageKey("",id,true) keeps
-an explicit empty context distinct from absence. [Contract/example](std/gettext.md).
+an explicit empty context distinct from absence. Contract/example (okkama-docs `docs/std/gettext.md`).
 
 
 ### Test execution and snapshots
@@ -7229,7 +7228,7 @@ serializing or parsing bodies. Each new ParsedMime.result() call parses again;
 the existing part() delegates to result().part(). The result retains parser
 nodes()/decoded() accounting and checked limits. SMTP DATA walks this tree for
 8bit/binary CTE inspection; MimeBody still exposes bytes()/validate().
-See the [MIME contract](std/mime-part.md) for limits and navigation boundaries.
+See the MIME contract (okkama-docs `docs/std/mime-part.md`) for limits and navigation boundaries.
 
 ### Separate work guards from elapsed-time measurements
 
@@ -7239,7 +7238,7 @@ warnings, interpreter call counts and depth. A separate sequential job, run as
 10/25-second budgets using one warmup and five fresh-VM samples and their median.
 Measurements include parsing/imports/execution. Use an idle fixed machine for
 comparative baselines; ordinary parallel regression retains structural guards.
-See the [testing contract](std/testing.md).
+See the testing contract (okkama-docs `docs/std/testing.md`).
 
 ### Grant structured MIME rendering explicitly
 
@@ -7260,4 +7259,4 @@ replacing public headers immutably.
 
 Compact byte arrays retain fresh immutable wrappers across any boxing and strict
 array equality without reconstructing every Byte. Any remains opaque; explicit
-elements()/iteration may still materialize data. See the [MIME contract](std/mime-part.md).
+elements()/iteration may still materialize data. See the MIME contract (okkama-docs `docs/std/mime-part.md`).

@@ -154,6 +154,10 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   numbers. Cold runs: Sparrow is 2.2× slower than Go, 1.5× faster than Java,
   1.85× faster than Kotlin and 6.3× faster than Python. Warmed up, Go and
   HotSpot are 2.4–2.6× faster than Sparrow.
+- Book, both languages: §26.5 starts from the std principles and the review
+  (#367). The 187 links to `std/*.md`, which were never in this repository,
+  now name the okkama-docs guide (`docs/std/…`) instead. The legacy `stdlib/`
+  passages go as the review finishes each area.
 
 ### Fixed
 
