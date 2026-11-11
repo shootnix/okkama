@@ -81,6 +81,12 @@ and compares the output.
 |---|---|
 | `diff/compare.ok` | compare two versions once: unified and context patches, similarity, the list of edits |
 
+## uuid
+
+| Program | Task |
+|---|---|
+| `uuid/ids.ok` | read a UUID from text and bytes, derive v3/v5 from a namespace, pack v8, draw v4 |
+
 ## strings/parse
 
 | Program | Task |

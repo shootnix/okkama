@@ -1,0 +1,36 @@
+module examples/uuid/ids v1.0.0;
+
+import "io/stdout" take Stdout;
+import "random/source" take SecureRandom;
+import "uuid/generation" take Uuid3, Uuid4s, Uuid5, Uuid8;
+import "uuid/value" take InvalidUuid, Uuid, UuidBytes, UuidText, UuidVariant;
+
+// Read a UUID from text, rebuild it from bytes, derive stable names from a
+// namespace, pack custom bits, and draw random ones. Every maker is a Uuid
+// and answers the same questions.
+
+main() is int {
+    let out = Stdout();
+    let id is Uuid = UuidText(origin: "550E8400-E29B-41D4-A716-446655440000");
+    out.writeln(id.string() + " version " + id.version().string()
+        + ", RFC variant: " + (id.variant() == UuidVariant.rfc).string());
+    out.writeln("from bytes: " + UuidBytes(origin: id.bytes()).string());
+
+    let dns is Uuid = UuidText(origin: "6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+    out.writeln("v3 " + Uuid3(namespace: dns, name: "www.example.com").string());
+    out.writeln("v5 " + Uuid5(namespace: dns, name: "www.example.com").string());
+    out.writeln("v8 " + Uuid8(high: 1, middle: 2, low: 3).string());
+
+    let random = Uuid4s(random: SecureRandom()).sample();
+    out.writeln("random is version " + random.version().string() + ", "
+        + random.string().length().string() + " characters");
+
+    let refused = try {
+        UuidText(origin: "550e8400e29b41d4a716446655440000").string();
+    }
+    catch InvalidUuid.because(message) {
+        message;
+    };
+    out.writeln(refused);
+    0;
+}

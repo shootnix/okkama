@@ -3,33 +3,54 @@ module uuid/value v1.0.0;
 import "compare" take Comparing, Order;
 import "runtime/uuid" take uuid_valid, uuid_bytes, uuid_string, uuid_version, uuid_variant;
 
-// Immutable 128-bit UUID values.
+// A UUID is a role: whatever makes one, it answers the same questions.
 //
-//     let id = Uuid(origin: "550e8400-e29b-41d4-a716-446655440000");
+//     let id is Uuid = UuidText(origin: "550e8400-e29b-41d4-a716-446655440000");
 //     id.version();                  // 4
 //     id.variant();                  // UuidVariant.rfc
 //     id.string();                   // canonical lowercase text
 //     id.bytes();                    // exactly 16 bytes
+//     UuidBytes(origin: id.bytes()).string() == id.string();
 //
-// Text construction is deliberately strict: exactly 8-4-4-4-12 ASCII hex
-// digits with hyphens in their canonical positions. Uppercase digits are
-// accepted and normalized; compact text, braces, URNs and whitespace are not.
-// UuidFromBytes requires exactly sixteen bytes.
+// Text is read strictly: exactly 8-4-4-4-12 ASCII hex digits with hyphens in
+// their canonical positions. Uppercase digits are accepted and normalized;
+// compact text, braces, URNs and whitespace are not. UuidBytes requires
+// exactly sixteen bytes. uuid/generation makes named (3, 5), custom (8) and
+// random (4) UUIDs.
 //
 // version() exposes the raw four-bit version field for every variant. Variant
 // decoding follows the RFC bit prefixes: 0xxx reserved/NCS, 10xx RFC,
 // 110x Microsoft and 111x future. order() compares the unsigned 128-bit value,
-// most-significant byte first; canonical string ordering is identical.
+// most-significant byte first; canonical string ordering is identical. Two
+// UUIDs made differently are the same UUID when their bytes are equal; `==`
+// compares how they were made, so compare bytes() or string().
 
 enum UuidVariant = (rfc, microsoft, reserved, future);
 
-object Uuid does Comparing<Uuid> {
+role Uuid {
+    string() is string;
+    bytes() is @byte;
+    version() is int;
+    variant() is UuidVariant;
+    order(other is Uuid) is Order;
+}
+
+object UuidText does Uuid, Comparing<Uuid> {
     has origin is @byte;
 
-    Uuid(origin is string) {
+    UuidText(origin is string) {
         confirm uuid_valid(origin)
             else throw InvalidUuid.because("invalid canonical UUID text");
+        // The bytes are the value, so uppercase and lowercase text are equal.
         self.origin = uuid_bytes(origin);
+    }
+
+    string() is string {
+        uuid_string(origin);
+    }
+
+    bytes() is @byte {
+        origin;
     }
 
     version() is int {
@@ -37,7 +58,52 @@ object Uuid does Comparing<Uuid> {
     }
 
     variant() is UuidVariant {
-        match uuid_variant(origin) {
+        UuidValue(bytes: origin).variant();
+    }
+
+    order(other is Uuid) is Order {
+        self.string().order(other.string());
+    }
+}
+
+object UuidBytes does Uuid, Comparing<Uuid> {
+    has origin is @byte;
+
+    UuidBytes(origin is @byte) {
+        confirm origin.size() == 16
+            else throw InvalidUuid.because("UUID binary value must contain sixteen bytes");
+        self.origin = origin;
+    }
+
+    string() is string {
+        uuid_string(origin);
+    }
+
+    bytes() is @byte {
+        origin;
+    }
+
+    version() is int {
+        uuid_version(origin);
+    }
+
+    variant() is UuidVariant {
+        UuidValue(bytes: origin).variant();
+    }
+
+    order(other is Uuid) is Order {
+        self.string().order(other.string());
+    }
+}
+
+// The answers every UUID gives from its sixteen bytes.
+hidden object UuidValue {
+    has bytes is @byte;
+
+    UuidValue(:bytes);
+
+    variant() is UuidVariant {
+        match uuid_variant(bytes) {
             case "rfc" {
                 UuidVariant.rfc;
             }
@@ -52,32 +118,34 @@ object Uuid does Comparing<Uuid> {
             }
         }
     }
-
-    order(other is Uuid) is Order {
-        self.string().order(other.string());
-    }
-
-    string() is string {
-        uuid_string(origin);
-    }
-
-    bytes() is @byte {
-        origin;
-    }
-}
-
-object UuidFromBytes {
-    has origin is @byte;
-
-    UuidFromBytes(origin is @byte) {
-        self.origin = origin;
-    }
-
-    value() is Uuid {
-        confirm origin.size() == 16
-            else throw InvalidUuid.because("UUID binary value must contain sixteen bytes");
-        Uuid(origin: uuid_string(origin));
-    }
 }
 
 enum InvalidUuid is Error = (because(message is string));
+
+test "text is read strictly and kept as bytes" {
+    let id = UuidText(origin: "550E8400-E29B-41D4-A716-446655440000");
+    test.is(id.string(), "550e8400-e29b-41d4-a716-446655440000");
+    test.is(id.version(), 4);
+    test.ok(id.variant() == UuidVariant.rfc);
+    test.is(id.bytes().size(), 16);
+    test.ok(id == UuidText(origin: "550e8400-e29b-41d4-a716-446655440000"));
+    for ["550e8400e29b41d4a716446655440000", "{550e8400-e29b-41d4-a716-446655440000}", " 550e8400-e29b-41d4-a716-446655440000", "550e8400-e29b-41d4-a716-44665544000g"] -> bad {
+        test.throws(InvalidUuid) {
+            UuidText(origin: bad);
+        };
+    }
+}
+
+test "bytes make the same UUID; the variant follows the bit prefix" {
+    let text = UuidText(origin: "550e8400-e29b-41d4-a716-446655440000");
+    let bytes = UuidBytes(origin: text.bytes());
+    test.is(bytes.string(), text.string());
+    test.ok(bytes.order(text) == Order.equal);
+    test.ok(UuidText(origin: "00000000-0000-0000-0000-000000000000").variant() == UuidVariant.reserved);
+    test.ok(UuidText(origin: "00000000-0000-0000-c000-000000000000").variant() == UuidVariant.microsoft);
+    test.ok(UuidText(origin: "00000000-0000-0000-e000-000000000000").variant() == UuidVariant.future);
+    test.ok(UuidText(origin: "00000000-0000-0000-0000-000000000000").order(text) == Order.less);
+    test.throws(InvalidUuid) {
+        UuidBytes(origin: [byte(1)]);
+    };
+}

@@ -3776,6 +3776,13 @@ lists the most frequent values in first-seen order. Too few values throw
 shows `edit::Line::kind` (equal, removed or added), `::text`, and its index
 on each side. `examples/diff/` shows each.
 
+`uuid` makes UUIDs, and each maker is a `Uuid` that answers `string()`,
+`bytes()`, `version()`, `variant()` and `order()`. `UuidText(origin:)`
+reads canonical text strictly, and `UuidBytes(origin:)` reads sixteen bytes.
+`Uuid3`/`Uuid5(namespace:, name:)` hash a name, `Uuid8(high:, middle:,
+low:)` packs custom bits, and `Uuid4s(random:).sample()` draws a random one.
+Compare two UUIDs by `bytes()` or `order()`. `examples/uuid/` shows each.
+
 `http/client` sends requests with `HttpClient()`. By default it uses the system's DNS and trusted roots, reaches public endpoints only and speaks HTTP/1.1. Every other part is a named argument: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)` and `cookies: MemoryCookieJar()`. Every REST method has a shortcut: `get(url)`, `head`, `options`, `delete`, and `post(url:, body:)`, `put`, `patch` with a `Content` such as `JsonBody(json)`. Anything else is `client.response(Request(url:, method:, headers:, body:))`. A reply shows its head through the cap `Head` (`page::Head::status`, `::class`, `::headers`) and reads its body with `await page.text()`, `bytes()`, `json()` or `reading()`. `Status` and `Method` are enums: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` and `MethodName` turn them into wire numbers and tokens and back. `examples/http/client/` shows each task as a program.
 
 `strings/parse` reads text as the type asked for: `Number("42").int()`,

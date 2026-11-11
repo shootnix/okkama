@@ -611,6 +611,23 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
       hidden.
     - New inline tests check the output against Python's difflib. There is
       an example, `examples/diff/`.
+  - `uuid` (B1, revised by the owner). The object is the UUID:
+
+    | before | now |
+    |---|---|
+    | `Uuid(origin: text)` | `UuidText(origin: text)` |
+    | `UuidFromBytes(origin: b).value()` | `UuidBytes(origin: b)` |
+    | `Uuid3(namespace:, name:).value()`, `Uuid5` | `Uuid3(namespace:, name:)`, `Uuid5` |
+    | `Uuid8(high:, middle:, low:).value()` | `Uuid8(high:, middle:, low:)` |
+
+    - `role Uuid` holds `string()`, `bytes()`, `version()`, `variant()` and
+      `order()`. All five makers implement it, and `Uuid4s(…).sample()`
+      answers a `Uuid`.
+    - `Uuid3` and `Uuid5` hash on the first question, with `memo let`.
+    - `==` compares how a UUID was made. To compare values, use `bytes()`
+      or `order()`.
+    - Inline tests, with the RFC 4122 v3/v5 vectors. There is an example,
+      `examples/uuid/`.
 
 ### Fixed
 

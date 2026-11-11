@@ -1,22 +1,27 @@
 module uuid/generation v1.0.0;
 
-import "uuid/value" take Uuid, UuidFromBytes;
+import "compare" take Comparing, Order;
+import "uuid/value" take Uuid, UuidBytes, UuidText, UuidVariant;
 import "random/source" take SecureRandom;
 import "random/distribution" take Distribution;
 import "encoding/utf" take Utf8Encoded;
 import "error" take InvalidArgument;
-import "runtime/uuid" take uuid_named, uuid_versioned, uuid_custom;
+import "runtime/uuid" take uuid_named, uuid_versioned, uuid_custom, uuid_string, uuid_version,
+    uuid_variant;
 
 // RFC-compatible UUID generation that does not depend on host UUID libraries.
+// Each maker is itself a Uuid:
 //
-//     let dns = Uuid(origin: "6ba7b810-9dad-11d1-80b4-00c04fd430c8");
-//     let legacy is Uuid = Uuid3(namespace: dns, name: "example.com").value();
-//     let stable is Uuid = Uuid5(namespace: dns, name: "example.com").value();
+//     let dns = UuidText(origin: "6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+//     let legacy is Uuid = Uuid3(namespace: dns, name: "example.com");
+//     let stable is Uuid = Uuid5(namespace: dns, name: "example.com");
+//     let custom is Uuid = Uuid8(high: 1, middle: 2, low: 3);
 //     let random is Uuid = Uuid4s(random: SecureRandom()).sample();
 //
 // UUID 3 hashes namespace bytes followed by the exact UTF-8 name with MD5.
 // UUID 5 does the same with SHA-1 and retains its first 128 bits. Both then set
-// their version and RFC variant bits.
+// their version and RFC variant bits. The hash is computed once, on the first
+// question.
 //
 // UUID 8 exposes all 122 custom bits explicitly: high is the most-significant
 // 48 bits, middle is 12 bits after the version field, and low is the final 62
@@ -27,7 +32,7 @@ import "runtime/uuid" take uuid_named, uuid_versioned, uuid_custom;
 // per-millisecond counter. UUID 1 and UUID 6 are excluded from v3 until a
 // privacy-preserving explicit node-identity capability is approved.
 
-object Uuid3 {
+object Uuid3 does Uuid, Comparing<Uuid> {
     has namespace is Uuid;
     has name is string;
 
@@ -36,16 +41,30 @@ object Uuid3 {
         self.name = name;
     }
 
-    value() is Uuid {
-        UuidFromBytes(origin: uuid_named(
-            namespace.bytes(),
-            Utf8Encoded(origin: name).bytes(),
-            3,
-        )).value();
+    // The namespace bytes and the UTF-8 name, hashed with MD5.
+    bytes() is @byte {
+        memo let hashed = uuid_named(namespace.bytes(), Utf8Encoded(origin: name).bytes(), 3);
+        hashed;
+    }
+
+    string() is string {
+        uuid_string(self.bytes());
+    }
+
+    version() is int {
+        3;
+    }
+
+    variant() is UuidVariant {
+        UuidVariant.rfc;
+    }
+
+    order(other is Uuid) is Order {
+        self.string().order(other.string());
     }
 }
 
-object Uuid5 {
+object Uuid5 does Uuid, Comparing<Uuid> {
     has namespace is Uuid;
     has name is string;
 
@@ -54,16 +73,30 @@ object Uuid5 {
         self.name = name;
     }
 
-    value() is Uuid {
-        UuidFromBytes(origin: uuid_named(
-            namespace.bytes(),
-            Utf8Encoded(origin: name).bytes(),
-            5,
-        )).value();
+    // The namespace bytes and the UTF-8 name, hashed with SHA-1.
+    bytes() is @byte {
+        memo let hashed = uuid_named(namespace.bytes(), Utf8Encoded(origin: name).bytes(), 5);
+        hashed;
+    }
+
+    string() is string {
+        uuid_string(self.bytes());
+    }
+
+    version() is int {
+        5;
+    }
+
+    variant() is UuidVariant {
+        UuidVariant.rfc;
+    }
+
+    order(other is Uuid) is Order {
+        self.string().order(other.string());
     }
 }
 
-object Uuid8 {
+object Uuid8 does Uuid, Comparing<Uuid> {
     has high is int;
     has middle is int;
     has low is int;
@@ -80,8 +113,24 @@ object Uuid8 {
         self.low = low;
     }
 
-    value() is Uuid {
-        UuidFromBytes(origin: uuid_custom(high, middle, low)).value();
+    bytes() is @byte {
+        uuid_custom(high, middle, low);
+    }
+
+    string() is string {
+        uuid_string(self.bytes());
+    }
+
+    version() is int {
+        8;
+    }
+
+    variant() is UuidVariant {
+        UuidVariant.rfc;
+    }
+
+    order(other is Uuid) is Order {
+        self.string().order(other.string());
     }
 }
 
@@ -93,6 +142,43 @@ object Uuid4s does Distribution<Uuid> {
     }
 
     sample() is Uuid {
-        UuidFromBytes(origin: uuid_versioned(random.bytes(16), 4)).value();
+        UuidBytes(origin: uuid_versioned(random.bytes(16), 4));
     }
+}
+
+test "named UUIDs match RFC 4122 vectors" {
+    let dns = UuidText(origin: "6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+    let legacy = Uuid3(namespace: dns, name: "www.example.com");
+    test.is(legacy.string(), "5df41881-3aed-3515-88a7-2f4a814cf09e");
+    test.is(legacy.version(), 3);
+    test.is(legacy.bytes(), UuidText(origin: legacy.string()).bytes());
+    test.ok(UuidText(origin: legacy.string()).version() == 3);
+    let stable = Uuid5(namespace: dns, name: "www.example.com");
+    test.is(stable.string(), "2ed6657d-e927-568b-95e1-2665a8aea6a2");
+    test.ok(UuidText(origin: stable.string()).variant() == UuidVariant.rfc);
+    test.ok(stable.order(legacy) == Order.less);
+}
+
+test "custom UUIDs place their bits and refuse what does not fit" {
+    let custom = Uuid8(high: 0, middle: 0, low: 0);
+    test.is(custom.string(), "00000000-0000-8000-8000-000000000000");
+    test.is(UuidText(origin: Uuid8(high: 281474976710655, middle: 4095, low: 4611686018427387903).string()).version(), 8);
+    test.throws(InvalidArgument) {
+        Uuid8(high: 281474976710656, middle: 0, low: 0);
+    };
+    test.throws(InvalidArgument) {
+        Uuid8(high: 0, middle: 4096, low: 0);
+    };
+    test.throws(InvalidArgument) {
+        Uuid8(high: 0, middle: 0, low: -1);
+    };
+}
+
+test "random UUIDs are version 4, RFC variant, and differ" {
+    let source = Uuid4s(random: SecureRandom());
+    let first = source.sample();
+    let second = source.sample();
+    test.is(first.version(), 4);
+    test.ok(first.variant() == UuidVariant.rfc);
+    test.ok(first.string() != second.string());
 }

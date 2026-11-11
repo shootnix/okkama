@@ -3952,6 +3952,14 @@ right:)` отвечает на `unified()` или `unified(context)`, `contextua
 или added), `::text` и свой индекс с каждой стороны. `examples/diff/`
 показывает каждое.
 
+`uuid` делает UUID, и каждый способ сам является `Uuid`, отвечающим на
+`string()`, `bytes()`, `version()`, `variant()` и `order()`.
+`UuidText(origin:)` строго читает канонический текст, `UuidBytes(origin:)`
+— шестнадцать байт. `Uuid3`/`Uuid5(namespace:, name:)` хешируют имя,
+`Uuid8(high:, middle:, low:)` укладывает свои биты, а
+`Uuid4s(random:).sample()` выбирает случайный. Два UUID сравнивают по
+`bytes()` или `order()`. `examples/uuid/` показывает каждое.
+
 `http/client` отправляет запросы через `HttpClient()`. По умолчанию он берёт системные DNS и доверенные корни, ходит только на публичные адреса и говорит по HTTP/1.1. Всё остальное задаётся именованными аргументами: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)`, `cookies: MemoryCookieJar()`. Для каждого REST-метода есть шорткат: `get(url)`, `head`, `options`, `delete`, а также `post(url:, body:)`, `put`, `patch` с `Content`, например `JsonBody(json)`. Любой другой запрос пишется как `client.response(Request(url:, method:, headers:, body:))`. Ответ показывает голову через cap `Head` (`page::Head::status`, `::class`, `::headers`) и читает тело через `await page.text()`, `bytes()`, `json()` или `reading()`. `Status` и `Method` — enum'ы: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` и `MethodName` переводят их в числа и токены протокола и обратно. Каждая задача показана программой в `examples/http/client/`.
 
 `strings/parse` читает текст как тип, который у него просят: `Number("42").int()`,
