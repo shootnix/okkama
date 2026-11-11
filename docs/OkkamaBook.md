@@ -3760,6 +3760,16 @@ unsafe paths. `compression` wraps a `Compressing` or `Decompressing` codec as
 a reading stream: `CompressedReading(origin:, compressor:)`.
 `examples/archive/` shows a round trip.
 
+`statistics` describes floats. `Sample(values:)` answers `mean()`,
+`median()`, `median_low()`, `median_high()`, `geometric_mean()`,
+`harmonic_mean()`, `variance()` and `deviation()` (n − 1), and
+`quantiles(4)` or `quantiles(count:, method: QuantileMethod.inclusive)`.
+`Population(values:)` answers `variance()` and `deviation()` divided by n.
+`Pairs(left:, right:)` answers `covariance()`, `correlation()` and `line()`,
+a `FittedLine` with `prediction(at:)` and `fit::Line::slope`. `Modes(values:)`
+lists the most frequent values in first-seen order. Too few values throw
+`StatisticsError`. `examples/statistics/` shows each.
+
 `http/client` sends requests with `HttpClient()`. By default it uses the system's DNS and trusted roots, reaches public endpoints only and speaks HTTP/1.1. Every other part is a named argument: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)` and `cookies: MemoryCookieJar()`. Every REST method has a shortcut: `get(url)`, `head`, `options`, `delete`, and `post(url:, body:)`, `put`, `patch` with a `Content` such as `JsonBody(json)`. Anything else is `client.response(Request(url:, method:, headers:, body:))`. A reply shows its head through the cap `Head` (`page::Head::status`, `::class`, `::headers`) and reads its body with `await page.text()`, `bytes()`, `json()` or `reading()`. `Status` and `Method` are enums: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` and `MethodName` turn them into wire numbers and tokens and back. `examples/http/client/` shows each task as a program.
 
 `strings/parse` reads text as the type asked for: `Number("42").int()`,

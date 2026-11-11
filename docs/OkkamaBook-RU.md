@@ -3934,6 +3934,17 @@ entry_size:, total_size:, path_length:)).entries()` читает в предел
 `CompressedReading(origin:, compressor:)`. `examples/archive/` показывает
 путь туда и обратно.
 
+`statistics` описывает числа с плавающей точкой. `Sample(values:)`
+отвечает на `mean()`, `median()`, `median_low()`, `median_high()`,
+`geometric_mean()`, `harmonic_mean()`, `variance()` и `deviation()`
+(n − 1), а также `quantiles(4)` или `quantiles(count:, method:
+QuantileMethod.inclusive)`. `Population(values:)` отвечает на `variance()` и
+`deviation()` с делением на n. `Pairs(left:, right:)` отвечает на
+`covariance()`, `correlation()` и `line()` — `FittedLine` с
+`prediction(at:)` и `fit::Line::slope`. `Modes(values:)` перечисляет самые
+частые значения в порядке появления. Слишком мало значений —
+`StatisticsError`. `examples/statistics/` показывает каждое.
+
 `http/client` отправляет запросы через `HttpClient()`. По умолчанию он берёт системные DNS и доверенные корни, ходит только на публичные адреса и говорит по HTTP/1.1. Всё остальное задаётся именованными аргументами: `endpoints`, `protocols`, `timeouts`, `redirects: Redirects(limit: 5)`, `cookies: MemoryCookieJar()`. Для каждого REST-метода есть шорткат: `get(url)`, `head`, `options`, `delete`, а также `post(url:, body:)`, `put`, `patch` с `Content`, например `JsonBody(json)`. Любой другой запрос пишется как `client.response(Request(url:, method:, headers:, body:))`. Ответ показывает голову через cap `Head` (`page::Head::status`, `::class`, `::headers`) и читает тело через `await page.text()`, `bytes()`, `json()` или `reading()`. `Status` и `Method` — enum'ы: `Status.ok`, `Status.not_found`, `Status.other(299)`, `Method.put`. `StatusCode` и `MethodName` переводят их в числа и токены протокола и обратно. Каждая задача показана программой в `examples/http/client/`.
 
 `strings/parse` читает текст как тип, который у него просят: `Number("42").int()`,

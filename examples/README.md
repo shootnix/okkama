@@ -69,6 +69,12 @@ and compares the output.
 |---|---|
 | `archive/tar.ok` | build a TAR in memory, read it back within limits, refuse an unsafe path and an oversized member |
 
+## statistics
+
+| Program | Task |
+|---|---|
+| `statistics/describe.ok` | centre, spread and quartiles of a sample; population variance; modes; a fitted line |
+
 ## strings/parse
 
 | Program | Task |

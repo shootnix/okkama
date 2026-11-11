@@ -575,6 +575,26 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
       be represented is refused when it is converted.
     - Named arguments in 103 calls in std, and 26 in the okkama-docs
       examples. There is an example, `examples/archive/`.
+  - `statistics` (B2, approved). One object per kind of data, with its
+    answers as actions:
+
+    | before | now |
+    |---|---|
+    | `Mean(values: xs).value()`, `Median`, `MedianLow`, `MedianHigh`, `GeometricMean`, `HarmonicMean` | `Sample(values: xs).mean()`, `.median()`, `.median_low()`, `.median_high()`, `.geometric_mean()`, `.harmonic_mean()` |
+    | `SampleVariance(…).value()`, `SampleDeviation` | `Sample(…).variance()`, `.deviation()` |
+    | `Quantiles(values:, count:, method:).values()` | `Sample(…).quantiles(count)`, `.quantiles(count:, method:)` |
+    | `PopulationVariance(…).value()`, `PopulationDeviation` | `Population(values:).variance()`, `.deviation()` |
+    | `Covariance(left:, right:).value()`, `Correlation`, `FittedLine(left:, right:)` | `Pairs(left:, right:).covariance()`, `.correlation()`, `.line()` |
+    | `Mode(values:).value()` | `Modes(values:).first()` |
+    | `fit.slope()`, `fit.intercept()` | `fit::Line::slope`, `fit::Line::intercept` |
+
+    - `FloatSample` is now `Sample`.
+    - `FittedLine(slope:, intercept:)` is the line itself.
+    - Constructors bind. `Sample` takes its values on first use and keeps
+      them with `memo let`, and so does `Modes` with its counts.
+      `ModesCursor` is hidden.
+    - The module has inline tests now. There is an example,
+      `examples/statistics/`.
 
 ### Fixed
 
