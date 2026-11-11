@@ -4052,10 +4052,11 @@ destination: logs)` пишет через
 для этой глубины, а `DisplayWidth(text).columns()` меряет ширину.
 
 `db` работает с SQLite и PostgreSQL через одни и те же роли. `await
-SqliteMemory().connection()` открывает базу. `Statement(text:, values:
-[Param(…)])` всегда привязывает значения. `Query(origin: connection, statement:)`
-отвечает `one()`, `maybe()`, `all(limit)` или потоком `rows()`, а
-`row.int("id")` и `row.maybe("body").text()` читают по имени столбца.
+SqliteMemory().connection()` открывает базу. `await db.execution(sql,
+[Param(…)])` выполняет SQL с привязанными значениями, а `db.query(sql, values)`
+отвечает `one()`, `maybe()` или `all(limit)`; транзакции умеют то же.
+`row.int("id")` и `row.maybe("body").text()` читают по имени столбца, а
+`Query(origin:, statement:).rows()` отдаёт поток.
 `prepared()`, `transaction()` с `TransactionOptions::Mode`, blob, скрипты и
 онлайн-копия (`SqliteBackup(…).report()`) дополняют это, а `DbPool`
 разделяет соединения.
@@ -5733,8 +5734,7 @@ Connector передаётся на прикладной границе. Stateme
 
 ```okkama
 let transaction=await connection.transaction(TransactionOptions());
-await transaction.execution(Statement(text: "INSERT INTO customers VALUES(?,?)",
-    values: [Param(7),Param("Ada")]));
+await transaction.execution("INSERT INTO customers VALUES(?,?)",[Param(7),Param("Ada")]);
 await transaction.commit();
 ```
 

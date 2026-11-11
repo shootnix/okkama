@@ -4,8 +4,8 @@ import "db/query" take Query,NoRows,TooManyRows,QueryLimitExceeded,InvalidQueryL
 import "db/sqlite" take SqliteMemory;
 import "db/connection" take DbExecuting;
 import "db/statement" take Statement,Execution;
-import "db/row" take Row,Column,RowReading,RowsEnded;
-import "db/value" take DbInteger;
+import "db/row" take Row,Column,RowReading,RowsEnded,DbQuery;
+import "db/value" take DbInteger,DbValue;
 import "db/error" take DbFailure,DbClosed;
 import "numbers/bigint" take BigInt;
 import "collections/sequence" take Sequencing;
@@ -36,6 +36,8 @@ object ProbeDb does DbExecuting {
     ProbeDb(cursor is ProbeRows) { self.cursor=cursor; }
     async rows(statement is Statement) is RowReading { cursor; }
     async execution(statement is Statement) is Execution { Execution(); }
+    async execution(sql is string, values is Sequencing<DbValue>) is Execution { Execution(); }
+    query(sql is string, values is Sequencing<DbValue>) is DbQuery { Query(origin: self, statement: Statement(text: sql, values: values)); }
 }
 
 async main() is int {

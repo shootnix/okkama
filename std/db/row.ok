@@ -341,6 +341,14 @@ object Row does RowValues {
     }
 }
 
+// The answer of connection.query(sql, values): exactly one row, at most one
+// row, or a bounded list. db/query's Query does it.
+role DbQuery {
+    async one() is Row;
+    async maybe() is Maybe<Row>;
+    async all(max_rows is int) is @Row;
+}
+
 role RowReading {
     async row() is Row;
     columns() is Sequencing<Column>;

@@ -5,7 +5,8 @@ import "db/acquisition" take DbAcquiring, DbAcquisition, PortableDbAcquiring;
 import "db/prepared" take DbPreparing, PreparedStatement, DbPreparedOpening;
 import "db/statement" take Statement, Execution;
 import "db/value" take DbValue;
-import "db/row" take RowReading, Row, Column;
+import "db/query" take Query;
+import "db/row" take RowReading, Row, Column, DbQuery;
 import "db/transaction" take Transaction, TransactionOptions;
 import "db/error" take DbClosed, TransactionEnded, DbFailure, DbFailureKind, DbOperation;
 import "collections/sequence" take Sequencing;
@@ -699,6 +700,15 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
     destroy {
         self.close();
     }
+    // db.execution(sql, values) and db.query(sql, values).one(): the values
+    // are always bound, never pasted into the SQL.
+    async execution(sql is string, values is Sequencing<DbValue>) is Execution {
+        await self.execution(Statement(text: sql, values: values));
+    }
+
+    query(sql is string, values is Sequencing<DbValue>) is DbQuery {
+        Query(origin: self, statement: Statement(text: sql, values: values));
+    }
 }
 
 hidden object PooledRows does RowReading, Closing {
@@ -796,6 +806,15 @@ object PooledTransaction does Transaction, DbExecuting, DbPreparing {
         confirm !lease_closed.ready() else throw TransactionEnded.ended;
         await origin.rollback();
         self;
+    }
+    // db.execution(sql, values) and db.query(sql, values).one(): the values
+    // are always bound, never pasted into the SQL.
+    async execution(sql is string, values is Sequencing<DbValue>) is Execution {
+        await self.execution(Statement(text: sql, values: values));
+    }
+
+    query(sql is string, values is Sequencing<DbValue>) is DbQuery {
+        Query(origin: self, statement: Statement(text: sql, values: values));
     }
 }
 

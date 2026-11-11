@@ -2,7 +2,7 @@ module db/query v1.0.0;
 
 import "db/connection" take DbExecuting;
 import "db/statement" take Statement, DbValueSnapshot, DbLimits;
-import "db/row" take Row, RowReading, RowsEnded;
+import "db/row" take Row, RowReading, RowsEnded, DbQuery;
 import "db/error" take DbClosed, DbBusy;
 import "async/atomic" take Atomic;
 import "collections/list" take List, EmptyList;
@@ -12,7 +12,7 @@ import "db/prepared" take PreparedStatement;
 import "db/value" take DbValue;
 
 // Each call executes the statement anew. Owns its cursor, not the connection.
-object Query {
+object Query does DbQuery {
     has source is QueryOpening;
 
     Query(origin is DbExecuting, statement is Statement) {

@@ -3873,10 +3873,11 @@ refuses event attributes.
 that depth, and `DisplayWidth(text).columns()` measures text.
 
 `db` talks to SQLite and PostgreSQL through one set of roles. `await
-SqliteMemory().connection()` opens a database. `Statement(text:, values:
-[Param(…)])` always binds its values. `Query(origin: connection, statement:)` answers
-`one()`, `maybe()`, `all(limit)` or a `rows()` stream, and `row.int("id")`,
-`row.maybe("body").text()` read by column name. `prepared()`, `transaction()`
+SqliteMemory().connection()` opens a database. `await db.execution(sql,
+[Param(…)])` runs SQL with bound values, and `db.query(sql, values)` answers
+`one()`, `maybe()` or `all(limit)`; transactions do the same.
+`row.int("id")` and `row.maybe("body").text()` read by column name, and
+`Query(origin:, statement:).rows()` streams. `prepared()`, `transaction()`
 with `TransactionOptions::Mode`, blobs, scripts and an online backup
 (`SqliteBackup(…).report()`) complete it, and `DbPool` shares connections.
 
@@ -5338,8 +5339,7 @@ are separate capabilities available on concrete acquisitions.
 
 ```okkama
 let transaction=await connection.transaction(TransactionOptions());
-await transaction.execution(Statement(text: "INSERT INTO customers VALUES(?,?)",
-    values: [Param(7),Param("Ada")]));
+await transaction.execution("INSERT INTO customers VALUES(?,?)",[Param(7),Param("Ada")]);
 await transaction.commit();
 ```
 

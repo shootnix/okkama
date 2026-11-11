@@ -15,7 +15,7 @@ import "async/timeout" take Before, TimedOut;
 import "compare" take Order;
 import "db/transaction" take Transaction, TransactionOptions, Isolation;
 import "db/statement" take Statement, Execution, DbLimits, DbBoundaryLimit;
-import "db/row" take Row, Column, RowReading, RowsEnded, DbRowSchema, DbRowData;
+import "db/row" take Row, Column, RowReading, RowsEnded, DbRowSchema, DbRowData, DbQuery;
 import "db/read" take DbPage;
 import "db/value" take DbValue, DbValueKind, ObservedDbValue, DbNativeValue, DbNull, DbInteger,
     DbFloating, DbText, DbBytes;
@@ -354,6 +354,15 @@ object SqliteConnection does DbConnection, DbExecuting, DbPreparing, DbPreparedO
 
     async transaction(options is TransactionOptions, mode is SqliteTransactionMode) is SqliteTransaction {
         await origin.begin(options, mode);
+    }
+    // db.execution(sql, values) and db.query(sql, values).one(): the values
+    // are always bound, never pasted into the SQL.
+    async execution(sql is string, values is Sequencing<DbValue>) is Execution {
+        await self.execution(Statement(text: sql, values: values));
+    }
+
+    query(sql is string, values is Sequencing<DbValue>) is DbQuery {
+        Query(origin: self, statement: Statement(text: sql, values: values));
     }
 }
 
@@ -1525,6 +1534,15 @@ object SqliteTransaction does Transaction, DbExecuting, DbPreparing, SqliteBlobO
             owner.abandon(token);
         }
     }
+    // db.execution(sql, values) and db.query(sql, values).one(): the values
+    // are always bound, never pasted into the SQL.
+    async execution(sql is string, values is Sequencing<DbValue>) is Execution {
+        await self.execution(Statement(text: sql, values: values));
+    }
+
+    query(sql is string, values is Sequencing<DbValue>) is DbQuery {
+        Query(origin: self, statement: Statement(text: sql, values: values));
+    }
 }
 
 hidden object SqlitePrepared does PreparedStatement, Closing {
@@ -1808,4 +1826,21 @@ async test "scripts, blobs and an online backup" {
     acquired.connection().close();
     await acquired.connection().settled();
     scratch.close();
+}
+
+async test "a connection runs SQL with bound values and answers a query" {
+    let db = await SqliteMemory().connection();
+    defer await db.settled();
+    defer db.close();
+    await db.execution("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT)", []);
+    let added = await db.execution("INSERT INTO t(name) VALUES (?), (?)", [Param("a"), Param("b; DROP TABLE t")]);
+    test.is(added.affected_rows().string(), "2");
+    test.is((await db.query("SELECT name FROM t WHERE id = ?", [Param(2)]).one()).text("name"), "b; DROP TABLE t");
+    test.is((await db.query("SELECT id FROM t WHERE id > ?", [Param(9)]).maybe()) == Maybe<Row>.none, true);
+    test.is((await db.query("SELECT id FROM t ORDER BY id", []).all(10)).size(), 2);
+    let change = await db.transaction(TransactionOptions());
+    await change.execution("DELETE FROM t WHERE id = ?", [Param(1)]);
+    test.is((await change.query("SELECT count(*) AS n FROM t", []).one()).int("n"), 1);
+    await change.rollback();
+    test.is((await db.query("SELECT count(*) AS n FROM t", []).one()).int("n"), 2);
 }
