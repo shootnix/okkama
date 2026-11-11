@@ -73,9 +73,9 @@ object PopSession does Closing {
         defer cleanup.close();
         let command = PopCommand(PopSimpleCommand.stat);
         let reply = await wire.read(command);
-        if !reply.successful() {
+        if !reply::Reply::successful {
             complete.set();
-            throw PopCommandRejected.detailed(command.name(), reply.text());
+            throw PopCommandRejected.detailed(command.name(), reply::Reply::text);
         }
         let state = PopMailboxState(reply, limits);
         complete.set();
@@ -91,18 +91,18 @@ object PopSession does Closing {
         let cleanup = PopSessionCleanup(self, complete);
         defer cleanup.close();
         let reply = await wire.read(PopCommand(PopSimpleCommand.list));
-        if !reply.successful() {
+        if !reply::Reply::successful {
             complete.set();
-            throw PopCommandRejected.detailed("LIST", reply.text());
+            throw PopCommandRejected.detailed("LIST", reply::Reply::text);
         }
         // Validate LIST before sending another command or holding another body.
         let listed = PopListing(reply, [], limits);
         let entries = listed.messages();
         let result = if capabilities.features().membership(PopFeature.uidl) {
             let ids = await wire.read(PopCommand(PopSimpleCommand.uidl));
-            if !ids.successful() {
+            if !ids::Reply::successful {
                 complete.set();
-                throw PopCommandRejected.detailed("UIDL", ids.text());
+                throw PopCommandRejected.detailed("UIDL", ids::Reply::text);
             }
             let joined = PopListing(reply, [ids], limits);
             joined.messages();
@@ -136,8 +136,8 @@ object PopSession does Closing {
             self.close();
         }
         complete.set();
-        confirm reply.successful()
-            else throw PopCommandRejected.detailed(command.name(), reply.text());
+        confirm reply::Reply::successful
+            else throw PopCommandRejected.detailed(command.name(), reply::Reply::text);
         reply;
     }
 
@@ -173,7 +173,7 @@ object PopMailbox {
         let reply = await origin.run(
             PopCommand(operation: PopMessageCommand.retrieve, number: number)
         );
-        reply.body();
+        reply::Reply::body;
     }
 
     async message(number is PopNumber) is MailMessage {
@@ -187,7 +187,7 @@ object PopMailbox {
 
     async preview(number is PopNumber, lines is int) is @byte {
         let reply = await origin.run(PopCommand(number: number, lines: lines));
-        reply.body();
+        reply::Reply::body;
     }
 }
 
@@ -308,7 +308,7 @@ hidden object PopWire does Closing {
         prefix is @byte,
         limits is PopReplyLimits
     ) {
-        confirm prefix.size() <= limits.wire_bytes() && limits.wire_bytes() > 0
+        confirm prefix.size() <= limits::Limits::wire_bytes && limits::Limits::wire_bytes > 0
             else throw InvalidArgument.because("invalid POP3 wire prefix/budget");
         self.input = input;
         self.output = output;

@@ -32,12 +32,14 @@ object ImapDataLimits {
         self.depth = depth;
     }
 
-    tokens() is int {
-        tokens;
-    }
+    cap Limits {
+        tokens is int {
+            tokens;
+        }
 
-    depth() is int {
-        depth;
+        depth is int {
+            depth;
+        }
     }
 }
 
@@ -133,7 +135,7 @@ object ImapDataTokens {
     }
 
     following(token is ImapDataToken) is ^ImapDataTokens {
-        confirm count < limits.tokens() else throw ImapDataLimitExceeded.kind("tokens");
+        confirm count < limits::Limits::tokens else throw ImapDataLimitExceeded.kind("tokens");
         let appended = entries.following(token);
         ^entries = appended;
         ^count = count + 1;
@@ -335,7 +337,7 @@ object ImapDataTree {
         confirm token.kind() != ImapTokenKind.closing
             else throw InvalidImapData.because("unexpected closing parenthesis");
         if token.kind() == ImapTokenKind.opening {
-            confirm depth < limits.depth() else throw ImapDataLimitExceeded.kind("depth");
+            confirm depth < limits::Limits::depth else throw ImapDataLimitExceeded.kind("depth");
             let values is MimeItems<ImapValue> = MimeItems();
             let position = MimePosition(at + 1);
             loop {

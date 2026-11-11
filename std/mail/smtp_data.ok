@@ -45,16 +45,18 @@ object SmtpDataLimits {
         self.line_bytes = line_bytes;
     }
 
-    message_bytes() is int {
-        message_bytes;
-    }
+    cap Limits {
+        message_bytes is int {
+            message_bytes;
+        }
 
-    wire_bytes() is int {
-        wire_bytes;
-    }
+        wire_bytes is int {
+            wire_bytes;
+        }
 
-    line_bytes() is int {
-        line_bytes;
+        line_bytes is int {
+            line_bytes;
+        }
     }
 }
 
@@ -99,11 +101,11 @@ hidden object SmtpDataValue {
         confirm MimeMetadata(origin.headers()).encoding() != TransferEncoding.binary
             else throw InvalidSmtpData.located(0, "binary MIME requires BDAT, not DATA");
         let original = origin.limits();
-        let maximum = if original::Limits::body_bytes < limits.message_bytes() {
+        let maximum = if original::Limits::body_bytes < limits::Limits::message_bytes {
             original::Limits::body_bytes;
         }
         else {
-            limits.message_bytes();
+            limits::Limits::message_bytes;
         };
         let mime = MimeLimits(
             header_bytes: original::Limits::header_bytes,
@@ -169,11 +171,11 @@ hidden object SmtpDataValue {
         }
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        let output = SmtpDataOutput(buffer, limits.wire_bytes());
+        let output = SmtpDataOutput(buffer, limits::Limits::wire_bytes);
         let start = MimePosition(0);
         loop {
             last if start.index() == content.size();
-            let end = SmtpDataLine(content, start.index(), limits.line_bytes()).end();
+            let end = SmtpDataLine(content, start.index(), limits::Limits::line_bytes).end();
             if content[start.index()].int() == 46 {
                 output.write([46.byte()]);
             }

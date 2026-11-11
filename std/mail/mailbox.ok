@@ -340,16 +340,18 @@ object StoredMail {
         content = StoredMailContent(message, limits).message();
     }
 
-    identifier() is string {
-        identifier;
-    }
-
     message() is MailMessage {
         content;
     }
 
     flags() is Set<MailFlag> {
         marks;
+    }
+
+    cap Mail {
+        identifier is string {
+            identifier;
+        }
     }
 }
 
@@ -408,16 +410,18 @@ object MaildirLimits {
         self.mime = mime;
     }
 
-    messages() is int {
-        messages;
-    }
-
-    wire_bytes() is int {
-        wire_bytes;
-    }
-
     mime() is MimeLimits {
         mime;
+    }
+
+    cap Limits {
+        messages is int {
+            messages;
+        }
+
+        wire_bytes is int {
+            wire_bytes;
+        }
     }
 }
 
@@ -529,14 +533,14 @@ object Maildir {
     messages() is Sequencing<StoredMail> {
         let access = MaildirAccess(origin, FileLockMode.shared);
         defer access.close();
-        let entries = MaildirEntries(origin, bounds.messages()).values();
+        let entries = MaildirEntries(origin, bounds::Limits::messages).values();
         let total = MimePosition(0);
         let messages is MimeItems<StoredMail> = MimeItems();
         for entries -> entry {
             let bytes = MaildirFileBytes(
                 entry.path(),
                 bounds.mime()::Limits::body_bytes,
-                bounds.wire_bytes() - total.index()
+                bounds::Limits::wire_bytes - total.index()
             ).bytes();
             total = total.following(total.index() + bytes.size());
             messages = messages.following(
@@ -561,7 +565,7 @@ object Maildir {
             else throw InvalidMailbox.located(0, "remove requires a base identifier");
         let access = MaildirAccess(origin, FileLockMode.exclusive);
         defer access.close();
-        let entries = MaildirEntries(origin, bounds.messages()).values();
+        let entries = MaildirEntries(origin, bounds::Limits::messages).values();
         for entries -> entry {
             if entry.name().identifier() == identifier {
                 FileEntry(entry.path()).remove();
@@ -594,10 +598,10 @@ hidden object MaildirDelivery {
         let access = MaildirAccess(origin.path(), FileLockMode.exclusive);
         defer access.close();
         let limits = origin.limits();
-        let entries = MaildirEntries(origin.path(), limits.messages()).values();
-        confirm entries.size() < limits.messages() else throw MailboxLimitExceeded.kind("messages");
+        let entries = MaildirEntries(origin.path(), limits::Limits::messages).values();
+        confirm entries.size() < limits::Limits::messages else throw MailboxLimitExceeded.kind("messages");
         let bytes = MimePart(headers: message.headers(), body: message.body(), limits: limits.mime()).bytes();
-        confirm bytes.size() <= limits.wire_bytes()
+        confirm bytes.size() <= limits::Limits::wire_bytes
             else throw MailboxLimitExceeded.kind("wire_bytes");
         let temporary = TemporaryFile(directory: Directory(origin.path().child("tmp")), prefix: ".okkama-");
         let identifier = try {
@@ -709,13 +713,13 @@ object ChangedMaildirFlags {
         let access = MaildirAccess(origin.path(), FileLockMode.exclusive);
         defer access.close();
         let limits = origin.limits();
-        let entries = MaildirEntries(origin.path(), limits.messages()).values();
+        let entries = MaildirEntries(origin.path(), limits::Limits::messages).values();
         for entries -> entry {
             if entry.name().identifier() == identifier {
                 let bytes = MaildirFileBytes(
                     entry.path(),
                     limits.mime()::Limits::body_bytes,
-                    limits.wire_bytes()
+                    limits::Limits::wire_bytes
                 ).bytes();
                 let result = StoredMail(
                     identifier,

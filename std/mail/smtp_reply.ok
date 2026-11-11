@@ -36,16 +36,18 @@ object SmtpReplyLimits {
         self.wire_bytes = wire_bytes;
     }
 
-    line_bytes() is int {
-        line_bytes;
-    }
+    cap Limits {
+        line_bytes is int {
+            line_bytes;
+        }
 
-    lines() is int {
-        lines;
-    }
+        lines is int {
+            lines;
+        }
 
-    wire_bytes() is int {
-        wire_bytes;
+        wire_bytes is int {
+            wire_bytes;
+        }
     }
 }
 
@@ -92,7 +94,7 @@ hidden object ParsedSmtpReply {
     }
 
     reply() is SmtpReply {
-        confirm origin.size() <= limits.wire_bytes()
+        confirm origin.size() <= limits::Limits::wire_bytes
             else throw SmtpLimitExceeded.kind("wire_bytes");
         let decoder = SmtpReplyDecoder(limits);
         decoder = decoder.fed(origin);
@@ -123,7 +125,7 @@ object SmtpReplyDecoder {
 
     fed(chunk is @byte) is ^SmtpReplyDecoder {
         confirm !state.complete() else throw InvalidState.because("SMTP reply decoder is complete");
-        confirm chunk.size() <= limits.wire_bytes()
+        confirm chunk.size() <= limits::Limits::wire_bytes
             else throw SmtpLimitExceeded.kind("chunk_bytes");
         let progress = state;
         let end = MimePosition(chunk.size());
@@ -183,7 +185,7 @@ hidden object SmtpReplyValue {
             else throw InvalidArgument.because("SMTP reply source size must be nonnegative");
         confirm count > 0
             else throw InvalidSmtpReply.located(0, "reply requires at least one line");
-        confirm count <= limits.lines() else throw SmtpLimitExceeded.kind("lines");
+        confirm count <= limits::Limits::lines else throw SmtpLimitExceeded.kind("lines");
         let buffer = ByteBuffer();
         defer buffer.closing().close();
         let values is @string = (0..count).map() -> index {
@@ -199,20 +201,20 @@ hidden object SmtpReplyValue {
                     " ";
                 }
             };
-            confirm text.length() <= limits.line_bytes() - 5 - separator.length()
+            confirm text.length() <= limits::Limits::line_bytes - 5 - separator.length()
                 else throw SmtpLimitExceeded.kind("line_bytes");
             SmtpReplyText(text).validate();
             let bytes = Utf8Encoded(code.string() + separator + text + "\r\n").bytes();
-            confirm bytes.size() <= limits.line_bytes()
+            confirm bytes.size() <= limits::Limits::line_bytes
                 else throw SmtpLimitExceeded.kind("line_bytes");
-            confirm bytes.size() <= limits.wire_bytes() - buffer.content().size()
+            confirm bytes.size() <= limits::Limits::wire_bytes - buffer.content().size()
                 else throw SmtpLimitExceeded.kind("wire_bytes");
             buffer.writing().write(ByteSnapshot(bytes));
             text;
         };
         status = code;
         entries = values;
-        summary = Joined(separator: "\n", values: values, maximum_items: count, maximum_length: limits.wire_bytes()).string();
+        summary = Joined(separator: "\n", values: values, maximum_items: count, maximum_length: limits::Limits::wire_bytes).string();
         wire = buffer.content().bytes();
     }
 
@@ -342,9 +344,9 @@ hidden object SmtpReplyProgress {
 
     accepted(octet is byte) is ^SmtpReplyProgress {
         confirm !done else throw InvalidState.because("SMTP reply already complete");
-        confirm lines.size() < limits.lines() else throw SmtpLimitExceeded.kind("lines");
-        confirm used < limits.wire_bytes() else throw SmtpLimitExceeded.kind("wire_bytes");
-        confirm pending.length() < limits.line_bytes()
+        confirm lines.size() < limits::Limits::lines else throw SmtpLimitExceeded.kind("lines");
+        confirm used < limits::Limits::wire_bytes else throw SmtpLimitExceeded.kind("wire_bytes");
+        confirm pending.length() < limits::Limits::line_bytes
             else throw SmtpLimitExceeded.kind("line_bytes");
         let value = octet.int();
         let cr = pending.length() > 0

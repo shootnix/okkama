@@ -256,7 +256,7 @@ object ImapUidRanges {
 
     ImapUidRanges(origin is string, limits is ImapUidSetLimits) {
         confirm origin.length() > 0 else throw InvalidImapData.because("empty UID range");
-        confirm origin.length() <= limits.wire_bytes()
+        confirm origin.length() <= limits::Limits::wire_bytes
             else throw ImapUidLimitExceeded.kind("wire_bytes");
         let items is MimeItems<ImapUid> = MimeItems();
         let count = MimePosition(0);
@@ -277,7 +277,7 @@ object ImapUidRanges {
             else {
                 first - final;
             });
-            confirm size <= limits.entries() - count.index()
+            confirm size <= limits::Limits::entries - count.index()
                 else throw ImapUidLimitExceeded.kind("entries");
             // RFC 4315: 12:10 is the sequence 10,11,12, just like 10:12.
             // This matters for positional COPYUID source/destination mappings.
@@ -312,7 +312,7 @@ object ImapSearchResult {
     ImapSearchResult(origin is ImapResponse, tag is ImapTag, limits is ImapUidSetLimits) {
         let values = ParsedImapData(origin).entries();
         if origin.name() == "SEARCH" {
-            confirm values.size() - 2 <= limits.entries()
+            confirm values.size() - 2 <= limits::Limits::entries
                 else throw ImapUidLimitExceeded.kind("entries");
             let ids is @ImapUid = (2..values.size()).map() -> index {
                 let entry = values.item(index);

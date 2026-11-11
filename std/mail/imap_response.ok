@@ -39,20 +39,22 @@ object ImapResponseLimits {
         self.literals = literals;
     }
 
-    line_bytes() is int {
-        line_bytes;
-    }
+    cap Limits {
+        line_bytes is int {
+            line_bytes;
+        }
 
-    literal_bytes() is int {
-        literal_bytes;
-    }
+        literal_bytes is int {
+            literal_bytes;
+        }
 
-    wire_bytes() is int {
-        wire_bytes;
-    }
+        wire_bytes is int {
+            wire_bytes;
+        }
 
-    literals() is int {
-        literals;
+        literals is int {
+            literals;
+        }
     }
 }
 
@@ -128,7 +130,7 @@ object ParsedImapResponse {
     }
 
     response() is ImapResponse {
-        confirm origin.size() <= limits.wire_bytes()
+        confirm origin.size() <= limits::Limits::wire_bytes
             else throw ImapResponseLimitExceeded.kind("wire_bytes");
         let decoder = ImapResponseDecoder(limits);
         decoder = decoder.fed(origin);
@@ -163,7 +165,7 @@ object ImapResponseDecoder {
     fed(chunk is @byte) is ^ImapResponseDecoder {
         confirm !state.complete()
             else throw InvalidState.because("IMAP response decoder is complete");
-        confirm chunk.size() <= limits.wire_bytes()
+        confirm chunk.size() <= limits::Limits::wire_bytes
             else throw ImapResponseLimitExceeded.kind("chunk_bytes");
         let progress = state;
         let position = MimePosition(0);
@@ -273,7 +275,7 @@ object ImapResponseProgress {
     literal_fragment(fragment is @byte) is ^ImapResponseProgress {
         confirm !done && remaining > 0 && fragment.size() > 0 && fragment.size() <= remaining
             else throw InvalidState.because("invalid IMAP literal fragment");
-        confirm fragment.size() <= limits.wire_bytes() - used
+        confirm fragment.size() <= limits::Limits::wire_bytes - used
             else throw ImapResponseLimitExceeded.kind("wire_bytes");
         if !binary {
             for (0..fragment.size()) -> index {
@@ -309,8 +311,8 @@ object ImapResponseProgress {
     accepted(octet is byte) is ^ImapResponseProgress {
         confirm !done && remaining == 0
             else throw InvalidState.because("IMAP response expects literal bytes or is complete");
-        confirm used < limits.wire_bytes() else throw ImapResponseLimitExceeded.kind("wire_bytes");
-        confirm pending.length() < limits.line_bytes()
+        confirm used < limits::Limits::wire_bytes else throw ImapResponseLimitExceeded.kind("wire_bytes");
+        confirm pending.length() < limits::Limits::line_bytes
             else throw ImapResponseLimitExceeded.kind("line_bytes");
         let code = octet.int();
         let cr = pending.length() > 0
@@ -335,9 +337,9 @@ object ImapResponseProgress {
                 ImapResponsePart(ImapResponsePartKind.text, Utf8Encoded(pending + "\n").bytes())
             );
             if marker.present() {
-                confirm literals < limits.literals()
+                confirm literals < limits::Limits::literals
                     else throw ImapResponseLimitExceeded.kind("literals");
-                confirm marker.size() <= limits.wire_bytes() - used - 3
+                confirm marker.size() <= limits::Limits::wire_bytes - used - 3
                     else throw ImapResponseLimitExceeded.kind("wire_bytes");
                 if marker.size() == 0 {
                     let kind = if marker.binary() {
@@ -598,7 +600,7 @@ hidden object ImapResponseLine {
                 return ImapLiteralMarker(
                     origin.slice(start, origin.length()),
                     offset + start,
-                    limits.literal_bytes()
+                    limits::Limits::literal_bytes
                 );
             }
             quote = quote.accepted(char, offset + index);

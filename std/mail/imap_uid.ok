@@ -90,12 +90,14 @@ object ImapUidSetLimits {
         self.wire_bytes = wire_bytes;
     }
 
-    entries() is int {
-        entries;
-    }
+    cap Limits {
+        entries is int {
+            entries;
+        }
 
-    wire_bytes() is int {
-        wire_bytes;
+        wire_bytes is int {
+            wire_bytes;
+        }
     }
 }
 
@@ -216,7 +218,7 @@ hidden object ImapUidSnapshot {
         let size = origin.size();
         confirm size >= 0
             else throw InvalidArgument.because("IMAP UID source size must be nonnegative");
-        confirm size <= limits.entries() else throw ImapUidLimitExceeded.kind("entries");
+        confirm size <= limits::Limits::entries else throw ImapUidLimitExceeded.kind("entries");
         let all is MimeItems<ImapUid> = MimeItems();
         let texts is MimeItems<string> = MimeItems();
         let seen = ImapUidSeen();
@@ -231,8 +233,8 @@ hidden object ImapUidSnapshot {
                 else {
                     1;
                 };
-                confirm separator <= limits.wire_bytes() - used.index()
-                    && text.length() <= limits.wire_bytes() - used.index() - separator
+                confirm separator <= limits::Limits::wire_bytes - used.index()
+                    && text.length() <= limits::Limits::wire_bytes - used.index() - separator
                     else throw ImapUidLimitExceeded.kind("wire_bytes");
                 used = used.following(used.index() + separator + text.length());
                 all = all.following(uid);

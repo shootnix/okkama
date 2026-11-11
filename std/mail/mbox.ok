@@ -92,16 +92,18 @@ object MboxLimits {
         self.mime = mime;
     }
 
-    messages() is int {
-        messages;
-    }
-
-    wire_bytes() is int {
-        wire_bytes;
-    }
-
     mime() is MimeLimits {
         mime;
+    }
+
+    cap Limits {
+        messages is int {
+            messages;
+        }
+
+        wire_bytes is int {
+            wire_bytes;
+        }
     }
 }
 
@@ -111,19 +113,19 @@ object MboxArchive does ByteSource {
 
     MboxArchive(records is Sequencing<MboxRecord>) {
         let bounds = MboxLimits();
-        self.records = MboxRecordsSnapshot(records, bounds.messages()).values();
+        self.records = MboxRecordsSnapshot(records, bounds::Limits::messages).values();
         limits = bounds;
     }
 
     MboxArchive(records is Sequencing<MboxRecord>, limits is MboxLimits) {
-        self.records = MboxRecordsSnapshot(records, limits.messages()).values();
+        self.records = MboxRecordsSnapshot(records, limits::Limits::messages).values();
         self.limits = limits;
     }
 
     bytes() is @byte {
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        let output = MboxOutput(buffer, limits.wire_bytes(), "wire_bytes");
+        let output = MboxOutput(buffer, limits::Limits::wire_bytes, "wire_bytes");
         for records -> record {
             let message = record.message();
             let wire = MimePart(headers: message.headers(), body: message.body(), limits: limits.mime()).bytes();
@@ -365,13 +367,13 @@ hidden object MboxParsing {
     }
 
     records() is @MboxRecord {
-        confirm origin.size() <= limits.wire_bytes()
+        confirm origin.size() <= limits::Limits::wire_bytes
             else throw MboxLimitExceeded.kind("wire_bytes");
         let records is MimeItems<MboxRecord> = MimeItems();
         if origin.size() == 0 {
             return records.entries();
         }
-        confirm limits.messages() > 0 else throw MboxLimitExceeded.kind("messages");
+        confirm limits::Limits::messages > 0 else throw MboxLimitExceeded.kind("messages");
         let first = MboxLine(origin, 0).end();
         let current = MboxRecordStart(first + 1, MboxSeparatorBytes(origin, 0, first).separator());
         let position = MimePosition(first + 1);
@@ -389,7 +391,7 @@ hidden object MboxParsing {
                         limits.mime()
                     ).record()
                 );
-                confirm records.size() < limits.messages()
+                confirm records.size() < limits::Limits::messages
                     else throw MboxLimitExceeded.kind("messages");
                 current = current.following(end + 1, MboxSeparatorBytes(origin, start, end).separator());
             }

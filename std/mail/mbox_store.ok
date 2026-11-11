@@ -83,7 +83,7 @@ object MboxSession does Closing {
             throw failure;
         };
         let initial = try {
-            let wire = MboxFileBytes(origin.path(), origin.limits().wire_bytes()).bytes();
+            let wire = MboxFileBytes(origin.path(), origin.limits()::Limits::wire_bytes).bytes();
             let records = ParsedMbox(wire, origin.limits()).records();
             let identifiers is @string = (0..records.size()).map() -> index {
                 token + "." + index.string();
@@ -128,7 +128,7 @@ object MboxSession does Closing {
         self.current();
         let records = view.records();
         let count = records.size();
-        confirm count < origin.limits().messages() else throw MboxLimitExceeded.kind("messages");
+        confirm count < origin.limits()::Limits::messages else throw MboxLimitExceeded.kind("messages");
         confirm serial < 9223372036854775807 else throw MboxLimitExceeded.kind("identifiers");
         let added is @MboxRecord = (0..count + 1).map() -> index {
             if index < count {
@@ -188,7 +188,7 @@ object MboxSession does Closing {
 
     hidden current() is void {
         lease.check();
-        let present = MboxFileBytes(origin.path(), origin.limits().wire_bytes()).bytes();
+        let present = MboxFileBytes(origin.path(), origin.limits()::Limits::wire_bytes).bytes();
         confirm present == view.bytes() else throw MboxConflict.conflict;
     }
 }
@@ -292,7 +292,7 @@ hidden object MboxSnapshot {
         let count = records.size();
         confirm count == identifiers.size()
             else throw InvalidArgument.because("mbox identity count mismatch");
-        confirm count <= limits.messages() else throw MboxLimitExceeded.kind("messages");
+        confirm count <= limits::Limits::messages else throw MboxLimitExceeded.kind("messages");
         let values is @MboxRecord = (0..count).map() -> index {
             records.item(index);
         };
@@ -366,5 +366,5 @@ hidden object MboxReplacement {
 test "mbox coordinates do not observe a filesystem" {
     let mailbox = Mbox(Path("missing/archive"), MboxLimits());
     test.is(mailbox.path().string(), "missing/archive");
-    test.is(mailbox.limits().messages(), 1000);
+    test.is(mailbox.limits()::Limits::messages, 1000);
 }

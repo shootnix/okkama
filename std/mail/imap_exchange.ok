@@ -36,10 +36,10 @@ object ImapCommandChannel does Closing {
         prefix is @byte,
         limits is ImapCommandLimits
     ) {
-        confirm prefix.size() <= limits.wire_bytes()
+        confirm prefix.size() <= limits::Limits::wire_bytes
             else throw ImapCommandLimitExceeded.kind("prefix_bytes");
-        confirm limits.responses() > 0 else throw ImapCommandLimitExceeded.kind("responses");
-        confirm limits.wire_bytes() > 0 && limits.response().wire_bytes() > 0
+        confirm limits::Limits::responses > 0 else throw ImapCommandLimitExceeded.kind("responses");
+        confirm limits::Limits::wire_bytes > 0 && limits.response()::Limits::wire_bytes > 0
             else throw ImapCommandLimitExceeded.kind("wire_bytes");
         self.input = input;
         self.output = output;

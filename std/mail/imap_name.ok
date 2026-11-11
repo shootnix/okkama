@@ -29,12 +29,14 @@ object ImapNameLimits {
         self.wire_bytes = wire_bytes;
     }
 
-    scalars() is int {
-        scalars;
-    }
+    cap Limits {
+        scalars is int {
+            scalars;
+        }
 
-    wire_bytes() is int {
-        wire_bytes;
+        wire_bytes is int {
+            wire_bytes;
+        }
     }
 }
 
@@ -116,11 +118,11 @@ hidden object ImapUtf7Encoder {
     }
 
     string() is string {
-        confirm origin.length() <= limits.scalars()
+        confirm origin.length() <= limits::Limits::scalars
             else throw ImapNameLimitExceeded.kind("scalars");
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        let output = ImapNameOutput(buffer, limits.wire_bytes());
+        let output = ImapNameOutput(buffer, limits::Limits::wire_bytes);
         let start = MimePosition(0);
         for (0..origin.length()) -> index {
             let char = origin.slice(index, index + 1);
@@ -182,7 +184,7 @@ hidden object ImapUtf7Parser {
     }
 
     string() is string {
-        confirm origin.length() <= limits.wire_bytes()
+        confirm origin.length() <= limits::Limits::wire_bytes
             else throw ImapNameLimitExceeded.kind("wire_bytes");
         for (0..origin.length()) -> index {
             let bytes = Utf8Encoded(origin.slice(index, index + 1)).bytes();
@@ -218,7 +220,7 @@ hidden object ImapUtf7Parser {
                     ImapUtf7Shift(origin.slice(start + 1, end.index()), start).string();
                 }
             };
-            confirm piece.length() <= limits.scalars() - count.index()
+            confirm piece.length() <= limits::Limits::scalars - count.index()
                 else throw ImapNameLimitExceeded.kind("scalars");
             buffer.writing().write(ByteSnapshot(Utf8Encoded(piece).bytes()));
             count = count.following(count.index() + piece.length());
@@ -291,7 +293,7 @@ hidden object ImapNameValue {
     has wire, argument is string;
 
     ImapNameValue(origin is string, limits is ImapNameLimits) {
-        confirm origin.length() <= limits.scalars()
+        confirm origin.length() <= limits::Limits::scalars
             else throw ImapNameLimitExceeded.kind("scalars");
         for (0..origin.length()) -> index {
             let bytes = Utf8Encoded(origin.slice(index, index + 1)).bytes();
@@ -301,7 +303,7 @@ hidden object ImapNameValue {
         let encoded = ImapUtf7Encoded(origin, limits).string();
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        let output = ImapNameOutput(buffer, limits.wire_bytes());
+        let output = ImapNameOutput(buffer, limits::Limits::wire_bytes);
         output.write("\"");
         for (0..encoded.length()) -> index {
             let char = encoded.slice(index, index + 1);

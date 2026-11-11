@@ -82,7 +82,7 @@ hidden object PopReplyInput {
     ) {
         confirm chunk_bytes > 0
             else throw InvalidArgument.because("POP3 read chunk size must be positive");
-        confirm prefix.size() <= limits.wire_bytes()
+        confirm prefix.size() <= limits::Limits::wire_bytes
             else throw PopReplyLimitExceeded.kind("chunk_bytes");
         self.origin = origin;
         self.mode = mode;
@@ -96,7 +96,7 @@ hidden object PopReplyInput {
         decoder = decoder.fed(prefix);
         loop {
             last if decoder.complete();
-            let remaining = limits.wire_bytes() - decoder.consumed();
+            let remaining = limits::Limits::wire_bytes - decoder.consumed();
             confirm remaining > 0 else throw PopReplyLimitExceeded.kind("wire_bytes");
             let requested = if chunk_bytes < remaining {
                 chunk_bytes;
@@ -120,7 +120,7 @@ test "POP3 read snapshot preserves status and exact remainder" {
     let decoder = PopReplyDecoder(PopReplyMode.single);
     decoder = decoder.fed([43.byte(), 79.byte(), 75.byte(), 13.byte(), 10.byte(), 1.byte()]);
     let read = PopReplyRead(decoder);
-    test.is(read.reply().successful(), true);
+    test.is(read.reply()::Reply::successful, true);
     test.is(read.consumed(), 5);
     test.is(read.remainder(), [1.byte()]);
 }

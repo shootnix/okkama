@@ -81,7 +81,7 @@ hidden object ImapResponseInput {
     ) {
         confirm chunk_bytes > 0
             else throw InvalidArgument.because("IMAP read chunk size must be positive");
-        confirm prefix.size() <= limits.wire_bytes()
+        confirm prefix.size() <= limits::Limits::wire_bytes
             else throw ImapResponseLimitExceeded.kind("chunk_bytes");
         self.origin = origin;
         self.prefix = prefix;
@@ -94,7 +94,7 @@ hidden object ImapResponseInput {
         decoder = decoder.fed(prefix);
         loop {
             last if decoder.complete();
-            let remaining = limits.wire_bytes() - decoder.consumed();
+            let remaining = limits::Limits::wire_bytes - decoder.consumed();
             confirm remaining > 0 else throw ImapResponseLimitExceeded.kind("wire_bytes");
             let requested = if chunk_bytes < remaining {
                 chunk_bytes;

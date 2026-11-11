@@ -35,16 +35,18 @@ object ImapCapabilityLimits {
         self.wire_bytes = wire_bytes;
     }
 
-    tokens() is int {
-        tokens;
-    }
+    cap Limits {
+        tokens is int {
+            tokens;
+        }
 
-    token_bytes() is int {
-        token_bytes;
-    }
+        token_bytes is int {
+            token_bytes;
+        }
 
-    wire_bytes() is int {
-        wire_bytes;
+        wire_bytes is int {
+            wire_bytes;
+        }
     }
 }
 
@@ -132,7 +134,7 @@ hidden object ImapCapabilityToken {
     }
 
     name() is string {
-        confirm origin.length() <= limits.token_bytes()
+        confirm origin.length() <= limits::Limits::token_bytes
             else throw ImapCapabilityLimitExceeded.kind("token_bytes");
         confirm origin != "" else throw InvalidImapCapabilities.because("empty capability atom");
         for (0..origin.length()) -> index {
@@ -205,8 +207,8 @@ hidden object ImapCapabilitySnapshot {
         confirm count >= 0
             else throw InvalidArgument.because("IMAP capability source size must be nonnegative");
         confirm count > 0 else throw InvalidImapCapabilities.because("missing protocol revision");
-        confirm count <= limits.tokens() else throw ImapCapabilityLimitExceeded.kind("tokens");
-        confirm limits.wire_bytes() >= 14 else throw ImapCapabilityLimitExceeded.kind("wire_bytes");
+        confirm count <= limits::Limits::tokens else throw ImapCapabilityLimitExceeded.kind("tokens");
+        confirm limits::Limits::wire_bytes >= 14 else throw ImapCapabilityLimitExceeded.kind("wire_bytes");
         let buffer = ByteBuffer();
         defer buffer.closing().close();
         buffer.writing().write(ByteSnapshot(Utf8Encoded("* CAPABILITY").bytes()));
@@ -217,7 +219,7 @@ hidden object ImapCapabilitySnapshot {
             let token = ImapCapability(origin.item(index), limits);
             let raw = token.string();
             let name = token.name();
-            confirm raw.length() <= limits.wire_bytes() - buffer.content().size() - 3
+            confirm raw.length() <= limits::Limits::wire_bytes - buffer.content().size() - 3
                 else throw ImapCapabilityLimitExceeded.kind("wire_bytes");
             buffer.writing().write(ByteSnapshot(Utf8Encoded(" " + raw).bytes()));
             all = all.following(name);
@@ -278,7 +280,7 @@ hidden object ImapCapabilityLine {
     }
 
     capabilities() is ImapCapabilities {
-        confirm origin.size() <= limits.wire_bytes()
+        confirm origin.size() <= limits::Limits::wire_bytes
             else throw ImapCapabilityLimitExceeded.kind("wire_bytes");
         confirm origin.size() >= 2
             && origin[origin.size() - 2].int() == 13
