@@ -59,6 +59,13 @@ object Work {
     attempt(code is int) is int {
         try { self.fail(code); } catch Boom.boom(found) { found; }
     }
+    // A failure that leaves a scope holding a destroy: `region.unwind`.
+    unwound(code is int) is int {
+        try {
+            let guard = Guard("unwound");
+            self.fail(code + guard.label().length());
+        } catch Boom.boom(found) { found; }
+    }
     index(items is @int, at is int) is int { items[at]; }
 }
 
@@ -83,6 +90,7 @@ async main() is int {
     counter.replace(counter.value() + 5);
     out.writeln(counter.value().string());
     out.writeln(work.attempt(42).string());
+    out.writeln(work.unwound(1).string());
     out.writeln(work.guarded(3));
     out.writeln("a,b,c".split(",").size().string());
     let add = work.adder(10);
