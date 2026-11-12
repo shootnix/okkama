@@ -7,7 +7,7 @@ import "http/status" take Status, InvalidStatus, StatusCode;
 import "http/version" take HttpVersion, ParsedHttp1Version, UnsupportedHttpVersion;
 import "http/header" take Headers, Header, HeaderName, HeaderLimits, InvalidHeader;
 import "http/body" take BodyOpening;
-import "url/value" take InvalidUrl, ParsedUrl, UrlParts;
+import "url/value" take InvalidUrl, UrlParts;
 import "encoding/single_byte" take Latin1Encoded;
 import "runtime/single_byte" take latin1_representable_prefix, ascii_representable_prefix;
 
@@ -233,7 +233,7 @@ object Http1RequestHead {
             confirm ascii_representable_prefix(value) == value.length()
                 else throw InvalidHttpMessage.because("ASCII Host required");
             let checked = try {
-                ParsedUrl("//" + value).parts();
+                Http1HostAuthority(value).parts();
             }
             catch e is InvalidUrl {
                 throw InvalidHttpMessage.because("invalid Host authority");
@@ -315,6 +315,57 @@ object Http1ResponseHead {
 
 enum MissingHttp1Host is Error = (missing);
 
+// A Host field as URL parts. Only the port is split off here, past an IPv6
+// literal's brackets; UrlParts checks the host itself, in one pass instead of
+// parsing "//" + host as a whole URL first (#503).
+hidden object Http1HostAuthority {
+    has origin is string;
+
+    Http1HostAuthority(origin is string) {
+        self.origin = origin;
+    }
+
+    parts() is UrlParts {
+        let end = if origin.starts_with("[") {
+            (origin.find("]") else origin.length()) + 1;
+        }
+        else {
+            origin.find(":") else origin.length();
+        };
+        confirm end <= origin.length() else throw InvalidUrl.located(0, "IP literal closing bracket required");
+        let rest = origin.slice(end, origin.length());
+        confirm rest == "" || rest.starts_with(":") else throw InvalidUrl.located(end, "invalid authority suffix");
+        let digits = if rest == "" {
+            "";
+        }
+        else {
+            rest.slice(1, rest.length());
+        };
+        let port is Maybe<int> = if digits == "" {
+            Maybe<int>.none;
+        }
+        else {
+            let number = digits.characters().reduce(0) -> value, character {
+                let code = character.code();
+                confirm code >= 48 && code <= 57 else throw InvalidUrl.located(end + 1, "ASCII decimal port required");
+                let grown = value * 10 + code - 48;
+                confirm grown <= 65535 else throw InvalidUrl.located(end + 1, "port exceeds 65535");
+                grown;
+            };
+            Maybe.some(number);
+        };
+        UrlParts(
+            scheme: "",
+            userinfo: Maybe<string>.none,
+            host: Maybe.some(origin.slice(0, end)),
+            port: port,
+            path: "",
+            query: Maybe<string>.none,
+            fragment: Maybe<string>.none,
+        );
+    }
+}
+
 test "strict HTTP1 head preserves extension status and duplicate fields" {
     let head = ParsedHttp1ResponseHead("HTTP/1.1 299 phrase\r\nX: 1\r\nX: 2\r\n\r\n").head();
     test.ok(
@@ -328,3 +379,19 @@ test "strict HTTP1 head preserves extension status and duplicate fields" {
         true;
     });
 }
+
+test "a Host field is one authority: a host and an optional port" {
+    let read = ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: EXAMPLE.com:8080\r\n\r\n").head().host();
+    test.is(read::Parts::host else "", "example.com");
+    test.is(read::Parts::port else 0, 8080);
+    let literal = ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: [::1]:81\r\n\r\n").head().host();
+    test.is(literal::Parts::host else "", "[::1]");
+    test.is(literal::Parts::port else 0, 81);
+    test.is(ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").head().host()::Parts::port, Maybe<int>.none);
+    for ["a:b:c", "user@host", "host/x", "host?x", "[::1", "[::1]x", "host:99999", "host:x", ":80", ""] -> bad {
+        test.throws(InvalidHttpMessage) {
+            ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: " + bad + "\r\n\r\n").head();
+        };
+    }
+}
+
