@@ -36,18 +36,23 @@ import "runtime/bigint" take bigint_valid, bigint_bits;
 import "runtime/number_text" take int_parse;
 import "async/atomic" take Atomic;
 
+// An integer of any size; it holds an int, so arithmetic is exact and fast.
 object BigInt does Comparing<BigInt>, Adding<BigInt, BigInt>, Subtracting<BigInt, BigInt>, Multiplying<BigInt, BigInt>, Dividing<BigInt, BigInt>, Remaindering<BigInt, BigInt>, Negating<BigInt> {
     has value is int;
 
+    // Parses decimal digits with an optional minus; anything else is
+    // InvalidBigInt.
     BigInt(origin is string) {
         confirm bigint_valid(origin) else throw InvalidBigInt.invalid;
         value = int_parse(origin, 10);
     }
 
+    // The same number as value: `BigInt(7)`.
     BigInt(value is int) {
         self.value = value;
     }
 
+    // -1, 0 or 1.
     sign() is int {
         value.sign();
     }
@@ -64,6 +69,7 @@ object BigInt does Comparing<BigInt>, Adding<BigInt, BigInt>, Subtracting<BigInt
         bigint_bits(value.string());
     }
 
+    // Compares the numbers.
     order(other is BigInt) is Order {
         let right = other.int();
         if value < right {
@@ -79,6 +85,7 @@ object BigInt does Comparing<BigInt>, Adding<BigInt, BigInt>, Subtracting<BigInt
         }
     }
 
+    // The decimal digits, with a minus when negative.
     string() is string {
         value.string();
     }
@@ -179,14 +186,19 @@ object BigInt does Comparing<BigInt>, Adding<BigInt, BigInt>, Subtracting<BigInt
     }
 }
 
+// Text that is not an integer.
 enum InvalidBigInt is Error = (invalid);
 
+// Division or remainder by zero.
 enum BigDivisionByZero is Error = (by_zero);
 
+// A negative exponent.
 enum InvalidBigExponent is Error = (exponent(exponent is int));
 
+// A bit budget below one.
 enum InvalidBigPowerLimit is Error = (maximum_bits(maximum_bits is int));
 
+// A power would have more bits than the budget.
 enum BigPowerLimitExceeded is Error = (maximum_bits(maximum_bits is int));
 
 test "a BigInt holds an int and takes one" {

@@ -29,9 +29,12 @@ import "runtime/decimal" take decimal_valid, decimal_canonical, decimal_coeffici
 // coefficient by more than 4096 digits: DecimalLimitExceeded. A far exponent
 // in a document cannot ask for a number of millions of digits.
 
+// An exact decimal number: a coefficient times a power of ten, never rounded on
+// its own.
 object Decimal does Comparing<Decimal> {
     has origin is string;
 
+    // Parses `19.99`, `-0.5` or `1e3`; anything else is InvalidDecimal.
     Decimal(origin is string) {
         confirm decimal_valid(origin) else throw InvalidDecimal.origin(origin);
         self.origin = decimal_canonical(origin);
@@ -42,14 +45,17 @@ object Decimal does Comparing<Decimal> {
         self.origin = decimal_canonical(origin.string());
     }
 
+    // The integer the value is made of: 1999 for 19.99.
     coefficient() is BigInt {
         BigInt(decimal_coefficient(origin));
     }
 
+    // The power of ten: -2 for 19.99.
     exponent() is int {
         decimal_exponent(origin);
     }
 
+    // Compares the values: 1.0 and 1.00 are equal.
     order(other is Decimal) is Order {
         let result = decimal_order(origin, other.string());
         if result < 0 {
@@ -65,10 +71,12 @@ object Decimal does Comparing<Decimal> {
         }
     }
 
+    // Its canonical text.
     string() is string {
         origin;
     }
 
+    // The exact sum.
     plus(other is Decimal) is Decimal {
         let mine = DecimalTerms(self);
         let theirs = DecimalTerms(other);
@@ -79,6 +87,7 @@ object Decimal does Comparing<Decimal> {
         ).decimal();
     }
 
+    // The exact difference.
     minus(other is Decimal) is Decimal {
         let mine = DecimalTerms(self);
         let theirs = DecimalTerms(other);
@@ -89,6 +98,7 @@ object Decimal does Comparing<Decimal> {
         ).decimal();
     }
 
+    // The exact product.
     times(other is Decimal) is Decimal {
         let mine = DecimalTerms(self);
         let theirs = DecimalTerms(other);
@@ -308,8 +318,10 @@ hidden object DecimalQuotient {
     }
 }
 
+// Text that is not a decimal number.
 enum InvalidDecimal is Error = (origin(origin is string));
 
+// Division by zero; dividend is the number divided.
 enum DecimalDivisionByZero is Error = (dividend(dividend is string));
 
 // A shift of a coefficient by more than limit digits.

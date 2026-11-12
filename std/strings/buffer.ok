@@ -17,13 +17,16 @@ import "io/stream" take WritingText;
 import "runtime/buffer" take TextBufferState, text_buffer_create, text_buffer_append,
     text_buffer_text;
 
+// Text built piece by piece; a write appends without copying what is there.
 object TextBuffer does WritingText {
     has state is TextBufferState;
 
+    // An empty buffer.
     TextBuffer() {
         state = text_buffer_create();
     }
 
+    // Appends the strings.
     write(values is ...string) is void {
         let parts is @string = values...;
         for parts -> part {
@@ -31,6 +34,7 @@ object TextBuffer does WritingText {
         }
     }
 
+    // Appends the strings and then one LF.
     writeln(values is ...string) is void {
         let parts is @string = values...;
         for parts -> part {
@@ -39,6 +43,7 @@ object TextBuffer does WritingText {
         text_buffer_append(state, "\n");
     }
 
+    // The text so far.
     string() is string {
         text_buffer_text(state);
     }

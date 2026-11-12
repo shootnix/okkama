@@ -12,13 +12,16 @@ import "numbers/bigrational" take BigRational;
 import "math/decimal" take Decimal;
 import "compare" take Order;
 
+// The shortest decimal that reads back as exactly this float.
 object ShortestFloat {
     has origin is float;
 
+    // The shortest decimal of origin.
     ShortestFloat(origin is float) {
         self.origin = origin;
     }
 
+    // Whether the float is negative, -0.0 included.
     negative() is bool {
         self.binary()[0].int() >= 128;
     }
@@ -42,6 +45,7 @@ object ShortestFloat {
         Binary(bytes: magnitude, order: ByteOrder.big).int(Signedness.unsigned);
     }
 
+    // The decimal: 0.1 for 0.1, not 0.1000000000000000055….
     decimal() is Decimal {
         let bits is int = self.bits();
         if bits == 0 {
@@ -150,6 +154,7 @@ hidden object FloatDecimalCandidate {
     }
 }
 
+// A decimal that does not read back as the float.
 enum InvalidFloatRepresentation is Error = (invalid);
 
 test "binary64 tenth has a one-digit decimal representative" {

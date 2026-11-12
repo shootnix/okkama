@@ -29,10 +29,13 @@ import "runtime/math_aggregate" take aggregate_square_root;
 object Extremes<T: Comparing<T>> {
     has origin is Iterating<T>;
 
+    // The least and greatest of values, found in one pass; EmptySequence when
+    // there are none.
     Extremes(values is Iterating<T>) {
         origin = values;
     }
 
+    // The least value.
     minimum() is T {
         let cursor = origin.cursor();
         confirm cursor.available() else throw EmptySequence.empty;
@@ -46,6 +49,7 @@ object Extremes<T: Comparing<T>> {
         };
     }
 
+    // The greatest value.
     maximum() is T {
         let cursor = origin.cursor();
         confirm cursor.available() else throw EmptySequence.empty;
@@ -64,28 +68,33 @@ object Extremes<T: Comparing<T>> {
 object Numbers {
     has origin is Iterating<float>;
 
+    // Floats to add up or multiply, read in one pass.
     Numbers(values is Iterating<float>) {
         origin = values;
     }
 
+    // The plain sum.
     sum() is float {
         origin.reduce(0.0) -> total, item {
             total + item;
         };
     }
 
+    // The sum with compensated rounding, as Python's math.fsum.
     accurate_sum() is float {
         origin.reduce(RunningSum(sum: 0.0, correction: 0.0)) -> total, item {
             total.addition(item);
         }.sum();
     }
 
+    // The product.
     product() is float {
         origin.reduce(1.0) -> product, item {
             product * item;
         };
     }
 
+    // The square root of the sum of squares, without overflow along the way.
     hypotenuse() is float {
         origin.reduce(RunningNorm(scale: 0.0, squares: 1.0)) -> state, item {
             state.addition(item);
@@ -98,17 +107,20 @@ object Vectors {
     has left is Sequencing<float>;
     has right is Sequencing<float>;
 
+    // Two vectors of the same length; UnequalSizes otherwise.
     Vectors(left is Sequencing<float>, right is Sequencing<float>) {
         self.left = left;
         self.right = right;
     }
 
+    // The dot product.
     dot() is float {
         StrictlyZipped(left: left, right: right).reduce(0.0) -> total, pair {
             total + pair.first() * pair.second();
         };
     }
 
+    // The Euclidean distance between them.
     distance() is float {
         confirm left.size() == right.size() else throw UnequalSizes.unequal;
         (0..left.size()).reduce(RunningNorm(scale: 0.0, squares: 1.0)) -> state, index {
