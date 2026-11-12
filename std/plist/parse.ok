@@ -6,8 +6,8 @@ import "collections/list" take List, EmptyList;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal, InvalidDecimal;
 import "compare" take Order;
-import "encoding/utf" take Utf8Decoded, Utf8Encoded, Utf16Decoded, Utf32Decoded, Utf32Encoded,
-    ByteOrder, InvalidUtf8, InvalidUtf16;
+import "encoding/utf" take Utf8Decoded, Utf8Encoded, Utf16Decoded, Utf32Decoded, ByteOrder,
+    InvalidUtf8, InvalidUtf16;
 import "encoding/binary" take IntegerBytes, Binary, Signedness, FloatWidth;
 import "encoding/base64" take Base64Decoded, InvalidBase64;
 import "time/rfc3339" take Rfc3339;
@@ -59,7 +59,11 @@ object ParsedPlist {
                 byte(115),
                 byte(116)
             ] {
-                return PlistBinaryDocument(origin: origin, maximum_nodes: maximum_nodes, maximum_depth: maximum_depth).root();
+                return PlistBinaryDocument(
+                    origin: origin,
+                    maximum_nodes: maximum_nodes,
+                    maximum_depth: maximum_depth
+                ).root();
             }
         let bom = origin.size() >= 3 && origin.slice(0, 3) == [byte(239), byte(187), byte(191)];
         let base = if bom {
@@ -74,7 +78,11 @@ object ParsedPlist {
         catch InvalidUtf8.at(offset) {
             throw InvalidPlist.located(base + offset, "invalid UTF-8");
         };
-        PlistXmlDocument(source: PlistXmlSource(source, base), maximum_nodes: maximum_nodes, maximum_depth: maximum_depth).root();
+        PlistXmlDocument(
+            source: PlistXmlSource(source, base),
+            maximum_nodes: maximum_nodes,
+            maximum_depth: maximum_depth
+        ).root();
     }
 }
 
@@ -170,23 +178,40 @@ object PlistXmlSource {
         InvalidPlist.located(base + Utf8Encoded(origin.slice(0, at)).bytes().size(), reason);
     }
 
+    // The source's characters, once (#171): scans compare codes.
+    hidden symbols() is @char {
+        once let characters = origin.characters();
+        characters;
+    }
+
     until(start is int, delimiter is string) is int {
-        for (start..origin.length()) -> index {
-            if index + delimiter.length() <= origin.length()
-                && origin.slice(index, index + delimiter.length()) == delimiter {
-                    return index;
-                }
+        let symbols = self.symbols();
+        let wanted = delimiter.characters();
+        for (start..symbols.size()) -> index {
+            if self.matching(symbols, wanted, index) {
+                return index;
+            }
         }
         throw self.failure(start, "unterminated XML token");
     }
 
+    hidden matching(symbols is @char, wanted is @char, index is int) is bool {
+        if index + wanted.size() > symbols.size() {
+            return false;
+        }
+        (0..wanted.size()).reduce(true) -> same, offset {
+            same && symbols[index + offset].code() == wanted[offset].code();
+        };
+    }
+
     text_end(start is int) is int {
-        for (start..origin.length()) -> index {
-            if origin.slice(index, index + 1) == "<" {
+        let symbols = self.symbols();
+        for (start..symbols.size()) -> index {
+            if symbols[index].code() == 60 {
                 return index;
             }
         }
-        origin.length();
+        symbols.size();
     }
 
     token(at is int) is PlistXmlToken {
@@ -207,7 +232,12 @@ object PlistXmlSource {
         }
         if at + 9 <= origin.length() && origin.slice(at, at + 9) == "<![CDATA[" {
             let end = self.until(at + 9, "]]>");
-            return PlistXmlToken(kind: "cdata", text: origin.slice(at + 9, end), start: at, end: end + 3);
+            return PlistXmlToken(
+                kind: "cdata",
+                text: origin.slice(at + 9, end),
+                start: at,
+                end: end + 3
+            );
         }
         let end = self.until(at + 1, ">");
         let raw = origin.slice(at + 1, end);
@@ -293,18 +323,19 @@ object PlistXmlSource {
     }
 
     checked(text is string, at is int) is string {
-        let bytes = Utf32Encoded(origin: text, order: ByteOrder.big).bytes();
-        for (0..text.length()) -> index {
-            let scalar = Binary(bytes: bytes.slice(index * 4, index * 4 + 4), order: ByteOrder.big).int(
-                Signedness.unsigned
-            );
-            confirm PlistXmlCharacter(scalar).valid()
+        let characters = text.characters();
+        for (0..characters.size()) -> index {
+            confirm PlistXmlCharacter(characters[index].code()).valid()
                 else throw self.failure(at + index, "invalid XML character");
         }
         text;
     }
 
     decoded(text is string, at is int) is string {
+        // Text without references or carriage returns is its own value.
+        if !text.contains("&") && !text.contains("\r") {
+            return text;
+        }
         let cursor = PlistParsePosition(0);
         let pieces is PlistParsedItems<string> = PlistParsedItems();
         loop {
@@ -331,11 +362,9 @@ object PlistXmlSource {
                 cursor = cursor.following(index + count, 0);
             }
             else {
-                let stops = (index + 1..text.length()).filter() -> position {
-                    text.slice(position, position + 1) == ";";
-                };
-                confirm stops.size() > 0 else throw self.failure(at + index, "unterminated entity");
-                let end = stops[0];
+                let semicolon = text.slice(index + 1, text.length()).find(";") else -1;
+                confirm semicolon >= 0 else throw self.failure(at + index, "unterminated entity");
+                let end = index + 1 + semicolon;
                 let entity = text.slice(index + 1, end);
                 let value = match entity {
                     case "amp" {
@@ -429,8 +458,16 @@ object PlistXmlText {
     }
 
     whitespace(index is int) is bool {
-        let c = origin.slice(index, index + 1);
-        c == " " || c == "\t" || c == "\n" || c == "\r";
+        let code = self.codes()[index];
+        code == 32 || code == 9 || code == 10 || code == 13;
+    }
+
+    // The text's character codes, once (#171).
+    hidden codes() is @int {
+        once let found is @int = origin.characters().map() -> character {
+            character.code();
+        };
+        found;
     }
 
     stripped() is string {
@@ -561,7 +598,9 @@ hidden object PlistXmlDocument {
                             depth + 1,
                             remaining - cursor.used() - 2
                         );
-                        members = members.following(PlistMember(name: key.text(), value: child.plist()));
+                        members = members.following(
+                            PlistMember(name: key.text(), value: child.plist())
+                        );
                         cursor = cursor.following(child.end(), child.nodes() + 1);
                     }
                     else {
@@ -675,7 +714,12 @@ hidden object PlistXmlDocument {
                 let ordered is @string = (0..reversed.size()).map() -> index {
                     reversed[reversed.size() - index - 1];
                 };
-                return PlistXmlToken(kind: "text", text: ordered.join(""), start: open.end(), end: token.end());
+                return PlistXmlToken(
+                    kind: "text",
+                    text: ordered.join(""),
+                    start: open.end(),
+                    end: token.end()
+                );
             }
             confirm token.kind() == "text" || token.kind() == "cdata" || token.kind() == "skip"
                 else throw source.failure(token.start(), "invalid scalar content");
@@ -1056,7 +1100,11 @@ hidden object PlistBinaryDocument {
                 let value is PlistValue = reversed[reversed.size() - item - 1];
                 value;
             };
-            return PlistParsedNode(value: PlistArray(ordered, maximum_nodes), end: end, nodes: progress.used() + 1);
+            return PlistParsedNode(
+                value: PlistArray(ordered, maximum_nodes),
+                end: end,
+                nodes: progress.used() + 1
+            );
         }
         let value is PlistValue = try {
             if marker == 8 || marker == 9 {
@@ -1093,7 +1141,10 @@ hidden object PlistBinaryDocument {
                         if marker == 51 {
                             PlistDate(
                                 Instant(
-                                    Duration(value: number.rat() + 978307200.rat(), unit: DurationUnit.second)
+                                    Duration(
+                                        value: number.rat() + 978307200.rat(),
+                                        unit: DurationUnit.second
+                                    )
                                 )
                             );
                         }
@@ -1269,4 +1320,27 @@ test "plist parser recognizes both wire formats" {
             ]
         ).root().kind()
     );
+}
+
+test "XML plist text decodes references and line breaks and scans for delimiters" {
+    let source = PlistXmlSource(source: "<a>чай</a><!-- x -->", base: 0);
+    test.is(
+        source.decoded("a &amp; b &lt;c&gt; &#65;&#x42; чай\r\nend\rx", 0),
+        "a & b <c> AB чай\nend\nx"
+    );
+    test.is(source.decoded("plain чай", 0), "plain чай");
+    test.is(source.until(0, "</"), 6);
+    test.is(source.until(10, "-->"), 17);
+    test.is(source.text_end(3), 6);
+    test.is(source.checked("ok чай", 0), "ok чай");
+    test.ok(
+        try {
+            source.checked("bad" + 1.char().string(), 0);
+            false;
+        }
+        catch e is InvalidPlist {
+            true;
+        }
+    );
+    test.is(PlistXmlText(" \t x y \r\n").stripped(), "x y");
 }
