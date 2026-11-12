@@ -112,7 +112,10 @@ object StandardMediaTypes does MediaIdentifying {
     has table is MappedMediaTypes;
 
     StandardMediaTypes() {
-        table = MappedMediaTypes(entries: StandardMediaEntries().entries(), fallback: EmptyMediaTypes());
+        table = MappedMediaTypes(
+            entries: StandardMediaEntries().entries(),
+            fallback: EmptyMediaTypes()
+        );
     }
 
     type(path is Path) is MediaType {
@@ -377,7 +380,10 @@ hidden object SystemMediaSnapshot {
         for paths -> path {
             let bytes = OptionalMediaFile(path: path, maximum: limits.bytes() - count.index()).bytes();
             count = count.following(count.index() + bytes.size());
-            let entries = MediaDatabaseEntries(origin: bytes, maximum: limits.entries() - output.size()).entries();
+            let entries = MediaDatabaseEntries(
+                origin: bytes,
+                maximum: limits.entries() - output.size()
+            ).entries();
             for entries -> entry {
                 output = output.following(entry);
             }

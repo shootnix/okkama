@@ -5,7 +5,8 @@ import "fs/entry" take FileEntry;
 import "fs/error" take FileError, FileFailure;
 import "fs/path" take Path;
 import "io/decorators" take ByteSnapshot;
-import "io/stream" take ByteSource, Reading, Writing, WritingText, Closing, IncompleteWrite, InvalidReadLimit;
+import "io/stream" take ByteSource, Reading, Writing, WritingText, Closing, IncompleteWrite,
+    InvalidReadLimit;
 import "encoding/utf" take Utf8Encoded;
 import "os/environment" take Environment;
 import "runtime/fs" take FileState, TemporaryDirectoryState, path_encode, path_decode,
@@ -169,7 +170,10 @@ object TemporaryDirectory does DirectoryLocating, Closing {
 
     // In the system's directory for temporary files unless a parent is given:
     // TemporaryDirectory(prefix: "build-").
-    TemporaryDirectory(parent is DirectoryLocating = Environment().temporary(), prefix is string = "okkama-") {
+    TemporaryDirectory(
+        parent is DirectoryLocating = Environment().temporary(),
+        prefix is string = "okkama-"
+    ) {
         state = try {
             temporary_directory_create(
                 path_encode(parent.path().string()),
@@ -223,7 +227,11 @@ test "a temporary file is written, named under its directory and gone after clos
     let temporary = TemporaryFile(directory: scratch, prefix: "upload-");
     let path = temporary.path();
     test.is(path.parent(), scratch.path());
-    test.ok(path.string().slice(scratch.path().string().length() + 1, path.string().length()).starts_with("upload-"));
+    test.ok(
+        path.string().slice(scratch.path().string().length() + 1, path.string().length()).starts_with(
+            "upload-"
+        )
+    );
     temporary.write(ByteSnapshot([byte(1), byte(2), byte(3)]));
     temporary.flush();
     test.is(FileEntry(path: path).stat()::Shape::size, 3);

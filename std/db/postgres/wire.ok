@@ -137,12 +137,18 @@ object PgFields {
 
     int16() is int {
         let start = self.advance(2);
-        ByteRange(source: body, start: start, end: start + 2).integer(Signedness.signed, ByteOrder.big);
+        ByteRange(source: body, start: start, end: start + 2).integer(
+            Signedness.signed,
+            ByteOrder.big
+        );
     }
 
     int32() is int {
         let start = self.advance(4);
-        ByteRange(source: body, start: start, end: start + 4).integer(Signedness.signed, ByteOrder.big);
+        ByteRange(source: body, start: start, end: start + 4).integer(
+            Signedness.signed,
+            ByteOrder.big
+        );
     }
 
     cstring() is string {

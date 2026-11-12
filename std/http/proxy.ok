@@ -33,8 +33,20 @@ object Proxied does Exchanging, Closing {
         policy is ClientPolicy,
         clock is Timing
     ) {
-        let routing = HttpProxyRouting(proxy: proxy, resolver: resolver, tls: tls, client: policy, clock: clock);
-        client = HttpTransport(resolver: resolver, tls: tls, policy: policy, clock: clock, routing: routing);
+        let routing = HttpProxyRouting(
+            proxy: proxy,
+            resolver: resolver,
+            tls: tls,
+            client: policy,
+            clock: clock
+        );
+        client = HttpTransport(
+            resolver: resolver,
+            tls: tls,
+            policy: policy,
+            clock: clock,
+            routing: routing
+        );
     }
 
     closed() is bool {
@@ -94,7 +106,13 @@ async test "a proxied exchange sends the absolute target and the proxy credentia
         access: LoopbackEndpoints(),
     );
     let proxied = Proxied(
-        proxy: ProxyPolicy(origin: proxy_url, credentials: BasicCredentials(username: "ada", password: SecretBytes(Utf8Encoded("pw").bytes()))),
+        proxy: ProxyPolicy(
+            origin: proxy_url,
+            credentials: BasicCredentials(
+                username: "ada",
+                password: SecretBytes(Utf8Encoded("pw").bytes())
+            )
+        ),
         resolver: FixedResolution(),
         tls: TlsClientPolicy(TrustedCertificates()),
         policy: policy,
@@ -110,8 +128,22 @@ async test "a proxied exchange sends the absolute target and the proxy credentia
     let head = await ProxyWire(wire.input()).head();
     let lines = head.split("\r\n");
     test.is(lines[0], "GET http://example.test/page?q=1 HTTP/1.1");
-    test.is(lines.filter() -> line { line == "Proxy-Authorization: Basic YWRhOnB3"; }.size(), 1);
-    test.is(lines.filter() -> line { line.lower() == "host: example.test"; }.size(), 1);
-    await wire.output().write(ByteSnapshot(Utf8Encoded("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok").bytes()));
+    test.is(
+        lines.filter() -> line {
+            line == "Proxy-Authorization: Basic YWRhOnB3";
+        }.size(),
+        1
+    );
+    test.is(
+        lines.filter() -> line {
+            line.lower() == "host: example.test";
+        }.size(),
+        1
+    );
+    await wire.output().write(
+        ByteSnapshot(
+            Utf8Encoded("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok").bytes()
+        )
+    );
     test.is(await (await answer).text(), "ok");
 }

@@ -276,7 +276,8 @@ object HttpMediaScanning {
     has limits is HttpMediaLimits;
 
     HttpMediaScanning(origin is string, limits is HttpMediaLimits) {
-        confirm origin.length() <= limits::Limits::bytes else throw HttpMediaLimitExceeded.kind("bytes");
+        confirm origin.length() <= limits::Limits::bytes
+            else throw HttpMediaLimitExceeded.kind("bytes");
         let wire = try {
             Latin1Encoded(origin).bytes();
         }
@@ -339,7 +340,9 @@ object HttpMediaScanning {
             catch InvalidHttpMediaType.located(_, reason) {
                 throw InvalidHttpMediaType.located(start, reason);
             };
-            parsed = parsed.following(HttpMediaWireParameter(parameter: parameter, quoted: quoted, offset: start));
+            parsed = parsed.following(
+                HttpMediaWireParameter(parameter: parameter, quoted: quoted, offset: start)
+            );
             position = position.following(self.space(value.end()));
         }
         HttpMediaFields(
@@ -388,7 +391,10 @@ object HttpMediaScanning {
                 else throw InvalidHttpMediaType.located(start, "unterminated quoted value");
             let code = bytes[at].int();
             if code == 34 {
-                return HttpMediaScanned(text: Latin1Decoded(output.content().bytes()).string(), end: at + 1);
+                return HttpMediaScanned(
+                    text: Latin1Decoded(output.content().bytes()).string(),
+                    end: at + 1
+                );
             }
             if code == 92 {
                 confirm at + 1 < width

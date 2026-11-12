@@ -214,7 +214,12 @@ hidden object SmtpReplyValue {
         };
         status = code;
         entries = values;
-        summary = Joined(separator: "\n", values: values, maximum_items: count, maximum_length: limits::Limits::wire_bytes).string();
+        summary = Joined(
+            separator: "\n",
+            values: values,
+            maximum_items: count,
+            maximum_length: limits::Limits::wire_bytes
+        ).string();
         wire = buffer.content().bytes();
     }
 

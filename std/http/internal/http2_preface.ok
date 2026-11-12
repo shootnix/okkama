@@ -53,7 +53,10 @@ hidden object Http2PrefaceOperation {
     async run() is Http2PeerSettings {
         let magic = Utf8Encoded("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n").bytes();
         let payload = Http2SettingsWire(origin: settings, client: true).bytes();
-        let frame = Http2Frame(header: Http2FrameHeader(4.byte(), 0.byte(), 0, payload.size()), payload: payload).bytes();
+        let frame = Http2Frame(
+            header: Http2FrameHeader(4.byte(), 0.byte(), 0, payload.size()),
+            payload: payload
+        ).bytes();
         let prefix = HttpWireBytes(chunks: [magic, frame], maximum: magic.size() + frame.size()).bytes();
         await self.emit(prefix);
         let peer = try {
@@ -62,8 +65,14 @@ hidden object Http2PrefaceOperation {
         catch failure is EndOfHttp2Frames {
             throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "missing server preface");
         };
-        let received = ReceivedHttp2Settings(origin: peer, previous: Http2PeerSettings(), from_server: true).settings();
-        await self.emit(Http2Frame(header: Http2FrameHeader(4.byte(), 1.byte(), 0, 0), payload: []).bytes());
+        let received = ReceivedHttp2Settings(
+            origin: peer,
+            previous: Http2PeerSettings(),
+            from_server: true
+        ).settings();
+        await self.emit(
+            Http2Frame(header: Http2FrameHeader(4.byte(), 1.byte(), 0, 0), payload: []).bytes()
+        );
         received;
     }
 }
@@ -90,7 +99,11 @@ object Http2ServerPreface {
     has waiting is Future<Http2PeerSettings>;
 
     Http2ServerPreface(input is AsyncReading, output is AsyncWriting, settings is Http2Settings) {
-        let operation = Http2ServerPrefaceOperation(input: input, output: output, settings: settings);
+        let operation = Http2ServerPrefaceOperation(
+            input: input,
+            output: output,
+            settings: settings
+        );
         waiting = operation.run();
     }
 
@@ -131,7 +144,10 @@ hidden object Http2ServerPrefaceOperation {
     async run() is Http2PeerSettings {
         let payload = Http2SettingsWire(origin: settings, client: false).bytes();
         await self.emit(
-            Http2Frame(header: Http2FrameHeader(4.byte(), 0.byte(), 0, payload.size()), payload: payload).bytes()
+            Http2Frame(
+                header: Http2FrameHeader(4.byte(), 0.byte(), 0, payload.size()),
+                payload: payload
+            ).bytes()
         );
         let magic = Utf8Encoded("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n").bytes();
         let offset = Atomic(0);
@@ -167,8 +183,14 @@ hidden object Http2ServerPrefaceOperation {
         catch failure is EndOfHttp2Frames {
             throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "missing client SETTINGS");
         };
-        let peer = ReceivedHttp2Settings(origin: first, previous: Http2PeerSettings(), from_server: false).settings();
-        await self.emit(Http2Frame(header: Http2FrameHeader(4.byte(), 1.byte(), 0, 0), payload: []).bytes());
+        let peer = ReceivedHttp2Settings(
+            origin: first,
+            previous: Http2PeerSettings(),
+            from_server: false
+        ).settings();
+        await self.emit(
+            Http2Frame(header: Http2FrameHeader(4.byte(), 1.byte(), 0, 0), payload: []).bytes()
+        );
         peer;
     }
 }

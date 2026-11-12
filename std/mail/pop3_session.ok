@@ -33,7 +33,13 @@ object PopSession does Closing {
         reply_limits is PopReplyLimits,
         listing_limits is PopListingLimits
     ) {
-        wire = PopWire(input: input, output: output, owner: owner, prefix: prefix, limits: reply_limits);
+        wire = PopWire(
+            input: input,
+            output: output,
+            owner: owner,
+            prefix: prefix,
+            limits: reply_limits
+        );
         self.capabilities = capabilities;
         limits = listing_limits;
         lock = Lock();
@@ -332,7 +338,13 @@ hidden object PopWire does Closing {
     async read(command is PopCommand) is PopReply {
         confirm !self.closed() else throw PopSessionClosed.closed;
         await output.write(ByteSnapshot(command.bytes()));
-        let result = await PopReplyReading(origin: input, mode: command.mode(), prefix: prefix.value(), limits: limits, chunk_bytes: 4096).read();
+        let result = await PopReplyReading(
+            origin: input,
+            mode: command.mode(),
+            prefix: prefix.value(),
+            limits: limits,
+            chunk_bytes: 4096
+        ).read();
         confirm !self.closed() else throw PopSessionClosed.closed;
         prefix.replace(result.remainder());
         result.reply();

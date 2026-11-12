@@ -92,7 +92,10 @@ object DigestCredentials {
         else {
             original;
         };
-        let a2 = DigestHash(origin: DigestAscii(method + ":" + uri).bytes(), algorithm: challenge::Challenge::algorithm).string();
+        let a2 = DigestHash(
+            origin: DigestAscii(method + ":" + uri).bytes(),
+            algorithm: challenge::Challenge::algorithm
+        ).string();
         DigestHash(
             origin: DigestAscii(
                 secret + ":" + challenge::Challenge::nonce + ":" + count + ":" + cnonce + ":auth:" + a2
@@ -314,7 +317,9 @@ object DigestAuthorization does HttpAuthorizing {
             credentials::Credentials::username;
         };
         let user = if challenge::Challenge::userhash {
-            "username=" + DigestQuoted(DigestHash(origin: self.identity(), algorithm: challenge::Challenge::algorithm).string()).string();
+            "username=" + DigestQuoted(
+                DigestHash(origin: self.identity(), algorithm: challenge::Challenge::algorithm).string()
+            ).string();
         }
         else {
             let ascii = try {
@@ -574,7 +579,10 @@ object DigestExchanging does Exchanging {
         cleanup.close();
         let result = await self.authorized(request, selected);
         let final = Event();
-        let final_cleanup = DigestResponseCleanup(origin: result::Exchange::response, retained: final);
+        let final_cleanup = DigestResponseCleanup(
+            origin: result::Exchange::response,
+            retained: final
+        );
         defer final_cleanup.close();
         if self.eligible(result, request) {
             let refreshing = DigestSelection(result::Head::headers).values();
@@ -600,7 +608,13 @@ object DigestExchanging does Exchanging {
     hidden async authorized(request is Request, challenge is DigestChallenge) is ClientResponse {
         let count = counts.ticket(challenge::Challenge::nonce);
         let nonce = HexEncoded(random.bytes(16)).string();
-        let authorization = DigestAuthorization(credentials: credentials, challenge: challenge, request: request, cnonce: nonce, count: count);
+        let authorization = DigestAuthorization(
+            credentials: credentials,
+            challenge: challenge,
+            request: request,
+            cnonce: nonce,
+            count: count
+        );
         let header = authorization.header();
         let proof = authorization.proof();
         let outgoing = Request(

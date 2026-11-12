@@ -106,7 +106,10 @@ object ImapCommandChannel does Closing {
             limits: limits,
             mode: ImapReplyMode(continuation, logout)
         ).read();
-        let following = ImapExchangeState(prefix: result.remainder(), serial: (state.serial() + BigInt("1")));
+        let following = ImapExchangeState(
+            prefix: result.remainder(),
+            serial: (state.serial() + BigInt("1"))
+        );
         await states.sending().send(following);
         completed.set();
         if logout {
@@ -130,7 +133,15 @@ object ImapCommandChannel does Closing {
         let state = await states.receiving().item();
         let tag = ImapTag("O" + state.serial().string());
         await output.write(ByteSnapshot(ImapCommand(simple: ImapSimpleCommand.idle).bytes(tag)));
-        let action = ImapIdleWireInput(input: input, output: output, tag: tag, prefix: state.prefix(), limits: limits, stop: stop, observer: observer);
+        let action = ImapIdleWireInput(
+            input: input,
+            output: output,
+            tag: tag,
+            prefix: state.prefix(),
+            limits: limits,
+            stop: stop,
+            observer: observer
+        );
         let scope is FutureScope<int, ImapCommandRead> = FutureScope(action: action.run);
         let result = await scope.outcome();
         await states.sending().send(
@@ -237,7 +248,12 @@ hidden object ImapIdleWireInput {
 
     async run(group is Supervising<int>) is ImapCommandRead {
         let sent = Event();
-        let continuation = ImapIdleContinuation(output: output, stop: stop, sent: sent, group: group);
+        let continuation = ImapIdleContinuation(
+            output: output,
+            stop: stop,
+            sent: sent,
+            group: group
+        );
         let result = await ImapCommandInput(
             origin: input,
             tag: tag,

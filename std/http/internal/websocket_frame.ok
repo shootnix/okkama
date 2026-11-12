@@ -79,11 +79,21 @@ object WebSocketFrameHeader {
             0;
         }).byte();
         let extended is @byte = if indicator == 126 {
-            IntegerBytes(value: length, size: 2, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+            IntegerBytes(
+                value: length,
+                size: 2,
+                signedness: Signedness.unsigned,
+                order: ByteOrder.big
+            ).bytes();
         }
         else {
             if indicator == 127 {
-                IntegerBytes(value: length, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+                IntegerBytes(
+                    value: length,
+                    size: 8,
+                    signedness: Signedness.unsigned,
+                    order: ByteOrder.big
+                ).bytes();
             }
             else {
                 let empty is @byte = [];
@@ -175,7 +185,12 @@ object ParsedWebSocketFrameHeader {
         if opcode < 8 {
             confirm length <= maximum else throw WebSocketFailure.because("data frame byte limit");
         }
-        WebSocketFrameHeader(opcode: opcode, final: (first & 128) != 0, length: length, masked: masked);
+        WebSocketFrameHeader(
+            opcode: opcode,
+            final: (first & 128) != 0,
+            length: length,
+            masked: masked
+        );
     }
 }
 
@@ -255,7 +270,12 @@ object WebSocketFrame {
     bytes(mask is @byte) is @byte {
         confirm mask.size() == 0 || mask.size() == 4
             else throw WebSocketFailure.because("mask width");
-        let header = WebSocketFrameHeader(opcode: opcode, final: final, length: payload.size(), masked: mask.size() == 4).bytes(
+        let header = WebSocketFrameHeader(
+            opcode: opcode,
+            final: final,
+            length: payload.size(),
+            masked: mask.size() == 4
+        ).bytes(
             mask
         );
         let data = if mask.size() == 4 {

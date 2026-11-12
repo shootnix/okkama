@@ -214,9 +214,16 @@ object LogFile does Writing, Closing {
 enum ClosedLogFile is Error = (closed);
 
 test "a log file appends, reopens and refuses writes once closed" {
-    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "logging-file-test-");
+    let scratch = TemporaryDirectory(
+        parent: Directory(path: Path(".")),
+        prefix: "logging-file-test-"
+    );
     let path = scratch.path().child("app.log");
-    let options = FileLogOptions(permissions: PermissionMode(416), flush_each: true, sync_each: true);
+    let options = FileLogOptions(
+        permissions: PermissionMode(416),
+        flush_each: true,
+        sync_each: true
+    );
     test.is(options.permissions().owner()::Access::writable, true);
     test.is(options.permissions().group()::Access::writable, false);
     test.is(options::Writes::flush_each, true);
@@ -235,7 +242,14 @@ test "a log file appends, reopens and refuses writes once closed" {
     test.throws(ClosedLogFile) {
         logs.reopen();
     };
-    let again = LogFile(path: path, options: FileLogOptions(permissions: PermissionMode(416), flush_each: false, sync_each: false));
+    let again = LogFile(
+        path: path,
+        options: FileLogOptions(
+            permissions: PermissionMode(416),
+            flush_each: false,
+            sync_each: false
+        )
+    );
     again.write(ByteSnapshot(Utf8Encoded("three\n").bytes()));
     again.close();
     test.is(File(path: path).text().content(), "one\ntwo\nthree\n");

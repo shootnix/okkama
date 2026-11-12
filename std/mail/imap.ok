@@ -207,8 +207,10 @@ hidden object ImapCapabilitySnapshot {
         confirm count >= 0
             else throw InvalidArgument.because("IMAP capability source size must be nonnegative");
         confirm count > 0 else throw InvalidImapCapabilities.because("missing protocol revision");
-        confirm count <= limits::Limits::tokens else throw ImapCapabilityLimitExceeded.kind("tokens");
-        confirm limits::Limits::wire_bytes >= 14 else throw ImapCapabilityLimitExceeded.kind("wire_bytes");
+        confirm count <= limits::Limits::tokens
+            else throw ImapCapabilityLimitExceeded.kind("tokens");
+        confirm limits::Limits::wire_bytes >= 14
+            else throw ImapCapabilityLimitExceeded.kind("wire_bytes");
         let buffer = ByteBuffer();
         defer buffer.closing().close();
         buffer.writing().write(ByteSnapshot(Utf8Encoded("* CAPABILITY").bytes()));

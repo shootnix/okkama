@@ -86,11 +86,21 @@ object AuthenticationChallenges {
     has origin is @AuthenticationChallenge;
 
     AuthenticationChallenges(origin is string) {
-        self.origin = AuthenticationChallengeScanning(origin: origin, budget: 8192, challenges: 32, parameters: 32).values();
+        self.origin = AuthenticationChallengeScanning(
+            origin: origin,
+            budget: 8192,
+            challenges: 32,
+            parameters: 32
+        ).values();
     }
 
     AuthenticationChallenges(origin is string, bytes is int, challenges is int, parameters is int) {
-        self.origin = AuthenticationChallengeScanning(origin: origin, budget: bytes, challenges: challenges, parameters: parameters).values();
+        self.origin = AuthenticationChallengeScanning(
+            origin: origin,
+            budget: bytes,
+            challenges: challenges,
+            parameters: parameters
+        ).values();
     }
 
     values() is @AuthenticationChallenge {
@@ -147,7 +157,9 @@ hidden object AuthenticationChallengeScanning {
                 || (boundary < width
                 && bytes[boundary].int() == 44
                 && (boundary == scheme.end() || !self.assignment(after))) {
-                    result = result.following(AuthenticationChallenge(scheme: scheme.text(), parameters: [], token68: ""));
+                    result = result.following(
+                        AuthenticationChallenge(scheme: scheme.text(), parameters: [], token68: "")
+                    );
                     position = position.separator(after);
                     next;
                 }
@@ -155,7 +167,13 @@ hidden object AuthenticationChallengeScanning {
                 else throw InvalidAuthenticationChallenge.because("scheme separator");
             if !self.assignment(after) {
                 let token = self.token68(after);
-                result = result.following(AuthenticationChallenge(scheme: scheme.text(), parameters: [], token68: token.text()));
+                result = result.following(
+                    AuthenticationChallenge(
+                        scheme: scheme.text(),
+                        parameters: [],
+                        token68: token.text()
+                    )
+                );
                 position = position.separator(self.separator(self.space(token.end())));
                 next;
             }
@@ -196,7 +214,13 @@ hidden object AuthenticationChallengeScanning {
                 cursor = cursor.separator(following);
                 last if following == width || !self.assignment(following);
             }
-            result = result.following(AuthenticationChallenge(scheme: scheme.text(), parameters: fields.values(), token68: ""));
+            result = result.following(
+                AuthenticationChallenge(
+                    scheme: scheme.text(),
+                    parameters: fields.values(),
+                    token68: ""
+                )
+            );
             position = position.separator(cursor.index());
         }
         result.values();
@@ -305,7 +329,10 @@ hidden object AuthenticationChallengeScanning {
                 else throw InvalidAuthenticationChallenge.because("unfinished quote");
             let code = bytes[at].int();
             if code == 34 {
-                return HttpMediaScanned(text: Latin1Decoded(output.content().bytes()).string(), end: at + 1);
+                return HttpMediaScanned(
+                    text: Latin1Decoded(output.content().bytes()).string(),
+                    end: at + 1
+                );
             }
             if code == 92 {
                 confirm at + 1 < width

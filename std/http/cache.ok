@@ -3,8 +3,10 @@ module http/cache v1.0.0;
 import "http/status" take StatusCode, Status, StatusClass;
 import "http/method" take Method;
 import "http/cache_admission" take CacheAdmissions, CacheAdmissionLease, CacheAdmissionAnchor;
-import "http/cache_validation" take CacheValidation, CacheRequestFreshness, InvalidCacheRevalidation;
-import "http/cache_memory" take ResponseCaching, CachedHttpEntry, MissingCachedResponse, CacheClosed, MemoryHttpCache;
+import "http/cache_validation" take CacheValidation, CacheRequestFreshness,
+    InvalidCacheRevalidation;
+import "http/cache_memory" take ResponseCaching, CachedHttpEntry, MissingCachedResponse,
+    CacheClosed, MemoryHttpCache;
 import "http/cache_control" take CacheControl;
 import "http/cache_freshness" take CacheResponseTiming;
 import "http/body" take BodyReading, OneShotBody, BodyClosed, TrailersUnavailable, TextBody;
@@ -58,9 +60,10 @@ object Caching does Exchanging {
                 let empty is @CachedHttpEntry = [];
                 empty;
             };
-            if peek.size() == 1 && CacheRequestFreshness(request: request, entry: peek[0]).usable(now) {
-                return peek[0].response(request, now);
-            }
+            if peek.size() == 1
+                && CacheRequestFreshness(request: request, entry: peek[0]).usable(now) {
+                    return peek[0].response(request, now);
+                }
         }
         let leases is @CacheAdmissionLease = if eligible {
             let booking = admissions.booking(request);
@@ -133,7 +136,11 @@ object Caching does Exchanging {
         let revision = cache.revision();
         let started = clock.monotonic_instant();
         let result = await origin.response(outgoing);
-        let timing = CacheResponseTiming(received: clock.instant(), started: started, finished: clock.monotonic_instant());
+        let timing = CacheResponseTiming(
+            received: clock.instant(),
+            started: started,
+            finished: clock.monotonic_instant()
+        );
         let status = result::Head::status;
         let class = StatusCode(status).class();
         if status == Status.not_modified && validation.size() == 1 && validation[0].conditional() {
@@ -148,7 +155,13 @@ object Caching does Exchanging {
             if CacheResponseSelection(refreshed.response()::Head::headers).allowed()
                 && refreshed.storable() {
                     cache.conditional_store(refreshed, revision);
-                    CacheVerifiedPublication(cache: cache, request: request, entry: refreshed, revision: revision, leases: leases).publish();
+                    CacheVerifiedPublication(
+                        cache: cache,
+                        request: request,
+                        entry: refreshed,
+                        revision: revision,
+                        leases: leases
+                    ).publish();
                 }
                 else {
                     cache.invalidate(request);
@@ -367,7 +380,15 @@ hidden object CacheBodyReading does BodyReading {
             trailers.replace([ending]);
             if !overflow.ready() {
                 let entry is @CachedHttpEntry = try {
-                    [CachedHttpEntry(request: request, result: result, timing: timing, bytes: buffer.content().bytes(), trailers: ending)];
+                    [
+                        CachedHttpEntry(
+                            request: request,
+                            result: result,
+                            timing: timing,
+                            bytes: buffer.content().bytes(),
+                            trailers: ending
+                        )
+                    ];
                 }
                 catch e is Error {
                     let empty is @CachedHttpEntry = [];
@@ -376,7 +397,13 @@ hidden object CacheBodyReading does BodyReading {
                 if entry.size() == 1 {
                     try {
                         cache.conditional_store(entry[0], revision);
-                        CacheVerifiedPublication(cache: cache, request: request, entry: entry[0], revision: revision, leases: leases).publish();
+                        CacheVerifiedPublication(
+                            cache: cache,
+                            request: request,
+                            entry: entry[0],
+                            revision: revision,
+                            leases: leases
+                        ).publish();
                     }
                     catch e is CacheClosed {}
                 }
@@ -544,8 +571,13 @@ async test "a fresh response is served from memory without reaching the origin" 
     let listener = await TcpListening(port: 0).listener();
     let clock = SystemClock();
     let origin = CountedOrigin();
-    let server = HttpServer(listener: listener, handling: origin, policy: ServerPolicy(), clock: clock).started();
-        let base = "http://127.0.0.1:" + server::Local::port.string();
+    let server = HttpServer(
+        listener: listener,
+        handling: origin,
+        policy: ServerPolicy(),
+        clock: clock
+    ).started();
+    let base = "http://127.0.0.1:" + server::Local::port.string();
     let client = HttpClient(endpoints: LoopbackEndpoints());
     let memory = MemoryHttpCache(clock: clock, maximum: BigInt("1048576"));
     let cached = Caching(origin: client, cache: memory, clock: clock);

@@ -219,7 +219,10 @@ test "buffered and limited readings" {
         },
         -1
     );
-    let limited = LimitedReading(origin: ByteBuffer(initial: [byte(9), byte(8), byte(7)]).reading(), limit: 2);
+    let limited = LimitedReading(
+        origin: ByteBuffer(initial: [byte(9), byte(8), byte(7)]).reading(),
+        limit: 2
+    );
     test.is(limited.bytes(1), [byte(9)]);
     test.is(limited.bytes(5), [byte(8)]);
     test.is(limited.bytes(5).size(), 0);

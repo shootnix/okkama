@@ -147,7 +147,12 @@ object TcpConnecting {
     }
 
     // TcpConnecting(address: IpAddress("127.0.0.1"), port: 8080, no_delay: true)
-    TcpConnecting(address is IpAddress, port is int, keep_alive is bool = false, no_delay is bool = true) {
+    TcpConnecting(
+        address is IpAddress,
+        port is int,
+        keep_alive is bool = false,
+        no_delay is bool = true
+    ) {
         confirm port > 0 && port <= 65535
             else throw InvalidArgument.because("TCP destination port must be 1..65535");
         remote = [IpEndpoint(address: address, port: port)];
@@ -166,7 +171,8 @@ object TcpConnecting {
         no_delay is bool = true,
         resolver is Resolving = SystemResolution()
     ) {
-        confirm host != "" else throw InvalidArgument.because("TCP destination host must not be empty");
+        confirm host != ""
+            else throw InvalidArgument.because("TCP destination host must not be empty");
         confirm port > 0 && port <= 65535
             else throw InvalidArgument.because("TCP destination port must be 1..65535");
         let none_yet is @IpEndpoint = [];
@@ -251,7 +257,11 @@ object TcpListening {
         no_delay is bool = true
     ) {
         local = IpEndpoint(address: address, port: port);
-        options = TcpListeningOptions(address_reuse: address_reuse, dual_stack: dual_stack, backlog: backlog);
+        options = TcpListeningOptions(
+            address_reuse: address_reuse,
+            dual_stack: dual_stack,
+            backlog: backlog
+        );
         accepted = TcpOptions(keep_alive: keep_alive, no_delay: no_delay);
     }
 
@@ -298,7 +308,11 @@ object TcpListener does Closing {
     TcpListener(state is network.TcpListenerState, accepted is TcpOptions) {
         let endpoint = try {
             let fields = network.tcp_listener_endpoint(state);
-            IpEndpoint(address: IpAddress(fields[0]), port: Number(fields[1]).int(), zone: fields[2]);
+            IpEndpoint(
+                address: IpAddress(fields[0]),
+                port: Number(fields[1]).int(),
+                zone: fields[2]
+            );
         }
         catch e is NativeFailure {
             network.tcp_listener_close(state);
@@ -421,7 +435,13 @@ hidden object TcpListenerUnpublished {
 
 test "TCP defaults agree with explicit settings" {
     test.ok(TcpOptions() == TcpOptions(keep_alive: false, no_delay: true));
-    test.ok(TcpListeningOptions() == TcpListeningOptions(address_reuse: true, dual_stack: false, backlog: 128));
+    test.ok(
+        TcpListeningOptions() == TcpListeningOptions(
+            address_reuse: true,
+            dual_stack: false,
+            backlog: 128
+        )
+    );
 }
 
 test "TCP options preserve independent choices" {
@@ -519,7 +539,8 @@ object TcpEndpointRace {
         delay is Duration,
         clock is Timing
     ) {
-        confirm delay::Span::seconds >= 0.rat() else throw InvalidTcpRace.because("negative stagger");
+        confirm delay::Span::seconds >= 0.rat()
+            else throw InvalidTcpRace.because("negative stagger");
         endpoints = TcpRaceEndpoints(origins).items();
         self.options = options;
         self.delay = delay;
@@ -562,7 +583,12 @@ object TcpEndpointRace {
         let keep is @int = [];
         let keeper = Atomic(keep);
         let published = Event();
-        let cleanup = TcpRaceCleanup(group: group, attempts: attempts, keeper: keeper, published: published);
+        let cleanup = TcpRaceCleanup(
+            group: group,
+            attempts: attempts,
+            keeper: keeper,
+            published: published
+        );
         defer await cleanup.close();
         let futures is @Future<TcpRaceWin> = attempts.map() -> attempt {
             let future = attempt.result();
@@ -810,13 +836,19 @@ async test "a listener on a port; connections by address and by host name" {
     let accepting is async () is TcpConnection = listener.connection;
 
     let first = spawn accepting();
-    let by_address = await TcpConnecting(address: IpAddress("127.0.0.1"), port: port, no_delay: true).connection();
+    let by_address = await TcpConnecting(
+        address: IpAddress("127.0.0.1"),
+        port: port,
+        no_delay: true
+    ).connection();
     defer by_address.close();
     let served = await first;
     defer served.close();
     test.is(by_address.endpoints().remote_endpoint()::Parts::port, port);
 
-    let names = FixedResolution(HostAddresses(host: HostName("db.local"), addresses: [IpAddress("127.0.0.1")]));
+    let names = FixedResolution(
+        HostAddresses(host: HostName("db.local"), addresses: [IpAddress("127.0.0.1")])
+    );
     let second = spawn accepting();
     let by_name = await TcpConnecting(host: "db.local", port: port, resolver: names).connection();
     defer by_name.close();

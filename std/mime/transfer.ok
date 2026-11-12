@@ -239,14 +239,20 @@ hidden object MimeBase64Decoded {
 
 test "MIME binary preserves arbitrary bytes" {
     test.is(
-        TransferEncodedBody(origin: ByteSnapshot([0.byte(), 255.byte()]), encoding: TransferEncoding.binary).bytes(),
+        TransferEncodedBody(
+            origin: ByteSnapshot([0.byte(), 255.byte()]),
+            encoding: TransferEncoding.binary
+        ).bytes(),
         [0.byte(), 255.byte()]
     );
 }
 
 test "seven bit rejects high bytes and empty Base64 stays empty" {
     let offset = try {
-        TransferEncodedBody(origin: ByteSnapshot([255.byte()]), encoding: TransferEncoding.seven_bit).bytes();
+        TransferEncodedBody(
+            origin: ByteSnapshot([255.byte()]),
+            encoding: TransferEncoding.seven_bit
+        ).bytes();
         -1;
     }
     catch InvalidTransferEncoding.located(offset, _) {
@@ -254,5 +260,12 @@ test "seven bit rejects high bytes and empty Base64 stays empty" {
     };
     test.is(offset, 0);
     let empty is @byte = [];
-    test.is(TransferEncodedBody(origin: ByteSnapshot(empty), encoding: TransferEncoding.base64, maximum_bytes: 0).bytes().size(), 0);
+    test.is(
+        TransferEncodedBody(
+            origin: ByteSnapshot(empty),
+            encoding: TransferEncoding.base64,
+            maximum_bytes: 0
+        ).bytes().size(),
+        0
+    );
 }

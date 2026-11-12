@@ -94,7 +94,9 @@ object File does Closing {
     // A lock on the whole file, or none when another lock is in the way.
     lock(mode is FileLockMode) is Maybe<FileLock> {
         try {
-            Maybe.some(FileLock(state: file_state_lock(state, NativeLockMode(mode).code(), 1), owner: self));
+            Maybe.some(
+                FileLock(state: file_state_lock(state, NativeLockMode(mode).code(), 1), owner: self)
+            );
         }
         catch failure is NativeFailure {
             if failure.code() == "would_block" {

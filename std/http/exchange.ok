@@ -262,7 +262,9 @@ async test "a client response reads its head through caps and its body whole" {
         request: request,
         response: Response(
             status: Status.ok,
-            headers: Headers(Header(name: HeaderName("Content-Type"), value: "text/plain; charset=utf-8")),
+            headers: Headers(
+                Header(name: HeaderName("Content-Type"), value: "text/plain; charset=utf-8")
+            ),
             body: ByteBody(Utf8Encoded("héllo").bytes())
         ),
         details: details
@@ -286,7 +288,9 @@ async test "text follows the charset, json parses, an unknown charset is refused
         request: request,
         response: Response(
             status: Status.ok,
-            headers: Headers(Header(name: HeaderName("Content-Type"), value: "text/plain; charset=ISO-8859-1")),
+            headers: Headers(
+                Header(name: HeaderName("Content-Type"), value: "text/plain; charset=ISO-8859-1")
+            ),
             body: ByteBody([104.byte(), 233.byte()])
         ),
         details: details
@@ -306,7 +310,9 @@ async test "text follows the charset, json parses, an unknown charset is refused
         request: request,
         response: Response(
             status: Status.ok,
-            headers: Headers(Header(name: HeaderName("Content-Type"), value: "text/plain; charset=koi8-r")),
+            headers: Headers(
+                Header(name: HeaderName("Content-Type"), value: "text/plain; charset=koi8-r")
+            ),
             body: ByteBody([65.byte()])
         ),
         details: details

@@ -59,7 +59,13 @@ object Http2HeaderBlockReading {
         context is HpackDecoder,
         budget is HpackBudget
     ) {
-        let operation = Http2HeaderInput(first: first, origin: origin, context: context, budget: budget, maximum: 16384);
+        let operation = Http2HeaderInput(
+            first: first,
+            origin: origin,
+            context: context,
+            budget: budget,
+            maximum: 16384
+        );
         pending = operation.reading();
     }
 
@@ -70,7 +76,13 @@ object Http2HeaderBlockReading {
         budget is HpackBudget,
         maximum is int
     ) {
-        let operation = Http2HeaderInput(first: first, origin: origin, context: context, budget: budget, maximum: maximum);
+        let operation = Http2HeaderInput(
+            first: first,
+            origin: origin,
+            context: context,
+            budget: budget,
+            maximum: maximum
+        );
         pending = operation.reading();
     }
 
@@ -242,7 +254,14 @@ object Http2HeaderBlockWriting {
         fragment is int,
         end_stream is bool
     ) {
-        let operation = Http2HeaderOutput(origin: origin, stream: stream, fields: fields, budget: budget, fragment: fragment, end_stream: end_stream);
+        let operation = Http2HeaderOutput(
+            origin: origin,
+            stream: stream,
+            fields: fields,
+            budget: budget,
+            fragment: fragment,
+            end_stream: end_stream
+        );
         pending = operation.writing();
     }
 
@@ -291,7 +310,13 @@ hidden object Http2HeaderOutput {
     }
 
     async writing() is AsyncWriting {
-        let encoded = Http2EncodedHeaderFrames(stream: stream, fields: fields, budget: budget, fragment: fragment, end_stream: end_stream);
+        let encoded = Http2EncodedHeaderFrames(
+            stream: stream,
+            fields: fields,
+            budget: budget,
+            fragment: fragment,
+            end_stream: end_stream
+        );
         for encoded.frames() -> frame {
             await self.emit(frame);
         }

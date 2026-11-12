@@ -173,7 +173,9 @@ hidden object CacheControlScanning {
                 let following = self.space(value.end());
                 confirm following == width || bytes[following].int() == 44
                     else throw InvalidCacheControl.because("directive separator");
-                parsed = parsed.following(CacheDirective(name: name.text(), arguments: [value.text()]));
+                parsed = parsed.following(
+                    CacheDirective(name: name.text(), arguments: [value.text()])
+                );
                 position = position.separator(self.list(following));
             }
         }
@@ -223,7 +225,10 @@ hidden object CacheControlScanning {
             confirm at < width else throw InvalidCacheControl.because("unfinished quote");
             let code = bytes[at].int();
             if code == 34 {
-                return HttpMediaScanned(text: Latin1Decoded(output.content().bytes()).string(), end: at + 1);
+                return HttpMediaScanned(
+                    text: Latin1Decoded(output.content().bytes()).string(),
+                    end: at + 1
+                );
             }
             if code == 92 {
                 confirm at + 1 < width else throw InvalidCacheControl.because("unfinished escape");
@@ -241,6 +246,8 @@ hidden object CacheControlScanning {
 enum InvalidCacheControl is Error = (because(reason is string));
 
 test "cache control keeps duplicate freshness directives" {
-    let c = CacheControl(Headers(Header(name: HeaderName("Cache-Control"), value: "max-age=60,max-age=60")));
+    let c = CacheControl(
+        Headers(Header(name: HeaderName("Cache-Control"), value: "max-age=60,max-age=60"))
+    );
     test.is(c.count("max-age"), 2);
 }

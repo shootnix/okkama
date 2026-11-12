@@ -28,5 +28,8 @@ test "text is written as strict UTF-8 without separators" {
     output.write("a", "б");
     output.writeln();
     output.writeln("c", "d");
-    test.is(buffer.content().bytes(), [byte(97), byte(208), byte(177), byte(10), byte(99), byte(100), byte(10)]);
+    test.is(
+        buffer.content().bytes(),
+        [byte(97), byte(208), byte(177), byte(10), byte(99), byte(100), byte(10)]
+    );
 }

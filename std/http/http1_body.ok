@@ -32,7 +32,13 @@ object Http1BodyReading does BodyReading {
         prefix is @byte,
         head is Headers
     ) {
-        let source = Http1BodyInput(origin: origin, plan: plan, prefix: prefix, head: head, limits: Http1Limits());
+        let source = Http1BodyInput(
+            origin: origin,
+            plan: plan,
+            prefix: prefix,
+            head: head,
+            limits: Http1Limits()
+        );
         input = source;
         reading = StreamBodyReading(input: source, owner: owner, trailers: Headers());
         self.plan = plan;
@@ -46,7 +52,13 @@ object Http1BodyReading does BodyReading {
         head is Headers,
         limits is Http1Limits
     ) {
-        let source = Http1BodyInput(origin: origin, plan: plan, prefix: prefix, head: head, limits: limits);
+        let source = Http1BodyInput(
+            origin: origin,
+            plan: plan,
+            prefix: prefix,
+            head: head,
+            limits: limits
+        );
         input = source;
         reading = StreamBodyReading(input: source, owner: owner, trailers: Headers());
         self.plan = plan;

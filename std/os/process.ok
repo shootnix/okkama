@@ -1,6 +1,7 @@
 module os/process v1.0.0;
 
-import "io/stream" take ByteSource, Writing, WritingText, Reading, Closing, IncompleteWrite, InvalidReadLimit;
+import "io/stream" take ByteSource, Writing, WritingText, Reading, Closing, IncompleteWrite,
+    InvalidReadLimit;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded;
 import "fs/path" take Path;
 import "io/decorators" take ByteSnapshot;
@@ -427,7 +428,9 @@ async test "a process takes text and answers text" {
     test.ok((await process.exit()).success());
     process.close();
 
-    let noisy = Process(command: InheritedCommand(program: Path("printf"), arguments: ["0123456789"]));
+    let noisy = Process(
+        command: InheritedCommand(program: Path("printf"), arguments: ["0123456789"])
+    );
     test.throws(OutputLimitExceeded) {
         noisy.output().text(limit: 4);
     };

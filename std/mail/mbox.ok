@@ -133,10 +133,18 @@ object MboxArchive does ByteSource {
     bytes() is @byte {
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        let output = MboxOutput(buffer: buffer, maximum: limits::Limits::wire_bytes, kind: "wire_bytes");
+        let output = MboxOutput(
+            buffer: buffer,
+            maximum: limits::Limits::wire_bytes,
+            kind: "wire_bytes"
+        );
         for records -> record {
             let message = record.message();
-            let wire = MimePart(headers: message.headers(), body: message.body(), limits: limits.mime()).bytes();
+            let wire = MimePart(
+                headers: message.headers(),
+                body: message.body(),
+                limits: limits.mime()
+            ).bytes();
             output.write(Utf8Encoded(record.separator().string() + "\n").bytes());
             let start = MimePosition(0);
             loop {
@@ -334,7 +342,9 @@ hidden object MboxSeparatorBytes {
                 else throw InvalidMbox.located(index, "separator must be printable ASCII");
         }
         try {
-            MboxSeparator(Utf8Decoded(MboxBytes(origin: origin, start: start, stop: stop).bytes()).string());
+            MboxSeparator(
+                Utf8Decoded(MboxBytes(origin: origin, start: start, stop: stop).bytes()).string()
+            );
         }
         catch InvalidMbox.located(offset, reason) {
             throw InvalidMbox.located(start + offset, reason);
@@ -383,7 +393,10 @@ hidden object MboxParsing {
         }
         confirm limits::Limits::messages > 0 else throw MboxLimitExceeded.kind("messages");
         let first = MboxLine(origin: origin, start: 0).end();
-        let current = MboxRecordStart(start: first + 1, separator: MboxSeparatorBytes(origin, 0, first).separator());
+        let current = MboxRecordStart(
+            start: first + 1,
+            separator: MboxSeparatorBytes(origin, 0, first).separator()
+        );
         let position = MimePosition(first + 1);
         loop {
             let start = position.index();
@@ -401,7 +414,10 @@ hidden object MboxParsing {
                 );
                 confirm records.size() < limits::Limits::messages
                     else throw MboxLimitExceeded.kind("messages");
-                current = current.following(end + 1, MboxSeparatorBytes(origin: origin, start: start, stop: end).separator());
+                current = current.following(
+                    end + 1,
+                    MboxSeparatorBytes(origin: origin, start: start, stop: end).separator()
+                );
             }
             position = position.following(end + 1);
         }
@@ -443,7 +459,11 @@ hidden object MboxDecodedRecord {
             else throw InvalidMbox.located(stop, "record requires an extra empty delimiter line");
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        let output = MboxOutput(buffer: buffer, maximum: limits::Limits::body_bytes, kind: "message_bytes");
+        let output = MboxOutput(
+            buffer: buffer,
+            maximum: limits::Limits::body_bytes,
+            kind: "message_bytes"
+        );
         let position = MimePosition(start);
         loop {
             let beginning = position.index();
@@ -460,7 +480,10 @@ hidden object MboxDecodedRecord {
             output.write([13.byte(), 10.byte()]);
             position = position.following(end + 1);
         }
-        MboxRecord(separator: separator, message: ParsedMail(buffer.content().bytes(), limits).message());
+        MboxRecord(
+            separator: separator,
+            message: ParsedMail(buffer.content().bytes(), limits).message()
+        );
     }
 }
 

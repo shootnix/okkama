@@ -25,7 +25,14 @@ object Http1BodyWriting {
         plan is Http1BodyPlan,
         head is Headers
     ) {
-        pending = Http1BodyWriteOperation(origin: origin, body: body, plan: plan, head: head, limits: Http1Limits(), chunk_bytes: 65536).write();
+        pending = Http1BodyWriteOperation(
+            origin: origin,
+            body: body,
+            plan: plan,
+            head: head,
+            limits: Http1Limits(),
+            chunk_bytes: 65536
+        ).write();
     }
 
     Http1BodyWriting(
@@ -36,7 +43,14 @@ object Http1BodyWriting {
         limits is Http1Limits,
         chunk_bytes is int
     ) {
-        pending = Http1BodyWriteOperation(origin: origin, body: body, plan: plan, head: head, limits: limits, chunk_bytes: chunk_bytes).write();
+        pending = Http1BodyWriteOperation(
+            origin: origin,
+            body: body,
+            plan: plan,
+            head: head,
+            limits: limits,
+            chunk_bytes: chunk_bytes
+        ).write();
     }
 
     output() is Future<AsyncWriting> {
@@ -320,16 +334,19 @@ hidden object Http1TrailerWire {
 
     bytes() is @byte {
         let entries = origin.entries();
-        confirm entries.size() <= limits::Limits::fields else throw Http1LimitExceeded.kind("fields");
+        confirm entries.size() <= limits::Limits::fields
+            else throw Http1LimitExceeded.kind("fields");
         let total = (0..entries.size()).reduce(2) -> used, index {
             let field = entries.item(index);
             let width = field.name().string().length() + field.value().length() + 2;
-            confirm width <= limits::Limits::line_bytes else throw Http1LimitExceeded.kind("line_bytes");
+            confirm width <= limits::Limits::line_bytes
+                else throw Http1LimitExceeded.kind("line_bytes");
             confirm width + 2 <= limits::Limits::head_bytes - used
                 else throw Http1LimitExceeded.kind("trailer_bytes");
             used + width + 2;
         };
-        confirm total <= limits::Limits::head_bytes else throw Http1LimitExceeded.kind("trailer_bytes");
+        confirm total <= limits::Limits::head_bytes
+            else throw Http1LimitExceeded.kind("trailer_bytes");
         let buffer = ByteBuffer();
         defer buffer.closing().close();
         let writer = buffer.writing();
