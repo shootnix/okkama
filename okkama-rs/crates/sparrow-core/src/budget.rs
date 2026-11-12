@@ -129,7 +129,7 @@ impl Reach {
             "runtime/fs" | "runtime/fs_root" | "runtime/snapshot" | "runtime/database" => NativeGroup::Fs,
             "runtime/network" | "runtime/net" | "runtime/tls_transport" | "runtime/postgres" => NativeGroup::Net,
             "runtime/process" | "runtime/signal" => NativeGroup::Process,
-            "runtime/system" if name.starts_with("secure_random") => NativeGroup::Random,
+            "runtime/system" if name.starts_with("secure_") => NativeGroup::Random,
             "runtime/environment" | "runtime/account" | "runtime/system" => NativeGroup::Env,
             "runtime/time_zone" if name.starts_with("timezone_local") => NativeGroup::Env,
             // The host's language preferences and trust anchors (#361).

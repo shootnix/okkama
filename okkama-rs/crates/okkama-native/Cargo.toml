@@ -33,8 +33,9 @@ spki = "0.8"
 subtle = "2.6.1"
 x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
 
-# C ABI для рантаймов (FFM JVM): unsafe разрешён только в `ffi` и в
-# `rsa_public` (низкоуровневая проверка подписей RSA через aws-lc).
+# C ABI для рантаймов (FFM JVM): unsafe разрешён только в `ffi`, в
+# `rsa_public` (низкоуровневая проверка подписей RSA через aws-lc) и в
+# `secure` (arc4random_buf на системах Apple).
 [lints.rust]
 unsafe_code = "deny"
 missing_debug_implementations = "warn"
