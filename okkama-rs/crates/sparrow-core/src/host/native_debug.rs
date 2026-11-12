@@ -22,6 +22,8 @@ const DEPTH: usize = 64;
 /// A value resolved from a word and its static type.
 enum Node {
     Scalar(Word, Shape),
+    /// A Tomato rat: a payload around the origin's own Rat (#489, #508).
+    Rat(Word),
     Enum(u32, u32),
     Array(Word, TypeRef),
     Map(Word, TypeRef, TypeRef),
@@ -57,6 +59,7 @@ impl Heap {
             Some(T::Byte) => Node::Scalar(word, Shape::Byte),
             Some(T::Char) => Node::Scalar(word, Shape::Char),
             Some(T::Str) => Node::Scalar(word, Shape::Str),
+            Some(T::Rat) => Node::Rat(word),
             Some(T::Enum(e)) => Node::Enum(e.0, word as u32),
             Some(T::Array(element)) => Node::Array(word, *element),
             Some(T::Map(key, item)) => Node::Map(word, *key, *item),
@@ -102,6 +105,10 @@ impl Heap {
                 let slot = self.slot(word, &shape);
                 self.to_origin(slot, &abi)?
             }
+            Node::Rat(word) => match self.core().payload::<crate::ops::Rational>(word) {
+                Some(rational) => Value::Rat(Rc::new(rational.0.clone())),
+                None => Value::Handle(Rc::new(())),
+            },
             Node::Enum(declaration, case) => Value::Enum { declaration: declaration as usize, case: case as usize },
             Node::Array(word, element) => {
                 let items = self.core().elements(word).to_vec();
