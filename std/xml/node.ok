@@ -7,6 +7,11 @@ import "collections/sequence" take Sequencing;
 role XmlNode {
     xml() is string;
     depth() is int;
+    // The node as an element, none for text, comments and instructions.
+    element() is Maybe<XmlElement>;
+    // What the node adds to its parent's text(): a text node's text, nothing
+    // for the others.
+    characters() is string;
 }
 
 object XmlText does XmlNode {
@@ -28,6 +33,14 @@ object XmlText does XmlNode {
 
     depth() is int {
         0;
+    }
+
+    element() is Maybe<XmlElement> {
+        Maybe<XmlElement>.none;
+    }
+
+    characters() is string {
+        origin;
     }
 }
 
@@ -53,6 +66,14 @@ object XmlComment does XmlNode {
 
     depth() is int {
         0;
+    }
+
+    element() is Maybe<XmlElement> {
+        Maybe<XmlElement>.none;
+    }
+
+    characters() is string {
+        "";
     }
 }
 
@@ -89,6 +110,14 @@ object XmlProcessingInstruction does XmlNode {
 
     depth() is int {
         0;
+    }
+
+    element() is Maybe<XmlElement> {
+        Maybe<XmlElement>.none;
+    }
+
+    characters() is string {
+        "";
     }
 }
 
@@ -164,7 +193,71 @@ object XmlElement does XmlNode {
         once let levels = XmlElementContent(name: name, attributes: attributes, children: children).depth();
         levels;
     }
+
+    element() is Maybe<XmlElement> {
+        Maybe.some(self);
+    }
+
+    characters() is string {
+        "";
+    }
+
+    // Read like json values (#144): feed.root().attribute("version"),
+    // for feed.root().children("item") -> item { item.text("title"); }.
+    // Names are compared as written, prefix included ("a:entry").
+
+    // The value of an attribute; MissingXmlAttribute when there is none.
+    attribute(name is string) is string {
+        for attributes -> candidate {
+            if candidate.name().lexical() == name {
+                return candidate.value();
+            }
+        }
+        throw MissingXmlAttribute.named(self.name.lexical(), name);
+    }
+
+    // The child elements of that name, in order.
+    children(name is string) is @XmlElement {
+        let none_yet is @XmlElement = [];
+        let found is @XmlElement = children.reduce(none_yet) -> kept, node {
+            match node.element() {
+                case Maybe.some(child) {
+                    if child.name().lexical() == name {
+                        kept + [child];
+                    }
+                    else {
+                        kept;
+                    }
+                }
+                else {
+                    kept;
+                }
+            }
+        };
+        found;
+    }
+
+    // The text of the first child element of that name; MissingXmlElement
+    // when there is none.
+    text(name is string) is string {
+        let found = self.children(name);
+        confirm found.size() > 0 else throw MissingXmlElement.named(self.name.lexical(), name);
+        found[0].text();
+    }
+
+    // The element's own text: its text nodes, not its children's.
+    text() is string {
+        children.reduce("") -> text, node {
+            text + node.characters();
+        };
+    }
 }
+
+// An attribute an element does not have.
+enum MissingXmlAttribute is Error = (named(element is string, attribute is string));
+
+// A child element an element does not have.
+enum MissingXmlElement is Error = (named(element is string, child is string));
 
 hidden object XmlChildren {
     has values is @XmlNode;
@@ -261,7 +354,10 @@ hidden object XmlElementContent {
                 "";
             }
             else {
-                " xmlns:" + name.prefix() + "=\"" + EscapedXml(origin: name.namespace(), attribute: true).string() + "\"";
+                " xmlns:" + name.prefix() + "=\"" + EscapedXml(
+                    origin: name.namespace(),
+                    attribute: true
+                ).string() + "\"";
             });
         let declarations is @string = (0..attributes.size()).map() -> index {
             let current = attributes[index].name();
@@ -275,7 +371,10 @@ hidden object XmlElementContent {
                     "";
                 }
                 else {
-                    " xmlns:" + current.prefix() + "=\"" + EscapedXml(origin: current.namespace(), attribute: true).string() + "\"";
+                    " xmlns:" + current.prefix() + "=\"" + EscapedXml(
+                        origin: current.namespace(),
+                        attribute: true
+                    ).string() + "\"";
                 }
         };
         let pairs is @string = attributes.map() -> attribute {
@@ -340,7 +439,10 @@ hidden object XmlDeclared {
 }
 
 test "mixed XML text remains literal" {
-    test.is(XmlElement(name: XmlName("p"), children: [XmlText("a<&")]).xml(), "<p xmlns=\"\">a&lt;&amp;</p>");
+    test.is(
+        XmlElement(name: XmlName("p"), children: [XmlText("a<&")]).xml(),
+        "<p xmlns=\"\">a&lt;&amp;</p>"
+    );
 }
 
 test "an element writes its namespaces, attributes and children in order" {
@@ -349,23 +451,29 @@ test "an element writes its namespaces, attributes and children in order" {
         name: XmlName(namespace: atom, local: "entry", prefix: "a"),
         attributes: [XmlAttribute(name: XmlName("id"), value: "1 & 2")],
         children: [
-            XmlElement(name: XmlName(namespace: atom, local: "title", prefix: "a"), children: [XmlText("Hi")]),
+            XmlElement(
+                name: XmlName(namespace: atom, local: "title", prefix: "a"),
+                children: [XmlText("Hi")]
+            ),
             XmlComment("note"),
             XmlProcessingInstruction(target: "render", data: "fast"),
         ],
     );
     test.is(
         entry.xml(),
-        "<a:entry xmlns=\"\" xmlns:a=\"http://www.w3.org/2005/Atom\" id=\"1 &amp; 2\">"
-            + "<a:title xmlns=\"\" xmlns:a=\"http://www.w3.org/2005/Atom\">Hi</a:title>"
-            + "<!--note--><?render fast?></a:entry>",
+        "<a:entry xmlns=\"\" xmlns:a=\"http://www.w3.org/2005/Atom\" id=\"1 &amp; 2\">" +
+            "<a:title xmlns=\"\" xmlns:a=\"http://www.w3.org/2005/Atom\">Hi</a:title>" +
+            "<!--note--><?render fast?></a:entry>",
     );
     test.is(entry.depth(), 2);
     test.is(entry.xml(), entry.xml());
     test.is(XmlElement(name: XmlName("br"), children: []).xml(), "<br xmlns=\"\"/>");
     test.is(XmlText("a<b").text(), "a<b");
     test.is(XmlComment("c").text(), "c");
-    test.is(XmlDocument(XmlElement(name: XmlName("r"), children: [])).xml(), "<?xml version=\"1.0\" encoding=\"UTF-8\"?><r xmlns=\"\"/>");
+    test.is(
+        XmlDocument(XmlElement(name: XmlName("r"), children: [])).xml(),
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><r xmlns=\"\"/>"
+    );
 }
 
 test "bad nodes are refused when made; a tree too deep when written" {
@@ -387,7 +495,10 @@ test "bad nodes are refused when made; a tree too deep when written" {
     test.throws(InvalidXml) {
         XmlElement(
             name: XmlName("e"),
-            attributes: [XmlAttribute(name: XmlName("a"), value: "1"), XmlAttribute(name: XmlName("a"), value: "2")],
+            attributes: [
+                XmlAttribute(name: XmlName("a"), value: "1"),
+                XmlAttribute(name: XmlName("a"), value: "2")
+            ],
             children: [],
         );
     };

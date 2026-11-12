@@ -1,0 +1,299 @@
+module xml/parse v1.0.0;
+
+import "xml/name" take XmlName, InvalidXml;
+import "xml/node" take XmlNode, XmlElement, XmlText, XmlComment, XmlProcessingInstruction,
+    XmlAttribute, XmlDocument, MissingXmlAttribute, MissingXmlElement;
+import "collections/list" take List, EmptyList;
+import "async/atomic" take Atomic;
+import "runtime/xml" take XmlEventsState, xml_events, xml_events_error, xml_events_offset,
+    xml_event_count, xml_event_kind, xml_event_name, xml_event_text, xml_attribute_count,
+    xml_attribute_name, xml_attribute_value;
+
+// XML text read into a tree (#144):
+//
+//     let feed = ParsedXml(text).document();
+//     feed.root().attribute("version");
+//     for feed.root().children("item") -> item {
+//         item.text("title");
+//     }
+//
+// The parser does not validate and knows no DTD: a DOCTYPE with an internal
+// subset is refused and an external one is never fetched, so the only
+// entities are the five predefined ones and character references. Elements
+// may nest 256 deep and a document may hold a million events (tags, texts,
+// comments, instructions) unless told otherwise. Namespaces are resolved:
+// names carry their namespace, and xmlns attributes become the names'
+// bindings rather than attributes, so what the tree writes reads back the
+// same. A document that is not well formed is InvalidXml at its character
+// offset.
+object ParsedXml {
+    has origin is string;
+    has maximum_depth, maximum_events is int;
+
+    ParsedXml(origin is string) {
+        self.origin = origin;
+        maximum_depth = 256;
+        maximum_events = 1048576;
+    }
+
+    ParsedXml(origin is string, maximum_depth is int, maximum_events is int) {
+        confirm maximum_depth > 0 && maximum_events > 0
+            else throw InvalidXml.located(0, "limits must be positive");
+        self.origin = origin;
+        self.maximum_depth = maximum_depth;
+        self.maximum_events = maximum_events;
+    }
+
+    document() is XmlDocument {
+        let state = xml_events(origin, maximum_depth, maximum_events);
+        let error = xml_events_error(state);
+        confirm error == "" else throw InvalidXml.located(xml_events_offset(state), error);
+        let start = XmlParseFrame(
+            name: "",
+            scope: ["xml": "http://www.w3.org/XML/1998/namespace", "": ""],
+            attributes: [],
+            children: [],
+        );
+        let empty is List<XmlParseFrame> = EmptyList();
+        let frames = Atomic(empty.prefix(start));
+        for (0..xml_event_count(state)) -> index {
+            let kind = xml_event_kind(state, index);
+            let top = frames.value().first();
+            if kind == 0 {
+                frames.replace(frames.value().prefix(top.opened(state, index)));
+            }
+            else if kind == 1 {
+                let closed = top.element();
+                let rest = frames.value().tail();
+                frames.replace(rest.tail().prefix(rest.first().adding(closed)));
+            }
+            else if kind == 2 {
+                frames.replace(
+                    frames.value().tail().prefix(top.adding(XmlText(xml_event_text(state, index))))
+                );
+            }
+            else if kind == 3 {
+                frames.replace(
+                    frames.value().tail().prefix(
+                        top.adding(XmlComment(xml_event_text(state, index)))
+                    )
+                );
+            }
+            else {
+                let instruction = XmlProcessingInstruction(
+                    target: xml_event_name(state, index),
+                    data: xml_event_text(state, index),
+                );
+                frames.replace(frames.value().tail().prefix(top.adding(instruction)));
+            }
+        }
+        XmlDocument(frames.value().first().root());
+    }
+}
+
+// An element being read: its lexical name, the namespace bindings in scope,
+// its attributes and the children read so far.
+hidden object XmlParseFrame {
+    has name is string;
+    has scope is %string:string;
+    has attributes is @XmlAttribute;
+    has children is @XmlNode;
+
+    XmlParseFrame(
+        name is string,
+        scope is %string:string,
+        attributes is @XmlAttribute,
+        children is @XmlNode,
+    ) {
+        self.name = name;
+        self.scope = scope;
+        self.attributes = attributes;
+        self.children = children;
+    }
+
+    // The frame of a start tag: xmlns attributes bind prefixes, the others
+    // are attributes with resolved names.
+    opened(state is XmlEventsState, index is int) is XmlParseFrame {
+        let count = xml_attribute_count(state, index);
+        let bound = (0..count).reduce(scope) -> bindings, at {
+            let attribute = xml_attribute_name(state, index, at);
+            if attribute == "xmlns" {
+                bindings + ["": xml_attribute_value(state, index, at)];
+            }
+            else if attribute.starts_with("xmlns:") {
+                let value = xml_attribute_value(state, index, at);
+                confirm value != ""
+                    else throw InvalidXml.located(0, "a prefix bound to no namespace");
+                bindings + [attribute.slice(6, attribute.length()): value];
+            }
+            else {
+                bindings;
+            }
+        };
+        let none_yet is @XmlAttribute = [];
+        let resolved = (0..count).reduce(none_yet) -> kept, at {
+            let attribute = xml_attribute_name(state, index, at);
+            if attribute == "xmlns" || attribute.starts_with("xmlns:") {
+                kept;
+            }
+            else {
+                kept + [XmlAttribute(
+                    name: XmlNamespaces(bound).name(attribute, false),
+                    value: xml_attribute_value(state, index, at),
+                )];
+            }
+        };
+        let children is @XmlNode = [];
+        XmlParseFrame(
+            name: xml_event_name(state, index),
+            scope: bound,
+            attributes: resolved,
+            children: children
+        );
+    }
+
+    adding(node is XmlNode) is XmlParseFrame {
+        XmlParseFrame(name: name, scope: scope, attributes: attributes, children: children + [node]);
+    }
+
+    element() is XmlElement {
+        XmlElement(
+            name: XmlNamespaces(scope).name(name, true),
+            attributes: attributes,
+            children: children
+        );
+    }
+
+    // The document's one element.
+    root() is XmlElement {
+        let found = children.reduce(Maybe<XmlElement>.none) -> chosen, node {
+            match node.element() {
+                case Maybe.some(element) {
+                    Maybe.some(element);
+                }
+                else {
+                    chosen;
+                }
+            }
+        };
+        match found {
+            case Maybe.some(element) {
+                element;
+            }
+            else {
+                throw InvalidXml.located(0, "no root element");
+            }
+        }
+    }
+}
+
+// A lexical name resolved by the bindings in scope; an attribute without a
+// prefix has no namespace.
+hidden object XmlNamespaces {
+    has scope is %string:string;
+
+    XmlNamespaces(scope is %string:string) {
+        self.scope = scope;
+    }
+
+    name(lexical is string, element is bool) is XmlName {
+        let parts = lexical.split(":");
+        confirm parts.size() <= 2
+            else throw InvalidXml.located(0, "a name with two colons: " + lexical);
+        if parts.size() == 1 {
+            let namespace = if element {
+                scope[""] else "";
+            }
+            else {
+                "";
+            };
+            return if namespace == "" {
+                XmlName(lexical);
+            }
+            else {
+                XmlName(namespace: namespace, local: lexical, prefix: "");
+            };
+        }
+        let prefix = parts[0];
+        confirm scope.has(prefix) else throw InvalidXml.located(0, "an unbound prefix " + prefix);
+        XmlName(namespace: scope[prefix] else "", local: parts[1], prefix: prefix);
+    }
+}
+
+test "a document reads into a tree with json-style readers" {
+    let feed = ParsedXml(
+        "<?xml version=\"1.0\"?>\n<rss version=\"2.0\"><channel>" +
+            "<item><title>Tea &amp; cake</title><link>a</link></item>" +
+            "<item><title><![CDATA[<b>Чай</b>]]></title></item>" +
+            "<!--end--></channel></rss>\n"
+    ).document();
+    test.is(feed.root().name().lexical(), "rss");
+    test.is(feed.root().attribute("version"), "2.0");
+    let items = feed.root().children("channel")[0].children("item");
+    test.is(items.size(), 2);
+    test.is(items[0].text("title"), "Tea & cake");
+    test.is(items[1].text("title"), "<b>Чай</b>");
+    test.is(
+        try {
+            items[1].text("link");
+        }
+        catch MissingXmlElement.named(element, child) {
+            element + "/" + child;
+        },
+        "item/link"
+    );
+    test.is(
+        try {
+            feed.root().attribute("lang");
+        }
+        catch MissingXmlAttribute.named(element, attribute) {
+            element + "@" + attribute;
+        },
+        "rss@lang"
+    );
+}
+
+test "namespaces resolve and what the tree writes reads back" {
+    let atom = ParsedXml(
+        "<feed xmlns=\"http://www.w3.org/2005/Atom\" xmlns:m=\"urn:m\"><entry m:id=\"7\"><title>Hi</title></entry></feed>"
+    ).document();
+    let root = atom.root();
+    test.is(root.name().namespace(), "http://www.w3.org/2005/Atom");
+    test.is(root.children("entry")[0].attribute("m:id"), "7");
+    test.is(
+        root.children("entry")[0].children("title")[0].name().namespace(),
+        "http://www.w3.org/2005/Atom"
+    );
+    let again = ParsedXml(atom.xml()).document();
+    test.is(again.xml(), atom.xml());
+    test.ok(again.root() == atom.root());
+}
+
+test "documents that are not well formed are refused at their offset" {
+    let refused = (text is string) is string {
+        try {
+            ParsedXml(text).document().root().name().lexical();
+        }
+        catch InvalidXml.located(offset, reason) {
+            offset.string() + ": " + reason;
+        }
+    };
+    test.is(refused("<a><b></a>"), "8: </a> closes <b>");
+    test.is(
+        refused("<!DOCTYPE a [<!ENTITY x \"y\">]><a>&x;</a>"),
+        "12: a DTD internal subset is not supported"
+    );
+    test.is(refused("<a>&x;</a>"), "3: an unknown entity &x;");
+    test.is(refused("<p:a/>"), "0: an unbound prefix p");
+    test.is(refused("<a/><b/>"), "4: a second root element");
+    test.ok(refused("").ends_with("no root element"));
+    test.is(
+        try {
+            ParsedXml(origin: "<a><a><a/></a></a>", maximum_depth: 2, maximum_events: 100).document().root().name().lexical();
+        }
+        catch InvalidXml.located(_offset, reason) {
+            reason;
+        },
+        "elements nested deeper than 2"
+    );
+}

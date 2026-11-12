@@ -641,5 +641,15 @@ natives! {
     JsonJsonSplitItem = 655, "runtime/json@1::json_split_item/1", "(JsonSplitState) -> @byte";
     JsonJsonSplitError = 656, "runtime/json@1::json_split_error/1", "(JsonSplitState) -> string";
     JsonJsonSplitOffset = 657, "runtime/json@1::json_split_offset/1", "(JsonSplitState) -> int";
+    XmlXmlEvents = 658, "runtime/xml@1::xml_events/3", "(string, int, int) -> XmlEventsState";
+    XmlXmlEventsError = 659, "runtime/xml@1::xml_events_error/1", "(XmlEventsState) -> string";
+    XmlXmlEventsOffset = 660, "runtime/xml@1::xml_events_offset/1", "(XmlEventsState) -> int";
+    XmlXmlEventCount = 661, "runtime/xml@1::xml_event_count/1", "(XmlEventsState) -> int";
+    XmlXmlEventKind = 662, "runtime/xml@1::xml_event_kind/2", "(XmlEventsState, int) -> int";
+    XmlXmlEventName = 663, "runtime/xml@1::xml_event_name/2", "(XmlEventsState, int) -> string";
+    XmlXmlEventText = 664, "runtime/xml@1::xml_event_text/2", "(XmlEventsState, int) -> string";
+    XmlXmlAttributeCount = 665, "runtime/xml@1::xml_attribute_count/2", "(XmlEventsState, int) -> int";
+    XmlXmlAttributeName = 666, "runtime/xml@1::xml_attribute_name/3", "(XmlEventsState, int, int) -> string";
+    XmlXmlAttributeValue = 667, "runtime/xml@1::xml_attribute_value/3", "(XmlEventsState, int, int) -> string";
 }
 // retired: 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258
