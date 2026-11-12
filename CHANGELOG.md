@@ -130,7 +130,38 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   float. They are intrinsics of every engine; the Sparrow image format is
   unchanged. Book, spec §6.6, Bible §5; `t/op/float-functions.ok`.
 
+- **ZIP archives are read and written (#185).**
+
+      for ZipArchive(bytes).entries() -> entry {
+          entry.name();
+          await entry.bytes(limit: 10485760);
+      }
+      let zip = ZipWriting(destination: output);
+      zip.add(name: "a.txt", bytes: data);
+      zip.close();
+
+  Stored and deflated members, ZIP64. Reading trusts nothing: names pass
+  `ArchivePath` (no absolute names, `..`, backslashes or drives) and may not
+  repeat, `ArchiveLimits` bound entries, sizes and names, members may not
+  overlap, and `bytes(limit)` checks the declared size and the CRC-32, so a
+  member that expands beyond what it declares is `InvalidZip`. Python's
+  `zipfile` reads what Okkama writes on all three engines, and the other way
+  round.
+
+- **JSON is read from a stream and written as lines (#136).**
+  `for await JsonItems(origin: upload) -> item` reads the elements of one
+  top-level array, or NDJSON, one item at a time:
+  210 MB of NDJSON stays at 43 MB on Sparrow.
+  `await JsonLines(destination: output).write(item)` writes one compact value
+  per line.
+
 ### Fixed
+
+- **Parsed JSON grew Sparrow's memory (#510).** Sparrow keeps JSON nodes and
+  a parse's source outside the Okkama heap, which saw only tiny handles, so
+  nothing brought a collection closer: a million `ParsedJson` calls reached
+  391 MB, against 28 MB on the IR engine. They now count toward the next
+  collection: 42 MB, and 2.0 → 1.4 s.
 
 - **A server's memory grew with every request (#503).** `examples/web/hello.ok`
   on Sparrow reached 483 MB after 7 400 requests; Python's `http.server`
