@@ -94,8 +94,20 @@ impl App {
         })
     }
 
-    fn refuses(&self) -> bool {
-        TcpStream::connect(("127.0.0.1", self.port)).is_err()
+    /// Whether the program stops accepting connections within `limit`. A
+    /// debug build compiles the drain on first use, so the limit is generous;
+    /// a passing run returns as soon as a connection is refused.
+    fn refusing(&self, limit: Duration) -> bool {
+        let deadline = Instant::now() + limit;
+        loop {
+            if TcpStream::connect(("127.0.0.1", self.port)).is_err() {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            sleep(Duration::from_millis(50));
+        }
     }
 
     fn outputs(&mut self, status: ExitStatus) -> Ended {
@@ -141,14 +153,10 @@ fn sigterm_drains_the_request_in_flight_and_listen_returns() {
         let slow = app.get("/slow");
         sleep(Duration::from_secs(1));
         app.signal("TERM");
-        let deadline = Instant::now() + Duration::from_millis(1500);
-        while !app.refuses() && Instant::now() < deadline {
-            sleep(Duration::from_millis(50));
-        }
-        assert!(app.refuses(), "{engine}: still accepting after SIGTERM");
+        assert!(app.refusing(Duration::from_secs(30)), "{engine}: still accepting after SIGTERM");
         let answer = slow.join().expect("slow thread").expect("slow answer");
         assert!(answer.starts_with("HTTP/1.1 200") && answer.ends_with("slow and done"), "{engine}: {answer}");
-        let ended = app.ended(Duration::from_secs(20));
+        let ended = app.ended(Duration::from_secs(60));
         assert_eq!(ended.status.code(), Some(0), "{engine}: {}{}", ended.stdout, ended.stderr);
         assert_eq!(ended.stdout, "stopped\n", "{engine}: {}", ended.stderr);
     }
@@ -161,10 +169,9 @@ fn a_second_signal_during_the_drain_ends_the_process_at_once() {
         let slow = app.get("/slow");
         sleep(Duration::from_secs(1));
         app.signal("INT");
-        sleep(Duration::from_millis(500));
-        assert!(app.refuses(), "{engine}: still accepting after SIGINT");
+        assert!(app.refusing(Duration::from_secs(30)), "{engine}: still accepting after SIGINT");
         app.signal("INT");
-        let ended = app.ended(Duration::from_secs(5));
+        let ended = app.ended(Duration::from_secs(10));
         assert_ne!(ended.status.code(), Some(0), "{engine}: {}{}", ended.stdout, ended.stderr);
         assert!(!ended.stdout.contains("stopped"), "{engine}: {}", ended.stdout);
         let _ = slow.join();
@@ -176,7 +183,7 @@ fn an_https_application_stops_on_sigterm() {
     for engine in engines() {
         let app = App::start(engine, 3, true);
         app.signal("TERM");
-        let ended = app.ended(Duration::from_secs(20));
+        let ended = app.ended(Duration::from_secs(60));
         assert_eq!(ended.status.code(), Some(0), "{engine}: {}{}", ended.stdout, ended.stderr);
         assert_eq!(ended.stdout, "stopped\n", "{engine}: {}", ended.stderr);
     }
