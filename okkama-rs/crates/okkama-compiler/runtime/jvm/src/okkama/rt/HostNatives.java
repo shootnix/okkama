@@ -6,8 +6,6 @@ import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Natives часов, ожидания и случайности хоста: {@code runtime/time},
@@ -78,20 +76,15 @@ public final class HostNatives {
         }
         final long nanoseconds = duration.longValue();
         final Future promise = Future.promise();
-        final Scheduler.Op op = Scheduler.offload(new Callable<Object>() {
-            public Object call() throws InterruptedException {
-                TimeUnit.NANOSECONDS.sleep(nanoseconds);
-                return Boolean.TRUE;
-            }
-        }, new Scheduler.Outcome() {
+        final Scheduler.Op op = Scheduler.timer(nanoseconds, new Scheduler.Outcome() {
             public void deliver(Object value, Throwable error) {
                 Scheduler.settle(promise, Boolean.TRUE, null);
             }
         });
-        // Отменённое ожидание не держит программу.
+        // Отменённое ожидание не держит программу и снимает свой таймер (#504).
         promise.listen(new Runnable() {
             public void run() {
-                op.detach();
+                op.cancel();
             }
         });
         return promise;

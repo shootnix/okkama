@@ -6,7 +6,10 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Кооперативный планировщик (OIR-1 §13, §18 спецификации). Каждая задача —
@@ -110,6 +113,8 @@ public final class Scheduler {
      */
     static final class Op {
         private boolean attached;
+        /** Таймер операции {@link #timer}, если она ожидание. */
+        private ScheduledFuture<?> timer;
 
         void attach() {
             if (!attached) {
@@ -124,6 +129,51 @@ public final class Scheduler {
                 external--;
             }
         }
+
+        /** Отсоединить и снять таймер ожидания, если он ещё не сработал (#504). */
+        void cancel() {
+            detach();
+            if (timer != null) {
+                timer.cancel(false);
+            }
+        }
+    }
+
+    /**
+     * Таймеры ожиданий: один поток-планировщик, отменённый таймер снимается
+     * сразу (#504). Прежде каждое ожидание спало в своём потоке до дедлайна,
+     * даже отменённое, и сервер с тайм-аутами на каждый запрос исчерпывал
+     * потоки.
+     */
+    private static final ScheduledThreadPoolExecutor TIMERS = timers();
+
+    private static ScheduledThreadPoolExecutor timers() {
+        ScheduledThreadPoolExecutor timers = new ScheduledThreadPoolExecutor(1, new ThreadFactory() {
+            public Thread newThread(Runnable work) {
+                Thread thread = new Thread(work, "okkama-timer");
+                thread.setDaemon(true);
+                return thread;
+            }
+        });
+        timers.setRemoveOnCancelPolicy(true);
+        return timers;
+    }
+
+    /** Исход через {@code nanoseconds} — событием цикла; {@link Op#cancel} снимает таймер. */
+    static Op timer(long nanoseconds, final Outcome done) {
+        final Op op = new Op();
+        op.attach();
+        op.timer = TIMERS.schedule(new Runnable() {
+            public void run() {
+                events.add(new Runnable() {
+                    public void run() {
+                        op.detach();
+                        done.deliver(Boolean.TRUE, null);
+                    }
+                });
+            }
+        }, nanoseconds, TimeUnit.NANOSECONDS);
+        return op;
     }
 
     /** Исполнить {@code work} на рабочем потоке; исход — событием цикла. */
