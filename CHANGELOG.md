@@ -155,6 +155,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `await JsonLines(destination: output).write(item)` writes one compact value
   per line.
 
+- **An XML parser (#144).**
+
+      let feed = ParsedXml(text).document();
+      feed.root().attribute("version");
+      for feed.root().children("item") -> item { item.text("title"); }
+
+  A bounded, non-validating tokenizer in the runtime checks that a document
+  is well formed; there is no DTD (an internal subset is refused, an
+  external one never fetched), and depth and size are bounded. `xml/parse`
+  builds the `XmlElement` tree and resolves namespaces, so what a tree writes
+  reads back equal. `XmlElement` reads like json: `attribute(name)`,
+  `children(name)`, `text(name)`, `text()`.
+
 ### Fixed
 
 - **Parsed JSON grew Sparrow's memory (#510).** Sparrow keeps JSON nodes and
@@ -227,6 +240,11 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `1/2 (rat)`. The debug bridge now converts a rat like other values.
 
 ### Changed
+
+- **Plist reads its XML form through the XML tokenizer (#144).** Every
+  document that parsed before parses to the same value; structural errors
+  are worded by the tokenizer. A small dictionary takes Sparrow 82 → 32 µs
+  and the IR engine 1 862 → 299 µs (release builds).
 
 - **Gettext plural formulas evaluate in `int` (#205).** The Russian formula
   takes Sparrow 9 581 → 460 ns per lookup and the IR engine
