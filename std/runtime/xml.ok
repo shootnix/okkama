@@ -1,0 +1,29 @@
+module runtime/xml v1.0.0;
+
+// XML events of a whole document (#144), for xml/parse: the runtime checks
+// that the document is well formed, with no DTD and bounded depth and size.
+// Kinds: 0 start, 1 end, 2 text, 3 comment, 4 processing instruction.
+native object XmlEventsState;
+
+native xml_events(origin is string, maximum_depth is int, maximum_events is int) is XmlEventsState;
+
+native xml_events_error(state is XmlEventsState) is string;
+
+native xml_events_offset(state is XmlEventsState) is int;
+
+native xml_event_count(state is XmlEventsState) is int;
+
+native xml_event_kind(state is XmlEventsState, index is int) is int;
+
+native xml_event_name(state is XmlEventsState, index is int) is string;
+
+native xml_event_text(state is XmlEventsState, index is int) is string;
+
+native xml_attribute_count(state is XmlEventsState, index is int) is int;
+
+native xml_attribute_name(state is XmlEventsState, index is int, attribute is int) is string;
+
+native xml_attribute_value(state is XmlEventsState, index is int, attribute is int) is string;
+
+// The character offset where an event starts.
+native xml_event_offset(state is XmlEventsState, index is int) is int;
