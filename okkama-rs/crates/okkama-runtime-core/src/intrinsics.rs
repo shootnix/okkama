@@ -1625,6 +1625,39 @@ pub fn call_borrowed(
             }
             unit
         }
+        "test.close" => {
+            let number = |index: usize| -> Result<f64> { arg(index)?.as_float().map_err(|e| trap(e.message)) };
+            let (actual, expected, tolerance) = (number(0)?, number(1)?, number(2)?);
+            let text = |value: f64| host.show(&Value::Float(value));
+            if let Some(message) = crate::testing::close_failure(actual, expected, tolerance, text) {
+                host.test_failure(message)?;
+            }
+            unit
+        }
+        "test.text" => {
+            let (actual, expected) = (arg(0)?, arg(1)?);
+            let actual = actual.as_string().map_err(|e| trap(e.message))?;
+            let expected = expected.as_string().map_err(|e| trap(e.message))?;
+            if let Some(message) = crate::testing::text_failure(actual, expected) {
+                host.test_failure(message)?;
+            }
+            unit
+        }
+        "test.bytes" => {
+            let bytes = |index: usize| -> Result<Vec<u8>> {
+                let value = arg(index)?;
+                crate::heap::ArrayHeap
+                    .elements(&value)
+                    .map_err(|e| trap(e.message))?
+                    .iter()
+                    .map(|byte| byte.as_byte().map_err(|e| trap(e.message)))
+                    .collect()
+            };
+            if let Some(message) = crate::testing::bytes_failure(&bytes(0)?, &bytes(1)?) {
+                host.test_failure(message)?;
+            }
+            unit
+        }
         "test.fail" => {
             let message = arg(0)?;
             host.test_failure(message.as_string().map_err(|e| trap(e.message))?.to_owned())?;

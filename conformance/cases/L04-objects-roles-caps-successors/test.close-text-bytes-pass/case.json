@@ -1,0 +1,37 @@
+{
+  "schema": "ocs-case/1",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "TEST.RUNNER",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "test",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#14"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "status": "mandatory",
+  "id": "L04.test.close-text-bytes-pass",
+  "title": "test.close, test.text and test.bytes pass on equal values",
+  "purpose": "Run embedded tests whose float, text and byte assertions hold.",
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": "ignore",
+    "justification": "The embedded test runner's report format is not normative (spec 14 fixes only the exit status)."
+  },
+  "provenance": {
+    "origin": "authored for #187 from the cited contract text",
+    "expected_basis": "spec 14: 0.1 + 0.2 is within 1e-12 of 0.3, -2.5 within 0.1000001 of -2.4, and the texts and byte arrays are equal, so every test passes and the CLI returns 0."
+  }
+}

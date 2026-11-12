@@ -2,9 +2,12 @@ module csv v1.0.0;
 
 import "collections/iteration" take Iterating, Cursor;
 import "collections/list" take List, EmptyList;
-import "runtime/csv_state" take csv_state_create, csv_state_feed, csv_state_advance, csv_state_row,
-    csv_state_offset, csv_state_request, csv_state_close;
-import "encoding/utf" take Utf8Encoded;
+import "runtime/csv_state" take CsvState, csv_state_create, csv_state_feed, csv_state_advance,
+    csv_state_row, csv_state_offset, csv_state_request, csv_state_close;
+import "encoding/utf" take Utf8Encoded, InvalidUtf8;
+import "io/stream" take AsyncReading;
+import "io/decorators" take InvalidReading;
+import "async/atomic" take Atomic;
 import "strings/parse" take Number, Truth, InvalidInteger, InvalidBoolean;
 
 // In-memory Unicode CSV representations; defaults are comma / double quote / CRLF.
@@ -313,38 +316,252 @@ object CsvMaybeValue {
 //
 // A column named twice reads its first field. The text is read and checked
 // whole, as CsvRows reads it.
+//
+// Records as an AsyncReading gives them, an upload or a socket, are read as
+// they come with for await (#204):
+//
+//     for await CsvRecords(origin: upload) -> record {
+//         record.text("name");
+//     }
+//
+// Such a source has the default comma, quote and CRLF grammar and, unless
+// given, the limits of CsvStream: 4 MiB, 1 Mi characters, fields of 64 Ki,
+// 10 000 rows, 1024 columns. Walking it with for, instead of for await, is
+// AsyncCsvOrigin.walked.
 object CsvRecords does Iterating<CsvRecord> {
     has rows is CsvRows;
+    has upstream is Maybe<CsvAsyncRows>;
+    // The header of a streamed source, once its first row is read.
+    has header is Atomic<@%string:int>;
+    // The number of the next streamed record; the header is row 1.
+    has counted is Atomic<int>;
+    // Where next() is in a text.
+    has walk is Atomic<@Cursor<CsvRecord>>;
 
     CsvRecords(origin is string) {
         rows = CsvRows(origin);
+        upstream = Maybe<CsvAsyncRows>.none;
+        let none_yet is @%string:int = [];
+        header = Atomic(none_yet);
+        counted = Atomic(2);
+        let unwalked is @Cursor<CsvRecord> = [];
+        walk = Atomic(unwalked);
     }
 
     CsvRecords(origin is string, dialect is CsvDialect) {
         rows = CsvRows(origin, dialect);
+        upstream = Maybe<CsvAsyncRows>.none;
+        let none_yet is @%string:int = [];
+        header = Atomic(none_yet);
+        counted = Atomic(2);
+        let unwalked is @Cursor<CsvRecord> = [];
+        walk = Atomic(unwalked);
+    }
+
+    CsvRecords(origin is AsyncReading) {
+        rows = CsvRows("");
+        upstream = Maybe.some(CsvAsyncRows(
+            origin: origin,
+            maximum_bytes: 4194304,
+            maximum_input: 1048576,
+            maximum_field: 65536,
+            maximum_rows: 10000,
+            maximum_columns: 1024
+        ));
+        let none_yet is @%string:int = [];
+        header = Atomic(none_yet);
+        counted = Atomic(2);
+        let unwalked is @Cursor<CsvRecord> = [];
+        walk = Atomic(unwalked);
+    }
+
+    CsvRecords(
+        origin is AsyncReading,
+        maximum_bytes is int,
+        maximum_input is int,
+        maximum_field is int,
+        maximum_rows is int,
+        maximum_columns is int
+    ) {
+        rows = CsvRows("");
+        upstream = Maybe.some(CsvAsyncRows(
+            origin: origin,
+            maximum_bytes: maximum_bytes,
+            maximum_input: maximum_input,
+            maximum_field: maximum_field,
+            maximum_rows: maximum_rows,
+            maximum_columns: maximum_columns
+        ));
+        let none_yet is @%string:int = [];
+        header = Atomic(none_yet);
+        counted = Atomic(2);
+        let unwalked is @Cursor<CsvRecord> = [];
+        walk = Atomic(unwalked);
     }
 
     cursor() is Cursor<CsvRecord> {
+        confirm !self.streamed() else throw AsyncCsvOrigin.walked;
         let all = rows.cursor();
         if all.available() {
-            let names = all.item();
-            let empty is %string:int = [:];
-            let header = (0..names.size()).reduce(empty) -> kept, index {
-                if kept.has(names[index]) {
-                    kept;
-                }
-                else {
-                    kept + [names[index]: index];
-                }
-            };
-            CsvRecordCursor(rows: all.successor(), header: header, row: 2);
+            CsvRecordCursor(rows: all.successor(), header: CsvHeader(all.item()).columns(), row: 2);
         }
         else {
             let empty is %string:int = [:];
             CsvRecordCursor(rows: all, header: empty, row: 2);
         }
     }
+
+    // The next record, or none after the last: for await walks a source with
+    // it. Records of a text come in order as for walks them.
+    async next() is Maybe<CsvRecord> {
+        match upstream {
+            case Maybe.some(source) {
+                await self.received(source);
+            }
+            else {
+                self.walked();
+            }
+        }
+    }
+
+    hidden streamed() is bool {
+        match upstream {
+            case Maybe.some(_source) {
+                true;
+            }
+            else {
+                false;
+            }
+        }
+    }
+
+    hidden async received(source is CsvAsyncRows) is Maybe<CsvRecord> {
+        if header.value().size() == 0 {
+            match await source.next() {
+                case Maybe.some(names) {
+                    header.replace([CsvHeader(names).columns()]);
+                }
+                else {
+                    return Maybe<CsvRecord>.none;
+                }
+            }
+        }
+        match await source.next() {
+            case Maybe.some(fields) {
+                let row = counted.value();
+                counted.replace(row + 1);
+                Maybe.some(CsvRecord(fields: fields, header: header.value()[0], row: row));
+            }
+            else {
+                Maybe<CsvRecord>.none;
+            }
+        }
+    }
+
+    hidden walked() is Maybe<CsvRecord> {
+        if walk.value().size() == 0 {
+            walk.replace([self.cursor()]);
+        }
+        let current = walk.value()[0];
+        if !current.available() {
+            return Maybe<CsvRecord>.none;
+        }
+        walk.replace([current.successor()]);
+        Maybe.some(current.item());
+    }
 }
+
+// Column names to their positions; a name given twice keeps its first.
+hidden object CsvHeader {
+    has names is @string;
+
+    CsvHeader(names is @string) {
+        self.names = names;
+    }
+
+    columns() is %string:int {
+        let empty is %string:int = [:];
+        (0..names.size()).reduce(empty) -> kept, index {
+            if kept.has(names[index]) {
+                kept;
+            }
+            else {
+                kept + [names[index]: index];
+            }
+        };
+    }
+}
+
+// Rows of CSV as an AsyncReading gives them (#204), the default grammar read
+// by the runtime's scanner of CsvStream. The byte limit is reported as the
+// input limit.
+hidden object CsvAsyncRows {
+    has origin is AsyncReading;
+    has state is CsvState;
+
+    CsvAsyncRows(
+        origin is AsyncReading,
+        maximum_bytes is int,
+        maximum_input is int,
+        maximum_field is int,
+        maximum_rows is int,
+        maximum_columns is int
+    ) {
+        confirm maximum_bytes >= 0
+            && maximum_input >= 0
+            && maximum_field >= 0
+            && maximum_rows >= 0
+            && maximum_columns >= 0
+            else throw InvalidCsvLimits.invalid;
+        self.origin = origin;
+        state = csv_state_create(
+            maximum_bytes,
+            maximum_input,
+            maximum_field,
+            maximum_rows,
+            maximum_columns
+        );
+    }
+
+    async next() is Maybe<@string> {
+        loop {
+            let status = csv_state_advance(state);
+            if status == "row" {
+                return Maybe.some(csv_state_row(state));
+            }
+            if status == "eof" {
+                return Maybe<@string>.none;
+            }
+            if status == "syntax" {
+                throw InvalidCsv.at(csv_state_offset(state));
+            }
+            if status == "utf8" {
+                throw InvalidUtf8.at(csv_state_offset(state));
+            }
+            if status == "bytes" || status == "input" {
+                throw CsvLimitExceeded.kind(CsvLimit.input);
+            }
+            if status == "field" {
+                throw CsvLimitExceeded.kind(CsvLimit.field);
+            }
+            if status == "rows" {
+                throw CsvLimitExceeded.kind(CsvLimit.rows);
+            }
+            if status == "columns" {
+                throw CsvLimitExceeded.kind(CsvLimit.columns);
+            }
+            let requested = csv_state_request(state);
+            let chunk = await origin.bytes(requested);
+            confirm chunk.size() <= requested
+                else throw InvalidReading.because("CSV origin returned more bytes than requested");
+            csv_state_feed(state, chunk);
+        }
+    }
+}
+
+// A CSV source that is an AsyncReading is read with for await, or await
+// next(), not walked with for or row().
+enum AsyncCsvOrigin is Error = (walked);
 
 hidden object CsvRecordCursor does Cursor<CsvRecord> {
     has rows is Cursor<@string>;
@@ -1424,4 +1641,88 @@ test "records read their fields by column name" {
     };
     test.is(first_of_twice, ["1"]);
     test.is(records[0].string(), "Ada,36,first,true\r\n");
+}
+
+// An upload in pieces of at most seven bytes, never more than asked for.
+hidden object CsvTestUpload does AsyncReading {
+    has content is @byte;
+    has position is Atomic<int>;
+
+    CsvTestUpload(text is string) {
+        content = Utf8Encoded(text).bytes();
+        position = Atomic(0);
+    }
+
+    async bytes(limit is int) is @byte {
+        let at = position.value();
+        let wanted = if limit < 7 {
+            limit;
+        }
+        else {
+            7;
+        };
+        let end = if at + wanted < content.size() {
+            at + wanted;
+        }
+        else {
+            content.size();
+        };
+        position.replace(end);
+        content.slice(at, end);
+    }
+}
+
+async test "records stream from an upload as they come" {
+    let seen = Atomic("");
+    for await CsvRecords(origin: CsvTestUpload("name,age,name\r\nAda,36,x\r\n\"Zoë, Q\",41,y\r\n")) -> record {
+        seen.replace(seen.value() + record.text("name") + "/" + record.int("age").string() + ";");
+    }
+    test.is(seen.value(), "Ada/36;Zoë, Q/41;");
+    let failure = try {
+        for await CsvRecords(origin: CsvTestUpload("n\r\n1\r\nx\r\n")) -> record {
+            record.int("n");
+        }
+        "none";
+    }
+    catch InvalidCsvValue.at(row, column, _value, _expected) {
+        row.string() + " " + column;
+    };
+    test.is(failure, "3 n");
+    let walked = try {
+        for CsvRecords(origin: CsvTestUpload("a\r\n1\r\n")) -> record {
+            record.text("a");
+        }
+        "walked";
+    }
+    catch error is AsyncCsvOrigin {
+        "refused";
+    };
+    test.is(walked, "refused");
+    let sum = Atomic(0);
+    for await CsvRecords("a\r\n1\r\n2\r\n") -> record {
+        sum.replace(sum.value() + record.int("a"));
+    }
+    test.is(sum.value(), 3);
+    let empty = Atomic(0);
+    for await CsvRecords(origin: CsvTestUpload("")) -> _record {
+        empty.replace(empty.value() + 1);
+    }
+    test.is(empty.value(), 0);
+    let limited = try {
+        for await CsvRecords(
+            origin: CsvTestUpload("a\r\n1\r\n2\r\n3\r\n"),
+            maximum_bytes: 1024,
+            maximum_input: 1024,
+            maximum_field: 16,
+            maximum_rows: 2,
+            maximum_columns: 4
+        ) -> record {
+            record.text("a");
+        }
+        "all";
+    }
+    catch CsvLimitExceeded.kind(_kind) {
+        "limited";
+    };
+    test.is(limited, "limited");
 }

@@ -1735,11 +1735,15 @@ impl Checker<'_, '_> {
     }
 
     /// `test.ok(bool)`, `test.is(a, b)`, `test.isnt(a, b)`, `test.fail(string)`,
-    /// `test.skip(string)` (§14).
+    /// `test.skip(string)` (§14); `test.close(float, float, float)`,
+    /// `test.text(string, string)` and `test.bytes(@byte, @byte)` (#187).
     fn test_call(&mut self, name: &ast::Name, args: &[ast::Argument], span: Span) -> Expr {
         let params: Vec<Option<Ty>> = match name.text.as_str() {
             "ok" => vec![Some(Ty::Bool)],
             "is" | "isnt" => vec![None, None],
+            "close" => vec![Some(Ty::Float), Some(Ty::Float), Some(Ty::Float)],
+            "text" => vec![Some(Ty::Str), Some(Ty::Str)],
+            "bytes" => vec![Some(Ty::array(Ty::Byte)), Some(Ty::array(Ty::Byte))],
             "fail" | "skip" => vec![Some(Ty::Str)],
             other => {
                 self.error(

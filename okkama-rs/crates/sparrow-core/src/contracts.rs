@@ -78,6 +78,8 @@ fn contract(intrinsic: Intrinsic) -> Contract {
         FakeRemove => (false, "P*", '-'),
         TestOk => (false, "R", '-'),
         TestIs | TestIsnt => (false, "**", '-'),
+        TestClose => (false, "FFF", '-'),
+        TestText | TestBytes => (false, "PP", '-'),
     };
     Contract { asynchronous, params, result }
 }

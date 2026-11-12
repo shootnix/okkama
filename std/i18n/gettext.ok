@@ -4,8 +4,8 @@ import "locale/tag" take Locale;
 import "i18n/catalog" take MessageKey, MissingMessage, WrongMessageEntry, Translating;
 import "i18n/plural" take PluralNumber;
 import "math/decimal" take Decimal;
-import "numbers/bigint" take BigInt;
 import "strings/parse" take Number;
+import "runtime/decimal" take decimal_coefficient;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded, AsciiEncoded, AsciiDecoded;
 import "collections/sequence" take Sequencing;
@@ -197,31 +197,32 @@ object GettextCharset {
 
 // GNU formulas use unsigned integer operations. This portable profile fixes
 // their width at 64 bits instead of inheriting the host's unsigned long width.
+// Values are ints in 0..2^64-1 (#205): no BigInt, no text, on every lookup.
 role GettextExpression {
-    value(count is BigInt) is BigInt;
+    value(count is int) is int;
     depth() is int;
 }
 
 hidden object GettextLiteral does GettextExpression {
-    has number is BigInt;
+    has number is int;
     has variable is bool;
 
     GettextLiteral(token is string, offset is int) {
         variable = token == "n";
         number = if self.variable {
-            BigInt("0");
+            0;
         }
         else {
             confirm token.length() <= 20
                 else throw InvalidCatalog.located(offset, "integer literal exceeds unsigned64");
-            let value = BigInt(token);
-            confirm value.order(BigInt("18446744073709551615")) != Order.greater
+            let value = Number(token).int();
+            confirm value <= 18446744073709551615
                 else throw InvalidCatalog.located(offset, "integer literal exceeds unsigned64");
             value;
         };
     }
 
-    value(count is BigInt) is BigInt {
+    value(count is int) is int {
         if variable {
             count;
         }
@@ -246,13 +247,13 @@ hidden object GettextNot does GettextExpression {
             else throw InvalidCatalog.located(0, "plural evaluation depth exceeds 64");
     }
 
-    value(count is BigInt) is BigInt {
-        BigInt(if origin.value(count).sign() == 0 {
-            "1";
+    value(count is int) is int {
+        if origin.value(count) == 0 {
+            1;
         }
         else {
-            "0";
-        });
+            0;
+        }
     }
 
     depth() is int {
@@ -286,8 +287,8 @@ hidden object GettextConditional does GettextExpression {
             else throw InvalidCatalog.located(0, "plural evaluation depth exceeds 64");
     }
 
-    value(count is BigInt) is BigInt {
-        if condition.value(count).sign() != 0 {
+    value(count is int) is int {
+        if condition.value(count) != 0 {
             yes.value(count);
         }
         else {
@@ -300,9 +301,12 @@ hidden object GettextConditional does GettextExpression {
     }
 }
 
+// The operation of a binary node, decided once when the formula is parsed.
+hidden enum GettextOperation = (and, or, equal, unequal, less, at_most, greater, at_least, plus, minus, times, quotient, remainder);
+
 hidden object GettextBinary does GettextExpression {
     has left, right is GettextExpression;
-    has operation is string;
+    has operation is GettextOperation;
     has offset, height is int;
 
     GettextBinary(
@@ -313,7 +317,47 @@ hidden object GettextBinary does GettextExpression {
     ) {
         self.left = left;
         self.right = right;
-        self.operation = operation;
+        self.operation = match operation {
+            case "&&" {
+                GettextOperation.and;
+            }
+            case "||" {
+                GettextOperation.or;
+            }
+            case "==" {
+                GettextOperation.equal;
+            }
+            case "!=" {
+                GettextOperation.unequal;
+            }
+            case "<" {
+                GettextOperation.less;
+            }
+            case "<=" {
+                GettextOperation.at_most;
+            }
+            case ">" {
+                GettextOperation.greater;
+            }
+            case ">=" {
+                GettextOperation.at_least;
+            }
+            case "+" {
+                GettextOperation.plus;
+            }
+            case "-" {
+                GettextOperation.minus;
+            }
+            case "*" {
+                GettextOperation.times;
+            }
+            case "/" {
+                GettextOperation.quotient;
+            }
+            else {
+                GettextOperation.remainder;
+            }
+        };
         self.offset = offset;
         height = 1 + (if left.depth() > right.depth() {
             left.depth();
@@ -329,85 +373,101 @@ hidden object GettextBinary does GettextExpression {
         height;
     }
 
-    value(count is BigInt) is BigInt {
+    value(count is int) is int {
         let first = left.value(count);
-        if operation == "&&" && first.sign() == 0 {
-            return BigInt("0");
-        }
-        if operation == "||" && first.sign() != 0 {
-            return BigInt("1");
-        }
-        let second = right.value(count);
-        let comparison = first.order(second);
-        if operation == "&&" || operation == "||" {
-            return BigInt(if second.sign() != 0 {
-                "1";
-            }
-            else {
-                "0";
-            });
-        }
-        let predicate = match operation {
-            case "==" {
-                comparison == Order.equal;
-            }
-            case "!=" {
-                comparison != Order.equal;
-            }
-            case "<" {
-                comparison == Order.less;
-            }
-            case "<=" {
-                comparison != Order.greater;
-            }
-            case ">" {
-                comparison == Order.greater;
-            }
-            case ">=" {
-                comparison != Order.less;
-            }
-            else {
-                false;
-            }
-        };
-        if operation == "=="
-            || operation == "!="
-            || operation == "<"
-            || operation == "<="
-            || operation == ">"
-            || operation == ">=" {
-                return BigInt(if predicate {
-                    "1";
+        match operation {
+            case GettextOperation.and {
+                if first != 0 && right.value(count) != 0 {
+                    1;
                 }
                 else {
-                    "0";
-                });
+                    0;
+                }
             }
-        if operation == "/" || operation == "%" {
-            confirm second.sign() != 0
-                else throw InvalidCatalog.located(offset, "plural expression divides by zero");
-        }
-        let value = match operation {
-            case "+" {
-                (first + second);
+            case GettextOperation.or {
+                if first != 0 || right.value(count) != 0 {
+                    1;
+                }
+                else {
+                    0;
+                }
             }
-            case "-" {
-                (first - second);
+            case GettextOperation.equal {
+                GettextTruth(first == right.value(count)).value();
             }
-            case "*" {
-                (first * second);
+            case GettextOperation.unequal {
+                GettextTruth(first != right.value(count)).value();
             }
-            case "/" {
-                (first / second);
+            case GettextOperation.less {
+                GettextTruth(first < right.value(count)).value();
+            }
+            case GettextOperation.at_most {
+                GettextTruth(first <= right.value(count)).value();
+            }
+            case GettextOperation.greater {
+                GettextTruth(first > right.value(count)).value();
+            }
+            case GettextOperation.at_least {
+                GettextTruth(first >= right.value(count)).value();
+            }
+            case GettextOperation.plus {
+                GettextWrapped(first + right.value(count)).value();
+            }
+            case GettextOperation.minus {
+                GettextWrapped(first - right.value(count)).value();
+            }
+            case GettextOperation.times {
+                GettextWrapped(first * right.value(count)).value();
             }
             else {
-                (first % second);
+                let second = right.value(count);
+                confirm second != 0
+                    else throw InvalidCatalog.located(offset, "plural expression divides by zero");
+                // Both are unsigned, so % and a truncating / are exact.
+                if operation == GettextOperation.quotient {
+                    ((first - first % second) / second).int();
+                }
+                else {
+                    first % second;
+                }
             }
-        };
-        let modulus = BigInt("18446744073709551616");
-        let remainder = (value % modulus);
-        if remainder.sign() < 0 {
-            (remainder + modulus);
+        }
+    }
+}
+
+// 1 or 0, as C answers a comparison.
+hidden object GettextTruth {
+    has origin is bool;
+
+    GettextTruth(origin is bool) {
+        self.origin = origin;
+    }
+
+    value() is int {
+        if origin {
+            1;
+        }
+        else {
+            0;
+        }
+    }
+}
+
+// A result brought back into 0..2^64-1, as unsigned arithmetic wraps.
+hidden object GettextWrapped {
+    has origin is int;
+
+    GettextWrapped(origin is int) {
+        self.origin = origin;
+    }
+
+    value() is int {
+        if origin >= 0 && origin <= 18446744073709551615 {
+            return origin;
+        }
+        let remainder = origin % 18446744073709551616;
+        if remainder < 0 {
+            remainder + 18446744073709551616;
         }
         else {
             remainder;
@@ -444,7 +504,10 @@ hidden object GettextTokens {
         let position = Atomic(0);
         defer items.close();
         defer position.close();
-        for RegexMatches(origin: origin, regex: Regex("[0-9]+|n|==|!=|<=|>=|&&|\\|\\||[!?:()+*/%<>-]")) -> token {
+        for RegexMatches(
+            origin: origin,
+            regex: Regex("[0-9]+|n|==|!=|<=|>=|&&|\\|\\||[!?:()+*/%<>-]")
+        ) -> token {
             let at = token.range()::Bounds::start;
             for (position.value()..at) -> index {
                 confirm GettextSpace(origin.slice(index, index + 1)).matches()
@@ -459,7 +522,9 @@ hidden object GettextTokens {
             confirm GettextSpace(origin.slice(index, index + 1)).matches()
                 else throw InvalidCatalog.located(index, "invalid plural token");
         }
-        values = GettextListArray(items.value().prefix(GettextToken(text: "", offset: origin.length()))).values();
+        values = GettextListArray(
+            items.value().prefix(GettextToken(text: "", offset: origin.length()))
+        ).values();
     }
 
     values() is @GettextToken {
@@ -528,7 +593,9 @@ hidden object GettextExpressionParsing {
                     let operation = operators.value().first();
                     if operation.text() == "?" {
                         operators.replace(
-                            operators.value().tail().prefix(GettextToken(text: "?:", offset: operation.offset()))
+                            operators.value().tail().prefix(
+                                GettextToken(text: "?:", offset: operation.offset())
+                            )
                         );
                         last;
                     }
@@ -645,7 +712,12 @@ hidden object GettextExpressionParsing {
             else {
                 let right = self.pop();
                 let left = self.pop();
-                GettextBinary(left: left, operation: operation, right: right, offset: token.offset());
+                GettextBinary(
+                    left: left,
+                    operation: operation,
+                    right: right,
+                    offset: token.offset()
+                );
             }
         };
         values.replace(values.value().prefix(result));
@@ -683,26 +755,23 @@ object GettextPluralRule {
     }
 
     index(count is Decimal) is int {
-        let coefficient = count.coefficient();
         let exponent = count.exponent();
-        confirm coefficient.sign() >= 0
+        let digits = decimal_coefficient(count.string());
+        confirm !digits.starts_with("-")
             && exponent >= 0
             && exponent <= 19
-            && coefficient.string().length() + exponent <= 20
+            && digits.length() + exponent <= 20
             else throw InvalidCatalog.located(
                 0,
                 "plural count requires a nonnegative integral unsigned64 Decimal"
             );
-        let zeros is @string = (0..exponent).map() -> index {
-            "0";
-        };
-        let integer = BigInt(coefficient.string() + zeros.join(""));
-        confirm integer.order(BigInt("18446744073709551615")) != Order.greater
+        let integer = Number(digits).int() * (10).pow(exponent);
+        confirm integer <= 18446744073709551615
             else throw InvalidCatalog.located(0, "plural count exceeds unsigned64");
         let value = expression.value(integer);
-        confirm value.order(BigInt(amount.string())) == Order.less
+        confirm value < amount
             else throw InvalidCatalog.located(0, "plural index outside declared nplurals");
-        Number(value.string()).int();
+        value;
     }
 }
 
@@ -770,7 +839,9 @@ object PoComments {
             confirm size >= 0 && items.value().size() + size <= 4096
                 else throw InvalidCatalog.located(0, "comment count");
             for (0..size) -> index {
-                items.replace(items.value().prefix(PoComment(kind: kinds[group], text: source.item(index))));
+                items.replace(
+                    items.value().prefix(PoComment(kind: kinds[group], text: source.item(index)))
+                );
             }
         }
         records = GettextListArray(items.value()).values();
@@ -827,7 +898,14 @@ object PoEntry {
         translations is Sequencing<string>,
         comments is PoComments
     ) {
-        let value = PoEntry(context: context, identity: identity, plural: plural, translations: translations, comments: comments, has_context: context != "");
+        let value = PoEntry(
+            context: context,
+            identity: identity,
+            plural: plural,
+            translations: translations,
+            comments: comments,
+            has_context: context != ""
+        );
         self.context = value::Entry::context;
         self.identity = value::Entry::identity;
         self.plural = value::Entry::plural;
@@ -853,7 +931,8 @@ object PoEntry {
         let nul = GettextControl(0).string();
         let separator = GettextControl(4).string();
         for [context, identity, plural] -> text {
-            confirm !GettextContains(origin: text, part: nul).found() && !GettextContains(origin: text, part: separator).found()
+            confirm !GettextContains(origin: text, part: nul).found()
+                && !GettextContains(origin: text, part: separator).found()
                 else throw InvalidCatalog.located(0, "reserved separator in PO identity");
         }
         let size = translations.size();
@@ -1155,7 +1234,11 @@ hidden object PoQuoted {
                     }
                     else {
                         if escape.slice(0, 1) == "x" {
-                            PoNumericEscape(origin: escape.slice(1, escape.length()), base: 16, offset: offset + 1 + at).code();
+                            PoNumericEscape(
+                                origin: escape.slice(1, escape.length()),
+                                base: 16,
+                                offset: offset + 1 + at
+                            ).code();
                         }
                         else {
                             PoNumericEscape(origin: escape, base: 8, offset: offset + 1 + at).code();
@@ -1409,7 +1492,11 @@ hidden object PoLineStrings {
             pieces.replace(
                 pieces.value().prefix(
                     Latin1Decoded(
-                        PoQuoted(origin: part.text(), offset: offset + part.range()::Bounds::start, charset: charset).bytes()
+                        PoQuoted(
+                            origin: part.text(),
+                            offset: offset + part.range()::Bounds::start,
+                            charset: charset
+                        ).bytes()
                     ).string()
                 )
             );
@@ -1459,7 +1546,13 @@ hidden object PoField {
     following(octets is string) is PoField {
         confirm amount + octets.length() <= 262144 && pieces.size() < 8192
             else throw InvalidCatalog.located(offset, "PO field byte/fragment budget");
-        PoField(name: name, index: index, offset: offset, pieces: pieces.prefix(octets), amount: amount + octets.length());
+        PoField(
+            name: name,
+            index: index,
+            offset: offset,
+            pieces: pieces.prefix(octets),
+            amount: amount + octets.length()
+        );
     }
 
     string(charset is GettextCharset) is string {
@@ -1522,7 +1615,14 @@ hidden object PoEntryFields {
                 );
             field.string(charset);
         };
-        PoEntry(context: context, identity: identity, plural: plural, translations: values, comments: comments, has_context: self.seen("msgctxt"));
+        PoEntry(
+            context: context,
+            identity: identity,
+            plural: plural,
+            translations: values,
+            comments: comments,
+            has_context: self.seen("msgctxt")
+        );
     }
 
     hidden seen(name is string) is bool {
@@ -1733,7 +1833,9 @@ hidden object PoParsing {
             let current = fields.value();
             fields.replace(
                 current.tail().prefix(
-                    current.first().following(PoLineStrings(origin: text, offset: at, charset: charset).octets())
+                    current.first().following(
+                        PoLineStrings(origin: text, offset: at, charset: charset).octets()
+                    )
                 )
             );
             return;
@@ -1981,7 +2083,14 @@ object ParsedMo {
                     pair.original().offset(),
                     "empty MO plural identity"
                 );
-            PoEntry(context: context, identity: identity, plural: plural, translations: translated.split(nul), comments: comments, has_context: present);
+            PoEntry(
+                context: context,
+                identity: identity,
+                plural: plural,
+                translations: translated.split(nul),
+                comments: comments,
+                has_context: present
+            );
         };
         result = PoDocument(entries);
     }
@@ -2126,4 +2235,59 @@ test "GNU plural formula short circuits unused division" {
 test "PO projection preserves explicit empty context" {
     let document = ParsedPo("msgctxt \"\"\nmsgid \"Open\"\nmsgstr \"opened\"\n").document();
     test.ok(ParsedPo(PoString(document).string()).document().entries().item(0)::Entry::has_context);
+}
+
+test "plural formulas keep their GNU unsigned 64-bit results (#205)" {
+    let russian = GettextPluralRule(
+        "nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);"
+    );
+    let russian_forms is @int = [0, 1, 2, 4, 5, 11, 12, 21, 22, 25, 101, 111, 1000001].map() -> n {
+        russian.index(Decimal(n.string()));
+    };
+    test.is(russian_forms, [2, 0, 1, 1, 2, 2, 2, 0, 1, 2, 0, 2, 0]);
+    test.is(russian.index(Decimal("1e1")), 2);
+    let arabic = GettextPluralRule(
+        "nplurals=6; plural=n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : n%100>=3 && n%100<=10 ? 3 : n%100>=11 ? 4 : 5;"
+    );
+    let arabic_forms is @int = [0, 1, 2, 3, 11, 100, 102, 1000].map() -> n {
+        arabic.index(Decimal(n.string()));
+    };
+    test.is(arabic_forms, [0, 1, 2, 3, 4, 5, 5, 5]);
+    let refused = (rule is string, count is string) is string {
+        try {
+            GettextPluralRule(rule).index(Decimal(count)).string();
+        }
+        catch InvalidCatalog.located(_offset, reason) {
+            reason;
+        }
+    };
+    // Unsigned arithmetic wraps at 2^64.
+    test.is(refused("nplurals=2; plural=n-1;", "0"), "plural index outside declared nplurals");
+    test.is(refused("nplurals=2; plural=(n-1)%2;", "0"), "1");
+    test.is(refused("nplurals=2; plural=n*n;", "4294967296"), "0");
+    test.is(refused("nplurals=2; plural=n%2;", "18446744073709551615"), "1");
+    test.is(
+        refused("nplurals=2; plural=n%2;", "18446744073709551616"),
+        "plural count exceeds unsigned64"
+    );
+    test.is(refused("nplurals=2; plural=1/(n-n);", "3"), "plural expression divides by zero");
+    test.is(
+        refused("nplurals=2; plural=n%2;", "1.5"),
+        "plural count requires a nonnegative integral unsigned64 Decimal"
+    );
+    test.is(
+        refused("nplurals=2; plural=n%2;", "-1"),
+        "plural count requires a nonnegative integral unsigned64 Decimal"
+    );
+    test.is(
+        refused("nplurals=2; plural=18446744073709551616;", "1"),
+        "integer literal exceeds unsigned64"
+    );
+    let nested = GettextPluralRule("nplurals=3; plural=!n ? 2 : n>1 ? 1 : 0;");
+    test.is(
+        [nested.index(Decimal("0")), nested.index(Decimal("1")), nested.index(Decimal("5"))],
+        [2, 0, 1]
+    );
+    test.is(refused("nplurals=2; plural=n/2>=1 && n/2<2;", "3"), "1");
+    test.is(refused("nplurals=2; plural=n/2>=1 && n/2<2;", "4"), "0");
 }

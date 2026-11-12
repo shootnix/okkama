@@ -1,0 +1,25 @@
+module app v1.0.0;
+
+test "a float outside the tolerance" {
+    test.close(1.0, 1.5, 0.1);
+}
+
+test "a negative tolerance fails" {
+    test.close(1.0, 1.0, -1.0);
+}
+
+test "text that parts" {
+    test.text("one\ntwo", "one\ntoo");
+}
+
+test "bytes that part" {
+    test.bytes([byte(1), byte(2)], [byte(1), byte(2), byte(3)]);
+}
+
+test "passing test still runs" {
+    test.text("a", "a");
+}
+
+main() is int {
+    0;
+}
