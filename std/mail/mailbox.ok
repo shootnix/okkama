@@ -96,14 +96,20 @@ object KeywordFlag does MailFlag, Comparing<MailFlag> {
     KeywordFlag(origin is string) {
         confirm origin.length() > 0 && origin.length() <= 255
             else throw InvalidMailFlag.located(0, "keyword length outside 1..255");
-        for (0..origin.length()) -> index {
-            let scalar = origin.slice(index, index + 1);
-            let bytes = Utf8Encoded(scalar).bytes();
-            let value = bytes[0].int();
-            confirm bytes.size() == 1
-                && value >= 33
+        // Code points by code (#174): an atom character, not ( ) { % * " \ ].
+        let characters = origin.characters();
+        for (0..characters.size()) -> index {
+            let value = characters[index].code();
+            confirm value >= 33
                 && value <= 126
-                && "(){%*\"\\]".split(scalar).size() == 1
+                && value != 40
+                && value != 41
+                && value != 123
+                && value != 37
+                && value != 42
+                && value != 34
+                && value != 92
+                && value != 93
                 else throw InvalidMailFlag.located(index, "invalid keyword atom character");
         }
         self.origin = origin;
@@ -382,10 +388,10 @@ hidden object MailStorageIdentifier {
     validate() is void {
         confirm origin.length() > 0 && origin.length() <= 1024
             else throw InvalidMailbox.located(0, "storage identifier length outside 1..1024");
-        for (0..origin.length()) -> index {
-            let bytes = Utf8Encoded(origin.slice(index, index + 1)).bytes();
-            let value = bytes[0].int();
-            confirm bytes.size() == 1 && value >= 33 && value <= 126
+        let characters = origin.characters();
+        for (0..characters.size()) -> index {
+            let value = characters[index].code();
+            confirm value >= 33 && value <= 126
                 else throw InvalidMailbox.located(index, "invalid storage identifier character");
         }
     }
@@ -438,10 +444,10 @@ hidden object MaildirName {
             else throw InvalidMailbox.located(0, "maildir filename length outside 1..255");
         confirm origin.slice(0, 1) != "."
             else throw InvalidMailbox.located(0, "dot maildir filename is reserved");
-        for (0..origin.length()) -> index {
-            let bytes = Utf8Encoded(origin.slice(index, index + 1)).bytes();
-            let value = bytes[0].int();
-            confirm bytes.size() == 1 && value >= 33 && value <= 126 && value != 47 && value != 92
+        let characters = origin.characters();
+        for (0..characters.size()) -> index {
+            let value = characters[index].code();
+            confirm value >= 33 && value <= 126 && value != 47 && value != 92
                 else throw InvalidMailbox.located(index, "invalid maildir filename character");
         }
         let parts = origin.split(":");
@@ -455,27 +461,32 @@ hidden object MaildirName {
                     parts[0].length() + 1,
                     "unsupported maildir info version"
                 );
-            for (2..suffix.length()) -> index {
-                let letter = suffix.slice(index, index + 1);
-                confirm suffix.slice(2, index).split(letter).size() == 1
+            // The suffix is ASCII here: flag letters are read by code (#174).
+            let letters = suffix.characters();
+            for (2..letters.size()) -> index {
+                let code = letters[index].code();
+                let repeated = (2..index).reduce(false) -> found, prior {
+                    found || letters[prior].code() == code;
+                };
+                confirm !repeated
                     else throw InvalidMailbox.located(
                         parts[0].length() + 1 + index,
                         "duplicate maildir flag"
                     );
-                let kind = match letter {
-                    case "D" {
+                let kind = match code {
+                    case 68 {
                         SystemMailFlag.draft;
                     }
-                    case "F" {
+                    case 70 {
                         SystemMailFlag.flagged;
                     }
-                    case "R" {
+                    case 82 {
                         SystemMailFlag.answered;
                     }
-                    case "S" {
+                    case 83 {
                         SystemMailFlag.seen;
                     }
-                    case "T" {
+                    case 84 {
                         SystemMailFlag.deleted;
                     }
                     else {
@@ -790,10 +801,10 @@ hidden object MaildirFlagName {
             SystemMailFlag.seen,
             SystemMailFlag.deleted
         ];
-        let letters = "DFRST";
+        let letters = ["D", "F", "R", "S", "T"];
         let suffix = (0..5).reduce("") -> value, index {
             value + if marks.membership(SystemFlag(kinds[index])) {
-                letters.slice(index, index + 1);
+                letters[index];
             }
             else {
                 "";
@@ -1031,4 +1042,76 @@ test "a Maildir creates its folders, then keeps and lists messages" {
     box.add(ParsedMail(Utf8Encoded("Subject: hi\r\n\r\nbody\r\n").bytes()).message());
     test.is(box.messages().size(), 1);
     scratch.close();
+}
+
+test "mailbox names take ASCII characters only, by position" {
+    let keywords is @int = [
+        "$Ok_1",
+        "a[b}",
+        "a(b",
+        "ab{",
+        "a%",
+        "*",
+        "a\"b",
+        "a\\b",
+        "a]b",
+        "aé",
+        "a b",
+        "ok~"
+    ].map() -> keyword {
+        try {
+            KeywordFlag(keyword);
+            -1;
+        }
+        catch InvalidMailFlag.located(at, _reason) {
+            at;
+        }
+    };
+    test.is(keywords, [-1, -1, 1, 2, 1, 0, 1, 1, 1, 1, 1, -1]);
+    let identifiers is @int = ["id-1~", "a b", "абв", "a\tb", "ok!"].map() -> identifier {
+        try {
+            MailStorageIdentifier(identifier).validate();
+            -1;
+        }
+        catch InvalidMailbox.located(at, _reason) {
+            at;
+        }
+    };
+    test.is(identifiers, [-1, 1, 0, 1, -1]);
+    let names is @int = [
+        "id:2,DFRST",
+        "i/d",
+        "i\\d",
+        "id:2,SS",
+        "id:2,SX",
+        "id:1,S",
+        "ид",
+        "id:2,",
+        ".id",
+        "a:b:c",
+        "id:2,TDT"
+    ].map() -> name {
+        try {
+            MaildirName(name);
+            -1;
+        }
+        catch InvalidMailbox.located(at, _reason) {
+            at;
+        }
+    };
+    test.is(names, [-1, 1, 1, 6, 6, 3, 0, -1, 0, 0, 7]);
+    let all = MaildirName("id:2,TDSRF").flags();
+    test.is(all.size(), 5);
+    test.ok(all.membership(SystemFlag(SystemMailFlag.deleted)));
+    test.ok(all.membership(SystemFlag(SystemMailFlag.answered)));
+    let marks = MailFlags(
+        SystemFlag(SystemMailFlag.seen),
+        SystemFlag(SystemMailFlag.deleted),
+        SystemFlag(SystemMailFlag.draft),
+        SystemFlag(SystemMailFlag.answered),
+        SystemFlag(SystemMailFlag.flagged)
+    );
+    test.is(MaildirFlagName(identifier: "id", marks: marks).name().string(), "id:2,DFRST");
+    let empty is @MailFlag = [];
+    test.is(MaildirFlagName(identifier: "id", marks: MailFlags(empty)).name().string(), "id:2,");
 }
