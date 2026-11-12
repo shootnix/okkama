@@ -191,6 +191,31 @@ object StreamConnection does Closing {
         self.reserve_output();
         let ticket = StreamWriteTicket(self.output());
         defer ticket.close();
+        if !writer_lock.locked() {
+            // A free lock grants its guard at once on every engine: there is
+            // no wait to supervise, only the write itself (#503).
+            let guard = await writer_lock.guard();
+            defer guard.close();
+            let writing is FutureGroup<bool> = FutureGroup();
+            let settling = StreamWritingCleanup(writing);
+            defer await settling.close();
+            confirm !network.closed(state) && !network.stream_half_closed(state, true)
+                else throw NetworkClosed.closed;
+            let payload = source.bytes();
+            try {
+                let pending = network.stream_write(state, payload);
+                writing.start(pending);
+                await pending;
+            }
+            catch e is NativeFailure {
+                let translated = StreamFailure(operation: NetworkOperation.writing, failure: e);
+                if translated.applicable() {
+                    throw translated.error();
+                }
+                throw;
+            }
+            return true;
+        }
         let guards is FutureGroup<LockGuard> = FutureGroup();
         let writing is FutureGroup<bool> = FutureGroup();
         let empty is @Future<LockGuard> = [];
@@ -334,6 +359,23 @@ hidden object StreamReadTicket {
 
     close() is void {
         busy.replace(false);
+    }
+}
+
+// The write of an uncontended writer: cancelled, it waits for the native
+// write to settle.
+hidden object StreamWritingCleanup {
+    has writing is FutureGroup<bool>;
+
+    StreamWritingCleanup(writing is FutureGroup<bool>) {
+        self.writing = writing;
+    }
+
+    async close() is void {
+        if writing.active() > 0 {
+            writing.cancel();
+            await writing.wait();
+        }
     }
 }
 

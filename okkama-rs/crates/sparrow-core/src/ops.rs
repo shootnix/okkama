@@ -1297,7 +1297,20 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
                 Some(Type::Builder(element)) => runtime.kind_of(*element).repr(),
                 _ => return Err("builder.new needs a builder type".into()),
             };
-            Ok(runtime.heap.allocate_payload(Box::new(Builder { repr, items: Vec::new() })))
+            let spare = runtime.heap.allocate_spare(|payload| {
+                match payload.as_any_mut().downcast_mut::<Builder>() {
+                    Some(builder) => {
+                        builder.repr = repr;
+                        builder.items.clear();
+                        true
+                    }
+                    None => false,
+                }
+            });
+            match spare {
+                Some(object) => Ok(object),
+                None => Ok(runtime.heap.allocate_payload(Box::new(Builder { repr, items: Vec::new() }))),
+            }
         }
         I::BuilderPush { builder, value: item, .. } => {
             let (builder, item) = (value(builder), value(item));
@@ -1326,9 +1339,21 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             Ok(builder)
         }
         I::BuilderFinish { dst, builder } => {
-            let builder = runtime.heap.payload_mut::<Builder>(value(builder)).expect("builder");
-            let (repr, items) = (builder.repr, std::mem::take(&mut builder.items));
-            Ok(new_array(runtime, function, dst.0, repr, &items))
+            let object = value(builder);
+            let builder = runtime.heap.payload_mut::<Builder>(object).expect("builder");
+            let (repr, mut items) = (builder.repr, std::mem::take(&mut builder.items));
+            let array = new_array(runtime, function, dst.0, repr, &items);
+            // Its growth was charged as it grew; the buffer is freed or kept
+            // for the next builder here (#503).
+            runtime.heap.discharge_external(items.capacity() * 8);
+            if items.capacity() <= crate::heap::SPARE_CAPACITY {
+                items.clear();
+                if let Some(builder) = runtime.heap.payload_mut::<Builder>(object) {
+                    builder.items = items;
+                }
+                runtime.heap.retire_payload(object);
+            }
+            Ok(array)
         }
         I::MapNew { dst, entries } => {
             let mut map = map_for(runtime, function, dst.0)?;

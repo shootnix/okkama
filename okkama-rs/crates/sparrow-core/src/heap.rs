@@ -89,6 +89,10 @@ pub const CLASSES: [usize; 18] = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 
 const POISON: u64 = 0xdead_dead_dead_dead;
 /// Collections start once this much has been allocated, at least.
 const COLLECTION_FLOOR: usize = 1 << 20;
+/// Spare builder payloads kept at most, each with a buffer of at most
+/// [`SPARE_CAPACITY`] words.
+const SPARE_PAYLOADS: usize = 64;
+pub const SPARE_CAPACITY: usize = 512;
 
 #[inline]
 pub fn header(kind: u8, repr: Repr, payload: u32) -> u64 {
@@ -119,6 +123,10 @@ pub trait Payload: std::any::Any + std::fmt::Debug {
     }
     fn as_any(&self) -> &dyn std::any::Any;
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+    /// The payload's type, for the allocation counts of `--stats`.
+    fn kind_name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
 }
 
 /// Field representations of objects, closures and async frames, by index.
@@ -181,6 +189,10 @@ pub struct Heap {
     /// sweep). It sets the next threshold, so a heap of large live maps does
     /// not collect over and over for nothing.
     threshold: usize,
+    /// Payloads of finished array builders, for the next builder (#503):
+    /// a `map` or `filter` then allocates no Rust memory, releases nothing
+    /// in the sweep and brings no collection closer.
+    spare: Vec<Box<Box<dyn Payload>>>,
     live: usize,
     external_live: usize,
     collections: usize,
@@ -253,6 +265,11 @@ pub struct Allocations {
     /// (count, bytes). A census for leak hunting (`--stats`).
     pub live: std::collections::BTreeMap<(&'static str, u32), (u64, u64)>,
     pub collection_nanos: u64,
+    /// The two phases of collections: marking from the roots, and the sweep.
+    pub mark_nanos: u64,
+    pub sweep_nanos: u64,
+    /// Time of the runtime's own work around collections (`Runtime::safepoint`).
+    pub around_nanos: u64,
 }
 
 /// The census name of a header's kind.
@@ -296,6 +313,7 @@ impl Heap {
             allocated: 0,
             external: 0,
             threshold: COLLECTION_FLOOR,
+            spare: Vec::new(),
             live: 0,
             external_live: 0,
             collections: 0,
@@ -336,6 +354,13 @@ impl Heap {
     /// payload that grew). Nothing collects here: the next safepoint does.
     pub fn charge_external(&mut self, bytes: usize) {
         self.external += bytes;
+    }
+
+    /// Rust memory charged since the last collection and already freed: a
+    /// builder's buffer when it finishes. It no longer brings the next
+    /// collection closer (#503).
+    pub fn discharge_external(&mut self, bytes: usize) {
+        self.external = self.external.saturating_sub(bytes);
     }
 
     /// Collector stress: a zero threshold makes every safepoint collect.
@@ -1057,6 +1082,9 @@ impl Heap {
     pub fn allocate_payload_moved(&mut self, payload: Box<dyn Payload>) -> Word {
         self.external += BOX_BYTES + std::mem::size_of_val(&*payload);
         self.counted("payload", 0, 2);
+        if self.allocations.is_some() {
+            self.counted(payload.kind_name(), 0, 0);
+        }
         let object = self.allocate(2);
         // SAFETY: two fresh words; the double box gives a thin pointer.
         unsafe {
@@ -1066,16 +1094,54 @@ impl Heap {
         object
     }
     pub fn payload<T: Payload>(&self, object: Word) -> Option<&T> {
-        // SAFETY: a PAYLOAD object holds a live Box<Box<dyn Payload>>.
-        (kind(self.header_of(object)) == PAYLOAD)
+        // SAFETY: a PAYLOAD object holds a live Box<Box<dyn Payload>>, or
+        // null once its payload was retired.
+        (kind(self.header_of(object)) == PAYLOAD && self.field(object, 0) != 0)
             .then(|| unsafe { &**(self.field(object, 0) as *const Box<dyn Payload>) })
             .and_then(|p| p.as_any().downcast_ref())
     }
     pub fn payload_mut<T: Payload>(&mut self, object: Word) -> Option<&mut T> {
         // SAFETY: as above, uniquely borrowed through &mut self.
-        (kind(self.header_of(object)) == PAYLOAD)
+        (kind(self.header_of(object)) == PAYLOAD && self.field(object, 0) != 0)
             .then(|| unsafe { &mut **(self.field(object, 0) as *mut Box<dyn Payload>) })
             .and_then(|p| p.as_any_mut().downcast_mut())
+    }
+
+    /// A PAYLOAD object around a spare payload that `reuse` takes (and
+    /// resets), or none when there is no spare.
+    pub fn allocate_spare(&mut self, reuse: impl FnOnce(&mut dyn Payload) -> bool) -> Option<Word> {
+        let mut boxed = self.spare.pop()?;
+        if !reuse(&mut **boxed) {
+            return None;
+        }
+        self.counted("payload", 0, 2);
+        let object = self.allocate(2);
+        // SAFETY: two fresh words.
+        unsafe {
+            *(object as *mut u64) = header(PAYLOAD, Repr::Raw, 0);
+            *((object + 8) as *mut u64) = Box::into_raw(boxed) as u64;
+        }
+        Some(object)
+    }
+
+    /// Take the payload out of a finished object for a later one: the object
+    /// then owns nothing, and its payload is kept while there is room.
+    pub fn retire_payload(&mut self, object: Word) {
+        if kind(self.header_of(object)) != PAYLOAD {
+            return;
+        }
+        let pointer = self.field(object, 0) as *mut Box<dyn Payload>;
+        if pointer.is_null() {
+            return;
+        }
+        // SAFETY: the object's live payload, taken out exactly once.
+        let boxed = unsafe {
+            *((object + 8) as *mut u64) = 0;
+            Box::from_raw(pointer)
+        };
+        if self.spare.len() < SPARE_PAYLOADS {
+            self.spare.push(boxed);
+        }
     }
 
     // ---- closures and async frames ----
@@ -1134,6 +1200,7 @@ impl Heap {
         ephemerons: &mut dyn FnMut(&dyn Fn(Word) -> bool, &mut dyn FnMut(Word, Repr)),
     ) {
         crate::maps::begin_pass();
+        let marking = self.allocations.is_some().then(std::time::Instant::now);
         let mut worklist = std::mem::take(&mut self.worklist);
         roots(&mut |word, repr| {
             if let Some(pointer) = repr.pointer(word) {
@@ -1157,8 +1224,32 @@ impl Heap {
                 break;
             }
         }
+        if let (Some(allocations), Some(marking)) = (&mut self.allocations, marking) {
+            allocations.mark_nanos += marking.elapsed().as_nanos() as u64;
+        }
         self.worklist = worklist;
+        // Watched objects that died, found by their marks before the sweep:
+        // a pass over the watched few, instead of a set lookup for every dead
+        // cell in the sweep (#503).
+        if !self.watched.is_empty() {
+            // SAFETY: watched addresses are objects allocated and not yet
+            // reported dead, so their headers are live until this sweep.
+            let dead: Vec<Word> = self
+                .watched
+                .iter()
+                .copied()
+                .filter(|&object| unsafe { *(object as *const u64) } & MARK == 0)
+                .collect();
+            for object in dead {
+                self.watched.remove(&object);
+                self.released.push(object);
+            }
+        }
+        let swept = self.allocations.is_some().then(std::time::Instant::now);
         self.sweep();
+        if let (Some(allocations), Some(swept)) = (&mut self.allocations, swept) {
+            allocations.sweep_nanos += swept.elapsed().as_nanos() as u64;
+        }
     }
 
     /// Mark everything reachable from the worklist.
@@ -1209,9 +1300,11 @@ impl Heap {
                     }
                 }
                 PAYLOAD => {
-                    let payload =
-                        unsafe { &**(*((object + 8) as *const u64) as *const Box<dyn Payload>) };
-                    payload.trace(&mut push);
+                    let pointer = unsafe { *((object + 8) as *const u64) };
+                    if pointer != 0 {
+                        let payload = unsafe { &**(pointer as *const Box<dyn Payload>) };
+                        payload.trace(&mut push);
+                    }
                 }
                 _ => {}
             }
@@ -1258,9 +1351,6 @@ impl Heap {
                 if kind(header) != FREE {
                     unsafe { release(address, header) };
                     unsafe { *(address as *mut u64) = 0 };
-                    if !self.watched.is_empty() && self.watched.remove(&address) {
-                        self.released.push(address);
-                    }
                 }
                 unsafe { *((address + 8) as *mut u64) = self.free[page.class] };
                 self.free[page.class] = address;
@@ -1281,9 +1371,6 @@ impl Heap {
                 true
             } else {
                 unsafe { release(address, header) };
-                if self.watched.remove(&address) {
-                    self.released.push(address);
-                }
                 false
             }
         });
@@ -1338,6 +1425,7 @@ fn big_bytes(n: &BigInt) -> usize {
 unsafe fn owned_bytes(address: Word, header: u64) -> usize {
     match kind(header) {
         BIGINT => big_bytes(unsafe { &*(*((address + 8) as *const u64) as *const BigInt) }),
+        PAYLOAD if unsafe { *((address + 8) as *const u64) } == 0 => 0,
         PAYLOAD => payload_bytes(unsafe { &**(*((address + 8) as *const u64) as *const Box<dyn Payload>) }),
         _ => 0,
     }
@@ -1350,7 +1438,10 @@ unsafe fn release(address: Word, header: u64) {
     match kind(header) {
         BIGINT => drop(unsafe { Box::from_raw(*((address + 8) as *const u64) as *mut BigInt) }),
         PAYLOAD => {
-            drop(unsafe { Box::from_raw(*((address + 8) as *const u64) as *mut Box<dyn Payload>) })
+            let pointer = unsafe { *((address + 8) as *const u64) };
+            if pointer != 0 {
+                drop(unsafe { Box::from_raw(pointer as *mut Box<dyn Payload>) })
+            }
         }
         _ => {}
     }

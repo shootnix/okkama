@@ -223,6 +223,7 @@ impl Runtime {
             return;
         }
         self.count(|_| "gc collection".into());
+        let started = self.heap.allocations.is_some().then(std::time::Instant::now);
         self.prune_spawned();
         let jit = &self.jit;
         let constants = &self.constants;
@@ -269,6 +270,9 @@ impl Runtime {
         }
         if let Some(host) = &mut self.host {
             host.released(&released);
+        }
+        if let (Some(allocations), Some(started)) = (&mut self.heap.allocations, started) {
+            allocations.around_nanos += started.elapsed().as_nanos() as u64;
         }
     }
 
@@ -323,6 +327,12 @@ impl Runtime {
                     }))
                     .chain([
                         ("collection, microseconds".to_string(), allocations.collection_nanos / 1000),
+                        ("collection marking, microseconds".to_string(), allocations.mark_nanos / 1000),
+                        ("collection sweep, microseconds".to_string(), allocations.sweep_nanos / 1000),
+                        (
+                            "collection around it in the runtime, microseconds".to_string(),
+                            allocations.around_nanos.saturating_sub(allocations.collection_nanos) / 1000,
+                        ),
                         ("run, microseconds".to_string(), self.created.elapsed().as_micros() as u64),
                     ])
             })
