@@ -103,35 +103,23 @@ hidden object PhysicalLogLine {
             return origin;
         }
         let digits = "0123456789abcdef";
-        let parts is @string = (0..origin.length()).map() -> index {
-            let char = origin.slice(index, index + 1);
-            let bytes = Utf8Encoded(char).bytes();
-            let first = bytes[0].int();
-            if first < 32 || first == 127 || (first == 194 && bytes[1].int() < 160) {
-                let code = if first == 194 {
-                    bytes[1].int();
-                }
-                else {
-                    first;
-                };
+        // Code points, compared by code (#172): C0 and DEL, C1, U+2028, U+2029.
+        let parts is @string = origin.characters().map() -> character {
+            let code = character.code();
+            if code < 32 || code == 127 || (code >= 128 && code < 160) {
                 let high = (code / 16).int();
                 let low = code % 16;
                 "\\u00" + digits.slice(high, high + 1) + digits.slice(low, low + 1);
             }
-            else if bytes.size() == 3
-                && first == 226
-                && bytes[1].int() == 128
-                && (bytes[2].int() == 168 || bytes[2].int() == 169) {
-                    if bytes[2].int() == 168 {
-                        "\\u2028";
-                    }
-                    else {
-                        "\\u2029";
-                    }
-                }
-                else {
-                    char;
-                }
+            else if code == 8232 {
+                "\\u2028";
+            }
+            else if code == 8233 {
+                "\\u2029";
+            }
+            else {
+                character.string();
+            }
         };
         let result = parts.join("");
         confirm Utf8Encoded(result).bytes().size() <= 1048576 else throw LogLineLimit.exceeded;
@@ -161,4 +149,11 @@ test "a record is one physical line of text or JSON, quotes escaped" {
         JsonLogLine(record).string(),
         "{\"time\":\"2023-11-14T22:13:20Z\",\"level\":\"WARNING\",\"name\":\"app.db\",\"process\":7,\"message\":\"slow \\\"query\\\"\",\"fields\":{\"ms\":900},\"cause\":\"InvalidLogProcess.invalid\"}"
     );
+}
+
+test "a physical line escapes terminal controls and line separators only" {
+    let text = "a" + 7.char().string() + "б" + 127.char().string() + 133.char().string() + "в" +
+        8232.char().string() + 8233.char().string() + "\tж";
+    test.is(PhysicalLogLine(text).string(), "a\\u0007б\\u007f\\u0085в\\u2028\\u2029\\u0009ж");
+    test.is(PhysicalLogLine("plain ж").string(), "plain ж");
 }
