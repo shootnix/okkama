@@ -411,6 +411,22 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     scans entity tag lists by octet; `http/form` and `logging/line` walk
     code points instead of slicing a string per character. Each has a
     characterization test that passes before and after.
+- **Checksums by the runtime, CSV read once, POD gone (#193, #203, #200).**
+
+  | operation | Sparrow before → after | IR before → after |
+  |---|---|---|
+  | CRC-32 and Adler-32 of 1 MiB | 90.0 → 12.8 ms | 1 930 → 8.4 ms |
+  | `CsvRows` of 20 000 rows, per row | 3.83 → 2.14 µs | 67.7 → 4.1 µs |
+
+  - `checksum/crc` and `checksum/adler32` keep their objects and call the
+    new `runtime/checksum` natives (CRC-32, CRC-16/CCITT, Adler-32 from a
+    seed).
+  - `CsvRows` reads its text once (`once let`); the default dialect goes
+    to the native scanner of `csv/stream`. Its default limits are now 64 Mi
+    characters, fields of 1 Mi, a million rows and 1024 columns: the text
+    is already in memory, and a 2 MB file no longer fails by default.
+  - `cell` and the `async/*` modules document themselves in `//` comments
+    like the rest of std; no POD is left.
 
 ## [0.5.4] — 2026-11-12
 
