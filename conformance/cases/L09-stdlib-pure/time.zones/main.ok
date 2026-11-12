@@ -4,11 +4,11 @@ import "conformance/check" take Checks;
 import "time/zone" take Zone, Zoned, Fold, ZonedDateTime, ZoneObservation, MissingLocalTime, TimeZoneDatabaseVersion;
 import "time/rfc3339" take Rfc3339;
 import "time/iso" take IsoText, IsoLocalDateTime;
-import "time/duration" take Duration, DurationUnit;
+import "time/duration" take Duration;
 
 main() is int {
     let berlin = Zone("Europe/Berlin");
-    let utc = Duration(value: 0.rat(), unit: DurationUnit.second);
+    let utc = Duration(seconds: 0);
     let resolved = (text is string, fold is Fold) is string {
         Rfc3339(origin: Zoned(local: IsoText(text).local_date_time(), zone: berlin, fold: fold).instant(), offset: utc).string();
     };

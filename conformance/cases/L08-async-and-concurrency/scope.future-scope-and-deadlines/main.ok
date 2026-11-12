@@ -7,7 +7,7 @@ import "async/scope" take FutureScope, Supervising;
 import "async/timeout" take Within, Before, TimedOut;
 import "async/event" take Event;
 import "time/clock" take SystemClock;
-import "time/duration" take Duration, DurationUnit;
+import "time/duration" take Duration;
 
 enum Broken is Error = (broken);
 
@@ -61,7 +61,7 @@ async main() is int {
     });
 
     let clock = SystemClock();
-    let short = Duration(value: 20.rat(), unit: DurationUnit.millisecond);
+    let short = Duration(milliseconds: 20);
     let within is Within<int> = Within(origin: Forever(event: Event()).run(), limit: short, clock: clock);
     out.writeln(try {
         (await within.outcome()).string();
@@ -79,7 +79,7 @@ async main() is int {
     // An origin already settled wins without a clock wait, even at zero.
     let done = Quiet(result: 7).run();
     let seven = await done;
-    let ready is Within<int> = Within(origin: done, limit: Duration(value: 0.rat(), unit: DurationUnit.second), clock: clock);
+    let ready is Within<int> = Within(origin: done, limit: Duration(seconds: 0), clock: clock);
     out.writeln("settled first: " + (await ready.outcome()).string() + " " + seven.string());
     0;
 }

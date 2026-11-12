@@ -5,14 +5,14 @@ module app v1.0.0;
 import "io/stdout" take Stdout;
 import "async/event" take Event;
 import "time/clock" take SystemClock;
-import "time/duration" take Duration, DurationUnit;
+import "time/duration" take Duration;
 
 object Alarm {
     has rung is Event;
     Alarm(:rung);
 
     async ring() is void {
-        await SystemClock().wait(Duration(value: 20.rat(), unit: DurationUnit.millisecond));
+        await SystemClock().wait(Duration(milliseconds: 20));
         Stdout().writeln("alarm: rang");
         rung.set();
     }

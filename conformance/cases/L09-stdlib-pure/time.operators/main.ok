@@ -1,13 +1,13 @@
 module ocs/time_operators v1.0.0;
 
 import "io/stdout" take Stdout;
-import "time/duration" take Duration, DurationUnit;
+import "time/duration" take Duration;
 import "time/clock" take Instant;
 
 main() is int {
     let out = Stdout();
-    let minute = Duration(value: 60.rat(), unit: DurationUnit.second);
-    let start = Instant(origin: Duration(value: 1000.rat(), unit: DurationUnit.second));
+    let minute = Duration(seconds: 60);
+    let start = Instant(origin: Duration(seconds: 1000));
     let later = start + minute + minute;
     out.writeln((later - start)::Span::seconds.string() + " " + (later - minute).unix_duration()::Span::seconds.string() + " " + (-minute)::Span::seconds.string());
     out.writeln((start < later).string() + " " + (minute + minute > minute).string());

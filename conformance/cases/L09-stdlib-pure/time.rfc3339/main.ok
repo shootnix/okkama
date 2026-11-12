@@ -2,14 +2,14 @@ module app v1.0.0;
 
 import "conformance/check" take Checks;
 import "time/rfc3339" take Rfc3339, InvalidRfc3339;
-import "time/duration" take Duration, DurationUnit;
+import "time/duration" take Duration;
 
 main() is int {
     let c = Checks();
     c = c.same_text("unix nanoseconds", (Rfc3339("2026-08-11T12:30:45.125+05:00").instant()).unix_duration().nanoseconds().string(), "1786433445125000000");
-    c = c.same_text("UTC rendering", Rfc3339(origin: Rfc3339("2026-08-11T12:30:45.125+05:00").instant(), offset: Duration(value: 0.rat(), unit: DurationUnit.second)).string(), "2026-08-11T07:30:45.125Z");
-    c = c.same_text("offset rendering", Rfc3339(origin: Rfc3339("2026-08-11T07:30:45.125Z").instant(), offset: Duration(value: 5.rat(), unit: DurationUnit.hour)).string(), "2026-08-11T12:30:45.125+05:00");
-    c = c.same_text("unknown offset is zero", Rfc3339(origin: Rfc3339("2026-08-11T07:30:45-00:00").instant(), offset: Duration(value: 0.rat(), unit: DurationUnit.second)).string(), "2026-08-11T07:30:45Z");
+    c = c.same_text("UTC rendering", Rfc3339(origin: Rfc3339("2026-08-11T12:30:45.125+05:00").instant(), offset: Duration(seconds: 0)).string(), "2026-08-11T07:30:45.125Z");
+    c = c.same_text("offset rendering", Rfc3339(origin: Rfc3339("2026-08-11T07:30:45.125Z").instant(), offset: Duration(hours: 5)).string(), "2026-08-11T12:30:45.125+05:00");
+    c = c.same_text("unknown offset is zero", Rfc3339(origin: Rfc3339("2026-08-11T07:30:45-00:00").instant(), offset: Duration(seconds: 0)).string(), "2026-08-11T07:30:45Z");
     c = c.same_text("lowercase t rejected", try { let probe = Rfc3339("2026-08-11t07:30:45Z").instant(); "no error"; } catch e is InvalidRfc3339 { "InvalidRfc3339"; }, "InvalidRfc3339");
     c.done();
 }
