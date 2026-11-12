@@ -34,6 +34,8 @@ impl Event {
 #[derive(Debug)]
 pub struct Events {
     events: Vec<Event>,
+    /// Character offset where each event starts.
+    offsets: Vec<usize>,
     /// Character offset and reason of the first error.
     error: Option<(usize, String)>,
 }
@@ -42,6 +44,10 @@ struct Parser<'a> {
     source: &'a str,
     position: usize,
     events: Vec<Event>,
+    /// Byte offset where each event starts.
+    starts: Vec<usize>,
+    /// Where the token being read starts.
+    begin: usize,
     open: Vec<String>,
     root_closed: bool,
     root_seen: bool,
@@ -82,6 +88,7 @@ impl<'a> Parser<'a> {
             return self.fail(format!("more than {} XML events", self.maximum_events));
         }
         self.events.push(event);
+        self.starts.push(self.begin);
         Ok(())
     }
 
@@ -144,8 +151,14 @@ impl<'a> Parser<'a> {
             if attribute && c == '<' {
                 return Err((start + raw.len() - rest.len(), "< inside an attribute value".into()));
             }
+            // Line ends become \n (XML 1.0 2.11): a CR LF pair or a lone CR.
+            if c == '\r' && rest[1..].starts_with('\n') {
+                rest = &rest[1..];
+                continue;
+            }
+            let c = if c == '\r' { '\n' } else { c };
             // Attribute values normalize whitespace characters to spaces.
-            out.push(if attribute && matches!(c, '\t' | '\n' | '\r') { ' ' } else { c });
+            out.push(if attribute && matches!(c, '\t' | '\n') { ' ' } else { c });
             rest = &rest[c.len_utf8()..];
         }
         Ok(out)
@@ -157,6 +170,7 @@ impl<'a> Parser<'a> {
         }
         let start = self.position;
         while self.position < self.source.len() {
+            self.begin = self.position;
             let rest = self.rest();
             if let Some(body) = rest.strip_prefix("<?") {
                 let Some(end) = body.find("?>") else { return self.fail("an unterminated processing instruction") };
@@ -188,7 +202,7 @@ impl<'a> Parser<'a> {
                 if let Some(bad) = body[..end].chars().find(|c| !allowed(*c)) {
                     return self.fail(format!("a character U+{:04X} XML does not allow", bad as u32));
                 }
-                self.push(Event::Text(body[..end].to_string()))?;
+                self.push(Event::Text(body[..end].replace("\r\n", "\n").replace('\r', "\n")))?;
                 self.position += 9 + end + 3;
             } else if rest.starts_with("<!DOCTYPE") {
                 if self.root_seen {
@@ -316,6 +330,8 @@ pub fn events(source: &str, maximum_depth: usize, maximum_events: usize) -> Even
         source,
         position: 0,
         events: Vec::new(),
+        starts: Vec::new(),
+        begin: 0,
         open: Vec::new(),
         root_closed: false,
         root_seen: false,
@@ -323,11 +339,21 @@ pub fn events(source: &str, maximum_depth: usize, maximum_events: usize) -> Even
         maximum_events,
     };
     match parser.run() {
-        Ok(()) => Events { events: parser.events, error: None },
+        Ok(()) => {
+            // Byte offsets to characters, in one pass: they only grow.
+            let mut offsets = Vec::with_capacity(parser.starts.len());
+            let (mut bytes, mut characters) = (0, 0);
+            for start in parser.starts {
+                characters += source[bytes..start].chars().count();
+                bytes = start;
+                offsets.push(characters);
+            }
+            Events { events: parser.events, offsets, error: None }
+        }
         Err((at, message)) => {
             let at = at.min(source.len());
             let characters = source[..source.floor_char_boundary(at)].chars().count();
-            Events { events: Vec::new(), error: Some((characters, message)) }
+            Events { events: Vec::new(), offsets: Vec::new(), error: Some((characters, message)) }
         }
     }
 }
@@ -365,6 +391,12 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
         XmlXmlEventsOffset => Ok(int_value(state(&args[0])?.error.as_ref().map_or(0, |(at, _)| *at as i64))),
         XmlXmlEventCount => Ok(int_value(state(&args[0])?.events.len() as i64)),
         XmlXmlEventKind => Ok(int_value(event(native, state(&args[0])?, &args[1])?.kind())),
+        XmlXmlEventOffset => {
+            let events = state(&args[0])?;
+            event(native, events, &args[1])?;
+            let index = int(&args[1])?.to_i64().unwrap_or(0) as usize;
+            Ok(int_value(events.offsets[index] as i64))
+        }
         XmlXmlEventName => Ok(text(match event(native, state(&args[0])?, &args[1])? {
             Event::Start { name, .. } | Event::End { name } => name.clone(),
             Event::Instruction { target, .. } => target.clone(),
@@ -424,6 +456,7 @@ mod tests {
         );
         assert_eq!(shape("<a\tb=\"x\ny\"/>"), Ok("<a b=x y></a>".into()));
         assert_eq!(shape("<a>чай 😀</a>"), Ok("<a>[чай 😀]</a>".into()));
+        assert_eq!(shape("<a b=\"x\r\ny\">1\r\n2\r3&#13;<![CDATA[4\r\n]]></a>"), Ok("<a b=x y>[1\n2\n3\r4\n]</a>".into()));
     }
 
     #[test]

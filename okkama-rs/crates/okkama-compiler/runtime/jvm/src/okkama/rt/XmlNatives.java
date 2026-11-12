@@ -15,6 +15,7 @@ public final class XmlNatives {
 
     static final class Event {
         final int kind;
+        int start;
         String name = "";
         StringBuilder text;
         String data = "";
@@ -57,6 +58,7 @@ public final class XmlNatives {
     private static final class Parser {
         final String source;
         int position;
+        int begin;
         final Events out = new Events();
         final ArrayList<String> open = new ArrayList<>();
         boolean rootClosed;
@@ -83,6 +85,7 @@ public final class XmlNatives {
             if (events.size() >= maximumEvents) {
                 throw bad("more than " + maximumEvents + " XML events");
             }
+            event.start = begin;
             events.add(event);
         }
 
@@ -157,7 +160,15 @@ public final class XmlNatives {
                 if (attribute && c == '<') {
                     throw new Bad(i, "< inside an attribute value");
                 }
-                out.appendCodePoint(attribute && (c == '\t' || c == '\n' || c == '\r') ? ' ' : c);
+                // Line ends become \n (XML 1.0 2.11): a CR LF pair or a lone CR.
+                if (c == '\r' && i + 1 < end && source.charAt(i + 1) == '\n') {
+                    i++;
+                    continue;
+                }
+                if (c == '\r') {
+                    c = '\n';
+                }
+                out.appendCodePoint(attribute && (c == '\t' || c == '\n') ? ' ' : c);
                 i += Character.charCount(c);
             }
             return out.toString();
@@ -169,6 +180,7 @@ public final class XmlNatives {
             }
             int start = position;
             while (position < source.length()) {
+                begin = position;
                 if (at("<?")) {
                     int end = source.indexOf("?>", position + 2);
                     if (end < 0) {
@@ -216,7 +228,7 @@ public final class XmlNatives {
                         throw bad(String.format("a character U+%04X XML does not allow", c));
                     });
                     Event event = new Event(2);
-                    event.text = new StringBuilder(body);
+                    event.text = new StringBuilder(body.replace("\r\n", "\n").replace('\r', '\n'));
                     push(event);
                     position = end + 3;
                 } else if (at("<!DOCTYPE")) {
@@ -382,6 +394,14 @@ public final class XmlNatives {
         Parser parser = new Parser(origin, positive(maximumDepth, "maximum depth"), positive(maximumEvents, "maximum events"));
         try {
             parser.run();
+            // UTF-16 indices to code points, in one pass: they only grow.
+            int index = 0;
+            int points = 0;
+            for (Event event : parser.out.events) {
+                points += origin.codePointCount(index, event.start);
+                index = event.start;
+                event.start = points;
+            }
             return parser.out;
         } catch (Bad bad) {
             Events failed = new Events();
@@ -399,6 +419,10 @@ public final class XmlNatives {
 
     public static BigInteger runtime_xml__xml_events_offset(Object handle) {
         return BigInteger.valueOf(state(handle).error == null ? 0 : state(handle).offset);
+    }
+
+    public static BigInteger runtime_xml__xml_event_offset(Object handle, BigInteger index) {
+        return BigInteger.valueOf(event(handle, index, "xml_event_offset", 2).start);
     }
 
     public static BigInteger runtime_xml__xml_event_count(Object handle) {
