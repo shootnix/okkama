@@ -280,9 +280,10 @@ hidden object Http1HeadBoundary {
         confirm prefix.length() <= 3
             else throw InvalidHttpMessage.because("HTTP1 delimiter boundary width");
         let text = prefix + Latin1Decoded(chunk).string();
-        let pieces = text.split("\r\n\r\n");
-        after = if pieces.size() > 1 {
-            pieces[0].length() + 4 - prefix.length();
+        // A position, not the pieces around it (#503).
+        let found = text.find("\r\n\r\n") else -1;
+        after = if found >= 0 {
+            found + 4 - prefix.length();
         }
         else {
             -1;

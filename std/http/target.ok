@@ -257,7 +257,7 @@ object ParsedRequestTarget {
         catch e is UnrepresentableAsciiCharacter {
             throw InvalidRequestTarget.because("ASCII wire target required");
         }
-        confirm origin.split("#").size() == 1
+        confirm !origin.contains("#")
             else throw InvalidRequestTarget.because("wire target fragment prohibited");
         let parsed is RequestTarget = try {
             if origin == "*" {
@@ -269,14 +269,20 @@ object ParsedRequestTarget {
                 }
                 else {
                     if origin.slice(0, 1) == "/" {
-                        let parts = origin.split("?");
-                        let query is Maybe<string> = if parts.size() == 1 {
+                        let mark = origin.find("?") else -1;
+                        let query is Maybe<string> = if mark < 0 {
                             Maybe<string>.none;
                         }
                         else {
-                            Maybe.some(origin.slice(parts[0].length() + 1, origin.length()));
+                            Maybe.some(origin.slice(mark + 1, origin.length()));
                         };
-                        OriginTarget(path: parts[0], query: query);
+                        let path = if mark < 0 {
+                            origin;
+                        }
+                        else {
+                            origin.slice(0, mark);
+                        };
+                        OriginTarget(path: path, query: query);
                     }
                     else {
                         AbsoluteTarget(ParsedUrl(origin).parts());

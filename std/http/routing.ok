@@ -29,8 +29,8 @@ hidden object RoutedPath {
         confirm origin != ""
             && origin.length() <= 8192
             && origin.slice(0, 1) == "/"
-            && origin.split("?").size() == 1
-            && origin.split("#").size() == 1
+            && !origin.contains("?")
+            && !origin.contains("#")
             else throw InvalidRoute.because("absolute path without query/fragment required");
         let raw is @string = if origin == "/" {
             [];
@@ -61,9 +61,11 @@ hidden object RouteLiteral {
         catch e is Error {
             throw InvalidRoute.because("invalid percent/UTF8 segment");
         };
-        for Utf8Encoded(decoded).bytes() -> octet {
-            confirm octet.int() >= 32 && octet.int() != 127
-                else throw InvalidRoute.because("control in decoded segment");
+        // Character codes: a character past ASCII is no control, as none of
+        // its UTF-8 bytes was (#503).
+        for decoded.characters() -> character {
+            let code = character.code();
+            confirm code >= 32 && code != 127 else throw InvalidRoute.because("control in decoded segment");
         }
         value = decoded;
     }
@@ -135,8 +137,8 @@ object RoutePattern {
         confirm origin != ""
             && Utf8Encoded(origin).bytes().size() <= 8192
             && origin.slice(0, 1) == "/"
-            && origin.split("?").size() == 1
-            && origin.split("#").size() == 1
+            && !origin.contains("?")
+            && !origin.contains("#")
             else throw InvalidRoute.because("pattern path budget or grammar");
         let raw is @string = if origin == "/" {
             [];

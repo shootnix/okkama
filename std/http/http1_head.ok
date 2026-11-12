@@ -165,7 +165,8 @@ hidden object Http1HeadLines {
         confirm values.size() - 3 <= limits::Limits::fields else throw Http1LimitExceeded.kind("fields");
         // Every CR and LF belongs to a CRLF when there are as many of each as
         // there are lines; only then the lines need no look of their own (#113).
-        let clean = origin.split("\r").size() == values.size() && origin.split("\n").size() == values.size();
+        let stripped = origin.replace("\r\n", "");
+        let clean = !stripped.contains("\r") && !stripped.contains("\n");
         for (0..values.size() - 2) -> index {
             let line = values[index];
             confirm line.length() <= limits::Limits::line_bytes

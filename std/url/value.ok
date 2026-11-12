@@ -76,13 +76,10 @@ object UrlComponentText {
     // which characters a run may hold. Canonical text comes back as it is;
     // other text is checked once and joined from its pieces once (#503).
     string() is string {
-        let parts = origin.split("%");
-        let canonical = (0..parts.size()).reduce(true) -> clean, index {
-            clean && self.canonical(parts, index);
-        };
-        if canonical {
+        if self.canonical() {
             return origin;
         }
+        let parts = origin.split("%");
         // The offset of the '%' before each part; the first part has none.
         (0..parts.size()).reduce(-1) -> at, index {
             let part = parts[index];
@@ -123,29 +120,48 @@ object UrlComponentText {
         pieces.join("");
     }
 
-    // Whether a part is spelled canonically already: its escape in capital
-    // hex and not of an unreserved character, its run of allowed ASCII.
-    hidden canonical(parts is @string, index is int) is bool {
-        let part = parts[index];
-        let run = if index == 0 {
-            part;
-        }
-        else {
-            if part.length() < 2 {
-                return false;
+    // Whether the text is spelled canonically already, in one pass over its
+    // character codes: each escape in capital hex and not of an unreserved
+    // character, every other character allowed ASCII. The two digits after
+    // a '%' were checked with it (#503).
+    hidden canonical() is bool {
+        let codes = origin.characters();
+        let size = codes.size();
+        (0..size).reduce(true) -> clean, index {
+            if !clean {
+                false;
             }
-            let codes = part.slice(0, 2).characters();
-            let high = codes[0].code();
-            let low = codes[1].code();
-            if high >= 97 || low >= 97 || self.hex(high) < 0 || self.hex(low) < 0 {
-                return false;
+            else {
+                let code = codes[index].code();
+                if (index >= 1 && codes[index - 1].code() == 37) || (index >= 2 && codes[index - 2].code() == 37) {
+                    true;
+                }
+                else {
+                    if code == 37 {
+                        index + 2 < size && self.capital(codes[index + 1].code()) && self.capital(codes[index + 2].code())
+                            && !self.unreserved(self.hex(codes[index + 1].code()) * 16 + self.hex(codes[index + 2].code()));
+                    }
+                    else {
+                        if code >= 128 {
+                            false;
+                        }
+                        else {
+                            if self.unreserved(code) {
+                                true;
+                            }
+                            else {
+                                let text = codes[index].string();
+                                PercentEncoded(origin: text, component: component).string() == text;
+                            }
+                        }
+                    }
+                }
             }
-            if self.unreserved(self.hex(high) * 16 + self.hex(low)) {
-                return false;
-            }
-            part.slice(2, part.length());
         };
-        run == "" || PercentEncoded(origin: run, component: component).string() == run;
+    }
+
+    hidden capital(code is int) is bool {
+        (code >= 48 && code <= 57) || (code >= 65 && code <= 70);
     }
 
     // Every character of a literal run is allowed in the component.
