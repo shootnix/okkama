@@ -62,6 +62,47 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   181 → 141 µs (release builds). New native
   `runtime/json.json_parse_bytes_state`.
 
+- **`Logger("shop")` writes text to standard error at info (#181).**
+
+      let log = Logger("shop");
+      log.info("started");
+      log.debug("query", JsonField("ms", 9));
+      log.error("payment failed", failure);
+
+  `Logger(name:, destination:, level:)` for another destination or level;
+  `debug`, `info`, `warning`, `error` and `critical` take fields, and the
+  last three also the error that caused it (as the second argument: a call
+  cannot mix positional and named arguments). `log.enabled(level)` asks
+  before costly fields are built; `child("db")` is the logger of a part.
+  `NamedLogging` stays.
+
+- **`Decimal` does arithmetic (#191).** `plus`, `minus` and `times` are
+  exact; `divided(by:, scale:, rounding:)` and `rounded(scale:, rounding:)`
+  take every `math/rounding` mode; `Decimal(int)`, `rat()` and `float()`.
+  The arithmetic is Okkama on the coefficient and the exponent. Lining
+  exponents up may shift a coefficient by at most 4 096 digits
+  (`DecimalLimitExceeded`), so a far exponent in a document cannot ask for
+  millions of digits; dividing by zero is `DecimalDivisionByZero`.
+
+- **A channel receiver is walked with `for await` (#199).**
+  `Receiving.next()` answers the next value, or none once the channel is
+  closed and drained. Selecting over several receivers is #509, postponed.
+
+- **`Run` a tool and read its text (#197).**
+  `await Run("git", ["status", "--short"]).text()`: the program is found on
+  PATH and runs with this process's environment and directory, without a
+  shell; output and errors are kept up to 1 MiB each. A non-zero exit is
+  `CommandFailed.exited(code, errors)`; `completion()` takes any exit.
+
+- **`PostgresDatabase` connects by URL (#218).**
+  `PostgresDatabase("postgres://app:secret@db:5432/shop?sslmode=require")` or
+  `PostgresDatabase(url:, password:)`. The host is looked up by DNS;
+  `sslmode=disable` (the default) is plaintext, `require`, `verify-ca` and
+  `verify-full` verify the certificate against the system trust store and
+  the host, and `prefer` and `allow` are refused, since they fall back to
+  plaintext without a word. Checked against a Postgres service by name on
+  IR, Sparrow and the JVM.
+
 ### Fixed
 
 - **A server's memory grew with every request (#503).** `examples/web/hello.ok`
@@ -128,6 +169,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `1/2 (rat)`. The debug bridge now converts a rat like other values.
 
 ### Changed
+
+- **A disabled log level costs almost nothing (#180).** `LogWriting` gains
+  `enabled(name, level)`, and `NamedLogging` asks it before it builds
+  fields, reads the clock or the process id, or makes a record. A debug
+  call on a logger at info, release builds: Sparrow 1 787 → 74 ns, the IR
+  engine 10 118 → 2 088 ns. Writers of one's own implement `enabled`; a
+  writer that cannot tell answers `true`.
 
 - **Standard output is buffered (#132).** The IR engine flushed after every
   write and Sparrow after every line. Now a terminal gets each line as it
