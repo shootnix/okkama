@@ -461,6 +461,27 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   - `mail/message` takes each date token with one slice instead of writing
     a buffer byte by byte, and checks Message-ID characters by code.
   - Each change has a characterization test that passes before and after.
+- **`SecureRandom` numbers take one runtime call (#195).** Before, an
+  integer cost three runtime calls (eight bytes, then two
+  arbitrary-precision sampling steps) and a float cost two. Release builds
+  on Linux, before → after:
+
+  | operation | Sparrow | IR |
+  |---|---|---|
+  | `integer(0, 1000000)` | 1278 → 163 ns | 2190 → 604 ns |
+  | `float()` | 412 → 123 ns | 1179 → 555 ns |
+  | `bytes(16)` | 321 → 299 ns | 1109 → 1068 ns |
+
+  - New runtime natives `secure_integer` and `secure_float` sample in the
+    runtime, on all three engines.
+  - On Apple systems the bytes come from `arc4random_buf`, a user-space
+    ChaCha20 generator that the kernel seeds and reseeds. Before, each
+    request was a `getentropy` system call, about a microsecond.
+  - Elsewhere the bytes still come from `getrandom`. glibc 2.41 on Linux
+    6.11 and later serves it from the vDSO with a generator of the same
+    kind. The runtime keeps no generator state of its own.
+  - `SecureRandom.integer` accepts ranges wider than 2^64; before, it
+    never returned for them (#507).
 
 ## [0.5.4] — 2026-11-12
 
