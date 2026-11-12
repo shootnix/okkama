@@ -1,0 +1,67 @@
+module examples/web/events v1.0.0;
+
+import "web/app" take WebApplication;
+import "web/routing" take WebRoutes, Get;
+import "web/request" take WebRequest;
+import "web/reply" take EventsReply, BytesReply;
+import "http/message" take Responding;
+import "http/sse" take ServerEvent;
+import "http/client" take HttpClient;
+import "http/endpoint" take LoopbackEndpoints;
+import "async/channel" take Channel, Sending;
+import "time/duration" take Duration;
+import "io/stdout" take Stdout;
+
+// Server-sent events and bytes: /ticks streams three events from a task
+// through a channel, /pixel answers a one-byte GIF-like body. The program
+// serves on a free loopback port, reads both with the std client and drains.
+
+object Ticker {
+    Ticker() {}
+
+    async run(output is Sending<ServerEvent>) is int {
+        for [1, 2, 3] -> tick {
+            await output.send(ServerEvent("tick " + tick.string()));
+        }
+        output.close();
+        0;
+    }
+}
+
+object Feed {
+    Feed() {}
+
+    async ticks(request is WebRequest) is Responding {
+        let channel is Channel<ServerEvent> = Channel(capacity: 1);
+        spawn Ticker().run(channel.sending());
+        EventsReply(channel.receiving());
+    }
+
+    async pixel(request is WebRequest) is Responding {
+        BytesReply(bytes: [71.byte()], media_type: "image/gif");
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    let feed = Feed();
+    let routes = WebRoutes(Get(path: "/ticks", endpoint: feed.ticks), Get(path: "/pixel", endpoint: feed.pixel));
+    let server = (await WebApplication(routes).server("127.0.0.1", 0)).started();
+    let base = "http://127.0.0.1:" + server::Local::port.string();
+    let client = HttpClient(endpoints: LoopbackEndpoints());
+
+    let ticks = await client.get(base + "/ticks");
+    out.writeln("GET /ticks -> ", ticks::Head::code, " ", ticks::Head::headers.text("Content-Type"));
+    for (await ticks.text()).split("\n\n") -> event {
+        if event != "" {
+            out.writeln("  ", event);
+        }
+    }
+    let pixel = await client.get(base + "/pixel");
+    out.writeln("GET /pixel -> ", pixel::Head::code, " ", pixel::Head::headers.text("Content-Type"), " ", (await pixel.bytes()).size(), " byte");
+
+    client.close();
+    await server.drain(limit: Duration(seconds: 5));
+    out.writeln("drained");
+    0;
+}

@@ -3,7 +3,8 @@ module web/internal/reply v1.0.0;
 import "http/message" take Response;
 import "http/status" take Status, StatusCode;
 import "http/header" take Headers, Header, HeaderName;
-import "http/body" take ByteBody, EmptyBody;
+import "http/body" take ByteBody, EmptyBody, BodyOpening, UnknownBodyLength;
+import "http/media_type" take HttpMediaType, InvalidHttpMediaType;
 
 // Shared response assembly for web/reply and web/exception. A reply owns its
 // representation and framing fields; the headers a caller gives may carry any
@@ -28,7 +29,11 @@ object ReplyResponse {
             Header(name: "Content-Type", value: media),
             Header(name: "Content-Length", value: content.size().string())
         ];
-        Response(status: code, headers: ReplyFields(fixed: fixed, given: given).headers(), body: ByteBody(content));
+        Response(
+            status: code,
+            headers: ReplyFields(fixed: fixed, given: given).headers(),
+            body: ByteBody(content)
+        );
     }
 }
 
@@ -51,7 +56,77 @@ object EmptyReplyResponse {
         else {
             [Header(name: "Content-Length", value: "0")];
         };
-        Response(status: code, headers: ReplyFields(fixed: fixed, given: given).headers(), body: EmptyBody());
+        Response(
+            status: code,
+            headers: ReplyFields(fixed: fixed, given: given).headers(),
+            body: EmptyBody()
+        );
+    }
+}
+
+// The response of a reply whose body is opened as it is sent: a stream, a
+// file, events. The reply gives its own fields (Content-Type, and
+// Content-Length when it knows the length).
+object OpenedReplyResponse {
+    has code is Status;
+    has fixed is @Header;
+    has body is BodyOpening;
+    has given is Headers;
+
+    OpenedReplyResponse(status is Status, fixed is @Header, body is BodyOpening, headers is Headers) {
+        code = BodyStatus(status).status();
+        self.fixed = fixed;
+        self.body = body;
+        given = headers;
+    }
+
+    response() is Response {
+        Response(
+            status: code,
+            headers: ReplyFields(fixed: fixed, given: given).headers(),
+            body: body
+        );
+    }
+}
+
+// The Content-Type and, when the body knows it, Content-Length of a body.
+object OpenedReplyFields {
+    has media is string;
+    has body is BodyOpening;
+
+    OpenedReplyFields(media is string, body is BodyOpening) {
+        self.media = media;
+        self.body = body;
+    }
+
+    fields() is @Header {
+        let typed = Header(name: "Content-Type", value: ReplyMediaType(media).string());
+        let sized is @Header = try {
+            [typed, Header(name: "Content-Length", value: body.length().string())];
+        }
+        catch failure is UnknownBodyLength {
+            [typed];
+        };
+        sized;
+    }
+}
+
+// A media type a reply declares, checked as a media type.
+object ReplyMediaType {
+    has origin is string;
+
+    ReplyMediaType(origin is string) {
+        try {
+            HttpMediaType(origin);
+        }
+        catch failure is InvalidHttpMediaType {
+            throw InvalidReply.because("not a media type: " + origin);
+        };
+        self.origin = origin;
+    }
+
+    string() is string {
+        origin;
     }
 }
 
@@ -71,8 +146,12 @@ hidden object ReplyFields {
         let extra is @Header = (0..more.size()).map() -> index {
             let field = more.item(index);
             let lowered = field.name().lowercase();
-            confirm lowered != "content-type" && lowered != "content-length" && lowered != "transfer-encoding"
-                else throw InvalidReply.because(field.name().string() + " is owned by the reply itself");
+            confirm lowered != "content-type"
+                && lowered != "content-length"
+                && lowered != "transfer-encoding"
+                else throw InvalidReply.because(
+                    field.name().string() + " is owned by the reply itself"
+                );
             field;
         };
         Headers(entries: fixed + extra, limits: given.limits());
@@ -102,8 +181,16 @@ test "framing headers are owned by the reply" {
     test.throws(InvalidReply) {
         ReplyResponse(status: Status.ok, media: "text/plain", content: [], headers: owned).response();
     };
-    let traced = Headers(Header(name: "X-Trace", value: "a"), Header(name: "Cache-Control", value: "no-store"));
-    let response = ReplyResponse(status: Status.ok, media: "text/plain", content: [104.byte()], headers: traced).response();
+    let traced = Headers(
+        Header(name: "X-Trace", value: "a"),
+        Header(name: "Cache-Control", value: "no-store")
+    );
+    let response = ReplyResponse(
+        status: Status.ok,
+        media: "text/plain",
+        content: [104.byte()],
+        headers: traced
+    ).response();
     test.is(response::Head::headers.entries().size(), 4);
     test.is(response::Head::headers.first(HeaderName("Content-Length")), "1");
 }

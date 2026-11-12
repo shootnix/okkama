@@ -190,6 +190,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
   `examples/web/testing.ok` tests a table this way.
 
+- **Replies of bytes, streams and server-sent events (#82).**
+  `BytesReply(bytes: png, media_type: "image/png")`,
+  `StreamReply(body: opening, media_type: "text/csv")` (Content-Length when
+  the body knows it, chunks otherwise) and `EventsReply(channel.receiving())`,
+  which streams `ServerEvent`s as `text/event-stream` until the channel
+  closes. `examples/web/events.ok` streams three events to the std client.
+
 - **The server answers HTTP/1.0 (#102).** `ab` works: no Host is required,
   responses are not chunked, and keep-alive applies only when asked for.
 - **RequestJson readers share one translation of reading failures (#84).**

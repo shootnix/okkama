@@ -3940,7 +3940,9 @@ one being a 400 that names it: `request.path().int("id")`,
 `await text(limit)`. It answers
 anything `Responding`: a reply with defaults, `TextReply("hi")`, `HtmlReply(…)`,
 `JsonReply(value)`, `CreatedReply(location:, value:)`, `RedirectReply("/notes")`,
-`NoContentReply()` or `ProblemReply(status:, detail:)`, each taking `status:`
+`NoContentReply()`, `BytesReply(bytes:, media_type:)`, `StreamReply(body:, media_type:)`,
+`EventsReply(channel.receiving())` for server-sent events or
+`ProblemReply(status:, detail:)`, each taking `status:`
 and `headers:` for what differs, or a `Response` built in full. Headers are
 fields one by one: `Headers(Header(name: "Cache-Control", value: "no-store"),
 SetCookie(name: "sid", value: token), ExpiredCookie("old"))`, where a

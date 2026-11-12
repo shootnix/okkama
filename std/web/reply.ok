@@ -4,8 +4,12 @@ import "http/status" take Status, StatusCode;
 import "http/message" take Response, Responding;
 import "http/header" take Headers, Header, HeaderName;
 import "json" take Json, JsonField;
-import "encoding/utf" take Utf8Encoded;
-import "web/internal/reply" take ReplyResponse, EmptyReplyResponse, BodyStatus, InvalidReply;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "http/body" take BodyOpening, ByteBody;
+import "http/sse" take ServerEvent, EventBody, EventStreamHeaders;
+import "async/channel" take Channel, Receiving;
+import "web/internal/reply" take ReplyResponse, EmptyReplyResponse, OpenedReplyResponse,
+    OpenedReplyFields, ReplyMediaType, BodyStatus, InvalidReply;
 
 // Endpoint replies. Each one builds a std Response with the defaults of its
 // kind and takes only what differs: status: and headers:. Content-Type and
@@ -32,7 +36,12 @@ object TextReply does Responding {
     }
 
     response() is Response {
-        ReplyResponse(status: code, media: "text/plain; charset=utf-8", content: Utf8Encoded(text).bytes(), headers: given).response();
+        ReplyResponse(
+            status: code,
+            media: "text/plain; charset=utf-8",
+            content: Utf8Encoded(text).bytes(),
+            headers: given
+        ).response();
     }
 }
 
@@ -49,7 +58,12 @@ object HtmlReply does Responding {
     }
 
     response() is Response {
-        ReplyResponse(status: code, media: "text/html; charset=utf-8", content: Utf8Encoded(html).bytes(), headers: given).response();
+        ReplyResponse(
+            status: code,
+            media: "text/html; charset=utf-8",
+            content: Utf8Encoded(html).bytes(),
+            headers: given
+        ).response();
     }
 }
 
@@ -66,7 +80,12 @@ object JsonReply does Responding {
     }
 
     response() is Response {
-        ReplyResponse(status: code, media: "application/json", content: Utf8Encoded(value.string()).bytes(), headers: given).response();
+        ReplyResponse(
+            status: code,
+            media: "application/json",
+            content: Utf8Encoded(value.string()).bytes(),
+            headers: given
+        ).response();
     }
 }
 
@@ -77,7 +96,8 @@ object CreatedReply does Responding {
     has given is Headers;
 
     CreatedReply(location is string, value is Json, headers is Headers = Headers()) {
-        confirm location != "" else throw InvalidReply.because("a created reply requires a location");
+        confirm location != ""
+            else throw InvalidReply.because("a created reply requires a location");
         self.location = location;
         self.value = value;
         given = headers;
@@ -85,7 +105,12 @@ object CreatedReply does Responding {
 
     response() is Response {
         let fields = given.addition(Header(name: "Location", value: location));
-        ReplyResponse(status: Status.created, media: "application/json", content: Utf8Encoded(value.string()).bytes(), headers: fields).response();
+        ReplyResponse(
+            status: Status.created,
+            media: "application/json",
+            content: Utf8Encoded(value.string()).bytes(),
+            headers: fields
+        ).response();
     }
 }
 
@@ -96,7 +121,11 @@ object RedirectReply does Responding {
     has code is Status;
     has given is Headers;
 
-    RedirectReply(location is string, status is Status = Status.see_other, headers is Headers = Headers()) {
+    RedirectReply(
+        location is string,
+        status is Status = Status.see_other,
+        headers is Headers = Headers()
+    ) {
         let number = StatusCode(status).number();
         confirm number == 301 || number == 302 || number == 303 || number == 307 || number == 308
             else throw InvalidReply.because("redirect status must be 301, 302, 303, 307 or 308");
@@ -107,7 +136,10 @@ object RedirectReply does Responding {
     }
 
     response() is Response {
-        EmptyReplyResponse(status: code, headers: given.addition(Header(name: "Location", value: location))).response();
+        EmptyReplyResponse(
+            status: code,
+            headers: given.addition(Header(name: "Location", value: location))
+        ).response();
     }
 }
 
@@ -124,6 +156,93 @@ object NoContentReply does Responding {
     }
 }
 
+// Bytes of a media type, 200 unless told: BytesReply(bytes: png, media_type: "image/png").
+object BytesReply does Responding {
+    has bytes is @byte;
+    has media is string;
+    has code is Status;
+    has given is Headers;
+
+    BytesReply(
+        bytes is @byte,
+        media_type is string,
+        status is Status = Status.ok,
+        headers is Headers = Headers()
+    ) {
+        self.bytes = bytes;
+        media = ReplyMediaType(media_type).string();
+        code = BodyStatus(status).status();
+        given = headers;
+    }
+
+    response() is Response {
+        ReplyResponse(status: code, media: media, content: bytes, headers: given).response();
+    }
+}
+
+// A body read while it is sent, such as a generated export:
+// StreamReply(body: opening, media_type: "text/csv"). Content-Length is
+// declared when the body knows its length; otherwise HTTP/1.1 sends the body
+// in chunks.
+object StreamReply does Responding {
+    has body is BodyOpening;
+    has media is string;
+    has code is Status;
+    has given is Headers;
+
+    StreamReply(
+        body is BodyOpening,
+        media_type is string,
+        status is Status = Status.ok,
+        headers is Headers = Headers()
+    ) {
+        self.body = body;
+        media = ReplyMediaType(media_type).string();
+        code = BodyStatus(status).status();
+        given = headers;
+    }
+
+    response() is Response {
+        OpenedReplyResponse(
+            status: code,
+            fixed: OpenedReplyFields(media: media, body: body).fields(),
+            body: body,
+            headers: given
+        ).response();
+    }
+}
+
+// Server-sent events from a channel, as text/event-stream (#82):
+//
+//     let events is Channel<ServerEvent> = Channel(capacity: 16);
+//     spawn clock.ticks(events.sending());
+//     EventsReply(events.receiving())
+//
+// The stream ends when the channel closes. The reply sends Cache-Control:
+// no-cache and X-Accel-Buffering: no, so proxies pass each event on at once.
+object EventsReply does Responding {
+    has events is Receiving<ServerEvent>;
+    has given is Headers;
+
+    EventsReply(events is Receiving<ServerEvent>, headers is Headers = Headers()) {
+        self.events = events;
+        given = headers;
+    }
+
+    response() is Response {
+        let stream = EventStreamHeaders().headers().entries();
+        let fixed is @Header = (0..stream.size()).map() -> index {
+            stream.item(index);
+        };
+        OpenedReplyResponse(
+            status: Status.ok,
+            fixed: fixed,
+            body: EventBody(events),
+            headers: given
+        ).response();
+    }
+}
+
 test "a text reply declares its representation and keeps the given fields" {
     let response = TextReply(text: "Привет", headers: Headers(Header(name: "X-Trace", value: "t1"))).response();
     test.is(response::Head::status, Status.ok);
@@ -131,7 +250,10 @@ test "a text reply declares its representation and keeps the given fields" {
     test.is(response::Head::headers.first(HeaderName("Content-Type")), "text/plain; charset=utf-8");
     test.is(response.body().length().string(), "12");
     test.is(TextReply("ok").response()::Head::headers.entries().size(), 2);
-    test.is(TextReply(text: "no", status: Status.forbidden).response()::Head::status, Status.forbidden);
+    test.is(
+        TextReply(text: "no", status: Status.forbidden).response()::Head::status,
+        Status.forbidden
+    );
     test.is(NoContentReply().response()::Head::headers.entries().size(), 0);
     test.throws(InvalidReply) {
         TextReply(text: "x", status: Status.no_content);
@@ -143,13 +265,53 @@ test "redirects and created replies carry their location" {
     test.is(moved::Head::status, Status.see_other);
     test.is(moved::Head::headers.first(HeaderName("Location")), "/notes");
     test.is(moved::Head::headers.first(HeaderName("Content-Length")), "0");
-    test.is(RedirectReply(location: "/x", status: Status.permanent_redirect).response()::Head::status, Status.permanent_redirect);
+    test.is(
+        RedirectReply(location: "/x", status: Status.permanent_redirect).response()::Head::status,
+        Status.permanent_redirect
+    );
     test.throws(InvalidReply) {
         RedirectReply(location: "/x", status: Status.ok);
     };
     let created = CreatedReply(location: "/notes/7", value: Json(JsonField("id", 7))).response();
     test.is(created::Head::status, Status.created);
     test.is(created::Head::headers.first(HeaderName("Location")), "/notes/7");
-    test.is(JsonReply(Json(JsonField("a", 1))).response()::Head::headers.first(HeaderName("Content-Type")), "application/json");
-    test.is(HtmlReply("<p>hi</p>").response()::Head::headers.first(HeaderName("Content-Type")), "text/html; charset=utf-8");
+    test.is(
+        JsonReply(Json(JsonField("a", 1))).response()::Head::headers.first(
+            HeaderName("Content-Type")
+        ),
+        "application/json"
+    );
+    test.is(
+        HtmlReply("<p>hi</p>").response()::Head::headers.first(HeaderName("Content-Type")),
+        "text/html; charset=utf-8"
+    );
+}
+
+test "bytes and streams declare their media type" {
+    let png is @byte = [137.byte(), 80.byte(), 78.byte(), 71.byte()];
+    let bytes = BytesReply(bytes: png, media_type: "image/png").response();
+    test.is(bytes::Head::headers.text("Content-Type"), "image/png");
+    test.is(bytes::Head::headers.int("Content-Length"), 4);
+    test.throws(InvalidReply) {
+        BytesReply(bytes: png, media_type: "png");
+    };
+    let sized = StreamReply(body: ByteBody(png), media_type: "application/octet-stream").response();
+    test.is(sized::Head::headers.int("Content-Length"), 4);
+    let channel is Channel<ServerEvent> = Channel(capacity: 1);
+    let open = StreamReply(body: EventBody(channel.receiving()), media_type: "text/plain").response();
+    test.ok(!open::Head::headers.membership(HeaderName("Content-Length")));
+    channel.receiving().close();
+}
+
+async test "an events reply streams its channel as text/event-stream" {
+    let channel is Channel<ServerEvent> = Channel(capacity: 2);
+    let sending = channel.sending();
+    await sending.send(ServerEvent("hello"));
+    sending.close();
+    let response = EventsReply(channel.receiving()).response();
+    test.is(response::Head::headers.text("Content-Type"), "text/event-stream; charset=utf-8");
+    test.is(response::Head::headers.text("Cache-Control"), "no-cache");
+    let input = response.body().reading();
+    defer input.close();
+    test.is(Utf8Decoded(await input.bytes(1024)).string(), "data: hello\n\n");
 }

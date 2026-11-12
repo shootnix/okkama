@@ -4121,7 +4121,9 @@ endpoint: notes.one), Post(…)), Fallback(notes.missing))`. Без `Fallback` �
 `await text(limit)`. Он отвечает
 чем-то `Responding`: ответом с умолчаниями — `TextReply("hi")`, `HtmlReply(…)`,
 `JsonReply(value)`, `CreatedReply(location:, value:)`, `RedirectReply("/notes")`,
-`NoContentReply()` или `ProblemReply(status:, detail:)`, каждый берёт `status:`
+`NoContentReply()`, `BytesReply(bytes:, media_type:)`, `StreamReply(body:, media_type:)`,
+`EventsReply(channel.receiving())` для server-sent events или
+`ProblemReply(status:, detail:)`, каждый берёт `status:`
 и `headers:` для того, что отличается, — или полностью собранным `Response`.
 Заголовки — поля поштучно: `Headers(Header(name: "Cache-Control", value:
 "no-store"), SetCookie(name: "sid", value: token), ExpiredCookie("old"))`, где
