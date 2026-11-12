@@ -482,6 +482,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     kind. The runtime keeps no generator state of its own.
   - `SecureRandom.integer` accepts ranges wider than 2^64; before, it
     never returned for them (#507).
+- **`PcgRandom.integer` returns for ranges wider than 2^64 (#507).** Before,
+  it looped forever on every engine, because no 64-bit sample could pass
+  the rejection threshold.
+  - A sample takes one pair of outputs per 64-bit word that
+    `stop - start - 1` needs, the first pair most significant.
+  - A range up to 2^64 still takes one pair, so every sequence that worked
+    before is unchanged; a test pins this on all three engines.
+  - Ranges below 2^63 are sampled in 64-bit arithmetic: `integer(0, 1000000)`
+    takes Sparrow 353 → 140 ns and IR 850 → 602 ns (release builds).
 
 ## [0.5.4] — 2026-11-12
 
