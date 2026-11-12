@@ -69,6 +69,16 @@ public final class Rt {
 
     /** Отказ cleanup при уже идущем отказе становится вторичным. */
     public static Failure secondary(Failure primary, Failure cleanup) {
+        // Never its own secondary nor the same one twice: a cleanup that
+        // rethrows the failure in flight would make the graph a cycle.
+        if (cleanup == primary) {
+            return primary;
+        }
+        for (Failure known : primary.secondary) {
+            if (known == cleanup) {
+                return primary;
+            }
+        }
         primary.secondary.add(cleanup);
         return primary;
     }

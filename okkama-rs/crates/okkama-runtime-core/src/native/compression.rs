@@ -150,10 +150,8 @@ impl Compressor {
 fn gzip_header(bytes: &[u8]) -> Result<Option<usize>, Fail> {
     let magic = [0x1f, 0x8b, 8];
     for (index, expected) in magic.iter().enumerate() {
-        if let Some(byte) = bytes.get(index) {
-            if byte != expected {
-                return Err(invalid("The data is not a gzip stream"));
-            }
+        if bytes.get(index).is_some_and(|byte| byte != expected) {
+            return Err(invalid("The data is not a gzip stream"));
         }
     }
     if bytes.len() < 10 {

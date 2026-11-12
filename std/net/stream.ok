@@ -221,7 +221,12 @@ object StreamConnection does Closing {
         let empty is @Future<LockGuard> = [];
         let pending_guard = Atomic(empty);
         let taken = Event();
-        let cleanup = StreamWriteCleanup(guards: guards, writing: writing, pending: pending_guard, taken: taken);
+        let cleanup = StreamWriteCleanup(
+            guards: guards,
+            writing: writing,
+            pending: pending_guard,
+            taken: taken
+        );
         defer await cleanup.close();
         let waiting = writer_lock.guard();
         pending_guard.replace([waiting]);
@@ -253,6 +258,13 @@ object StreamConnection does Closing {
             else throw InvalidState.because("TLS requires drained TCP operations");
         tls.client(state, versions, protocols, server);
     }
+
+    // The server side of TLS over an accepted connection (#209).
+    upgrade_tls_server(versions is int, protocols is @string, certificates is @@byte, key is @byte) is tls.TlsState {
+        confirm !reader_busy.value() && writer_count.value() == 0 && !writer_closed.ready()
+            else throw InvalidState.because("TLS requires drained TCP operations");
+        tls.server(state, versions, protocols, certificates, key);
+    }
 }
 
 // Internal upgrade bridge: capture private capabilities synchronously, check
@@ -266,6 +278,10 @@ object TlsTcpOrigin {
 
     client(versions is int, protocols is @string, server is string) is tls.TlsState {
         input.tls_client(versions, protocols, server);
+    }
+
+    server(versions is int, protocols is @string, certificates is @@byte, key is @byte) is tls.TlsState {
+        input.tls_server(versions, protocols, certificates, key);
     }
 }
 
@@ -290,6 +306,10 @@ object StreamReading does AsyncReading, Closing {
 
     tls_client(versions is int, protocols is @string, server is string) is tls.TlsState {
         owner.upgrade_tls(versions, protocols, server);
+    }
+
+    tls_server(versions is int, protocols is @string, certificates is @@byte, key is @byte) is tls.TlsState {
+        owner.upgrade_tls_server(versions, protocols, certificates, key);
     }
 }
 
@@ -451,7 +471,10 @@ object StreamFailure {
 }
 
 test "connection endpoint observations preserve direction" {
-    let endpoints is ConnectionEndpoints<string> = ConnectionEndpoints(local: "local", remote: "remote");
+    let endpoints is ConnectionEndpoints<string> = ConnectionEndpoints(
+        local: "local",
+        remote: "remote"
+    );
     test.is(endpoints.local_endpoint(), "local");
     test.is(endpoints.remote_endpoint(), "remote");
 }

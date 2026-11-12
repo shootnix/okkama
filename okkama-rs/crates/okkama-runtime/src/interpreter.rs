@@ -1389,7 +1389,12 @@ fn is_runtime_cancelled(value: &Value) -> bool {
 fn thrown_errors(failure: &Rc<Failure>) -> Vec<Value> {
     let mut errors = Vec::new();
     let mut pending = vec![failure.clone()];
+    // The graph may share links or even loop: each failure is looked at once.
+    let mut seen = std::collections::HashSet::new();
     while let Some(link) = pending.pop() {
+        if !seen.insert(Rc::as_ptr(&link)) {
+            continue;
+        }
         if let FailureKind::Thrown { object, .. } = &link.kind {
             errors.push(Value::Object(object.0.clone()));
         }

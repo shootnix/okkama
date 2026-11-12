@@ -1,4 +1,5 @@
-//! `runtime/tls_transport` — перенос `TlsNatives` JVM: TLS-клиент rustls
+//! `runtime/tls_transport` — перенос `TlsNatives` JVM: TLS-клиент и (#209)
+//! TLS-сервер rustls
 //! поверх TCP-потока, отобранного у `runtime/network`. Как у JDK-провайдера,
 //! движок не проверяет цепочку пира сам (подписи рукопожатия — проверяет):
 //! `authorize` — явная проверка `verify_chain` до прикладного ввода-вывода.
@@ -11,8 +12,8 @@ use crate::failure::{Failure, Kind};
 use crate::sched;
 use crate::{Value, abi::Native};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-use rustls::{ClientConnection, DigitallySignedStruct, SignatureScheme};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName, UnixTime};
+use rustls::{ClientConnection, Connection, DigitallySignedStruct, ServerConnection, SignatureScheme};
 use std::cell::RefCell;
 use std::io::Read;
 use std::rc::Rc;
@@ -108,7 +109,7 @@ struct Truncated;
 
 /// Движок TLS, общий с рабочими потоками.
 struct Engine {
-    connection: Mutex<ClientConnection>,
+    connection: Mutex<Connection>,
     socket: Arc<Shared>,
     /// Шифротекст, полученный, но ещё не поданный движку.
     incoming: Mutex<Vec<u8>>,
@@ -124,7 +125,7 @@ struct Engine {
 
 impl Engine {
     /// Отправить накопленный шифротекст; движок освобождается до отправки.
-    fn flush(&self, mut connection: std::sync::MutexGuard<'_, ClientConnection>) -> std::io::Result<()> {
+    fn flush(&self, mut connection: std::sync::MutexGuard<'_, Connection>) -> std::io::Result<()> {
         let mut out = Vec::new();
         while connection.wants_write() {
             connection.write_tls(&mut out)?;
@@ -287,6 +288,8 @@ impl Engine {
 
 struct Tls {
     engine: Arc<Engine>,
+    /// Сервер не просит сертификат клиента: после рукопожатия пир проверен.
+    server: bool,
     negotiated: bool,
     authorized: bool,
     closing: bool,
@@ -376,7 +379,7 @@ fn client(args: &[Value]) -> Result<Value, Error> {
         return Err(abort_with("unsupported", "required TLS engine policy unavailable"));
     };
     let engine = Arc::new(Engine {
-        connection: Mutex::new(connection),
+        connection: Mutex::new(Connection::Client(connection)),
         socket,
         incoming: Mutex::new(early),
         plain: Mutex::new(Vec::new()),
@@ -387,6 +390,83 @@ fn client(args: &[Value]) -> Result<Value, Error> {
     });
     Ok(new_handle(Rc::new(RefCell::new(Tls {
         engine,
+        server: false,
+        negotiated: false,
+        authorized: false,
+        closing: false,
+        closed: false,
+        handshake: None,
+        reading: None,
+        writing: None,
+        shutting: None,
+        peer: Vec::new(),
+    }))))
+}
+
+/// TLS-сервер поверх принятого TCP-потока (#209): цепочка сертификатов (DER,
+/// свой первым), ключ PKCS #8 (DER), версии и ALPN — как у клиента. Сертификат
+/// клиента не запрашивается.
+fn server(args: &[Value]) -> Result<Value, Error> {
+    let operation = symbol("server", 5);
+    let (socket, early) = take_tcp(&args[0], &operation).map_err(as_error)?;
+    let choice = int(&args[1])?.to_i64().unwrap_or(0);
+    let abort_with = |code: &str, message: &str| {
+        socket.close();
+        as_error(fail(code, &operation, message))
+    };
+    if !(1..=3).contains(&choice) {
+        return Err(abort_with("invalid_input", "invalid TLS version selection"));
+    }
+    let protocols = items(&args[2])?;
+    let mut valid = protocols.len() <= 16;
+    let mut names: Vec<String> = Vec::new();
+    for protocol in protocols.iter() {
+        let name = protocol.as_string()?.to_string();
+        let units = name.encode_utf16().count();
+        if name.is_empty() || units > 255 || name.chars().any(|c| u32::from(c) >= 256) || names.contains(&name) {
+            valid = false;
+        }
+        names.push(name);
+    }
+    let sources = items(&args[3])?;
+    let mut chain: Vec<CertificateDer<'static>> = Vec::new();
+    for source in sources.iter() {
+        chain.push(CertificateDer::from(bytes(source)?));
+    }
+    let key = bytes(&args[4])?;
+    if !valid || chain.is_empty() || chain.len() > 16 || key.is_empty() {
+        return Err(abort_with("invalid_input", "invalid TLS server configuration"));
+    }
+    let provider = Arc::new(provider());
+    let versions: &[&'static rustls::SupportedProtocolVersion] = match choice {
+        1 => &[&rustls::version::TLS12],
+        2 => &[&rustls::version::TLS13],
+        _ => &[&rustls::version::TLS13, &rustls::version::TLS12],
+    };
+    let Ok(builder) = rustls::ServerConfig::builder_with_provider(provider).with_protocol_versions(versions) else {
+        return Err(abort_with("unsupported", "required TLS engine policy unavailable"));
+    };
+    let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key));
+    let Ok(mut config) = builder.with_no_client_auth().with_single_cert(chain, key) else {
+        return Err(abort_with("invalid_input", "invalid TLS server identity"));
+    };
+    config.alpn_protocols = names.iter().map(|name| name.chars().map(|c| c as u8).collect()).collect();
+    let Ok(connection) = ServerConnection::new(Arc::new(config)) else {
+        return Err(abort_with("unsupported", "required TLS engine policy unavailable"));
+    };
+    let engine = Arc::new(Engine {
+        connection: Mutex::new(Connection::Server(connection)),
+        socket,
+        incoming: Mutex::new(early),
+        plain: Mutex::new(Vec::new()),
+        sending: Mutex::new(()),
+        reader: Mutex::new(()),
+        writer: Mutex::new(()),
+        eof: AtomicBool::new(false),
+    });
+    Ok(new_handle(Rc::new(RefCell::new(Tls {
+        engine,
+        server: true,
         negotiated: false,
         authorized: false,
         closing: false,
@@ -431,14 +511,19 @@ fn handshake(value: &Value) -> Value {
         },
         move |outcome: std::io::Result<()>| match outcome {
             Ok(()) => {
-                delivered.borrow_mut().negotiated = true;
+                let mut done = delivered.borrow_mut();
+                done.negotiated = true;
+                if done.server {
+                    done.authorized = true;
+                }
+                drop(done);
                 sched::settle(&target, Ok(Value::Bool(true)));
             }
             Err(_) => {
                 let failure = if delivered.borrow().closed {
                     fail("already_closed", &operation, "TLS handshake readiness closed")
                 } else {
-                    fail("invalid_data", &operation, "TLS client handshake failed")
+                    fail("invalid_data", &operation, "TLS handshake failed")
                 };
                 sched::settle(&target, Err(failure));
             }
@@ -718,6 +803,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
     let name = native.name();
     match name {
         "client" => client(args),
+        "server" => server(args),
         "close" => {
             let state = handle::<TlsRef>(&args[0])?.clone();
             abort(&mut state.borrow_mut());

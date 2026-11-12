@@ -40,6 +40,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   of 1 350. `sparrow --stats` prints a census of the objects alive after the
   last collection, by type.
 
+- **A failure could become its own secondary failure (IR, JVM).** A cleanup
+  that rethrew the failure in flight, as when a task group is awaited while
+  unwinding, linked the failure to itself. Matching a `catch` then walked
+  the failure graph without end: the IR engine spun at 100% CPU and the JVM
+  overflowed its stack. It showed with HTTP/2 over TLS when a client left.
+  A failure is no longer its own or a repeated secondary, and the walks
+  remember what they have seen, as Sparrow's did.
+
 ### Changed
 
 - **The HTTP server is faster than Python's `http.server` (#75, #76, #81,
@@ -293,6 +301,23 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     `Accept-Encoding` gets the bytes as sent.
   - New module `http/body_coding`: `GzipEncodedBody(origin:)` and
     `GzipDecodedBody(origin:, limit:)`, bodies coded as they are read.
+
+- **HTTPS servers (#209).**
+  - `net/tls` has `TlsIdentity(certificates:, key:)`: PEM, the server's own
+    certificate first, a PKCS #8 key. It also has
+    `TlsServerPolicy(identity:, versions:)` and `TlsServerHandshake`.
+  - `HttpServer(listener:, handling:, tls: TlsServerPolicy(identity:
+    identity))` speaks HTTPS and offers the protocols of its policy by ALPN,
+    h2 first.
+  - The runtimes do the server side as they do the client: rustls in the IR
+    engine and Sparrow, an `SSLEngine` with a key manager on the JVM.
+  - No client certificate is asked for; `TlsDetails.peer()` of such a
+    connection says the peer presented none.
+- **The server frames every response.** A response of known length without a
+  Content-Length gets one, and one of unknown length (`StreamReply`,
+  `EventsReply`, compressed streams) is chunked for an HTTP/1.1 client.
+  Before, both were sent to the end of the connection, which closed after
+  each. A TLS connection now ends with close_notify.
 
 - **The server answers HTTP/1.0 (#102).** `ab` works: no Host is required,
   responses are not chunked, and keep-alive applies only when asked for.

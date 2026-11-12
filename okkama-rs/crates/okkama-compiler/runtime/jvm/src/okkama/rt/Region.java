@@ -311,13 +311,23 @@ public final class Region {
         return failure;
     }
 
+    /** Each failure of the graph once: it may share links or even loop. */
     private static void collectErrors(Failure failure, List<Object> out) {
-        for (Failure link = failure; link != null; link = link.cause) {
-            if (link.error != null) {
-                out.add(link.error);
-            }
-            for (Failure secondary : link.secondary) {
-                collectErrors(secondary, out);
+        IdentityHashMap<Failure, Boolean> seen = new IdentityHashMap<Failure, Boolean>();
+        ArrayList<Failure> pending = new ArrayList<Failure>();
+        pending.add(failure);
+        while (!pending.isEmpty()) {
+            Failure start = pending.remove(pending.size() - 1);
+            for (Failure link = start; link != null; link = link.cause) {
+                if (seen.put(link, Boolean.TRUE) != null) {
+                    break;
+                }
+                if (link.error != null) {
+                    out.add(link.error);
+                }
+                for (int index = link.secondary.size() - 1; index >= 0; index--) {
+                    pending.add(link.secondary.get(index));
+                }
             }
         }
     }
@@ -371,11 +381,11 @@ public final class Region {
                 }
             } catch (Failure failure) {
                 if (active != null) {
-                    active.secondary.add(failure);
+                    Rt.secondary(active, failure);
                 } else if (primary == null) {
                     primary = failure;
                 } else {
-                    primary.secondary.add(failure);
+                    Rt.secondary(primary, failure);
                 }
             }
         }

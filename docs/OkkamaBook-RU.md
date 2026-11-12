@@ -4103,7 +4103,9 @@ SqliteMemory().connection()` открывает базу. `await db.execution(sq
 `ResponseHandling(Response(status:, content: TextBody(text: "hi")))`, что
 задаёт тело и его Content-Type, или через
 `WebSocketHandlingResult(origin: WebSocketUpgrade(…), application:)`, чтобы
-перейти на WebSocket. `HttpServer(listener:, handling:)` обслуживает через
+перейти на WebSocket. `HttpServer(listener:, handling:, tls: TlsServerPolicy(identity: TlsIdentity(certificates:, key:)))`
+говорит по HTTPS и предлагает h2 и HTTP/1.1 через ALPN, как разрешает его политика.
+`HttpServer(listener:, handling:)` обслуживает через
 `serve()` с `ServerPolicy()` и системными часами, если не заданы `policy:` и
 `clock:`, а `await server.drain(limit:)` перестаёт принимать соединения, даёт
 закончить начатые запросы и закрывает сервер. WebSocket-серверу нужен ещё

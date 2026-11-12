@@ -6,6 +6,17 @@ native object TlsState;
 
 native client(origin is SocketState, versions is int, protocols is @string, server is string) is TlsState;
 
+// A TLS server over an accepted connection (#209): the certificate chain (DER,
+// the server's own first) and its PKCS #8 private key (DER); no client
+// certificate is asked for.
+native server(
+    origin is SocketState,
+    versions is int,
+    protocols is @string,
+    certificates is @@byte,
+    key is @byte
+) is TlsState;
+
 native close(origin is TlsState) is bool;
 
 native closed(origin is TlsState) is bool;

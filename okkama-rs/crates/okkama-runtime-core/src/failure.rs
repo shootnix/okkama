@@ -84,8 +84,19 @@ impl Failure {
     }
 
     /// `Rt.secondary`: отказ cleanup при уже идущем отказе — вторичный.
+    ///
+    /// A failure is never its own secondary, nor twice the same one: a cleanup
+    /// that rethrows the failure in flight (a group awaited during unwinding)
+    /// would make the graph a cycle, and walks over it would not end.
     pub fn with_secondary(self: &Rc<Self>, cleanup: Rc<Self>) -> Rc<Self> {
-        self.secondary.borrow_mut().push(cleanup);
+        if Rc::ptr_eq(self, &cleanup) {
+            return self.clone();
+        }
+        let mut secondary = self.secondary.borrow_mut();
+        if !secondary.iter().any(|known| Rc::ptr_eq(known, &cleanup)) {
+            secondary.push(cleanup);
+        }
+        drop(secondary);
         self.clone()
     }
 

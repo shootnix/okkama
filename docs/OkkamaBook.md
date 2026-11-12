@@ -3922,7 +3922,9 @@ A `Handling` object answers `handling(request, context)` with
 `ResponseHandling(Response(status:, content: TextBody(text: "hi")))`, which
 sets the body and its Content-Type, or with
 `WebSocketHandlingResult(origin: WebSocketUpgrade(…), application:)` to switch
-to WebSocket. `HttpServer(listener:, handling:)` serves with `serve()` under
+to WebSocket. `HttpServer(listener:, handling:, tls: TlsServerPolicy(identity: TlsIdentity(certificates:, key:)))`
+speaks HTTPS, offering h2 and HTTP/1.1 by ALPN as its policy allows.
+`HttpServer(listener:, handling:)` serves with `serve()` under
 `ServerPolicy()` and the system clock unless `policy:` and `clock:` are given,
 and `await server.drain(limit:)` stops accepting, lets requests in flight
 finish and closes. A WebSocket server also takes `url:`, its own URL, to check

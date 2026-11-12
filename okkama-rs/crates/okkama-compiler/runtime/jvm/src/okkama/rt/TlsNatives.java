@@ -15,6 +15,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import javax.net.ssl.SNIHostName;
 import javax.net.ssl.SNIServerName;
+import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLEngineResult;
@@ -47,6 +48,8 @@ public final class TlsNatives {
         /** Открытый текст, прочитанный без ожидающего {@code read}. */
         final ByteArrayOutputStream plain = new ByteArrayOutputStream();
         final Object sending = new Object();
+        /** Сервер не просит сертификат клиента: после рукопожатия пир проверен. */
+        boolean server;
         boolean negotiated;
         boolean authorized;
         boolean closing;
@@ -167,6 +170,112 @@ public final class TlsNatives {
         } catch (Exception error) {
             abort(state);
             throw failure("unsupported", operation, "required TLS engine policy unavailable");
+        }
+        return state;
+    }
+
+    // ---- сервер (#209) ----
+
+    /**
+     * TLS-сервер поверх принятого TCP-потока: цепочка сертификатов (DER, свой
+     * первым) и ключ PKCS #8 (DER); сертификат клиента не запрашивается.
+     */
+    public static Object runtime_tls_transport__server(Object handle, BigInteger versions, List<?> protocols,
+            List<?> certificates, List<?> key) {
+        String operation = symbol("server", 5);
+        NetNatives.Stream source = NetNatives.stream(handle, operation);
+        if (source.family != 1 && source.family != 2) {
+            throw failure("invalid_input", operation, "TLS requires a managed TCP stream");
+        }
+        if (source.inputClosed || source.outputClosed || source.eof) {
+            throw failure("already_closed", operation, "TLS requires both open TCP halves");
+        }
+        if (!source.channel.isConnected()) {
+            throw failure("invalid_input", operation, "TLS requires a connected TCP stream");
+        }
+        if (source.reading != null || source.writing != null || source.reader != null) {
+            throw failure("resource_exhausted", operation, "TLS requires drained TCP operations");
+        }
+        source.closed = true;
+        Tls state = new Tls();
+        state.server = true;
+        state.channel = source.channel;
+        state.reader = thread("okkama-tls-read");
+        state.writer = thread("okkama-tls-write");
+        byte[] early = source.pending != null ? source.pending : new byte[0];
+        source.pending = null;
+        state.netIn = ByteBuffer.allocate(Math.max(early.length, 1 << 17));
+        state.netIn.put(early);
+        state.netIn.flip();
+        int choice = versions.bitLength() > 31 ? 0 : versions.intValue();
+        if (choice != 1 && choice != 2 && choice != 3) {
+            abort(state);
+            throw failure("invalid_input", operation, "invalid TLS version selection");
+        }
+        ArrayList<String> names = new ArrayList<String>();
+        boolean valid = protocols.size() <= 16 && !certificates.isEmpty() && certificates.size() <= 16 && !key.isEmpty();
+        for (Object protocol : protocols) {
+            String name = (String) protocol;
+            boolean latin = true;
+            for (int index = 0; index < name.length(); index++) {
+                latin &= name.charAt(index) < 256;
+            }
+            if (name.isEmpty() || name.length() > 255 || !latin || names.contains(name)) {
+                valid = false;
+            }
+            names.add(name);
+        }
+        if (!valid) {
+            abort(state);
+            throw failure("invalid_input", operation, "invalid TLS server configuration");
+        }
+        java.security.PrivateKey privateKey = null;
+        X509Certificate[] chain = new X509Certificate[certificates.size()];
+        try {
+            java.security.cert.CertificateFactory factory = java.security.cert.CertificateFactory.getInstance("X.509");
+            for (int index = 0; index < chain.length; index++) {
+                byte[] der = Natives.toBytes((List<?>) certificates.get(index));
+                chain[index] = (X509Certificate) factory.generateCertificate(new java.io.ByteArrayInputStream(der));
+            }
+            java.security.spec.PKCS8EncodedKeySpec spec = new java.security.spec.PKCS8EncodedKeySpec(Natives.toBytes(key));
+            for (String algorithm : new String[] {"EC", "RSA", "Ed25519", "Ed448", "RSASSA-PSS"}) {
+                try {
+                    privateKey = java.security.KeyFactory.getInstance(algorithm).generatePrivate(spec);
+                    break;
+                } catch (Exception wrong) {
+                    privateKey = null;
+                }
+            }
+        } catch (Exception error) {
+            privateKey = null;
+        }
+        if (privateKey == null) {
+            abort(state);
+            throw failure("invalid_input", operation, "invalid TLS server identity");
+        }
+        try {
+            char[] password = "okkama".toCharArray();
+            java.security.KeyStore store = java.security.KeyStore.getInstance("PKCS12");
+            store.load(null, null);
+            store.setKeyEntry("server", privateKey, password, chain);
+            KeyManagerFactory keys = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            keys.init(store, password);
+            SSLContext context = SSLContext.getInstance("TLS");
+            context.init(keys.getKeyManagers(), null, null);
+            SSLEngine engine = context.createSSLEngine();
+            engine.setUseClientMode(false);
+            engine.setNeedClientAuth(false);
+            engine.setEnabledProtocols(choice == 1 ? new String[] {"TLSv1.2"}
+                : choice == 2 ? new String[] {"TLSv1.3"} : new String[] {"TLSv1.3", "TLSv1.2"});
+            SSLParameters parameters = engine.getSSLParameters();
+            if (!names.isEmpty()) {
+                parameters.setApplicationProtocols(names.toArray(new String[0]));
+            }
+            engine.setSSLParameters(parameters);
+            state.engine = engine;
+        } catch (Exception error) {
+            abort(state);
+            throw failure("invalid_input", operation, "invalid TLS server identity");
         }
         return state;
     }
@@ -341,10 +450,13 @@ public final class TlsNatives {
             public void deliver(Object value, Throwable error) {
                 if (error != null) {
                     Scheduler.settle(promise, null, state.closed ? failure("already_closed", operation,
-                        "TLS handshake readiness closed") : failure("invalid_data", operation, "TLS client handshake failed"));
+                        "TLS handshake readiness closed") : failure("invalid_data", operation, "TLS handshake failed"));
                     return;
                 }
                 state.negotiated = true;
+                if (state.server) {
+                    state.authorized = true;
+                }
                 Scheduler.settle(promise, Boolean.TRUE, null);
             }
         });
@@ -678,7 +790,8 @@ public final class TlsNatives {
     }
 
     public static List<Object> runtime_tls_transport__peer(Object handle) {
-        return new ArrayList<Object>(verified(handle, symbol("peer", 1)).peer);
+        List<Object> peer = verified(handle, symbol("peer", 1)).peer;
+        return peer == null ? new ArrayList<Object>() : new ArrayList<Object>(peer);
     }
 
     public static String runtime_tls_transport__version(Object handle) {
