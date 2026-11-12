@@ -1,6 +1,7 @@
 module digest/shake v1.0.0;
 
 import "digest/state" take Digesting;
+import "encoding/utf" take Utf8Encoded;
 import "digest/host" take HostDigest;
 import "encoding/hex" take HexEncoded;
 
@@ -23,12 +24,29 @@ object Shake128 does Digesting {
         digest = HostDigest(algorithm: "shake128", key: [], width: length).appended(origin);
     }
 
+    // Text, as UTF-8.
+    Shake128(length is int, text is string) {
+        confirm length >= 1 && length <= 1048576 else throw InvalidShakeLength.length(length);
+        digest = HostDigest(algorithm: "shake128", key: [], width: length).appended(Utf8Encoded(text).bytes());
+    }
+
     bytes() is @byte {
         digest.bytes();
     }
 
+    // The digest as lowercase hex.
+    hex() is string {
+        HexEncoded(self.bytes()).string();
+    }
+
     state(origin is @byte) is ^Shake128 {
         let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+
+    // Text, as UTF-8: Sha256().state("hello ").state("world").
+    state(text is string) is ^Shake128 {
+        let continued = digest.appended(Utf8Encoded(text).bytes());
         ^digest = continued;
     }
 }
@@ -46,12 +64,29 @@ object Shake256 does Digesting {
         digest = HostDigest(algorithm: "shake256", key: [], width: length).appended(origin);
     }
 
+    // Text, as UTF-8.
+    Shake256(length is int, text is string) {
+        confirm length >= 1 && length <= 1048576 else throw InvalidShakeLength.length(length);
+        digest = HostDigest(algorithm: "shake256", key: [], width: length).appended(Utf8Encoded(text).bytes());
+    }
+
     bytes() is @byte {
         digest.bytes();
     }
 
+    // The digest as lowercase hex.
+    hex() is string {
+        HexEncoded(self.bytes()).string();
+    }
+
     state(origin is @byte) is ^Shake256 {
         let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+
+    // Text, as UTF-8: Sha256().state("hello ").state("world").
+    state(text is string) is ^Shake256 {
+        let continued = digest.appended(Utf8Encoded(text).bytes());
         ^digest = continued;
     }
 }

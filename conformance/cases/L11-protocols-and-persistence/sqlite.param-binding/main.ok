@@ -49,7 +49,7 @@ async main() is int {
     c=c.ok("binary exact",row.bytes("data")==@byte(0.byte(),255.byte()));
     let prepared=await connection.prepared("SELECT ? AS id, ? AS name, ? AS nick");
     defer prepared.close();
-    let rows=await prepared.rows([Param(8),Param(""),Param(Maybe<string>.none)]);
+    let rows=await prepared.rows(Param(8),Param(""),Param(Maybe<string>.none));
     defer rows.close();
     let prepared_row=await rows.row();
     c=c.ok("prepared int",prepared_row.int("id")==8);

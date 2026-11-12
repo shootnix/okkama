@@ -38,6 +38,8 @@ object ProbeDb does DbExecuting {
     async execution(statement is Statement) is Execution { Execution(); }
     async execution(sql is string, values is Sequencing<DbValue>) is Execution { Execution(); }
     query(sql is string, values is Sequencing<DbValue>) is DbQuery { Query(origin: self, statement: Statement(text: sql, values: values)); }
+    async execution(sql is string, values is ...DbValue) is Execution { Execution(); }
+    query(sql is string, values is ...DbValue) is DbQuery { let listed is @DbValue = values...; Query(origin: self, statement: Statement(text: sql, values: listed)); }
 }
 
 async main() is int {

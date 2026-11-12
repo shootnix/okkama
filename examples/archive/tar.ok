@@ -6,7 +6,6 @@ import "archive/metadata" take ArchiveMetadata, ArchiveModificationFromEpoch;
 import "archive/path" take ArchivePath, UnsafeArchivePath;
 import "archive/tar" take ParsedTar, TarArchive;
 import "collections/list" take EmptyList, List;
-import "encoding/utf" take Utf8Encoded;
 import "io/stdout" take Stdout;
 
 // Build a TAR archive in memory, read it back within limits, and see that
@@ -24,7 +23,7 @@ main() is int {
         .prefix(ArchiveFile(
             path: ArchivePath("docs/readme.txt"),
             metadata: stamp,
-            data: Utf8Encoded("Read me first.\n").bytes(),
+            text: "Read me first.\n",
         ))
         .prefix(ArchiveDirectory(path: ArchivePath("docs"), metadata: stamp));
     let bytes = TarArchive(entries).bytes();

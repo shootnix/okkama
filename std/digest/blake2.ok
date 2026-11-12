@@ -1,6 +1,7 @@
 module digest/blake2 v1.0.0;
 
 import "digest/state" take Digesting;
+import "encoding/utf" take Utf8Encoded;
 import "digest/host" take HostDigest;
 import "crypto/secret" take SecretBytes;
 import "encoding/hex" take HexEncoded;
@@ -37,12 +38,35 @@ object Blake2b does Digesting {
         digest = HostDigest(algorithm: "blake2b", key: [], width: length).appended(origin);
     }
 
+    // Text, as UTF-8.
+    Blake2b(length is int, text is string) {
+        confirm length == 16
+            || length == 20
+            || length == 28
+            || length == 32
+            || length == 48
+            || length == 64
+            else throw InvalidBlake2Length.length(length);
+        digest = HostDigest(algorithm: "blake2b", key: [], width: length).appended(Utf8Encoded(text).bytes());
+    }
+
     bytes() is @byte {
         digest.bytes();
     }
 
+    // The digest as lowercase hex.
+    hex() is string {
+        HexEncoded(self.bytes()).string();
+    }
+
     state(origin is @byte) is ^Blake2b {
         let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+
+    // Text, as UTF-8: Sha256().state("hello ").state("world").
+    state(text is string) is ^Blake2b {
+        let continued = digest.appended(Utf8Encoded(text).bytes());
         ^digest = continued;
     }
 }
@@ -62,12 +86,30 @@ object Blake2s does Digesting {
         digest = HostDigest(algorithm: "blake2s", key: [], width: length).appended(origin);
     }
 
+    // Text, as UTF-8.
+    Blake2s(length is int, text is string) {
+        confirm length == 16 || length == 20 || length == 28 || length == 32
+            else throw InvalidBlake2Length.length(length);
+        digest = HostDigest(algorithm: "blake2s", key: [], width: length).appended(Utf8Encoded(text).bytes());
+    }
+
     bytes() is @byte {
         digest.bytes();
     }
 
+    // The digest as lowercase hex.
+    hex() is string {
+        HexEncoded(self.bytes()).string();
+    }
+
     state(origin is @byte) is ^Blake2s {
         let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+
+    // Text, as UTF-8: Sha256().state("hello ").state("world").
+    state(text is string) is ^Blake2s {
+        let continued = digest.appended(Utf8Encoded(text).bytes());
         ^digest = continued;
     }
 }
@@ -83,12 +125,28 @@ object Blake2bMac does Digesting {
         digest = HostDigest(algorithm: "blake2b-mac", key: key.export_bytes(), width: 0).appended(origin);
     }
 
+    // Text, as UTF-8.
+    Blake2bMac(key is SecretBytes, text is string) {
+        digest = HostDigest(algorithm: "blake2b-mac", key: key.export_bytes(), width: 0).appended(Utf8Encoded(text).bytes());
+    }
+
     bytes() is @byte {
         digest.bytes();
     }
 
+    // The digest as lowercase hex.
+    hex() is string {
+        HexEncoded(self.bytes()).string();
+    }
+
     state(origin is @byte) is ^Blake2bMac {
         let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+
+    // Text, as UTF-8: Sha256().state("hello ").state("world").
+    state(text is string) is ^Blake2bMac {
+        let continued = digest.appended(Utf8Encoded(text).bytes());
         ^digest = continued;
     }
 }
@@ -104,12 +162,28 @@ object Blake2sMac does Digesting {
         digest = HostDigest(algorithm: "blake2s-mac", key: key.export_bytes(), width: 0).appended(origin);
     }
 
+    // Text, as UTF-8.
+    Blake2sMac(key is SecretBytes, text is string) {
+        digest = HostDigest(algorithm: "blake2s-mac", key: key.export_bytes(), width: 0).appended(Utf8Encoded(text).bytes());
+    }
+
     bytes() is @byte {
         digest.bytes();
     }
 
+    // The digest as lowercase hex.
+    hex() is string {
+        HexEncoded(self.bytes()).string();
+    }
+
     state(origin is @byte) is ^Blake2sMac {
         let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+
+    // Text, as UTF-8: Sha256().state("hello ").state("world").
+    state(text is string) is ^Blake2sMac {
+        let continued = digest.appended(Utf8Encoded(text).bytes());
         ^digest = continued;
     }
 }

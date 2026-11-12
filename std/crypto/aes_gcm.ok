@@ -1,6 +1,7 @@
 module crypto/aes_gcm v1.0.0;
 
 import "crypto/aead" take Sealing;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "crypto/secret" take SecretBytes;
 import "crypto/error" take HostOperation, InvalidCryptoInput, AuthenticationFailed;
 import "encoding/hex" take HexEncoded;
@@ -40,6 +41,20 @@ object AesGcm does Sealing {
 
     opened(nonce is @byte, aad is @byte, sealed is @byte) is @byte {
         HostOperation(operation: "aead-open:" + self.algorithm(), arguments: [key.export_bytes(), nonce, aad, sealed]).bytes();
+    }
+
+    // Text, as UTF-8: cipher.sealed(nonce, "record 7", "balance: 42").
+    sealed(nonce is @byte, aad is string, text is string) is @byte {
+        self.sealed(nonce, Utf8Encoded(aad).bytes(), Utf8Encoded(text).bytes());
+    }
+
+    opened(nonce is @byte, aad is string, sealed is @byte) is @byte {
+        self.opened(nonce, Utf8Encoded(aad).bytes(), sealed);
+    }
+
+    // The plaintext as UTF-8 text.
+    opened_text(nonce is @byte, aad is string, sealed is @byte) is string {
+        Utf8Decoded(self.opened(nonce, Utf8Encoded(aad).bytes(), sealed)).string();
     }
 }
 

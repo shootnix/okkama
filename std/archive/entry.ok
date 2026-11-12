@@ -1,6 +1,7 @@
 module archive/entry v1.0.0;
 
 import "archive/path" take ArchivePath;
+import "encoding/utf" take Utf8Encoded;
 import "archive/metadata" take ArchiveMetadata, ArchiveModificationFromEpoch;
 
 // Immutable archive member values, with already-bound paths and metadata.
@@ -70,6 +71,13 @@ object ArchiveFile does ArchiveEntry {
         origin = path;
         attributes = metadata;
         content = data;
+    }
+
+    // Text content, as UTF-8: ArchiveFile(path:, metadata:, text: "Read me first.\n").
+    ArchiveFile(path is ArchivePath, metadata is ArchiveMetadata, text is string) {
+        origin = path;
+        attributes = metadata;
+        content = Utf8Encoded(text).bytes();
     }
 
     path() is ArchivePath {
@@ -305,4 +313,10 @@ test "archive devices reject contradictory kind and negative numbers" {
     catch error is InvalidArchiveDevice {
         true;
     });
+}
+
+test "a file entry takes text content" {
+    let stamp = ArchiveMetadata(modified: ArchiveModificationFromEpoch(0.rat()).local_date_time(), comment: "");
+    let file = ArchiveFile(path: ArchivePath("a.txt"), metadata: stamp, text: "hé");
+    test.is(file.data(), [104.byte(), 195.byte(), 169.byte()]);
 }

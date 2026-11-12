@@ -1,6 +1,7 @@
 module io/buffer v1.0.0;
 
 import "io/stream" take ByteSource, Reading, Writing, Closing, IncompleteWrite, InvalidReadLimit;
+import "encoding/utf" take Utf8Encoded;
 import "size" take Sizing;
 import "runtime/buffer" take BufferState, buffer_state_create, buffer_state_read,
     buffer_state_append, buffer_state_bytes, buffer_state_size, buffer_state_closed,
@@ -33,6 +34,11 @@ object ByteBuffer {
 
     ByteBuffer(initial is @byte) {
         state = buffer_state_create(initial);
+    }
+
+    // Text to start with, as UTF-8: ByteBuffer("id,total\r\n").reading().
+    ByteBuffer(text is string) {
+        state = buffer_state_create(Utf8Encoded(text).bytes());
     }
 
     reading() is Reading {

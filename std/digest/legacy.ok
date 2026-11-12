@@ -1,6 +1,8 @@
 module digest/legacy v1.0.0;
 
 import "digest/state" take Digesting;
+import "encoding/utf" take Utf8Encoded;
+import "encoding/hex" take HexEncoded;
 import "digest/blocks" take DigestBlocks64, DigestCompression64, InvalidDigestBlock;
 
 // MD5 (RFC 1321) and SHA-1 (RFC 3174), for legacy interoperability only.
@@ -32,12 +34,28 @@ object Md5 does Digesting {
         self.origin = DigestBlocks64(compression: Md5Compression(), origin: origin, little_endian: true);
     }
 
+    // Text, as UTF-8.
+    Md5(text is string) {
+        self.origin = DigestBlocks64(compression: Md5Compression(), origin: Utf8Encoded(text).bytes(), little_endian: true);
+    }
+
     bytes() is @byte {
         origin.bytes();
     }
 
+    // The digest as lowercase hex.
+    hex() is string {
+        HexEncoded(self.bytes()).string();
+    }
+
     state(origin is @byte) is ^Md5 {
         let continued = self.origin.state(origin);
+        ^origin = continued;
+    }
+
+    // Text, as UTF-8: Sha256().state("hello ").state("world").
+    state(text is string) is ^Md5 {
+        let continued = self.origin.state(Utf8Encoded(text).bytes());
         ^origin = continued;
     }
 }
@@ -53,12 +71,28 @@ object Sha1 does Digesting {
         self.origin = DigestBlocks64(compression: Sha1Compression(), origin: origin, little_endian: false);
     }
 
+    // Text, as UTF-8.
+    Sha1(text is string) {
+        self.origin = DigestBlocks64(compression: Sha1Compression(), origin: Utf8Encoded(text).bytes(), little_endian: false);
+    }
+
     bytes() is @byte {
         origin.bytes();
     }
 
+    // The digest as lowercase hex.
+    hex() is string {
+        HexEncoded(self.bytes()).string();
+    }
+
     state(origin is @byte) is ^Sha1 {
         let continued = self.origin.state(origin);
+        ^origin = continued;
+    }
+
+    // Text, as UTF-8: Sha256().state("hello ").state("world").
+    state(text is string) is ^Sha1 {
+        let continued = self.origin.state(Utf8Encoded(text).bytes());
         ^origin = continued;
     }
 }
