@@ -7,7 +7,7 @@ import "http/request_context" take HttpRequestContext;
 import "http/message" take Response, InvalidHttpMessage, Request;
 import "http/status" take Status, StatusCode;
 import "http/method" take Method, MethodName;
-import "http/header" take Headers, Header, HeaderName, HttpAsciiLowercase, ReplacedHeader;
+import "http/header" take Headers, Header, HeaderName, HttpAsciiLowercase, ReplacedHeader, HeadersWithout;
 import "http/version" take HttpVersion, UnsupportedHttpVersion;
 import "http/exchange" take ExchangeDetails, ClientResponse;
 import "http/http1_head" take Http1RequestHead, Http1ResponseHead, Http1LimitExceeded;
@@ -616,8 +616,9 @@ hidden object HttpServerPeer {
             let bounded = deadline.outcome();
             let received = await bounded;
             let head = received.head();
-            confirm head::Head::version == HttpVersion.http_1_1
-                else throw BadRequest.because("HTTP1.1 request required");
+            // HTTP/1.0 is served too: ab, health checks and old proxies (#102).
+            confirm head::Head::version == HttpVersion.http_1_1 || head::Head::version == HttpVersion.http_1_0
+                else throw BadRequest.because("HTTP1.1 or HTTP1.0 request required");
             // Origin form, or the absolute form a server must accept too
             // (RFC 9112 §3.2.2); handlers read path() and query() either way.
             confirm head.target().kind() == RequestTargetKind.origin
@@ -757,7 +758,12 @@ hidden object HttpServerPeer {
                 );
             }
             else {
-                original;
+                if head::Head::version == HttpVersion.http_1_0 {
+                    Http10Response(origin: original, keep: plan::Plan::reuse_after_eof).response();
+                }
+                else {
+                    original;
+                }
             };
             let writing = Http1ResponseWriting(
                 origin: connection.output(),
@@ -779,6 +785,39 @@ hidden object HttpServerPeer {
             prefix.replace(rest);
             completed.replace(completed.value() + 1);
         }
+    }
+}
+
+// An HTTP/1.0 client reads neither chunked coding nor a persistent
+// connection it did not ask for (#102). Its response loses Transfer-Encoding
+// (the body then ends with the connection) and says whether the connection
+// stays: keep-alive when asked for and the length is declared, else close.
+hidden object Http10Response {
+    has origin is Response;
+    has keep is bool;
+
+    Http10Response(origin is Response, keep is bool) {
+        self.origin = origin;
+        self.keep = keep;
+    }
+
+    response() is Response {
+        let fields = HeadersWithout(
+            origin: origin::Head::headers,
+            names: [HeaderName("Transfer-Encoding"), HeaderName("Connection")]
+        ).headers();
+        let token = if keep && fields.membership(HeaderName("Content-Length")) {
+            "keep-alive";
+        }
+        else {
+            "close";
+        };
+        Response(
+            status: origin::Head::status,
+            headers: fields.addition(Header(name: HeaderName("Connection"), value: token)),
+            body: origin.body(),
+            version: origin::Head::version
+        );
     }
 }
 
@@ -1016,13 +1055,15 @@ hidden object EchoApplication does Handling {
         let received = await request.text(limit: 4096);
         let peer = context.endpoints().remote_endpoint().address().string();
         let text = TextBody(text: MethodName(request::Head::method).string() + " " + target + " " + received);
+        let body = text.opening();
         ResponseHandling(Response(
             status: Status.ok,
             headers: Headers(
                 Header(name: HeaderName("Content-Type"), value: text.media_type()),
+                Header(name: HeaderName("Content-Length"), value: body.length().string()),
                 Header(name: HeaderName("X-Peer"), value: peer),
             ),
-            body: text.opening(),
+            body: body,
         ));
     }
 }
@@ -1083,3 +1124,38 @@ async test "a server speaks HTTP/2 over cleartext and multiplexes one connection
     await server.drain(limit: Duration(seconds: 5));
     test.is(server.closed(), true);
 }
+
+async test "a server answers HTTP/1.0 and keeps its connection only when asked" {
+    let listener = await TcpListening(port: 0).listener();
+    let server = HttpServer(listener: listener, handling: EchoApplication(), policy: ServerPolicy(), clock: SystemClock()).started();
+    // No Host and no keep-alive: the answer says close, and the server closes.
+    let plain = await TcpConnecting(address: IpAddress("127.0.0.1"), port: server::Local::port).connection();
+    await plain.output().write("GET /old HTTP/1.0\r\n\r\n");
+    let answer = Atomic("");
+    loop {
+        let chunk = await plain.input().bytes(4096);
+        last if chunk.size() == 0;
+        answer.replace(answer.value() + Utf8Decoded(chunk).string());
+    }
+    plain.close();
+    test.ok(answer.value().starts_with("HTTP/1.1 200 OK\r\n"));
+    test.ok(answer.value().contains("\r\nConnection: close\r\n"));
+    test.ok(answer.value().ends_with("GET /old "));
+    // Asked for keep-alive: a second request goes over the same connection.
+    let kept = await TcpConnecting(address: IpAddress("127.0.0.1"), port: server::Local::port).connection();
+    for ["/one", "/two"] -> path {
+        await kept.output().write("GET " + path + " HTTP/1.0\r\nConnection: keep-alive\r\n\r\n");
+        let reply = Atomic("");
+        loop {
+            last if reply.value().ends_with("GET " + path + " ");
+            let chunk = await kept.input().bytes(4096);
+            confirm chunk.size() > 0 else throw BadRequest.because("connection closed early");
+            reply.replace(reply.value() + Utf8Decoded(chunk).string());
+        }
+        test.ok(reply.value().contains("\r\nConnection: keep-alive\r\n"));
+    }
+    kept.close();
+    await server.drain(limit: Duration(seconds: 5));
+    test.is(server.closed(), true);
+}
+
