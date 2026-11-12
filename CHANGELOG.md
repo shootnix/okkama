@@ -35,6 +35,27 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   of 1 350. `sparrow --stats` prints a census of the objects alive after the
   last collection, by type.
 
+### Changed
+
+- **The HTTP server answers about three times faster (#110, #113, #115,
+  #116, #81, #503).** On Sparrow, the hello server answered a request over
+  a kept-alive connection in 44 ms; the next request waited for Nagle's
+  algorithm and delayed acknowledgements. It now answers in 0.105 ms
+  (Python's `http.server`: 0.089 ms). A new connection takes 0.137 ms
+  (Python: 0.177 ms). Most of the gain is work the server no longer does:
+  - TCP connections and listeners set `TCP_NODELAY`, and listeners reuse
+    their address.
+  - A small response goes out in one write, with the head and the body
+    together. A generated head is no longer parsed back to check it.
+  - Header values are checked in one pass, without regular expressions.
+  - URL components no longer pass every character through an encoder, a
+    byte buffer and a decoder. Text that is already canonical comes back as
+    it is. The request target used to be canonicalised three times a
+    request: 18 µs each time, 2.5 µs now.
+  - The server asked for its HTTP/1 limits five times a request, each time
+    converting a `BigInt` through its decimal text. It now asks once per
+    connection. A response is framed once on its way out, not twice.
+
 ## [0.5.4] — 2026-11-12
 
 0.5.4 is the review of the standard library (#352).
