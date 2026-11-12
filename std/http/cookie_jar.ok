@@ -18,7 +18,6 @@ import "fs/entry" take FileEntry;
 import "fs/directory" take Directory;
 import "fs/temp" take TemporaryDirectory, TemporaryFile, TemporaryFilePreservation;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "encoding/single_byte" take AsciiEncoded, AsciiDecoded, InvalidAsciiByte;
 import "collections/set" take OrderedSet, Set;
 import "net/endpoint" take HostName;
@@ -575,12 +574,12 @@ object SavedCookieJar {
         defer scratch.close();
         let temporary = TemporaryFile(directory: Directory(scratch.path()), prefix: "snapshot-");
         defer temporary.close();
-        temporary.write(ByteSnapshot(AsciiEncoded(text).bytes()));
+        temporary.write(AsciiEncoded(text).bytes());
         temporary.flush();
         let staged = scratch.path().child("complete");
         TemporaryFilePreservation(origin: temporary, destination: staged).preserve();
         temporary.close();
-        FileEntry(staged).move(destination.path());
+        FileEntry(staged).move(destination: destination.path(), overwrite: true);
         destination;
     }
 }
@@ -609,7 +608,7 @@ object LoadedCookieJar {
             }
             confirm output.content().size() + chunk.size() <= 67108864
                 else throw InvalidCookieStore.because("file byte limit exceeded");
-            writing.write(ByteSnapshot(chunk));
+            writing.write(chunk);
         }
         let text = try {
             AsciiDecoded(output.content().bytes()).string();

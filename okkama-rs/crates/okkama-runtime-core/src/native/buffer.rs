@@ -58,6 +58,9 @@ pub fn handles(native: Native) -> bool {
             | BufferStateSize
             | BufferStateClosed
             | BufferStateClose
+            | TextBufferCreate
+            | TextBufferAppend
+            | TextBufferText
     )
 }
 
@@ -112,6 +115,14 @@ pub fn execute(native: Native, args: &[Value], arrays: &mut ArrayHeap) -> Result
                 Value::Bool(true)
             }
         }
+        // Text built piece by piece (#139): appending does not copy the text so far.
+        TextBufferCreate => Value::Handle(Rc::new(RefCell::new(String::new()))),
+        TextBufferAppend => {
+            let text = args[1].as_string()?.to_owned();
+            super::support::handle::<RefCell<String>>(&args[0])?.borrow_mut().push_str(&text);
+            Value::Bool(true)
+        }
+        TextBufferText => super::support::text(super::support::handle::<RefCell<String>>(&args[0])?.borrow().clone()),
         _ => return Err(Error::InvalidState("not a buffer native".into())),
     })
 }

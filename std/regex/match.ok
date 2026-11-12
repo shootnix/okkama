@@ -1,6 +1,7 @@
 module regex/match v1.0.0;
 
 import "regex/range" take RegexRange;
+import "strings/parse" take Number, InvalidInteger;
 import "runtime/regex" take RegexMatchState, regex_match_capture_count, regex_match_capture_name,
     regex_match_capture_index, regex_match_capture_span;
 
@@ -16,12 +17,22 @@ import "runtime/regex" take RegexMatchState, regex_match_capture_count, regex_ma
 // An optional group still has a RegexCapture. matched() is false when that
 // group did not participate; text() and range() then throw
 // UnmatchedRegexCapture instead of inventing empty text or a fake range.
+//
+// Named groups also read like json values (#217):
+//
+//     let date = FirstRegexMatch("due 2026-11", Regex("(?<year>\\d{4})-(?<month>\\d{2})(-(?<day>\\d{2}))?"));
+//     date.int("year");                     // 2026
+//     date.text("month");                   // "11"
+//     date.maybe("day").text() else "";     // "": the group took no part
 role RegexMatching {
     text() is string;
     range() is RegexRange;
     capture(index is int) is RegexCapture;
     group(name is string) is RegexCapture;
     captures() is @RegexCapture;
+    text(name is string) is string;
+    int(name is string) is int;
+    maybe(name is string) is RegexMaybeValue;
 }
 
 // The constructor requires an opaque RegexMatchState. Application code cannot
@@ -67,6 +78,75 @@ object RegexMatch does RegexMatching {
             self.capture(index);
         };
         values;
+    }
+
+    // The text of a named group: found.text("month"). A name the pattern does
+    // not have is MissingRegexGroup; a group that took no part in the match is
+    // UnmatchedRegexCapture.
+    text(name is string) is string {
+        self.group(name).text();
+    }
+
+    // A named group as an integer: found.int("year"). Text that is not one is
+    // InvalidRegexGroupValue, naming the group and the text.
+    int(name is string) is int {
+        let capture = self.group(name);
+        match self.maybe(name).int() {
+            case Maybe.some(found) {
+                found;
+            }
+            else {
+                throw UnmatchedRegexCapture.index(capture::Group::index);
+            }
+        }
+    }
+
+    // A named group that may have taken no part in the match:
+    // found.maybe("day").text() else "".
+    maybe(name is string) is RegexMaybeValue {
+        let capture = self.group(name);
+        RegexMaybeValue(
+            name: name,
+            value: if capture.matched() {
+                Maybe.some(capture.text());
+            }
+            else {
+                Maybe<string>.none;
+            },
+        );
+    }
+}
+
+// A group that may have taken no part in a match: its readers answer Maybe.
+// Text that is there but is not what the reader expects is still
+// InvalidRegexGroupValue.
+object RegexMaybeValue {
+    has name is string;
+    has value is Maybe<string>;
+
+    RegexMaybeValue(name is string, value is Maybe<string>) {
+        self.name = name;
+        self.value = value;
+    }
+
+    text() is Maybe<string> {
+        value;
+    }
+
+    int() is Maybe<int> {
+        match value {
+            case Maybe.some(text) {
+                Maybe.some(try {
+                    Number(text).int();
+                }
+                catch failure is InvalidInteger {
+                    throw InvalidRegexGroupValue.named(name, text, "an integer");
+                });
+            }
+            else {
+                Maybe<int>.none;
+            }
+        }
     }
 }
 
@@ -125,3 +205,6 @@ enum MissingRegexCapture is Error = (index(index is int));
 enum MissingRegexGroup is Error = (name(name is string));
 
 enum UnmatchedRegexCapture is Error = (index(index is int));
+
+// A named group whose text is not what its reader expects.
+enum InvalidRegexGroupValue is Error = (named(name is string, value is string, expected is string));

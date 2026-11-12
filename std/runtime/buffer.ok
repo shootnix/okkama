@@ -17,3 +17,13 @@ native buffer_state_size(state is BufferState) is int;
 native buffer_state_closed(state is BufferState) is bool;
 
 native buffer_state_close(state is BufferState) is bool;
+
+// Text built up piece by piece for strings/buffer (#139); appending does not
+// copy the text so far.
+native object TextBufferState;
+
+native text_buffer_create() is TextBufferState;
+
+native text_buffer_append(state is TextBufferState, text is string) is bool;
+
+native text_buffer_text(state is TextBufferState) is string;

@@ -8,7 +8,6 @@ import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument;
 
 // Immutable extension mappings; target paths are never opened or inspected.
@@ -112,7 +111,10 @@ object StandardMediaTypes does MediaIdentifying {
     has table is MappedMediaTypes;
 
     StandardMediaTypes() {
-        table = MappedMediaTypes(entries: StandardMediaEntries().entries(), fallback: EmptyMediaTypes());
+        table = MappedMediaTypes(
+            entries: StandardMediaEntries().entries(),
+            fallback: EmptyMediaTypes()
+        );
     }
 
     type(path is Path) is MediaType {
@@ -377,7 +379,10 @@ hidden object SystemMediaSnapshot {
         for paths -> path {
             let bytes = OptionalMediaFile(path: path, maximum: limits.bytes() - count.index()).bytes();
             count = count.following(count.index() + bytes.size());
-            let entries = MediaDatabaseEntries(origin: bytes, maximum: limits.entries() - output.size()).entries();
+            let entries = MediaDatabaseEntries(
+                origin: bytes,
+                maximum: limits.entries() - output.size()
+            ).entries();
             for entries -> entry {
                 output = output.following(entry);
             }
@@ -417,7 +422,7 @@ hidden object OptionalMediaFile {
                 let bytes = reader.bytes(amount);
                 last if bytes.size() == 0;
                 confirm bytes.size() <= remaining else throw MediaTypeLimitExceeded.kind("bytes");
-                buffer.writing().write(ByteSnapshot(bytes));
+                buffer.writing().write(bytes);
             }
             buffer.content().bytes();
         }

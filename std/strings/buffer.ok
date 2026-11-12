@@ -1,0 +1,82 @@
+module strings/buffer v1.0.0;
+
+import "io/stream" take WritingText;
+import "runtime/buffer" take TextBufferState, text_buffer_create, text_buffer_append,
+    text_buffer_text;
+
+// Text built up piece by piece and kept by the runtime: a write does not copy
+// what is already there, and string() gives the text so far.
+//
+//     let page = TextBuffer();
+//     for items -> item {
+//         page.write("<li>", item, "</li>");
+//     }
+//     page.writeln();
+//     let html = page.string();
+//
+// A TextBuffer is a WritingText, so it goes wherever text is written. Copies
+// of the object share the one buffer, like the other io/buffer views.
+object TextBuffer does WritingText {
+    has state is TextBufferState;
+
+    TextBuffer() {
+        state = text_buffer_create();
+    }
+
+    write(values is ...string) is void {
+        let parts is @string = values...;
+        for parts -> part {
+            text_buffer_append(state, part);
+        }
+    }
+
+    writeln(values is ...string) is void {
+        let parts is @string = values...;
+        for parts -> part {
+            text_buffer_append(state, part);
+        }
+        text_buffer_append(state, "\n");
+    }
+
+    string() is string {
+        text_buffer_text(state);
+    }
+}
+
+hidden object TextBufferReport {
+    has out is WritingText;
+
+    TextBufferReport(out is WritingText) {
+        self.out = out;
+    }
+
+    print(name is string, total is int) is void {
+        out.write(name, ": ");
+        out.writeln(total.string());
+    }
+}
+
+test "pieces keep their order and writeln ends a line" {
+    let page = TextBuffer();
+    test.is(page.string(), "");
+    page.write("<li>", "tea", "</li>");
+    page.write();
+    page.writeln();
+    page.writeln("a", "β", "😀");
+    test.is(page.string(), "<li>tea</li>\naβ😀\n");
+    page.write("more");
+    test.is(page.string(), "<li>tea</li>\naβ😀\nmore");
+}
+
+test "a TextBuffer goes wherever text is written, and copies share it" {
+    let page = TextBuffer();
+    let copy = page;
+    TextBufferReport(page).print("total", 42);
+    copy.write("!");
+    test.is(page.string(), "total: 42\n!");
+    let many = TextBuffer();
+    for (0..1000) -> index {
+        many.write(index.string(), ",");
+    }
+    test.is(many.string().split(",").size(), 1001);
+}

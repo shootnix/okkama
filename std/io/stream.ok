@@ -26,6 +26,7 @@ role ByteSource {
 
 role Writing {
     write(source is ByteSource) is void;
+    write(bytes is @byte) is void;
     flush() is void;
 }
 
@@ -50,6 +51,7 @@ role AsyncReading {
 // Concrete socket halves must separately implement serialization and cleanup.
 role AsyncWriting {
     async write(source is ByteSource) is AsyncWriting;
+    async write(bytes is @byte) is AsyncWriting;
 }
 
 role WritingText {

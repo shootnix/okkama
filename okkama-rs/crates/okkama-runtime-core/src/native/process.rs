@@ -247,6 +247,8 @@ fn launch(commands: &[Command]) -> std::io::Result<Vec<Spawned>> {
             Some(output) => builder.stdin(Stdio::from(output)),
             None => builder.stdin(Stdio::piped()),
         };
+        // Buffered output goes before the child's own (#132).
+        let _ = crate::stdout::flush();
         let mut process = match builder.spawn() {
             Ok(process) => process,
             Err(error) => {

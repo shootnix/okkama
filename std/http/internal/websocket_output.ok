@@ -6,7 +6,6 @@ import "http/websocket" take WebSocketMessage, WebSocketMessageKind, WebSocketLi
 import "encoding/utf" take Utf8Encoded;
 import "random/source" take Randomizing;
 import "io/stream" take AsyncWriting;
-import "io/decorators" take ByteSnapshot;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
 import "async/scope" take FutureGroup;
@@ -160,7 +159,7 @@ object WebSocketOutput {
             empty;
         };
         let wire = frame.bytes(mask);
-        let writing = origin.write(ByteSnapshot(wire));
+        let writing = origin.write(wire);
         await writing;
         true;
     }

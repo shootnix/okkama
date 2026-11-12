@@ -8,7 +8,7 @@ import "http/header" take Headers;
 import "http/message" take InvalidHttpMessage;
 import "net/unix" take UnixPaired;
 import "io/stream" take AsyncReading, Closing, InvalidReadLimit;
-import "io/decorators" take ByteSnapshot, InvalidReading;
+import "io/decorators" take InvalidReading;
 import "io/buffer" take ByteBuffer;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
 import "numbers/bigint" take BigInt;
@@ -32,7 +32,13 @@ object Http1BodyReading does BodyReading {
         prefix is @byte,
         head is Headers
     ) {
-        let source = Http1BodyInput(origin: origin, plan: plan, prefix: prefix, head: head, limits: Http1Limits());
+        let source = Http1BodyInput(
+            origin: origin,
+            plan: plan,
+            prefix: prefix,
+            head: head,
+            limits: Http1Limits()
+        );
         input = source;
         reading = StreamBodyReading(input: source, owner: owner, trailers: Headers());
         self.plan = plan;
@@ -46,7 +52,13 @@ object Http1BodyReading does BodyReading {
         head is Headers,
         limits is Http1Limits
     ) {
-        let source = Http1BodyInput(origin: origin, plan: plan, prefix: prefix, head: head, limits: limits);
+        let source = Http1BodyInput(
+            origin: origin,
+            plan: plan,
+            prefix: prefix,
+            head: head,
+            limits: limits
+        );
         input = source;
         reading = StreamBodyReading(input: source, owner: owner, trailers: Headers());
         self.plan = plan;
@@ -275,7 +287,7 @@ hidden object Http1BodyInput does AsyncReading {
                         let rows = Atomic(0);
                         loop {
                             let line = await self.line(group);
-                            raw.writing().write(ByteSnapshot(Latin1Encoded(line + "\r\n").bytes()));
+                            raw.writing().write(Latin1Encoded(line + "\r\n").bytes());
                             last if line == "";
                             rows.replace(rows.value() + 1);
                             confirm rows.value() <= limits::Limits::fields
@@ -328,7 +340,7 @@ hidden object Http1BodyInput does AsyncReading {
                     );
                 confirm chunk.size() > 0
                     else throw InvalidHttpMessage.because("EOF inside HTTP1 chunk metadata");
-                cache.writing().write(ByteSnapshot(chunk));
+                cache.writing().write(chunk);
             }
             let current = cache.content().bytes();
             let text = Latin1Decoded(current).string();
@@ -345,7 +357,7 @@ hidden object Http1BodyInput does AsyncReading {
             confirm amount <= limits::Limits::head_bytes - metadata.value()
                 else throw Http1LimitExceeded.kind("chunk_metadata_bytes");
             let accepted = cache.reading().bytes(amount);
-            line.writing().write(ByteSnapshot(accepted));
+            line.writing().write(accepted);
             metadata.replace(metadata.value() + amount);
             if pieces.size() > 1 {
                 let complete = line.content().bytes();

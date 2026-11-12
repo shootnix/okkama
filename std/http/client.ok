@@ -4,7 +4,6 @@ import "strings/parse" take Number;
 import "json" take Json, JsonField;
 import "http/status" take Status, StatusClass;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
-import "io/decorators" take ByteSnapshot;
 import "net/tcp" take TcpListening, TcpListener, TcpConnection;
 import "http/cookie_client" take CookieExchanging, FirstPartyCookies;
 import "http/cookie_jar" take CookieStoring, MemoryCookieJar;
@@ -2199,9 +2198,9 @@ async test "a client gets text and posts JSON through its shortcuts" {
     defer one.close();
     let asked = await LoopbackRequest(one.input()).text();
     test.ok(asked.starts_with("GET /hello HTTP/1.1\r\n"));
-    await one.output().write(ByteSnapshot(Utf8Encoded(
+    await one.output().write(Utf8Encoded(
         "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 6\r\nConnection: close\r\n\r\nhéllo"
-    ).bytes()));
+    ).bytes());
     let page = await getting;
     test.is(page::Head::status, Status.ok);
     test.is(await page.text(), "héllo");
@@ -2216,9 +2215,9 @@ async test "a client gets text and posts JSON through its shortcuts" {
     test.ok(sent.starts_with("POST /orders HTTP/1.1\r\n"));
     test.ok(sent.lower().contains("content-type: application/json\r\n"));
     test.ok(sent.ends_with("\r\n\r\n{\"id\":7}"));
-    await two.output().write(ByteSnapshot(Utf8Encoded(
+    await two.output().write(Utf8Encoded(
         "HTTP/1.1 201 Created\r\nContent-Type: application/json\r\nContent-Length: 9\r\nConnection: close\r\n\r\n{\"id\":7}\n"
-    ).bytes()));
+    ).bytes());
     let created = await posting;
     test.is(created::Head::status, Status.created);
     test.is(created::Head::class, StatusClass.successful);
@@ -2258,17 +2257,17 @@ async test "a client follows redirects and carries its cookies when told" {
     defer one.close();
     test.ok((await LoopbackRequest(one.input()).text()).starts_with("GET /start HTTP/1.1\r\n"));
     let second = spawn accepting();
-    await one.output().write(ByteSnapshot(Utf8Encoded(
+    await one.output().write(Utf8Encoded(
         "HTTP/1.1 302 Found\r\nLocation: /next\r\nSet-Cookie: seen=1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-    ).bytes()));
+    ).bytes());
     let two = await second;
     defer two.close();
     let followed = await LoopbackRequest(two.input()).text();
     test.ok(followed.starts_with("GET /next HTTP/1.1\r\n"));
     test.ok(followed.lower().contains("cookie: seen=1\r\n"));
-    await two.output().write(ByteSnapshot(Utf8Encoded(
+    await two.output().write(Utf8Encoded(
         "HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\ndone"
-    ).bytes()));
+    ).bytes());
     let page = await getting;
     test.is(page::Head::status, Status.ok);
     test.is(page::Exchange::history.size(), 1);

@@ -1,7 +1,6 @@
 module db/postgres/wire v1.0.0;
 
 import "io/stream" take AsyncReading, AsyncWriting;
-import "io/decorators" take ByteSnapshot;
 import "io/buffer" take ByteBuffer;
 import "io/input" take ByteInput;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded, ByteOrder;
@@ -137,12 +136,18 @@ object PgFields {
 
     int16() is int {
         let start = self.advance(2);
-        ByteRange(source: body, start: start, end: start + 2).integer(Signedness.signed, ByteOrder.big);
+        ByteRange(source: body, start: start, end: start + 2).integer(
+            Signedness.signed,
+            ByteOrder.big
+        );
     }
 
     int32() is int {
         let start = self.advance(4);
-        ByteRange(source: body, start: start, end: start + 4).integer(Signedness.signed, ByteOrder.big);
+        ByteRange(source: body, start: start, end: start + 4).integer(
+            Signedness.signed,
+            ByteOrder.big
+        );
     }
 
     cstring() is string {
@@ -284,7 +289,7 @@ object PgJoined {
         defer joined.closing().close();
         let output = joined.writing();
         for parts -> part {
-            output.write(ByteSnapshot(part));
+            output.write(part);
         }
         joined.content().bytes();
     }
@@ -298,7 +303,7 @@ object PgOutput {
     }
 
     async send(bytes is @byte) is void {
-        await sink.write(ByteSnapshot(bytes));
+        await sink.write(bytes);
     }
 }
 

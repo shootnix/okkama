@@ -3,17 +3,24 @@ module fs/entry v1.0.0;
 import "fs/path" take Path;
 import "fs/stat" take FileKind, FileStat, FileStatFromMap;
 import "fs/error" take FileError, FileFailure;
-import "runtime/fs" take path_encode, stat, unlink, rename, path_decode, temporary_directory_create,
-    temporary_directory_path, temporary_directory_close, temporary_file_create, temporary_file_path,
-    temporary_file_preserve, file_state_write, file_state_flush, file_state_close;
+import "runtime/fs" take path_encode, stat, unlink, rename, rename_noreplace, copy_file, chmod,
+    path_decode, temporary_directory_create, temporary_directory_path, temporary_directory_close,
+    temporary_file_create, temporary_file_path, temporary_file_preserve, file_state_write,
+    file_state_flush, file_state_close;
 
 // A path on disk, opened or not: whether something is there, what it is, and
-// removing or moving it. Reading and writing go through fs/file.
+// removing, moving or copying it. Reading and writing go through fs/file.
 //
 //     let entry = FileEntry(Path("notes.txt"));
 //     if entry.existence() {
-//         entry.move(Path("notes.old"));
+//         entry.copy(Path("notes.bak"));
+//         entry.move(destination: Path("notes.old"), overwrite: true);
 //     }
+//
+// move and copy refuse a destination that already exists (FileError.already_exists
+// names it) unless overwrite is true. A move then replaces the destination in one
+// step; a copy is written beside it and renamed over it, so a failed copy leaves
+// the old file whole. A copy keeps the permission bits of its source.
 
 object FileEntry {
     has origin is Path;
@@ -60,15 +67,57 @@ object FileEntry {
     }
 
     move(destination is Path) is void {
+        self.move(destination: destination, overwrite: false);
+    }
+
+    move(destination is Path, overwrite is bool) is void {
         try {
-            rename(
-                path_encode(origin.string()),
-                path_encode(destination.string()),
-            );
+            if overwrite {
+                rename(path_encode(origin.string()), path_encode(destination.string()));
+            }
+            else {
+                rename_noreplace(path_encode(origin.string()), path_encode(destination.string()));
+            }
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure: failure, path: origin.string()).error();
+            throw EntryFailure(failure: failure, source: origin, destination: destination).error();
         }
+    }
+
+    copy(destination is Path) is void {
+        self.copy(destination: destination, overwrite: false);
+    }
+
+    copy(destination is Path, overwrite is bool) is void {
+        try {
+            copy_file(path_encode(origin.string()), path_encode(destination.string()), overwrite);
+        }
+        catch failure is NativeFailure {
+            throw EntryFailure(failure: failure, source: origin, destination: destination).error();
+        }
+    }
+}
+
+// A failed move or copy: an occupied destination is named, anything else names
+// the source.
+hidden object EntryFailure {
+    has failure is NativeFailure;
+    has source, destination is Path;
+
+    EntryFailure(failure is NativeFailure, source is Path, destination is Path) {
+        self.failure = failure;
+        self.source = source;
+        self.destination = destination;
+    }
+
+    error() is FileError {
+        let named = if failure.code() == "already_exists" {
+            destination;
+        }
+        else {
+            source;
+        };
+        FileFailure(failure: failure, path: named.string()).error();
     }
 }
 
@@ -128,5 +177,64 @@ test "an entry moves and is removed; both name the path when it is gone" {
     catch FileError.not_found(failed) {
         failed == kept.path().string();
     });
+    temporary_directory_close(scratch);
+}
+
+test "copy and move refuse an occupied destination unless told to overwrite" {
+    let scratch = temporary_directory_create(path_encode("."), "fs-entry-test-");
+    let root = Path(path_decode(temporary_directory_path(scratch)));
+    let first = temporary_file_create(path_encode(root.string()), "a-");
+    file_state_write(first, [byte(104), byte(105)]);
+    file_state_flush(first);
+    temporary_file_preserve(first, path_encode(root.child("a.txt").string()));
+    file_state_close(first);
+    let other = temporary_file_create(path_encode(root.string()), "c-");
+    file_state_write(other, [byte(120), byte(121), byte(122)]);
+    file_state_flush(other);
+    temporary_file_preserve(other, path_encode(root.child("c.txt").string()));
+    file_state_close(other);
+    let source = FileEntry(path: root.child("a.txt"));
+    chmod(path_encode(source.path().string()), 416);
+    source.copy(root.child("b.txt"));
+    let copy = FileEntry(path: root.child("b.txt"));
+    test.is(copy.stat()::Shape::size, 2);
+    test.ok(copy.stat().mode().group()::Access::readable);
+    test.ok(!copy.stat().mode().others()::Access::readable);
+    test.ok(source.existence());
+    test.ok(try {
+        source.copy(root.child("c.txt"));
+        false;
+    }
+    catch FileError.already_exists(failed) {
+        failed == root.child("c.txt").string();
+    });
+    test.is(FileEntry(path: root.child("c.txt")).stat()::Shape::size, 3);
+    source.copy(destination: root.child("c.txt"), overwrite: true);
+    test.is(FileEntry(path: root.child("c.txt")).stat()::Shape::size, 2);
+    test.ok(try {
+        FileEntry(path: root.child("c.txt")).move(root.child("b.txt"));
+        false;
+    }
+    catch FileError.already_exists(failed) {
+        failed == root.child("b.txt").string();
+    });
+    FileEntry(path: root.child("c.txt")).move(destination: root.child("b.txt"), overwrite: true);
+    test.ok(!FileEntry(path: root.child("c.txt")).existence());
+    test.ok(try {
+        FileEntry(path: root.child("missing.txt")).copy(root.child("d.txt"));
+        false;
+    }
+    catch FileError.not_found(failed) {
+        failed == root.child("missing.txt").string();
+    });
+    test.ok(try {
+        FileEntry(path: root).copy(root.child("e.txt"));
+        false;
+    }
+    catch failure is FileError {
+        true;
+    });
+    source.remove();
+    copy.remove();
     temporary_directory_close(scratch);
 }

@@ -1,7 +1,8 @@
 module regex/pattern v1.0.0;
 
 import "regex/range" take RegexRange;
-import "regex/match" take RegexMatch, RegexMatching;
+import "regex/match" take RegexMatch, RegexMatching, MissingRegexGroup, UnmatchedRegexCapture,
+    InvalidRegexGroupValue;
 import "runtime/regex" take RegexQueryState, regex_query_create, regex_query_found,
     regex_query_match;
 
@@ -21,6 +22,21 @@ import "runtime/regex" take RegexState, regex_state_create, regex_state_prepare,
 // Construction retains expression and flags and creates only an empty lazy
 // compile state. expression() and flags() never compile. The first metadata or
 // matching action compiles once and memoizes either its program or typed error.
+//
+// The common questions are asked of the regex itself (#217). Each searches
+// the whole text; FirstRegexMatch, RegexMatches, RegexSubstitution and
+// RegexParts take a range, a limit or a replacement policy.
+//
+//     let date = Regex("(?<year>\\d{4})-(?<month>\\d{2})");
+//     date.found("due 2026-11");                   // true
+//     match date.first(text) {
+//         case Maybe.some(due) {
+//             due.int("year");
+//         }
+//     }
+//     for date.all(text) -> each { ... }           // every match, in order
+//     date.replaced(origin: text, by: "YYYY-MM");  // literal, $ is not expanded
+//     Regex(",\\s*").parts("a, b,,c");             // ["a", "b", "", "c"]
 
 enum RegexFlag = (ascii, ignore_case, multiline, dot_all, verbose);
 
@@ -72,6 +88,62 @@ object Regex {
         }
     }
 
+    // Does the text contain a match?
+    found(origin is string) is bool {
+        self.prepare();
+        regex_query_found(regex_query_create(state, origin, 0, origin.length(), 0));
+    }
+
+    // The leftmost match, if there is one.
+    first(origin is string) is Maybe<RegexMatch> {
+        self.search(origin, 0);
+    }
+
+    // Every non-overlapping match from left to right, as RegexMatches walks
+    // them: after an empty match the search moves on by one scalar.
+    all(origin is string) is @RegexMatch {
+        let limit = origin.length();
+        let nothing is @RegexMatch = [];
+        let scan = RegexScan(position: 0, found: nothing);
+        loop {
+            last if scan.position() > limit;
+            match self.search(origin, scan.position()) {
+                case Maybe.some(each) {
+                    scan = scan.after(each);
+                }
+                else {
+                    scan = scan.ended(limit);
+                }
+            }
+        }
+        scan.found();
+    }
+
+    // The text with every match replaced by the literal text by. Dollars are
+    // not expanded: RegexSubstitution with ExpandedRegexReplacement reads $1
+    // and ${name}.
+    replaced(origin is string, by is string) is string {
+        self.parts(origin).join(by);
+    }
+
+    // The text between the matches, as RegexParts splits it: empty leading,
+    // adjacent and trailing parts stay.
+    parts(origin is string) is @string {
+        let matches = self.all(origin);
+        let starts is @int = matches.map() -> each {
+            each.range()::Bounds::start;
+        };
+        let ends is @int = matches.map() -> each {
+            each.range()::Bounds::end;
+        };
+        let lefts = [0] + ends;
+        let rights = starts + [origin.length()];
+        let pieces is @string = (0..rights.size()).map() -> index {
+            origin.slice(lefts[index], rights[index]);
+        };
+        pieces;
+    }
+
     group_count() is int {
         self.prepare();
         regex_state_group_count(state);
@@ -101,6 +173,18 @@ object Regex {
             }
         );
         RegexQueryObservation(source: origin, pattern: self, selected: range, query: query);
+    }
+
+    // The leftmost match at or after position.
+    hidden search(origin is string, position is int) is Maybe<RegexMatch> {
+        self.prepare();
+        let query = regex_query_create(state, origin, position, origin.length(), 0);
+        if regex_query_found(query) {
+            Maybe.some(RegexMatch(origin: origin, state: regex_query_match(query)));
+        }
+        else {
+            Maybe<RegexMatch>.none;
+        }
     }
 
     hidden prepare() is void {
@@ -133,6 +217,42 @@ object Regex {
                 RegexLimit.states;
             }
         }
+    }
+}
+
+// Where the next search of Regex.all() starts, and what it found so far.
+hidden object RegexScan {
+    has position is int;
+    has found is @RegexMatch;
+
+    RegexScan(position is int, found is @RegexMatch) {
+        self.position = position;
+        self.found = found;
+    }
+
+    position() is int {
+        position;
+    }
+
+    found() is @RegexMatch {
+        found;
+    }
+
+    // A non-empty match ends where the next search starts; after an empty
+    // one the search moves on by one scalar.
+    after(each is RegexMatch) is ^RegexScan {
+        let range = each.range();
+        ^found = found + [each];
+        ^position = if range::Bounds::start < range::Bounds::end {
+            range::Bounds::end;
+        }
+        else {
+            range::Bounds::end + 1;
+        };
+    }
+
+    ended(limit is int) is ^RegexScan {
+        ^position = limit + 1;
     }
 }
 
@@ -214,7 +334,10 @@ test "a regex reports its groups, flags and syntax errors" {
     test.is(pair::Source::expression, "(?<key>\\w+)=(\\d+)?");
     test.is(pair.group_count(), 2);
     test.is(pair.group_names()["key"], 1);
-    test.is(Regex(expression: "ABC", flags: [RegexFlag.ignore_case])::Source::flags, [RegexFlag.ignore_case]);
+    test.is(
+        Regex(expression: "ABC", flags: [RegexFlag.ignore_case])::Source::flags,
+        [RegexFlag.ignore_case]
+    );
     test.is(Regex("x")::Source::flags.size(), 0);
     let offset = (expression is string) is int {
         try {
@@ -231,14 +354,38 @@ test "a regex reports its groups, flags and syntax errors" {
 test "an observation finds a match inside a range" {
     let digits = Regex("\\d+");
     let whole = RegexRange(start: 0, end: 12);
-    let found = RegexMatchObservation(origin: "one 22 three", regex: digits, range: whole, mode: RegexQuery.first);
+    let found = RegexMatchObservation(
+        origin: "one 22 three",
+        regex: digits,
+        range: whole,
+        mode: RegexQuery.first
+    );
     test.ok(found.found());
     test.is(found.match().text(), "22");
-    test.ok(!RegexMatchObservation(origin: "one 22 three", regex: digits, range: whole, mode: RegexQuery.entire).found());
-    test.ok(RegexMatchObservation(origin: "ABC", regex: Regex(expression: "abc", flags: [RegexFlag.ignore_case]), range: RegexRange(start: 0, end: 3), mode: RegexQuery.entire).found());
+    test.ok(
+        !RegexMatchObservation(
+            origin: "one 22 three",
+            regex: digits,
+            range: whole,
+            mode: RegexQuery.entire
+        ).found()
+    );
+    test.ok(
+        RegexMatchObservation(
+            origin: "ABC",
+            regex: Regex(expression: "abc", flags: [RegexFlag.ignore_case]),
+            range: RegexRange(start: 0, end: 3),
+            mode: RegexQuery.entire
+        ).found()
+    );
     test.is(
         try {
-            RegexMatchObservation(origin: "abc", regex: digits, range: RegexRange(start: 0, end: 9), mode: RegexQuery.first).found();
+            RegexMatchObservation(
+                origin: "abc",
+                regex: digits,
+                range: RegexRange(start: 0, end: 9),
+                mode: RegexQuery.first
+            ).found();
             "found";
         }
         catch RegexRangeOutsideInput.range(start, end, length) {
@@ -248,11 +395,111 @@ test "an observation finds a match inside a range" {
     );
     test.is(
         try {
-            RegexMatchObservation(origin: "abc", regex: digits, range: RegexRange(start: 0, end: 3), mode: RegexQuery.first).match().text();
+            RegexMatchObservation(
+                origin: "abc",
+                regex: digits,
+                range: RegexRange(start: 0, end: 3),
+                mode: RegexQuery.first
+            ).match().text();
         }
         catch error is NoRegexMatch {
             "none";
         },
         "none"
+    );
+}
+
+test "a regex answers the common questions itself" {
+    let date = Regex("(?<year>\\d{4})-(?<month>\\d{2})(-(?<day>\\d{2}))?");
+    let text = "from 2026-11 to 2027-01-15, then 1999-12";
+    test.ok(date.found(text));
+    test.ok(!date.found("no dates"));
+    let year = (origin is string) is int {
+        match date.first(origin) {
+            case Maybe.some(due) {
+                due.int("year");
+            }
+            else {
+                0;
+            }
+        }
+    };
+    test.is(year(text), 2026);
+    test.is(year("no dates"), 0);
+    let all = date.all(text);
+    test.is(all.size(), 3);
+    test.is(all[1].text(), "2027-01-15");
+    test.is(all[1].text("month"), "01");
+    test.is(all[1].maybe("day").int() else 0, 15);
+    test.is(all[0].maybe("day").text() else "-", "-");
+    test.is(all[2].range()::Bounds::start, 33);
+    test.is(date.all("no dates").size(), 0);
+    test.is(date.replaced(origin: text, by: "D"), "from D to D, then D");
+    test.is(date.replaced(origin: "none", by: "D"), "none");
+    // The replacement is literal.
+    test.is(Regex("\\d+").replaced(origin: "a1b22", by: "<$0>"), "a<$0>b<$0>");
+    test.is(Regex(",\\s*").parts("a, b,,c"), ["a", "b", "", "c"]);
+    test.is(Regex(",").parts(",a,"), ["", "a", ""]);
+    test.is(Regex(",").parts(""), [""]);
+    // An empty match moves on by one scalar: x* matches at 0, 1, 2 and 3.
+    let empty = Regex("x*").all("a😀b");
+    let starts is @int = empty.map() -> each {
+        each.range()::Bounds::start;
+    };
+    test.is(starts, [0, 1, 2, 3]);
+    test.is(Regex("x*").replaced(origin: "a😀b", by: "-"), "-a-😀-b-");
+    test.is(Regex("x*").parts("ab"), ["", "a", "b", ""]);
+    // Offsets count Unicode scalars.
+    test.is(Regex("\\d").all("a😀я1")[0].range()::Bounds::start, 3);
+}
+
+test "a regex shortcut reports what it cannot read" {
+    let date = Regex("(?<year>\\d{4}|x{4})-(?<month>\\d{2})(-(?<day>\\d{2}))?");
+    let found = date.all("xxxx-07")[0];
+    test.is(
+        try {
+            found.int("year");
+        }
+        catch InvalidRegexGroupValue.named(_name, _value, _expected) {
+            -1;
+        },
+        -1
+    );
+    test.is(
+        try {
+            (found.maybe("year").int() else 0).string();
+        }
+        catch error is InvalidRegexGroupValue {
+            error.text();
+        },
+        "InvalidRegexGroupValue.named(\"year\", \"xxxx\", \"an integer\")"
+    );
+    test.is(
+        try {
+            found.int("day");
+        }
+        catch UnmatchedRegexCapture.index(index) {
+            index;
+        },
+        4
+    );
+    test.is(
+        try {
+            found.text("week");
+        }
+        catch MissingRegexGroup.name(name) {
+            name;
+        },
+        "week"
+    );
+    test.is(
+        try {
+            Regex("a(b").found("ab");
+            -1;
+        }
+        catch InvalidRegex.located(offset, _message) {
+            offset;
+        },
+        3
     );
 }

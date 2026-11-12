@@ -258,6 +258,20 @@ impl Spec {
     }
 }
 
+/// The anchor of a path (its volume and root, `""` for a relative path), then
+/// its names: `.` and repeated separators go away, `..` stays (#124).
+pub(crate) fn path_parts(spec: Spec, path: &str) -> Vec<String> {
+    let canonical = spec.canonpath(path);
+    let [volume, directory, file] = spec.splitpath(&canonical);
+    let rooted = directory.starts_with('/') || (matches!(spec, Spec::Win32) && directory.starts_with('\\'));
+    let mut parts = vec![format!("{volume}{}", if rooted { spec.rootdir() } else { "" })];
+    parts.extend(spec.splitdir(&directory).into_iter().filter(|name| !name.is_empty() && name != "."));
+    if !file.is_empty() && file != "." {
+        parts.push(file);
+    }
+    parts
+}
+
 pub(crate) fn joined(spec: Spec, parts: &[String]) -> String {
     let mut joined = parts[0].clone();
     for part in &parts[1..] {

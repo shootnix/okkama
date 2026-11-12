@@ -207,7 +207,8 @@ object TerminalSession does Closing, TerminalModeApplying, TerminalScreenApplyin
     }
 
     hidden interactive_screen() is void {
-        confirm observation.capabilities()::Support::output_interactive && observation.screen_capable()
+        confirm observation.capabilities()::Support::output_interactive
+            && observation.screen_capable()
             else throw TerminalUnavailable.because(
                 "screen control requires interactive VT-capable output"
             );
@@ -458,6 +459,10 @@ object TerminalOutput does Writing, WritingText {
         self.write_bytes(source.bytes());
     }
 
+    write(bytes is @byte) is void {
+        self.write_bytes(bytes);
+    }
+
     write(values is ...string) is void {
         let items is @string = values...;
         for items -> value {
@@ -466,7 +471,9 @@ object TerminalOutput does Writing, WritingText {
     }
 
     write(value is StyledText) is void {
-        self.write_bytes(Utf8Encoded(value.rendered(observation.capabilities()::Support::colors)).bytes());
+        self.write_bytes(
+            Utf8Encoded(value.rendered(observation.capabilities()::Support::colors)).bytes()
+        );
     }
 
     writeln(values is ...string) is void {

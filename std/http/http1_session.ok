@@ -658,6 +658,10 @@ hidden object Http1UnstartedTransport does AsyncReading, AsyncWriting, Closing {
         throw InvalidState.because("unstarted session must not write");
     }
 
+    async write(bytes is @byte) is AsyncWriting {
+        throw InvalidState.because("unstarted session must not write");
+    }
+
     closed() is bool {
         stopped.ready();
     }

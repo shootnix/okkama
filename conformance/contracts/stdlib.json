@@ -50,7 +50,7 @@
     },
     {
       "id": "STD.CSV",
-      "title": "std csv public contract (CsvDialect, CsvField, CsvLimit, CsvLimitExceeded, CsvRecord, CsvRows, CsvString, CsvSymbol, EmptyCsvRecord, InvalidCsv, InvalidCsvDialect, InvalidCsvLimits)",
+      "title": "std csv public contract (CsvDialect, CsvField, CsvLimit, CsvLimitExceeded, CsvMaybeValue, CsvRecord, CsvRecords, CsvRows, CsvString, CsvSymbol, EmptyCsvRecord, InvalidCsv, InvalidCsvDialect, InvalidCsvLimits, InvalidCsvValue, MissingCsvColumn, MissingCsvValue)",
       "family": "Standard library: csv",
       "spec_refs": [
         "std/csv.ok"
@@ -5120,7 +5120,7 @@
     },
     {
       "id": "STD.OS.ENVIRONMENT",
-      "title": "std os/environment public contract (Environment, InvalidEnvironmentVariable, MissingEnvironmentVariable, MissingHomeDirectory, SearchPath)",
+      "title": "std os/environment public contract (Environment, EnvironmentMaybeValue, InvalidEnvironmentValue, InvalidEnvironmentVariable, MissingEnvironmentVariable, MissingHomeDirectory, SearchPath)",
       "family": "Standard library: os",
       "spec_refs": [
         "std/os/environment.ok"
@@ -5300,7 +5300,7 @@
     },
     {
       "id": "STD.REGEX.MATCH",
-      "title": "std regex/match public contract (MissingRegexCapture, MissingRegexGroup, RegexCapture, RegexMatch, RegexMatching, UnmatchedRegexCapture)",
+      "title": "std regex/match public contract (InvalidRegexGroupValue, MissingRegexCapture, MissingRegexGroup, RegexCapture, RegexMatch, RegexMatching, RegexMaybeValue, UnmatchedRegexCapture)",
       "family": "Standard library: regex",
       "spec_refs": [
         "std/regex/match.ok"
@@ -6477,6 +6477,21 @@
       "notes": "Native substrate module; its behaviour is observed through the public modules that compose it."
     },
     {
+      "id": "STD.STRINGS.BUFFER",
+      "title": "std strings/buffer public contract (TextBuffer)",
+      "family": "Standard library: strings",
+      "spec_refs": [
+        "std/strings/buffer.ok"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+      }
+    },
+    {
       "id": "STD.STRINGS.FORMAT",
       "title": "std strings/format public contract (FormatProbe, Formatted, InvalidFormat)",
       "family": "Standard library: strings",
@@ -7198,7 +7213,7 @@
     },
     {
       "id": "STD.URL.QUERY",
-      "title": "std url/query public contract (InvalidQueryEncoding, MissingQueryParameter, ParameterParsing, ParsedQuery, QueryLimitExceeded, QueryParameter, QueryParameters)",
+      "title": "std url/query public contract (InvalidQueryEncoding, InvalidQueryValue, MissingQueryParameter, ParameterParsing, ParsedQuery, QueryLimitExceeded, QueryMaybeValue, QueryParameter, QueryParameters)",
       "family": "Standard library: url",
       "spec_refs": [
         "std/url/query.ok"

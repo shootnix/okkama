@@ -896,6 +896,8 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
                 return Ok(int_value(0));
             }
             let output = state.borrow().output;
+            // Buffered standard output goes first (#132).
+            let _ = crate::stdout::flush();
             Ok(int_value(write_fd(output, &data, operation).map_err(as_error)? as i64))
         }
         "terminal_read" => Ok(terminal_read(&args[0], int(&args[1])?)),

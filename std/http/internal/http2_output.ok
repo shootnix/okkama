@@ -8,7 +8,6 @@ import "http/internal/hpack_tables" take HpackField;
 import "http/internal/http2_headers" take Http2EncodedHeaderFrames;
 import "collections/sequence" take Sequencing;
 import "io/stream" take AsyncWriting;
-import "io/decorators" take ByteSnapshot;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
 import "error" take InvalidState;
@@ -180,7 +179,7 @@ object Http2ConnectionOutput does Http2ControlQueuing {
             if !ticket.cancelled() {
                 ticket.begin();
                 for ticket.frames() -> frame {
-                    let pending = origin.write(ByteSnapshot(frame.bytes()));
+                    let pending = origin.write(frame.bytes());
                     await pending;
                 }
                 ticket.completed();

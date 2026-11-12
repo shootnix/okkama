@@ -5,7 +5,6 @@ import "runtime/hpack" take huffman_decode;
 import "http/internal/wire_bytes" take HttpWireBytes;
 import "async/atomic" take Atomic;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 
 // Internal bounded uint32 integer profile. No public header/HPACK API.
 object HpackInteger {
@@ -44,14 +43,14 @@ object HpackInteger {
         }
         let output = ByteBuffer();
         let remaining = Atomic(value - maximum);
-        output.writing().write(ByteSnapshot([(pattern | maximum).byte()]));
+        output.writing().write([(pattern | maximum).byte()]);
         for (0..5) -> step {
             let chunk = remaining.value() & 127;
             if remaining.value() < 128 {
-                output.writing().write(ByteSnapshot([chunk.byte()]));
+                output.writing().write([chunk.byte()]);
                 return output.content().bytes();
             }
-            output.writing().write(ByteSnapshot([(chunk | 128).byte()]));
+            output.writing().write([(chunk | 128).byte()]);
             remaining.replace(remaining.value() >> 7);
         }
         throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "oversized HPACK integer");

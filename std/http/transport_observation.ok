@@ -103,8 +103,12 @@ hidden object HttpObservedWriting does AsyncWriting {
     }
 
     async write(source is ByteSource) is AsyncWriting {
+        await self.write(source.bytes());
+    }
+
+    async write(bytes is @byte) is AsyncWriting {
         try {
-            let pending = origin.write(source);
+            let pending = origin.write(bytes);
             await pending;
             self;
         }

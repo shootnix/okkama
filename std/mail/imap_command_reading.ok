@@ -9,7 +9,6 @@ import "mail/imap_response" take ImapResponse, ImapResponseKind, ImapResponseLim
 import "collections/sequence" take Sequencing;
 import "mime/media_type" take MimeItems, MimePosition;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument;
 import "async/event" take Event;
 
@@ -146,7 +145,12 @@ hidden object ImapCommandReading {
     has pending is Future<ImapCommandRead>;
 
     ImapCommandReading(origin is AsyncReading, tag is ImapTag) {
-        pending = ImapCommandInput(origin: origin, tag: tag, prefix: [], limits: ImapCommandLimits()).read();
+        pending = ImapCommandInput(
+            origin: origin,
+            tag: tag,
+            prefix: [],
+            limits: ImapCommandLimits()
+        ).read();
     }
 
     ImapCommandReading(
@@ -285,11 +289,18 @@ object ImapCommandInput {
             let response = read.response();
             used = used.following(used.index() + read.consumed());
             count = count.following(count.index() + 1);
-            tail = tail.following(ImapCommandPrefixJoin(first: read.remainder(), second: split.tail()).bytes());
+            tail = tail.following(
+                ImapCommandPrefixJoin(first: read.remainder(), second: split.tail()).bytes()
+            );
             if response.kind() == ImapResponseKind.tagged {
                 confirm response.tag() == tag.string()
                     else throw UnexpectedImapTag.detailed(tag.string(), response.tag());
-                return ImapCommandRead(responses: collected.entries(), completion: response, remainder: tail.bytes(), consumed: used.index());
+                return ImapCommandRead(
+                    responses: collected.entries(),
+                    completion: response,
+                    remainder: tail.bytes(),
+                    consumed: used.index()
+                );
             }
             if response.kind() == ImapResponseKind.continuation {
                 confirm !continued.ready() else throw UnexpectedImapContinuation.unexpected;
@@ -360,7 +371,7 @@ hidden object ImapCommandPrefixJoin {
     bytes() is @byte {
         let buffer = ByteBuffer(first);
         defer buffer.closing().close();
-        buffer.writing().write(ByteSnapshot(second));
+        buffer.writing().write(second);
         buffer.content().bytes();
     }
 }
@@ -378,7 +389,12 @@ enum ImapServerClosed is Error = (bye);
 test "tagged rejection remains a completed aligned outcome" {
     let wire = Utf8Encoded("O1 NO rejected\r\n").bytes();
     let response = ParsedImapResponse(wire).response();
-    let result = ImapCommandRead(responses: [], completion: response, remainder: [7.byte()], consumed: wire.size());
+    let result = ImapCommandRead(
+        responses: [],
+        completion: response,
+        remainder: [7.byte()],
+        consumed: wire.size()
+    );
     test.is(result.successful(), false);
     test.is(result.remainder(), [7.byte()]);
     let rejected = try {

@@ -183,7 +183,7 @@ object ImapCommand {
             else throw InvalidState.because("IMAP command has no continuation payload");
         let buffer = ByteBuffer(payload[0].bytes());
         defer buffer.closing().close();
-        buffer.writing().write(ByteSnapshot([13.byte(), 10.byte()]));
+        buffer.writing().write([13.byte(), 10.byte()]);
         buffer.content().bytes();
     }
 

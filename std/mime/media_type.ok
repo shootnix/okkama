@@ -6,7 +6,6 @@ import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
 import "url/percent" take PercentEncoded, PercentDecoded, UrlComponent, InvalidPercentEncoding;
 import "strings/parse" take Number, InvalidInteger;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument;
 
 // Immutable logical parameters and concrete media types. Parsing observes an
@@ -519,7 +518,7 @@ object MimeScanning {
             let code = codes[index].int();
             if code == 34 {
                 if index > run.index() {
-                    writer.write(ByteSnapshot(codes.slice(run.index(), index)));
+                    writer.write(codes.slice(run.index(), index));
                 }
                 return MimeScanned(
                     text: Utf8Decoded(buffer.content().bytes()).string(),
@@ -530,7 +529,7 @@ object MimeScanning {
                 confirm codes.size() - index >= 2
                     else throw InvalidMediaType.located(index, "unfinished quoted pair");
                 if index > run.index() {
-                    writer.write(ByteSnapshot(codes.slice(run.index(), index)));
+                    writer.write(codes.slice(run.index(), index));
                 }
                 run = run.following(index + 1);
                 position = position.following(index + 2);
@@ -706,7 +705,7 @@ hidden object MimeExtended {
             else {
                 Utf8Encoded(text).bytes();
             };
-            writer.write(ByteSnapshot(bytes));
+            writer.write(bytes);
         }
         let bytes = output.content().bytes();
         if prefix.charset() != "utf-8" {

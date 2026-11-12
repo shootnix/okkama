@@ -98,6 +98,8 @@ impl Heap {
     fn input_execute(&mut self, n: Native, a: &[Slot]) -> Result<Slot, ProviderError> {
         use Native::*;
         if matches!(n, StdinRead | StdinReadLine) {
+            // A prompt on a terminal shows before the program waits (#132).
+            let _ = okkama_runtime_core::stdout::before_input();
             let count = if n == StdinRead {
                 use num_traits::ToPrimitive;
                 let limit = crate::host::native_file::big(self.integer(a[0])?);

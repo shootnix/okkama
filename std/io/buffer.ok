@@ -80,10 +80,13 @@ object BufferWriting does Writing {
     }
 
     write(source is ByteSource) is void {
+        self.write(source.bytes());
+    }
+
+    write(bytes is @byte) is void {
         confirm !buffer_state_closed(state) else throw ClosedBuffer.closed;
-        let value is @byte = source.bytes();
-        let written is int = buffer_state_append(state, value);
-        confirm written == value.size() else throw IncompleteWrite.after(written);
+        let written is int = buffer_state_append(state, bytes);
+        confirm written == bytes.size() else throw IncompleteWrite.after(written);
     }
 
     flush() is void {

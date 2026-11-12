@@ -19,6 +19,9 @@ pub(crate) fn handles(native: Native) -> bool {
             | BufferStateSize
             | BufferStateClosed
             | BufferStateClose
+            | TextBufferCreate
+            | TextBufferAppend
+            | TextBufferText
     )
 }
 impl Heap {
@@ -43,6 +46,28 @@ impl Heap {
         args: &[Slot],
     ) -> Result<Outcome, Error> {
         use Native::*;
+        // Text built piece by piece (#139): appending does not copy the text so far.
+        match native {
+            TextBufferCreate => {
+                return Ok(Outcome::Value(Slot { tag: HANDLE, bits: self.handles.allocate(Handle::TextBuffer(String::new()))? }));
+            }
+            TextBufferAppend => {
+                let added = self.text(args[1])?.to_owned();
+                let Handle::TextBuffer(text) = self.handles.get_mut(args[0].bits)? else {
+                    return Err(Error("expected native TextBufferState handle".into()));
+                };
+                text.push_str(&added);
+                return Ok(Outcome::Value(Slot::boolean(true)));
+            }
+            TextBufferText => {
+                let Handle::TextBuffer(text) = self.handles.get(args[0].bits)? else {
+                    return Err(Error("expected native TextBufferState handle".into()));
+                };
+                let text = text.clone();
+                return Ok(Outcome::Value(self.allocate_text(text)?));
+            }
+            _ => {}
+        }
         if native == BufferStateCreate {
             let bytes = self.native_bytes(args[0])?.into();
             return Ok(Outcome::Value(Slot {

@@ -4,7 +4,6 @@ import "compare" take Comparing, Order;
 import "collections/sequence" take Sequencing;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument;
 
 object MessageHeaderName does Comparing<MessageHeaderName> {
@@ -213,7 +212,7 @@ hidden object UnfoldedMessageHeader {
                             index,
                             "invalid field value character"
                         );
-                    writer.write(ByteSnapshot(bytes));
+                    writer.write(bytes);
                     index + 1;
                 }
             }
@@ -260,7 +259,7 @@ hidden object MessageHeaderOutput {
         let bytes = Utf8Encoded(text + "\r\n").bytes();
         confirm bytes.size() <= maximum - buffer.content().size()
             else throw MessageHeaderLimitExceeded.kind("bytes");
-        buffer.writing().write(ByteSnapshot(bytes));
+        buffer.writing().write(bytes);
     }
 }
 

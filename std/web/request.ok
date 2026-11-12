@@ -161,11 +161,13 @@ object WebRequest {
 
     // Requires application/json or a +json media type. The document is parsed
     // eagerly, so syntax errors are a 400 here and never escape later as JsonError.invalid;
-    // reading errors of the returned RequestJson are 422.
+    // reading errors of the returned RequestJson are 422. The bytes go to the
+    // parser as they are (#135): bytes that are not UTF-8 are a 400 that names
+    // where they start.
     async json(limit is int) is RequestJson {
         self.media("json");
         let document = try {
-            ParsedJson(await self.text(limit)).root();
+            ParsedJson(await self.bytes(limit)).root();
         }
         catch failure is JsonError {
             throw Exception.status(400, "invalid JSON body: " + failure.text());
@@ -396,11 +398,7 @@ hidden object QueryValues does RequestValues {
     }
 
     list(name is string) is @string {
-        let values = parameters.values(name);
-        let listed is @string = (0..values.size()).map() -> index {
-            values.item(index);
-        };
-        listed;
+        parameters.list(name);
     }
 
     maybe(name is string) is RequestMaybeValue {
@@ -906,7 +904,7 @@ test "the query is decoded once and read many times" {
     test.is(request.query().text("a"), "1");
     test.is(request.query().text("b"), "x y");
     test.is(request.query().maybe("c").text() else "none", "none");
-    test.is(request.parameters().first("a"), "1");
+    test.is(request.parameters().text("a"), "1");
     let broken = WebRequest(
         request: Request(target: OriginTarget(path: "/", query: Maybe.some("a=%FF"))),
         context: context

@@ -420,6 +420,30 @@ public final class FsNatives {
         return spec.canonpath(parent);
     }
 
+    /**
+     * Якорь пути (том и корень, {@code ""} у относительного), затем его имена:
+     * {@code .} и повторные разделители уходят, {@code ..} остаётся (#124).
+     */
+    public static List<Object> runtime_fs__path_parts(String path, BigInteger style) {
+        Spec spec = spec(style, "path_parts", 2);
+        if (path.isEmpty() || path.indexOf('\0') >= 0) {
+            throw fail("invalid_input", "path_parts", 2, "Invalid lexical path");
+        }
+        String[] split = spec.splitpath(spec.canonpath(path));
+        boolean rooted = split[1].startsWith("/") || (spec == WIN32 && split[1].startsWith("\\"));
+        ArrayList<Object> parts = new ArrayList<Object>();
+        parts.add(split[0] + (rooted ? spec.rootdir() : ""));
+        for (String name : spec.splitdir(split[1])) {
+            if (!name.isEmpty() && !name.equals(".")) {
+                parts.add(name);
+            }
+        }
+        if (!split[2].isEmpty() && !split[2].equals(".")) {
+            parts.add(split[2]);
+        }
+        return parts;
+    }
+
     public static String runtime_fs__path_child(String path, String part, BigInteger style) {
         Spec spec = spec(style, "path_child", 3);
         if (path.isEmpty() || part.isEmpty()) {
@@ -779,6 +803,20 @@ public final class FsNatives {
         return true;
     }
 
+    /** Каталог и все недостающие родители; готовый каталог — не отказ (#125). */
+    public static boolean runtime_fs__mkdir_all(List<?> pathValue, BigInteger mode) {
+        String path = path(pathValue, "mkdir_all", 2);
+        if (!validMode(mode)) {
+            throw fail("invalid_input", "mkdir_all", 2, "Invalid directory mode");
+        }
+        try {
+            Files.createDirectories(Host.path(path), PosixFilePermissions.asFileAttribute(permissions(mode.intValue())));
+        } catch (IOException error) {
+            throw host(error, "mkdir_all", 2, "Cannot create directory");
+        }
+        return true;
+    }
+
     private static boolean directory(Path path) {
         return Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS);
     }
@@ -822,6 +860,48 @@ public final class FsNatives {
             Files.move(Host.path(source), Host.path(target), StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException error) {
             throw host(error, "rename", 2, "Cannot rename path");
+        }
+        return true;
+    }
+
+    /** rename, отказывающий занятой цели (already_exists) вместо замены (#126). */
+    public static boolean runtime_fs__rename_noreplace(List<?> sourceValue, List<?> targetValue) {
+        String source = path(sourceValue, "rename_noreplace", 2);
+        String target = path(targetValue, "rename_noreplace", 2);
+        try {
+            Files.move(Host.path(source), Host.path(target));
+        } catch (IOException error) {
+            throw host(error, "rename_noreplace", 2, "Cannot rename path");
+        }
+        return true;
+    }
+
+    /**
+     * Копия файла с его правами (#126). Занятая цель — already_exists, если не
+     * replace; при replace копия пишется рядом и переименовывается поверх цели.
+     */
+    public static boolean runtime_fs__copy_file(List<?> sourceValue, List<?> targetValue, boolean replace) {
+        String source = path(sourceValue, "copy_file", 3);
+        String target = path(targetValue, "copy_file", 3);
+        Path from = Host.path(source);
+        Path to = Host.path(target);
+        try {
+            if (Files.isDirectory(from)) {
+                throw fail("invalid_input", "copy_file", 3, "Cannot copy file");
+            }
+            if (replace) {
+                Path written = to.resolveSibling("." + to.getFileName() + "." + ProcessHandle.current().pid() + "-" + System.nanoTime() + ".copy");
+                try {
+                    Files.copy(from, written, StandardCopyOption.COPY_ATTRIBUTES);
+                    Files.move(written, to, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } finally {
+                    Files.deleteIfExists(written);
+                }
+            } else {
+                Files.copy(from, to, StandardCopyOption.COPY_ATTRIBUTES);
+            }
+        } catch (IOException error) {
+            throw host(error, "copy_file", 3, "Cannot copy file");
         }
         return true;
     }

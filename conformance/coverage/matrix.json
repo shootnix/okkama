@@ -11396,7 +11396,7 @@
     "std/csv.ok"
    ],
    "status": "mandatory",
-   "title": "std csv public contract (CsvDialect, CsvField, CsvLimit, CsvLimitExceeded, CsvRecord, CsvRows, CsvString, CsvSymbol, EmptyCsvRecord, InvalidCsv, InvalidCsvDialect, InvalidCsvLimits)"
+   "title": "std csv public contract (CsvDialect, CsvField, CsvLimit, CsvLimitExceeded, CsvMaybeValue, CsvRecord, CsvRecords, CsvRows, CsvString, CsvSymbol, EmptyCsvRecord, InvalidCsv, InvalidCsvDialect, InvalidCsvLimits, InvalidCsvValue, MissingCsvColumn, MissingCsvValue)"
   },
   {
    "aspects": {
@@ -21203,7 +21203,7 @@
     "std/os/environment.ok"
    ],
    "status": "mandatory",
-   "title": "std os/environment public contract (Environment, InvalidEnvironmentVariable, MissingEnvironmentVariable, MissingHomeDirectory, SearchPath)"
+   "title": "std os/environment public contract (Environment, EnvironmentMaybeValue, InvalidEnvironmentValue, InvalidEnvironmentVariable, MissingEnvironmentVariable, MissingHomeDirectory, SearchPath)"
   },
   {
    "aspects": {
@@ -21639,7 +21639,7 @@
     "std/regex/match.ok"
    ],
    "status": "mandatory",
-   "title": "std regex/match public contract (MissingRegexCapture, MissingRegexGroup, RegexCapture, RegexMatch, RegexMatching, UnmatchedRegexCapture)"
+   "title": "std regex/match public contract (InvalidRegexGroupValue, MissingRegexCapture, MissingRegexGroup, RegexCapture, RegexMatch, RegexMatching, RegexMaybeValue, UnmatchedRegexCapture)"
   },
   {
    "aspects": {
@@ -24092,6 +24092,41 @@
   {
    "aspects": {
     "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.STRINGS.BUFFER",
+   "discrepancies": [],
+   "family": "Standard library: strings",
+   "spec_refs": [
+    "std/strings/buffer.ok"
+   ],
+   "status": "mandatory",
+   "title": "std strings/buffer public contract (TextBuffer)"
+  },
+  {
+   "aspects": {
+    "boundary": {
      "cases": [
       "L09.strings.formatted"
      ],
@@ -25911,7 +25946,7 @@
     "std/url/query.ok"
    ],
    "status": "mandatory",
-   "title": "std url/query public contract (InvalidQueryEncoding, MissingQueryParameter, ParameterParsing, ParsedQuery, QueryLimitExceeded, QueryParameter, QueryParameters)"
+   "title": "std url/query public contract (InvalidQueryEncoding, InvalidQueryValue, MissingQueryParameter, ParameterParsing, ParsedQuery, QueryLimitExceeded, QueryMaybeValue, QueryParameter, QueryParameters)"
   },
   {
    "aspects": {
@@ -30349,6 +30384,9 @@
    "STD.SIZE [normal]",
    "STD.SIZE [boundary]",
    "STD.SIZE [invalid]",
+   "STD.STRINGS.BUFFER [normal]",
+   "STD.STRINGS.BUFFER [boundary]",
+   "STD.STRINGS.BUFFER [invalid]",
    "STD.STRINGS.JOIN [normal]",
    "STD.STRINGS.JOIN [boundary]",
    "STD.STRINGS.JOIN [invalid]",
@@ -30796,6 +30834,7 @@
    "STD.REGEX.MATCH",
    "STD.REGEX.RANGE",
    "STD.SIZE",
+   "STD.STRINGS.BUFFER",
    "STD.STRINGS.JOIN",
    "STD.TEMPLATE.COMPILE",
    "STD.TEMPLATE.HTML",
@@ -30850,5 +30889,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "21b07606888e125c71844f07dea16ed16d261a2e141189914f2c75412a2a3f09"
+ "suite_tree_sha256": "f32baf458fba734e21445dae81a4401db8dfe36774f957be8d3c47b93c693833"
 }

@@ -6,7 +6,6 @@ import "encoding/utf" take ByteOrder;
 import "http/internal/wire_bytes" take HttpWireBytes;
 import "runtime/binary" take binary_masked_slice;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 
 object WebSocketFrameHeader {
     has opcode, length is int;
@@ -79,11 +78,21 @@ object WebSocketFrameHeader {
             0;
         }).byte();
         let extended is @byte = if indicator == 126 {
-            IntegerBytes(value: length, size: 2, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+            IntegerBytes(
+                value: length,
+                size: 2,
+                signedness: Signedness.unsigned,
+                order: ByteOrder.big
+            ).bytes();
         }
         else {
             if indicator == 127 {
-                IntegerBytes(value: length, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+                IntegerBytes(
+                    value: length,
+                    size: 8,
+                    signedness: Signedness.unsigned,
+                    order: ByteOrder.big
+                ).bytes();
             }
             else {
                 let empty is @byte = [];
@@ -175,7 +184,12 @@ object ParsedWebSocketFrameHeader {
         if opcode < 8 {
             confirm length <= maximum else throw WebSocketFailure.because("data frame byte limit");
         }
-        WebSocketFrameHeader(opcode: opcode, final: (first & 128) != 0, length: length, masked: masked);
+        WebSocketFrameHeader(
+            opcode: opcode,
+            final: (first & 128) != 0,
+            length: length,
+            masked: masked
+        );
     }
 }
 
@@ -221,7 +235,7 @@ object WebSocketMaskedBytes {
             else {
                 origin.size() - start;
             };
-            writing.write(ByteSnapshot(binary_masked_slice(origin, mask, offset, start, count)));
+            writing.write(binary_masked_slice(origin, mask, offset, start, count));
             position = position.following(start + count);
         }
         output.content().bytes();
@@ -255,7 +269,12 @@ object WebSocketFrame {
     bytes(mask is @byte) is @byte {
         confirm mask.size() == 0 || mask.size() == 4
             else throw WebSocketFailure.because("mask width");
-        let header = WebSocketFrameHeader(opcode: opcode, final: final, length: payload.size(), masked: mask.size() == 4).bytes(
+        let header = WebSocketFrameHeader(
+            opcode: opcode,
+            final: final,
+            length: payload.size(),
+            masked: mask.size() == 4
+        ).bytes(
             mask
         );
         let data = if mask.size() == 4 {

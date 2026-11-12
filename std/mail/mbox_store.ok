@@ -12,7 +12,6 @@ import "fs/stat" take FileKind;
 import "fs/lock" take FileLock, FileLockMode;
 import "fs/temp" take TemporaryFile;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "io/stream" take Closing;
 import "random/source" take SecureRandom;
 import "encoding/hex" take HexEncoded;
@@ -83,12 +82,20 @@ object MboxSession does Closing {
             throw failure;
         };
         let initial = try {
-            let wire = MboxFileBytes(path: origin.path(), maximum: origin.limits()::Limits::wire_bytes).bytes();
+            let wire = MboxFileBytes(
+                path: origin.path(),
+                maximum: origin.limits()::Limits::wire_bytes
+            ).bytes();
             let records = ParsedMbox(origin: wire, limits: origin.limits()).records();
             let identifiers is @string = (0..records.size()).map() -> index {
                 token + "." + index.string();
             };
-            MboxSnapshot(wire: wire, records: records, identifiers: identifiers, limits: origin.limits());
+            MboxSnapshot(
+                wire: wire,
+                records: records,
+                identifiers: identifiers,
+                limits: origin.limits()
+            );
         }
         catch failure is Error {
             try {
@@ -128,7 +135,8 @@ object MboxSession does Closing {
         self.current();
         let records = view.records();
         let count = records.size();
-        confirm count < origin.limits()::Limits::messages else throw MboxLimitExceeded.kind("messages");
+        confirm count < origin.limits()::Limits::messages
+            else throw MboxLimitExceeded.kind("messages");
         confirm serial < 9223372036854775807 else throw MboxLimitExceeded.kind("identifiers");
         let added is @MboxRecord = (0..count + 1).map() -> index {
             if index < count {
@@ -188,7 +196,10 @@ object MboxSession does Closing {
 
     hidden current() is void {
         lease.check();
-        let present = MboxFileBytes(path: origin.path(), maximum: origin.limits()::Limits::wire_bytes).bytes();
+        let present = MboxFileBytes(
+            path: origin.path(),
+            maximum: origin.limits()::Limits::wire_bytes
+        ).bytes();
         confirm present == view.bytes() else throw MboxConflict.conflict;
     }
 }
@@ -271,7 +282,7 @@ hidden object MboxFileBytes {
             let bytes = reader.bytes(amount);
             last if bytes.size() == 0;
             confirm bytes.size() <= remaining else throw MboxLimitExceeded.kind("wire_bytes");
-            buffer.writing().write(ByteSnapshot(bytes));
+            buffer.writing().write(bytes);
         }
         buffer.content().bytes();
     }
@@ -299,7 +310,12 @@ hidden object MboxSnapshot {
         let empty is @MailFlag = [];
         let flags = MailFlags(empty);
         let saved is @StoredMail = (0..count).map() -> index {
-            StoredMail(identifier: identifiers[index], message: values[index].message(), flags: flags, limits: limits.mime());
+            StoredMail(
+                identifier: identifiers[index],
+                message: values[index].message(),
+                flags: flags,
+                limits: limits.mime()
+            );
         };
         self.wire = wire;
         self.records = values;
@@ -339,9 +355,9 @@ hidden object MboxReplacement {
         lease.check();
         let temporary = TemporaryFile(directory: Directory(path.parent()), prefix: ".okkama-mbox-");
         try {
-            temporary.write(ByteSnapshot(wire));
+            temporary.write(wire);
             temporary.flush();
-            FileEntry(temporary.path()).move(path);
+            FileEntry(temporary.path()).move(destination: path, overwrite: true);
         }
         catch failure is Error {
             try {

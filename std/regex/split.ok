@@ -120,7 +120,10 @@ test "parts keep empty fields and honour a limit" {
         }.join("");
     };
     test.is(text(RegexParts(origin: ",a,,b,", regex: Regex(","))), "[][a][][b][]");
-    test.is(text(RegexParts(origin: "one, two;three", regex: Regex("[,;]\\s*"))), "[one][two][three]");
+    test.is(
+        text(RegexParts(origin: "one, two;three", regex: Regex("[,;]\\s*"))),
+        "[one][two][three]"
+    );
     test.is(text(RegexParts(origin: "a,b,c", regex: Regex(","), limit: 1)), "[a][b,c]");
     test.is(text(RegexParts(origin: "abc", regex: Regex(","))), "[abc]");
     test.is(text(RegexParts(origin: "", regex: Regex(","))), "[]");
@@ -133,4 +136,25 @@ test "parts keep empty fields and honour a limit" {
         },
         "limit 0"
     );
+}
+
+test "a regex splits the way RegexParts does" {
+    for [
+        [",", ",a,,b,"],
+        ["[,;]\\s*", "one, two;three"],
+        [",", "abc"],
+        [",", ""],
+        ["x*", "abc"],
+        ["\\s*", "a b"],
+        ["😀", "a😀😀b"],
+    ] -> pair {
+        let regex = Regex(pair[0]);
+        let eager = regex.parts(pair[1]).map() -> part {
+            "[" + part + "]";
+        }.join("");
+        let lazy = RegexParts(origin: pair[1], regex: regex).map() -> part {
+            "[" + part + "]";
+        }.join("");
+        test.is(eager, lazy);
+    }
 }

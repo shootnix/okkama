@@ -626,6 +626,11 @@ object TlsWriting does AsyncWriting, Closing {
         await owner.write_bytes(source);
         self;
     }
+
+    async write(bytes is @byte) is AsyncWriting {
+        await owner.write_bytes(ByteSnapshot(bytes));
+        self;
+    }
 }
 
 test "client defaults retain only modern versions and explicit empty trust" {

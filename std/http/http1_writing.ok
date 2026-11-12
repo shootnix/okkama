@@ -7,7 +7,6 @@ import "http/header" take Headers;
 import "http/method" take Method, MethodName;
 import "http/version" take Http1VersionText;
 import "io/stream" take AsyncWriting;
-import "io/decorators" take ByteSnapshot;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
 
 // Canonical head bytes are fully bounded/validated before a lazy single write.
@@ -132,14 +131,16 @@ hidden object Http1HeadOutput {
 
     // The bytes of a head whose framing is already checked.
     response_bytes(head is Http1ResponseHead, limits is Http1Limits) is @byte {
-        let start = Http1VersionText(head::Head::version).string() + " " + StatusCode(head::Head::status).number().string() + " " + StatusCode(
+        let start = Http1VersionText(head::Head::version).string() + " " + StatusCode(
+            head::Head::status
+        ).number().string() + " " + StatusCode(
             head::Head::status
         ).phrase();
         Http1HeadWire(start: start, fields: head.headers(), limits: limits).bytes();
     }
 
     writing(origin is AsyncWriting, wire is @byte) is Future<AsyncWriting> {
-        origin.write(ByteSnapshot(wire));
+        origin.write(wire);
     }
 }
 
@@ -162,11 +163,13 @@ hidden object Http1HeadWire {
         confirm start.length() + 4 <= limits::Limits::head_bytes
             else throw Http1LimitExceeded.kind("head_bytes");
         let entries = fields.entries();
-        confirm entries.size() <= limits::Limits::fields else throw Http1LimitExceeded.kind("fields");
+        confirm entries.size() <= limits::Limits::fields
+            else throw Http1LimitExceeded.kind("fields");
         let total = (0..entries.size()).reduce(start.length() + 4) -> used, index {
             let field = entries.item(index);
             let width = field.name().string().length() + field.value().length() + 2;
-            confirm width <= limits::Limits::line_bytes else throw Http1LimitExceeded.kind("line_bytes");
+            confirm width <= limits::Limits::line_bytes
+                else throw Http1LimitExceeded.kind("line_bytes");
             confirm width + 2 <= limits::Limits::head_bytes - used
                 else throw Http1LimitExceeded.kind("head_bytes");
             used + width + 2;

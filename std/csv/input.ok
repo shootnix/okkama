@@ -2,7 +2,7 @@ module csv/input v1.0.0;
 
 import "io/stream" take Reading;
 import "io/buffer" take ByteBuffer, ClosedBuffer;
-import "io/decorators" take ByteSnapshot, InvalidReading;
+import "io/decorators" take InvalidReading;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded, InvalidUtf8;
 import "csv" take CsvRows, CsvDialect, InvalidCsv, InvalidCsvLimits, CsvLimitExceeded, CsvLimit;
 
@@ -105,7 +105,7 @@ object CsvInput {
                 else throw InvalidReading.because("CSV origin returned more bytes than requested");
             last if chunk.size() == 0;
             confirm chunk.size() <= remaining else throw CsvByteLimitExceeded.exceeded;
-            buffer.writing().write(ByteSnapshot(chunk));
+            buffer.writing().write(chunk);
         }
         let text = Utf8Decoded(buffer.content().bytes()).string();
         let rows is @@string = CsvRows(
@@ -138,16 +138,38 @@ test "empty and blank documents differ" {
     test.is(CsvInput(ByteBuffer().reading()).read(), []);
     test.is(CsvInput(ByteBuffer([byte(13), byte(10)]).reading()).read(), [[""]]);
     test.is(
-        CsvInput(origin: ByteBuffer().reading(), maximum_bytes: 0, maximum_input: 0, maximum_field: 0, maximum_rows: 0, maximum_columns: 0, dialect: CsvDialect(",", "\"", "\r\n")).read(),
+        CsvInput(
+            origin: ByteBuffer().reading(),
+            maximum_bytes: 0,
+            maximum_input: 0,
+            maximum_field: 0,
+            maximum_rows: 0,
+            maximum_columns: 0,
+            dialect: CsvDialect(",", "\"", "\r\n")
+        ).read(),
         []
     );
 }
 
 test "custom grammar and exact byte bound" {
     let buffer = ByteBuffer(Utf8Encoded("§§§§\n").bytes());
-    test.is(CsvInput(origin: buffer.reading(), maximum_bytes: 9, maximum_input: 5, maximum_field: 1, maximum_rows: 1, maximum_columns: 1, dialect: CsvDialect("😀", "§", "\n")).read(), [["§"]]);
     test.is(
-        CsvInput(origin: ByteBuffer(Utf8Encoded("a;'b;c'\n").bytes()).reading(), dialect: CsvDialect(";", "'", "\n")).read(),
+        CsvInput(
+            origin: buffer.reading(),
+            maximum_bytes: 9,
+            maximum_input: 5,
+            maximum_field: 1,
+            maximum_rows: 1,
+            maximum_columns: 1,
+            dialect: CsvDialect("😀", "§", "\n")
+        ).read(),
+        [["§"]]
+    );
+    test.is(
+        CsvInput(
+            origin: ByteBuffer(Utf8Encoded("a;'b;c'\n").bytes()).reading(),
+            dialect: CsvDialect(";", "'", "\n")
+        ).read(),
         [["a", "b;c"]]
     );
 }
@@ -155,7 +177,15 @@ test "custom grammar and exact byte bound" {
 test "byte budgets and invalid configuration" {
     let buffer = ByteBuffer(Utf8Encoded("abcdef").bytes());
     try {
-        CsvInput(origin: buffer.reading(), maximum_bytes: 2, maximum_input: 10, maximum_field: 10, maximum_rows: 1, maximum_columns: 1, dialect: CsvDialect(",", "\"", "\r\n")).read();
+        CsvInput(
+            origin: buffer.reading(),
+            maximum_bytes: 2,
+            maximum_input: 10,
+            maximum_field: 10,
+            maximum_rows: 1,
+            maximum_columns: 1,
+            dialect: CsvDialect(",", "\"", "\r\n")
+        ).read();
         test.fail("byte budget ignored");
     }
     catch error is CsvByteLimitExceeded {
@@ -163,7 +193,15 @@ test "byte budgets and invalid configuration" {
     }
     test.is(Utf8Decoded(buffer.content().bytes()).string(), "def");
     try {
-        CsvInput(origin: buffer.reading(), maximum_bytes: -1, maximum_input: 10, maximum_field: 10, maximum_rows: 1, maximum_columns: 1, dialect: CsvDialect(",", "\"", "\r\n"));
+        CsvInput(
+            origin: buffer.reading(),
+            maximum_bytes: -1,
+            maximum_input: 10,
+            maximum_field: 10,
+            maximum_rows: 1,
+            maximum_columns: 1,
+            dialect: CsvDialect(",", "\"", "\r\n")
+        );
         test.fail("negative limit accepted");
     }
     catch error is InvalidCsvLimits {

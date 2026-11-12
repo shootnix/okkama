@@ -89,7 +89,7 @@ pub fn execute(
         Provider::Postgres => postgres::execute(native, args),
         Provider::Misc => misc::execute(native, args, context),
         Provider::Idna => idna::execute(native, args),
-        Provider::Json => json::execute(native, args),
+        Provider::Json => json::execute(native, args, arrays),
         Provider::Db => db::execute(native, args),
         Provider::Markup => markup::execute(native, args),
         Provider::Math => math::execute(native, args, context),
@@ -122,7 +122,8 @@ pub fn execute(
             args,
             arrays,
             &mut std::io::stdin().lock(),
-            &mut std::io::stdout().lock(),
+            // The process buffer (#132), shared with the test report.
+            &mut crate::stdout::Buffered,
             &mut std::io::stderr().lock(),
         ),
         Provider::Utf => unicode_text(native, args, arrays),
@@ -264,7 +265,11 @@ fn route(native: Native) -> Provider {
     }
     if matches!(
         native,
-        Native::StdoutWrite | Native::StderrWrite | Native::StdinRead | Native::StdinReadLine
+        Native::StdoutWrite
+            | Native::StderrWrite
+            | Native::StdoutFlush
+            | Native::StdinRead
+            | Native::StdinReadLine
     ) {
         return Provider::Streams;
     }

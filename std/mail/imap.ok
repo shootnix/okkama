@@ -6,7 +6,6 @@ import "mime/media_type" take MimeItems;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "io/stream" take ByteSource;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument;
 
 // Eager CAPABILITY advertisement snapshots, not negotiated session state.
@@ -207,11 +206,13 @@ hidden object ImapCapabilitySnapshot {
         confirm count >= 0
             else throw InvalidArgument.because("IMAP capability source size must be nonnegative");
         confirm count > 0 else throw InvalidImapCapabilities.because("missing protocol revision");
-        confirm count <= limits::Limits::tokens else throw ImapCapabilityLimitExceeded.kind("tokens");
-        confirm limits::Limits::wire_bytes >= 14 else throw ImapCapabilityLimitExceeded.kind("wire_bytes");
+        confirm count <= limits::Limits::tokens
+            else throw ImapCapabilityLimitExceeded.kind("tokens");
+        confirm limits::Limits::wire_bytes >= 14
+            else throw ImapCapabilityLimitExceeded.kind("wire_bytes");
         let buffer = ByteBuffer();
         defer buffer.closing().close();
-        buffer.writing().write(ByteSnapshot(Utf8Encoded("* CAPABILITY").bytes()));
+        buffer.writing().write(Utf8Encoded("* CAPABILITY").bytes());
         let all is MimeItems<string> = MimeItems();
         let known is MimeItems<ImapFeature> = MimeItems();
         let auth is MimeItems<string> = MimeItems();
@@ -221,7 +222,7 @@ hidden object ImapCapabilitySnapshot {
             let name = token.name();
             confirm raw.length() <= limits::Limits::wire_bytes - buffer.content().size() - 3
                 else throw ImapCapabilityLimitExceeded.kind("wire_bytes");
-            buffer.writing().write(ByteSnapshot(Utf8Encoded(" " + raw).bytes()));
+            buffer.writing().write(Utf8Encoded(" " + raw).bytes());
             all = all.following(name);
             let recognized = ImapKnownFeature(name).features();
             if recognized.size() > 0 {
@@ -241,7 +242,7 @@ hidden object ImapCapabilitySnapshot {
         let unique is Set<string> = OrderedSet(all.entries());
         confirm unique.membership("IMAP4REV1") || unique.membership("IMAP4REV2")
             else throw InvalidImapCapabilities.because("missing supported protocol revision");
-        buffer.writing().write(ByteSnapshot(Utf8Encoded("\r\n").bytes()));
+        buffer.writing().write(Utf8Encoded("\r\n").bytes());
         entries = tokens;
         names = unique;
         features = OrderedSet(known.entries());

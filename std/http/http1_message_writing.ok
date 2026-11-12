@@ -6,7 +6,6 @@ import "http/http1_head" take Http1RequestHead, Http1ResponseHead, Http1Limits,
 import "http/http1_framing" take Http1BodyPlan, Http1BodyKind;
 import "http/http1_writing" take Http1RequestHeadWriting, Http1RequestHeadWire,
     Http1ResponseHeadWire;
-import "io/decorators" take ByteSnapshot;
 import "http/http1_body_writing" take Http1BodyWriting;
 import "http/http1_body_check" take Http1BodyCheck;
 import "http/header" take Headers;
@@ -80,7 +79,7 @@ hidden object Http1MessageOutput {
         let plan = wire.plan();
         let whole = self.whole(request.body(), plan, limits);
         if whole.size() == 1 {
-            return origin.write(ByteSnapshot(wire.bytes() + whole[0]));
+            return origin.write(wire.bytes() + whole[0]);
         }
         let writing = Http1RequestHeadWriting(origin: origin, head: head, limits: limits);
         self.writing(writing.output(), request.body(), plan, head.headers(), limits, true);
@@ -95,13 +94,25 @@ hidden object Http1MessageOutput {
         Http1ResponseHeadWire(head: head, method: method, limits: limits);
     }
 
-    response(origin is AsyncWriting, response is Response, wire is Http1ResponseHeadWire, limits is Http1Limits) is Future<AsyncWriting> {
+    response(
+        origin is AsyncWriting,
+        response is Response,
+        wire is Http1ResponseHeadWire,
+        limits is Http1Limits
+    ) is Future<AsyncWriting> {
         let plan = wire.plan();
         let whole = self.whole(response.body(), plan, limits);
         if whole.size() == 1 {
-            return origin.write(ByteSnapshot(wire.bytes() + whole[0]));
+            return origin.write(wire.bytes() + whole[0]);
         }
-        self.writing(origin.write(ByteSnapshot(wire.bytes())), response.body(), plan, response::Head::headers, limits, false);
+        self.writing(
+            origin.write(wire.bytes()),
+            response.body(),
+            plan,
+            response::Head::headers,
+            limits,
+            false
+        );
     }
 
     // A body already in memory whose length the plan expects: written with the
@@ -112,7 +123,8 @@ hidden object Http1MessageOutput {
         match body.contained() {
             case Maybe.some(bytes) {
                 let fits = bytes.size() <= limits::Limits::body_bytes
-                    && ((plan::Plan::kind == Http1BodyKind.fixed && plan.length().string() == bytes.size().string())
+                    && ((plan::Plan::kind == Http1BodyKind.fixed
+                    && plan.length().string() == bytes.size().string())
                     || (plan::Plan::kind == Http1BodyKind.empty && bytes.size() == 0));
                 if fits {
                     [bytes];
@@ -135,11 +147,19 @@ hidden object Http1MessageOutput {
         limits is Http1Limits,
         request is bool
     ) is Future<AsyncWriting> {
-        confirm plan::Plan::kind != Http1BodyKind.tunnel && plan::Plan::kind != Http1BodyKind.upgrade
+        confirm plan::Plan::kind != Http1BodyKind.tunnel
+            && plan::Plan::kind != Http1BodyKind.upgrade
             else throw InvalidHttpMessage.because(
                 "upgraded response requires dedicated protocol handling"
             );
-        let operation = Http1MessageWriteOperation(head: head, body: body, plan: plan, fields: fields, limits: limits, request: request);
+        let operation = Http1MessageWriteOperation(
+            head: head,
+            body: body,
+            plan: plan,
+            fields: fields,
+            limits: limits,
+            request: request
+        );
         let scope is FutureScope<AsyncWriting, AsyncWriting> = FutureScope(action: operation.write);
         scope.outcome();
     }
@@ -173,7 +193,14 @@ hidden object Http1MessageWriteOperation {
         Http1BodyCheck(body: body, plan: plan, limits: limits, request: request).known();
         group.start(head);
         let origin = await head;
-        let writing = Http1BodyWriting(origin: origin, body: body, plan: plan, head: fields, limits: limits, chunk_bytes: 65536).output();
+        let writing = Http1BodyWriting(
+            origin: origin,
+            body: body,
+            plan: plan,
+            head: fields,
+            limits: limits,
+            chunk_bytes: 65536
+        ).output();
         group.start(writing);
         await writing;
     }

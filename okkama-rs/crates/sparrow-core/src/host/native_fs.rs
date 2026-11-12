@@ -3,7 +3,7 @@
 use crate::host::{
     Error,
     {Outcome, ProviderError},
-    path_syntax::{Spec, joined, path_parent},
+    path_syntax::{Spec, joined, path_parent, path_parts},
     *,
 };
 use okkama_runtime_abi::{Native, NativeFailure};
@@ -26,6 +26,7 @@ pub(crate) fn handles(n: Native) -> bool {
                 | FsPathParent
                 | FsPathChild
                 | FsPathAbsolute
+                | FsPathParts
         )
 }
 pub(crate) fn fail(n: Native, code: &str, message: &str) -> ProviderError {
@@ -157,6 +158,18 @@ impl Heap {
             Some(1) => Spec::Win32,
             _ => return Err(fail(n, "invalid_input", "Invalid path style")),
         };
+        if n == FsPathParts {
+            let path = self.text(a[0])?;
+            if path.is_empty() || path.contains('\0') {
+                return Err(fail(n, "invalid_input", "Invalid lexical path"));
+            }
+            let parts = path_parts(spec, path);
+            let mut slots = Vec::with_capacity(parts.len());
+            for part in parts {
+                slots.push(self.allocate_text(part)?);
+            }
+            return Ok(self.allocate_array(slots)?);
+        }
         let text = match n {
             FsPathJoin => {
                 let parts = self

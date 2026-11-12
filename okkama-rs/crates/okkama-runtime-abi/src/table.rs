@@ -625,5 +625,14 @@ natives! {
     SystemSecureInteger = 639, "runtime/system@1::secure_integer/2", "(int, int) -> int";
     SystemSecureFloat = 640, "runtime/system@1::secure_float/0", "() -> float";
     CldrCldrFields = 641, "runtime/cldr@1::cldr_fields/2", "(string, string) -> @string";
+    FsPathParts = 642, "runtime/fs@1::path_parts/2", "(string, int) -> @string";
+    FsMkdirAll = 643, "runtime/fs@1::mkdir_all/2", "(@byte, int) -> bool";
+    FsCopyFile = 644, "runtime/fs@1::copy_file/3", "(@byte, @byte, bool) -> bool";
+    FsRenameNoreplace = 645, "runtime/fs@1::rename_noreplace/2", "(@byte, @byte) -> bool";
+    StdoutFlush = 646, "runtime/stdio@1::stdout_flush/0", "() -> bool";
+    TextBufferCreate = 647, "runtime/buffer@1::text_buffer_create/0", "() -> TextBufferState";
+    TextBufferAppend = 648, "runtime/buffer@1::text_buffer_append/2", "(TextBufferState, string) -> bool";
+    TextBufferText = 649, "runtime/buffer@1::text_buffer_text/1", "(TextBufferState) -> string";
+    JsonJsonParseBytesState = 650, "runtime/json@1::json_parse_bytes_state/2", "(@byte, int) -> JsonParseState";
 }
 // retired: 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258

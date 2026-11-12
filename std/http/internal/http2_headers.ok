@@ -8,7 +8,6 @@ import "http/internal/hpack_tables" take HpackField;
 import "io/stream" take AsyncReading, AsyncWriting;
 import "collections/sequence" take Sequencing;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "async/atomic" take Atomic;
 import "async/scope" take FutureGroup;
 import "http/internal/wire_bytes" take HttpWireBytes;
@@ -59,7 +58,13 @@ object Http2HeaderBlockReading {
         context is HpackDecoder,
         budget is HpackBudget
     ) {
-        let operation = Http2HeaderInput(first: first, origin: origin, context: context, budget: budget, maximum: 16384);
+        let operation = Http2HeaderInput(
+            first: first,
+            origin: origin,
+            context: context,
+            budget: budget,
+            maximum: 16384
+        );
         pending = operation.reading();
     }
 
@@ -70,7 +75,13 @@ object Http2HeaderBlockReading {
         budget is HpackBudget,
         maximum is int
     ) {
-        let operation = Http2HeaderInput(first: first, origin: origin, context: context, budget: budget, maximum: maximum);
+        let operation = Http2HeaderInput(
+            first: first,
+            origin: origin,
+            context: context,
+            budget: budget,
+            maximum: maximum
+        );
         pending = operation.reading();
     }
 
@@ -131,7 +142,7 @@ hidden object Http2HeaderInput {
                 0,
                 "encoded field block budget"
             );
-        buffer.writing().write(ByteSnapshot(fragment));
+        buffer.writing().write(fragment);
         let complete = Atomic((first.header().flags().int() & 4) != 0);
         let count = Atomic(1);
         let stream = first.header().stream();
@@ -182,7 +193,7 @@ hidden object Http2HeaderInput {
                     0,
                     "encoded field block budget"
                 );
-            buffer.writing().write(ByteSnapshot(bytes));
+            buffer.writing().write(bytes);
             complete.replace((following.header().flags().int() & 4) != 0);
             count.replace(count.value() + 1);
         }
@@ -242,7 +253,14 @@ object Http2HeaderBlockWriting {
         fragment is int,
         end_stream is bool
     ) {
-        let operation = Http2HeaderOutput(origin: origin, stream: stream, fields: fields, budget: budget, fragment: fragment, end_stream: end_stream);
+        let operation = Http2HeaderOutput(
+            origin: origin,
+            stream: stream,
+            fields: fields,
+            budget: budget,
+            fragment: fragment,
+            end_stream: end_stream
+        );
         pending = operation.writing();
     }
 
@@ -286,12 +304,18 @@ hidden object Http2HeaderOutput {
     }
 
     async emit(frame is Http2Frame) is void {
-        let pending = origin.write(ByteSnapshot(frame.bytes()));
+        let pending = origin.write(frame.bytes());
         await pending;
     }
 
     async writing() is AsyncWriting {
-        let encoded = Http2EncodedHeaderFrames(stream: stream, fields: fields, budget: budget, fragment: fragment, end_stream: end_stream);
+        let encoded = Http2EncodedHeaderFrames(
+            stream: stream,
+            fields: fields,
+            budget: budget,
+            fragment: fragment,
+            end_stream: end_stream
+        );
         for encoded.frames() -> frame {
             await self.emit(frame);
         }

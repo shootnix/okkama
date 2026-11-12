@@ -9,9 +9,9 @@ main() is int {
     let child = base.addition("MODE", "test").difference("LANG");
     out.writeln(if base.membership("LANG") { "base has LANG"; } else { "?"; });
     out.writeln(if child.membership("LANG") { "?"; } else { "child lacks LANG"; });
-    out.writeln("[" + base.variable("EMPTY") + "]");
-    out.writeln(child.variable("MODE"));
-    let missing = try { base.variable("ABSENT"); } catch MissingEnvironmentVariable.name(name) { "missing " + name; };
+    out.writeln("[" + base.text("EMPTY") + "]");
+    out.writeln(child.text("MODE"));
+    let missing = try { base.text("ABSENT"); } catch MissingEnvironmentVariable.name(name) { "missing " + name; };
     out.writeln(missing);
     0;
 }

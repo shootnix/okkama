@@ -5,14 +5,15 @@ import "numbers/bigint" take BigInt, BigPowerLimitExceeded;
 import "compare" take Order;
 import "cell" take Cell;
 import "runtime/number_text" take int_parse_valid, int_parse;
-import "runtime/json" take JsonParseState, JsonNodeState, json_parse_state, json_parse_valid,
-    json_parse_offset, json_parse_line, json_parse_column, json_parse_message, json_parse_duplicate,
-    json_parse_has_duplicate, json_parse_root, json_node_kind, json_node_boolean, json_node_number,
-    json_node_text, json_node_size, json_node_item, json_member_value, json_member_position,
-    json_member_text, json_member_spelling, json_member_boolean, json_member_int, json_text_node,
-    json_number_node, json_boolean_node, json_null_node, json_array_node, json_object_node,
-    json_node_write, json_node_pointer, json_member_names, json_member_values, json_node_items,
-    json_repeated_name;
+import "runtime/utf" take utf8_encode;
+import "runtime/json" take JsonParseState, JsonNodeState, json_parse_state, json_parse_bytes_state,
+    json_parse_valid, json_parse_offset, json_parse_line, json_parse_column, json_parse_message,
+    json_parse_duplicate, json_parse_has_duplicate, json_parse_root, json_node_kind,
+    json_node_boolean, json_node_number, json_node_text, json_node_size, json_node_item,
+    json_member_value, json_member_position, json_member_text, json_member_spelling,
+    json_member_boolean, json_member_int, json_text_node, json_number_node, json_boolean_node,
+    json_null_node, json_array_node, json_object_node, json_node_write, json_node_pointer,
+    json_member_names, json_member_values, json_node_items, json_repeated_name;
 
 // JSON values: one immutable Json, parsed or built in code, read without
 // casts and written by the runtime in one call.
@@ -495,6 +496,19 @@ object ParsedJson {
         state = json_parse_state(origin, maximum_depth);
     }
 
+    // JSON as UTF-8 bytes, as a body or a file gives it: the parser checks the
+    // UTF-8 itself, with no text in between. Bytes that are not UTF-8 are
+    // JsonError.invalid where the valid prefix ends.
+    ParsedJson(origin is @byte) {
+        state = json_parse_bytes_state(origin, 128);
+    }
+
+    ParsedJson(origin is @byte, maximum_depth is int) {
+        confirm maximum_depth > 0
+            else throw JsonError.invalid(0, 1, 1, "maximum JSON depth must be positive");
+        state = json_parse_bytes_state(origin, maximum_depth);
+    }
+
     root() is Json {
         if json_parse_valid(state) {
             Json(json_parse_root(state));
@@ -865,7 +879,10 @@ test "values built in code are written compact and pretty" {
     );
     test.is(Json(fields: []).pretty(0), "{}");
     test.is(Json(JsonField("a", 1), JsonField("b", true)).string(), "{\"a\":1,\"b\":true}");
-    test.is(Json(fields: [JsonField("a", 1), JsonField("b", true)]).string(), "{\"a\":1,\"b\":true}");
+    test.is(
+        Json(fields: [JsonField("a", 1), JsonField("b", true)]).string(),
+        "{\"a\":1,\"b\":true}"
+    );
     test.is(Json().string(), "null");
     test.is(
         try {
@@ -1387,4 +1404,50 @@ test "typed member readers preserve absence and reject invalid values" {
         },
         true
     );
+}
+
+test "json parses from UTF-8 bytes as from text" {
+    let text = "{\"name\": \"Zoë 😀\", \"sizes\": [1, 2.5], \"none\": null}";
+    let parsed = ParsedJson(utf8_encode(text)).root();
+    test.is(parsed.text("name"), "Zoë 😀");
+    test.is(parsed.string(), ParsedJson(text).root().string());
+    test.is(ParsedJson(origin: utf8_encode("[[1]]"), maximum_depth: 3).root().string(), "[[1]]");
+    let located = (origin is @byte) is string {
+        try {
+            ParsedJson(origin: origin, maximum_depth: 2).root().string();
+        }
+        catch JsonError.invalid(offset, line, column, message) {
+            offset.string() + ":" + line.string() + ":" + column.string() + " " + message;
+        }
+    };
+    let textual = (origin is string) is string {
+        try {
+            ParsedJson(origin: origin, maximum_depth: 2).root().string();
+        }
+        catch JsonError.invalid(offset, line, column, message) {
+            offset.string() + ":" + line.string() + ":" + column.string() + " " + message;
+        }
+    };
+    // Errors land where they would in the text, in characters.
+    for ["[1,\n ]", "{\"ë\": tru}", "[[[1]]]", "", "1 2", "\"😀\\x\""] -> broken {
+        test.is(located(utf8_encode(broken)), textual(broken));
+    }
+    // Bytes that are not UTF-8 fail where the valid prefix ends, in characters.
+    let stray is @byte = [
+        byte(123),
+        byte(34),
+        byte(195),
+        byte(171),
+        byte(34),
+        byte(58),
+        byte(34),
+        byte(255),
+        byte(34),
+        byte(125)
+    ];
+    test.is(located(stray), "6:1:7 invalid UTF-8");
+    let cut is @byte = [byte(91), byte(13), byte(10), byte(49), byte(44), byte(226), byte(130)];
+    test.is(located(cut), "5:2:3 invalid UTF-8");
+    let nothing is @byte = [];
+    test.is(located(nothing), textual(""));
 }

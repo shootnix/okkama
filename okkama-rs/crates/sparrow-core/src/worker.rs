@@ -381,8 +381,8 @@ fn settle(runtime: &mut Runtime, output: &Output, result: Option<TypeRef>) -> Re
     if !raw[start..end].starts_with(FRAME) {
         return Err("invalid worker response frame".into());
     }
-    let mut stdout = std::io::stdout();
-    stdout.write_all(&raw[..start]).and_then(|()| stdout.flush()).map_err(|e| e.to_string())?;
+    // The action's output, into the process buffer (#132).
+    okkama_runtime_core::stdout::write(&raw[..start]).map_err(|e| e.to_string())?;
     std::io::stderr().write_all(&output.stderr).map_err(|e| e.to_string())?;
     let mut reader = Reader::new(&raw[start + 4..end]);
     match reader.take(1)?[0] {

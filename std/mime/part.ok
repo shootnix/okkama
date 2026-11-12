@@ -1229,8 +1229,8 @@ hidden object MimeRendering {
         let output = ByteBuffer(headers);
         defer output.closing().close();
         let writer = output.writing();
-        writer.write(ByteSnapshot([13.byte(), 10.byte()]));
-        writer.write(ByteSnapshot(encoded));
+        writer.write([13.byte(), 10.byte()]);
+        writer.write(encoded);
         MimeRendered(
             origin: output.content().bytes(),
             nodes: body.nodes() + 1,
@@ -1398,7 +1398,7 @@ hidden object MimeBoundedOutput {
     write(bytes is @byte) is void {
         confirm bytes.size() <= maximum - buffer.content().size()
             else throw MimeLimitFailure.kind("body_bytes");
-        buffer.writing().write(ByteSnapshot(bytes));
+        buffer.writing().write(bytes);
     }
 }
 

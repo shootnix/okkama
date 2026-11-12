@@ -8,6 +8,7 @@ import "fs/path" take Path;
 import "runtime/environment" take environment_snapshot, environment_normalize, environment_add,
     environment_diff, environment_name, environment_home, environment_path_separator;
 import "size" take Sizing;
+import "strings/parse" take Number, Truth, InvalidInteger, InvalidBoolean;
 
 // Environment is an immutable snapshot. Environment() reads the process
 // environment exactly once; Environment(values: ...) is completely isolated:
@@ -15,11 +16,15 @@ import "size" take Sizing;
 //     let system = Environment();
 //     let isolated = Environment(values: ["LANG": "C.UTF-8"]);
 //
-// Missing variables are distinct from variables containing an empty string:
+// Variables read like json values. An absent variable is distinct from one
+// that holds an empty string:
 //
-//     if system.membership("EDITOR") {
-//         output.writeln(system.variable("EDITOR"));
-//     }
+//     let env = Environment();
+//     env.text("HOME");                     // MissingEnvironmentVariable if absent
+//     env.maybe("PORT").int() else 8080;    // optional, still typed
+//     env.boolean("DEBUG");                 // true or false
+//     env.list("PATH");                     // split at the OS separator, [] if absent
+//     if env.membership("EDITOR") { … }
 //
 // addition() and difference() build new snapshots without changing their receiver:
 //
@@ -61,11 +66,64 @@ object Environment {
         origin.has(self.normalized(name));
     }
 
-    variable(name is string) is string {
+    // The value of name: env.text("HOME"). An absent variable is
+    // MissingEnvironmentVariable.
+    text(name is string) is string {
         let normalized is string = self.normalized(name);
         confirm origin.has(normalized)
             else throw MissingEnvironmentVariable.name(name);
         origin[normalized];
+    }
+
+    // The value of name as an integer: env.int("PORT"). A value that is not
+    // one is InvalidEnvironmentValue, naming the variable and the value.
+    int(name is string) is int {
+        match self.maybe(name).int() {
+            case Maybe.some(found) {
+                found;
+            }
+            else {
+                throw MissingEnvironmentVariable.name(name);
+            }
+        }
+    }
+
+    // The value of name as true or false: env.boolean("DEBUG").
+    boolean(name is string) is bool {
+        match self.maybe(name).boolean() {
+            case Maybe.some(found) {
+                found;
+            }
+            else {
+                throw MissingEnvironmentVariable.name(name);
+            }
+        }
+    }
+
+    // The value of name split at the separator of the OS's path lists (":" on
+    // POSIX, ";" on Windows): env.list("PATH"). An absent or empty variable
+    // gives []; an empty part between separators stays.
+    list(name is string) is @string {
+        let normalized is string = self.normalized(name);
+        let value = origin[normalized] else "";
+        if value.empty() {
+            let empty is @string = [];
+            empty;
+        }
+        else {
+            value.split(environment_path_separator());
+        }
+    }
+
+    // A variable that may be absent: env.maybe("PORT").int() else 8080.
+    maybe(name is string) is EnvironmentMaybeValue {
+        let normalized is string = self.normalized(name);
+        EnvironmentMaybeValue(name: name, value: if origin.has(normalized) {
+            Maybe.some(origin[normalized]);
+        }
+        else {
+            Maybe<string>.none;
+        });
     }
 
     variables() is %string:string {
@@ -141,7 +199,7 @@ object SearchPath does Sequencing<Path>, Iterating<Path>, Sizing {
 
     hidden paths() is @Path {
         if environment.membership("PATH") {
-            environment.variable("PATH")
+            environment.text("PATH")
                 .split(environment_path_separator())
                 .map() -> part {
                     Path(if part.empty() {
@@ -206,7 +264,58 @@ hidden object SearchPathCursor does Cursor<Path> {
     }
 }
 
+// A variable that may be absent: its readers answer Maybe. A value that is
+// there but malformed is still InvalidEnvironmentValue.
+object EnvironmentMaybeValue {
+    has name is string;
+    has value is Maybe<string>;
+
+    EnvironmentMaybeValue(name is string, value is Maybe<string>) {
+        self.name = name;
+        self.value = value;
+    }
+
+    text() is Maybe<string> {
+        value;
+    }
+
+    int() is Maybe<int> {
+        match value {
+            case Maybe.some(text) {
+                Maybe.some(try {
+                    Number(text).int();
+                }
+                catch failure is InvalidInteger {
+                    throw InvalidEnvironmentValue.named(name, text, "an integer");
+                });
+            }
+            else {
+                Maybe<int>.none;
+            }
+        }
+    }
+
+    boolean() is Maybe<bool> {
+        match value {
+            case Maybe.some(text) {
+                Maybe.some(try {
+                    Truth(text).bool();
+                }
+                catch failure is InvalidBoolean {
+                    throw InvalidEnvironmentValue.named(name, text, "true or false");
+                });
+            }
+            else {
+                Maybe<bool>.none;
+            }
+        }
+    }
+}
+
 enum MissingEnvironmentVariable is Error = (name(name is string));
+
+// A variable whose value is not what its reader expects.
+enum InvalidEnvironmentValue is Error = (named(name is string, value is string, expected is string));
 
 enum InvalidEnvironmentVariable is Error = (because(message is string));
 
@@ -215,12 +324,12 @@ enum MissingHomeDirectory is Error = (missing);
 test "an isolated environment answers only what it was given" {
     let env = Environment(values: ["LANG": "C.UTF-8", "EMPTY": ""]);
     test.ok(env.membership("LANG"));
-    test.is(env.variable("LANG"), "C.UTF-8");
+    test.is(env.text("LANG"), "C.UTF-8");
     test.ok(env.membership("EMPTY"));
-    test.is(env.variable("EMPTY"), "");
+    test.is(env.text("EMPTY"), "");
     test.ok(!env.membership("HOME"));
     test.ok(try {
-        env.variable("HOME");
+        env.text("HOME");
         false;
     }
     catch MissingEnvironmentVariable.name(name) {
@@ -234,8 +343,8 @@ test "addition and difference make new snapshots" {
     let more = base.addition("B", "2");
     test.ok(more.membership("B") && !base.membership("B"));
     let replaced = more.addition("A", "one");
-    test.is(replaced.variable("A"), "one");
-    test.is(more.variable("A"), "1");
+    test.is(replaced.text("A"), "one");
+    test.is(more.text("A"), "1");
     let fewer = replaced.difference("A");
     test.ok(!fewer.membership("A") && fewer.membership("B"));
     test.ok(Environment(values: ["A": "1"]) == base);
@@ -296,7 +405,53 @@ test "the process environment is a snapshot" {
 }
 
 test "an environment knows its directory for temporary files" {
-    test.is(Environment(values: ["TMPDIR": "/scratch", "TEMP": "/other"]).temporary().path().string(), "/scratch");
+    test.is(
+        Environment(values: ["TMPDIR": "/scratch", "TEMP": "/other"]).temporary().path().string(),
+        "/scratch"
+    );
     test.is(Environment(values: ["TEMP": "/other"]).temporary().path().string(), "/other");
     test.is(Environment(values: ["HOME": "/home/ada"]).temporary().path().string(), "/tmp");
+}
+
+test "variables read like json values" {
+    let separator = environment_path_separator();
+    let env = Environment(
+        values: [
+            "PORT": "8080",
+            "DEBUG": "true",
+            "NAME": "",
+            "BAD": "x",
+            "PATH": "/a" + separator + separator + "/b"
+        ]
+    );
+    test.is(env.text("NAME"), "");
+    test.is(env.int("PORT"), 8080);
+    test.ok(env.boolean("DEBUG"));
+    test.is(env.list("PATH"), ["/a", "", "/b"]);
+    test.is(env.list("NAME").size(), 0);
+    test.is(env.list("ABSENT").size(), 0);
+    test.is(env.maybe("ABSENT").int() else 3000, 3000);
+    test.is(env.maybe("PORT").int() else 3000, 8080);
+    test.is(env.maybe("NAME").text() else "unset", "");
+    test.ok(try {
+        env.text("ABSENT");
+        false;
+    }
+    catch MissingEnvironmentVariable.name(name) {
+        name == "ABSENT";
+    });
+    test.ok(try {
+        env.int("BAD");
+        false;
+    }
+    catch InvalidEnvironmentValue.named(name, value, expected) {
+        name == "BAD" && value == "x" && expected == "an integer";
+    });
+    test.ok(try {
+        env.maybe("BAD").boolean();
+        false;
+    }
+    catch InvalidEnvironmentValue.named(_name, _value, expected) {
+        expected == "true or false";
+    });
 }

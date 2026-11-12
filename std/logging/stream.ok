@@ -6,7 +6,6 @@ import "logging/level" take LogLevel;
 import "logging/line" take TextLogLine, JsonLogLine;
 import "time/zone" take TimeZone, FixedZone;
 import "io/stream" take Writing;
-import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "terminal/session" take TerminalOutput;
 import "terminal/style" take TextStyle, StyledText, DefaultColor;
@@ -70,7 +69,9 @@ object LogStyles {
     }
 
     style(level is LogLevel) is TextStyle {
-        origin.reduce(TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: [])) -> old, entry {
+        origin.reduce(
+            TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: [])
+        ) -> old, entry {
             if entry.level() == level {
                 entry.style();
             }
@@ -88,14 +89,17 @@ object TextStreamLogs does LogWriting {
     has zone is TimeZone;
 
     // Times are written in UTC unless a zone is given.
-    TextStreamLogs(origin is Writing, zone is TimeZone = FixedZone(name: "UTC", offset: Duration(seconds: 0))) {
+    TextStreamLogs(
+        origin is Writing,
+        zone is TimeZone = FixedZone(name: "UTC", offset: Duration(seconds: 0))
+    ) {
         self.origin = origin;
         self.zone = zone;
     }
 
     write(record is LogRecord) is void {
         let line = TextLogLine(origin: record, zone: zone).string();
-        origin.write(ByteSnapshot(Utf8Encoded(line + "\n").bytes()));
+        origin.write(Utf8Encoded(line + "\n").bytes());
     }
 }
 
@@ -108,7 +112,7 @@ object JsonStreamLogs does LogWriting {
 
     write(record is LogRecord) is void {
         let line = JsonLogLine(record).string();
-        origin.write(ByteSnapshot(Utf8Encoded(line + "\n").bytes()));
+        origin.write(Utf8Encoded(line + "\n").bytes());
     }
 }
 
@@ -124,7 +128,12 @@ object TextTerminalLogs does LogWriting {
     }
 
     write(record is LogRecord) is void {
-        origin.writeln(StyledText(origin: TextLogLine(origin: record, zone: zone).string(), style: styles.style(record::Entry::level)));
+        origin.writeln(
+            StyledText(
+                origin: TextLogLine(origin: record, zone: zone).string(),
+                style: styles.style(record::Entry::level)
+            )
+        );
     }
 }
 
@@ -138,7 +147,12 @@ object JsonTerminalLogs does LogWriting {
     }
 
     write(record is LogRecord) is void {
-        origin.writeln(StyledText(origin: JsonLogLine(record).string(), style: styles.style(record::Entry::level)));
+        origin.writeln(
+            StyledText(
+                origin: JsonLogLine(record).string(),
+                style: styles.style(record::Entry::level)
+            )
+        );
     }
 }
 
@@ -152,14 +166,43 @@ test "stream writers put one line per record on their output" {
     let text = ByteBuffer();
     let zone = FixedZone(name: "UTC", offset: Duration(seconds: 0));
     TextStreamLogs(origin: text.writing(), zone: zone).write(record);
-    test.is(Utf8Decoded(text.content().bytes()).string(), "2023-11-14T22:13:20Z level=INFO name=\"app\" process=1 message=\"up\" fields={}\n");
+    test.is(
+        Utf8Decoded(text.content().bytes()).string(),
+        "2023-11-14T22:13:20Z level=INFO name=\"app\" process=1 message=\"up\" fields={}\n"
+    );
     let json = ByteBuffer();
     JsonStreamLogs(json.writing()).write(record);
-    test.ok(Utf8Decoded(json.content().bytes()).string().starts_with("{\"time\":\"2023-11-14T22:13:20Z\",\"level\":\"INFO\""));
-    let styles = LogStyles(LogStyle(level: LogLevel.error, style: TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: [])));
+    test.ok(
+        Utf8Decoded(json.content().bytes()).string().starts_with(
+            "{\"time\":\"2023-11-14T22:13:20Z\",\"level\":\"INFO\""
+        )
+    );
+    let styles = LogStyles(
+        LogStyle(
+            level: LogLevel.error,
+            style: TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: [])
+        )
+    );
     styles.style(LogLevel.error);
     styles.style(LogLevel.info);
     test.throws(InvalidLogStyles) {
-        LogStyles(LogStyle(level: LogLevel.error, style: TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: [])), LogStyle(level: LogLevel.error, style: TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: [])));
+        LogStyles(
+            LogStyle(
+                level: LogLevel.error,
+                style: TextStyle(
+                    foreground: DefaultColor(),
+                    background: DefaultColor(),
+                    attributes: []
+                )
+            ),
+            LogStyle(
+                level: LogLevel.error,
+                style: TextStyle(
+                    foreground: DefaultColor(),
+                    background: DefaultColor(),
+                    attributes: []
+                )
+            )
+        );
     };
 }

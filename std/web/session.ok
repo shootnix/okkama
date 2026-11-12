@@ -371,7 +371,7 @@ hidden object CsrfFormToken {
         }
         let form = await request.form(65536);
         if form.membership("csrf") {
-            form.first("csrf");
+            form.text("csrf");
         }
         else {
             "";
@@ -413,7 +413,7 @@ hidden object SessionSite {
     }
 
     async change(request is WebRequest) is Responding {
-        TextReply("changed " + (await request.form(1024)).first("note"));
+        TextReply("changed " + (await request.form(1024)).text("note"));
     }
 
     async logout(request is WebRequest) is Responding {

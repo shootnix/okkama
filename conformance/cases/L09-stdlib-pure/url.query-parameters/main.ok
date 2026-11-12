@@ -5,10 +5,10 @@ import "url/query" take ParsedQuery, MissingQueryParameter;
 
 main() is int {
     let c = Checks();
-    c = c.same_texts("repeated name", ParsedQuery("a=1&b=2&a=3").parameters().values("a").map() -> v { v; }, ["1", "3"]);
-    c = c.same_text("first value", ParsedQuery("a=1&b=2&a=3").parameters().first("b"), "2");
+    c = c.same_texts("repeated name", ParsedQuery("a=1&b=2&a=3").parameters().list("a"), ["1", "3"]);
+    c = c.same_text("first value", ParsedQuery("a=1&b=2&a=3").parameters().text("b"), "2");
     c = c.same_bool("absent name", ParsedQuery("a=1").parameters().membership("c"), false);
-    c = c.same_text("percent decoding", ParsedQuery("q=a%20b").parameters().first("q"), "a b");
-    c = c.same_text("missing parameter", try { let probe = ParsedQuery("a=1").parameters().first("c"); "no error"; } catch MissingQueryParameter.name(name) { name; }, "c");
+    c = c.same_text("percent decoding", ParsedQuery("q=a%20b").parameters().text("q"), "a b");
+    c = c.same_text("missing parameter", try { let probe = ParsedQuery("a=1").parameters().text("c"); "no error"; } catch MissingQueryParameter.name(name) { name; }, "c");
     c.done();
 }

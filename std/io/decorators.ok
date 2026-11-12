@@ -172,9 +172,12 @@ object TeeWriting does Writing {
     }
 
     write(source is ByteSource) is void {
-        let snapshot = ByteSnapshot(origin: source.bytes());
+        self.write(source.bytes());
+    }
+
+    write(bytes is @byte) is void {
         for (0..destinations.size()) -> index {
-            destinations.item(index).write(snapshot);
+            destinations.item(index).write(bytes);
         }
     }
 
@@ -190,6 +193,10 @@ object Discarding does Writing {
 
     write(source is ByteSource) is void {
         source.bytes();
+    }
+
+    write(bytes is @byte) is void {
+        return;
     }
 
     flush() is void {}
@@ -219,7 +226,10 @@ test "buffered and limited readings" {
         },
         -1
     );
-    let limited = LimitedReading(origin: ByteBuffer(initial: [byte(9), byte(8), byte(7)]).reading(), limit: 2);
+    let limited = LimitedReading(
+        origin: ByteBuffer(initial: [byte(9), byte(8), byte(7)]).reading(),
+        limit: 2
+    );
     test.is(limited.bytes(1), [byte(9)]);
     test.is(limited.bytes(5), [byte(8)]);
     test.is(limited.bytes(5).size(), 0);
@@ -238,8 +248,8 @@ test "chained readings, snapshots, tees and discarding" {
     let left = ByteBuffer();
     let right = ByteBuffer();
     let outputs is @Writing = [left.writing(), right.writing()];
-    TeeWriting(destinations: outputs).write(ByteSnapshot([byte(7), byte(8)]));
+    TeeWriting(destinations: outputs).write([byte(7), byte(8)]);
     test.is(left.content().bytes(), [byte(7), byte(8)]);
     test.is(right.content().bytes(), [byte(7), byte(8)]);
-    Discarding().write(ByteSnapshot([byte(1)]));
+    Discarding().write([byte(1)]);
 }

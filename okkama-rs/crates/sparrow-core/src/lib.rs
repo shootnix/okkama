@@ -115,6 +115,8 @@ pub fn run_described(
         }
         let result = runtime.run_entry(STACK_BYTES);
         if let Some(report) = runtime.stats_report() {
+            // The program's buffered output goes first (#132).
+            let _ = okkama_runtime_core::stdout::flush();
             eprint!("{report}");
         }
         Ok(result.map_err(|error| (error, runtime.uncaught.take())))
@@ -135,6 +137,7 @@ pub struct Uncaught {
 }
 
 pub use okkama_runtime_core::failure::Site;
+pub use okkama_runtime_core::stdout;
 
 /// The call stack of an uncaught failure in Sparrow terms: function, number
 /// and text of the instruction of each frame. Empty for an empty stack.

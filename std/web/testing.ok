@@ -7,7 +7,7 @@ import "http/method" take Method;
 import "http/status" take Status;
 import "http/header" take Headers, Header, HeaderName;
 import "http/target" take ParsedRequestTarget;
-import "http/body" take Content, EmptyBody, TextBody, JsonBody;
+import "http/body" take Content, EmptyBody, TextBody, JsonBody, BytesBody;
 import "http/exchange" take ClientResponse, ExchangeDetails;
 import "http/version" take HttpVersion;
 import "async/cancellation" take Cancellation;
@@ -193,6 +193,51 @@ async test "a test client calls the routes without a network" {
     test.is((await head.bytes()).size(), 0);
     let text = await client.put("/notes", TextBody("x"));
     test.is(text::Head::code, 405);
+    // A JSON body goes to the parser as bytes (#135): non-ASCII text reads
+    // back, and bytes that are not UTF-8 are a 400 naming where they start.
+    let tea = await client.post(
+        "/notes",
+        BytesBody(
+            bytes: [
+                123.byte(),
+                34.byte(),
+                116.byte(),
+                105.byte(),
+                116.byte(),
+                108.byte(),
+                101.byte(),
+                34.byte(),
+                58.byte(),
+                34.byte(),
+                195.byte(),
+                167.byte(),
+                97.byte(),
+                34.byte(),
+                125.byte()
+            ],
+            media_type: "application/json"
+        )
+    );
+    test.is((await tea.json()).text("title"), "ça");
+    let broken = await client.post(
+        "/notes",
+        BytesBody(
+            bytes: [
+                123.byte(),
+                34.byte(),
+                116.byte(),
+                34.byte(),
+                58.byte(),
+                34.byte(),
+                255.byte(),
+                34.byte(),
+                125.byte()
+            ],
+            media_type: "application/json"
+        )
+    );
+    test.is(broken::Head::code, 400);
+    test.ok((await broken.json()).text("detail").contains("6, 1, 7, \"invalid UTF-8\""));
 }
 
 async test "a test client passes the arounds of the routes" {

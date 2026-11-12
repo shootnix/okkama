@@ -18,7 +18,6 @@ import "url/percent" take PercentEncoded, UrlComponent;
 import "encoding/hex" take HexEncoded, HexDecoded, InvalidHex;
 import "runtime/crypto" as native_crypto;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "async/atomic" take Atomic;
 import "http/exchange" take ClientResponse, Exchanging;
 import "random/source" take SecureRandom;
@@ -92,7 +91,10 @@ object DigestCredentials {
         else {
             original;
         };
-        let a2 = DigestHash(origin: DigestAscii(method + ":" + uri).bytes(), algorithm: challenge::Challenge::algorithm).string();
+        let a2 = DigestHash(
+            origin: DigestAscii(method + ":" + uri).bytes(),
+            algorithm: challenge::Challenge::algorithm
+        ).string();
         DigestHash(
             origin: DigestAscii(
                 secret + ":" + challenge::Challenge::nonce + ":" + count + ":" + cnonce + ":auth:" + a2
@@ -314,7 +316,9 @@ object DigestAuthorization does HttpAuthorizing {
             credentials::Credentials::username;
         };
         let user = if challenge::Challenge::userhash {
-            "username=" + DigestQuoted(DigestHash(origin: self.identity(), algorithm: challenge::Challenge::algorithm).string()).string();
+            "username=" + DigestQuoted(
+                DigestHash(origin: self.identity(), algorithm: challenge::Challenge::algorithm).string()
+            ).string();
         }
         else {
             let ascii = try {
@@ -445,14 +449,14 @@ hidden object DigestQuoted {
         let output = ByteBuffer();
         defer output.closing().close();
         let writer = output.writing();
-        writer.write(ByteSnapshot([34.byte()]));
+        writer.write([34.byte()]);
         for bytes -> octet {
             if octet.int() == 34 || octet.int() == 92 {
-                writer.write(ByteSnapshot([92.byte()]));
+                writer.write([92.byte()]);
             }
-            writer.write(ByteSnapshot([octet]));
+            writer.write([octet]);
         }
-        writer.write(ByteSnapshot([34.byte()]));
+        writer.write([34.byte()]);
         Latin1Decoded(output.content().bytes()).string();
     }
 }
@@ -574,7 +578,10 @@ object DigestExchanging does Exchanging {
         cleanup.close();
         let result = await self.authorized(request, selected);
         let final = Event();
-        let final_cleanup = DigestResponseCleanup(origin: result::Exchange::response, retained: final);
+        let final_cleanup = DigestResponseCleanup(
+            origin: result::Exchange::response,
+            retained: final
+        );
         defer final_cleanup.close();
         if self.eligible(result, request) {
             let refreshing = DigestSelection(result::Head::headers).values();
@@ -600,7 +607,13 @@ object DigestExchanging does Exchanging {
     hidden async authorized(request is Request, challenge is DigestChallenge) is ClientResponse {
         let count = counts.ticket(challenge::Challenge::nonce);
         let nonce = HexEncoded(random.bytes(16)).string();
-        let authorization = DigestAuthorization(credentials: credentials, challenge: challenge, request: request, cnonce: nonce, count: count);
+        let authorization = DigestAuthorization(
+            credentials: credentials,
+            challenge: challenge,
+            request: request,
+            cnonce: nonce,
+            count: count
+        );
         let header = authorization.header();
         let proof = authorization.proof();
         let outgoing = Request(

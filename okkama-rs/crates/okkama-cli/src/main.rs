@@ -301,7 +301,7 @@ fn sparrow_exec_command(args: &[String]) -> Outcome {
 
 /// A test-profile program on the core: the report goes to stdout.
 fn core_tests(bytes: Vec<u8>) -> Outcome {
-    match sparrow_core::run_tests(bytes, Box::new(io::stdout())) {
+    match sparrow_core::run_tests(bytes, Box::new(okkama_runtime::stdout::Buffered)) {
         Ok(passed) => Outcome { stdout: String::new(), stderr: String::new(), code: u8::from(!passed) },
         Err(error) => Outcome::failure(format!("okkama: {}\n", error.0), EXIT_DIAGNOSTICS),
     }
@@ -328,6 +328,7 @@ fn watchdog(flag: std::sync::Arc<std::sync::atomic::AtomicBool>) {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
+        okkama_runtime::stdout::try_flush();
         let _ = io::stdout().flush();
         let _ = writeln!(io::stderr(), "{}", okkama_runtime::budget::Exhausted::Interrupted.message());
         std::process::exit(1);
@@ -427,9 +428,12 @@ fn main() -> ExitCode {
         return repl::run();
     }
     let outcome = run(&args);
-    // A closed stdout (`okkama ast big.ok | head`) is not an error worth a
-    // panic; anything printed so far is all the reader wanted.
-    let _ = io::stdout().lock().write_all(outcome.stdout.as_bytes());
+    // The program's buffered output goes before the command's own and before
+    // a failure report (#132). A closed stdout (`okkama ast big.ok | head`) is
+    // not an error worth a panic; anything printed so far is all the reader
+    // wanted.
+    let _ = okkama_runtime::stdout::write(outcome.stdout.as_bytes());
+    let _ = okkama_runtime::stdout::flush();
     let _ = io::stderr().lock().write_all(outcome.stderr.as_bytes());
     ExitCode::from(outcome.code)
 }
@@ -1523,7 +1527,8 @@ fn run_command(args: &[String]) -> Outcome {
     if engine == "ir" {
         okkama_runtime::set_worker_command(worker_command("ir", tests, &line));
         if tests {
-            let mut stdout = io::stdout();
+            // The report shares the program's buffer, so their order holds (#132).
+            let mut stdout = okkama_runtime::stdout::Buffered;
             return match okkama_runtime::run_tests(&module, &mut stdout) {
                 Ok(passed) => Outcome {
                     stdout: String::new(),

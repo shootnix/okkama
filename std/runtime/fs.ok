@@ -9,6 +9,10 @@ native path_child(origin is string, part is string, style is int) is string;
 
 native path_absolute(origin is string, style is int) is bool;
 
+// The anchor (volume and root, "" for a relative path), then the names: `.` and
+// repeated separators go away, `..` stays (#124).
+native path_parts(origin is string, style is int) is @string;
+
 // Raw filesystem capabilities shared by every high-level filesystem module.
 native object FileHandle;
 
@@ -133,11 +137,24 @@ native lstat(path is @byte) is %string:int;
 
 native mkdir(path is @byte, mode is int) is bool;
 
+// mkdir with every missing parent; an existing directory is no failure, as
+// `mkdir -p` (#125).
+native mkdir_all(path is @byte, mode is int) is bool;
+
 native rmdir(path is @byte) is bool;
 
 native unlink(path is @byte) is bool;
 
 native rename(source is @byte, target is @byte) is bool;
+
+// rename that refuses an existing target (already_exists) instead of
+// replacing it (#126).
+native rename_noreplace(source is @byte, target is @byte) is bool;
+
+// A copy of the file at source as target, with its permission bits (#126). An
+// existing target is already_exists unless replace; a replacing copy is
+// written beside the target and renamed over it.
+native copy_file(source is @byte, target is @byte, replace is bool) is bool;
 
 native link(source is @byte, target is @byte) is bool;
 

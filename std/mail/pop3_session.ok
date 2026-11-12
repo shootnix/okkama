@@ -6,7 +6,6 @@ import "mail/pop3_reply" take PopReply, PopReplyMode, PopReplyLimits;
 import "mail/pop3_reading" take PopReplyReading;
 import "mail/message" take MailMessage, ParsedMail;
 import "io/stream" take AsyncReading, AsyncWriting, Closing;
-import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Encoded;
 import "collections/sequence" take Sequencing;
 import "async/atomic" take Atomic;
@@ -33,7 +32,13 @@ object PopSession does Closing {
         reply_limits is PopReplyLimits,
         listing_limits is PopListingLimits
     ) {
-        wire = PopWire(input: input, output: output, owner: owner, prefix: prefix, limits: reply_limits);
+        wire = PopWire(
+            input: input,
+            output: output,
+            owner: owner,
+            prefix: prefix,
+            limits: reply_limits
+        );
         self.capabilities = capabilities;
         limits = listing_limits;
         lock = Lock();
@@ -331,8 +336,14 @@ hidden object PopWire does Closing {
 
     async read(command is PopCommand) is PopReply {
         confirm !self.closed() else throw PopSessionClosed.closed;
-        await output.write(ByteSnapshot(command.bytes()));
-        let result = await PopReplyReading(origin: input, mode: command.mode(), prefix: prefix.value(), limits: limits, chunk_bytes: 4096).read();
+        await output.write(command.bytes());
+        let result = await PopReplyReading(
+            origin: input,
+            mode: command.mode(),
+            prefix: prefix.value(),
+            limits: limits,
+            chunk_bytes: 4096
+        ).read();
         confirm !self.closed() else throw PopSessionClosed.closed;
         prefix.replace(result.remainder());
         result.reply();
