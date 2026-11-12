@@ -173,7 +173,7 @@ hidden object Http1MessageWriteOperation {
         Http1BodyCheck(body: body, plan: plan, limits: limits, request: request).known();
         group.start(head);
         let origin = await head;
-        let writing = Http1BodyWriting(origin: origin, body: body, plan: plan, head: fields, limits: limits, chunk_bytes: 4096).output();
+        let writing = Http1BodyWriting(origin: origin, body: body, plan: plan, head: fields, limits: limits, chunk_bytes: 65536).output();
         group.start(writing);
         await writing;
     }

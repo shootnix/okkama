@@ -25,7 +25,7 @@ object Http1BodyWriting {
         plan is Http1BodyPlan,
         head is Headers
     ) {
-        pending = Http1BodyWriteOperation(origin: origin, body: body, plan: plan, head: head, limits: Http1Limits(), chunk_bytes: 4096).write();
+        pending = Http1BodyWriteOperation(origin: origin, body: body, plan: plan, head: head, limits: Http1Limits(), chunk_bytes: 65536).write();
     }
 
     Http1BodyWriting(
@@ -275,17 +275,12 @@ hidden object Http1ChunkWire {
         self.limits = limits;
     }
 
+    // Size line, data and CRLF in one allocation (#115).
     bytes() is @byte {
-        let buffer = ByteBuffer();
-        defer buffer.closing().close();
-        let writer = buffer.writing();
         let size = Http1HexSize(origin.size()).string();
         confirm size.length() <= limits::Limits::line_bytes
             else throw Http1LimitExceeded.kind("line_bytes");
-        writer.write(ByteSnapshot(Latin1Encoded(size + "\r\n").bytes()));
-        writer.write(ByteSnapshot(origin));
-        writer.write(ByteSnapshot([13.byte(), 10.byte()]));
-        buffer.content().bytes();
+        Latin1Encoded(size + "\r\n").bytes() + origin + [13.byte(), 10.byte()];
     }
 }
 
@@ -298,42 +293,18 @@ hidden object Http1HexSize {
         self.origin = origin;
     }
 
+    // At most five digits, 65536 being 10000; ints, not BigInt (#115).
     string() is string {
-        let digits = Http1HexDigits(number: BigInt(origin.string()), origin: "");
-        loop {
-            let value = digits.number();
-            last if value.sign() == 0;
-            let remainder = (value % BigInt("16"));
-            let index = Number(remainder.string()).int();
-            digits = digits.following(
-                (value / BigInt("16")),
-                "0123456789abcdef".slice(index, index + 1) + digits.string()
-            );
-        }
-        digits.string();
-    }
-}
-
-hidden object Http1HexDigits {
-    has number is BigInt;
-    has origin is string;
-
-    Http1HexDigits(number is BigInt, origin is string) {
-        self.number = number;
-        self.origin = origin;
-    }
-
-    following(number is BigInt, origin is string) is ^Http1HexDigits {
-        ^number = number;
-        ^origin = origin;
-    }
-
-    number() is BigInt {
-        number;
-    }
-
-    string() is string {
-        origin;
+        let digits = "0123456789abcdef";
+        (0..5).reduce("") -> spelled, position {
+            let digit = (origin >> (4 * (4 - position))) & 15;
+            if spelled == "" && digit == 0 {
+                "";
+            }
+            else {
+                spelled + digits.slice(digit, digit + 1);
+            }
+        };
     }
 }
 
