@@ -161,25 +161,27 @@ object ParsedEntityTags {
     }
 
     tags() is EntityTags {
-        confirm origin.length() <= limits::Limits::bytes else throw ConditionalLimitExceeded.kind("bytes");
-        try {
-            Latin1Encoded(origin).bytes();
+        confirm origin.length() <= limits::Limits::bytes
+            else throw ConditionalLimitExceeded.kind("bytes");
+        let codes = try {
+            self.codes();
         }
         catch UnrepresentableLatin1Character.at(offset) {
             throw InvalidEntityTag.located(offset, "field is not an octet string");
-        }
+        };
         let position = ConditionalPosition(index: self.space(0), slots: 1);
         if position.index() == origin.length() {
             let empty is @EntityTag = [];
             return EntityTags(values: empty, limits: limits);
         }
-        if origin.slice(position.index(), position.index() + 1) == "*" {
+        if codes[position.index()].int() == 42 {
             confirm self.space(position.index() + 1) == origin.length()
                 else throw InvalidEntityTag.located(
                     position.index() + 1,
                     "wildcard must stand alone"
                 );
-            confirm limits::Limits::entries >= 1 else throw ConditionalLimitExceeded.kind("entries");
+            confirm limits::Limits::entries >= 1
+                else throw ConditionalLimitExceeded.kind("entries");
             return EntityTags();
         }
         confirm position.slots() <= limits::Limits::entries
@@ -188,27 +190,29 @@ object ParsedEntityTags {
         loop {
             let at = position.index();
             last if at == origin.length();
-            if origin.slice(at, at + 1) == "," {
+            if codes[at].int() == 44 {
                 position = position.separator(self.space(at + 1));
                 confirm position.slots() <= limits::Limits::entries
                     else throw ConditionalLimitExceeded.kind("entries");
                 next;
             }
-            let weak = origin.length() - at >= 2 && origin.slice(at, at + 2) == "W/";
+            let weak = origin.length() - at >= 2
+                && codes[at].int() == 87
+                && codes[at + 1].int() == 47;
             let quote = at + if weak {
                 2;
             }
             else {
                 0;
             };
-            confirm quote < origin.length() && origin.slice(quote, quote + 1) == "\""
+            confirm quote < origin.length() && codes[quote].int() == 34
                 else throw InvalidEntityTag.located(quote, "expected quoted entity tag");
             let start = quote + 1;
             let cursor = ConditionalPosition(index: start, slots: 0);
             loop {
                 confirm cursor.index() < origin.length()
                     else throw InvalidEntityTag.located(quote, "unterminated entity tag");
-                last if origin.slice(cursor.index(), cursor.index() + 1) == "\"";
+                last if codes[cursor.index()].int() == 34;
                 cursor = cursor.following(cursor.index() + 1);
             }
             let tag = try {
@@ -219,22 +223,29 @@ object ParsedEntityTags {
             };
             tags = tags.following(tag);
             position = position.following(self.space(cursor.index() + 1));
-            confirm position.index() == origin.length()
-                || origin.slice(position.index(), position.index() + 1) == ","
+            confirm position.index() == origin.length() || codes[position.index()].int() == 44
                 else throw InvalidEntityTag.located(position.index(), "expected list separator");
         }
         EntityTags(values: tags.values(), limits: limits);
     }
 
+    // The field's octets, once (#167): a Latin-1 character is one byte, so a
+    // byte index is the character index.
+    hidden codes() is @byte {
+        once let bytes = Latin1Encoded(origin).bytes();
+        bytes;
+    }
+
     hidden space(start is int) is int {
+        let codes = self.codes();
         let position = ConditionalPosition(index: start, slots: 0);
         loop {
             let at = position.index();
-            if at == origin.length() {
+            if at == codes.size() {
                 return at;
             }
-            let char = origin.slice(at, at + 1);
-            if char != " " && char != "\t" {
+            let code = codes[at].int();
+            if code != 32 && code != 9 {
                 return at;
             }
             position = position.following(at + 1);
@@ -249,7 +260,8 @@ hidden object EntityTagSnapshot {
     EntityTagSnapshot(values is Sequencing<EntityTag>, limits is ConditionalLimits) {
         let count = values.size();
         confirm count >= 0 else throw InvalidArgument.because("negative entity tag sequence size");
-        confirm count <= limits::Limits::entries else throw ConditionalLimitExceeded.kind("entries");
+        confirm count <= limits::Limits::entries
+            else throw ConditionalLimitExceeded.kind("entries");
         let tags is @EntityTag = (0..count).map() -> index {
             values.item(index);
         };
@@ -493,7 +505,8 @@ hidden object ByteRangeParsing {
     }
 
     values() is @ByteRangeSpec {
-        confirm origin.length() <= limits::Limits::bytes else throw ConditionalLimitExceeded.kind("bytes");
+        confirm origin.length() <= limits::Limits::bytes
+            else throw ConditionalLimitExceeded.kind("bytes");
         try {
             Latin1Encoded(origin).bytes();
         }
@@ -644,4 +657,21 @@ test "byte range plans normalize exact inclusive intervals" {
     test.is(ranges.size(), 1);
     test.is(ranges.first().size().string(), "10");
     test.is(ByteRanges("bytes=-1").satisfiable(BigInt("0")), true);
+}
+
+test "an entity tag list reads weak tags, spaces and empty members" {
+    let tags = ParsedEntityTags(" W/\"a\" ,\t\"b,c\" ,, \"\"").tags();
+    test.is(tags.string(), "W/\"a\", \"b,c\", \"\"");
+    test.is(ParsedEntityTags("  ").tags().string(), "");
+    test.is(ParsedEntityTags(" * ").tags().string(), "*");
+    let offsets is @int = ["\"a\" \"b\"", "\"open", "W\"a\"", "*, \"a\""].map() -> field {
+        try {
+            ParsedEntityTags(field).tags();
+            -1;
+        }
+        catch InvalidEntityTag.located(at, _reason) {
+            at;
+        }
+    };
+    test.is(offsets, [4, 0, 0, 1]);
 }
