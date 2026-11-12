@@ -252,6 +252,29 @@ impl Checker<'_, '_> {
             (Ty::Rat, "pow") => (Builtin::Pow, vec![Param::Exact(Ty::Int)], Some(Ty::Rat)),
             (Ty::Float, "pow") => (Builtin::Pow, vec![Param::Same], Some(Ty::Float)),
             (Ty::Int | Ty::Float, "sqrt") => (Builtin::Sqrt, vec![], Some(Ty::Float)),
+            // Elementary functions (#192): intrinsics of every engine. A result
+            // must be finite, as every float; x.atan2(y) is the angle of (x, y).
+            (
+                Ty::Float,
+                "floor" | "ceil" | "round" | "trunc" | "exp" | "ln" | "log2" | "log10" | "sin"
+                | "cos" | "tan",
+            ) => (Builtin::Math(format!("okkama.float.{name}")), vec![], Some(Ty::Float)),
+            (Ty::Float, "atan2") => {
+                (Builtin::Math("okkama.float.atan2".into()), vec![Param::Same], Some(Ty::Float))
+            }
+            (Ty::Float, "finite" | "nan") => {
+                (Builtin::Math(format!("okkama.float.{name}")), vec![], Some(Ty::Bool))
+            }
+            (Ty::Int | Ty::Float, "min" | "max") => (
+                Builtin::Math(format!("okkama.{}.{name}", if *receiver == Ty::Int { "int" } else { "float" })),
+                vec![Param::Same],
+                Some(receiver.clone()),
+            ),
+            (Ty::Int | Ty::Float, "clamp") => (
+                Builtin::Math(format!("okkama.{}.clamp", if *receiver == Ty::Int { "int" } else { "float" })),
+                vec![Param::Same, Param::Same],
+                Some(receiver.clone()),
+            ),
             (Ty::Rat, "numerator") => (Builtin::Numerator, vec![], Some(Ty::Str)),
             (Ty::Rat, "denominator") => (Builtin::Denominator, vec![], Some(Ty::Str)),
             (Ty::Int | Ty::Byte, bits) if BIT_ACTIONS.contains(&bits) => {

@@ -1,0 +1,49 @@
+module t v1.0.0;
+
+// t/op: float functions; min, max and clamp of int and float (#192).
+import "tap" take Tap;
+
+main() is int {
+    let t = Tap(40);
+    t = t.is((-1.5).floor(), -2.0, "floor goes down");
+    t = t.is(1.5.floor(), 1.0, "floor of a positive");
+    t = t.is((-1.5).ceil(), -1.0, "ceil goes up");
+    t = t.is(2.0.ceil(), 2.0, "ceil of a whole number");
+    t = t.is(2.5.round(), 3.0, "round: half away from zero");
+    t = t.is((-2.5).round(), -3.0, "round: half away from zero below zero");
+    t = t.is(2.4999.round(), 2.0, "round down");
+    t = t.is(0.49999999999999994.round(), 0.0, "round: just below a half");
+    t = t.is((-1.7).trunc(), -1.0, "trunc toward zero");
+    t = t.is(1.7.trunc(), 1.0, "trunc of a positive");
+    t = t.is(0.0.exp(), 1.0, "exp(0)");
+    t = t.is(1.0.ln(), 0.0, "ln(1)");
+    t = t.is(8.0.log2(), 3.0, "log2 of a power of two");
+    t = t.is(0.5.log2(), -1.0, "log2 below one");
+    t = t.is(1000.0.log10(), 3.0, "log10 of a power of ten");
+    t = t.is(0.0.sin(), 0.0, "sin(0)");
+    t = t.is(0.0.cos(), 1.0, "cos(0)");
+    t = t.is(0.0.tan(), 0.0, "tan(0)");
+    t = t.ok((1.0.exp().ln() - 1.0).abs() < 1e-15, "ln undoes exp");
+    t = t.ok(((3.141592653589793 / 2.0).sin() - 1.0).abs() < 1e-15, "sin(pi/2)");
+    t = t.is(0.0.atan2(1.0), 1.5707963267948966, "x.atan2(y) is the angle of (x, y)");
+    t = t.is(1.0.atan2(0.0), 0.0, "on the x axis");
+    t = t.is((-1.0).atan2(0.0), 3.141592653589793, "on the negative x axis");
+    t = t.ok(2.5.finite(), "a float is finite");
+    t = t.ok(!2.5.nan(), "and never NaN");
+    t = t.is(1.5.min(2.5), 1.5, "float min");
+    t = t.is(1.5.max(2.5), 2.5, "float max");
+    t = t.is(5.5.clamp(0.0, 1.0), 1.0, "float clamp above");
+    t = t.is((-5.5).clamp(0.0, 1.0), 0.0, "float clamp below");
+    t = t.is(0.5.clamp(0.0, 1.0), 0.5, "float clamp inside");
+    t = t.is(3.min(7), 3, "int min");
+    t = t.is(3.max(7), 7, "int max");
+    t = t.is((-3).min(-7), -7, "int min of negatives");
+    t = t.is(10.clamp(0, 5), 5, "int clamp above");
+    t = t.is((-10).clamp(0, 5), 0, "int clamp below");
+    t = t.is(3.clamp(3, 3), 3, "int clamp to one value");
+    t = t.is((2).pow(100).min((2).pow(99)), (2).pow(99), "big int min");
+    t = t.is((2).pow(100).max(1), (2).pow(100), "big int max");
+    t = t.is((2).pow(100).clamp(0, (2).pow(64)), (2).pow(64), "big int clamp");
+    t = t.is((-(2).pow(70)).clamp(-5, 5), -5, "big negative int clamp");
+    t.done();
+}

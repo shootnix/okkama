@@ -698,6 +698,16 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 };
                 return self.order(*kind, receiver_id, ids[0], order, span);
             }
+            Builtin::Math(name) => {
+                let mut values = vec![receiver_id];
+                values.extend(ids.iter().copied());
+                let types = values.iter().map(|value| self.b.value_type(*value).clone()).collect();
+                let result = self.expr_type(expr)?;
+                let func = self
+                    .ctx
+                    .runtime_intrinsic(name, types, ir::ResultType::Value(result.clone()));
+                (InstKind::Call { func, args: values }, result)
+            }
             Builtin::Numerator | Builtin::Denominator => (
                 InstKind::RatPart {
                     value: receiver_id,

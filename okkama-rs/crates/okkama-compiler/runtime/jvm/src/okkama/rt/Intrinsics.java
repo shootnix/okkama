@@ -908,6 +908,87 @@ public final class Intrinsics {
         }
     }
 
+    // ----- float and int functions (#192): as okkama-runtime-core/src/float.rs -----
+
+    public static Object float_floor(Object x) { return Floats.finite(Math.floor((Double) x)); }
+    public static Object float_ceil(Object x) { return Floats.finite(Math.ceil((Double) x)); }
+
+    /** Half away from zero, as Rust's f64::round. */
+    public static Object float_round(Object x) {
+        double value = (Double) x;
+        double whole = Math.floor(Math.abs(value));
+        if (Math.abs(value) - whole >= 0.5) {
+            whole += 1.0;
+        }
+        return Floats.finite(Math.copySign(whole, value));
+    }
+
+    public static Object float_trunc(Object x) {
+        double value = (Double) x;
+        return Floats.finite(value < 0 ? Math.ceil(value) : Math.floor(value));
+    }
+
+    public static Object float_exp(Object x) { return Floats.finite(Math.exp((Double) x)); }
+    public static Object float_ln(Object x) { return Floats.finite(Math.log((Double) x)); }
+    public static Object float_log2(Object x) {
+        double value = (Double) x;
+        // Exact for powers of two, as log2 is in Rust.
+        double result = Math.log(value) / Math.log(2.0);
+        if (value > 0 && Double.isFinite(value)) {
+            long bits = Double.doubleToRawLongBits(value);
+            if ((bits & 0x000fffffffffffffL) == 0 && Math.getExponent(value) >= Double.MIN_EXPONENT) {
+                result = Math.getExponent(value);
+            }
+        }
+        return Floats.finite(result);
+    }
+    public static Object float_log10(Object x) { return Floats.finite(Math.log10((Double) x)); }
+    public static Object float_sin(Object x) { return Floats.finite(Math.sin((Double) x)); }
+    public static Object float_cos(Object x) { return Floats.finite(Math.cos((Double) x)); }
+    public static Object float_tan(Object x) { return Floats.finite(Math.tan((Double) x)); }
+
+    /** x.atan2(y): the angle of the point (x, y). */
+    public static Object float_atan2(Object x, Object y) { return Floats.finite(Math.atan2((Double) y, (Double) x)); }
+
+    public static Object float_min(Object value, Object other) {
+        return (Double) other < (Double) value ? other : value;
+    }
+
+    public static Object float_max(Object value, Object other) {
+        return (Double) other > (Double) value ? other : value;
+    }
+
+    public static Object float_clamp(Object value, Object low, Object high) {
+        double v = (Double) value;
+        double l = (Double) low;
+        double h = (Double) high;
+        if (l > h) {
+            throw Rt.trap("clamp: low " + Floats.text((Double) low) + " is above high " + Floats.text((Double) high));
+        }
+        return v < l ? low : v > h ? high : value;
+    }
+
+    public static Object float_finite(Object x) { return Double.isFinite((Double) x); }
+    public static Object float_nan(Object x) { return Double.isNaN((Double) x); }
+
+    public static Object int_min(Object value, Object other) {
+        return ((java.math.BigInteger) other).compareTo((java.math.BigInteger) value) < 0 ? other : value;
+    }
+
+    public static Object int_max(Object value, Object other) {
+        return ((java.math.BigInteger) other).compareTo((java.math.BigInteger) value) > 0 ? other : value;
+    }
+
+    public static Object int_clamp(Object value, Object low, Object high) {
+        java.math.BigInteger v = (java.math.BigInteger) value;
+        java.math.BigInteger l = (java.math.BigInteger) low;
+        java.math.BigInteger h = (java.math.BigInteger) high;
+        if (l.compareTo(h) > 0) {
+            throw Rt.trap("clamp: low " + l + " is above high " + h);
+        }
+        return v.compareTo(l) < 0 ? low : v.compareTo(h) > 0 ? high : value;
+    }
+
     // test.close, test.text, test.bytes (#187): the messages of
     // okkama-runtime-core/src/testing.rs.
     public static void test_close(Object actual, Object expected, Object tolerance) {

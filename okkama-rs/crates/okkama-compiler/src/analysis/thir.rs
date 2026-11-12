@@ -568,6 +568,9 @@ pub enum Builtin {
     Convert(CastTarget),
     Numerator,
     Denominator,
+    /// An elementary function or `min`/`max`/`clamp` (#192): the call of the
+    /// named runtime intrinsic on the receiver and the arguments.
+    Math(String),
     FutureCancel,
     FutureDone,
     FutureCancelled,

@@ -1625,6 +1625,58 @@ pub fn call_borrowed(
             }
             unit
         }
+        // ----- float and int functions (#192) -----
+        "float.floor" | "float.ceil" | "float.round" | "float.trunc" | "float.exp" | "float.ln"
+        | "float.log2" | "float.log10" | "float.sin" | "float.cos" | "float.tan" => {
+            let value = arg(0)?.as_float().map_err(|e| trap(e.message))?;
+            crate::float::function(&name["float.".len()..], value)
+                .map(Value::Float)
+                .map_err(trap)
+        }
+        "float.atan2" | "float.min" | "float.max" => {
+            let value = arg(0)?.as_float().map_err(|e| trap(e.message))?;
+            let other = arg(1)?.as_float().map_err(|e| trap(e.message))?;
+            match name {
+                "float.atan2" => crate::float::atan2(value, other).map(Value::Float).map_err(trap),
+                "float.min" => Ok(Value::Float(crate::float::min(value, other))),
+                _ => Ok(Value::Float(crate::float::max(value, other))),
+            }
+        }
+        "float.clamp" => {
+            let number = |index: usize| -> Result<f64> { arg(index)?.as_float().map_err(|e| trap(e.message)) };
+            crate::float::clamp(number(0)?, number(1)?, number(2)?)
+                .map(Value::Float)
+                .map_err(trap)
+        }
+        "float.finite" | "float.nan" => {
+            let value = arg(0)?.as_float().map_err(|e| trap(e.message))?;
+            Ok(Value::Bool(if name == "float.finite" { value.is_finite() } else { value.is_nan() }))
+        }
+        "int.min" | "int.max" | "int.clamp" => {
+            use std::cmp::Ordering::{Greater, Less};
+            let (value, other) = (arg(0)?, arg(1)?);
+            let a = value.as_int().map_err(|e| trap(e.message))?;
+            let b = other.as_int().map_err(|e| trap(e.message))?;
+            match name {
+                // The other value only when it is strictly beyond the receiver.
+                "int.min" => Ok(if crate::integer::compare(b, a) == Less { other.clone() } else { value.clone() }),
+                "int.max" => Ok(if crate::integer::compare(b, a) == Greater { other.clone() } else { value.clone() }),
+                _ => {
+                    let high_value = arg(2)?;
+                    let high = high_value.as_int().map_err(|e| trap(e.message))?;
+                    if crate::integer::compare(b, high) == Greater {
+                        return Err(trap(format!("clamp: low {b} is above high {high}")));
+                    }
+                    Ok(if crate::integer::compare(a, b) == Less {
+                        other.clone()
+                    } else if crate::integer::compare(a, high) == Greater {
+                        high_value.clone()
+                    } else {
+                        value.clone()
+                    })
+                }
+            }
+        }
         "test.close" => {
             let number = |index: usize| -> Result<f64> { arg(index)?.as_float().map_err(|e| trap(e.message)) };
             let (actual, expected, tolerance) = (number(0)?, number(1)?, number(2)?);
