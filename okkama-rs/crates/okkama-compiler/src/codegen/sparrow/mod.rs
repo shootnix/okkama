@@ -12,7 +12,7 @@ mod registers;
 
 use crate::{ir, source::Span};
 use okkama_sparrow::{
-    BitOp, CapDecl, CapRef, CatchKind, Cmp, Constant, Dst, EnumDecl, EnumRef, FuncRef, FutOp, Function,
+    BitOp, CapDecl, CapRef, CatchKind, Cmp, Constant, Data, Dst, EnumDecl, EnumRef, FuncRef, FutOp, Function,
     Handler, Instruction as I, Intrinsic, ObjectDecl, ObjectRef, Program, Register, RoleDecl, RoleMethod,
     GlobalDecl, RoleRef, StrFn, Target, TrapCode, Type, TypeRef, VariantDecl, VariantRef, Witness,
 };
@@ -175,17 +175,7 @@ impl FunctionGen<'_> {
         };
         Ok(match &inst.kind {
             K::Global(index) => I::GlobalGet { dst: dst()?, global: *index as u32 },
-            K::Const(constant) => I::Const {
-                dst: dst()?,
-                value: match constant {
-                    ir::Constant::Int(value) => Constant::Int(value.to_string()),
-                    ir::Constant::Bool(value) => Constant::Bool(*value),
-                    ir::Constant::Byte(value) => Constant::Byte(*value),
-                    ir::Constant::Float(bits) => Constant::Float(*bits),
-                    ir::Constant::Char(value) => Constant::Char(*value),
-                    ir::Constant::Str(value) => Constant::Str(value.clone()),
-                },
-            },
+            K::Const(constant) => I::Const { dst: dst()?, value: constant_of(constant) },
             K::IntBinary { op, left, right } => {
                 let (dst, left, right) = (dst()?, reg(*left), reg(*right));
                 match op {
@@ -568,6 +558,94 @@ fn function(module: &ir::Module, function: &ir::Function, types: &mut Types) -> 
     Ok(out)
 }
 
+/// The value a constant's init function builds, as data (#506): the init
+/// made by lowering is one block of `const`, `arr.new` and `map.new` ending in
+/// `ret`. Anything else (enum cases, rationals, a value used twice) keeps
+/// the function.
+fn fold(function: &ir::Function) -> Option<Data> {
+    let [block] = function.blocks.as_slice() else {
+        return None;
+    };
+    if !function.params.is_empty() || !block.params.is_empty() || block.unwind.is_some() {
+        return None;
+    }
+    // Each value once, with the depth of the arrays and maps it nests.
+    let mut values: Vec<Option<(Data, usize)>> = vec![None; function.values.len()];
+    for inst in &block.insts {
+        let result = inst.result?;
+        let (data, depth) = match &inst.kind {
+            ir::InstKind::Const(constant) => (Data::Scalar(constant_of(constant)), 0),
+            ir::InstKind::ArrayNew(elements) => {
+                let mut items = Vec::with_capacity(elements.len());
+                let mut depth = 0;
+                for element in elements {
+                    let (item, below) = taken(&mut values, *element)?;
+                    depth = depth.max(below + 1);
+                    items.push(item);
+                }
+                (Data::Array(items), depth.max(1))
+            }
+            ir::InstKind::MapNew(entries) => {
+                let mut pairs = Vec::with_capacity(entries.len());
+                let mut depth = 0;
+                for (key, value) in entries {
+                    let (key, key_depth) = taken(&mut values, *key)?;
+                    let (value, value_depth) = taken(&mut values, *value)?;
+                    depth = depth.max(key_depth.max(value_depth) + 1);
+                    pairs.push((key, value));
+                }
+                (Data::Map(pairs), depth.max(1))
+            }
+            _ => return None,
+        };
+        if depth > Data::MAX_DEPTH {
+            return None;
+        }
+        *values.get_mut(result.0)? = Some((data, depth));
+    }
+    match block.term.kind {
+        ir::TermKind::Ret(Some(value)) => taken(&mut values, value).map(|(data, _)| data),
+        _ => None,
+    }
+}
+
+fn taken(values: &mut [Option<(Data, usize)>], value: ir::ValueId) -> Option<(Data, usize)> {
+    values.get_mut(value.0).and_then(Option::take)
+}
+
+fn constant_of(constant: &ir::Constant) -> Constant {
+    match constant {
+        ir::Constant::Int(value) => Constant::Int(value.to_string()),
+        ir::Constant::Bool(value) => Constant::Bool(*value),
+        ir::Constant::Byte(value) => Constant::Byte(*value),
+        ir::Constant::Float(bits) => Constant::Float(*bits),
+        ir::Constant::Char(value) => Constant::Char(*value),
+        ir::Constant::Str(value) => Constant::Str(value.clone()),
+    }
+}
+
+/// The init of a constant carried as data (#506): it reads the global, which
+/// the runtime builds from the data.
+fn stub(function: &ir::Function, global: usize, types: &mut Types) -> Function {
+    let ir::ResultType::Value(ty) = &function.result else {
+        unreachable!("a constant's init returns its value");
+    };
+    Function {
+        symbol: function.symbol.clone(),
+        is_async: false,
+        native: None,
+        intrinsic: None,
+        registers: vec![types.intern(ty)],
+        params: Vec::new(),
+        result: types.result(&function.result),
+        code: vec![
+            I::GlobalGet { dst: Dst(Register(0)), global: global as u32 },
+            I::Return { value: Some(Register(0)) },
+        ],
+        handlers: Vec::new(),
+    }
+}
+
 /// Модуль с разрешёнными импортами → программа Sparrow.
 pub fn generate(module: &ir::Module) -> Result<Program, GenerateError> {
     ir::verify(module).map_err(|e| error(module.span, format!("invalid IR: {e}")))?;
@@ -636,18 +714,35 @@ pub fn generate(module: &ir::Module) -> Result<Program, GenerateError> {
             cases: variant.cases.iter().map(|(name, object)| (name.clone(), ObjectRef(object.0 as u32))).collect(),
         })
         .collect();
+    // A constant's init only builds its value: the program carries the value
+    // as data, and the init becomes a stub that reads the global (#506).
+    let data: Vec<Option<Data>> = module.globals.iter().map(|global| fold(&module.functions[global.init.0])).collect();
+    let stubs: HashMap<usize, usize> = module
+        .globals
+        .iter()
+        .zip(&data)
+        .enumerate()
+        .filter(|(_, (_, data))| data.is_some())
+        .map(|(index, (global, _))| (global.init.0, index))
+        .collect();
     let globals = module
         .globals
         .iter()
-        .map(|global| GlobalDecl {
+        .zip(data)
+        .map(|(global, data)| GlobalDecl {
             ty: types.intern(&global.ty),
             init: FuncRef(global.init.0 as u32),
+            data,
         })
         .collect();
     let functions = module
         .functions
         .iter()
-        .map(|item| function(module, item, &mut types))
+        .enumerate()
+        .map(|(index, item)| match stubs.get(&index) {
+            Some(&global) => Ok(stub(item, global, &mut types)),
+            None => function(module, item, &mut types),
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let program = Program {
         module: module.name.clone(),

@@ -5,10 +5,35 @@
 //! параметров. Ядро Sparrow выбирает машинное представление регистра по его
 //! типу, поэтому программа с ложными типами отвергается до исполнения.
 use crate::{
-    CatchKind, Constant, FutOp, Function, Instruction, Program, Register, StrFn, Target, Type, TypeRef,
+    CatchKind, Constant, Data, FutOp, Function, Instruction, Program, Register, StrFn, Target, Type, TypeRef,
 };
 
 type Rule = Result<(), String>;
+
+/// Данные константы (#506) той же формы, что её тип: скаляр своего типа,
+/// массив подходящих элементов, словарь подходящих ключей и значений.
+fn fits(typing: &Typing<'_>, data: &Data, ty: &Type) -> bool {
+    match (data, ty) {
+        (Data::Scalar(constant), _) => matches!(
+            (constant, ty),
+            (Constant::Int(_), Type::Int)
+                | (Constant::Bool(_), Type::Bool)
+                | (Constant::Byte(_), Type::Byte)
+                | (Constant::Float(_), Type::Float)
+                | (Constant::Char(_), Type::Char)
+                | (Constant::Str(_), Type::Str)
+        ),
+        (Data::Array(items), Type::Array(element)) => {
+            let element = typing.resolve(*element);
+            items.iter().all(|item| fits(typing, item, element))
+        }
+        (Data::Map(entries), Type::Map(key, value)) => {
+            let (key, value) = (typing.resolve(*key), typing.resolve(*value));
+            entries.iter().all(|(k, v)| fits(typing, k, key) && fits(typing, v, value))
+        }
+        _ => false,
+    }
+}
 
 pub(crate) struct Typing<'a> {
     program: &'a Program,
@@ -1130,6 +1155,9 @@ pub(crate) fn tables(program: &Program) -> Result<(), String> {
         let ty = typing.resolve(global.ty).clone();
         if !params.is_empty() || function.is_async || !result.is_some_and(|result| typing.equal(&result, &ty)) {
             return Err(format!("@{} is not the init of global g{index}", function.symbol));
+        }
+        if global.data.as_ref().is_some_and(|data| !fits(&typing, data, &ty)) {
+            return Err(format!("the data of global g{index} does not have its type"));
         }
     }
     for function in &program.functions {

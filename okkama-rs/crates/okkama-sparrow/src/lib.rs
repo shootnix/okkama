@@ -535,6 +535,23 @@ impl ObjectDecl {
 pub struct GlobalDecl {
     pub ty: TypeRef,
     pub init: FuncRef,
+    /// Значение, записанное данными (#506): рантайм строит его при первом
+    /// чтении сам, без вызова `init`; `init` тогда только читает global.
+    pub data: Option<Data>,
+}
+
+/// Значение константы модуля данными (#506): скаляр, массив или словарь из
+/// таких же значений; форма совпадает с типом global.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Data {
+    Scalar(Constant),
+    Array(Vec<Data>),
+    Map(Vec<(Data, Data)>),
+}
+
+impl Data {
+    /// Наибольшая вложенность массивов и словарей в данных.
+    pub const MAX_DEPTH: usize = 64;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

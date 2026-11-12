@@ -55,7 +55,7 @@ uncaught failure is printed on stderr and the exit status is 1.
 
 ```text
 ; Hello from Sparrow assembly: a native writes the UTF-8 bytes of a string.
-sparrow 14
+sparrow 15
 module "hello" "1.0.0"
 type t0 int
 type t1 str
@@ -97,7 +97,7 @@ result. Comments start with `;`.
 ## 3. The shape of a file
 
 ```text
-sparrow 14                      ; format version
+sparrow 15                      ; format version
 module "name" "version"         ; the module's name and version (may be "")
 type t0 …                       ; the type table, in order
 enum enum0 "Name" ["a", "b"]    ; enums with their cases
@@ -105,11 +105,20 @@ role role0 "Name" { method "m" [t…] -> t… … }
 object obj0 "Name" { field "f" t… … does role0 [f…] destroy f… }
 handle "Name"                   ; opaque host types (handles)
 cap cap0 "Name" obj0 { field "f" f… }
-global g0 t3 f2                ; a module constant: type and init (#153)
+global g0 t3 f2 [data …]       ; a module constant: type, init (#153), value as data (#506)
 function f0 "symbol" [async] [native "…"] [intrinsic "…" [obj…] [f…]] { … }
 entry f3                        ; the program's main
 tests { test "name" f5 … }      ; or a test profile
 ```
+
+A module constant (`const`, #153) is a global: `global.get` reads it, and
+the first read builds it. A constant whose value is plain data — scalars,
+arrays and maps of them — carries that value in the file after `data`, and the
+runtime builds it there without running code (#506): a scalar is written as in
+`const` (`str "a"`, `int 7`), an array as `array N` and its N items, a map as
+`map N` and N key–value pairs. Its init then only reads the global. A table of
+thousands of strings costs a few bytes each in the file and no instructions;
+before format 15 each element was an instruction of the init.
 
 Every table is indexed by position, and the index is written out: `t3`,
 `obj2`, `role0`, `f5`, `enum1`, `cap0`. The assembler checks that the indices
@@ -172,7 +181,7 @@ Integer operations never overflow: results that leave 64 bits become BigInt.
 
 ```text
 ; 30! with a loop: exact integers grow into BigInt transparently.
-sparrow 14
+sparrow 15
 module "factorial" "1.0.0"
 type t0 int
 type t1 bool
@@ -231,7 +240,7 @@ taken, all at once — every source is read before any destination is written.
 
 ```text
 ; Fibonacci with edge moves: the jump back writes both loop registers at once.
-sparrow 14
+sparrow 15
 module "fibonacci" "1.0.0"
 type t0 int
 type t1 bool
@@ -280,7 +289,7 @@ scalar values. String constants use `\n`, `\t`, `\"`, `\\` and `\u{…}`.
 ```text
 ; Objects, a role with two implementations, dispatch through role slots and
 ; a successor (a changed copy of an immutable object).
-sparrow 14
+sparrow 15
 module "shapes" "1.0.0"
 type t0 int
 type t1 object obj0
@@ -370,7 +379,7 @@ $ sparrow run shapes.spb; echo $?
 ```text
 ; Arrays are built through a linear builder; `arr.lookup` and `map.lookup`
 ; branch on whether the element exists.
-sparrow 14
+sparrow 15
 module "collections" "1.0.0"
 type t0 int
 type t1 array t0
@@ -445,7 +454,7 @@ version 14).
 ```text
 ; A closure value: `fn.closure` fills the leading parameters of its function
 ; with captures; `call.fn` passes the rest.
-sparrow 14
+sparrow 15
 module "closures" "1.0.0"
 type t0 int
 type t1 fn [t0] -> t0
@@ -491,7 +500,7 @@ $ sparrow run closures.spb; echo $?
 ```text
 ; Throwing and catching: an object that does the builtin Error role is
 ; thrown; a handler range sends failures to a `catch`, which matches the type.
-sparrow 14
+sparrow 15
 module "errors" "1.0.0"
 type t0 int
 type t1 str
@@ -578,7 +587,7 @@ sparrow: Sparrow assembly line 0: Sparrow @main instruction 2: register r2 may b
 ; Ownership regions: an object with `destroy` is tracked and adopted by the
 ; region of its scope; leaving the region runs `destroy`, on the failure path
 ; too (`region.unwind`).
-sparrow 14
+sparrow 15
 module "resources" "1.0.0"
 type t0 int
 type t1 str
@@ -652,7 +661,7 @@ keeps what is reachable from `rK` (a value being returned).
 ```text
 ; Async functions: a call makes a cold future, `await` runs it to its value,
 ; `fut.spawn` starts one now so it runs while the caller goes on.
-sparrow 14
+sparrow 15
 module "tasks" "1.0.0"
 type t0 int
 type t1 future t0
@@ -699,7 +708,7 @@ or observes one. An async function is compiled as a resumable state machine;
 ```text
 ; A test profile: `tests` lists parameterless functions; `sparrow test` runs
 ; each on a fresh runtime and reports it. A failure fails the test.
-sparrow 14
+sparrow 15
 module "testing" "1.0.0"
 type t0 int
 type t1 bool

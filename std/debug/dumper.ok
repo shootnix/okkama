@@ -206,6 +206,13 @@ test "all shows nested values with indices, keys and fields" {
     );
 }
 
+test "rats show as fractions on every engine" {
+    // #508: Sparrow showed them as <native>.
+    let half = 1 / 2;
+    test.is(Dumper(half).all(), "1/2 (rat)");
+    test.is(Dumper([half, 3 / 4]).all(), "@rat (2) [\n    [0] 1/2,\n    [1] 3/4\n]");
+}
+
 test "depth and item limits shorten big values" {
     test.is(
         Dumper([[1], [2]]).max_depth(1).all(),

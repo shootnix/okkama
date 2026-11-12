@@ -198,3 +198,77 @@ fn every_truncation_and_corrupted_byte_is_a_positioned_error() {
         }
     }
 }
+
+/// A constant carried as data (#506): `init` only reads the global.
+fn constant_program(data: &str) -> String {
+    format!(
+        "sparrow {}\nmodule \"tiny\" \"v1.0.0\"\ntype t0 str\ntype t1 array t0\ntype t2 int\ntype t3 map t0 t2\n\
+         global g0 t1 f1 data {data}\n\
+         function f0 \"main\" {{\n    registers [t1, t2]\n    params []\n    result t2\n    0: global.get r0, 0\n    1: arr.len r1, r0\n    2: ret r1\n}}\n\
+         function f1 \"const.WORDS\" {{\n    registers [t1]\n    params []\n    result t1\n    0: global.get r0, 0\n    1: ret r0\n}}\n\
+         entry f0\n",
+        okkama_sparrow::VERSION
+    )
+}
+
+#[test]
+fn constant_data_round_trips_and_keeps_its_type() {
+    let text = constant_program("array 3 str \"a\" str \"\" str \"β \\\"q\\\"\"");
+    let program = assemble(&text).expect("assembles");
+    let data = program.globals[0].data.as_ref().expect("data");
+    assert_eq!(
+        data,
+        &okkama_sparrow::Data::Array(vec![
+            okkama_sparrow::Data::Scalar(Constant::Str("a".into())),
+            okkama_sparrow::Data::Scalar(Constant::Str(String::new())),
+            okkama_sparrow::Data::Scalar(Constant::Str("β \"q\"".into())),
+        ])
+    );
+    let bytes = encode(&program).expect("encodes");
+    assert_eq!(decode(&bytes).expect("decodes"), program);
+    assert_eq!(assemble(&disassemble(&program)).expect("reassembles"), program);
+    // Data of another shape than the global's type is refused.
+    for wrong in ["array 1 int 1", "str \"a\"", "map 1 str \"a\" int 1", "array 1 array 0"] {
+        let error = assemble(&constant_program(wrong)).and_then(|program| {
+            program.verify().map_err(|error| okkama_sparrow::AsmError { line: 0, message: error.to_string() })
+        });
+        assert!(
+            error.as_ref().is_err_and(|error| error.message.contains("does not have its type")),
+            "{wrong}: {error:?}"
+        );
+    }
+}
+
+/// A constant of `levels` nested arrays around one string, typed to match.
+fn deep_program(levels: usize) -> String {
+    let mut text = format!("sparrow {}\nmodule \"deep\" \"v1.0.0\"\ntype t0 int\ntype t1 str\n", okkama_sparrow::VERSION);
+    for level in 0..levels {
+        text += &format!("type t{} array t{}\n", level + 2, level + 1);
+    }
+    let top = levels + 1;
+    text += &format!("global g0 t{top} f1 data {}str \"x\"\n", "array 1 ".repeat(levels));
+    text += "function f0 \"main\" {\n    registers [t0]\n    params []\n    result t0\n    0: const r0, int 0\n    1: ret r0\n}\n";
+    text += &format!(
+        "function f1 \"const.DEEP\" {{\n    registers [t{top}]\n    params []\n    result t{top}\n    0: global.get r0, 0\n    1: ret r0\n}}\nentry f0\n"
+    );
+    text
+}
+
+#[test]
+fn constant_data_nests_at_most_max_depth() {
+    let max = okkama_sparrow::Data::MAX_DEPTH;
+    let program = assemble(&deep_program(max)).expect("assembles");
+    assert_eq!(decode(&encode(&program).expect("encodes")).expect("decodes"), program);
+    assert!(assemble(&deep_program(max + 1)).is_err_and(|error| error.message.contains("nested deeper")));
+    // One level more, typed to match, encodes but does not decode.
+    let mut deeper = program;
+    let top = TypeRef(deeper.types.len() as u32);
+    deeper.types.push(Type::Array(deeper.globals[0].ty));
+    deeper.globals[0].ty = top;
+    let data = deeper.globals[0].data.take().expect("data");
+    deeper.globals[0].data = Some(okkama_sparrow::Data::Array(vec![data]));
+    deeper.functions[1].registers[0] = top;
+    deeper.functions[1].result = Some(top);
+    let bytes = encode(&deeper).expect("encodes");
+    assert!(decode(&bytes).is_err_and(|error| error.to_string().contains("nested deeper")));
+}

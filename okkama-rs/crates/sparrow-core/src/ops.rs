@@ -15,7 +15,7 @@ use num_traits::{Signed, ToPrimitive};
 use okkama_runtime_core::IntValue;
 use okkama_runtime_core::bignum::Big;
 use okkama_runtime_core::rat::Rat;
-use okkama_sparrow::{Access, Cmp, Instruction as I, StrFn, Type, TypeRef};
+use okkama_sparrow::{Access, Cmp, Constant, Data, Instruction as I, StrFn, Type, TypeRef};
 use std::cmp::Ordering;
 use std::rc::Rc;
 
@@ -1559,6 +1559,66 @@ fn map_key(runtime: &Runtime, function: usize, map: okkama_sparrow::Register) ->
         Some(Type::Map(key, _) | Type::MapBuilder(key, _)) => (runtime.kind_of(*key), runtime.loaded.program.ty(*key)),
         _ => (Kind::Raw, None),
     }
+}
+
+/// The value of a constant carried as data (#506), built as its init
+/// function would build it: the same scalar words, arrays with the element's
+/// representation (bytes packed), maps through the same keys. Allocation
+/// does not collect, so the words built so far need no rooting; the caller
+/// roots the result.
+pub(crate) fn materialize(runtime: &mut Runtime, data: &Data, ty: TypeRef) -> Result<Word, String> {
+    Ok(match data {
+        Data::Scalar(constant) => match constant {
+            Constant::Int(text) => {
+                let n: BigInt = text.parse().map_err(|_| "invalid integer constant")?;
+                runtime.heap.big(n)
+            }
+            Constant::Bool(value) => Word::from(*value),
+            Constant::Byte(value) => Word::from(*value),
+            Constant::Char(value) => Word::from(u32::from(*value)),
+            Constant::Float(bits) => *bits,
+            Constant::Str(text) => runtime.text_new(text),
+        },
+        Data::Array(items) => {
+            let Some(&Type::Array(element)) = runtime.loaded.program.ty(ty) else {
+                return Err("array data needs an array type".into());
+            };
+            let kind = runtime.kind_of(element);
+            let mut words = Vec::with_capacity(items.len());
+            for item in items {
+                words.push(materialize(runtime, item, element)?);
+            }
+            if kind == Kind::Byte {
+                let bytes: Vec<u8> = words.iter().map(|&word| word as u8).collect();
+                runtime.heap.allocate_bytes(&bytes)
+            } else {
+                runtime.heap.allocate_array(kind.repr(), &words)
+            }
+        }
+        Data::Map(entries) => {
+            let Some(&Type::Map(key, value)) = runtime.loaded.program.ty(ty) else {
+                return Err("map data needs a map type".into());
+            };
+            let (key_kind, key_type) = (runtime.kind_of(key), runtime.loaded.program.ty(key).cloned());
+            let mut map = MapValue {
+                key: key_kind.repr(),
+                value: runtime.kind_of(value).repr(),
+                entries: Default::default(),
+                owned: Default::default(),
+            };
+            let mut owned = 0;
+            for (k, v) in entries {
+                let (k, v) = (materialize(runtime, k, key)?, materialize(runtime, v, value)?);
+                let checked = runtime.checked_key(k, key_kind, key_type.as_ref())?;
+                let bytes = MAP_ENTRY_BYTES + checked.owned_bytes();
+                if map.entries.upsert(checked, (k, v)) {
+                    owned += bytes;
+                }
+            }
+            map.owned.set(Some(owned));
+            runtime.heap.allocate_payload(Box::new(map))
+        }
+    })
 }
 
 fn map_for(runtime: &Runtime, function: usize, register: okkama_sparrow::Register) -> Result<MapValue, String> {

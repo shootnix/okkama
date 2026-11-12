@@ -4,7 +4,7 @@
 //! инструкций (`12:`) проверяются при разборе.
 use crate::operand::Operand;
 use crate::{
-    CapDecl, EnumDecl, FuncRef, Function, GlobalDecl, Handler, Instruction, Intrinsic, ObjectDecl, ObjectRef, Program,
+    CapDecl, Data, EnumDecl, FuncRef, Function, GlobalDecl, Handler, Instruction, Intrinsic, ObjectDecl, ObjectRef, Program,
     Register, RoleDecl, RoleMethod, RoleRef, Target, Type, TypeRef, Witness,
 };
 use std::fmt;
@@ -286,6 +286,10 @@ pub fn disassemble(program: &Program) -> String {
         type_ref(&mut out, global.ty);
         out.push(' ');
         global.init.print(&mut out);
+        if let Some(data) = &global.data {
+            out.push_str(" data ");
+            data.print(&mut out);
+        }
         out.push('\n');
     }
     for (index, function) in program.functions.iter().enumerate() {
@@ -784,7 +788,8 @@ impl Parser<'_> {
                     self.index("g", program.globals.len())?;
                     let ty = self.type_ref()?;
                     let init = FuncRef::parse(self)?;
-                    program.globals.push(GlobalDecl { ty, init });
+                    let data = if self.eat_ident("data") { Some(Data::parse(self)?) } else { None };
+                    program.globals.push(GlobalDecl { ty, init, data });
                 }
                 "function" => {
                     self.index("f", program.functions.len())?;

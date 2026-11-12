@@ -2,7 +2,7 @@
 use crate::asm::Parser;
 use crate::codec::{Reader, Writer};
 use crate::{
-    AsmError, BitOp, CapRef, CatchKind, Cmp, CodecError, Constant, Dst, EnumRef, FuncRef, FutOp,
+    AsmError, BitOp, CapRef, CatchKind, Cmp, CodecError, Constant, Data, Dst, EnumRef, FuncRef, FutOp,
     ObjectRef, Register, RoleRef, StrFn, Target, TrapCode, VariantRef,
 };
 
@@ -393,6 +393,116 @@ impl Operand for Constant {
             "str" => Constant::Str(parser.string()?),
             other => return Err(parser.error(format!("unknown constant kind `{other}`"))),
         })
+    }
+}
+
+/// Данные константы (#506): тег 0 — скаляр, 1 — массив (число и элементы),
+/// 2 — словарь (число и пары ключ, значение). Текстом: скаляр как у
+/// `const`, `array N …` и `map N …`. Вложенность не глубже [`Data::MAX_DEPTH`].
+impl Operand for Data {
+    fn encode(&self, writer: &mut Writer) {
+        match self {
+            Data::Scalar(constant) => {
+                writer.byte(0);
+                constant.encode(writer);
+            }
+            Data::Array(items) => {
+                writer.byte(1);
+                writer.number(items.len() as u64);
+                for item in items {
+                    item.encode(writer);
+                }
+            }
+            Data::Map(entries) => {
+                writer.byte(2);
+                writer.number(entries.len() as u64);
+                for (key, value) in entries {
+                    key.encode(writer);
+                    value.encode(writer);
+                }
+            }
+        }
+    }
+    fn decode(reader: &mut Reader<'_>) -> Result<Self, CodecError> {
+        decode_data(reader, 0)
+    }
+    fn print(&self, out: &mut String) {
+        match self {
+            Data::Scalar(constant) => constant.print(out),
+            Data::Array(items) => {
+                out.push_str(&format!("array {}", items.len()));
+                for item in items {
+                    out.push(' ');
+                    item.print(out);
+                }
+            }
+            Data::Map(entries) => {
+                out.push_str(&format!("map {}", entries.len()));
+                for (key, value) in entries {
+                    out.push(' ');
+                    key.print(out);
+                    out.push(' ');
+                    value.print(out);
+                }
+            }
+        }
+    }
+    fn parse(parser: &mut Parser<'_>) -> Result<Self, AsmError> {
+        parse_data(parser, 0)
+    }
+}
+
+fn decode_data(reader: &mut Reader<'_>, depth: usize) -> Result<Data, CodecError> {
+    let tag = reader.byte()?;
+    if tag != 0 && depth >= Data::MAX_DEPTH {
+        return Err(reader.error(format!("data nested deeper than {}", Data::MAX_DEPTH)));
+    }
+    Ok(match tag {
+        0 => Data::Scalar(Constant::decode(reader)?),
+        1 => {
+            let count = reader.count_of::<Data>()?;
+            let mut items = Vec::with_capacity(count);
+            for _ in 0..count {
+                items.push(decode_data(reader, depth + 1)?);
+            }
+            Data::Array(items)
+        }
+        2 => {
+            let count = reader.count_of::<(Data, Data)>()?;
+            let mut entries = Vec::with_capacity(count);
+            for _ in 0..count {
+                let key = decode_data(reader, depth + 1)?;
+                entries.push((key, decode_data(reader, depth + 1)?));
+            }
+            Data::Map(entries)
+        }
+        other => return Err(reader.error(format!("invalid data tag {other}"))),
+    })
+}
+
+fn parse_data(parser: &mut Parser<'_>, depth: usize) -> Result<Data, AsmError> {
+    let array = parser.eat_ident("array");
+    let map = !array && parser.eat_ident("map");
+    if !array && !map {
+        return Ok(Data::Scalar(Constant::parse(parser)?));
+    }
+    if depth >= Data::MAX_DEPTH {
+        return Err(parser.error(format!("data nested deeper than {}", Data::MAX_DEPTH)));
+    }
+    let count = parser.u32()?;
+    if array {
+        let mut items = Vec::new();
+        for _ in 0..count {
+            items.push(parse_data(parser, depth + 1)?);
+        }
+        Ok(Data::Array(items))
+    } else {
+        let mut entries = Vec::new();
+        for _ in 0..count {
+            let key = parse_data(parser, depth + 1)?;
+            entries.push((key, parse_data(parser, depth + 1)?));
+        }
+        Ok(Data::Map(entries))
     }
 }
 
