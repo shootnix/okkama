@@ -406,6 +406,8 @@ hidden object UrlPort {
     }
 }
 
+// UrlHost is hidden, so every host is one of this module's own, canonical
+// by construction: it is kept as given, not rebuilt from its parts (#503).
 hidden object UrlAuthority {
     has hosts is @UrlHost;
     has userinfo is UrlUserInfo;
@@ -418,7 +420,7 @@ hidden object UrlAuthority {
     }
 
     UrlAuthority(host is UrlHost) {
-        hosts = [UrlHostSnapshot(host).host()];
+        hosts = [host];
         userinfo = UrlUserInfo();
         port = UrlPort();
     }
@@ -426,13 +428,13 @@ hidden object UrlAuthority {
     UrlAuthority(host is UrlHost, port is int) {
         confirm port >= 0 && port <= 65535
             else throw InvalidUrl.located(0, "port outside 0..65535");
-        hosts = [UrlHostSnapshot(host).host()];
+        hosts = [host];
         userinfo = UrlUserInfo();
         self.port = UrlPort(port.string());
     }
 
     UrlAuthority(host is UrlHost, userinfo is UrlUserInfo, port is UrlPort) {
-        hosts = [UrlHostSnapshot(host).host()];
+        hosts = [host];
         self.userinfo = userinfo;
         self.port = port;
     }
@@ -477,47 +479,6 @@ hidden object UrlAuthority {
             else {
                 "";
             });
-    }
-}
-
-// A nominal role can be implemented by callers. Snapshot its documented
-// coordinates and enforce their canonical wire agreement at composition.
-hidden object UrlHostSnapshot {
-    has origin is UrlHost;
-
-    UrlHostSnapshot(origin is UrlHost) {
-        self.origin = origin;
-    }
-
-    host() is UrlHost {
-        let kind = origin.kind();
-        let wire = origin.string();
-        let host is UrlHost = if kind == UrlHostKind.name {
-            NamedUrlHost(origin.name());
-        }
-        else {
-            if kind == UrlHostKind.address {
-                AddressUrlHost(origin.address());
-            }
-            else {
-                if kind == UrlHostKind.empty {
-                    EmptyUrlHost();
-                }
-                else {
-                    confirm wire.length() >= 2
-                        && wire.slice(0, 1) == "["
-                        && wire.slice(wire.length() - 1, wire.length()) == "]"
-                        else throw InvalidUrl.located(0, "IPvFuture host requires brackets");
-                    FutureUrlHost(wire.slice(1, wire.length() - 1));
-                }
-            }
-        };
-        confirm host.string() == wire
-            else throw InvalidUrl.located(
-                0,
-                "host coordinates and canonical wire spelling disagree"
-            );
-        host;
     }
 }
 

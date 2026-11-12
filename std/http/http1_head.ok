@@ -158,17 +158,19 @@ hidden object Http1HeadLines {
             else throw Http1LimitExceeded.kind("head_bytes");
         confirm latin1_representable_prefix(origin) == origin.length()
             else throw InvalidHttpMessage.because("octet head source required");
-        let termination = origin.split("\r\n\r\n");
-        confirm termination.size() == 2 && termination[1] == ""
+        confirm origin.find("\r\n\r\n") == Maybe.some(origin.length() - 4)
             else throw InvalidHttpMessage.because("exact CRLF head framing required");
         let values = origin.split("\r\n");
         confirm values.size() >= 3 else throw InvalidHttpMessage.because("missing start line");
         confirm values.size() - 3 <= limits::Limits::fields else throw Http1LimitExceeded.kind("fields");
+        // Every CR and LF belongs to a CRLF when there are as many of each as
+        // there are lines; only then the lines need no look of their own (#113).
+        let clean = origin.split("\r").size() == values.size() && origin.split("\n").size() == values.size();
         for (0..values.size() - 2) -> index {
             let line = values[index];
             confirm line.length() <= limits::Limits::line_bytes
                 else throw Http1LimitExceeded.kind("line_bytes");
-            confirm line.split("\r").size() == 1 && line.split("\n").size() == 1
+            confirm clean || (line.split("\r").size() == 1 && line.split("\n").size() == 1)
                 else throw InvalidHttpMessage.because("bare CR/LF in head");
         }
         lines = values;
@@ -178,17 +180,16 @@ hidden object Http1HeadLines {
     headers() is Headers {
         let entries is @Header = (1..lines.size() - 2).map() -> index {
             let line = lines[index];
-            let pieces = line.split(":");
-            confirm pieces.size() >= 2 && pieces[0] != ""
-                else throw InvalidHttpMessage.because("field colon required");
+            let colon = line.find(":") else 0;
+            confirm colon > 0 else throw InvalidHttpMessage.because("field colon required");
             let name = try {
-                HeaderName(pieces[0]);
+                HeaderName(line.slice(0, colon));
             }
             catch e is InvalidHeader {
                 throw InvalidHttpMessage.because("invalid field name or obsolete folding");
             };
             try {
-                Header(name: name, value: line.slice(pieces[0].length() + 1, line.length()));
+                Header(name: name, value: line.slice(colon + 1, line.length()));
             }
             catch e is InvalidHeader {
                 throw InvalidHttpMessage.because("invalid field value octets");

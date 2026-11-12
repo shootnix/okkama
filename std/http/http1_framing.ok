@@ -164,6 +164,13 @@ object Http1FramingFields {
             let empty is @string = [];
             return empty;
         }
+        // One value without a comma, as Content-Length usually is: a field
+        // value is trimmed already, so it is its own single member (#503).
+        if values.size() == 1 && !values.item(0).contains(",") {
+            let only = values.item(0);
+            confirm only != "" else throw InvalidHttpMessage.because("empty framing list member");
+            return [only];
+        }
         let count = (0..values.size()).reduce(0) -> used, index {
             let amount = values.item(index).split(",").size();
             confirm amount <= 16 - used else throw Http1LimitExceeded.kind("framing_items");

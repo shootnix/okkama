@@ -39,11 +39,17 @@ object IpAddress does Comparing<IpAddress> {
     IpAddress(origin is string) {
         confirm origin.length() > 0 && origin.length() <= 45
             else throw InvalidIpAddress.origin(origin);
-        let valid = (0..origin.length()).reduce(true) -> valid, index {
-            valid && "0123456789abcdefABCDEF:.".split(origin.slice(index, index + 1)).size() == 2;
+        // Hex digits, colons and dots, read as character codes (#503).
+        let valid = origin.characters().reduce(true) -> valid, character {
+            let code = character.code();
+            valid
+                && ((code >= 48 && code <= 58)
+                || (code >= 97 && code <= 102)
+                || (code >= 65 && code <= 70)
+                || code == 46);
         };
         confirm valid else throw InvalidIpAddress.origin(origin);
-        let ipv6 = origin.split(":").size() > 1;
+        let ipv6 = origin.contains(":");
         let number = if ipv6 {
             2;
         }

@@ -7,7 +7,6 @@ import "http/header" take Headers;
 import "http/method" take Method, MethodName;
 import "http/version" take Http1VersionText;
 import "io/stream" take AsyncWriting;
-import "io/buffer" take ByteBuffer;
 import "io/decorators" take ByteSnapshot;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
 
@@ -172,20 +171,12 @@ hidden object Http1HeadWire {
                 else throw Http1LimitExceeded.kind("head_bytes");
             used + width + 2;
         };
-        let buffer = ByteBuffer();
-        defer buffer.closing().close();
-        let writer = buffer.writing();
-        writer.write(ByteSnapshot(Latin1Encoded(start + "\r\n").bytes()));
-        for (0..entries.size()) -> index {
+        // One text, encoded once (#503).
+        let lines is @string = (0..entries.size()).map() -> index {
             let field = entries.item(index);
-            writer.write(
-                ByteSnapshot(
-                    Latin1Encoded(field.name().string() + ": " + field.value() + "\r\n").bytes()
-                )
-            );
-        }
-        writer.write(ByteSnapshot([13.byte(), 10.byte()]));
-        buffer.content().bytes();
+            field.name().string() + ": " + field.value() + "\r\n";
+        };
+        Latin1Encoded(start + "\r\n" + lines.join("") + "\r\n").bytes();
     }
 }
 
