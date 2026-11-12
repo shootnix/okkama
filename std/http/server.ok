@@ -38,6 +38,7 @@ import "http/endpoint" take LoopbackEndpoints;
 import "net/ip" take IpAddress;
 import "http/client_policy" take HttpLimits;
 import "collections/set" take Set, OrderedSet;
+import "collections/list" take List, EmptyList;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded;
 import "io/decorators" take ByteSnapshot;
 
@@ -150,7 +151,11 @@ hidden object HttpServerState {
     has policy is ServerPolicy;
     has clock is Timing;
     has destinations is @UrlParts;
-    has peers, retired is Atomic<@HttpServerPeer>;
+    // Peers live on persistent lists, so taking or retiring one costs the same
+    // however many there are; finished peers leave the list once they
+    // outnumber the live ones (#101).
+    has peers, retired is Atomic<List<HttpServerPeer>>;
+    has live, gone is Atomic<int>;
     has changed is Atomic<Event>;
     has stopped, started, draining is Event;
     has serial is Atomic<int>;
@@ -167,9 +172,11 @@ hidden object HttpServerState {
         self.handling = handling;
         self.policy = policy;
         self.clock = clock;
-        let empty is @HttpServerPeer = [];
+        let empty is List<HttpServerPeer> = EmptyList();
         peers = Atomic(empty);
         retired = Atomic(empty);
+        live = Atomic(0);
+        gone = Atomic(0);
         changed = Atomic(Event());
         stopped = Event();
         started = Event();
@@ -203,7 +210,7 @@ hidden object HttpServerState {
             draining.set();
             origin.close();
             for peers.value() -> peer {
-                if peer.waiting_for_request() {
+                if !peer.gone() && peer.waiting_for_request() {
                     peer.close();
                 }
             }
@@ -213,7 +220,7 @@ hidden object HttpServerState {
 
     async drained() is bool {
         loop {
-            if peers.value().size() == 0 {
+            if live.value() == 0 {
                 await self.reap();
                 return true;
             }
@@ -227,29 +234,31 @@ hidden object HttpServerState {
             stopped.set();
             origin.close();
             for peers.value() -> peer {
-                peer.close();
+                if !peer.gone() {
+                    peer.close();
+                }
             }
             self.signal();
         }
     }
 
-    remove(id is int) is void {
-        let found is @HttpServerPeer = peers.value().filter() -> peer {
-            peer.id() == id;
-        };
-        let old = retired.value();
-        let following is @HttpServerPeer = (0..old.size() + found.size()).map() -> index {
-            if index < old.size() {
-                old[index];
-            }
-            else {
-                found[index - old.size()];
-            }
-        };
-        retired.replace(following);
-        peers.replace(peers.value().filter() -> peer {
-            peer.id() != id;
-        });
+    remove(peer is HttpServerPeer) is void {
+        peer.retire();
+        retired.replace(retired.value().prefix(peer));
+        live.replace(live.value() - 1);
+        gone.replace(gone.value() + 1);
+        if gone.value() > live.value() {
+            let empty is List<HttpServerPeer> = EmptyList();
+            peers.replace(peers.value().reduce(empty) -> kept, each {
+                if each.gone() {
+                    kept;
+                }
+                else {
+                    kept.prefix(each);
+                }
+            });
+            gone.replace(0);
+        }
         self.signal();
     }
 
@@ -271,11 +280,18 @@ hidden object HttpServerState {
                 group.start(peer.settled());
             }
             await group.wait();
-            retired.replace(retired.value().filter() -> peer {
-                !(batch.reduce(false) -> found, item {
-                    found || item.id() == peer.id();
-                });
-            });
+            // Peers retired meanwhile went in front of the batch: keep them.
+            let current = retired.value();
+            let fresh = current.size() - batch.size();
+            let empty is List<HttpServerPeer> = EmptyList();
+            let kept = Atomic(empty);
+            let taken = Atomic(0);
+            for current -> peer {
+                last if taken.value() == fresh;
+                kept.replace(kept.value().prefix(peer));
+                taken.replace(taken.value() + 1);
+            }
+            retired.replace(kept.value());
         }
         true;
     }
@@ -290,7 +306,8 @@ hidden object HttpServerState {
             }
         }
         await group.wait();
-        retired.replace([]);
+        let empty is List<HttpServerPeer> = EmptyList();
+        retired.replace(empty);
         true;
     }
 
@@ -306,14 +323,14 @@ hidden object HttpServerState {
                 return true;
             }
             if draining.ready() {
-                if peers.value().size() == 0 {
+                if live.value() == 0 {
                     return true;
                 }
                 let signal = changed.value();
                 await signal.wait();
                 next;
             }
-            if peers.value().size() >= policy.connections() {
+            if live.value() >= policy.connections() {
                 let signal = changed.value();
                 await signal.wait();
                 next;
@@ -329,16 +346,8 @@ hidden object HttpServerState {
                 clock: clock,
                 destinations: destinations
             );
-            let old = peers.value();
-            let following is @HttpServerPeer = (0..old.size() + 1).map() -> index {
-                if index < old.size() {
-                    old[index];
-                }
-                else {
-                    peer;
-                }
-            };
-            peers.replace(following);
+            peers.replace(peers.value().prefix(peer));
+            live.replace(live.value() + 1);
             peer.start();
             await peer.ready();
             peer.dispatch();
@@ -370,7 +379,7 @@ hidden object HttpServerPeer {
     has group is FutureGroup<bool>;
     has cancelled is Cancellation;
     has destinations is @UrlParts;
-    has sent is Atomic<bool>;
+    has sent, departed is Atomic<bool>;
     has phase, seen is Atomic<int>;
 
     HttpServerPeer(
@@ -394,12 +403,22 @@ hidden object HttpServerPeer {
         group = FutureGroup();
         cancelled = Cancellation();
         sent = Atomic(false);
+        departed = Atomic(false);
         phase = Atomic(0);
         seen = Atomic(0);
     }
 
     id() is int {
         id;
+    }
+
+    // Finished and retired by the server.
+    gone() is bool {
+        departed.value();
+    }
+
+    retire() is void {
+        departed.replace(true);
     }
 
     waiting_for_request() is bool {
@@ -431,7 +450,7 @@ hidden object HttpServerPeer {
     }
 
     async run() is bool {
-        defer server.remove(id);
+        defer server.remove(self);
         defer ready.set();
         defer cancelled.cancel();
         let connections is FutureGroup<TcpConnection> = FutureGroup();
