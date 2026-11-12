@@ -2,10 +2,49 @@ module archive/zip v1.0.0;
 
 import "error" take InvalidArgument;
 import "archive/entry" take ArchiveEntry;
+import "archive/limits" take ArchiveLimits, ArchiveLimitExceeded;
+import "archive/path" take ArchivePath;
+import "archive/tar" take DuplicateArchivePath;
+import "encoding/bytes" take ByteRange, ByteSearch;
+import "encoding/binary" take Signedness, IntegerBytes;
+import "encoding/utf" take ByteOrder, Utf8Encoded, Utf8Decoded, InvalidUtf8;
+import "checksum/crc" take Crc32;
+import "compression/deflate" take DeflateCompressed, DeflateDecompressed;
+import "compression/state" take CompressionLimitExceeded, InvalidCompressedData;
+import "io/stream" take Writing, Closing;
+import "async/atomic" take Atomic;
+import "io/buffer" take ByteBuffer;
+import "encoding/base64" take Base64Decoded;
 
+// ZIP archives (#185): ZipArchive reads one from bytes, ZipWriting writes one
+// to a Writing; members are stored or deflated, and ZIP64 is read and written.
+//
+//     for ZipArchive(bytes).entries() -> entry {
+//         entry.name();
+//         await entry.bytes(limit: 10485760);
+//     }
+//
+//     let zip = ZipWriting(destination: output);
+//     zip.add(name: "a.txt", bytes: data);
+//     zip.close(); // the central directory goes out here
+//
+// Reading trusts nothing in the archive:
+// - every name goes through ArchivePath, so an absolute name, "..", a
+//   backslash or a drive prefix is UnsafeArchivePath, and a name given twice
+//   is DuplicateArchivePath;
+// - ArchiveLimits bound the entries, their declared sizes and the names:
+//   65 536 entries, 1 GiB a member, 4 GiB in all and names of 4 096
+//   characters, unless given;
+// - members may not overlap one another or the central directory;
+// - bytes(limit) never makes more than the declared size or the limit and
+//   checks the CRC-32, so a member that expands beyond what it declares is
+//   InvalidZip instead of a bomb;
+// - encrypted members, multi-disk archives and methods other than stored and
+//   deflated are UnsupportedZip.
+//
 // A ZIP method name, not a wire identifier or a promise of an installed codec.
-// The module currently represents writing choices only. ZIP wire processing
-// and the deferred compression providers are separate capabilities.
+// Reading and writing support stored and deflated; the other names are
+// writing choices for which no codec is installed.
 enum ZipMethod = (stored, deflated, bzip2, lzma, zstandard);
 
 // Immutable choice of ZIP method and effective compression level. Construction
@@ -168,3 +207,745 @@ test "ZIP level ranges are exact and zero has method-specific meaning" {
 // ZipArchiveEntry is covered by ordinary-import consumer suite 319. The root
 // inline runner cannot resolve imported ArchiveEntry.fake(); keeping its tests
 // external avoids adding test-only roles/factories to the library's public scope.
+
+// The members of a ZIP archive in memory, read through its central directory.
+object ZipArchive {
+    has origin is @byte;
+    has limits is ArchiveLimits;
+
+    ZipArchive(origin is @byte) {
+        self.origin = origin;
+        limits = ArchiveLimits(65536, 1073741824, 4294967296, 4096);
+    }
+
+    ZipArchive(origin is @byte, limits is ArchiveLimits) {
+        self.origin = origin;
+        self.limits = limits;
+    }
+
+    // The members in the order of the central directory, every one checked.
+    entries() is @ZipEntry {
+        ZipDirectory(origin: origin, limits: limits).entries();
+    }
+}
+
+// One member of a ZipArchive.
+object ZipEntry {
+    has source is @byte;
+    has label is string;
+    has kind is ZipMethod;
+    has checksum is int;
+    has packed, expanded, start is int;
+
+    ZipEntry(
+        source is @byte,
+        name is string,
+        method is ZipMethod,
+        crc is int,
+        compressed_size is int,
+        size is int,
+        start is int
+    ) {
+        self.source = source;
+        label = name;
+        kind = method;
+        checksum = crc;
+        packed = compressed_size;
+        expanded = size;
+        self.start = start;
+    }
+
+    // The name as stored; a directory's ends with "/".
+    name() is string {
+        label;
+    }
+
+    directory() is bool {
+        label.ends_with("/");
+    }
+
+    method() is ZipMethod {
+        kind;
+    }
+
+    // The size the archive declares; bytes() holds it to that.
+    size() is int {
+        expanded;
+    }
+
+    compressed_size() is int {
+        packed;
+    }
+
+    // The member's bytes, at most limit of them: ArchiveLimitExceeded when it
+    // declares more. Bytes beyond the declared size, a size that differs from
+    // it or a CRC-32 that does not match are InvalidZip.
+    async bytes(limit is int) is @byte {
+        confirm limit >= 0 else throw InvalidArgument.because("limit must not be negative");
+        confirm expanded <= limit else throw ArchiveLimitExceeded.detailed("entry_size", limit);
+        let stored = source.slice(start, start + packed);
+        let content = if kind == ZipMethod.stored {
+            stored;
+        }
+        else {
+            try {
+                DeflateDecompressed(origin: stored, limit: expanded).bytes();
+            }
+            catch failure is CompressionLimitExceeded {
+                throw InvalidZip.because(label + " expands beyond its declared size");
+            }
+            catch failure is InvalidCompressedData {
+                throw InvalidZip.because(label + " holds damaged deflate data");
+            }
+        };
+        confirm content.size() == expanded
+            else throw InvalidZip.because(label + " differs in size from the central directory");
+        confirm Crc32(content).checksum() == checksum
+            else throw InvalidZip.because(label + " fails its CRC-32");
+        content;
+    }
+}
+
+// Little-endian fields of an archive, refused when they run past its end.
+hidden object ZipFields {
+    has origin is @byte;
+
+    ZipFields(origin is @byte) {
+        self.origin = origin;
+    }
+
+    number(at is int, width is int) is int {
+        confirm at >= 0 && at + width <= origin.size()
+            else throw InvalidZip.because("truncated archive");
+        ByteRange(source: origin, start: at, end: at + width).integer(
+            Signedness.unsigned,
+            ByteOrder.little
+        );
+    }
+
+    bytes(at is int, width is int) is @byte {
+        confirm at >= 0 && at + width <= origin.size()
+            else throw InvalidZip.because("truncated archive");
+        origin.slice(at, at + width);
+    }
+}
+
+// Where the central directory is and how many members it holds.
+hidden object ZipEnd {
+    has count, size, offset is int;
+
+    ZipEnd(count is int, size is int, offset is int) {
+        self.count = count;
+        self.size = size;
+        self.offset = offset;
+    }
+
+    count() is int {
+        count;
+    }
+
+    size() is int {
+        size;
+    }
+
+    offset() is int {
+        offset;
+    }
+}
+
+hidden object ZipDirectory {
+    has origin is @byte;
+    has limits is ArchiveLimits;
+    has fields is ZipFields;
+
+    ZipDirectory(origin is @byte, limits is ArchiveLimits) {
+        self.origin = origin;
+        self.limits = limits;
+        fields = ZipFields(origin);
+    }
+
+    entries() is @ZipEntry {
+        let end = self.end();
+        confirm end.count() <= limits::Limits::entries
+            else throw ArchiveLimitExceeded.detailed("entries", limits::Limits::entries);
+        confirm end.offset() + end.size() <= origin.size()
+            else throw InvalidZip.because("central directory runs past the archive");
+        let position = Atomic(end.offset());
+        let total = Atomic(0);
+        let seen is %string:bool = [:];
+        let names = Atomic(seen);
+        let spans is %int:int = [:];
+        let used = Atomic(spans);
+        let found is @ZipEntry = (0..end.count()).map() -> index {
+            let at = position.value();
+            confirm fields.number(at, 4) == 33639248
+                else throw InvalidZip.because("bad central directory header");
+            let flags = fields.number(at + 8, 2);
+            confirm flags % 2 == 0 else throw UnsupportedZip.because("encrypted members");
+            let method = match fields.number(at + 10, 2) {
+                case 0 {
+                    ZipMethod.stored;
+                }
+                case 8 {
+                    ZipMethod.deflated;
+                }
+                else {
+                    throw UnsupportedZip.because(
+                        "compression method " + fields.number(at + 10, 2).string()
+                    );
+                }
+            };
+            let name_size = fields.number(at + 28, 2);
+            let extra_size = fields.number(at + 30, 2);
+            let comment_size = fields.number(at + 32, 2);
+            let name = self.name(fields.bytes(at + 46, name_size));
+            let extra = ZipExtra(fields.bytes(at + 46 + name_size, extra_size));
+            let size = extra.wide(fields.number(at + 24, 4), 0);
+            let packed = extra.wide(
+                fields.number(at + 20, 4),
+                if fields.number(at + 24, 4) == 4294967295 {
+                    8;
+                }
+                else {
+                    0;
+                }
+            );
+            let local = extra.wide(
+                fields.number(at + 42, 4),
+                (if fields.number(at + 24, 4) == 4294967295 {
+                    8;
+                }
+                else {
+                    0;
+                }) + (if fields.number(at + 20, 4) == 4294967295 {
+                    8;
+                }
+                else {
+                    0;
+                })
+            );
+            limits.path(if name.ends_with("/") {
+                name.slice(0, name.length() - 1);
+            }
+            else {
+                name;
+            });
+            confirm !names.value().has(name) else throw DuplicateArchivePath.path(name);
+            names.replace(names.value() + [name: true]);
+            confirm size <= limits::Limits::entry_size
+                else throw ArchiveLimitExceeded.detailed("entry_size", limits::Limits::entry_size);
+            total.replace(total.value() + size);
+            confirm total.value() <= limits::Limits::total_size
+                else throw ArchiveLimitExceeded.detailed("total_size", limits::Limits::total_size);
+            confirm fields.number(local, 4) == 67324752
+                else throw InvalidZip.because(name + ": bad local header");
+            let start = local + 30 + fields.number(local + 26, 2) + fields.number(local + 28, 2);
+            confirm start + packed <= end.offset()
+                else throw InvalidZip.because(name + " runs into the central directory");
+            confirm !used.value().has(local)
+                else throw InvalidZip.because(name + " overlaps another member");
+            used.replace(used.value() + [local: start + packed]);
+            position.replace(at + 46 + name_size + extra_size + comment_size);
+            ZipEntry(
+                source: origin,
+                name: name,
+                method: method,
+                crc: fields.number(at + 16, 4),
+                compressed_size: packed,
+                size: size,
+                start: start
+            );
+        };
+        // Members sorted by where they start may not reach into the next one.
+        let starts = used.value().keys();
+        for (1..starts.size()) -> index {
+            let reach = used.value()[starts[index - 1]];
+            let begins = starts[index];
+            confirm reach <= begins else throw InvalidZip.because("members overlap");
+        }
+        found;
+    }
+
+    // The end of central directory record, or the ZIP64 one it points to.
+    hidden end() is ZipEnd {
+        let record = self.record();
+        confirm fields.number(record + 4, 2) == 0 && fields.number(record + 6, 2) == 0
+            else throw UnsupportedZip.because("multi-disk archives");
+        let count = fields.number(record + 10, 2);
+        let size = fields.number(record + 12, 4);
+        let offset = fields.number(record + 16, 4);
+        if count != 65535 && size != 4294967295 && offset != 4294967295 {
+            return ZipEnd(count: count, size: size, offset: offset);
+        }
+        let locator = record - 20;
+        confirm locator >= 0 && fields.number(locator, 4) == 117853008
+            else throw InvalidZip.because("missing ZIP64 end of central directory locator");
+        let wide = fields.number(locator + 8, 8);
+        confirm fields.number(wide, 4) == 101075792
+            else throw InvalidZip.because("bad ZIP64 end of central directory record");
+        ZipEnd(
+            count: fields.number(wide + 32, 8),
+            size: fields.number(wide + 40, 8),
+            offset: fields.number(wide + 48, 8)
+        );
+    }
+
+    // The last end record whose comment reaches exactly to the end.
+    hidden record() is int {
+        confirm origin.size() >= 22 else throw InvalidZip.because("not a ZIP archive");
+        let earliest = if origin.size() - 22 - 65535 > 0 {
+            origin.size() - 22 - 65535;
+        }
+        else {
+            0;
+        };
+        let signature is @byte = [byte(80), byte(75), byte(5), byte(6)];
+        let search = ByteSearch(source: origin, pattern: signature);
+        let found = Atomic(-1);
+        let upcoming = Atomic(search.from(earliest));
+        loop {
+            let at = upcoming.value();
+            last if at < 0 || at > origin.size() - 22;
+            if at + 22 + fields.number(at + 20, 2) == origin.size() {
+                found.replace(at);
+            }
+            upcoming.replace(search.from(at + 1));
+        }
+        confirm found.value() >= 0
+            else throw InvalidZip.because("no end of central directory record");
+        found.value();
+    }
+
+    // UTF-8, flagged or not; names in other code pages are refused.
+    hidden name(bytes is @byte) is string {
+        try {
+            Utf8Decoded(bytes).string();
+        }
+        catch failure is InvalidUtf8 {
+            throw UnsupportedZip.because("a name that is not UTF-8");
+        }
+    }
+}
+
+// The ZIP64 extended information field (0x0001) of a central record: its
+// 64-bit values replace the 32-bit fields that hold 0xFFFFFFFF, in order.
+hidden object ZipExtra {
+    has origin is @byte;
+
+    ZipExtra(origin is @byte) {
+        self.origin = origin;
+    }
+
+    // value, or the 64-bit one at skip bytes into the ZIP64 field when value
+    // is 0xFFFFFFFF.
+    wide(value is int, skip is int) is int {
+        if value != 4294967295 {
+            return value;
+        }
+        let fields = ZipFields(origin);
+        let at = Atomic(0);
+        loop {
+            confirm at.value() + 4 <= origin.size()
+                else throw InvalidZip.because("missing ZIP64 extended information");
+            let id = fields.number(at.value(), 2);
+            let size = fields.number(at.value() + 2, 2);
+            if id == 1 {
+                return fields.number(at.value() + 4 + skip, 8);
+            }
+            at.replace(at.value() + 4 + size);
+        }
+    }
+}
+
+// A ZIP archive written member by member to a Writing; close() writes the
+// central directory. A member is deflated when that makes it smaller, and
+// stored otherwise; a name ending in "/" is a directory with no bytes.
+// Names go through ArchivePath; one given twice is DuplicateArchivePath.
+// Times are 1980-01-01 00:00, so the same members make the same archive.
+object ZipWriting does Closing {
+    has destination is Writing;
+    has records is Atomic<@byte>;
+    has count, offset is Atomic<int>;
+    has names is Atomic<%string:bool>;
+    has finished is Atomic<bool>;
+
+    ZipWriting(destination is Writing) {
+        self.destination = destination;
+        let none_yet is @byte = [];
+        records = Atomic(none_yet);
+        count = Atomic(0);
+        offset = Atomic(0);
+        let seen is %string:bool = [:];
+        names = Atomic(seen);
+        finished = Atomic(false);
+    }
+
+    add(name is string, bytes is @byte) is void {
+        let packed = DeflateCompressed(bytes).bytes();
+        if !name.ends_with("/") && packed.size() < bytes.size() {
+            self.member(name, bytes, packed, 8);
+        }
+        else {
+            self.member(name, bytes, bytes, 0);
+        }
+    }
+
+    // With the method and level chosen: stored or deflated.
+    add(name is string, bytes is @byte, compression is ZipCompression) is void {
+        match compression.method() {
+            case ZipMethod.stored {
+                self.member(name, bytes, bytes, 0);
+            }
+            case ZipMethod.deflated {
+                self.member(
+                    name,
+                    bytes,
+                    DeflateCompressed(origin: bytes, level: compression.level()).bytes(),
+                    8
+                );
+            }
+            else {
+                throw UnsupportedZip.because("writing a method other than stored or deflated");
+            }
+        }
+    }
+
+    closed() is bool {
+        finished.value();
+    }
+
+    // The central directory and its end record; ZIP64 ones when there are
+    // more than 65 535 members or the directory starts past 4 GiB.
+    close() is void {
+        if finished.value() {
+            return;
+        }
+        finished.replace(true);
+        let start = offset.value();
+        let directory = records.value();
+        let members = count.value();
+        destination.write(directory);
+        let wide = members > 65535 || start >= 4294967295 || directory.size() >= 4294967295;
+        if wide {
+            let at = start + directory.size();
+            destination.write(
+                ZipLittle(101075792, 4).bytes() + ZipLittle(44, 8).bytes() + ZipLittle(45, 2).bytes() +
+                    ZipLittle(45, 2).bytes() + ZipLittle(0, 4).bytes() + ZipLittle(0, 4).bytes() +
+                    ZipLittle(members, 8).bytes() + ZipLittle(members, 8).bytes() +
+                    ZipLittle(directory.size(), 8).bytes() + ZipLittle(start, 8).bytes()
+            );
+            destination.write(
+                ZipLittle(117853008, 4).bytes() + ZipLittle(0, 4).bytes() + ZipLittle(at, 8).bytes() +
+                    ZipLittle(1, 4).bytes()
+            );
+        }
+        destination.write(
+            ZipLittle(101010256, 4).bytes() + ZipLittle(0, 2).bytes() + ZipLittle(0, 2).bytes() +
+                ZipLittle(ZipClamped(members, 65535).value(), 2).bytes() +
+                ZipLittle(ZipClamped(members, 65535).value(), 2).bytes() +
+                ZipLittle(ZipClamped(directory.size(), 4294967295).value(), 4).bytes() +
+                ZipLittle(ZipClamped(start, 4294967295).value(), 4).bytes() + ZipLittle(0, 2).bytes()
+        );
+        destination.flush();
+    }
+
+    hidden member(name is string, bytes is @byte, packed is @byte, method is int) is void {
+        confirm !finished.value() else throw InvalidArgument.because("the ZIP archive is closed");
+        let directory = name.ends_with("/");
+        confirm !directory || bytes.size() == 0
+            else throw InvalidArgument.because("a directory has no bytes");
+        ArchivePath(if directory {
+            name.slice(0, name.length() - 1);
+        }
+        else {
+            name;
+        });
+        confirm !names.value().has(name) else throw DuplicateArchivePath.path(name);
+        names.replace(names.value() + [name: true]);
+        let encoded = Utf8Encoded(name).bytes();
+        let flags = if encoded.size() != name.length() {
+            2048;
+        }
+        else {
+            0;
+        };
+        let crc = Crc32(bytes).checksum();
+        let at = offset.value();
+        let large = bytes.size() >= 4294967295 || packed.size() >= 4294967295;
+        let version = if large || at >= 4294967295 {
+            45;
+        }
+        else {
+            20;
+        };
+        let local_extra is @byte = if large {
+            ZipLittle(1, 2).bytes() + ZipLittle(16, 2).bytes() + ZipLittle(bytes.size(), 8).bytes() +
+                ZipLittle(packed.size(), 8).bytes();
+        }
+        else {
+            [];
+        };
+        let header = ZipLittle(67324752, 4).bytes() + ZipLittle(version, 2).bytes() + ZipLittle(
+            flags,
+            2
+        ).bytes() +
+            ZipLittle(method, 2).bytes() + ZipLittle(0, 2).bytes() + ZipLittle(33, 2).bytes() +
+            ZipLittle(crc, 4).bytes() + ZipLittle(ZipClamped(packed.size(), 4294967295).value(), 4).bytes() +
+            ZipLittle(ZipClamped(bytes.size(), 4294967295).value(), 4).bytes() +
+            ZipLittle(encoded.size(), 2).bytes() + ZipLittle(local_extra.size(), 2).bytes() + encoded +
+            local_extra;
+        destination.write(header);
+        destination.write(packed);
+        offset.replace(at + header.size() + packed.size());
+        // The central record's ZIP64 field holds the values that overflow, in order.
+        let central_extra_values is @byte = (if bytes.size() >= 4294967295 {
+            ZipLittle(bytes.size(), 8).bytes();
+        }
+        else {
+            [];
+        }) + (if packed.size() >= 4294967295 {
+            ZipLittle(packed.size(), 8).bytes();
+        }
+        else {
+            [];
+        }) + (if at >= 4294967295 {
+            ZipLittle(at, 8).bytes();
+        }
+        else {
+            [];
+        });
+        let central_extra is @byte = if central_extra_values.size() > 0 {
+            ZipLittle(1, 2).bytes() + ZipLittle(central_extra_values.size(), 2).bytes() + central_extra_values;
+        }
+        else {
+            [];
+        };
+        let attributes = if directory {
+            1106051088;
+        }
+        else {
+            2175008768;
+        };
+        let record = ZipLittle(33639248, 4).bytes() + ZipLittle(813, 2).bytes() + ZipLittle(
+            version,
+            2
+        ).bytes() +
+            ZipLittle(flags, 2).bytes() + ZipLittle(method, 2).bytes() + ZipLittle(0, 2).bytes() +
+            ZipLittle(33, 2).bytes() + ZipLittle(crc, 4).bytes() +
+            ZipLittle(ZipClamped(packed.size(), 4294967295).value(), 4).bytes() +
+            ZipLittle(ZipClamped(bytes.size(), 4294967295).value(), 4).bytes() +
+            ZipLittle(encoded.size(), 2).bytes() + ZipLittle(central_extra.size(), 2).bytes() +
+            ZipLittle(0, 2).bytes() + ZipLittle(0, 2).bytes() + ZipLittle(0, 2).bytes() +
+            ZipLittle(attributes, 4).bytes() + ZipLittle(ZipClamped(at, 4294967295).value(), 4).bytes() +
+            encoded + central_extra;
+        records.replace(records.value() + record);
+        count.replace(count.value() + 1);
+    }
+}
+
+// value as width little-endian unsigned bytes.
+hidden object ZipLittle {
+    has value, width is int;
+
+    ZipLittle(value is int, width is int) {
+        self.value = value;
+        self.width = width;
+    }
+
+    bytes() is @byte {
+        IntegerBytes(
+            value: value,
+            size: width,
+            signedness: Signedness.unsigned,
+            order: ByteOrder.little
+        ).bytes();
+    }
+}
+
+// value, or the marker that sends a reader to the ZIP64 field.
+hidden object ZipClamped {
+    has origin, marker is int;
+
+    ZipClamped(origin is int, marker is int) {
+        self.origin = origin;
+        self.marker = marker;
+    }
+
+    value() is int {
+        if origin >= marker {
+            marker;
+        }
+        else {
+            origin;
+        }
+    }
+}
+
+enum InvalidZip is Error = (because(reason is string));
+
+enum UnsupportedZip is Error = (because(reason is string));
+
+hidden const ZIP_MIXED = "UEsDBBQAAAAAAAAAIQCGphA2BQAAAAUAAAAFAAAAYS50eHRoZWxsb1BLAwQUAAAAAAAAACEAAAAAAAAAAAAAAAAABQAAAGRvY3MvUEsDBBQAAAAIAAAAIQCRa0zXCQAAAMgAAAAKAAAAZG9jcy9iLnR4dCtJTVQoGQYYAFBLAwQUAAAICAAAACEAFYvpuwgAAAAGAAAAEAAAANC40LrQvtC90LrQsC50eHS72H5hw4WdAFBLAQIUAxQAAAAAAAAAIQCGphA2BQAAAAUAAAAFAAAAAAAAAAAAAACAAQAAAABhLnR4dFBLAQIUAxQAAAAAAAAAIQAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAACAASgAAABkb2NzL1BLAQIUAxQAAAAIAAAAIQCRa0zXCQAAAMgAAAAKAAAAAAAAAAAAAACAAUsAAABkb2NzL2IudHh0UEsBAhQDFAAACAgAAAAhABWL6bsIAAAABgAAABAAAAAAAAAAAAAAAIABfAAAANC40LrQvtC90LrQsC50eHRQSwUGAAAAAAQABADcAAAAsgAAAAAA";
+
+hidden const ZIP_ZIP64 = "UEsDBBQAAAAAAAAAIQCGphA2BQAAAAUAAAAFAAAAYS50eHRoZWxsb1BLAwQUAAAAAAAAACEAAAAAAAAAAAAAAAAABQAAAGRvY3MvUEsDBBQAAAAIAAAAIQCRa0zXCQAAAMgAAAAKAAAAZG9jcy9iLnR4dCtJTVQoGQYYAFBLAwQUAAAICAAAACEAFYvpuwgAAAAGAAAAEAAAANC40LrQvtC90LrQsC50eHS72H5hw4WdAFBLAQIUAxQAAAAAAAAAIQCGphA2BQAAAAUAAAAFAAAAAAAAAAAAAACAAQAAAABhLnR4dFBLAQIUAxQAAAAAAAAAIQAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAACAASgAAABkb2NzL1BLAQIUAxQAAAAIAAAAIQCRa0zXCQAAAMgAAAAKAAAAAAAAAAAAAACAAUsAAABkb2NzL2IudHh0UEsBAhQDFAAACAgAAAAhABWL6bsIAAAABgAAABAAAAAAAAAAAAAAAIABfAAAANC40LrQvtC90LrQsC50eHRQSwYGLAAAAAAAAAAtAC0AAAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAA3AAAAAAAAACyAAAAAAAAAFBLBgcAAAAAjgEAAAAAAAABAAAAUEsFBgAAAAD///////////////8AAA==";
+
+hidden const ZIP_EVIL = "UEsDBBQAAAAAAAAAIQCDFtyMAQAAAAEAAAALAAAALi4vZXZpbC50eHR4UEsBAhQDFAAAAAAAAAAhAIMW3IwBAAAAAQAAAAsAAAAAAAAAAAAAAIABAAAAAC4uL2V2aWwudHh0UEsFBgAAAAABAAEAOQAAACoAAAAAAA==";
+
+hidden const ZIP_BADCRC = "UEsDBBQAAAAAAAAAIQCGphA2BQAAAAUAAAAFAAAAYS50eHRoZWxsb1BLAwQUAAAAAAAAACEAAAAAAAAAAAAAAAAABQAAAGRvY3MvUEsDBBQAAAAIAAAAIQCRa0zXCQAAAMgAAAAKAAAAZG9jcy9iLnR4dCtJTVQoGQYYAFBLAwQUAAAICAAAACEAFYvpuwgAAAAGAAAAEAAAANC40LrQvtC90LrQsC50eHS72H5hw4WdAFBLAQIUAxQAAAAAAAAAIQB5phA2BQAAAAUAAAAFAAAAAAAAAAAAAACAAQAAAABhLnR4dFBLAQIUAxQAAAAAAAAAIQAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAACAASgAAABkb2NzL1BLAQIUAxQAAAAIAAAAIQCRa0zXCQAAAMgAAAAKAAAAAAAAAAAAAACAAUsAAABkb2NzL2IudHh0UEsBAhQDFAAACAgAAAAhABWL6bsIAAAABgAAABAAAAAAAAAAAAAAAIABfAAAANC40LrQvtC90LrQsC50eHRQSwUGAAAAAAQABADcAAAAsgAAAAAA";
+
+hidden const ZIP_BOMB = "UEsDBBQAAAAIAAAAIQB9lRHUcgAAAAoAAAAFAAAAemVyb3PtwTEBAAAAwqD1T20ND6AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAVwNQSwECFAMUAAAACAAAACEAfZUR1HIAAAAKAAAABQAAAAAAAAAAAAAAgAEAAAAAemVyb3NQSwUGAAAAAAEAAQAzAAAAlQAAAAAA";
+
+hidden const ZIP_ENCRYPTED = "UEsDBBQAAAAAAAAAIQCGphA2BQAAAAUAAAAFAAAAYS50eHRoZWxsb1BLAwQUAAAAAAAAACEAAAAAAAAAAAAAAAAABQAAAGRvY3MvUEsDBBQAAAAIAAAAIQCRa0zXCQAAAMgAAAAKAAAAZG9jcy9iLnR4dCtJTVQoGQYYAFBLAwQUAAAICAAAACEAFYvpuwgAAAAGAAAAEAAAANC40LrQvtC90LrQsC50eHS72H5hw4WdAFBLAQIUAxQAAQAAAAAAIQCGphA2BQAAAAUAAAAFAAAAAAAAAAAAAACAAQAAAABhLnR4dFBLAQIUAxQAAAAAAAAAIQAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAACAASgAAABkb2NzL1BLAQIUAxQAAAAIAAAAIQCRa0zXCQAAAMgAAAAKAAAAAAAAAAAAAACAAUsAAABkb2NzL2IudHh0UEsBAhQDFAAACAgAAAAhABWL6bsIAAAABgAAABAAAAAAAAAAAAAAAIABfAAAANC40LrQvtC90LrQsC50eHRQSwUGAAAAAAQABADcAAAAsgAAAAAA";
+
+hidden const ZIP_OVERLAP = "UEsDBBQAAAAAAAAAIQCGphA2BQAAAAUAAAAFAAAAYS50eHRoZWxsb1BLAwQUAAAAAAAAACEAAAAAAAAAAAAAAAAABQAAAGRvY3MvUEsDBBQAAAAIAAAAIQCRa0zXCQAAAMgAAAAKAAAAZG9jcy9iLnR4dCtJTVQoGQYYAFBLAwQUAAAICAAAACEAFYvpuwgAAAAGAAAAEAAAANC40LrQvtC90LrQsC50eHS72H5hw4WdAFBLAQIUAxQAAAAAAAAAIQCGphA2BQAAAAUAAAAFAAAAAAAAAAAAAACAAQAAAABhLnR4dFBLAQIUAxQAAAAAAAAAIQAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAACAAQAAAABkb2NzL1BLAQIUAxQAAAAIAAAAIQCRa0zXCQAAAMgAAAAKAAAAAAAAAAAAAACAAUsAAABkb2NzL2IudHh0UEsBAhQDFAAACAgAAAAhABWL6bsIAAAABgAAABAAAAAAAAAAAAAAAIABfAAAANC40LrQvtC90LrQsC50eHRQSwUGAAAAAAQABADcAAAAsgAAAAAA";
+
+async test "a ZIP archive is read through its central directory" {
+    for [ZIP_MIXED, ZIP_ZIP64] -> fixture {
+        let entries = ZipArchive(Base64Decoded(origin: fixture).bytes()).entries();
+        let names is @string = entries.map() -> entry {
+            entry.name();
+        };
+        test.is(names, ["a.txt", "docs/", "docs/b.txt", "иконка.txt"]);
+        test.is(entries[0].method(), ZipMethod.stored);
+        test.is(entries[2].method(), ZipMethod.deflated);
+        test.ok(entries[1].directory());
+        test.ok(!entries[2].directory());
+        test.is(entries[2].size(), 200);
+        test.ok(entries[2].compressed_size() < 200);
+        test.is(Utf8Decoded(await entries[0].bytes(limit: 1024)).string(), "hello");
+        test.is((await entries[1].bytes(limit: 0)).size(), 0);
+        test.is(
+            Utf8Decoded(await entries[2].bytes(limit: 1024)).string(),
+            "tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea tea "
+        );
+        test.is(Utf8Decoded(await entries[3].bytes(limit: 1024)).string(), "чай");
+    }
+}
+
+async test "a ZIP archive that lies is refused" {
+    let refused = (fixture is string) is string {
+        try {
+            ZipArchive(Base64Decoded(origin: fixture).bytes()).entries().size().string();
+        }
+        catch failure is Error {
+            failure.text();
+        }
+    };
+    test.ok(refused(ZIP_EVIL).starts_with("UnsafeArchivePath"));
+    test.ok(refused(ZIP_ENCRYPTED).starts_with("UnsupportedZip"));
+    test.ok(refused(ZIP_OVERLAP).starts_with("InvalidZip"));
+    test.is(
+        try {
+            ZipArchive(Base64Decoded(origin: ZIP_MIXED).bytes().slice(0, 100)).entries().size();
+        }
+        catch InvalidZip.because(_reason) {
+            -1;
+        },
+        -1
+    );
+    test.is(
+        try {
+            ZipArchive(
+                origin: Base64Decoded(origin: ZIP_MIXED).bytes(),
+                limits: ArchiveLimits(2, 1024, 4096, 255)
+            )
+                .entries()
+                .size();
+        }
+        catch ArchiveLimitExceeded.detailed(_limit, maximum) {
+            -maximum;
+        },
+        -2
+    );
+    let crc = ZipArchive(Base64Decoded(origin: ZIP_BADCRC).bytes()).entries()[0];
+    test.is(
+        try {
+            await crc.bytes(limit: 1024);
+            "read";
+        }
+        catch InvalidZip.because(reason) {
+            reason;
+        },
+        "a.txt fails its CRC-32"
+    );
+    let bomb = ZipArchive(Base64Decoded(origin: ZIP_BOMB).bytes()).entries()[0];
+    test.is(bomb.size(), 10);
+    test.is(
+        try {
+            await bomb.bytes(limit: 1048576);
+            "read";
+        }
+        catch InvalidZip.because(reason) {
+            reason;
+        },
+        "zeros expands beyond its declared size"
+    );
+    let small = ZipArchive(Base64Decoded(origin: ZIP_MIXED).bytes()).entries()[2];
+    test.is(
+        try {
+            await small.bytes(limit: 199);
+            "read";
+        }
+        catch ArchiveLimitExceeded.detailed(limit, _maximum) {
+            limit;
+        },
+        "entry_size"
+    );
+}
+
+async test "a written ZIP archive reads back" {
+    let buffer = ByteBuffer();
+    let zip = ZipWriting(destination: buffer.writing());
+    zip.add(name: "a.txt", bytes: Utf8Encoded("hello").bytes());
+    zip.add(name: "docs/", bytes: []);
+    zip.add(name: "docs/b.txt", bytes: Utf8Encoded("tea tea tea tea tea tea tea tea").bytes());
+    zip.add(
+        name: "иконка.txt",
+        bytes: Utf8Encoded("чай").bytes(),
+        compression: ZipCompression(ZipMethod.deflated)
+    );
+    test.is(
+        try {
+            zip.add(name: "a.txt", bytes: []);
+            "added";
+        }
+        catch DuplicateArchivePath.path(path) {
+            path;
+        },
+        "a.txt"
+    );
+    test.ok(
+        try {
+            zip.add(name: "../x", bytes: []);
+            false;
+        }
+        catch failure is Error {
+            failure.text().starts_with("UnsafeArchivePath");
+        }
+    );
+    zip.close();
+    test.ok(zip.closed());
+    zip.close();
+    let entries = ZipArchive(buffer.content().bytes()).entries();
+    let names is @string = entries.map() -> entry {
+        entry.name();
+    };
+    test.is(names, ["a.txt", "docs/", "docs/b.txt", "иконка.txt"]);
+    test.is(entries[0].method(), ZipMethod.stored);
+    test.is(entries[2].method(), ZipMethod.deflated);
+    test.ok(entries[1].directory());
+    test.is(
+        Utf8Decoded(await entries[2].bytes(limit: 100)).string(),
+        "tea tea tea tea tea tea tea tea"
+    );
+    test.is(Utf8Decoded(await entries[3].bytes(limit: 100)).string(), "чай");
+    test.ok(
+        try {
+            zip.add(name: "late.txt", bytes: []);
+            false;
+        }
+        catch failure is InvalidArgument {
+            true;
+        }
+    );
+}
