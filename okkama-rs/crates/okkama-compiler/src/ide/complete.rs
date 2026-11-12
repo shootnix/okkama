@@ -994,6 +994,9 @@ pub fn builtin_members(key: &str) -> Vec<Completion> {
             out.push(method("pow", &["exponent is int"], "int", "exact; a negative exponent is an error"));
             out.push(method("char", &[], "char", "the code point as a char"));
             out.push(method("sqrt", &[], "float", ""));
+            out.push(method("min", &["other is int"], "int", "the receiver when they are equal"));
+            out.push(method("max", &["other is int"], "int", "the receiver when they are equal"));
+            out.push(method("clamp", &["low is int", "high is int"], "int", "low above high is an error"));
         }
         for bits in ["bit_count", "leading_zeros", "trailing_zeros"] {
             out.push(method(bits, &[], "int", ""));
@@ -1008,6 +1011,15 @@ pub fn builtin_members(key: &str) -> Vec<Completion> {
         out.push(method("sign", &[], "int", ""));
         out.push(method("pow", &["exponent is float"], "float", ""));
         out.push(method("sqrt", &[], "float", ""));
+        for name in ["floor", "ceil", "round", "trunc", "exp", "ln", "log2", "log10", "sin", "cos", "tan"] {
+            out.push(method(name, &[], "float", "a result that is not finite is an error"));
+        }
+        out.push(method("atan2", &["y is float"], "float", "the angle of the point (x, y)"));
+        out.push(method("finite", &[], "bool", ""));
+        out.push(method("nan", &[], "bool", ""));
+        out.push(method("min", &["other is float"], "float", "the receiver when they are equal"));
+        out.push(method("max", &["other is float"], "float", "the receiver when they are equal"));
+        out.push(method("clamp", &["low is float", "high is float"], "float", "low above high is an error"));
     } else if key == "rat" {
         compare(&mut out);
         conversions(&mut out, &["int", "byte", "float", "rat", "string"]);

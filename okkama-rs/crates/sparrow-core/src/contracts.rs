@@ -79,6 +79,12 @@ fn contract(intrinsic: Intrinsic) -> Contract {
         TestOk => (false, "R", '-'),
         TestIs | TestIsnt => (false, "**", '-'),
         TestClose => (false, "FFF", '-'),
+        FloatFunction(_) => (false, "F", 'F'),
+        FloatAtan2 | FloatMin | FloatMax => (false, "FF", 'F'),
+        FloatClamp => (false, "FFF", 'F'),
+        FloatFinite | FloatNan => (false, "F", 'R'),
+        IntMin | IntMax => (false, "II", 'I'),
+        IntClamp => (false, "III", 'I'),
         TestText | TestBytes => (false, "PP", '-'),
     };
     Contract { asynchronous, params, result }

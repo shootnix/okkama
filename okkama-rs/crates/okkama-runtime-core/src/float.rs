@@ -381,3 +381,80 @@ mod tests {
         assert_eq!(sqrt(-1.0).unwrap_err(), "Can't take sqrt of -1");
     }
 }
+
+// ----- elementary functions, min, max, clamp (#192) -----
+// The IR engine and Sparrow call these; okkama.rt.Floats does the same.
+
+/// `floor`, `ceil`, `round` (half away from zero), `trunc`, `exp`, `ln`,
+/// `log2`, `log10`, `sin`, `cos`, `tan`. A result that is not finite
+/// (`exp(1000.0)`, `ln(0.0)`, `ln(-1.0)`) is refused, as for every float.
+pub fn function(name: &str, value: f64) -> Result<f64> {
+    let result = match name {
+        "floor" => value.floor(),
+        "ceil" => value.ceil(),
+        "round" => value.round(),
+        "trunc" => value.trunc(),
+        "exp" => value.exp(),
+        "ln" => value.ln(),
+        "log2" => value.log2(),
+        "log10" => value.log10(),
+        "sin" => value.sin(),
+        "cos" => value.cos(),
+        "tan" => value.tan(),
+        _ => return Err(format!("unknown float function {name}")),
+    };
+    finite(result)
+}
+
+/// `x.atan2(y)`: the angle of the point (x, y), from -pi to pi.
+pub fn atan2(x: f64, y: f64) -> Result<f64> {
+    finite(y.atan2(x))
+}
+
+/// The smaller value; the receiver when they are equal.
+pub fn min(value: f64, other: f64) -> f64 {
+    if other < value { other } else { value }
+}
+
+/// The larger value; the receiver when they are equal.
+pub fn max(value: f64, other: f64) -> f64 {
+    if other > value { other } else { value }
+}
+
+/// The value brought into low..=high; low above high is refused.
+pub fn clamp(value: f64, low: f64, high: f64) -> Result<f64> {
+    if low > high {
+        return Err(format!("clamp: low {} is above high {}", text(low), text(high)));
+    }
+    Ok(if value < low {
+        low
+    } else if value > high {
+        high
+    } else {
+        value
+    })
+}
+
+#[cfg(test)]
+mod functions {
+    use super::*;
+
+    #[test]
+    fn elementary_functions_and_bounds() {
+        assert_eq!(function("floor", -1.5), Ok(-2.0));
+        assert_eq!(function("ceil", -1.5), Ok(-1.0));
+        assert_eq!(function("round", 2.5), Ok(3.0));
+        assert_eq!(function("round", -2.5), Ok(-3.0));
+        assert_eq!(function("trunc", -1.7), Ok(-1.0));
+        assert_eq!(function("log10", 1000.0), Ok(3.0));
+        assert_eq!(function("log2", 8.0), Ok(3.0));
+        assert!(function("ln", 0.0).is_err());
+        assert!(function("ln", -1.0).is_err());
+        assert!(function("exp", 1000.0).is_err());
+        assert_eq!(atan2(0.0, 1.0), Ok(std::f64::consts::FRAC_PI_2));
+        assert_eq!(min(1.0, 2.0), 1.0);
+        assert_eq!(max(1.0, 2.0), 2.0);
+        assert_eq!(clamp(5.0, 0.0, 1.0), Ok(1.0));
+        assert!(clamp(5.0, 1.0, 0.0).is_err());
+    }
+}

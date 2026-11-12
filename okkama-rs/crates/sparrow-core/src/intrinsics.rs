@@ -79,6 +79,17 @@ pub enum Intrinsic {
     TestClose,
     TestText,
     TestBytes,
+    /// `float.floor` … `float.tan` (#192): the name after `okkama.float.`.
+    FloatFunction(&'static str),
+    FloatAtan2,
+    FloatMin,
+    FloatMax,
+    FloatClamp,
+    FloatFinite,
+    FloatNan,
+    IntMin,
+    IntMax,
+    IntClamp,
 }
 
 impl Intrinsic {
@@ -153,6 +164,26 @@ impl Intrinsic {
             "okkama.test.close" => TestClose,
             "okkama.test.text" => TestText,
             "okkama.test.bytes" => TestBytes,
+            "okkama.float.floor" => FloatFunction("floor"),
+            "okkama.float.ceil" => FloatFunction("ceil"),
+            "okkama.float.round" => FloatFunction("round"),
+            "okkama.float.trunc" => FloatFunction("trunc"),
+            "okkama.float.exp" => FloatFunction("exp"),
+            "okkama.float.ln" => FloatFunction("ln"),
+            "okkama.float.log2" => FloatFunction("log2"),
+            "okkama.float.log10" => FloatFunction("log10"),
+            "okkama.float.sin" => FloatFunction("sin"),
+            "okkama.float.cos" => FloatFunction("cos"),
+            "okkama.float.tan" => FloatFunction("tan"),
+            "okkama.float.atan2" => FloatAtan2,
+            "okkama.float.min" => FloatMin,
+            "okkama.float.max" => FloatMax,
+            "okkama.float.clamp" => FloatClamp,
+            "okkama.float.finite" => FloatFinite,
+            "okkama.float.nan" => FloatNan,
+            "okkama.int.min" => IntMin,
+            "okkama.int.max" => IntMax,
+            "okkama.int.clamp" => IntClamp,
             _ => return None,
         })
     }
@@ -256,6 +287,32 @@ fn raised(runtime: &mut Runtime, descriptor: u32, values: &[Word]) -> Word {
         words.push(runtime.heap.allocate_array(element, &elements));
     }
     runtime.heap.object_new(descriptor, &words)
+}
+
+/// A float result of #192, or the failure of a result that is not finite.
+fn float_result(result: Result<f64, String>) -> Outcome {
+    match result {
+        Ok(value) => Value(value.to_bits(), Repr::Raw),
+        Err(message) => program_failure(&message),
+    }
+}
+
+/// The order of two int words, small or big (#192).
+fn integer_order(runtime: &Runtime, left: Word, right: Word) -> Ordering {
+    use crate::heap::Integer::{Big, Small};
+    match (runtime.heap.integer(left), runtime.heap.integer(right)) {
+        (Small(a), Small(b)) => a.cmp(&b),
+        (Small(a), Big(b)) => num_bigint::BigInt::from(a).cmp(b),
+        (Big(a), Small(b)) => a.cmp(&num_bigint::BigInt::from(b)),
+        (Big(a), Big(b)) => a.cmp(b),
+    }
+}
+
+fn integer_text(runtime: &Runtime, value: Word) -> String {
+    match runtime.heap.integer(value) {
+        crate::heap::Integer::Small(n) => n.to_string(),
+        crate::heap::Integer::Big(n) => n.to_string(),
+    }
 }
 
 fn boolean(value: bool) -> Outcome {
@@ -500,6 +557,36 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
             Value(runtime.heap.int(remaining), Repr::Int)
         }
         FakeSet | FakeGet | FakeHas | FakeRemove | FakeClear | FakeSize => fake_storage(runtime, function, intrinsic, args),
+        FloatFunction(name) => float_result(okkama_runtime_core::float::function(name, f64::from_bits(args[0]))),
+        FloatAtan2 => float_result(okkama_runtime_core::float::atan2(f64::from_bits(args[0]), f64::from_bits(args[1]))),
+        FloatMin => Value(okkama_runtime_core::float::min(f64::from_bits(args[0]), f64::from_bits(args[1])).to_bits(), Repr::Raw),
+        FloatMax => Value(okkama_runtime_core::float::max(f64::from_bits(args[0]), f64::from_bits(args[1])).to_bits(), Repr::Raw),
+        FloatClamp => float_result(okkama_runtime_core::float::clamp(
+            f64::from_bits(args[0]),
+            f64::from_bits(args[1]),
+            f64::from_bits(args[2]),
+        )),
+        FloatFinite => boolean(f64::from_bits(args[0]).is_finite()),
+        FloatNan => boolean(f64::from_bits(args[0]).is_nan()),
+        IntMin => Value(if integer_order(runtime, args[1], args[0]).is_lt() { args[1] } else { args[0] }, Repr::Int),
+        IntMax => Value(if integer_order(runtime, args[1], args[0]).is_gt() { args[1] } else { args[0] }, Repr::Int),
+        IntClamp => {
+            if integer_order(runtime, args[1], args[2]).is_gt() {
+                return program_failure(&format!(
+                    "clamp: low {} is above high {}",
+                    integer_text(runtime, args[1]),
+                    integer_text(runtime, args[2])
+                ));
+            }
+            let chosen = if integer_order(runtime, args[0], args[1]).is_lt() {
+                args[1]
+            } else if integer_order(runtime, args[0], args[2]).is_gt() {
+                args[2]
+            } else {
+                args[0]
+            };
+            Value(chosen, Repr::Int)
+        }
         TestOk | TestIs | TestIsnt | TestFail | TestClose | TestText | TestBytes => {
             if runtime.host.as_ref().is_none_or(|h| h.test_failures.is_none()) {
                 return program_failure("The test capability is available only inside a running test");

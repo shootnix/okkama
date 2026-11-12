@@ -16,7 +16,7 @@ public final class Floats {
     private static final BigDecimal INT_MIN = new BigDecimal(Long.MIN_VALUE);
     private static final BigDecimal INT_MAX = new BigDecimal(Long.MAX_VALUE);
 
-    private static Double finite(double value) {
+    static Double finite(double value) {
         if (Double.isNaN(value) || Double.isInfinite(value)) {
             throw Rt.trap("Float value must contain a finite number");
         }
