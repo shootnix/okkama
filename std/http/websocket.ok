@@ -3,6 +3,7 @@ module http/websocket v1.0.0;
 import "encoding/utf" take Utf8Encoded;
 import "numbers/bigint" take BigInt;
 import "compare" take Order;
+import "json" take Json, ParsedJson;
 
 enum WebSocketMessageKind = (text, binary);
 
@@ -10,6 +11,9 @@ role WebSocketMessage {
     kind() is WebSocketMessageKind;
     text() is string;
     bytes() is @byte;
+
+    // A text message parsed as JSON (#220); a binary one is not text.
+    json() is Json;
 }
 
 object TextWebSocketMessage does WebSocketMessage {
@@ -31,6 +35,10 @@ object TextWebSocketMessage does WebSocketMessage {
     bytes() is @byte {
         throw WebSocketMessageIsNotBinary.not_binary;
     }
+
+    json() is Json {
+        ParsedJson(origin).root();
+    }
 }
 
 object BinaryWebSocketMessage does WebSocketMessage {
@@ -50,6 +58,10 @@ object BinaryWebSocketMessage does WebSocketMessage {
 
     bytes() is @byte {
         origin;
+    }
+
+    json() is Json {
+        throw WebSocketMessageIsNotText.not_text;
     }
 }
 
@@ -125,9 +137,21 @@ object WebSocketClose {
     }
 }
 
+// A WebSocket connection, walked message by message (#220):
+//
+//     for await connection -> message {
+//         await connection.send_text(message.text().upper());
+//     }
+//
+// message() waits for the next message and throws WebSocketClosed once the
+// connection has closed; next() answers none instead, so the loop ends.
 role WebSocketConnection {
     async message() is WebSocketMessage;
+    async next() is Maybe<WebSocketMessage>;
     async send(origin is WebSocketMessage) is WebSocketConnection;
+    async send_text(text is string) is WebSocketConnection;
+    async send_bytes(bytes is @byte) is WebSocketConnection;
+    async send_json(value is Json) is WebSocketConnection;
     async ping(origin is @byte) is WebSocketConnection;
     async close(code is int, reason is string) is WebSocketConnection;
     closed() is bool;
@@ -151,4 +175,11 @@ test "WebSocket values distinguish projections" {
     catch e is WebSocketMessageIsNotBinary {
         true;
     });
+}
+
+test "a text message reads as JSON and a binary one does not" {
+    test.is(TextWebSocketMessage("{\"n\": 2}").json().int("n"), 2);
+    test.throws(WebSocketMessageIsNotText) {
+        BinaryWebSocketMessage([1.byte()]).json();
+    };
 }

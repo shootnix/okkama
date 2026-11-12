@@ -1,7 +1,8 @@
 module http/websocket_session v1.0.0;
 
 import "http/websocket" take WebSocketConnection, WebSocketMessage, WebSocketLimits, WebSocketClose,
-    WebSocketClosed, WebSocketFailure;
+    WebSocketClosed, WebSocketFailure, TextWebSocketMessage, BinaryWebSocketMessage;
+import "json" take Json;
 import "http/internal/websocket_output" take WebSocketOutput, WebSocketOutputSettlement;
 import "http/internal/websocket_reading" take WebSocketFrameReading;
 import "http/internal/websocket_messages" take WebSocketMessageAssembly, ParsedWebSocketClose;
@@ -88,6 +89,30 @@ object WebSocketSession does WebSocketConnection, Closing {
         self;
     }
 
+    // The next message, or none once the connection has closed, for
+    // `for await connection -> message` (#220).
+    async next() is Maybe<WebSocketMessage> {
+        let found is Maybe<WebSocketMessage> = try {
+            Maybe.some(await self.message());
+        }
+        catch closed is WebSocketClosed {
+            Maybe<WebSocketMessage>.none;
+        };
+        found;
+    }
+
+    async send_text(text is string) is WebSocketConnection {
+        await self.send(TextWebSocketMessage(text));
+    }
+
+    async send_bytes(bytes is @byte) is WebSocketConnection {
+        await self.send(BinaryWebSocketMessage(bytes));
+    }
+
+    async send_json(value is Json) is WebSocketConnection {
+        await self.send(TextWebSocketMessage(value.string()));
+    }
+
     destroy {
         self.close();
     }
@@ -120,7 +145,12 @@ hidden object WebSocketSessionState {
             else throw WebSocketFailure.because("positive close deadline required");
         confirm !owner.closed() else throw WebSocketClosed.detailed(1006, "");
         self.input = input;
-        self.output = WebSocketOutput(origin: output, masked: client, random: random, limits: limits);
+        self.output = WebSocketOutput(
+            origin: output,
+            masked: client,
+            random: random,
+            limits: limits
+        );
         self.owner = owner;
         self.client = client;
         self.limits = limits;
@@ -209,10 +239,17 @@ hidden object WebSocketSessionState {
         defer assembly.close();
         try {
             loop {
-                let pending = WebSocketFrameReading(origin: input, masked: !client, maximum: limits::Limits::frame_bytes).frame();
+                let pending = WebSocketFrameReading(
+                    origin: input,
+                    masked: !client,
+                    maximum: limits::Limits::frame_bytes
+                ).frame();
                 let frame = await pending;
                 if frame.opcode() == 8 {
-                    let received = ParsedWebSocketClose(origin: frame.payload(), from_server: client).closure();
+                    let received = ParsedWebSocketClose(
+                        origin: frame.payload(),
+                        from_server: client
+                    ).closure();
                     let responding = !closing.ready();
                     if responding {
                         closing.set();
@@ -327,7 +364,12 @@ hidden object WebSocketSessionState {
             incoming.sending().close();
             let payload = HttpWireBytes(
                 chunks: [
-                    IntegerBytes(value: value::Close::code, size: 2, signedness: Signedness.unsigned, order: ByteOrder.big).bytes(),
+                    IntegerBytes(
+                        value: value::Close::code,
+                        size: 2,
+                        signedness: Signedness.unsigned,
+                        order: ByteOrder.big
+                    ).bytes(),
                     Utf8Encoded(value::Close::reason).bytes()
                 ],
                 maximum: 125
@@ -344,7 +386,11 @@ hidden object WebSocketSessionState {
         let cleanup = WebSocketSessionFinish(self);
         defer await cleanup.close();
         if !self.closed() {
-            let bounded is Within<bool> = Within(origin: self.handshake(code, reason), limit: close_timeout, clock: clock);
+            let bounded is Within<bool> = Within(
+                origin: self.handshake(code, reason),
+                limit: close_timeout,
+                clock: clock
+            );
             let pending = bounded.outcome();
             await pending;
         }

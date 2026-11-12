@@ -14,7 +14,8 @@ import "http/message" take Responding, Request;
 import "http/handler" take WebSocketHandling;
 import "http/request_context" take HttpRequestContext;
 import "http/header" take Headers, Header;
-import "http/websocket" take WebSocketConnection, WebSocketLimits, TextWebSocketMessage, WebSocketClosed;
+import "http/websocket" take WebSocketConnection, WebSocketLimits, TextWebSocketMessage;
+import "json" take Json, JsonField;
 import "http/websocket_client" take WebSocketConnecting, WebSocketPolicy;
 import "net/dns" take FixedResolution;
 import "http/client" take HttpClient;
@@ -62,7 +63,13 @@ object WebApplication {
             host.string();
         };
         let own = ParsedUrl("http://" + literal + ":" + listener::Local::port.string() + "/").parts();
-        HttpServer(listener: listener, handling: routes.table(), url: own, policy: policy, clock: clock);
+        HttpServer(
+            listener: listener,
+            handling: routes.table(),
+            url: own,
+            policy: policy,
+            clock: clock
+        );
     }
 
     async listen(address is string, port is int) is void {
@@ -85,22 +92,30 @@ hidden object Greetings {
     }
 
     async missing(request is WebRequest) is Responding {
-        TextReply(text: "no " + MethodName(request.method()).string() + " here", status: Status.not_found);
+        TextReply(
+            text: "no " + MethodName(request.method()).string() + " here",
+            status: Status.not_found
+        );
     }
 }
 
 hidden object Shouting does WebSocketHandling {
     Shouting();
 
-    async handle(connection is WebSocketConnection, request is Request, context is HttpRequestContext) is WebSocketHandling {
-        try {
-            loop {
-                let message = await connection.message();
-                await connection.send(TextWebSocketMessage(message.text().upper()));
+    async handle(
+        connection is WebSocketConnection,
+        request is Request,
+        context is HttpRequestContext
+    ) is WebSocketHandling {
+        for await connection -> message {
+            if message.text().starts_with("{") {
+                await connection.send_json(
+                    Json(JsonField("shout", message.json().text("say").upper()))
+                );
             }
-        }
-        catch e is WebSocketClosed {
-            self;
+            else {
+                await connection.send_text(message.text().upper());
+            }
         }
         self;
     }
@@ -109,7 +124,8 @@ hidden object Shouting does WebSocketHandling {
 async test "a web application routes requests over loopback and drains" {
     let greetings = Greetings();
     let routes = WebRoutes(
-        Scope("/api",
+        Scope(
+            "/api",
             Get(path: "/hello/:name", endpoint: greetings.hello),
             Post(path: "/echo", endpoint: greetings.echo),
         ),
@@ -139,6 +155,19 @@ async test "a web application routes requests over loopback and drains" {
     ).connection();
     await socket.send(TextWebSocketMessage("hey"));
     test.is((await socket.message()).text(), "HEY");
+    await socket.send_json(Json(JsonField("say", "hi")));
+    let answer = await socket.next();
+    test.is(
+        match answer {
+            case Maybe.some(message) {
+                message.json().text("shout");
+            }
+            else {
+                "closed";
+            }
+        },
+        "HI"
+    );
     await socket.close(1000, "bye");
     client.close();
     await server.drain(limit: Duration(seconds: 5));

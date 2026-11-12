@@ -197,6 +197,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   which streams `ServerEvent`s as `text/event-stream` until the channel
   closes. `examples/web/events.ok` streams three events to the std client.
 
+- **A WebSocket connection is walked with `for await` (#220).**
+  `WebSocketConnection` gained `next()` (none once the connection has
+  closed), `send_text`, `send_bytes` and `send_json`, and a message `json()`:
+
+  ```okkama
+  for await connection -> message {
+      await connection.send_json(Json(JsonField("text", "you said: " + message.json().text("text"))));
+  }
+  ```
+
+  `examples/web/chat.ok` holds a JSON conversation this way. An
+  application's own `WebSocketConnection` or `WebSocketMessage` must add the
+  new actions.
+
 - **The server answers HTTP/1.0 (#102).** `ab` works: no Host is required,
   responses are not chunked, and keep-alive applies only when asked for.
 - **RequestJson readers share one translation of reading failures (#84).**

@@ -1,0 +1,71 @@
+module examples/web/chat v1.0.0;
+
+import "web/app" take WebApplication;
+import "web/routing" take WebRoutes, WebSocket;
+import "http/handler" take WebSocketHandling;
+import "http/message" take Request;
+import "http/request_context" take HttpRequestContext;
+import "http/websocket" take WebSocketConnection, WebSocketLimits;
+import "http/websocket_client" take WebSocketConnecting, WebSocketPolicy;
+import "http/header" take Headers, Header;
+import "http/endpoint" take LoopbackEndpoints;
+import "net/dns" take FixedResolution;
+import "url/value" take ParsedUrl;
+import "json" take Json, JsonField;
+import "time/duration" take Duration;
+import "io/stdout" take Stdout;
+
+// A WebSocket conversation in JSON, walked with `for await`: the server
+// answers every message and closes after "bye"; the client sends three
+// messages and reads the answers until the connection closes.
+
+object Room does WebSocketHandling {
+    Room() {}
+
+    async handle(
+        connection is WebSocketConnection,
+        request is Request,
+        context is HttpRequestContext
+    ) is WebSocketHandling {
+        for await connection -> message {
+            let said = message.json().text("text");
+            if said == "bye" {
+                await connection.send_json(Json(JsonField("text", "see you")));
+                await connection.close(1000, "bye");
+                last;
+            }
+            await connection.send_json(Json(JsonField("text", "you said: " + said)));
+        }
+        self;
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    let server = (await WebApplication(WebRoutes(WebSocket(path: "/chat", application: Room()))).server(
+        "127.0.0.1",
+        0
+    )).started();
+    let port = server::Local::port.string();
+    let socket = await WebSocketConnecting(
+        url: ParsedUrl("ws://127.0.0.1:" + port + "/chat").parts(),
+        headers: Headers(Header(name: "Origin", value: "http://127.0.0.1:" + port)),
+        resolver: FixedResolution(),
+        policy: WebSocketPolicy(
+            limits: WebSocketLimits(),
+            opening: Duration(seconds: 5),
+            closing: Duration(seconds: 2),
+            access: LoopbackEndpoints(),
+        ),
+    ).connection();
+    for ["hello", "how are you", "bye"] -> text {
+        out.writeln("> ", text);
+        await socket.send_json(Json(JsonField("text", text)));
+    }
+    for await socket -> message {
+        out.writeln("< ", message.json().text("text"));
+    }
+    out.writeln("closed");
+    await server.drain(limit: Duration(seconds: 5));
+    0;
+}

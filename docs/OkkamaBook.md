@@ -3947,7 +3947,9 @@ and `headers:` for what differs, or a `Response` built in full. Headers are
 fields one by one: `Headers(Header(name: "Cache-Control", value: "no-store"),
 SetCookie(name: "sid", value: token), ExpiredCookie("old"))`, where a
 `SetCookie` defaults to Path=/, Secure, HttpOnly and SameSite=Lax.
-`WebSocket(path:, application:)` routes a WebSocket.
+`WebSocket(path:, application:)` routes a WebSocket, whose application walks
+the connection with `for await connection -> message` and answers with
+`send_text`, `send_bytes` or `send_json`.
 `Resource("/notes", Get(notes.list), Post(notes.add))` writes a path once for
 several methods; `Route(method: Method.options, path:, endpoint:)` routes any
 one method and `Any(path:, endpoint:)` every method. When patterns overlap,
