@@ -159,32 +159,41 @@ object Http1FramingFields {
 
     list(name is string) is @string {
         let field = HeaderName(name);
-        let values = origin.values(field);
+        self.members(field.lowercase(), field.string());
+    }
+
+    // The members of a framing list found by its lowercase name: the framing
+    // fields are looked up on every message, without making a field name for
+    // the lookup or filtering the list twice (#503).
+    hidden members(lowered is string, spelling is string) is @string {
+        let entries = origin.entries();
+        let empty is @string = [];
+        let values = (0..entries.size()).reduce(empty) -> found, index {
+            let entry = entries.item(index);
+            if entry.name().lowercase() == lowered {
+                found + [entry.value()];
+            }
+            else {
+                found;
+            }
+        };
         if values.size() == 0 {
-            let empty is @string = [];
             return empty;
         }
         // One value without a comma, as Content-Length usually is: a field
         // value is trimmed already, so it is its own single member (#503).
-        if values.size() == 1 && !values.item(0).contains(",") {
-            let only = values.item(0);
+        if values.size() == 1 && !values[0].contains(",") {
+            let only = values[0];
             confirm only != "" else throw InvalidHttpMessage.because("empty framing list member");
             return [only];
         }
-        let count = (0..values.size()).reduce(0) -> used, index {
-            let amount = values.item(index).split(",").size();
+        let count = values.reduce(0) -> used, value {
+            let amount = value.split(",").size();
             confirm amount <= 16 - used else throw Http1LimitExceeded.kind("framing_items");
             used + amount;
         };
-        let joined = (0..values.size()).reduce("") -> all, index {
-            if index == 0 {
-                values.item(index);
-            }
-            else {
-                all + "," + values.item(index);
-            }
-        };
-        let items = joined.split(",");
+        let field = HeaderName(spelling);
+        let items = values.join(",").split(",");
         let clean is @string = items.map() -> value {
             let part = Header(name: field, value: value).value();
             confirm part != "" else throw InvalidHttpMessage.because("empty framing list member");
@@ -194,7 +203,7 @@ object Http1FramingFields {
     }
 
     length() is @BigInt {
-        let values = self.list("Content-Length");
+        let values = self.members("content-length", "Content-Length");
         if values.size() == 0 {
             let empty is @BigInt = [];
             return empty;
@@ -217,7 +226,7 @@ object Http1FramingFields {
     }
 
     codings() is @string {
-        let values = self.list("Transfer-Encoding");
+        let values = self.members("transfer-encoding", "Transfer-Encoding");
         confirm values.size() == 0 || version != HttpVersion.http_1_0
             else throw InvalidHttpMessage.because("Transfer-Encoding on HTTP1.0");
         let canonical is @string = values.map() -> value {
@@ -253,7 +262,7 @@ object Http1FramingFields {
     }
 
     reusable() is bool {
-        let values = self.list("Connection");
+        let values = self.members("connection", "Connection");
         let canonical is @string = values.map() -> value {
             let token = try {
                 HttpToken(value).string();
