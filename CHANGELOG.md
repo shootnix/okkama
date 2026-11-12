@@ -168,6 +168,65 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   reads back equal. `XmlElement` reads like json: `attribute(name)`,
   `children(name)`, `text(name)`, `text()`.
 
+- **A child process is talked to asynchronously (#196).**
+
+      let child = Process(command);
+      await child.streams().input().write("query\n");
+      for await child.streams().output().lines() -> line { … }
+
+  `Process.streams()` sits next to the blocking `input()`, `output()` and
+  `errors()`:
+  - its input does `AsyncWriting` and `Closing`;
+  - its outputs do `AsyncReading`, with `lines()` for `for await` and
+    `text(limit)`.
+
+  A slow child no longer holds up other tasks on the IR engine, Sparrow or
+  the JVM (new async natives, ABI 669–671).
+
+- **zstd and Brotli (#184).** `compression/zstd` and `compression/brotli`
+  have gzip's shape:
+
+      let packed = ZstdCompressed(data).bytes();
+      let data = BrotliDecompressed(origin: packed, limit: 10485760).bytes();
+
+  - zstd takes levels 1–22 (3 unless told) and writes one frame with a
+    checksum.
+  - Brotli takes levels 0–11 (11 unless told).
+  - `Compression()` in the web sends `br` to clients that take it at least as
+    gladly as gzip.
+  - The HTTP client asks for `br, gzip` and decodes both.
+  - The JVM has neither codec: it throws the new `UnsupportedCompression` and
+    the web stays with gzip there.
+  - Output reads with the zstd and brotli CLIs, and the other way round.
+
+- **`ReadUntilEnd` and `Copy` (#130).** `io/transfer` ends the hand-written
+  read loop:
+
+      let body = await ReadUntilEnd(origin: reader, limit: 1048576).bytes();
+      let count = await Copy(from: reader, to: writer).count();
+
+  - Both take sync and async sources; `Copy` takes sync and async
+    destinations too.
+  - A source over the limit throws `ReadLimitExceeded` after limit + 1 bytes
+    and is not read further.
+  - `Request.bytes(limit:)`, `ClientResponse.bytes()` and
+    `ProcessStreamOutput.text(limit)` are built on them.
+
+- **Standard input by lines (#221).**
+
+      for Stdin() -> line { … }
+      for Stdin(decoding: InputDecoding.lenient) -> line { … }
+      for Stdin().chunks(size: 65536) -> chunk { … }
+
+  - `Stdin().line()` gives one line.
+  - A line loses its LF and one CR before it.
+  - Lenient decoding puts U+FFFD for each bad sequence, as browsers do.
+  - Every `Stdin()` reads through the runtime's one buffer, so lines and
+    bytes mix.
+
+- **`BigInt(7)` and `int()` (#190).** `BigInt` gains `plus`, `minus`,
+  `times`, `divided` and `remainder` as methods next to the operators.
+
 ### Fixed
 
 - **Parsed JSON grew Sparrow's memory (#510).** Sparrow keeps JSON nodes and
@@ -239,7 +298,37 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `<native>` and an array of rats as `@native`, while the IR engine printed
   `1/2 (rat)`. The debug bridge now converts a rat like other values.
 
+- **The Russian Book's stdin example compiles (#221).** It imported
+  `EndOfInput` from `io/input` and `Stderr` from a missing `io/stderr`. It
+  also named `StdinBytes` and `StdoutBytes`, which are gone.
+
 ### Changed
+
+- **`BigInt` holds an `int` (#189).** Okkama's `int` already has any size,
+  so BigInt arithmetic is the int's, and digits are written only when asked
+  for. The product of 300 factors plus their sum takes Sparrow
+  2.37 ms → 34 µs and the IR engine 2.75 → 0.34 ms (release builds).
+  Signatures do not change. Moving std APIs from `BigInt` to `int` is #511.
+
+- **`Param` is gone; the typed values bind instead (#188).** Migration:
+
+      Param(7)                   → DbInteger(7)
+      Param("Ada")               → DbText("Ada")
+      Param(true)                → DbBoolean(true)
+      Param(nickname)            → DbText(nickname)   // Maybe<string>: none is NULL
+      Param()                    → DbNull()
+
+  - `DbInteger` keeps the int, so an integer parameter no longer goes
+    through text. An SQLite INSERT of three integers takes Sparrow
+    7.6 → 6.4 µs.
+  - `DbInteger`, `DbBoolean`, `DbFloating`, `DbDecimal`, `DbText` and
+    `DbBytes` each take a `Maybe` of their type.
+  - A `let` holding an array of different typed values needs its type:
+    `let values is @DbValue = […]`.
+
+- **A streamed body is joined once (#130).** `Request.bytes(limit:)` used to
+  join the pieces one by one. A 1 MiB body in 64 KiB pieces now takes
+  Sparrow 1.22 → 0.19 ms and IR 15.9 → 14.1 ms.
 
 - **Plist reads its XML form through the XML tokenizer (#144).** Every
   document that parsed before parses to the same value; structural errors
