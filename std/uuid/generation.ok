@@ -32,10 +32,12 @@ import "runtime/uuid" take uuid_named, uuid_versioned, uuid_custom, uuid_string,
 // per-millisecond counter. UUID 1 and UUID 6 are excluded from v3 until a
 // privacy-preserving explicit node-identity capability is approved.
 
+// Version 3: the MD5 of a namespace and a name, always the same for both.
 object Uuid3 does Uuid, Comparing<Uuid> {
     has namespace is Uuid;
     has name is string;
 
+    // The UUID of name in namespace.
     Uuid3(namespace is Uuid, name is string) {
         self.namespace = namespace;
         self.name = name;
@@ -47,27 +49,33 @@ object Uuid3 does Uuid, Comparing<Uuid> {
         hashed;
     }
 
+    // The canonical lowercase text: `6ba7b810-9dad-11d1-80b4-00c04fd430c8`.
     string() is string {
         uuid_string(self.bytes());
     }
 
+    // Its version number.
     version() is int {
         3;
     }
 
+    // Its variant.
     variant() is UuidVariant {
         UuidVariant.rfc;
     }
 
+    // Orders by the bytes.
     order(other is Uuid) is Order {
         self.string().order(other.string());
     }
 }
 
+// Version 5: the SHA-1 of a namespace and a name, always the same for both.
 object Uuid5 does Uuid, Comparing<Uuid> {
     has namespace is Uuid;
     has name is string;
 
+    // The UUID of name in namespace.
     Uuid5(namespace is Uuid, name is string) {
         self.namespace = namespace;
         self.name = name;
@@ -79,28 +87,34 @@ object Uuid5 does Uuid, Comparing<Uuid> {
         hashed;
     }
 
+    // The canonical lowercase text: `6ba7b810-9dad-11d1-80b4-00c04fd430c8`.
     string() is string {
         uuid_string(self.bytes());
     }
 
+    // Its version number.
     version() is int {
         5;
     }
 
+    // Its variant.
     variant() is UuidVariant {
         UuidVariant.rfc;
     }
 
+    // Orders by the bytes.
     order(other is Uuid) is Order {
         self.string().order(other.string());
     }
 }
 
+// Version 8: 122 bits of your own.
 object Uuid8 does Uuid, Comparing<Uuid> {
     has high is int;
     has middle is int;
     has low is int;
 
+    // high is 48 bits, middle 12 and low 62.
     Uuid8(high is int, middle is int, low is int) {
         confirm high >= 0 && high <= 281474976710655
             else throw InvalidArgument.because("UUID 8 high field must fit 48 bits");
@@ -113,34 +127,42 @@ object Uuid8 does Uuid, Comparing<Uuid> {
         self.low = low;
     }
 
+    // The 16 bytes.
     bytes() is @byte {
         uuid_custom(high, middle, low);
     }
 
+    // The canonical lowercase text: `6ba7b810-9dad-11d1-80b4-00c04fd430c8`.
     string() is string {
         uuid_string(self.bytes());
     }
 
+    // Its version number.
     version() is int {
         8;
     }
 
+    // Its variant.
     variant() is UuidVariant {
         UuidVariant.rfc;
     }
 
+    // Orders by the bytes.
     order(other is Uuid) is Order {
         self.string().order(other.string());
     }
 }
 
+// Random version 4 UUIDs.
 object Uuid4s does Distribution<Uuid> {
     has random is SecureRandom;
 
+    // UUIDs from random.
     Uuid4s(random is SecureRandom) {
         self.random = random;
     }
 
+    // A new random UUID.
     sample() is Uuid {
         UuidBytes(origin: uuid_versioned(random.bytes(16), 4));
     }

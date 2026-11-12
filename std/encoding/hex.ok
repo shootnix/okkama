@@ -16,25 +16,31 @@ import "runtime/hex" take hex_encode, hex_valid_prefix, hex_decode;
 // even. InvalidHex.offset() is a Unicode-scalar offset in the source string;
 // an unmatched final nibble reports origin.length().
 
+// Bytes as lowercase hexadecimal text.
 object HexEncoded {
     has origin is @byte;
 
+    // Encodes origin.
     HexEncoded(origin is @byte) {
         self.origin = origin;
     }
 
+    // The encoded text.
     string() is string {
         hex_encode(origin);
     }
 }
 
+// Hexadecimal text back to bytes, either case; anything else is InvalidHex.
 object HexDecoded {
     has origin is string;
 
+    // Decodes origin.
     HexDecoded(origin is string) {
         self.origin = origin;
     }
 
+    // The decoded bytes.
     bytes() is @byte {
         let offset is int = hex_valid_prefix(origin);
         confirm offset == origin.length() else throw InvalidHex.at(offset);
@@ -44,6 +50,7 @@ object HexDecoded {
     }
 }
 
+// Text that is not hexadecimal pairs; offset says where.
 enum InvalidHex is Error = (at(offset is int));
 
 test "hex writes lowercase and reads either case" {

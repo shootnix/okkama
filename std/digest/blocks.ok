@@ -1,13 +1,13 @@
 module digest/blocks v1.0.0;
 
-// Internal infrastructure for digests with 64-byte blocks and a 64-bit length
-// trailer. Compression is an immutable collaborator, not an algorithm enum.
-// block() accepts exactly 64 bytes and returns an unfinalized successor.
-// bytes() encodes the chaining words in the algorithm's specified byte order.
-// No collaborator is owned or closed. Errors propagate unchanged.
+// Infrastructure for digests of 64-byte blocks with a 64-bit length trailer, as
+// MD5 and SHA-1 are built. Use the digests themselves, not this.
 
+// One step of a block digest: it takes a block.
 role DigestCompression64 {
+    // The state after one 64-byte block.
     block(origin is @byte) is ^DigestCompression64;
+    // The digest of the state.
     bytes() is @byte;
 
     fake {
@@ -45,6 +45,8 @@ object DigestBlocks64 {
     has length is int;
     has little_endian is bool;
 
+    // Blocks of origin through compression, with the length written little- or
+    // big-endian.
     DigestBlocks64(compression is DigestCompression64, origin is @byte, little_endian is bool) {
         confirm origin.size() <= 2305843009213693951 else throw DigestInputTooLong.too_long;
         self.compression = compression;
@@ -54,6 +56,7 @@ object DigestBlocks64 {
         self.little_endian = little_endian;
     }
 
+    // Continued with origin.
     state(origin is @byte) is ^DigestBlocks64 {
         confirm origin.size() <= 2305843009213693951 - length
             else throw DigestInputTooLong.too_long;
@@ -63,6 +66,7 @@ object DigestBlocks64 {
         ^length = length + origin.size();
     }
 
+    // The digest after padding.
     bytes() is @byte {
         let padding = DigestPadding64(tail: self.remainder(), length: length, little_endian: little_endian).bytes();
         let completed = self.completed();
@@ -153,10 +157,13 @@ hidden object DigestPadding64 {
     }
 }
 
+// More input than a 64-bit length can count.
 enum DigestInputTooLong is Error = (too_long);
 
+// Padding that does not fit the block rules.
 enum InvalidDigestPadding is Error = (invalid);
 
+// A block that is not 64 bytes.
 enum InvalidDigestBlock is Error = (invalid);
 
 test "digest padding has exact one and two block boundaries" {

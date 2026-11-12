@@ -17,25 +17,31 @@ import "runtime/base32" take base32_encode, base32_invalid_offset, base32_decode
 // is valid. InvalidBase32.offset() is a Unicode-scalar offset; a structurally
 // incomplete final quantum reports origin.length().
 
+// Bytes as RFC 4648 Base32 text, padded.
 object Base32Encoded {
     has origin is @byte;
 
+    // Encodes origin.
     Base32Encoded(origin is @byte) {
         self.origin = origin;
     }
 
+    // The encoded text.
     string() is string {
         base32_encode(origin);
     }
 }
 
+// RFC 4648 Base32 text back to bytes; anything else is InvalidBase32.
 object Base32Decoded {
     has origin is string;
 
+    // Decodes origin.
     Base32Decoded(origin is string) {
         self.origin = origin;
     }
 
+    // The decoded bytes.
     bytes() is @byte {
         let offset is int = base32_invalid_offset(origin);
         confirm offset == -1 else throw InvalidBase32.at(offset);
@@ -43,6 +49,7 @@ object Base32Decoded {
     }
 }
 
+// Text that is not strict Base32; offset says where.
 enum InvalidBase32 is Error = (at(offset is int));
 
 test "base32 round-trips with canonical padding" {

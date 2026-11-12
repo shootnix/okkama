@@ -32,15 +32,19 @@ import "runtime/pem" take pem_kind_invalid_offset, pem_encode, pem_invalid_offse
 // blocks with immutable cursors. InvalidPem.offset() is a Unicode-scalar
 // offset in the original text (or in kind for an invalid encoding label).
 
+// Bytes in a PEM container: `-----BEGIN kind-----`, Base64 in 64-column lines,
+// `-----END kind-----`.
 object PemEncoded {
     has kind is string;
     has origin is @byte;
 
+    // data in a container labelled kind.
     PemEncoded(kind is string, data is @byte) {
         self.kind = kind;
         origin = data;
     }
 
+    // The PEM text.
     string() is string {
         let offset is int = pem_kind_invalid_offset(kind);
         confirm offset == -1 else throw InvalidPem.at(offset);
@@ -48,18 +52,22 @@ object PemEncoded {
     }
 }
 
+// One PEM block read from text.
 object PemBlock does ByteSource {
     has origin is string;
 
+    // Reads the one block of origin; InvalidPem otherwise.
     PemBlock(origin is string) {
         self.origin = origin;
     }
 
+    // Its label, such as `CERTIFICATE`.
     kind() is string {
         self.validation();
         pem_block_kind(origin, 0);
     }
 
+    // Its decoded bytes.
     bytes() is @byte {
         self.validation();
         Base64Decoded(origin: pem_block_base64(origin, 0)).bytes();
@@ -73,13 +81,16 @@ object PemBlock does ByteSource {
     }
 }
 
+// Every PEM block in a text, in order, such as a certificate chain.
 object PemBlocks does Iterating<PemBlock> {
     has origin is string;
 
+    // The blocks of origin.
     PemBlocks(origin is string) {
         self.origin = origin;
     }
 
+    // Walks the blocks.
     cursor() is Cursor<PemBlock> {
         let offset is int = pem_invalid_offset(origin);
         confirm offset == -1 else throw InvalidPem.at(offset);
@@ -140,6 +151,7 @@ hidden object PemBlockCursor does Cursor<PemBlock> {
     }
 }
 
+// Text that is not strict PEM; offset says where.
 enum InvalidPem is Error = (at(offset is int));
 
 test "PEM snapshot cursors keep independent ordered branches" {

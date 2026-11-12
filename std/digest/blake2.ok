@@ -1,12 +1,14 @@
 module digest/blake2 v1.0.0;
 
-// BLAKE2 (RFC 7693) over the host provider. Blake2b and Blake2s take the
-// output length, which is a BLAKE2 parameter (not a truncation): Blake2b
-// accepts 16, 20, 28, 32, 48 or 64 bytes, Blake2s 16, 20, 28 or 32; other
-// lengths are InvalidBlake2Length. Blake2bMac/Blake2sMac are the keyed modes
-// with full-width output (64/32 bytes); the key is a SecretBytes capability
-// of 1..64 / 1..32 bytes, exported once to the host at construction.
-// Successors and observation follow digest/state.
+// BLAKE2 digests (RFC 7693), plain and keyed.
+//
+//     let digest = Blake2b(length: 32, origin: data).bytes();
+//     let tag = Blake2bMac(key: secret, origin: message).bytes();
+//
+// Blake2b gives 16, 20, 28, 32, 48 or 64 bytes, Blake2s 16, 20, 28 or 32; the
+// length is a parameter of BLAKE2, not a truncation. The keyed forms give full
+// width (64 or 32 bytes) and take a SecretBytes key of 1 to 64 or 1 to 32
+// bytes.
 
 import "digest/state" take Digesting;
 import "encoding/utf" take Utf8Encoded;
@@ -14,9 +16,11 @@ import "digest/host" take HostDigest;
 import "crypto/secret" take SecretBytes;
 import "encoding/hex" take HexEncoded;
 
+// BLAKE2b with the output length given.
 object Blake2b does Digesting {
     has digest is HostDigest;
 
+    // An empty BLAKE2b of length bytes.
     Blake2b(length is int) {
         confirm length == 16
             || length == 20
@@ -28,6 +32,7 @@ object Blake2b does Digesting {
         digest = HostDigest(algorithm: "blake2b", key: [], width: length);
     }
 
+    // BLAKE2b of these bytes.
     Blake2b(length is int, origin is @byte) {
         confirm length == 16
             || length == 20
@@ -51,6 +56,7 @@ object Blake2b does Digesting {
         digest = HostDigest(algorithm: "blake2b", key: [], width: length).appended(Utf8Encoded(text).bytes());
     }
 
+    // The digest.
     bytes() is @byte {
         digest.bytes();
     }
@@ -60,6 +66,7 @@ object Blake2b does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The digest continued with origin.
     state(origin is @byte) is ^Blake2b {
         let continued = digest.appended(origin);
         ^digest = continued;
@@ -72,15 +79,18 @@ object Blake2b does Digesting {
     }
 }
 
+// BLAKE2s with the output length given.
 object Blake2s does Digesting {
     has digest is HostDigest;
 
+    // An empty BLAKE2s of length bytes.
     Blake2s(length is int) {
         confirm length == 16 || length == 20 || length == 28 || length == 32
             else throw InvalidBlake2Length.length(length);
         digest = HostDigest(algorithm: "blake2s", key: [], width: length);
     }
 
+    // BLAKE2s of these bytes.
     Blake2s(length is int, origin is @byte) {
         confirm length == 16 || length == 20 || length == 28 || length == 32
             else throw InvalidBlake2Length.length(length);
@@ -94,6 +104,7 @@ object Blake2s does Digesting {
         digest = HostDigest(algorithm: "blake2s", key: [], width: length).appended(Utf8Encoded(text).bytes());
     }
 
+    // The digest.
     bytes() is @byte {
         digest.bytes();
     }
@@ -103,6 +114,7 @@ object Blake2s does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The digest continued with origin.
     state(origin is @byte) is ^Blake2s {
         let continued = digest.appended(origin);
         ^digest = continued;
@@ -115,13 +127,16 @@ object Blake2s does Digesting {
     }
 }
 
+// Keyed BLAKE2b, 64 bytes: a MAC.
 object Blake2bMac does Digesting {
     has digest is HostDigest;
 
+    // An empty MAC with key.
     Blake2bMac(key is SecretBytes) {
         digest = HostDigest(algorithm: "blake2b-mac", key: key.export_bytes(), width: 0);
     }
 
+    // The MAC of these bytes.
     Blake2bMac(key is SecretBytes, origin is @byte) {
         digest = HostDigest(algorithm: "blake2b-mac", key: key.export_bytes(), width: 0).appended(origin);
     }
@@ -131,6 +146,7 @@ object Blake2bMac does Digesting {
         digest = HostDigest(algorithm: "blake2b-mac", key: key.export_bytes(), width: 0).appended(Utf8Encoded(text).bytes());
     }
 
+    // The tag.
     bytes() is @byte {
         digest.bytes();
     }
@@ -140,6 +156,7 @@ object Blake2bMac does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The MAC continued with origin.
     state(origin is @byte) is ^Blake2bMac {
         let continued = digest.appended(origin);
         ^digest = continued;
@@ -152,13 +169,16 @@ object Blake2bMac does Digesting {
     }
 }
 
+// Keyed BLAKE2s, 32 bytes: a MAC.
 object Blake2sMac does Digesting {
     has digest is HostDigest;
 
+    // An empty MAC with key.
     Blake2sMac(key is SecretBytes) {
         digest = HostDigest(algorithm: "blake2s-mac", key: key.export_bytes(), width: 0);
     }
 
+    // The MAC of these bytes.
     Blake2sMac(key is SecretBytes, origin is @byte) {
         digest = HostDigest(algorithm: "blake2s-mac", key: key.export_bytes(), width: 0).appended(origin);
     }
@@ -168,6 +188,7 @@ object Blake2sMac does Digesting {
         digest = HostDigest(algorithm: "blake2s-mac", key: key.export_bytes(), width: 0).appended(Utf8Encoded(text).bytes());
     }
 
+    // The tag.
     bytes() is @byte {
         digest.bytes();
     }
@@ -177,6 +198,7 @@ object Blake2sMac does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The MAC continued with origin.
     state(origin is @byte) is ^Blake2sMac {
         let continued = digest.appended(origin);
         ^digest = continued;
@@ -189,6 +211,7 @@ object Blake2sMac does Digesting {
     }
 }
 
+// A length BLAKE2 does not take.
 enum InvalidBlake2Length is Error = (length(length is int));
 
 test "BLAKE2 matches RFC 7693 abc examples" {

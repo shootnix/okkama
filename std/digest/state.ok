@@ -16,8 +16,12 @@ module digest/state v1.0.0;
 
 import "encoding/hex" take HexEncoded;
 
+// A digest fed bytes piece by piece; each state is a value, so a prefix can be
+// shared.
 role Digesting {
+    // The digest continued with origin.
     state(origin is @byte) is ^Digesting;
+    // The digest of everything fed.
     bytes() is @byte;
     // The digest as lowercase hex.
     hex() is string;

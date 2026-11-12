@@ -28,6 +28,7 @@ import "runtime/utf" take utf8_encode, utf8_decode, utf8_valid_prefix, utf16_enc
 // unpaired UTF-16 surrogates and values above U+10FFFF. No codec normalizes
 // text or inserts replacement characters.
 
+// Big-endian or little-endian.
 enum ByteOrder = (big, little);
 
 // Text as UTF-8 bytes; a ByteSource, so text can go wherever bytes are
@@ -35,22 +36,27 @@ enum ByteOrder = (big, little);
 object Utf8Encoded does ByteSource {
     has origin is string;
 
+    // Encodes origin.
     Utf8Encoded(origin is string) {
         self.origin = origin;
     }
 
+    // The UTF-8 bytes.
     bytes() is @byte {
         utf8_encode(origin);
     }
 }
 
+// UTF-8 bytes as text, strictly: a bad sequence is InvalidUtf8.
 object Utf8Decoded {
     has origin is @byte;
 
+    // Decodes origin.
     Utf8Decoded(origin is @byte) {
         self.origin = origin;
     }
 
+    // The text.
     string() is string {
         let offset is int = utf8_valid_prefix(origin);
         confirm offset == origin.size() else throw InvalidUtf8.at(offset);
@@ -58,15 +64,18 @@ object Utf8Decoded {
     }
 }
 
+// Text as UTF-16 in a byte order, without a BOM.
 object Utf16Encoded {
     has origin is string;
     has order is ByteOrder;
 
+    // Encodes origin in order.
     Utf16Encoded(origin is string, order is ByteOrder) {
         self.origin = origin;
         self.order = order;
     }
 
+    // The bytes.
     bytes() is @byte {
         utf16_encode(origin, self.order_name());
     }
@@ -81,15 +90,18 @@ object Utf16Encoded {
     }
 }
 
+// UTF-16 bytes in a byte order as text; an unpaired surrogate is InvalidUtf16.
 object Utf16Decoded {
     has origin is @byte;
     has order is ByteOrder;
 
+    // Decodes origin in order.
     Utf16Decoded(origin is @byte, order is ByteOrder) {
         self.origin = origin;
         self.order = order;
     }
 
+    // The text.
     string() is string {
         let name is string = self.order_name();
         let offset is int = utf16_valid_prefix(origin, name);
@@ -107,15 +119,18 @@ object Utf16Decoded {
     }
 }
 
+// Text as UTF-32 in a byte order, without a BOM.
 object Utf32Encoded {
     has origin is string;
     has order is ByteOrder;
 
+    // Encodes origin in order.
     Utf32Encoded(origin is string, order is ByteOrder) {
         self.origin = origin;
         self.order = order;
     }
 
+    // The bytes.
     bytes() is @byte {
         utf32_encode(origin, self.order_name());
     }
@@ -130,15 +145,18 @@ object Utf32Encoded {
     }
 }
 
+// UTF-32 bytes in a byte order as text.
 object Utf32Decoded {
     has origin is @byte;
     has order is ByteOrder;
 
+    // Decodes origin in order.
     Utf32Decoded(origin is @byte, order is ByteOrder) {
         self.origin = origin;
         self.order = order;
     }
 
+    // The text.
     string() is string {
         let name is string = self.order_name();
         let offset is int = utf32_valid_prefix(origin, name);
@@ -160,8 +178,10 @@ object Utf32Decoded {
 // InvalidUtf8.at(offset), InvalidUtf16.at(offset), InvalidUtf32.at(offset).
 enum InvalidUtf8 is Error = (at(offset is int));
 
+// Bytes that are not UTF-16; offset says where.
 enum InvalidUtf16 is Error = (at(offset is int));
 
+// Bytes that are not UTF-32; offset says where.
 enum InvalidUtf32 is Error = (at(offset is int));
 
 // Every Unicode scalar is preserved, including the 66 noncharacters. These

@@ -24,13 +24,16 @@ import "encoding/utf" take Utf8Encoded;
 import "encoding/hex" take HexEncoded;
 import "digest/blocks" take DigestBlocks64, DigestCompression64, InvalidDigestBlock;
 
+// MD5, for checking old formats only: it is broken for security.
 object Md5 does Digesting {
     has origin is DigestBlocks64;
 
+    // An empty digest; state(bytes) feeds it.
     Md5() {
         origin = DigestBlocks64(compression: Md5Compression(), origin: [], little_endian: true);
     }
 
+    // The digest of these bytes.
     Md5(origin is @byte) {
         self.origin = DigestBlocks64(compression: Md5Compression(), origin: origin, little_endian: true);
     }
@@ -40,6 +43,7 @@ object Md5 does Digesting {
         self.origin = DigestBlocks64(compression: Md5Compression(), origin: Utf8Encoded(text).bytes(), little_endian: true);
     }
 
+    // The digest.
     bytes() is @byte {
         origin.bytes();
     }
@@ -49,6 +53,8 @@ object Md5 does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The digest of everything fed so far and then origin; this one stays as it
+    // is.
     state(origin is @byte) is ^Md5 {
         let continued = self.origin.state(origin);
         ^origin = continued;
@@ -61,13 +67,16 @@ object Md5 does Digesting {
     }
 }
 
+// SHA-1, for checking old formats only: it is broken for security.
 object Sha1 does Digesting {
     has origin is DigestBlocks64;
 
+    // An empty digest; state(bytes) feeds it.
     Sha1() {
         origin = DigestBlocks64(compression: Sha1Compression(), origin: [], little_endian: false);
     }
 
+    // The digest of these bytes.
     Sha1(origin is @byte) {
         self.origin = DigestBlocks64(compression: Sha1Compression(), origin: origin, little_endian: false);
     }
@@ -77,6 +86,7 @@ object Sha1 does Digesting {
         self.origin = DigestBlocks64(compression: Sha1Compression(), origin: Utf8Encoded(text).bytes(), little_endian: false);
     }
 
+    // The digest.
     bytes() is @byte {
         origin.bytes();
     }
@@ -86,6 +96,8 @@ object Sha1 does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The digest of everything fed so far and then origin; this one stays as it
+    // is.
     state(origin is @byte) is ^Sha1 {
         let continued = self.origin.state(origin);
         ^origin = continued;

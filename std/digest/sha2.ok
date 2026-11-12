@@ -17,13 +17,16 @@ import "digest/host" take HostDigest;
 //     Sha256().state("ab").state([99.byte()]).hex();  // ba7816bf... for "abc"
 import "encoding/hex" take HexEncoded;
 
+// SHA-224.
 object Sha224 does Digesting {
     has digest is HostDigest;
 
+    // An empty digest; state(bytes) feeds it.
     Sha224() {
         digest = HostDigest(algorithm: "sha224", key: [], width: 0);
     }
 
+    // The digest of these bytes.
     Sha224(origin is @byte) {
         digest = HostDigest(algorithm: "sha224", key: [], width: 0).appended(origin);
     }
@@ -33,6 +36,7 @@ object Sha224 does Digesting {
         digest = HostDigest(algorithm: "sha224", key: [], width: 0).appended(Utf8Encoded(text).bytes());
     }
 
+    // The digest.
     bytes() is @byte {
         digest.bytes();
     }
@@ -42,6 +46,8 @@ object Sha224 does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The digest of everything fed so far and then origin; this one stays as it
+    // is.
     state(origin is @byte) is ^Sha224 {
         let continued = digest.appended(origin);
         ^digest = continued;
@@ -54,13 +60,16 @@ object Sha224 does Digesting {
     }
 }
 
+// SHA-256, the usual choice.
 object Sha256 does Digesting {
     has digest is HostDigest;
 
+    // An empty digest; state(bytes) feeds it.
     Sha256() {
         digest = HostDigest(algorithm: "sha256", key: [], width: 0);
     }
 
+    // The digest of these bytes.
     Sha256(origin is @byte) {
         digest = HostDigest(algorithm: "sha256", key: [], width: 0).appended(origin);
     }
@@ -70,6 +79,7 @@ object Sha256 does Digesting {
         digest = HostDigest(algorithm: "sha256", key: [], width: 0).appended(Utf8Encoded(text).bytes());
     }
 
+    // The digest.
     bytes() is @byte {
         digest.bytes();
     }
@@ -79,6 +89,8 @@ object Sha256 does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The digest of everything fed so far and then origin; this one stays as it
+    // is.
     state(origin is @byte) is ^Sha256 {
         let continued = digest.appended(origin);
         ^digest = continued;
@@ -91,13 +103,16 @@ object Sha256 does Digesting {
     }
 }
 
+// SHA-384.
 object Sha384 does Digesting {
     has digest is HostDigest;
 
+    // An empty digest; state(bytes) feeds it.
     Sha384() {
         digest = HostDigest(algorithm: "sha384", key: [], width: 0);
     }
 
+    // The digest of these bytes.
     Sha384(origin is @byte) {
         digest = HostDigest(algorithm: "sha384", key: [], width: 0).appended(origin);
     }
@@ -107,6 +122,7 @@ object Sha384 does Digesting {
         digest = HostDigest(algorithm: "sha384", key: [], width: 0).appended(Utf8Encoded(text).bytes());
     }
 
+    // The digest.
     bytes() is @byte {
         digest.bytes();
     }
@@ -116,6 +132,8 @@ object Sha384 does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The digest of everything fed so far and then origin; this one stays as it
+    // is.
     state(origin is @byte) is ^Sha384 {
         let continued = digest.appended(origin);
         ^digest = continued;
@@ -128,13 +146,16 @@ object Sha384 does Digesting {
     }
 }
 
+// SHA-512.
 object Sha512 does Digesting {
     has digest is HostDigest;
 
+    // An empty digest; state(bytes) feeds it.
     Sha512() {
         digest = HostDigest(algorithm: "sha512", key: [], width: 0);
     }
 
+    // The digest of these bytes.
     Sha512(origin is @byte) {
         digest = HostDigest(algorithm: "sha512", key: [], width: 0).appended(origin);
     }
@@ -144,6 +165,7 @@ object Sha512 does Digesting {
         digest = HostDigest(algorithm: "sha512", key: [], width: 0).appended(Utf8Encoded(text).bytes());
     }
 
+    // The digest.
     bytes() is @byte {
         digest.bytes();
     }
@@ -153,6 +175,8 @@ object Sha512 does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The digest of everything fed so far and then origin; this one stays as it
+    // is.
     state(origin is @byte) is ^Sha512 {
         let continued = digest.appended(origin);
         ^digest = continued;
@@ -165,13 +189,16 @@ object Sha512 does Digesting {
     }
 }
 
+// SHA-512/256: SHA-512 cut to 32 bytes, with its own start.
 object Sha512_256 does Digesting {
     has digest is HostDigest;
 
+    // An empty digest; state(bytes) feeds it.
     Sha512_256() {
         digest = HostDigest(algorithm: "sha512-256", key: [], width: 0);
     }
 
+    // The digest of these bytes.
     Sha512_256(origin is @byte) {
         digest = HostDigest(algorithm: "sha512-256", key: [], width: 0).appended(origin);
     }
@@ -181,6 +208,7 @@ object Sha512_256 does Digesting {
         digest = HostDigest(algorithm: "sha512-256", key: [], width: 0).appended(Utf8Encoded(text).bytes());
     }
 
+    // The digest.
     bytes() is @byte {
         digest.bytes();
     }
@@ -190,6 +218,8 @@ object Sha512_256 does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The digest of everything fed so far and then origin; this one stays as it
+    // is.
     state(origin is @byte) is ^Sha512_256 {
         let continued = digest.appended(origin);
         ^digest = continued;
