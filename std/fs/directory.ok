@@ -5,8 +5,8 @@ import "collections/list" take List, EmptyList;
 import "fs/error" take FileError, FileFailure;
 import "fs/path" take Path;
 import "fs/stat" take FileKind, FileStat, FileStatFromMap;
-import "runtime/fs" take path_encode, lstat, mkdir, mkdir_all, rmdir, rename, directory_entries,
-    directory_remove_tree, path_decode, symlink, temporary_directory_create,
+import "runtime/fs" take path_encode, lstat, mkdir, mkdir_all, rmdir, rename, rename_noreplace,
+    directory_entries, directory_remove_tree, path_decode, symlink, temporary_directory_create,
     temporary_directory_path, temporary_directory_close, temporary_file_create, temporary_file_path,
     file_state_close;
 
@@ -95,15 +95,29 @@ object Directory does DirectoryLocating {
         }
     }
 
+    // Refuses a destination that already exists unless overwrite is true; an
+    // overwriting move replaces an empty directory there.
     move(destination is Path) is void {
+        self.move(destination: destination, overwrite: false);
+    }
+
+    move(destination is Path, overwrite is bool) is void {
         try {
-            rename(
-                path_encode(origin.string()),
-                path_encode(destination.string()),
-            );
+            if overwrite {
+                rename(path_encode(origin.string()), path_encode(destination.string()));
+            }
+            else {
+                rename_noreplace(path_encode(origin.string()), path_encode(destination.string()));
+            }
         }
         catch failure is NativeFailure {
-            throw FileFailure(failure: failure, path: origin.string()).error();
+            let named = if failure.code() == "already_exists" {
+                destination;
+            }
+            else {
+                origin;
+            };
+            throw FileFailure(failure: failure, path: named.string()).error();
         }
     }
 }

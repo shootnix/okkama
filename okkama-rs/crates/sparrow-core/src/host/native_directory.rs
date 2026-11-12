@@ -39,6 +39,8 @@ pub(crate) fn handles(n: Native) -> bool {
             | FsRmdir
             | FsUnlink
             | FsRename
+            | FsRenameNoreplace
+            | FsCopyFile
             | FsLink
             | FsSymlink
             | FsReadlink
@@ -154,14 +156,21 @@ impl Heap {
                 }
                 fs::remove_file(path).map_err(|e| host(n, e))?;
             }
-            FsRename | FsLink => {
+            FsRename | FsRenameNoreplace | FsLink => {
                 let target = self.fs_path(n, a[1])?;
                 if n == FsRename {
                     fs::rename(path, target)
+                } else if n == FsRenameNoreplace {
+                    okkama_runtime_core::native::fs::rename_noreplace(&path, &target)
                 } else {
                     fs::hard_link(path, target)
                 }
                 .map_err(|e| host(n, e))?;
+            }
+            FsCopyFile => {
+                let target = self.fs_path(n, a[1])?;
+                okkama_runtime_core::native::fs::copy_file(&path, &target, a[2].bits != 0)
+                    .map_err(|e| host(n, e))?;
             }
             FsSymlink => {
                 let raw = self.native_bytes(a[0])?;

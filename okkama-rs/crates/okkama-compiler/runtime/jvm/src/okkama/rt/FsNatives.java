@@ -864,6 +864,48 @@ public final class FsNatives {
         return true;
     }
 
+    /** rename, отказывающий занятой цели (already_exists) вместо замены (#126). */
+    public static boolean runtime_fs__rename_noreplace(List<?> sourceValue, List<?> targetValue) {
+        String source = path(sourceValue, "rename_noreplace", 2);
+        String target = path(targetValue, "rename_noreplace", 2);
+        try {
+            Files.move(Host.path(source), Host.path(target));
+        } catch (IOException error) {
+            throw host(error, "rename_noreplace", 2, "Cannot rename path");
+        }
+        return true;
+    }
+
+    /**
+     * Копия файла с его правами (#126). Занятая цель — already_exists, если не
+     * replace; при replace копия пишется рядом и переименовывается поверх цели.
+     */
+    public static boolean runtime_fs__copy_file(List<?> sourceValue, List<?> targetValue, boolean replace) {
+        String source = path(sourceValue, "copy_file", 3);
+        String target = path(targetValue, "copy_file", 3);
+        Path from = Host.path(source);
+        Path to = Host.path(target);
+        try {
+            if (Files.isDirectory(from)) {
+                throw fail("invalid_input", "copy_file", 3, "Cannot copy file");
+            }
+            if (replace) {
+                Path written = to.resolveSibling("." + to.getFileName() + "." + ProcessHandle.current().pid() + "-" + System.nanoTime() + ".copy");
+                try {
+                    Files.copy(from, written, StandardCopyOption.COPY_ATTRIBUTES);
+                    Files.move(written, to, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } finally {
+                    Files.deleteIfExists(written);
+                }
+            } else {
+                Files.copy(from, to, StandardCopyOption.COPY_ATTRIBUTES);
+            }
+        } catch (IOException error) {
+            throw host(error, "copy_file", 3, "Cannot copy file");
+        }
+        return true;
+    }
+
     public static boolean runtime_fs__link(List<?> sourceValue, List<?> targetValue) {
         String source = path(sourceValue, "link", 2);
         String target = path(targetValue, "link", 2);

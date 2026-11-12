@@ -580,7 +580,7 @@ object SavedCookieJar {
         let staged = scratch.path().child("complete");
         TemporaryFilePreservation(origin: temporary, destination: staged).preserve();
         temporary.close();
-        FileEntry(staged).move(destination.path());
+        FileEntry(staged).move(destination: destination.path(), overwrite: true);
         destination;
     }
 }

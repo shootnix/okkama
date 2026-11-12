@@ -147,6 +147,15 @@ native unlink(path is @byte) is bool;
 
 native rename(source is @byte, target is @byte) is bool;
 
+// rename that refuses an existing target (already_exists) instead of
+// replacing it (#126).
+native rename_noreplace(source is @byte, target is @byte) is bool;
+
+// A copy of the file at source as target, with its permission bits (#126). An
+// existing target is already_exists unless replace; a replacing copy is
+// written beside the target and renamed over it.
+native copy_file(source is @byte, target is @byte, replace is bool) is bool;
+
 native link(source is @byte, target is @byte) is bool;
 
 native symlink(target is @byte, link_path is @byte) is bool;

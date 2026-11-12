@@ -83,12 +83,20 @@ object MboxSession does Closing {
             throw failure;
         };
         let initial = try {
-            let wire = MboxFileBytes(path: origin.path(), maximum: origin.limits()::Limits::wire_bytes).bytes();
+            let wire = MboxFileBytes(
+                path: origin.path(),
+                maximum: origin.limits()::Limits::wire_bytes
+            ).bytes();
             let records = ParsedMbox(origin: wire, limits: origin.limits()).records();
             let identifiers is @string = (0..records.size()).map() -> index {
                 token + "." + index.string();
             };
-            MboxSnapshot(wire: wire, records: records, identifiers: identifiers, limits: origin.limits());
+            MboxSnapshot(
+                wire: wire,
+                records: records,
+                identifiers: identifiers,
+                limits: origin.limits()
+            );
         }
         catch failure is Error {
             try {
@@ -128,7 +136,8 @@ object MboxSession does Closing {
         self.current();
         let records = view.records();
         let count = records.size();
-        confirm count < origin.limits()::Limits::messages else throw MboxLimitExceeded.kind("messages");
+        confirm count < origin.limits()::Limits::messages
+            else throw MboxLimitExceeded.kind("messages");
         confirm serial < 9223372036854775807 else throw MboxLimitExceeded.kind("identifiers");
         let added is @MboxRecord = (0..count + 1).map() -> index {
             if index < count {
@@ -188,7 +197,10 @@ object MboxSession does Closing {
 
     hidden current() is void {
         lease.check();
-        let present = MboxFileBytes(path: origin.path(), maximum: origin.limits()::Limits::wire_bytes).bytes();
+        let present = MboxFileBytes(
+            path: origin.path(),
+            maximum: origin.limits()::Limits::wire_bytes
+        ).bytes();
         confirm present == view.bytes() else throw MboxConflict.conflict;
     }
 }
@@ -299,7 +311,12 @@ hidden object MboxSnapshot {
         let empty is @MailFlag = [];
         let flags = MailFlags(empty);
         let saved is @StoredMail = (0..count).map() -> index {
-            StoredMail(identifier: identifiers[index], message: values[index].message(), flags: flags, limits: limits.mime());
+            StoredMail(
+                identifier: identifiers[index],
+                message: values[index].message(),
+                flags: flags,
+                limits: limits.mime()
+            );
         };
         self.wire = wire;
         self.records = values;
@@ -341,7 +358,7 @@ hidden object MboxReplacement {
         try {
             temporary.write(ByteSnapshot(wire));
             temporary.flush();
-            FileEntry(temporary.path()).move(path);
+            FileEntry(temporary.path()).move(destination: path, overwrite: true);
         }
         catch failure is Error {
             try {
