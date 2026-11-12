@@ -30,6 +30,11 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   connections with "failed to spawn thread". Timers are now a deadline heap
   on the event loop, and a cancelled timer drops its continuation at once.
 
+  The JVM runtime had the same defect (#504): every wait slept in a thread
+  of its own until its deadline, so the hello server built with
+  `--target jvm` ran out of threads after about 8 seconds of load. Waits now
+  run on one timer thread, and a cancelled one is dropped at once.
+
   Now the hello server stays at 59 MB on Sparrow and 52 MB on the IR engine
   over 6 000 connections. It also answers 1 930 requests per second instead
   of 1 350. `sparrow --stats` prints a census of the objects alive after the
@@ -37,24 +42,47 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
-- **The HTTP server answers about three times faster (#110, #113, #115,
-  #116, #81, #503).** On Sparrow, the hello server answered a request over
-  a kept-alive connection in 44 ms; the next request waited for Nagle's
-  algorithm and delayed acknowledgements. It now answers in 0.105 ms
-  (Python's `http.server`: 0.089 ms). A new connection takes 0.137 ms
-  (Python: 0.177 ms). Most of the gain is work the server no longer does:
-  - TCP connections and listeners set `TCP_NODELAY`, and listeners reuse
-    their address.
-  - A small response goes out in one write, with the head and the body
-    together. A generated head is no longer parsed back to check it.
-  - Header values are checked in one pass, without regular expressions.
-  - URL components no longer pass every character through an encoder, a
-    byte buffer and a decoder. Text that is already canonical comes back as
-    it is. The request target used to be canonicalised three times a
-    request: 18 µs each time, 2.5 µs now.
-  - The server asked for its HTTP/1 limits five times a request, each time
-    converting a `BigInt` through its decimal text. It now asks once per
-    connection. A response is framed once on its way out, not twice.
+- **The HTTP server is faster than Python's `http.server` (#75, #76, #81,
+  #83, #100, #101, #108, #110, #112–#117, #503).** The hello server
+  (`examples/web/hello.ok`) on Sparrow, against Python's
+  `ThreadingHTTPServer` with the same client in the same container (medians
+  of three rounds):
+
+  | | 0.5.4 | 0.5.5 | Python |
+  |---|---|---|---|
+  | request on a kept-alive connection | 44 ms | 0.082 ms | 0.091 ms |
+  | requests/s on one kept-alive connection | — | 11 300 | 10 800 |
+  | new connection per request | 0.45 ms | 0.125 ms | 0.181 ms |
+  | `ab -n 10000 -c 10`, requests/s | fails | 9 060 | 6 610 |
+
+  Most of the gain is work the server no longer does:
+  - TCP connections and listeners set `TCP_NODELAY`; listeners reuse their
+    address. A small response goes out in one write, a large one in 64 KiB
+    writes.
+  - The request target was canonicalised three times a request, every
+    character through an encoder, a byte buffer and a decoder: 18 µs each
+    time, 1.5 µs now. Strings are no longer split to find one character;
+    the head and the Host field are parsed in one pass each.
+  - Header values are checked without regular expressions, chunk sizes
+    without a regex compiled per chunk (19 µs → 0.8 µs), and the framing
+    fields without making field names per lookup.
+  - The HTTP/1 limits were rebuilt five times a request, a response was
+    framed three times, a GET built a request-body reader and drained it,
+    and a kept-alive connection read the next request one byte first.
+  - A web endpoint's query is decoded once; headers and reply headers are
+    built in linear time; in-memory bodies are read without a lock; a
+    declared body over the limit is refused with 413 before it is read.
+  - Static files: one open and one stat per GET instead of three stats.
+  - Server peers are kept in linear time (1000 connections at once).
+  - Tomato: a collection no longer looks up every dead cell in the set of
+    watched objects (sweep 55% shorter), and array builders are reused
+    instead of allocating Rust memory for every `map` or `filter`.
+  - A 1 MiB streamed response takes 0.4 ms instead of 42 ms; a 1 MiB upload
+    1.8 ms instead of 51 ms.
+- **The server answers HTTP/1.0 (#102).** `ab` works: no Host is required,
+  responses are not chunked, and keep-alive applies only when asked for.
+- **RequestJson readers share one translation of reading failures (#84).**
+- **The gate prints the output tail of a new std failure (#502).**
 
 ## [0.5.4] — 2026-11-12
 
