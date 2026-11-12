@@ -3,7 +3,7 @@ module app v1.0.0;
 // Run by tests/signals.rs (#80). Serves on the port named by the first
 // argument until SIGTERM or SIGINT, then says "stopped". /slow answers after
 // the number of seconds in the second argument, so a request can still be in
-// flight when the signal comes.
+// flight when the signal comes. A third argument, "tls", serves HTTPS.
 import "web/app" take WebApplication;
 import "web/routing" take WebRoutes, Get;
 import "web/request" take WebRequest;
@@ -14,6 +14,7 @@ import "strings/parse" take Number;
 import "time/clock" take SystemClock;
 import "time/duration" take Duration;
 import "io/stdout" take Stdout;
+import "net/tls" take TlsIdentity;
 
 object Pages {
     has delay is int;
@@ -39,7 +40,20 @@ async main() is int {
         Get(path: "/", endpoint: pages.hello),
         Get(path: "/slow", endpoint: pages.slow)
     );
-    await WebApplication(routes).listen(address: "127.0.0.1", port: Number(arguments[0]).int());
+    let port = Number(arguments[0]).int();
+    if arguments.size() > 2 {
+        let identity = TlsIdentity(certificates: CERTIFICATE, key: KEY);
+        await WebApplication(routes).listen(address: "127.0.0.1", port: port, tls: identity);
+    }
+    else {
+        await WebApplication(routes).listen(address: "127.0.0.1", port: port);
+    }
     Stdout().writeln("stopped");
     0;
 }
+
+// A certificate for 127.0.0.1 and localhost from the test authority of
+// std/http/server, and its key.
+hidden const CERTIFICATE = "-----BEGIN CERTIFICATE-----\nMIIBwzCCAWigAwIBAgIUG8NUjoqvvLFxqO/t7iv/3Auy2PgwCgYIKoZIzj0EAwIw\nGTEXMBUGA1UEAwwOT2trYW1hIFRlc3QgQ0EwHhcNMjYxMTEyMTE0MjA0WhcNNDgx\nMDA3MTE0MjA0WjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIBBggq\nhkjOPQMBBwNCAAQaMDVadj3Njz0QDGkIC6mwMvsIrcKEgNpBpZ4p9lZl/U7IZOja\nGwl/oQS67X/YHf5rcfdxvcb70003NsmoexTLo4GSMIGPMBoGA1UdEQQTMBGCCWxv\nY2FsaG9zdIcEfwAAATAMBgNVHRMBAf8EAjAAMA4GA1UdDwEB/wQEAwIHgDATBgNV\nHSUEDDAKBggrBgEFBQcDATAdBgNVHQ4EFgQU/R0ad9cojv2dRtb8rSPoG2ncsPsw\nHwYDVR0jBBgwFoAUe971fZqr+7LVQfdRmjZyyNxrsncwCgYIKoZIzj0EAwIDSQAw\nRgIhANTVp7yf3QQovicpuurIeJL4z3SWS68504anbBieM2edAiEA7ypMFNH5e/jc\nmX+bVt3dCMxTaQwVY8/loOQTp0PWQLg=\n-----END CERTIFICATE-----\n";
+
+hidden const KEY = "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgooq/y5Wqru57uZ/f\nLtDqQBGy63m5uDllm9k87Q2FqQuhRANCAAQaMDVadj3Njz0QDGkIC6mwMvsIrcKE\ngNpBpZ4p9lZl/U7IZOjaGwl/oQS67X/YHf5rcfdxvcb70003NsmoexTL\n-----END PRIVATE KEY-----\n";

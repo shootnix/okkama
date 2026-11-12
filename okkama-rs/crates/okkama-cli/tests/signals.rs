@@ -1,7 +1,8 @@
 //! A web application stops on SIGTERM or SIGINT (#80): it stops accepting,
 //! lets the request in flight finish, and `listen()` returns, so the program
 //! goes on and ends with code 0; a second signal during the drain ends the
-//! process at once. Runs `tests/signals/serve.ok` on every engine.
+//! process at once; an HTTPS application stops the same way. Runs
+//! `tests/signals/serve.ok` on every engine.
 #![cfg(unix)]
 
 use std::io::{Read, Write};
@@ -34,18 +35,23 @@ struct Ended {
 
 impl App {
     /// Start the program and wait until it accepts connections; `/slow`
-    /// answers after `delay` seconds.
-    fn start(engine: &'static str, delay: u64) -> App {
+    /// answers after `delay` seconds, and `tls` serves HTTPS.
+    fn start(engine: &'static str, delay: u64, tls: bool) -> App {
         let here = Path::new(env!("CARGO_MANIFEST_DIR"));
         let port = TcpListener::bind("127.0.0.1:0")
             .and_then(|listener| listener.local_addr())
             .expect("a free port")
             .port();
-        let child = Command::new(env!("CARGO_BIN_EXE_okkama"))
+        let mut command = Command::new(env!("CARGO_BIN_EXE_okkama"));
+        command
             .args(["run", "--engine", engine])
             .arg(here.join("tests/signals/serve.ok"))
             .arg(port.to_string())
-            .arg(delay.to_string())
+            .arg(delay.to_string());
+        if tls {
+            command.arg("tls");
+        }
+        let child = command
             .env("OKKAMA_STDLIB_DIR", here.join("../../../std"))
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -129,7 +135,7 @@ impl Drop for App {
 #[test]
 fn sigterm_drains_the_request_in_flight_and_listen_returns() {
     for engine in engines() {
-        let app = App::start(engine, 3);
+        let app = App::start(engine, 3, false);
         let hello = app.get("/").join().expect("hello thread").expect("hello answer");
         assert!(hello.starts_with("HTTP/1.1 200") && hello.ends_with("hello"), "{engine}: {hello}");
         let slow = app.get("/slow");
@@ -151,7 +157,7 @@ fn sigterm_drains_the_request_in_flight_and_listen_returns() {
 #[test]
 fn a_second_signal_during_the_drain_ends_the_process_at_once() {
     for engine in engines() {
-        let app = App::start(engine, 60);
+        let app = App::start(engine, 60, false);
         let slow = app.get("/slow");
         sleep(Duration::from_secs(1));
         app.signal("INT");
@@ -162,5 +168,16 @@ fn a_second_signal_during_the_drain_ends_the_process_at_once() {
         assert_ne!(ended.status.code(), Some(0), "{engine}: {}{}", ended.stdout, ended.stderr);
         assert!(!ended.stdout.contains("stopped"), "{engine}: {}", ended.stdout);
         let _ = slow.join();
+    }
+}
+
+#[test]
+fn an_https_application_stops_on_sigterm() {
+    for engine in engines() {
+        let app = App::start(engine, 3, true);
+        app.signal("TERM");
+        let ended = app.ended(Duration::from_secs(20));
+        assert_eq!(ended.status.code(), Some(0), "{engine}: {}{}", ended.stdout, ended.stderr);
+        assert_eq!(ended.stdout, "stopped\n", "{engine}: {}", ended.stderr);
     }
 }

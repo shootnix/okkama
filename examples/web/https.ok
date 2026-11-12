@@ -1,0 +1,69 @@
+module examples/web/https v1.0.0;
+
+import "web/app" take WebApplication;
+import "web/routing" take WebRoutes, Get;
+import "web/request" take WebRequest;
+import "web/reply" take TextReply;
+import "http/message" take Responding;
+import "http/client" take HttpClient;
+import "http/endpoint" take LoopbackEndpoints;
+import "http/version" take HttpVersion;
+import "net/tls" take TlsIdentity;
+import "crypto/x509/trust" take PemTrustStore;
+import "collections/set" take Set, OrderedSet;
+import "time/duration" take Duration;
+import "io/stdout" take Stdout;
+
+// HTTPS with HTTP/2. The server offers h2 and http/1.1 by ALPN: a client that
+// speaks HTTP/2 gets it, an older one gets HTTP/1.1. The program serves on a
+// free loopback port with a certificate made for this example, calls itself
+// with both kinds of client, and drains. A real service reads its own
+// certificate chain and key and calls
+// `await WebApplication(routes).listen(address: "0.0.0.0", port: 8443, tls: identity);`
+// which serves until SIGTERM or SIGINT, then lets the requests in flight
+// finish within 10 seconds and returns.
+
+object Greeting {
+    Greeting();
+
+    async hello(request is WebRequest) is Responding {
+        TextReply("hello, " + request.path().text("name"));
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    let routes = WebRoutes(Get(path: "/hello/:name", endpoint: Greeting().hello));
+    let identity = TlsIdentity(certificates: CERTIFICATE, key: KEY);
+    let server = (await WebApplication(routes).server("127.0.0.1", 0, identity)).started();
+    let base = "https://127.0.0.1:" + server::Local::port.string();
+    let both is Set<HttpVersion> = OrderedSet([HttpVersion.http_1_1, HttpVersion.http_2]);
+    let modern = HttpClient(
+        trust: PemTrustStore(AUTHORITY),
+        endpoints: LoopbackEndpoints(),
+        protocols: both
+    );
+    let older = HttpClient(trust: PemTrustStore(AUTHORITY), endpoints: LoopbackEndpoints());
+    for [modern, older] -> client {
+        let page = await client.get(base + "/hello/Ada");
+        let version = if page::Head::version == HttpVersion.http_2 {
+            "HTTP/2";
+        }
+        else {
+            "HTTP/1.1";
+        };
+        out.writeln(version, " ", page::Head::code, " ", await page.text());
+        client.close();
+    }
+    await server.drain(limit: Duration(seconds: 5));
+    out.writeln("drained");
+    0;
+}
+
+// The authority that signed CERTIFICATE, a certificate for 127.0.0.1 and
+// localhost, and its key; made for the examples and tests, never for a server.
+hidden const AUTHORITY = "-----BEGIN CERTIFICATE-----\nMIIBdjCCARygAwIBAgIUZys025uW0l2NKLRJhlj/e/NZtfIwCgYIKoZIzj0EAwIw\nGTEXMBUGA1UEAwwOT2trYW1hIFRlc3QgQ0EwHhcNMjYxMTEyMTE0MjA0WhcNNDgx\nMDA3MTE0MjA0WjAZMRcwFQYDVQQDDA5Pa2thbWEgVGVzdCBDQTBZMBMGByqGSM49\nAgEGCCqGSM49AwEHA0IABBFw/aXocscUbo6jObHs1PCN29BcRR+2K50QaEkwFdOx\nkiif5hQH5S72ksR2gL1PtbmPVLJv9kGhSjylkFnWMFujQjBAMA8GA1UdEwEB/wQF\nMAMBAf8wDgYDVR0PAQH/BAQDAgEGMB0GA1UdDgQWBBR73vV9mqv7stVB91GaNnLI\n3GuydzAKBggqhkjOPQQDAgNIADBFAiAufmQhdmE0TO2RfIcZRNt/ucAEPVLBW03q\nIRbruIX6KgIhAJsOnAIaGBgywbvntzwVyjTtIurUqVEB8oy03JNCKmNx\n-----END CERTIFICATE-----\n";
+
+hidden const CERTIFICATE = "-----BEGIN CERTIFICATE-----\nMIIBwzCCAWigAwIBAgIUG8NUjoqvvLFxqO/t7iv/3Auy2PgwCgYIKoZIzj0EAwIw\nGTEXMBUGA1UEAwwOT2trYW1hIFRlc3QgQ0EwHhcNMjYxMTEyMTE0MjA0WhcNNDgx\nMDA3MTE0MjA0WjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIBBggq\nhkjOPQMBBwNCAAQaMDVadj3Njz0QDGkIC6mwMvsIrcKEgNpBpZ4p9lZl/U7IZOja\nGwl/oQS67X/YHf5rcfdxvcb70003NsmoexTLo4GSMIGPMBoGA1UdEQQTMBGCCWxv\nY2FsaG9zdIcEfwAAATAMBgNVHRMBAf8EAjAAMA4GA1UdDwEB/wQEAwIHgDATBgNV\nHSUEDDAKBggrBgEFBQcDATAdBgNVHQ4EFgQU/R0ad9cojv2dRtb8rSPoG2ncsPsw\nHwYDVR0jBBgwFoAUe971fZqr+7LVQfdRmjZyyNxrsncwCgYIKoZIzj0EAwIDSQAw\nRgIhANTVp7yf3QQovicpuurIeJL4z3SWS68504anbBieM2edAiEA7ypMFNH5e/jc\nmX+bVt3dCMxTaQwVY8/loOQTp0PWQLg=\n-----END CERTIFICATE-----\n";
+
+hidden const KEY = "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgooq/y5Wqru57uZ/f\nLtDqQBGy63m5uDllm9k87Q2FqQuhRANCAAQaMDVadj3Njz0QDGkIC6mwMvsIrcKE\ngNpBpZ4p9lZl/U7IZOjaGwl/oQS67X/YHf5rcfdxvcb70003NsmoexTL\n-----END PRIVATE KEY-----\n";

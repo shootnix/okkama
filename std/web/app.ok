@@ -86,14 +86,16 @@ object WebApplication {
     }
 
     async listen(address is string, port is int) is void {
-        let server = await self.server(address, port);
-        await AppServing(server).run();
+        let stopping = AppStopping();
+        defer await stopping.close();
+        await stopping.serve(await self.server(address, port));
     }
 
     // HTTPS: the identity's certificate and key, HTTP/2 and HTTP/1.1 by ALPN.
     async listen(address is string, port is int, tls is TlsIdentity) is void {
-        let server = await self.server(address, port, tls);
-        await AppServing(server).run();
+        let stopping = AppStopping();
+        defer await stopping.close();
+        await stopping.serve(await self.server(address, port, tls));
     }
 
     // The HTTPS server, bound and not serving; its own URL is https.
@@ -126,43 +128,46 @@ object WebApplication {
     }
 }
 
-// Serves until a signal, then drains: SIGTERM or SIGINT stops accepting, the
-// requests in flight get 10 seconds, and the server closes, which ends serve().
-hidden object AppServing {
-    has server is HttpServer;
+// Serving that stops on SIGTERM or SIGINT. The wait for the signal begins when
+// the object is made, before the port is bound: signal_wait installs its
+// handlers when called, so a signal that comes as soon as the port accepts
+// finds them. On the signal the server stops accepting, the requests in flight
+// get 10 seconds, and the server closes, which ends serve(). close() cancels
+// the wait if no signal came, which gives the signals their earlier actions
+// back.
+hidden object AppStopping {
+    has signals is FutureGroup<string>;
+    has draining is FutureGroup<bool>;
 
-    AppServing(server is HttpServer) {
-        self.server = server;
+    AppStopping() {
+        let waiting is FutureGroup<string> = FutureGroup();
+        waiting.start(signal_wait(["TERM", "INT"]));
+        signals = waiting;
+        draining = FutureGroup();
     }
 
-    async run() is void {
-        let watching is FutureGroup<bool> = FutureGroup();
-        watching.start(self.stopping());
-        defer await AppWatch(watching).close();
+    async serve(server is HttpServer) is void {
+        draining.start(self.drained(server));
         defer await server.settled();
         defer server.close();
         await server.serve();
     }
 
-    async stopping() is bool {
-        await signal_wait(["TERM", "INT"]);
+    async drained(server is HttpServer) is bool {
+        await signals.wait();
         await server.drain(limit: Duration(seconds: 10));
         true;
     }
-}
-
-// The signal watch ends with the serving: cancelled when still waiting.
-hidden object AppWatch {
-    has group is FutureGroup<bool>;
-
-    AppWatch(group is FutureGroup<bool>) {
-        self.group = group;
-    }
 
     async close() is void {
-        group.cancel();
+        signals.cancel();
+        draining.cancel();
         try {
-            await group.wait();
+            await draining.wait();
+        }
+        catch e is Cancelled {}
+        try {
+            await signals.wait();
         }
         catch e is Cancelled {}
     }

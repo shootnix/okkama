@@ -328,9 +328,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     cancellation, the signal gets its earlier action back. The IR engine uses
     a self-pipe and a dispatcher thread, Sparrow takes it through the bridge,
     and the JVM uses `sun.misc.Signal`.
+  - The wait begins before the port is bound, so a signal that comes as soon
+    as the port accepts already finds its handler.
   - `okkama-cli/tests/signals.rs` runs a real application on every engine:
     a request in flight is answered after SIGTERM, new connections are
-    refused, and the program ends with code 0.
+    refused, and the program ends with code 0; an HTTPS application stops the
+    same way. `examples/web/https.ok` serves HTTPS and answers an HTTP/2 and
+    an HTTP/1.1 client.
 - **The server frames every response.** A response of known length without a
   Content-Length gets one, and one of unknown length (`StreamReply`,
   `EventsReply`, compressed streams) is chunked for an HTTP/1.1 client.
