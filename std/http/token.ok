@@ -1,7 +1,5 @@
 module http/token v1.0.0;
 
-import "encoding/utf" take Utf8Encoded;
-
 // A token of RFC 9110 §5.6.2: one or more `tchar`. Methods, field names,
 // codings, media types and cookie names are tokens. Checked at construction.
 object HttpToken {
@@ -9,8 +7,10 @@ object HttpToken {
 
     HttpToken(origin is string) {
         confirm origin.length() > 0 else throw InvalidToken.origin(origin);
-        for Utf8Encoded(origin).bytes() -> octet {
-            let code = octet.int();
+        // Characters, not encoded bytes (#503): a character past ASCII is no
+        // tchar, as each of its UTF-8 bytes was not.
+        for origin.characters() -> character {
+            let code = character.code();
             confirm (code >= 48 && code <= 57)
                 || (code >= 65 && code <= 90)
                 || (code >= 97 && code <= 122)

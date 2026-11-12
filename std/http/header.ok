@@ -317,6 +317,15 @@ object HttpAsciiLowercase {
     }
 
     string() is string {
+        // ASCII text, as every field name is: the builtin lower() is exact
+        // there, and text without capitals stays as it is (#503).
+        let codes = origin.characters();
+        let wide = codes.reduce(false) -> found, character {
+            found || character.code() > 127;
+        };
+        if !wide {
+            return origin.lower();
+        }
         let bytes is @byte = Latin1Encoded(origin).bytes().map() -> octet {
             let code = octet.int();
             if code >= 65 && code <= 90 {
