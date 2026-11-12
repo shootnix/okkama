@@ -6507,6 +6507,22 @@
       "notes": "Native substrate module; its behaviour is observed through the public modules that compose it."
     },
     {
+      "id": "STD.RUNTIME.XML",
+      "title": "std runtime/xml public contract (no public declarations)",
+      "family": "Standard library: runtime",
+      "spec_refs": [
+        "std/runtime/xml.ok"
+      ],
+      "status": "informative",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: module owns no public declarations",
+        "invalid": "n/a: module owns no public declarations",
+        "interaction": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+      },
+      "notes": "Native substrate module; its behaviour is observed through the public modules that compose it."
+    },
+    {
       "id": "STD.STRINGS.BUFFER",
       "title": "std strings/buffer public contract (TextBuffer)",
       "family": "Standard library: strings",
@@ -7453,10 +7469,25 @@
     },
     {
       "id": "STD.XML.NODE",
-      "title": "std xml/node public contract (XmlAttribute, XmlComment, XmlDocument, XmlElement, XmlNode, XmlProcessingInstruction, XmlText)",
+      "title": "std xml/node public contract (MissingXmlAttribute, MissingXmlElement, XmlAttribute, XmlComment, XmlDocument, XmlElement, XmlNode, XmlProcessingInstruction, XmlText)",
       "family": "Standard library: xml",
       "spec_refs": [
         "std/xml/node.ok"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+      }
+    },
+    {
+      "id": "STD.XML.PARSE",
+      "title": "std xml/parse public contract (ParsedXml)",
+      "family": "Standard library: xml",
+      "spec_refs": [
+        "std/xml/parse.ok"
       ],
       "status": "mandatory",
       "aspects": {
