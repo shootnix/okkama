@@ -228,8 +228,8 @@ object RequestJson {
         try {
             origin.text();
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         }
     }
 
@@ -237,8 +237,8 @@ object RequestJson {
         try {
             origin.number();
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         }
     }
 
@@ -246,8 +246,8 @@ object RequestJson {
         try {
             origin.boolean();
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         }
     }
 
@@ -255,11 +255,8 @@ object RequestJson {
         try {
             origin.integer();
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
-        }
-        catch JsonError.invalid_number(location, spelling, reason) {
-            throw Exception.status(422, JsonProblem().number(location, spelling, reason));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         }
     }
 
@@ -267,11 +264,8 @@ object RequestJson {
         try {
             origin.int();
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
-        }
-        catch JsonError.invalid_number(location, spelling, reason) {
-            throw Exception.status(422, JsonProblem().number(location, spelling, reason));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         }
     }
 
@@ -279,8 +273,8 @@ object RequestJson {
         try {
             origin.size();
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         }
     }
 
@@ -288,8 +282,8 @@ object RequestJson {
         try {
             origin.names();
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         }
     }
 
@@ -297,8 +291,8 @@ object RequestJson {
         try {
             origin.has(name);
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         }
     }
 
@@ -306,8 +300,8 @@ object RequestJson {
         let values = try {
             origin.items();
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         };
         let wrapped is @RequestJson = values.map() -> value {
             RequestJson(value);
@@ -319,11 +313,8 @@ object RequestJson {
         try {
             RequestJson(origin.at(index));
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
-        }
-        catch JsonError.missing(location) {
-            throw Exception.status(422, JsonProblem().missing(location));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         }
     }
 
@@ -331,11 +322,8 @@ object RequestJson {
         try {
             RequestJson(origin.get(name));
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
-        }
-        catch JsonError.missing(location) {
-            throw Exception.status(422, JsonProblem().missing(location));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         }
     }
 
@@ -345,8 +333,8 @@ object RequestJson {
         try {
             RequestJsonOptional(origin.maybe(name));
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         }
     }
 
@@ -403,8 +391,8 @@ object RequestJsonOptional {
         try {
             origin.text() else fallback;
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         }
     }
 
@@ -412,8 +400,8 @@ object RequestJsonOptional {
         try {
             origin.number() else fallback;
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         }
     }
 
@@ -421,8 +409,8 @@ object RequestJsonOptional {
         try {
             origin.boolean() else fallback;
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         }
     }
 
@@ -430,11 +418,8 @@ object RequestJsonOptional {
         try {
             origin.int() else fallback;
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
-        }
-        catch JsonError.invalid_number(location, spelling, reason) {
-            throw Exception.status(422, JsonProblem().number(location, spelling, reason));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         }
     }
 
@@ -442,8 +427,8 @@ object RequestJsonOptional {
         let values is @Json = try {
             origin.list() else [];
         }
-        catch JsonError.wrong_kind(pointer, expected, actual) {
-            throw Exception.status(422, JsonProblem().kind(pointer, expected, actual));
+        catch failure is JsonError {
+            throw JsonProblem().failure(failure);
         };
         let wrapped is @RequestJson = values.map() -> value {
             RequestJson(value);
@@ -453,8 +438,28 @@ object RequestJsonOptional {
 }
 
 // The client-facing detail of a JSON reading failure (sent in 422 problems).
+// One translation for every reader (#84).
 hidden object JsonProblem {
     JsonProblem();
+
+    // A failure to read the document the client sent, as the 422 the client
+    // sees; any other failure stays as it is.
+    failure(origin is JsonError) is Error {
+        match origin {
+            case JsonError.wrong_kind(pointer, expected, actual) {
+                Exception.status(422, self.kind(pointer, expected, actual));
+            }
+            case JsonError.missing(location) {
+                Exception.status(422, self.missing(location));
+            }
+            case JsonError.invalid_number(location, spelling, reason) {
+                Exception.status(422, self.number(location, spelling, reason));
+            }
+            else {
+                origin;
+            }
+        }
+    }
 
     kind(pointer is string, expected is JsonKind, actual is JsonKind) is string {
         "JSON value at " + JsonLocation(pointer).string() + " must be " + JsonKindName(expected).string() + ", found " + JsonKindName(
