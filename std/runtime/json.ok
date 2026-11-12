@@ -10,6 +10,10 @@ native object JsonOutputState;
 
 native json_parse_state(origin is string, maximum_depth is int) is JsonParseState;
 
+// JSON as UTF-8 bytes (#135): bytes that are not UTF-8 fail where the valid
+// prefix ends.
+native json_parse_bytes_state(origin is @byte, maximum_depth is int) is JsonParseState;
+
 native json_parse_valid(origin is JsonParseState) is bool;
 
 native json_parse_offset(origin is JsonParseState) is int;

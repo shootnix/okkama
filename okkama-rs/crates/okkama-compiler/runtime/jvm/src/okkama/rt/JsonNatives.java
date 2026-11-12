@@ -1,6 +1,12 @@
 package okkama.rt;
 
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CoderResult;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -391,30 +397,7 @@ public final class JsonNatives {
             state.offset = failure.offset;
             state.message = failure.message;
             state.duplicate = failure.duplicate;
-            int line = 1;
-            int column = 1;
-            int position = 0;
-            while (position < failure.offset) {
-                int character = state.source[position];
-                if (character == '\r') {
-                    position++;
-                    if (position < failure.offset && state.source[position] == '\n') {
-                        position++;
-                    }
-                    line++;
-                    column = 1;
-                    continue;
-                }
-                if (character == '\n') {
-                    line++;
-                    column = 1;
-                } else {
-                    column++;
-                }
-                position++;
-            }
-            state.line = line;
-            state.column = column;
+            locate(state);
         } catch (StackOverflowError overflow) {
             state.valid = false;
             state.offset = state.position;
@@ -423,8 +406,62 @@ public final class JsonNatives {
         return state;
     }
 
+    /** Line and column of state.offset, from 1; CR LF is one line break. */
+    private static void locate(ParseState state) {
+        int line = 1;
+        int column = 1;
+        int position = 0;
+        while (position < state.offset) {
+            int character = state.source[position];
+            if (character == '\r') {
+                position++;
+                if (position < state.offset && state.source[position] == '\n') {
+                    position++;
+                }
+                line++;
+                column = 1;
+                continue;
+            }
+            if (character == '\n') {
+                line++;
+                column = 1;
+            } else {
+                column++;
+            }
+            position++;
+        }
+        state.line = line;
+        state.column = column;
+    }
+
     public static Object runtime_json__json_parse_state(String source, BigInteger maximumDepth) {
         return new ParseState(source, maximumDepth);
+    }
+
+    /**
+     * JSON as UTF-8 bytes (#135). Bytes that are not UTF-8 fail where the valid
+     * prefix ends, as a parse error there would.
+     */
+    public static Object runtime_json__json_parse_bytes_state(List<?> source, BigInteger maximumDepth) {
+        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT);
+        ByteBuffer input = ByteBuffer.wrap(Natives.toBytes(source));
+        CharBuffer output = CharBuffer.allocate(input.remaining() + 1);
+        CoderResult result = decoder.decode(input, output, true);
+        if (!result.isError()) {
+            result = decoder.flush(output);
+        }
+        output.flip();
+        ParseState state = new ParseState(output.toString(), maximumDepth);
+        if (result.isError()) {
+            state.parsed = true;
+            state.valid = false;
+            state.offset = state.source.length;
+            state.message = "invalid UTF-8";
+            locate(state);
+        }
+        return state;
     }
 
     public static boolean runtime_json__json_parse_valid(Object handle) {

@@ -89,7 +89,7 @@ pub fn execute(
         Provider::Postgres => postgres::execute(native, args),
         Provider::Misc => misc::execute(native, args, context),
         Provider::Idna => idna::execute(native, args),
-        Provider::Json => json::execute(native, args),
+        Provider::Json => json::execute(native, args, arrays),
         Provider::Db => db::execute(native, args),
         Provider::Markup => markup::execute(native, args),
         Provider::Math => math::execute(native, args, context),

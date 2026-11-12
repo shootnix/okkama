@@ -633,5 +633,6 @@ natives! {
     TextBufferCreate = 647, "runtime/buffer@1::text_buffer_create/0", "() -> TextBufferState";
     TextBufferAppend = 648, "runtime/buffer@1::text_buffer_append/2", "(TextBufferState, string) -> bool";
     TextBufferText = 649, "runtime/buffer@1::text_buffer_text/1", "(TextBufferState) -> string";
+    JsonJsonParseBytesState = 650, "runtime/json@1::json_parse_bytes_state/2", "(@byte, int) -> JsonParseState";
 }
 // retired: 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258

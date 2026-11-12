@@ -3,7 +3,7 @@
 //! тексты отказов — как у Perl-provider.
 use super::Error;
 use super::support::{failure, handle, int, int_value, items, new_handle, string, text};
-use crate::{IntValue, Value, abi::Native};
+use crate::{IntValue, Value, abi::Native, heap::ArrayHeap};
 use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -450,26 +450,7 @@ fn parsed(value: &Value) -> Result<Rc<Outcome>, Error> {
             duplicate: None,
         },
         Err(error) => {
-            let (mut line, mut column, mut position) = (1, 1, 0);
-            while position < error.offset {
-                let character = state.source[position];
-                if character == '\r' {
-                    position += 1;
-                    if position < error.offset && state.source[position] == '\n' {
-                        position += 1;
-                    }
-                    line += 1;
-                    column = 1;
-                    continue;
-                }
-                if character == '\n' {
-                    line += 1;
-                    column = 1;
-                } else {
-                    column += 1;
-                }
-                position += 1;
-            }
+            let (line, column) = located(&state.source, error.offset);
             Outcome {
                 root: None,
                 offset: error.offset as i64,
@@ -483,6 +464,62 @@ fn parsed(value: &Value) -> Result<Rc<Outcome>, Error> {
     let outcome = Rc::new(outcome);
     *state.outcome.borrow_mut() = Some(outcome.clone());
     Ok(outcome)
+}
+
+/// Line and column of `offset` in `source`, from 1; CR LF is one line break.
+fn located(source: &[char], offset: usize) -> (i64, i64) {
+    let (mut line, mut column, mut position) = (1, 1, 0);
+    while position < offset {
+        let character = source[position];
+        if character == '\r' {
+            position += 1;
+            if position < offset && source[position] == '\n' {
+                position += 1;
+            }
+            line += 1;
+            column = 1;
+            continue;
+        }
+        if character == '\n' {
+            line += 1;
+            column = 1;
+        } else {
+            column += 1;
+        }
+        position += 1;
+    }
+    (line, column)
+}
+
+/// JSON as UTF-8 bytes (#135): the parser reads the decoded characters, with
+/// no text in between. Bytes that are not UTF-8 fail where the valid prefix
+/// ends, as a parse error there would.
+fn bytes_state(bytes: &[u8], maximum_depth: IntValue) -> ParseState {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => ParseState {
+            source: text.chars().collect(),
+            maximum_depth,
+            outcome: RefCell::new(None),
+        },
+        Err(error) => {
+            let valid = std::str::from_utf8(&bytes[..error.valid_up_to()]).unwrap_or_default();
+            let source: Vec<char> = valid.chars().collect();
+            let (line, column) = located(&source, source.len());
+            let outcome = Outcome {
+                root: None,
+                offset: source.len() as i64,
+                line,
+                column,
+                message: "invalid UTF-8".into(),
+                duplicate: None,
+            };
+            ParseState {
+                source,
+                maximum_depth,
+                outcome: RefCell::new(Some(Rc::new(outcome))),
+            }
+        }
+    }
 }
 
 /// JSON text being written: appends go to the end, and every append answers
@@ -654,7 +691,7 @@ fn node_value(node: Rc<Node>) -> Value {
     new_handle(node)
 }
 
-pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
+pub fn execute(native: Native, args: &[Value], arrays: &ArrayHeap) -> Result<Value, Error> {
     let invalid = |message: &str| failure("core.json", "invalid_input", native, message);
     match native {
         Native::JsonJsonParseState => Ok(new_handle(ParseState {
@@ -662,6 +699,11 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             maximum_depth: int(&args[1])?.clone(),
             outcome: RefCell::new(None),
         })),
+        Native::JsonJsonParseBytesState => {
+            let elements = arrays.elements(&args[0])?;
+            let bytes = elements.iter().map(Value::as_byte).collect::<Result<Vec<_>, _>>()?;
+            Ok(new_handle(bytes_state(&bytes, int(&args[1])?.clone())))
+        }
         Native::JsonJsonParseValid => Ok(Value::Bool(parsed(&args[0])?.root.is_some())),
         Native::JsonJsonParseHasDuplicate => Ok(Value::Bool(parsed(&args[0])?.duplicate.is_some())),
         Native::JsonJsonParseOffset => Ok(int_value(parsed(&args[0])?.offset)),

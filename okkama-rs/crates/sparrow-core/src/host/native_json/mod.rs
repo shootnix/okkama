@@ -116,6 +116,62 @@ impl JsonHandle {
         }
     }
 }
+/// Line and column of `offset` in `source`, from 1; CR LF is one line break.
+fn located(source: &[char], offset: usize) -> (i64, i64) {
+    let (mut line, mut column, mut position) = (1, 1, 0);
+    while position < offset {
+        match source[position] {
+            '\r' => {
+                position += 1;
+                if position < offset && source[position] == '\n' {
+                    position += 1;
+                }
+                line += 1;
+                column = 1;
+                continue;
+            }
+            '\n' => {
+                line += 1;
+                column = 1;
+            }
+            _ => column += 1,
+        }
+        position += 1;
+    }
+    (line, column)
+}
+
+/// JSON as UTF-8 bytes (#135): the parser reads the decoded characters, with
+/// no text in between. Bytes that are not UTF-8 fail where the valid prefix
+/// ends, as a parse error there would.
+fn bytes_state(bytes: &[u8], maximum_depth: BigInt) -> ParseState {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => ParseState {
+            source: text.chars().collect(),
+            maximum_depth,
+            outcome: RefCell::new(None),
+        },
+        Err(error) => {
+            let valid = std::str::from_utf8(&bytes[..error.valid_up_to()]).unwrap_or_default();
+            let source: Vec<char> = valid.chars().collect();
+            let (line, column) = located(&source, source.len());
+            let outcome = ParsedDocument {
+                root: None,
+                offset: source.len() as i64,
+                line,
+                column,
+                message: "invalid UTF-8".into(),
+                duplicate: None,
+            };
+            ParseState {
+                source,
+                maximum_depth,
+                outcome: RefCell::new(Some(Rc::new(outcome))),
+            }
+        }
+    }
+}
+
 pub(crate) fn handles(native: Native) -> bool {
     native.symbol().starts_with("runtime/json@1::")
 }
@@ -210,26 +266,7 @@ impl Heap {
             }
             Err(error) => {
                 let overflow = error.message == "\u{0}overflow";
-                let (mut line, mut column, mut position) = (1, 1, 0);
-                while position < error.offset {
-                    match state.source[position] {
-                        '\r' => {
-                            position += 1;
-                            if position < error.offset && state.source[position] == '\n' {
-                                position += 1;
-                            }
-                            line += 1;
-                            column = 1;
-                            continue;
-                        }
-                        '\n' => {
-                            line += 1;
-                            column = 1;
-                        }
-                        _ => column += 1,
-                    }
-                    position += 1;
-                }
+                let (line, column) = located(&state.source, error.offset);
                 ParsedDocument {
                     root: None,
                     offset: error.offset as i64,
@@ -469,6 +506,14 @@ impl Heap {
                     maximum_depth,
                     outcome: RefCell::new(None),
                 })))?
+            }
+            JsonJsonParseBytesState => {
+                let maximum_depth = match self.integer(args[1])? {
+                    Integer::Small(n) => BigInt::from(n),
+                    Integer::Big(n) => (*n).clone(),
+                };
+                let state = bytes_state(&self.byte_slice(args[0])?, maximum_depth);
+                self.json_handle_new(JsonHandle::Parse(Rc::new(state)))?
             }
             JsonJsonNodeKind => Slot::small(self.json_node(args[0])?.kind()),
             JsonJsonNodeBoolean => match self.json_node(args[0])? {
