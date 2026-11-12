@@ -48,8 +48,10 @@ import "runtime/json" take JsonParseState, JsonNodeState, json_parse_state, json
 // float. Text output writes numbers positionally while that stays short
 // (integers up to 21 digits, fractions down to 1e-6) and exactly otherwise.
 
+// Which of the six JSON kinds a value is.
 enum JsonKind = (null_value, boolean_value, number_value, string_value, array_value, object_value);
 
+// One JSON value, parsed or built: read it without casts, write it in one call.
 object Json {
     has node is JsonNodeState;
     has root is JsonNodeState;
@@ -68,24 +70,28 @@ object Json {
         root = made;
     }
 
+    // A JSON string.
     Json(value is string) {
         let made = json_text_node(value);
         node = made;
         root = made;
     }
 
+    // A JSON number from an int.
     Json(value is int) {
         let made = json_number_node(value.string());
         node = made;
         root = made;
     }
 
+    // A JSON number from an exact decimal.
     Json(value is Decimal) {
         let made = json_number_node(value.string());
         node = made;
         root = made;
     }
 
+    // A JSON number from a big integer.
     Json(value is BigInt) {
         let made = json_number_node(value.string());
         node = made;
@@ -99,6 +105,7 @@ object Json {
         root = made;
     }
 
+    // true or false.
     Json(value is bool) {
         let made = json_boolean_node(value);
         node = made;
@@ -161,6 +168,7 @@ object Json {
         self.root = root;
     }
 
+    // Which kind of value this is.
     kind() is JsonKind {
         match json_node_kind(node) {
             case 0 {
@@ -191,6 +199,7 @@ object Json {
         json_node_pointer(root, node);
     }
 
+    // This string; JsonError.wrong_kind for anything else.
     text() is string {
         try {
             json_node_text(node);
@@ -200,10 +209,12 @@ object Json {
         }
     }
 
+    // This number, exactly.
     number() is Decimal {
         Decimal(self.spelling());
     }
 
+    // This true or false.
     boolean() is bool {
         try {
             json_node_boolean(node);
@@ -238,6 +249,7 @@ object Json {
         json_node_size(node);
     }
 
+    // The array item at index; JsonError.missing past the end.
     at(index is int) is Json {
         self.expect(JsonKind.array_value);
         confirm index >= 0 && index < json_node_size(node)
@@ -245,6 +257,7 @@ object Json {
         Json(json_node_item(node, index), root);
     }
 
+    // The items of this array.
     items() is @Json {
         let nodes = try {
             json_node_items(node);
@@ -304,10 +317,12 @@ object Json {
         Json(kept + added);
     }
 
+    // Whether this object has the member, even when it is null.
     has(name is string) is bool {
         self.position(name) >= 0;
     }
 
+    // The member called name; JsonError.missing when there is none.
     get(name is string) is Json {
         let position = self.position(name);
         confirm position >= 0
@@ -328,6 +343,7 @@ object Json {
         );
     }
 
+    // The member read three ways: present, null or absent.
     presence(name is string) is JsonPresenceReader {
         let position = self.position(name);
         let found is Presence<Json> = if position < 0 {
@@ -356,6 +372,7 @@ object Json {
         }
     }
 
+    // The member as an exact number.
     number(name is string) is Decimal {
         try {
             Decimal(json_member_spelling(node, name));
@@ -365,6 +382,8 @@ object Json {
         }
     }
 
+    // The member as an int; a fraction or a number past 64 bits is
+    // JsonError.invalid_number.
     int(name is string) is int {
         try {
             json_member_int(node, name);
@@ -374,6 +393,7 @@ object Json {
         }
     }
 
+    // The member as true or false.
     boolean(name is string) is bool {
         try {
             json_member_boolean(node, name);
@@ -383,10 +403,12 @@ object Json {
         }
     }
 
+    // The member as an integer of any size.
     integer(name is string) is BigInt {
         self.get(name).integer();
     }
 
+    // The member's array items: `order.list("items").map() -> line { … }`.
     list(name is string) is @Json {
         self.get(name).items();
     }
@@ -438,36 +460,43 @@ object JsonField {
     has member is string;
     has content is Json;
 
+    // A member called name holding value.
     JsonField(name is string, value is Json) {
         member = name;
         content = value;
     }
 
+    // A string member.
     JsonField(name is string, value is string) {
         member = name;
         content = Json(value);
     }
 
+    // A number member from an int.
     JsonField(name is string, value is int) {
         member = name;
         content = Json(value);
     }
 
+    // A number member from an exact decimal.
     JsonField(name is string, value is Decimal) {
         member = name;
         content = Json(value);
     }
 
+    // A true or false member.
     JsonField(name is string, value is bool) {
         member = name;
         content = Json(value);
     }
 
+    // A number member from a big integer.
     JsonField(name is string, value is BigInt) {
         member = name;
         content = Json(value);
     }
 
+    // A number member from a float, written as its shortest exact decimal.
     JsonField(name is string, value is float) {
         member = name;
         content = Json(value);
@@ -490,10 +519,12 @@ object JsonField {
 object ParsedJson {
     has state is JsonParseState;
 
+    // Parses text, at most 128 values deep; errors come with root().
     ParsedJson(origin is string) {
         state = json_parse_state(origin, 128);
     }
 
+    // Parses text at most maximum_depth values deep.
     ParsedJson(origin is string, maximum_depth is int) {
         confirm maximum_depth > 0
             else throw JsonError.invalid(0, 1, 1, "maximum JSON depth must be positive");
@@ -507,12 +538,15 @@ object ParsedJson {
         state = json_parse_bytes_state(origin, 128);
     }
 
+    // Parses UTF-8 bytes at most maximum_depth values deep.
     ParsedJson(origin is @byte, maximum_depth is int) {
         confirm maximum_depth > 0
             else throw JsonError.invalid(0, 1, 1, "maximum JSON depth must be positive");
         state = json_parse_bytes_state(origin, maximum_depth);
     }
 
+    // The parsed value; JsonError.invalid with the line and column when the
+    // text is not JSON.
     root() is Json {
         if json_parse_valid(state) {
             Json(json_parse_root(state));
@@ -554,12 +588,15 @@ object JsonItems {
     has state is JsonSplitState;
     has maximum_depth is int;
 
+    // Items of one array or NDJSON from a stream, each at most 16 MiB and 128
+    // values deep.
     JsonItems(origin is AsyncReading) {
         self.origin = origin;
         state = json_split_state(16777216);
         maximum_depth = 128;
     }
 
+    // Items of a stream within these limits.
     JsonItems(origin is AsyncReading, maximum_item is int, maximum_depth is int) {
         confirm maximum_item > 0 && maximum_depth > 0
             else throw JsonError.invalid(0, 1, 1, "item limits must be positive");
@@ -599,10 +636,12 @@ object JsonItems {
 object JsonLines {
     has destination is AsyncWriting;
 
+    // Writes values to destination, one per line.
     JsonLines(destination is AsyncWriting) {
         self.destination = destination;
     }
 
+    // Writes the item as compact JSON and a LF.
     async write(item is Json) is void {
         await destination.write(utf8_encode(item.string() + "\n"));
     }
@@ -612,6 +651,7 @@ object JsonLines {
 object JsonPresenceReader {
     has origin is Presence<Json>;
 
+    // Made by Json.presence(name); not constructed directly.
     JsonPresenceReader(:origin);
 
     // The member as a node of any kind.
@@ -640,6 +680,7 @@ object JsonPresenceReader {
         }
     }
 
+    // The member as a string, null, or absent.
     text() is Presence<string> {
         match origin {
             case Presence.some(value) {
@@ -654,6 +695,7 @@ object JsonPresenceReader {
         }
     }
 
+    // The member as an int, null, or absent.
     int() is Presence<int> {
         match origin {
             case Presence.some(value) {
@@ -668,6 +710,7 @@ object JsonPresenceReader {
         }
     }
 
+    // The member as true or false, null, or absent.
     boolean() is Presence<bool> {
         match origin {
             case Presence.some(value) {
@@ -682,6 +725,7 @@ object JsonPresenceReader {
         }
     }
 
+    // The member as a number, null, or absent.
     number() is Presence<Decimal> {
         match origin {
             case Presence.some(value) {
@@ -696,6 +740,7 @@ object JsonPresenceReader {
         }
     }
 
+    // The member as an integer of any size, null, or absent.
     integer() is Presence<BigInt> {
         match origin {
             case Presence.some(value) {
@@ -710,6 +755,7 @@ object JsonPresenceReader {
         }
     }
 
+    // The member's items, null, or absent.
     list() is Presence<@Json> {
         match origin {
             case Presence.some(value) {
@@ -731,6 +777,7 @@ object JsonMaybeReader {
     // RFC 6901 pointer of the member, also while it is absent.
     has location is string;
 
+    // Made by Json.maybe(name); not constructed directly.
     JsonMaybeReader(:origin, :location);
 
     // There and not null.
@@ -748,6 +795,7 @@ object JsonMaybeReader {
         }
     }
 
+    // The pointer of the member, for errors.
     pointer() is string {
         location;
     }
@@ -772,30 +820,37 @@ object JsonMaybeReader {
         origin.node().fold();
     }
 
+    // The member, or none when it is absent or null.
     object() is Maybe<Json> {
         origin.object().fold();
     }
 
+    // The member as a string, or none.
     text() is Maybe<string> {
         origin.text().fold();
     }
 
+    // The member as an int, or none.
     int() is Maybe<int> {
         origin.int().fold();
     }
 
+    // The member as true or false, or none.
     boolean() is Maybe<bool> {
         origin.boolean().fold();
     }
 
+    // The member as a number, or none.
     number() is Maybe<Decimal> {
         origin.number().fold();
     }
 
+    // The member as an integer of any size, or none.
     integer() is Maybe<BigInt> {
         origin.integer().fold();
     }
 
+    // The member's items, or none.
     list() is Maybe<@Json> {
         origin.list().fold();
     }
@@ -813,10 +868,12 @@ object JsonMaybeReader {
 object JsonPointerToken {
     has origin is string;
 
+    // A name or index as one RFC 6901 pointer step.
     JsonPointerToken(origin is string) {
         self.origin = origin;
     }
 
+    // The step with `~` and `/` escaped.
     string() is string {
         origin.replace("~", "~0").replace("/", "~1");
     }
@@ -869,13 +926,16 @@ hidden object ExactJsonNumber {
     }
 }
 
+// The name of a JSON kind, for messages.
 object JsonKindName {
     has origin is JsonKind;
 
+    // The name of origin.
     JsonKindName(origin is JsonKind) {
         self.origin = origin;
     }
 
+    // "string", "number", "object" and so on.
     string() is string {
         match origin {
             case JsonKind.null_value {
@@ -900,13 +960,16 @@ object JsonKindName {
     }
 }
 
+// A pointer as messages show it.
 object JsonLocation {
     has origin is string;
 
+    // The location of pointer origin.
     JsonLocation(origin is string) {
         self.origin = origin;
     }
 
+    // The pointer, or `the document root` for "".
     string() is string {
         if origin == "" {
             "the document root";

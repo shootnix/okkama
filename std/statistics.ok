@@ -45,60 +45,75 @@ import "runtime/statistics" take statistics_mean, statistics_geometric_mean,
 // language/runtime boundary. If that contract later admits NaN, these objects
 // must propagate or reject it explicitly; they must never silently filter it.
 
+// How quantiles treat the ends: exclusive for a sample of a larger population,
+// inclusive when the sample's ends are the population's.
 enum QuantileMethod = (exclusive, inclusive);
 
+// Values drawn from a larger population.
 object Sample {
     has given is Iterating<float>;
 
+    // A sample of values; at least one.
     Sample(values is Iterating<float>) {
         given = values;
     }
 
+    // The values.
     values() is @float {
         once let floats is @float = FloatValues(values: given).floats();
         floats;
     }
 
+    // How many values.
     size() is int {
         self.values().size();
     }
 
+    // The arithmetic mean.
     mean() is float {
         self.require(1, "mean requires at least one value");
         statistics_mean(self.values());
     }
 
+    // The geometric mean; negative values are StatisticsError.
     geometric_mean() is float {
         self.require(1, "geometric mean requires at least one value");
         self.nonnegative("geometric mean does not accept negative values");
         statistics_geometric_mean(self.values());
     }
 
+    // The harmonic mean; negative values are StatisticsError.
     harmonic_mean() is float {
         self.require(1, "harmonic mean requires at least one value");
         self.nonnegative("harmonic mean does not accept negative values");
         statistics_harmonic_mean(self.values());
     }
 
+    // The middle value, or the mean of the two middle values.
     median() is float {
         self.require(1, "median requires at least one value");
         statistics_median(self.values(), "middle");
     }
 
+    // The lower of the two middle values.
     median_low() is float {
         self.require(1, "median requires at least one value");
         statistics_median(self.values(), "low");
     }
 
+    // The higher of the two middle values.
     median_high() is float {
         self.require(1, "median requires at least one value");
         statistics_median(self.values(), "high");
     }
 
+    // count - 1 cut points that split the values into count equal groups, by
+    // the exclusive method.
     quantiles(count is int) is @float {
         self.quantiles(count: count, method: QuantileMethod.exclusive);
     }
 
+    // count - 1 cut points by the method given.
     quantiles(count is int, method is QuantileMethod) is @float {
         confirm count >= 2
             else throw StatisticsError.because("quantile count must be at least two");
@@ -121,6 +136,7 @@ object Sample {
         statistics_variance(self.values(), true);
     }
 
+    // The sample standard deviation, dividing by n - 1; needs two values.
     deviation() is float {
         self.require(2, "sample deviation requires at least two values");
         aggregate_square_root(statistics_variance(self.values(), true));
@@ -138,9 +154,11 @@ object Sample {
     }
 }
 
+// Values that are all there is.
 object Population {
     has origin is Sample;
 
+    // A population of values.
     Population(values is Iterating<float>) {
         origin = Sample(values: values);
     }
@@ -152,6 +170,7 @@ object Population {
         statistics_variance(origin.values(), false);
     }
 
+    // The population standard deviation, dividing by n.
     deviation() is float {
         confirm origin.size() > 0
             else throw StatisticsError.because("population deviation requires at least one value");
@@ -177,9 +196,11 @@ hidden object FloatValues {
     }
 }
 
+// The most frequent values, in the order they first appear.
 object Modes<T> does Sequencing<T>, Iterating<T>, Sizing {
     has given is Iterating<T>;
 
+    // The modes of values.
     Modes(values is Iterating<T>) {
         given = values;
     }
@@ -190,25 +211,30 @@ object Modes<T> does Sequencing<T>, Iterating<T>, Sizing {
         modes;
     }
 
+    // Walks the modes.
     cursor() is Cursor<T> {
         ModesCursor(values: self.origin(), position: 0);
     }
 
+    // How many values tie for most frequent.
     size() is int {
         self.origin().size();
     }
 
+    // The mode at index.
     item(index is int) is T {
         confirm index >= 0 && index < self.size()
             else throw OutOfRange.because("mode index is outside the sequence");
         self.origin()[index];
     }
 
+    // The first mode.
     first() is T {
         confirm self.size() > 0 else throw EmptySequence.empty;
         self.origin()[0];
     }
 
+    // The last mode.
     last() is T {
         let origin is @T = self.origin();
         confirm origin.size() > 0 else throw EmptySequence.empty;
@@ -271,20 +297,24 @@ hidden object ModeValues<T> {
     }
 }
 
+// Two samples of the same size, read side by side.
 object Pairs {
     has left is Sample;
     has right is Sample;
 
+    // left and right paired by position; they must be the same size.
     Pairs(left is Iterating<float>, right is Iterating<float>) {
         self.left = Sample(values: left);
         self.right = Sample(values: right);
     }
 
+    // The sample covariance.
     covariance() is float {
         self.require("covariance requires at least two pairs");
         statistics_paired(left.values(), right.values(), "covariance");
     }
 
+    // Pearson's correlation, -1 to 1; a constant side is StatisticsError.
     correlation() is float {
         self.require("correlation requires at least two pairs");
         confirm statistics_paired_valid(left.values(), right.values(), "correlation")
@@ -311,19 +341,23 @@ object Pairs {
     }
 }
 
+// A straight line y = slope * x + intercept, as Pairs.line() fits it.
 object FittedLine {
     has gradient is float;
     has offset is float;
 
+    // The line with this slope and intercept.
     FittedLine(slope is float, intercept is float) {
         gradient = slope;
         offset = intercept;
     }
 
+    // The y of the line at x.
     prediction(at is float) is float {
         gradient * at + offset;
     }
 
+    // observed minus the prediction at x.
     residual(at is float, observed is float) is float {
         observed - self.prediction(at);
     }
@@ -340,6 +374,8 @@ object FittedLine {
     }
 }
 
+// Too few values, a negative value where none is allowed, a constant input, or
+// samples of different sizes.
 enum StatisticsError is Error = (because(message is string));
 
 test "a sample answers its centre and spread" {

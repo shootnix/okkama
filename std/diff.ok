@@ -1,13 +1,26 @@
 module diff v1.0.0;
 
+// The differences between two lists of lines, as unified or context diffs.
+//
+//     let changes = Diff(left: old_lines, right: new_lines);
+//     changes.unified();          // "--- left\n+++ right\n@@ -1,4 +1,5 @@\n …"
+//     changes.unified(0);         // without context lines
+//     changes.contextual();       // the context format
+//     changes.ratio();            // 1.0 when equal
+//     for changes.edits() -> edit { edit::Line::kind; }
+//
+// Equal lists give an empty diff. Context is 0 to 64 lines, 3 unless told.
+
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "collections/iteration" take Cursor;
 import "runtime/diff" take diff_script;
 import "cell" take Cell;
 
+// A context outside 0 to 64.
 enum InvalidDiff is Error = (because(reason is string));
 
+// The inputs are too large to compare.
 enum DiffLimitExceeded is Error = (off_budget);
 
 hidden object DiffListValues<T> {
@@ -62,13 +75,16 @@ hidden object DiffLines {
     }
 }
 
+// Whether a line was kept, removed from the left or added on the right.
 enum DiffEditKind = (equal, removed, added);
 
+// One line of a diff and where it is on each side.
 object DiffEdit {
     has kind is DiffEditKind;
     has text is string;
     has left, right is int;
 
+    // An edit as given; Diff.edits() makes them.
     DiffEdit(kind is DiffEditKind, text is string, left is int, right is int) {
         self.kind = kind;
         self.text = text;
@@ -133,6 +149,7 @@ hidden object DiffSearching {
     }
 }
 
+// The comparison could not be made; reason says why.
 enum UnavailableDiff is Error = (because(reason is string));
 
 hidden object DiffScript {
@@ -469,6 +486,7 @@ hidden object DiffContextRows {
 object Diff {
     has left, right is Sequencing<string>;
 
+    // Compares left with right.
     Diff(left is Sequencing<string>, right is Sequencing<string>) {
         self.left = left;
         self.right = right;
@@ -479,20 +497,24 @@ object Diff {
         self.script().edits();
     }
 
+    // The unified diff with 3 lines of context; "" when nothing changed.
     unified() is string {
         self.unified(3);
     }
 
+    // The unified diff with context lines, 0 to 64.
     unified(context is int) is string {
         confirm context >= 0 && context <= 64
             else throw InvalidDiff.because("context must be 0..64");
         DiffPrinting(script: self.script(), context: context).string(false);
     }
 
+    // The context diff with 3 lines of context.
     contextual() is string {
         self.contextual(3);
     }
 
+    // The context diff with context lines, 0 to 64.
     contextual(context is int) is string {
         confirm context >= 0 && context <= 64
             else throw InvalidDiff.because("context must be 0..64");

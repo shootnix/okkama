@@ -21,17 +21,21 @@ module cell v1.0.0;
 
 import "async/atomic" take Atomic;
 
+// One value that synchronous code may replace; async code uses Atomic instead.
 object Cell<T> {
     has state is Atomic<T>;
 
+    // A cell holding value.
     Cell(value is T) {
         state = Atomic(value);
     }
 
+    // The value now.
     value() is T {
         state.value();
     }
 
+    // Puts a new value in the cell.
     replace(value is T) is void {
         state.replace(value);
     }

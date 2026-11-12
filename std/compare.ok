@@ -23,8 +23,12 @@ module compare v1.0.0;
 // decorator whose order() expresses that policy. Do not introduce a
 // stateless binary comparator service.
 
+// How two values compare: less, equal or greater.
 enum Order = (less, equal, greater);
 
+// Values with an order of their own; `<`, `<=`, `>` and `>=` use it, and
+// sorting does too.
 role Comparing<T> {
+    // Whether this value comes before, with or after other.
     order(other is T) is Order;
 }
