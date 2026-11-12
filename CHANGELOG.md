@@ -6,6 +6,8 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+0.5.5 is in progress.
+
 ## [0.5.4] — 2026-11-12
 
 0.5.4 is the review of the standard library (#352).
