@@ -17,6 +17,12 @@ use std::{
 #[derive(Debug)]
 pub(crate) struct Rooted {
     file: Option<File>,
+    /// A regular file, as the open saw it: a descriptor never changes kind,
+    /// so reads need no stat of their own (#108).
+    regular: bool,
+    /// The metadata of the open's check, given to the first stat() instead
+    /// of asking the descriptor again (#108).
+    opened: Option<std::fs::Metadata>,
 }
 pub(crate) fn handles(n: Native) -> bool {
     n.symbol().starts_with("runtime/fs_root@1::") || n.symbol().starts_with("runtime/snapshot@1::")
@@ -48,7 +54,7 @@ fn host(n: Native, error: std::io::Error) -> ProviderError {
 fn component(s: &str) -> bool {
     !(s.is_empty() || s == "." || s == ".." || s.contains(['\0', '/', '\\']))
 }
-fn child(n: Native, parent: &File, name: &str, directory: bool) -> Result<File, ProviderError> {
+fn child(n: Native, parent: &File, name: &str, directory: bool) -> Result<(File, std::fs::Metadata), ProviderError> {
     let mut flags = OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW | OFlags::NONBLOCK;
     if directory {
         flags |= OFlags::DIRECTORY;
@@ -64,7 +70,7 @@ fn child(n: Native, parent: &File, name: &str, directory: bool) -> Result<File, 
             "Rooted entry must be regular file or directory",
         ));
     }
-    Ok(file)
+    Ok((file, meta))
 }
 impl Heap {
     fn rooted(&self, n: Native, v: Slot) -> Result<&File, ProviderError> {
@@ -79,13 +85,42 @@ impl Heap {
             .as_ref()
             .ok_or_else(|| fail(n, "already_closed", "Rooted handle is closed"))
     }
-    fn root_new(&mut self, file: File) -> Result<Slot, Error> {
+    fn root_new(&mut self, file: File, opened: Option<std::fs::Metadata>) -> Result<Slot, Error> {
+        let regular = opened.as_ref().is_some_and(|meta| meta.is_file());
         Ok(Slot {
             tag: HANDLE,
-            bits: self
-                .handles
-                .allocate(Handle::Rooted(Rooted { file: Some(file) }))?,
+            bits: self.handles.allocate(Handle::Rooted(Rooted {
+                file: Some(file),
+                regular,
+                opened,
+            }))?,
         })
+    }
+    fn rooted_state(&self, v: Slot) -> Result<&Rooted, ProviderError> {
+        if v.kind() != HANDLE {
+            return Err(Error("expected rooted native handle".into()).into());
+        }
+        let Handle::Rooted(state) = self.handles.get(v.bits)? else {
+            return Err(Error("expected rooted native handle".into()).into());
+        };
+        Ok(state)
+    }
+    /// The metadata kept from the open, once; afterwards the descriptor's own.
+    fn entry_metadata(&mut self, n: Native, v: Slot) -> Result<std::fs::Metadata, ProviderError> {
+        if v.kind() != HANDLE {
+            return Err(Error("expected rooted native handle".into()).into());
+        }
+        let Handle::Rooted(state) = self.handles.get_mut(v.bits)? else {
+            return Err(Error("expected rooted native handle".into()).into());
+        };
+        let file = state
+            .file
+            .as_ref()
+            .ok_or_else(|| fail(n, "already_closed", "Rooted handle is closed"))?;
+        match state.opened.take() {
+            Some(meta) => Ok(meta),
+            None => file.metadata().map_err(|e| host(n, e)),
+        }
     }
     pub(crate) fn native_root(&mut self, n: Native, a: &[Slot]) -> Result<Outcome, Error> {
         match self.root_execute(n, a) {
@@ -113,7 +148,7 @@ impl Heap {
                 .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
                 .open(path)
                 .map_err(|e| host(n, e))?;
-            return Ok(self.root_new(file)?);
+            return Ok(self.root_new(file, None)?);
         }
         if matches!(
             n,
@@ -157,13 +192,16 @@ impl Heap {
                     names.push(name);
                 }
                 let mut file = root.try_clone().map_err(|e| host(n, e))?;
+                let mut opened = None;
                 for (i, name) in names.iter().enumerate() {
-                    file = child(n, &file, name, i + 1 < names.len())?;
+                    let (next, meta) = child(n, &file, name, i + 1 < names.len())?;
+                    file = next;
+                    opened = Some(meta);
                 }
-                Ok(self.root_new(file)?)
+                Ok(self.root_new(file, opened)?)
             }
             FsRootRootedEntryStat => {
-                let m = root.metadata().map_err(|e| host(n, e))?;
+                let m = self.entry_metadata(n, a[0])?;
                 let kind = if m.is_file() {
                     1
                 } else if m.is_dir() {
@@ -199,7 +237,7 @@ impl Heap {
                     .to_i64()
                     .filter(|v| (1..=1_048_576).contains(v))
                     .ok_or_else(|| fail(n, "invalid_input", "Invalid rooted limit"))?;
-                if !root.metadata().map_err(|e| host(n, e))?.is_file() {
+                if !self.rooted_state(a[0])?.regular {
                     return Err(fail(
                         n,
                         "invalid_input",
@@ -258,8 +296,8 @@ impl Heap {
                     ));
                 }
                 let existing = match child(n, root, name, false) {
-                    Ok(file) => {
-                        if !file.metadata().map_err(|e| host(n, e))?.is_file() {
+                    Ok((file, meta)) => {
+                        if !meta.is_file() {
                             return Err(fail(n, "invalid_data", "Snapshot must be a regular file"));
                         }
                         Some(file)
