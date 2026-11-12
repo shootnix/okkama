@@ -26,7 +26,7 @@ import "time/duration" take Duration, DurationUnit;
 // path fail, acyclic sharing expands under the node budget. Unreachable payloads
 // are not decoded. Existing UTF/binary/number primitives are the only substrate.
 // Example: ParsedPlist(Utf8Encoded("<plist><true/></plist>").bytes()).value().
-// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/plist/parse.ok
+// Run: okkama run -t std/plist/parse.ok
 object ParsedPlist {
     has origin is @byte;
     has maximum_input, maximum_nodes, maximum_depth is int;

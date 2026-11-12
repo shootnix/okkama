@@ -37,7 +37,7 @@ import "runtime/template" take template_output_size;
 // and depth-bounded parser/visitor stacks and one scalar interpolation. string()
 // additionally owns its result buffer. Repeated rendering uses fresh budgets.
 // Contract: docs/std/template-sections-guide.md. Example: SectionTemplate("{{#.}}{{.}}{{/.}}").string(items).
-// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/template/sections.ok
+// Run: okkama run -t std/template/sections.ok
 object SectionTemplate {
     has program is TemplateTree;
     has maximum_iterations, maximum_output, maximum_members is int;
