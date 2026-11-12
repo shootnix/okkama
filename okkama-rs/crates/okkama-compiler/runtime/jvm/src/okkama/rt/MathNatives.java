@@ -615,9 +615,32 @@ public final class MathNatives {
             throw fail("core.random", "invalid_input", "runtime/random@1::pcg_integer/3", "Random range must be non-empty");
         }
         BigInteger span = stop.subtract(start);
-        BigInteger threshold = BigInteger.ONE.shiftLeft(64).mod(span);
+        // Выборка — пара выходов (старший, младший) на каждое 64-битное слово,
+        // которое нужно числу span - 1; до 2^64 это одна пара, как всегда.
+        // Выборка ниже 2^(64·слов) mod span тянется заново (#507).
+        if (span.bitLength() < 64) {
+            // span < 2^63: та же выборка и тот же ответ без больших чисел.
+            long small = span.longValue();
+            long threshold = Long.remainderUnsigned(-small, small);
+            while (true) {
+                long high = advance(pcg);
+                long low = advance(pcg);
+                long sample = (high << 32) | low;
+                if (Long.compareUnsigned(sample, threshold) >= 0) {
+                    return start.add(BigInteger.valueOf(Long.remainderUnsigned(sample, small)));
+                }
+            }
+        }
+        int words = Math.max(1, (span.subtract(BigInteger.ONE).bitLength() + 63) / 64);
+        BigInteger threshold = BigInteger.ONE.shiftLeft(64 * words).mod(span);
         while (true) {
-            BigInteger sample = BigInteger.valueOf(advance(pcg)).shiftLeft(32).add(BigInteger.valueOf(advance(pcg)));
+            BigInteger sample = BigInteger.ZERO;
+            for (int word = 0; word < words; word++) {
+                long high = advance(pcg);
+                long low = advance(pcg);
+                sample = sample.shiftLeft(64)
+                    .add(BigInteger.valueOf(high).shiftLeft(32).add(BigInteger.valueOf(low)));
+            }
             if (sample.compareTo(threshold) >= 0) {
                 return start.add(sample.mod(span));
             }

@@ -17,7 +17,9 @@ import "runtime/system" take secure_random, secure_integer, secure_float;
 // 6364136223846793005 and fixed stream increment 1442695040888963407.
 // Construction performs the standard zero-state advance, adds the signed seed
 // modulo 2^64, then advances again. Each integer consumes pairs of 32-bit
-// outputs until rejection sampling accepts one. float consumes two outputs and
+// outputs until rejection sampling accepts one: a sample is one pair (high
+// output first) per 64-bit word that stop - start - 1 needs, the first pair
+// most significant, so a range up to 2^64 takes one pair per sample. float consumes two outputs and
 // forms 53 random bits. bytes emits each 32-bit output little-endian; an
 // incomplete final word discards its unused bytes. This sequence is part of the
 // public reproducibility contract.
@@ -173,6 +175,24 @@ test "ranges are half-open and never empty" {
         },
         -1
     );
+}
+
+test "ranges wider than one 64-bit sample take whole words" {
+    // #507: such ranges used to loop forever.
+    let wide = 1180591620717411303424;
+    let spans = [18446744073709551615, 18446744073709551616, 18446744073709551617, wide];
+    let random is Randomizing = PcgRandom(3);
+    for spans -> span {
+        let value = random.integer(-span, span);
+        test.ok(value >= -span && value < span);
+    }
+    // A range up to 2^64 takes one pair of outputs, as it always did.
+    test.is(PcgRandom(11).integer(0, 18446744073709551616), 2065675223944926949);
+    test.is(PcgRandom(11).integer(0, 18446744073709551615), 2065675223944926949);
+    // A wider one takes two pairs per sample here, the first most significant.
+    let seeded = PcgRandom(11);
+    test.is(seeded.integer(0, wide), 693650027885558685440);
+    test.is(seeded.integer(0, 100), 67);
 }
 
 test "secure source answers within the same contract" {
