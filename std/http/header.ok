@@ -5,6 +5,7 @@ import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
 import "collections/sequence" take Sequencing;
 import "compare" take Comparing, Order;
 import "error" take InvalidArgument;
+import "strings/parse" take Number, InvalidInteger;
 
 // HTTP names share the HTTP token grammar, not mail's broader field-name
 // grammar. Spelling is immutable; HTTP matching is explicit canonical ordering,
@@ -236,10 +237,48 @@ object Headers {
         values;
     }
 
+    // The value of a field by name, in the json reading style (#111):
+    // headers.text("Content-Type"). With several fields of the name, the
+    // first; MissingHeader when there is none.
+    text(name is string) is string {
+        self.first(HeaderName(name));
+    }
+
+    // A field read as a decimal integer: headers.int("Content-Length").
+    // InvalidHeader when the value is something else.
+    int(name is string) is int {
+        HeaderInteger(name: name, value: self.text(name)).int();
+    }
+
+    // The members of a list field over all its lines: "Accept: a, b" and a
+    // second "Accept: c" give ["a", "b", "c"]. A comma inside a quoted string
+    // stays in its member, and empty members are dropped (RFC 9110 5.6.1).
+    // An absent field gives [].
+    list(name is string) is @string {
+        let empty is @string = [];
+        self.values(HeaderName(name)).reduce(empty) -> members, value {
+            members + HeaderListMembers(value).members();
+        };
+    }
+
+    // A field that may be absent: its readers give Maybe, so a fallback is
+    // headers.maybe("If-None-Match").text() else "".
+    maybe(name is string) is HeaderMaybeReader {
+        let field = HeaderName(name);
+        let found = if self.membership(field) {
+            Maybe.some(self.first(field));
+        }
+        else {
+            Maybe<string>.none;
+        };
+        HeaderMaybeReader(name: name, value: found);
+    }
+
     // Only the new field is checked against the limits; the others were
     // checked when they came in (#112).
     addition(entry is Header) is Headers {
-        confirm origin.size() < limits::Limits::entries else throw HeaderLimitExceeded.kind("entries");
+        confirm origin.size() < limits::Limits::entries
+            else throw HeaderLimitExceeded.kind("entries");
         let bytes = entry.name().string().length() + entry.value().length() + 4;
         confirm bytes <= limits::Limits::bytes - used else throw HeaderLimitExceeded.kind("bytes");
         let extended is Headers = self.extended(entry, bytes);
@@ -259,7 +298,8 @@ object HeadersWithout {
     HeadersWithout(origin is Headers, names is Sequencing<HeaderName>) {
         let count = names.size();
         confirm count >= 0 else throw InvalidArgument.because("negative header name sequence size");
-        confirm count <= origin.limits()::Limits::entries else throw HeaderLimitExceeded.kind("entries");
+        confirm count <= origin.limits()::Limits::entries
+            else throw HeaderLimitExceeded.kind("entries");
         let keys is @string = (0..count).map() -> index {
             names.item(index).lowercase();
         };
@@ -338,6 +378,98 @@ object Http2Headers {
     }
 }
 
+// A field that may be absent, as headers.maybe(name) gives it: text() and
+// int() answer Maybe, so a fallback is headers.maybe("Retry-After").int() else 0.
+// A value of another form is still InvalidHeader.
+object HeaderMaybeReader {
+    has name is string;
+    has value is Maybe<string>;
+
+    HeaderMaybeReader(name is string, value is Maybe<string>) {
+        self.name = name;
+        self.value = value;
+    }
+
+    text() is Maybe<string> {
+        value;
+    }
+
+    int() is Maybe<int> {
+        match value {
+            case Maybe.some(text) {
+                Maybe.some(HeaderInteger(name: name, value: text).int());
+            }
+            else {
+                Maybe<int>.none;
+            }
+        };
+    }
+}
+
+hidden object HeaderInteger {
+    has name is string;
+    has value is string;
+
+    HeaderInteger(name is string, value is string) {
+        self.name = name;
+        self.value = value;
+    }
+
+    int() is int {
+        try {
+            Number(value).int();
+        }
+        catch failure is InvalidInteger {
+            throw InvalidHeader.detailed(name, "a decimal integer is required");
+        };
+    }
+}
+
+// The members of one list field value. Quoted strings are split around: the
+// escaped quotes inside them are set aside first as a character no field value
+// holds (one above Latin-1), then the value alternates between text outside and
+// inside quotes at each double quote.
+hidden object HeaderListMembers {
+    has origin is string;
+
+    HeaderListMembers(origin is string) {
+        self.origin = origin;
+    }
+
+    members() is @string {
+        if !origin.contains("\"") {
+            return self.kept(origin.split(","));
+        }
+        let pieces = origin.replace("\\\"", "\u{100}").split("\"");
+        let start is @string = [""];
+        let joined is @string = (0..pieces.size()).reduce(start) -> members, index {
+            let piece = pieces[index];
+            let open = members.slice(0, members.size() - 1);
+            let current = members[members.size() - 1];
+            if index % 2 == 1 {
+                open + [current + "\"" + piece + "\""];
+            }
+            else {
+                let parts = piece.split(",");
+                open + [current + parts[0]] + parts.slice(1, parts.size());
+            }
+        };
+        let restored is @string = joined.map() -> member {
+            member.replace("\u{100}", "\\\"");
+        };
+        self.kept(restored);
+    }
+
+    hidden kept(members is @string) is @string {
+        let trimmed is @string = members.map() -> member {
+            member.trim();
+        };
+        trimmed.filter() -> member {
+            member != "";
+        };
+    }
+}
+
 enum InvalidHeader is Error = (detailed(name is string, reason is string));
 
 enum MissingHeader is Error = (name(name is string));
@@ -388,7 +520,8 @@ hidden object HeaderSnapshot {
         };
         let total = values.reduce(0) -> sum, entry {
             let bytes = entry.name().string().length() + entry.value().length() + 4;
-            confirm bytes <= limits::Limits::bytes - sum else throw HeaderLimitExceeded.kind("bytes");
+            confirm bytes <= limits::Limits::bytes - sum
+                else throw HeaderLimitExceeded.kind("bytes");
             sum + bytes;
         };
         origin = values;
@@ -405,7 +538,9 @@ hidden object HeaderSnapshot {
 }
 
 test "HTTP fields retain duplicates and compare names without case" {
-    let fields = Headers(Header(name: HeaderName("Set-Cookie"), value: " a=1 "), Header(name: HeaderName("set-cookie"), value: "b=2")
+    let fields = Headers(
+        Header(name: HeaderName("Set-Cookie"), value: " a=1 "),
+        Header(name: HeaderName("set-cookie"), value: "b=2")
     );
     test.is(fields.values(HeaderName("SET-COOKIE")).size(), 2);
     test.is(fields.first(HeaderName("set-cookie")), "a=1");
@@ -436,7 +571,9 @@ test "a field value is trimmed and checked in one pass" {
 test "adding a field checks only the new one against the limits" {
     let small = HeaderLimits(3, 40);
     let fields = Headers(entries: [Header(name: HeaderName("A"), value: "1")], limits: small);
-    let more = fields.addition(Header(name: HeaderName("B"), value: "22")).addition(Header(name: HeaderName("C"), value: "333"));
+    let more = fields.addition(Header(name: HeaderName("B"), value: "22")).addition(
+        Header(name: HeaderName("C"), value: "333")
+    );
     test.is(more.entries().size(), 3);
     test.is(more.entries().item(2).value(), "333");
     test.is(fields.entries().size(), 1);
@@ -444,10 +581,40 @@ test "adding a field checks only the new one against the limits" {
         more.addition(Header(name: HeaderName("D"), value: "4"));
     };
     // A: 1 takes 6 bytes of 12, B: 22 would take 7 more.
-    let tight = Headers(entries: [Header(name: HeaderName("A"), value: "1")], limits: HeaderLimits(10, 12));
+    let tight = Headers(
+        entries: [Header(name: HeaderName("A"), value: "1")],
+        limits: HeaderLimits(10, 12)
+    );
     test.throws(HeaderLimitExceeded) {
         tight.addition(Header(name: HeaderName("B"), value: "22"));
     };
     test.is(tight.addition(Header(name: HeaderName("B"), value: "2")).entries().size(), 2);
 }
 
+test "headers are read by name in the json style" {
+    let headers = Headers(
+        Header(name: "Content-Length", value: "42"),
+        Header(name: "Accept", value: "text/html, application/json;q=0.9,,"),
+        Header(name: "accept", value: "*/*"),
+        Header(name: "If-None-Match", value: "\"a,b\", W/\"c\""),
+        Header(name: "X-Quoted", value: "\"say \\\"hi, there\\\"\", b"),
+        Header(name: "X-Count", value: "many"),
+    );
+    test.is(headers.text("content-length"), "42");
+    test.is(headers.int("Content-Length"), 42);
+    test.is(headers.list("Accept").join("|"), "text/html|application/json;q=0.9|*/*");
+    test.is(headers.list("If-None-Match").join("|"), "\"a,b\"|W/\"c\"");
+    test.is(headers.list("X-Quoted").join("|"), "\"say \\\"hi, there\\\"\"|b");
+    test.is(headers.list("X-Missing").size(), 0);
+    test.is(headers.maybe("X-Trace").text() else "none", "none");
+    test.is(headers.maybe("content-length").int() else 0, 42);
+    test.throws(MissingHeader) {
+        headers.text("Content-Type");
+    };
+    test.throws(InvalidHeader) {
+        headers.int("X-Count");
+    };
+    test.throws(InvalidHeader) {
+        headers.maybe("X-Count").int();
+    };
+}

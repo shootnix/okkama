@@ -3932,7 +3932,12 @@ the `Origin` against. Over HTTP/1.1 and HTTP/2 alike, a handler reads
 `web` puts routes on top: `WebRoutes(Scope("/api", Get(path: "/notes/:id",
 endpoint: notes.one), Post(…)), Fallback(notes.missing))`. Without a
 `Fallback`, a request no route matches gets a 404 problem. An endpoint gets a
-`WebRequest` with `path("id")`, `query("limit") else "10"`, `await json(limit)` and `await text(limit)`, and answers
+`WebRequest` whose values read in the json style, a missing or malformed
+one being a 400 that names it: `request.path().int("id")`,
+`request.query().maybe("page").int() else 1`,
+`request.header().maybe("X-Request-Id").text() else ""`,
+`request.cookies().text("sid")`; the body is `await json(limit)` or
+`await text(limit)`. It answers
 anything `Responding`: a reply with defaults, `TextReply("hi")`, `HtmlReply(…)`,
 `JsonReply(value)`, `CreatedReply(location:, value:)`, `RedirectReply("/notes")`,
 `NoContentReply()` or `ProblemReply(status:, detail:)`, each taking `status:`

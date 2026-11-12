@@ -4113,7 +4113,12 @@ HTTP/2 обработчик читает `request::Head::target.path()` и `quer
 `web` строит маршруты поверх: `WebRoutes(Scope("/api", Get(path: "/notes/:id",
 endpoint: notes.one), Post(…)), Fallback(notes.missing))`. Без `Fallback` на
 запрос, которому не нашлось маршрута, отвечает 404 с problem-телом. Endpoint
-получает `WebRequest` с `path("id")`, `query("limit") else "10"`, `await json(limit)` и `await text(limit)` и отвечает
+получает `WebRequest`, значения которого читаются в стиле json, а
+пропущенное или испорченное даёт 400 с его именем:
+`request.path().int("id")`, `request.query().maybe("page").int() else 1`,
+`request.header().maybe("X-Request-Id").text() else ""`,
+`request.cookies().text("sid")`; тело — `await json(limit)` или
+`await text(limit)`. Он отвечает
 чем-то `Responding`: ответом с умолчаниями — `TextReply("hi")`, `HtmlReply(…)`,
 `JsonReply(value)`, `CreatedReply(location:, value:)`, `RedirectReply("/notes")`,
 `NoContentReply()` или `ProblemReply(status:, detail:)`, каждый берёт `status:`

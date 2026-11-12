@@ -4,11 +4,15 @@ import "time/clock" take Instant;
 import "encoding/utf" take Utf8Encoded;
 import "net/endpoint" take HostName, InvalidHostName;
 import "http/token" take HttpToken, InvalidToken;
-import "http/header" take HttpAsciiLowercase, Header, HeaderField;
+import "http/header" take HttpAsciiLowercase, Header, HeaderField, HeaderName, Headers;
+import "http/message" take Request;
+import "http/target" take OriginTarget;
+import "strings/parse" take Number, InvalidInteger;
 import "time/duration" take Duration;
 import "http/date" take HttpDate, InvalidHttpDate;
 import "collections/set" take Set, OrderedSet;
 import "collections/iteration" take Cursor;
+import "collections/sequence" take Sequencing;
 
 // Absolute expiry is explicit. A session cookie has no instant, including no
 // epoch sentinel. Construction neither queries a clock nor rounds a timestamp.
@@ -470,9 +474,162 @@ hidden object SafeCookieAttributes {
 
     attributes() is CookieAttributes {
         let flags is Set<CookieFlag> = OrderedSet([CookieFlag.secure, CookieFlag.http_only]);
-        CookieAttributes(domain: "", path: "/", expiry: CookieExpiry(), same_site: SameSite.lax, flags: flags);
+        CookieAttributes(
+            domain: "",
+            path: "/",
+            expiry: CookieExpiry(),
+            same_site: SameSite.lax,
+            flags: flags
+        );
     }
 }
+
+// The cookies a client sent in its Cookie fields, read by name on the server
+// (#206): name=value pairs separated by semicolons (RFC 6265 5.4). A value in
+// double quotes loses them; a pair without "=" is skipped; with one name twice,
+// text() takes the first, as browsers send the more specific cookie first.
+//
+//     let cookies = RequestCookies(request);
+//     let session = cookies.text("sid");
+//     let theme = cookies.maybe("theme").text() else "light";
+object RequestCookies {
+    has request is Request;
+
+    RequestCookies(request is Request) {
+        self.request = request;
+    }
+
+    // The value of a cookie; MissingCookie when the request has none.
+    text(name is string) is string {
+        let found = self.list(name);
+        confirm found.size() > 0 else throw MissingCookie.name(name);
+        found[0];
+    }
+
+    // A cookie read as a decimal integer; InvalidCookie when it is not one.
+    int(name is string) is int {
+        CookieInteger(name: name, value: self.text(name)).int();
+    }
+
+    // Every value sent under the name, in order; [] when there is none.
+    list(name is string) is @string {
+        let pairs = self.pairs();
+        let names is @int = (0..pairs.size()).filter() -> index {
+            index % 2 == 0 && pairs[index] == name;
+        };
+        let found is @string = names.map() -> index {
+            pairs[index + 1];
+        };
+        found;
+    }
+
+    // A cookie that may be absent: cookies.maybe("theme").text() else "light".
+    maybe(name is string) is CookieMaybeReader {
+        let found = self.list(name);
+        let first = if found.size() > 0 {
+            Maybe.some(found[0]);
+        }
+        else {
+            Maybe<string>.none;
+        };
+        CookieMaybeReader(name: name, value: first);
+    }
+
+    // Names and values in turn, parsed once.
+    hidden pairs() is @string {
+        once let parsed = CookieFieldPairs(request::Head::headers.values(HeaderName("Cookie"))).pairs();
+        parsed;
+    }
+}
+
+// A cookie that may be absent, as RequestCookies.maybe(name) gives it.
+object CookieMaybeReader {
+    has name is string;
+    has value is Maybe<string>;
+
+    CookieMaybeReader(name is string, value is Maybe<string>) {
+        self.name = name;
+        self.value = value;
+    }
+
+    text() is Maybe<string> {
+        value;
+    }
+
+    int() is Maybe<int> {
+        match value {
+            case Maybe.some(text) {
+                Maybe.some(CookieInteger(name: name, value: text).int());
+            }
+            else {
+                Maybe<int>.none;
+            }
+        };
+    }
+}
+
+hidden object CookieInteger {
+    has name is string;
+    has value is string;
+
+    CookieInteger(name is string, value is string) {
+        self.name = name;
+        self.value = value;
+    }
+
+    int() is int {
+        try {
+            Number(value).int();
+        }
+        catch failure is InvalidInteger {
+            throw InvalidCookie.because("cookie " + name + " must be a decimal integer");
+        };
+    }
+}
+
+// The name=value pairs of Cookie field values, flattened as name, value,
+// name, value.
+hidden object CookieFieldPairs {
+    has values is Sequencing<string>;
+
+    CookieFieldPairs(values is Sequencing<string>) {
+        self.values = values;
+    }
+
+    pairs() is @string {
+        let lines is @string = (0..values.size()).map() -> index {
+            values.item(index);
+        };
+        let empty is @string = [];
+        lines.join(";").split(";").reduce(empty) -> kept, piece {
+            let at = piece.find("=");
+            match at {
+                case Maybe.some(position) {
+                    let name = piece.slice(0, position).trim();
+                    let raw = piece.slice(position + 1, piece.length()).trim();
+                    let quoted = raw.length() >= 2 && raw.starts_with("\"") && raw.ends_with("\"");
+                    let value = if quoted {
+                        raw.slice(1, raw.length() - 1);
+                    }
+                    else {
+                        raw;
+                    };
+                    if name == "" {
+                        kept;
+                    }
+                    else {
+                        kept + [name, value];
+                    }
+                }
+                else {
+                    kept;
+                }
+            };
+        };
+    }
+}
+
+enum MissingCookie is Error = (name(name is string));
 
 enum InvalidCookie is Error = (because(reason is string));
 
@@ -498,7 +655,9 @@ test "cookie prefix and wire policy" {
     test.ok(
         Cookie(name: "__Host-id", value: "secret", attributes: attrs).string() == "__Host-id=secret; Path=/; SameSite=None; Secure"
     );
-    test.ok(Cookie(name: "id", value: "secret", attributes: CookieAttributes()).diagnostic() == "cookie id=<redacted>");
+    test.ok(
+        Cookie(name: "id", value: "secret", attributes: CookieAttributes()).diagnostic() == "cookie id=<redacted>"
+    );
     test.ok(try {
         Cookie(name: "__secure-id", value: "secret", attributes: CookieAttributes());
         false;
@@ -517,10 +676,38 @@ test "set-cookie fields carry safe defaults, Max-Age and expiry" {
         SetCookie(name: "theme", value: "dark", max_age: Duration(days: 30)).header().value(),
         "theme=dark; Path=/; SameSite=Lax; Secure; HttpOnly; Max-Age=2592000"
     );
-    test.is(ExpiredCookie("sid").header().value(), "sid=; Path=/; SameSite=Lax; Secure; HttpOnly; Max-Age=0");
+    test.is(
+        ExpiredCookie("sid").header().value(),
+        "sid=; Path=/; SameSite=Lax; Secure; HttpOnly; Max-Age=0"
+    );
     test.is(SetCookie(name: "sid", value: "abc").header().name().string(), "Set-Cookie");
     test.throws(InvalidCookie) {
         SetCookie(name: "bad name", value: "x");
     };
 }
 
+test "request cookies are read by name" {
+    let request = Request(
+        target: OriginTarget(path: "/", query: Maybe<string>.none),
+        headers: Headers(
+            Header(name: "Cookie", value: "sid=abc123; theme=\"dark\"; flag; count=7"),
+            Header(name: "cookie", value: "sid=older; =nameless"),
+        )
+    );
+    let cookies = RequestCookies(request);
+    test.is(cookies.text("sid"), "abc123");
+    test.is(cookies.list("sid").join(","), "abc123,older");
+    test.is(cookies.text("theme"), "dark");
+    test.is(cookies.int("count"), 7);
+    test.is(cookies.maybe("lang").text() else "en", "en");
+    test.is(cookies.maybe("count").int() else 0, 7);
+    test.is(cookies.list("flag").size(), 0);
+    test.throws(MissingCookie) {
+        cookies.text("lang");
+    };
+    test.throws(InvalidCookie) {
+        cookies.int("theme");
+    };
+    let bare = RequestCookies(Request(target: OriginTarget(path: "/", query: Maybe<string>.none)));
+    test.is(bare.list("sid").size(), 0);
+}

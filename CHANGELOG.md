@@ -151,6 +151,31 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `WebRouting` gained `around()`; an application's own routing element
   answers `Maybe<Surrounding>.none`.
 
+- **Request values read in the json style (#79, #111, #206).** A web
+  endpoint reads route parameters, query parameters, header fields and
+  cookies by name and type; a missing or malformed value is a 400 that names
+  it ("query parameter page must be an integer"):
+
+  ```okkama
+  let id = request.path().int("id");
+  let page = request.query().maybe("page").int() else 1;
+  let trace = request.header().maybe("X-Request-Id").text() else "";
+  let session = request.cookies().text("sid");
+  ```
+
+  Each of `path()`, `query()`, `header()` and `cookies()` is a
+  `RequestValues` with `text`, `int`, `boolean`, `list` and `maybe`.
+  Underneath, `Headers` reads the same way with http errors
+  (`headers.int("Content-Length")`, `headers.list("Accept")` splits list
+  fields outside quoted strings, `headers.maybe(name)`), and the new
+  `RequestCookies(request)` parses the Cookie fields on the server.
+
+  | Before | After |
+  |---|---|
+  | `Number(request.path("id")).int()` | `request.path().int("id")` |
+  | `Number(request.query("limit") else "10").int()` | `request.query().maybe("limit").int() else 10` |
+  | `headers.first(HeaderName("Content-Type"))` | `headers.text("Content-Type")` |
+
 - **The server answers HTTP/1.0 (#102).** `ab` works: no Host is required,
   responses are not chunked, and keep-alive applies only when asked for.
 - **RequestJson readers share one translation of reading failures (#84).**

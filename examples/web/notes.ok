@@ -10,7 +10,6 @@ import "http/client" take HttpClient;
 import "http/endpoint" take LoopbackEndpoints;
 import "http/body" take JsonBody;
 import "json" take Json, JsonField;
-import "strings/parse" take Number;
 import "async/atomic" take Atomic;
 import "time/duration" take Duration;
 import "io/stdout" take Stdout;
@@ -30,7 +29,7 @@ object Notes {
     }
 
     async list(request is WebRequest) is Responding {
-        let limit = Number(request.query("limit") else "10").int();
+        let limit = request.query().maybe("limit").int() else 10;
         let shown is @Json = items.value().take(limit).map() -> text {
             Json(text);
         };
@@ -44,7 +43,7 @@ object Notes {
     }
 
     async one(request is WebRequest) is Responding {
-        let id = Number(request.path("id")).int();
+        let id = request.path().int("id");
         if id < 1 || id > items.value().size() {
             return TextReply(text: "no note " + id.string(), status: Status.not_found);
         }
