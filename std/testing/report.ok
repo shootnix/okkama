@@ -439,14 +439,7 @@ object JUnitTestReport {
                 children: [XmlText(Base64Encoded(output::Captured::errors).string())]
             )
         ];
-        let children is @XmlNode = (0..terminal.size() + capture.size()).map() -> index {
-            if index < terminal.size() {
-                terminal[index];
-            }
-            else {
-                capture[index - terminal.size()];
-            }
-        };
+        let children is @XmlNode = terminal + capture;
         XmlElement(
             name: XmlName("testcase"),
             attributes: [

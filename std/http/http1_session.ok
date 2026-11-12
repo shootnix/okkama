@@ -262,14 +262,7 @@ hidden object Http1SessionHeads {
     }
 
     following(parsed is Http1HeadRead<Http1ResponseHead>) is ^Http1SessionHeads {
-        let next_entries is @Http1ResponseHead = (0..entries.size() + 1).map() -> index {
-            if index < entries.size() {
-                entries[index];
-            }
-            else {
-                parsed.head();
-            }
-        };
+        let next_entries is @Http1ResponseHead = entries + [parsed.head()];
         ^entries = next_entries;
         ^prefix = parsed.remainder();
     }

@@ -658,24 +658,10 @@ hidden object LanguageTagSuffix {
                 "invalid " + key + " extension: " + reason
             );
         };
-        let keys is @string = (0..seen.size() + 1).map() -> index {
-            if index == seen.size() {
-                key;
-            }
-            else {
-                seen[index];
-            }
-        };
+        let keys is @string = seen + [key];
         let remaining = self.parsed(stop, keys);
         let tail = remaining.extensions();
-        let extensions is @LanguageExtension = (0..tail.size() + 1).map() -> index {
-            if index == 0 {
-                LanguageExtension(key: key, values: values);
-            }
-            else {
-                tail[index - 1];
-            }
-        };
+        let extensions is @LanguageExtension = [LanguageExtension(key: key, values: values)] + tail;
         LanguageTagSuffixValue(extensions: extensions, private_use: remaining.private_use());
     }
 }

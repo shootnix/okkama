@@ -165,14 +165,7 @@ object HpackDynamicTable {
         else {
             let retained = HpackKept(origin: entries, maximum: capacity - size);
             let rows = retained.entries();
-            let following is @HpackField = (0..rows.size() + 1).map() -> index {
-                if index == 0 {
-                    field;
-                }
-                else {
-                    rows[index - 1];
-                }
-            };
+            let following is @HpackField = [field] + rows;
             ^entries = following;
             ^used = retained.used() + size;
         }

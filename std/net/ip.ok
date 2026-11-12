@@ -356,14 +356,7 @@ hidden object PackedIpText {
             2;
         };
         let header = [byte(79), byte(75), byte(1), family.byte(), byte(0), byte(0)];
-        let envelope is @byte = (0..origin.size() + 6).map() -> index {
-            if index < 6 {
-                header[index];
-            }
-            else {
-                origin[index - 6];
-            }
-        };
+        let envelope is @byte = header + origin;
         ip_format(envelope);
     }
 }

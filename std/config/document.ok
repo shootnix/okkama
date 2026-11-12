@@ -28,14 +28,7 @@ hidden object SettingDocumentEntries {
             confirm previous.key().order(entry.key()) != Order.equal
                 else throw DuplicateSetting.key(entry.key().string());
         }
-        let revised is @SettingEntry = (0..old.size() + 1).map() -> index {
-            if index < old.size() {
-                old[index];
-            }
-            else {
-                entry;
-            }
-        };
+        let revised is @SettingEntry = old + [entry];
         origin.replace(revised);
     }
 
@@ -278,14 +271,7 @@ hidden object TomlSettingVisitor does TomlVisitor {
             confirm size >= 0 && size <= 4096 else throw SettingLimitExceeded.exceeded;
             for (0..size) -> index {
                 let member = members.item(index);
-                let child is @string = (0..path.size() + 1).map() -> at {
-                    if at < path.size() {
-                        path[at];
-                    }
-                    else {
-                        member.name();
-                    }
-                };
+                let child is @string = path + [member.name()];
                 let visitor = TomlSettingVisitor(
                     path: child,
                     source: source,

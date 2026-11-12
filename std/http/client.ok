@@ -757,14 +757,7 @@ hidden object HttpClientState does Closing {
         let position = serial.value();
         serial.replace(position + 1);
         let operation = HttpClientOperation(owner: self, position: position);
-        let following is @HttpClientOperation = (0..previous.size() + 1).map() -> index {
-            if index < previous.size() {
-                previous[index];
-            }
-            else {
-                operation;
-            }
-        };
+        let following is @HttpClientOperation = previous + [operation];
         operations.replace(following);
         operation;
     }
@@ -817,14 +810,7 @@ hidden object HttpClientState does Closing {
         else {
             let previous = idle.value();
             let entry = HttpClientIdle(key: key, transport: transport);
-            let following is @HttpClientIdle = (0..previous.size() + 1).map() -> index {
-                if index < previous.size() {
-                    previous[index];
-                }
-                else {
-                    entry;
-                }
-            };
+            let following is @HttpClientIdle = previous + [entry];
             idle.replace(following);
         }
     }
@@ -1505,14 +1491,7 @@ hidden object HttpSharedClientState does Closing {
         let position = serial.value();
         serial.replace(position + 1);
         let operation = HttpSharedClientOperation(owner: self, position: position);
-        let next_operations is @HttpSharedClientOperation = (0..old.size() + 1).map() -> index {
-            if index < old.size() {
-                old[index];
-            }
-            else {
-                operation;
-            }
-        };
+        let next_operations is @HttpSharedClientOperation = old + [operation];
         operations.replace(next_operations);
         operation;
     }
@@ -1554,14 +1533,7 @@ hidden object HttpSharedClientState does Closing {
         let transport = HttpSharedClientTransport(connecting: connecting, capacity: capacity);
         transport.retain();
         let entry = HttpSharedClientIdle(key: key, transport: transport);
-        let next_entries is @HttpSharedClientIdle = (0..retained.size() + 1).map() -> index {
-            if index < retained.size() {
-                retained[index];
-            }
-            else {
-                entry;
-            }
-        };
+        let next_entries is @HttpSharedClientIdle = retained + [entry];
         shared.replace(next_entries);
         transport.start();
         HttpSharedClientSelected(transport: transport, reused: false);

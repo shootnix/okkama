@@ -307,14 +307,7 @@ hidden object Http2SessionState does Http2ReceivingEvents, Http2BodyEvents {
             );
         let position = serial.value();
         serial.replace(position + 1);
-        let following is @int = (0..old.size() + 1).map() -> index {
-            if index < old.size() {
-                old[index];
-            }
-            else {
-                position;
-            }
-        };
+        let following is @int = old + [position];
         admission.replace(following);
         position;
     }
@@ -349,14 +342,7 @@ hidden object Http2SessionState does Http2ReceivingEvents, Http2BodyEvents {
                     sender.open(stream);
                     flow.register(stream);
                     let old = entries.value();
-                    let following is @Http2StreamHolding = (0..old.size() + 1).map() -> index {
-                        if index < old.size() {
-                            old[index];
-                        }
-                        else {
-                            entry;
-                        }
-                    };
+                    let following is @Http2StreamHolding = old + [entry];
                     entries.replace(following);
                     self.unqueue(position);
                     entry.start();
@@ -975,14 +961,7 @@ hidden object Http2StreamEntry does Closing {
                     "informational response framing or count"
                 );
             let old = information.value();
-            let next_heads is @Response = (0..old.size() + 1).map() -> index {
-                if index < old.size() {
-                    old[index];
-                }
-                else {
-                    head.response(EmptyBody());
-                }
-            };
+            let next_heads is @Response = old + [head.response(EmptyBody())];
             information.replace(next_heads);
             life.replace(life.value().remote_headers(false));
             return;

@@ -1145,14 +1145,7 @@ hidden object CliParsing {
         }
         else {
             let old = operands.value();
-            let revised is @CliOperandToken = (0..old.size() + 1).map() -> index {
-                if index < old.size() {
-                    old[index];
-                }
-                else {
-                    CliOperandToken(token: token, index: at);
-                }
-            };
+            let revised is @CliOperandToken = old + [CliOperandToken(token: token, index: at)];
             operands.replace(revised);
         }
         position.replace(at + 1);
@@ -1438,14 +1431,7 @@ hidden object CompletionNames {
             old || value == name;
         };
         if !found {
-            let revised is @string = (0..origin.size() + 1).map() -> index {
-                if index < origin.size() {
-                    origin[index];
-                }
-                else {
-                    name;
-                }
-            };
+            let revised is @string = origin + [name];
             ^origin = revised;
         }
     }

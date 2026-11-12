@@ -63,14 +63,7 @@ object CacheAdmissions {
         }
         confirm current.size() < 256 else throw CacheAdmissionExceeded.exceeded;
         let slot = CacheAdmissionSlot(key);
-        let revised is @CacheAdmissionSlot = (0..current.size() + 1).map() -> index {
-            if index < current.size() {
-                current[index];
-            }
-            else {
-                slot;
-            }
-        };
+        let revised is @CacheAdmissionSlot = current + [slot];
         entries.replace(revised);
         CacheAdmissionBooking(origin: self, slot: slot);
     }

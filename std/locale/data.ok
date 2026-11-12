@@ -122,14 +122,7 @@ hidden object LocaleDataChain {
             }
         };
         let rest = self.values(parent, depth + 1);
-        let chain is @string = (0..rest.size() + 1).map() -> index {
-            if index == 0 {
-                tag;
-            }
-            else {
-                rest[index - 1];
-            }
-        };
+        let chain is @string = [tag] + rest;
         chain;
     }
 }

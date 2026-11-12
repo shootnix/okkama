@@ -102,14 +102,7 @@ hidden object ArgumentParts {
 
     added(argument is @byte) is ^ArgumentParts {
         confirm argument.size() <= remaining else throw ArgumentLimitExceeded.exceeded;
-        let revised is @@byte = (0..origin.size() + 1).map() -> index {
-            if index < origin.size() {
-                origin[index];
-            }
-            else {
-                argument;
-            }
-        };
+        let revised is @@byte = origin + [argument];
         ^origin = revised;
         ^remaining = remaining - argument.size();
     }

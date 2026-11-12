@@ -62,14 +62,7 @@ object JsonLogLine {
             JsonField("fields", context.fields().values())
         ];
         let complete is @JsonField = if origin.has_cause() {
-            (0..members.size() + 1).map() -> index {
-                if index < members.size() {
-                    members[index];
-                }
-                else {
-                    JsonField("cause", origin.cause().text());
-                }
-            };
+            members + [JsonField("cause", origin.cause().text())];
         }
         else {
             members;

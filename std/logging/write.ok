@@ -40,14 +40,7 @@ object CollectedLogs does LogWriting {
     write(record is LogRecord) is void {
         let old = origin.value();
         confirm old.size() < capacity else throw LogCollectionLimit.exceeded;
-        let revised is @LogRecord = (0..old.size() + 1).map() -> index {
-            if index < old.size() {
-                old[index];
-            }
-            else {
-                record;
-            }
-        };
+        let revised is @LogRecord = old + [record];
         origin.replace(revised);
     }
 
@@ -92,14 +85,7 @@ object BroadcastLogs does LogWriting {
             }
             catch failure is Error {
                 let old = failures.value();
-                let revised is @Error = (0..old.size() + 1).map() -> index {
-                    if index < old.size() {
-                        old[index];
-                    }
-                    else {
-                        failure;
-                    }
-                };
+                let revised is @Error = old + [failure];
                 failures.replace(revised);
             }
         }

@@ -474,14 +474,9 @@ object StaticFiles does Handling {
         defer compression.close();
         if policy::Settings::precompressed {
             let preferences = StaticEncoding(request::Head::headers).codings();
-            let rows is @StaticRepresentation = (0..companions.size() + 1).map() -> index {
-                if index == 0 {
-                    StaticRepresentation(entry: source, coding: "identity");
-                }
-                else {
-                    companions[index - 1];
-                }
-            };
+            let rows is @StaticRepresentation = [
+                StaticRepresentation(entry: source, coding: "identity")
+            ] + companions;
             let available is @ContentCoding = rows.map() -> row {
                 ContentCoding(row.coding());
             };
@@ -689,14 +684,7 @@ object StaticFiles does Handling {
             return empty;
         }
         for policy.indexes() -> name {
-            let parts is @string = (0..coordinates.size() + 1).map() -> index {
-                if index < coordinates.size() {
-                    coordinates[index];
-                }
-                else {
-                    name;
-                }
-            };
+            let parts is @string = coordinates + [name];
             let candidates is @RootedEntry = try {
                 [root.entry(parts)];
             }
@@ -727,14 +715,7 @@ object StaticFiles does Handling {
             return empty;
         }
         let base is @string = if directory {
-            (0..coordinates.size() + 1).map() -> index {
-                if index < coordinates.size() {
-                    coordinates[index];
-                }
-                else {
-                    name;
-                }
-            };
+            coordinates + [name];
         }
         else {
             coordinates;

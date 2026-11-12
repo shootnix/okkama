@@ -371,14 +371,7 @@ object DbPoolState {
                     serial: id
                 );
                 let old = records.value();
-                let all is @DbPhysical = (0..old.size() + 1).map() -> index {
-                    if index < old.size() {
-                        old[index];
-                    }
-                    else {
-                        record;
-                    }
-                };
+                let all is @DbPhysical = old + [record];
                 records.replace(all);
                 record;
             };
@@ -425,14 +418,7 @@ object DbPoolState {
                 permit: permit
             );
             let old = leases.value();
-            let all is @PooledConnection = (0..old.size() + 1).map() -> index {
-                if index < old.size() {
-                    old[index];
-                }
-                else {
-                    lease;
-                }
-            };
+            let all is @PooledConnection = old + [lease];
             leases.replace(all);
             owned.set();
             published.set();
@@ -453,14 +439,7 @@ object DbPoolState {
                 serial: id
             );
             let old = records.value();
-            let all is @DbPhysical = (0..old.size() + 1).map() -> index {
-                if index < old.size() {
-                    old[index];
-                }
-                else {
-                    physical;
-                }
-            };
+            let all is @DbPhysical = old + [physical];
             records.replace(all);
             let connection = try {
                 await physical.connection();
@@ -511,14 +490,7 @@ object DbPoolState {
             !record.complete();
         };
         let record = DbRetirement(owner: self, pending: pending);
-        let all is @DbRetirement = (0..old.size() + 1).map() -> index {
-            if index < old.size() {
-                old[index];
-            }
-            else {
-                record;
-            }
-        };
+        let all is @DbRetirement = old + [record];
         retiring.replace(all);
         record.start();
     }
@@ -540,14 +512,7 @@ object DbPoolState {
         else {
             let old = idle.value();
             let entry = DbIdle(physical: physical, since: clock.monotonic_instant());
-            let all is @DbIdle = (0..old.size() + 1).map() -> index {
-                if index < old.size() {
-                    old[index];
-                }
-                else {
-                    entry;
-                }
-            };
+            let all is @DbIdle = old + [entry];
             idle.replace(all);
         }
     }
@@ -655,14 +620,7 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
         let old is @PreparedStatement = preparation.value().filter() -> statement {
             !statement.closed();
         };
-        let all is @PreparedStatement = (0..old.size() + 1).map() -> index {
-            if index < old.size() {
-                old[index];
-            }
-            else {
-                raw;
-            }
-        };
+        let all is @PreparedStatement = old + [raw];
         preparation.replace(all);
         published.set();
         PooledPrepared(origin: raw, lease_closed: stopped, readers: readers);

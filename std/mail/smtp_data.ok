@@ -138,20 +138,7 @@ hidden object SmtpDataValue {
                     }
                     throw MimeLimitFailure.kind("body_bytes");
                 }
-                let bytes is @byte = (0..rendered.size() + 2).map() -> index {
-                    if index < rendered.size() {
-                        rendered[index];
-                    }
-                    else {
-                        if index == rendered.size() {
-                            13.byte();
-                        }
-                        else {
-                            10.byte();
-                        }
-                    }
-                };
-                bytes;
+                rendered + [13.byte(), 10.byte()];
             }
             else {
                 rendered;

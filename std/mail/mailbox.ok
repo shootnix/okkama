@@ -210,14 +210,7 @@ object MailFlags does Set<MailFlag>, Sequencing<MailFlag>, Iterating<MailFlag> {
             return self;
         }
         confirm entries.size() < maximum else throw MailboxLimitExceeded.kind("flags");
-        let following is @MailFlag = (0..entries.size() + 1).map() -> index {
-            if index < entries.size() {
-                entries[index];
-            }
-            else {
-                snapshot;
-            }
-        };
+        let following is @MailFlag = entries + [snapshot];
         MailFlags(entries: following, maximum_entries: maximum);
     }
 

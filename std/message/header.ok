@@ -126,14 +126,7 @@ object MessageHeaders {
 
     addition(entry is MessageHeader) is MessageHeaders {
         confirm origin.size() < maximum else throw MessageHeaderLimitExceeded.kind("entries");
-        let entries is @MessageHeader = (0..origin.size() + 1).map() -> index {
-            if index < origin.size() {
-                origin[index];
-            }
-            else {
-                entry;
-            }
-        };
+        let entries is @MessageHeader = origin + [entry];
         MessageHeaders(entries: entries, maximum_entries: maximum);
     }
 

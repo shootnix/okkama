@@ -303,14 +303,7 @@ object MemoryHttpCache does ResponseCaching, Closing {
             !item.same(entry);
         };
         let count = CacheStorageSelection(entries: kept, budget: maximum - amount).offset();
-        let revised is @CachedHttpEntry = (count..kept.size() + 1).map() -> index {
-            if index < kept.size() {
-                kept[index];
-            }
-            else {
-                entry;
-            }
-        };
+        let revised is @CachedHttpEntry = kept.drop(count) + [entry];
         cell.replace(revised);
     }
 

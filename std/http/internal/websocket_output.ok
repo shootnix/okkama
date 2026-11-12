@@ -85,14 +85,7 @@ object WebSocketOutput {
                 else throw WebSocketClosed.detailed(1000, "");
             if jobs.value().size() + current.value().size() < maximum {
                 let old = jobs.value();
-                let following is @WebSocketOutputTicket = (0..old.size() + 1).map() -> index {
-                    if index < old.size() {
-                        old[index];
-                    }
-                    else {
-                        ticket;
-                    }
-                };
+                let following is @WebSocketOutputTicket = old + [ticket];
                 jobs.replace(following);
                 changed.value().set();
                 return true;

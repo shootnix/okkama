@@ -212,14 +212,7 @@ role CompressionFlow {
             else {
                 [];
             };
-            let result is @byte = (0..before.size() + origin.size()).map() -> i {
-                if i < before.size() {
-                    before[i];
-                }
-                else {
-                    origin[i - before.size()];
-                }
-            };
+            let result is @byte = before + origin;
             fake.storage.set("queued", result);
         }
 

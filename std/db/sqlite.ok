@@ -487,14 +487,7 @@ object SqliteSession does Closing {
         let id = frame.identifier();
         if token > 0 {
             let old = transaction_prepared.value();
-            let all is @int = (0..old.size() + 1).map() -> index {
-                if index < old.size() {
-                    old[index];
-                }
-                else {
-                    id;
-                }
-            };
+            let all is @int = old + [id];
             transaction_prepared.replace(all);
         }
         SqlitePrepared(owner: self, id: id, token: token);

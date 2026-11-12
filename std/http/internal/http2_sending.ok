@@ -84,14 +84,7 @@ object Http2DataScheduler {
                 else throw InvalidState.because("sending stream already registered");
         }
         let slot = Http2SendingSlot(stream: stream, initial: peer.value().initial_window());
-        let following is @Http2SendingSlot = (0..old.size() + 1).map() -> index {
-            if index < old.size() {
-                old[index];
-            }
-            else {
-                slot;
-            }
-        };
+        let following is @Http2SendingSlot = old + [slot];
         slots.replace(following);
         highest.replace(stream);
     }

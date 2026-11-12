@@ -447,14 +447,7 @@ hidden object CookieJarUpdate {
                 kept;
             }
             else {
-                (0..kept.size() + 1).map() -> position {
-                    if position < kept.size() {
-                        kept[position];
-                    }
-                    else {
-                        revised;
-                    }
-                };
+                kept + [revised];
             };
             ^records = CookieJarBounded(records: added, limits: limits, domain: proposed.domain()).records();
             ^counter = index;

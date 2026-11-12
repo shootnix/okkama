@@ -469,14 +469,7 @@ hidden object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier,
         sender.value()[0].open(stream);
         flow.register(stream);
         let old = active.value();
-        let following is @Http2ServerStream = (0..old.size() + 1).map() -> index {
-            if index < old.size() {
-                old[index];
-            }
-            else {
-                entry;
-            }
-        };
+        let following is @Http2ServerStream = old + [entry];
         active.replace(following);
         publications.replace([entry]);
         entry.start();
@@ -557,14 +550,7 @@ hidden object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier,
 
     remove(entry is Http2ServerStream) is void {
         let old = retired.value();
-        let following is @Http2ServerStream = (0..old.size() + 1).map() -> index {
-            if index < old.size() {
-                old[index];
-            }
-            else {
-                entry;
-            }
-        };
+        let following is @Http2ServerStream = old + [entry];
         retired.replace(following);
         active.replace(active.value().filter() -> other {
             other.stream() != entry.stream();
@@ -1212,14 +1198,7 @@ hidden object Http2ServerWireInput does AsyncReading, Http2ReadBoundary {
             return;
         }
         let old = header.value();
-        let following is @byte = (0..old.size() + bytes.size()).map() -> index {
-            if index < old.size() {
-                old[index];
-            }
-            else {
-                bytes[index - old.size()];
-            }
-        };
+        let following is @byte = old + bytes;
         header.replace(following);
         if following.size() == 9 {
             kind.replace(following[3].int());

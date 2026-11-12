@@ -910,14 +910,7 @@ hidden object IniParse {
         let headers is @int = (0..lines.size()).filter() -> at {
             self.is_header(lines[at]);
         };
-        let bounds is @int = (0..headers.size() + 1).map() -> index {
-            if index < headers.size() {
-                headers[index];
-            }
-            else {
-                lines.size();
-            }
-        };
+        let bounds is @int = headers + [lines.size()];
         let repeated_section = self.first_repeated(
             headers.map() -> at {
                 self.name(lines[at]);

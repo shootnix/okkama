@@ -289,14 +289,7 @@ hidden object HpackDecodedProgress {
                 0,
                 "decompressed HPACK field list budget"
             );
-        let following is @HpackField = (0..fields.size() + 1).map() -> index {
-            if index < fields.size() {
-                fields[index];
-            }
-            else {
-                field;
-            }
-        };
+        let following is @HpackField = fields + [field];
         ^fields = following;
         ^used = used + field.size();
     }

@@ -269,14 +269,7 @@ hidden object Http2JoinedFields {
     has fields is @HpackField;
 
     Http2JoinedFields(prefix is @HpackField, ordinary is @HpackField) {
-        let rows is @HpackField = (0..prefix.size() + ordinary.size()).map() -> index {
-            if index < prefix.size() {
-                prefix[index];
-            }
-            else {
-                ordinary[index - prefix.size()];
-            }
-        };
+        let rows is @HpackField = prefix + ordinary;
         fields = rows;
     }
 
@@ -630,14 +623,7 @@ object Http2PseudoFields {
     }
 
     added(field is HpackField) is ^Http2PseudoFields {
-        let following is @HpackField = (0..fields.size() + 1).map() -> index {
-            if index < fields.size() {
-                fields[index];
-            }
-            else {
-                field;
-            }
-        };
+        let following is @HpackField = fields + [field];
         ^fields = following;
     }
 }

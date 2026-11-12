@@ -115,14 +115,9 @@ object ManualClock does Timing {
         let signal = Event();
         let id = old.serial() + 1;
         let waiting = old.waiters();
-        let added is @ManualClockWaiter = (0..waiting.size() + 1).map() -> index {
-            if index < waiting.size() {
-                waiting[index];
-            }
-            else {
-                ManualClockWaiter(id: id, deadline: old.elapsed().plus(duration), signal: signal);
-            }
-        };
+        let added is @ManualClockWaiter = waiting + [
+            ManualClockWaiter(id: id, deadline: old.elapsed().plus(duration), signal: signal)
+        ];
         cell.replace(
             ManualClockFrame(
                 wall: old.wall(),

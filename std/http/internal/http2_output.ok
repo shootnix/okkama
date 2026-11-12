@@ -67,14 +67,7 @@ object Http2ConnectionOutput does Http2ControlQueuing {
         };
         let ticket = Http2OutputTicket(frames: frames, amount: amount, starting: starting);
         let old = jobs.value();
-        let following is @Http2OutputTicket = (0..old.size() + 1).map() -> index {
-            if index < old.size() {
-                old[index];
-            }
-            else {
-                ticket;
-            }
-        };
+        let following is @Http2OutputTicket = old + [ticket];
         jobs.replace(following);
         count.replace(count.value() + 1);
         bytes.replace(bytes.value() + amount);

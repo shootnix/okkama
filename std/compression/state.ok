@@ -44,14 +44,7 @@ role Compressing {
             else {
                 [];
             };
-            let joined is @byte = (0..before.size() + origin.size()).map() -> i {
-                if i < before.size() {
-                    before[i];
-                }
-                else {
-                    origin[i - before.size()];
-                }
-            };
+            let joined is @byte = before + origin;
             fake.storage.set("pending", joined);
         }
 
@@ -136,14 +129,7 @@ role Decompressing {
             else {
                 [];
             };
-            let joined is @byte = (0..before.size() + origin.size()).map() -> i {
-                if i < before.size() {
-                    before[i];
-                }
-                else {
-                    origin[i - before.size()];
-                }
-            };
+            let joined is @byte = before + origin;
             fake.storage.set("ready", joined);
         }
 

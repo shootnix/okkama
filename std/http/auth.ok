@@ -43,14 +43,7 @@ object BasicCredentials {
         };
         confirm valid else throw InvalidAuthentication.because("ASCII password required");
         let prefix = AsciiEncoded(self::Credentials::username + ":").bytes();
-        let value is @byte = (0..prefix.size() + password.size()).map() -> index {
-            if index < prefix.size() {
-                prefix[index];
-            }
-            else {
-                password[index - prefix.size()];
-            }
-        };
+        let value is @byte = prefix + password;
         Header(name: HeaderName("Authorization"), value: "Basic " + Base64Encoded(value).string());
     }
 

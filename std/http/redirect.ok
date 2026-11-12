@@ -92,17 +92,10 @@ object Redirecting does Exchanging {
             let key = RedirectKey(following).string();
             confirm !state.known(key) else throw RedirectLoop.detected;
             confirm accumulated.size() < 20 else throw TooManyRedirects.exceeded;
-            let extended is @ExchangeHop = (0..accumulated.size() + 1).map() -> index {
-                if index < accumulated.size() {
-                    accumulated[index];
-                }
-                else {
-                    ExchangeHop(
-                        request: result::Exchange::request,
-                        response: result::Exchange::response
-                    );
-                }
-            };
+            let extended is @ExchangeHop = accumulated + [ExchangeHop(
+                request: result::Exchange::request,
+                response: result::Exchange::response
+            )];
             cleanup.close();
             state = state.following(following, extended, key);
         }
@@ -141,14 +134,7 @@ hidden object RedirectState {
     }
 
     following(request is Request, history is @ExchangeHop, key is string) is ^RedirectState {
-        let seen is @string = (0..visited.size() + 1).map() -> index {
-            if index < visited.size() {
-                visited[index];
-            }
-            else {
-                key;
-            }
-        };
+        let seen is @string = visited + [key];
         ^request = request;
         ^history = history;
         ^visited = seen;

@@ -879,14 +879,7 @@ hidden object FormDisposition {
             confirm collected.value().size() < 16
                 else throw FormLimitExceeded.kind("disposition_parameters");
             let old = collected.value();
-            let updated is @FormParameter = (0..old.size() + 1).map() -> index {
-                if index < old.size() {
-                    old[index];
-                }
-                else {
-                    FormParameter(name: name, value: value);
-                }
-            };
+            let updated is @FormParameter = old + [FormParameter(name: name, value: value)];
             collected.replace(updated);
         }
         entries = collected.value();
