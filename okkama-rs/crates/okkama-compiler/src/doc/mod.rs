@@ -177,6 +177,23 @@ impl ModuleDoc {
                     .to_string(),
             });
         }
+        // Without an overview, a long comment glued to the first declaration
+        // after the imports may be the overview written in the old place: it
+        // stays the declaration's, and the note asks for a blank line.
+        if overview_blocks.is_empty()
+            && let Some(first) = first_item
+            && let Some(block) = lines.blocks(module_line + 1, header_end).last().copied()
+            && block.last + 1 == first
+            && imports_end.is_some_and(|end| block.first > end)
+            && block.last - block.first >= 2
+        {
+            notes.push(DocNote {
+                span: lines.span(block.first, block.last),
+                message: "this comment may be the module overview: it is attached to the first declaration; \
+                          a blank line after it would make it the overview"
+                    .to_string(),
+            });
+        }
         let overview = (!overview_blocks.is_empty()).then(|| DocText {
             text: overview_blocks
                 .iter()

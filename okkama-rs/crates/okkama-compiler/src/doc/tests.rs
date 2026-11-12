@@ -257,3 +257,19 @@ fn a_long_signature_breaks_after_commas() {
     let page = module_text(&doc, &Style { width: 60, ansi: false });
     assert!(page.contains("    enum Kind = (null_value, boolean_value, number_value,\n        string_value, array_value, object_value)\n"), "{page}");
 }
+
+#[test]
+fn a_long_comment_glued_to_the_first_declaration_is_reported_not_guessed() {
+    let doc = doc("module m;\n\nimport \"a\" take A;\n\n// Line one.\n// Line two.\n// Line three.\nobject First {\n    First() {}\n}\n");
+    assert!(doc.overview.is_none());
+    assert_eq!(doc.item("First").unwrap().doc.as_ref().unwrap().text, "Line one.\nLine two.\nLine three.");
+    assert_eq!(doc.notes.len(), 1);
+    assert!(doc.notes[0].message.contains("may be the module overview"));
+}
+
+#[test]
+fn errors_text_and_error_enums_stand_apart() {
+    let doc = doc("module m;\n\n// Things.\n//\n// # Errors\n//\n// Bad input is Bad.\n\n// Bad input.\nenum Bad is Error = (input);\n");
+    let page = module_text(&doc, &Style::default());
+    assert!(page.contains("ERRORS\n    Bad input is Bad.\n\n    enum Bad is Error = (input)\n"), "{page}");
+}
