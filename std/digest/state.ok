@@ -1,7 +1,9 @@
 module digest/state v1.0.0;
 
-// An immutable digest of an ordered byte history. bytes() returns raw bytes;
-// use HexEncoded for hexadecimal display and explicit UTF encoding for text.
+import "encoding/hex" take HexEncoded;
+
+// An immutable digest of an ordered byte history. bytes() returns raw bytes
+// and hex() the same as lowercase hex; the algorithms also take text as UTF-8.
 // state(bytes) appends into a fresh successor without changing this digest,
 // its earlier bytes() results or the input. Empty chunks preserve the result.
 // Observation does not prevent later append. Empty concrete constructors bind
@@ -16,12 +18,18 @@ module digest/state v1.0.0;
 role Digesting {
     state(origin is @byte) is ^Digesting;
     bytes() is @byte;
+    // The digest as lowercase hex.
+    hex() is string;
 
     fake {
         has origin is @byte = [];
 
         bytes() is @byte {
             origin;
+        }
+
+        hex() is string {
+            HexEncoded(origin).string();
         }
 
         state(origin is @byte) is ^Digesting {

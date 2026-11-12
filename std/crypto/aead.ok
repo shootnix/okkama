@@ -13,4 +13,8 @@ role Sealing {
     tag_size() is int;
     sealed(nonce is @byte, aad is @byte, plaintext is @byte) is @byte;
     opened(nonce is @byte, aad is @byte, sealed is @byte) is @byte;
+    // The same with text, as UTF-8.
+    sealed(nonce is @byte, aad is string, text is string) is @byte;
+    opened(nonce is @byte, aad is string, sealed is @byte) is @byte;
+    opened_text(nonce is @byte, aad is string, sealed is @byte) is string;
 }

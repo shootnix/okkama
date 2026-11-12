@@ -1,6 +1,7 @@
 module digest/sha2 v1.0.0;
 
 import "digest/state" take Digesting;
+import "encoding/utf" take Utf8Encoded;
 import "digest/host" take HostDigest;
 
 // SHA-2 (FIPS 180-4) over the host provider. Each object is the digest of an
@@ -8,11 +9,12 @@ import "digest/host" take HostDigest;
 // constructor binds one chunk, state(bytes) returns a successor over the
 // appended history and leaves this digest, its earlier observations and other
 // branches unchanged. bytes() returns raw bytes (28/32/48/64/32 bytes for
-// Sha224/Sha256/Sha384/Sha512/Sha512_256); format with HexEncoded and encode
-// text explicitly. Construction creates a host state; there is no I/O.
+// Sha224/Sha256/Sha384/Sha512/Sha512_256) and hex() the same as lowercase
+// hex. Text is hashed as UTF-8. Construction creates a host state; there is
+// no I/O.
 //
-//     let digest = Sha256(Utf8Encoded("ab").bytes()).state([99.byte()]);
-//     HexEncoded(digest.bytes()).string(); // ba7816bf... for "abc"
+//     Sha256("hello world").hex();                   // b94d27b9...
+//     Sha256().state("ab").state([99.byte()]).hex();  // ba7816bf... for "abc"
 import "encoding/hex" take HexEncoded;
 
 object Sha224 does Digesting {
@@ -26,12 +28,28 @@ object Sha224 does Digesting {
         digest = HostDigest(algorithm: "sha224", key: [], width: 0).appended(origin);
     }
 
+    // Text, as UTF-8.
+    Sha224(text is string) {
+        digest = HostDigest(algorithm: "sha224", key: [], width: 0).appended(Utf8Encoded(text).bytes());
+    }
+
     bytes() is @byte {
         digest.bytes();
     }
 
+    // The digest as lowercase hex.
+    hex() is string {
+        HexEncoded(self.bytes()).string();
+    }
+
     state(origin is @byte) is ^Sha224 {
         let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+
+    // Text, as UTF-8: Sha256().state("hello ").state("world").
+    state(text is string) is ^Sha224 {
+        let continued = digest.appended(Utf8Encoded(text).bytes());
         ^digest = continued;
     }
 }
@@ -47,12 +65,28 @@ object Sha256 does Digesting {
         digest = HostDigest(algorithm: "sha256", key: [], width: 0).appended(origin);
     }
 
+    // Text, as UTF-8.
+    Sha256(text is string) {
+        digest = HostDigest(algorithm: "sha256", key: [], width: 0).appended(Utf8Encoded(text).bytes());
+    }
+
     bytes() is @byte {
         digest.bytes();
     }
 
+    // The digest as lowercase hex.
+    hex() is string {
+        HexEncoded(self.bytes()).string();
+    }
+
     state(origin is @byte) is ^Sha256 {
         let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+
+    // Text, as UTF-8: Sha256().state("hello ").state("world").
+    state(text is string) is ^Sha256 {
+        let continued = digest.appended(Utf8Encoded(text).bytes());
         ^digest = continued;
     }
 }
@@ -68,12 +102,28 @@ object Sha384 does Digesting {
         digest = HostDigest(algorithm: "sha384", key: [], width: 0).appended(origin);
     }
 
+    // Text, as UTF-8.
+    Sha384(text is string) {
+        digest = HostDigest(algorithm: "sha384", key: [], width: 0).appended(Utf8Encoded(text).bytes());
+    }
+
     bytes() is @byte {
         digest.bytes();
     }
 
+    // The digest as lowercase hex.
+    hex() is string {
+        HexEncoded(self.bytes()).string();
+    }
+
     state(origin is @byte) is ^Sha384 {
         let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+
+    // Text, as UTF-8: Sha256().state("hello ").state("world").
+    state(text is string) is ^Sha384 {
+        let continued = digest.appended(Utf8Encoded(text).bytes());
         ^digest = continued;
     }
 }
@@ -89,12 +139,28 @@ object Sha512 does Digesting {
         digest = HostDigest(algorithm: "sha512", key: [], width: 0).appended(origin);
     }
 
+    // Text, as UTF-8.
+    Sha512(text is string) {
+        digest = HostDigest(algorithm: "sha512", key: [], width: 0).appended(Utf8Encoded(text).bytes());
+    }
+
     bytes() is @byte {
         digest.bytes();
     }
 
+    // The digest as lowercase hex.
+    hex() is string {
+        HexEncoded(self.bytes()).string();
+    }
+
     state(origin is @byte) is ^Sha512 {
         let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+
+    // Text, as UTF-8: Sha256().state("hello ").state("world").
+    state(text is string) is ^Sha512 {
+        let continued = digest.appended(Utf8Encoded(text).bytes());
         ^digest = continued;
     }
 }
@@ -110,12 +176,28 @@ object Sha512_256 does Digesting {
         digest = HostDigest(algorithm: "sha512-256", key: [], width: 0).appended(origin);
     }
 
+    // Text, as UTF-8.
+    Sha512_256(text is string) {
+        digest = HostDigest(algorithm: "sha512-256", key: [], width: 0).appended(Utf8Encoded(text).bytes());
+    }
+
     bytes() is @byte {
         digest.bytes();
     }
 
+    // The digest as lowercase hex.
+    hex() is string {
+        HexEncoded(self.bytes()).string();
+    }
+
     state(origin is @byte) is ^Sha512_256 {
         let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+
+    // Text, as UTF-8: Sha256().state("hello ").state("world").
+    state(text is string) is ^Sha512_256 {
+        let continued = digest.appended(Utf8Encoded(text).bytes());
         ^digest = continued;
     }
 }
@@ -158,3 +240,11 @@ test "SHA-2 successors branch immutably" {
     test.is(prefix.state([]).bytes(), prefix.bytes());
     test.is(Sha512().bytes().size(), 64);
 }
+
+test "a digest takes text and writes itself as hex" {
+    test.is(Sha256("abc").hex(), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    test.is(Sha256().state("ab").state([99.byte()]).hex(), Sha256("abc").hex());
+    test.is(Sha256("abc").bytes(), Sha256([97.byte(), 98.byte(), 99.byte()]).bytes());
+    test.is(Sha256("é").hex(), Sha256([195.byte(), 169.byte()]).hex());
+}
+

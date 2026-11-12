@@ -1,6 +1,7 @@
 module crypto/hmac v1.0.0;
 
 import "digest/state" take Digesting;
+import "encoding/utf" take Utf8Encoded;
 import "digest/host" take HostDigest;
 import "crypto/secret" take SecretBytes;
 import "crypto/constant_time" take ConstantTimeEqual;
@@ -58,12 +59,28 @@ object Hmac does Digesting {
         digest = HostDigest(algorithm: HmacAlgorithm(hash).name(), key: key.export_bytes(), width: 0).appended(origin);
     }
 
+    // Text, as UTF-8.
+    Hmac(hash is HmacHash, key is SecretBytes, text is string) {
+        digest = HostDigest(algorithm: HmacAlgorithm(hash).name(), key: key.export_bytes(), width: 0).appended(Utf8Encoded(text).bytes());
+    }
+
     bytes() is @byte {
         digest.bytes();
     }
 
+    // The digest as lowercase hex.
+    hex() is string {
+        HexEncoded(self.bytes()).string();
+    }
+
     state(origin is @byte) is ^Hmac {
         let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+
+    // Text, as UTF-8: Sha256().state("hello ").state("world").
+    state(text is string) is ^Hmac {
+        let continued = digest.appended(Utf8Encoded(text).bytes());
         ^digest = continued;
     }
 

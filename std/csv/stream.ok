@@ -24,6 +24,12 @@ object CsvStream does Closing {
         state = csv_state_create(4194304, 1048576, 65536, 10000, 1024);
     }
 
+    // Rows of CSV text, read one at a time: CsvStream(text: "id,total\r\n1,10\r\n").
+    CsvStream(text is string) {
+        origin = ByteBuffer(text).reading();
+        state = csv_state_create(4194304, 1048576, 65536, 10000, 1024);
+    }
+
     CsvStream(
         origin is Reading,
         maximum_bytes is int,
@@ -170,3 +176,13 @@ test "limits are checked; bad limits are refused" {
         empty.row();
     };
 }
+
+test "a stream reads rows of text" {
+    let stream = CsvStream(text: "a,b\r\n\"c,d\",é\r\n");
+    test.is(stream.row(), ["a", "b"]);
+    test.is(stream.row(), ["c,d", "é"]);
+    test.throws(EndOfCsv) {
+        stream.row();
+    };
+}
+

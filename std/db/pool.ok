@@ -706,8 +706,20 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
         await self.execution(Statement(text: sql, values: values));
     }
 
+    // The values one by one: db.execution("… = ?", Param(7)).
+    async execution(sql is string, values is ...DbValue) is Execution {
+        let listed is @DbValue = values...;
+        await self.execution(sql, listed);
+    }
+
     query(sql is string, values is Sequencing<DbValue>) is DbQuery {
         Query(origin: self, statement: Statement(text: sql, values: values));
+    }
+
+    // The values one by one: db.query("… = ?", Param(7)).
+    query(sql is string, values is ...DbValue) is DbQuery {
+        let listed is @DbValue = values...;
+        self.query(sql, listed);
     }
 }
 
@@ -813,8 +825,20 @@ object PooledTransaction does Transaction, DbExecuting, DbPreparing {
         await self.execution(Statement(text: sql, values: values));
     }
 
+    // The values one by one: db.execution("… = ?", Param(7)).
+    async execution(sql is string, values is ...DbValue) is Execution {
+        let listed is @DbValue = values...;
+        await self.execution(sql, listed);
+    }
+
     query(sql is string, values is Sequencing<DbValue>) is DbQuery {
         Query(origin: self, statement: Statement(text: sql, values: values));
+    }
+
+    // The values one by one: db.query("… = ?", Param(7)).
+    query(sql is string, values is ...DbValue) is DbQuery {
+        let listed is @DbValue = values...;
+        self.query(sql, listed);
     }
 }
 
@@ -997,11 +1021,23 @@ hidden object PooledPrepared does PreparedStatement, Closing {
         await origin.execution(values);
     }
 
+    // The values one by one: statement.execution(Param(7)).
+    async execution(values is ...DbValue) is Execution {
+        let listed is @DbValue = values...;
+        await self.execution(listed);
+    }
+
     async rows(values is Sequencing<DbValue>) is RowReading {
         confirm !self.closed() else throw DbClosed.closed;
         let rows = await origin.rows(values);
         readers.replace([rows]);
         PooledRows(origin: rows, lease_closed: lease_closed);
+    }
+
+    // The values one by one: statement.rows(Param(7)).
+    async rows(values is ...DbValue) is RowReading {
+        let listed is @DbValue = values...;
+        await self.rows(listed);
     }
 
     destroy {

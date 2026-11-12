@@ -361,8 +361,20 @@ object SqliteConnection does DbConnection, DbExecuting, DbPreparing, DbPreparedO
         await self.execution(Statement(text: sql, values: values));
     }
 
+    // The values one by one: db.execution("… = ?", Param(7)).
+    async execution(sql is string, values is ...DbValue) is Execution {
+        let listed is @DbValue = values...;
+        await self.execution(sql, listed);
+    }
+
     query(sql is string, values is Sequencing<DbValue>) is DbQuery {
         Query(origin: self, statement: Statement(text: sql, values: values));
+    }
+
+    // The values one by one: db.query("… = ?", Param(7)).
+    query(sql is string, values is ...DbValue) is DbQuery {
+        let listed is @DbValue = values...;
+        self.query(sql, listed);
     }
 }
 
@@ -1540,8 +1552,20 @@ object SqliteTransaction does Transaction, DbExecuting, DbPreparing, SqliteBlobO
         await self.execution(Statement(text: sql, values: values));
     }
 
+    // The values one by one: db.execution("… = ?", Param(7)).
+    async execution(sql is string, values is ...DbValue) is Execution {
+        let listed is @DbValue = values...;
+        await self.execution(sql, listed);
+    }
+
     query(sql is string, values is Sequencing<DbValue>) is DbQuery {
         Query(origin: self, statement: Statement(text: sql, values: values));
+    }
+
+    // The values one by one: db.query("… = ?", Param(7)).
+    query(sql is string, values is ...DbValue) is DbQuery {
+        let listed is @DbValue = values...;
+        self.query(sql, listed);
     }
 }
 
@@ -1573,9 +1597,21 @@ hidden object SqlitePrepared does PreparedStatement, Closing {
         await owner.prepared_execution(id, values, token);
     }
 
+    // The values one by one: statement.execution(Param(7)).
+    async execution(values is ...DbValue) is Execution {
+        let listed is @DbValue = values...;
+        await self.execution(listed);
+    }
+
     async rows(values is Sequencing<DbValue>) is RowReading {
         confirm !self.closed() else throw DbClosed.closed;
         await owner.prepared_rows(id, values, stopped, token);
+    }
+
+    // The values one by one: statement.rows(Param(7)).
+    async rows(values is ...DbValue) is RowReading {
+        let listed is @DbValue = values...;
+        await self.rows(listed);
     }
 
     destroy {
@@ -1771,8 +1807,8 @@ async test "prepared statements, transactions and acquisitions" {
     defer connection.close();
     await connection.execution(Statement("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT)"));
     let insert = await connection.prepared("INSERT INTO t(name) VALUES (?)");
-    await insert.execution([Param("a")]);
-    await insert.execution([Param("b")]);
+    await insert.execution(Param("a"));
+    await insert.execution(Param("b"));
     insert.close();
     test.is(insert.closed(), true);
     let lookup = await connection.prepared("SELECT name FROM t WHERE id = ?");
@@ -1832,15 +1868,15 @@ async test "a connection runs SQL with bound values and answers a query" {
     let db = await SqliteMemory().connection();
     defer await db.settled();
     defer db.close();
-    await db.execution("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT)", []);
-    let added = await db.execution("INSERT INTO t(name) VALUES (?), (?)", [Param("a"), Param("b; DROP TABLE t")]);
+    await db.execution("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT)");
+    let added = await db.execution("INSERT INTO t(name) VALUES (?), (?)", Param("a"), Param("b; DROP TABLE t"));
     test.is(added.affected_rows().string(), "2");
-    test.is((await db.query("SELECT name FROM t WHERE id = ?", [Param(2)]).one()).text("name"), "b; DROP TABLE t");
-    test.is((await db.query("SELECT id FROM t WHERE id > ?", [Param(9)]).maybe()) == Maybe<Row>.none, true);
-    test.is((await db.query("SELECT id FROM t ORDER BY id", []).all(10)).size(), 2);
+    test.is((await db.query("SELECT name FROM t WHERE id = ?", Param(2)).one()).text("name"), "b; DROP TABLE t");
+    test.is((await db.query("SELECT id FROM t WHERE id > ?", Param(9)).maybe()) == Maybe<Row>.none, true);
+    test.is((await db.query("SELECT id FROM t ORDER BY id").all(10)).size(), 2);
     let change = await db.transaction(TransactionOptions());
-    await change.execution("DELETE FROM t WHERE id = ?", [Param(1)]);
-    test.is((await change.query("SELECT count(*) AS n FROM t", []).one()).int("n"), 1);
+    await change.execution("DELETE FROM t WHERE id = ?", Param(1));
+    test.is((await change.query("SELECT count(*) AS n FROM t").one()).int("n"), 1);
     await change.rollback();
-    test.is((await db.query("SELECT count(*) AS n FROM t", []).one()).int("n"), 2);
+    test.is((await db.query("SELECT count(*) AS n FROM t").one()).int("n"), 2);
 }

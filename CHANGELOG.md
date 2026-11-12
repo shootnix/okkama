@@ -118,6 +118,12 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   | `TemporaryFile(directory: Directory(path: root), prefix:)` | `scratch.file(prefix:)`; `file.write([…])`, `file.write("text")`, `file.size()` |
   | `entry.path().string().slice(root.string().length() + 1, …)` | `entry.path().name()` |
   | `out.writeln("lowest " + scores.first().string())` | `out.writeln("lowest ", scores.first())` (159 lines in `examples/`) |
+  | `HexEncoded(Sha256(Utf8Encoded("x").bytes()).bytes()).string()` | `Sha256("x").hex()`; `Sha256().state("hello ").state("world")` (every digest and `Hmac`; `Digesting` has `hex()`) |
+  | `add.execution([Param("tea"), Param(1)])`, `db.execution(sql, [])` | `add.execution(Param("tea"), Param(1))`, `db.execution(sql)` (roles `DbExecuting`, `DbConnection`, `Transaction`, `PreparedStatement`) |
+  | `CsvStream(ByteBuffer(Utf8Encoded(text).bytes()).reading())` | `CsvStream(text: …)`; `ByteBuffer("text")` |
+  | `SecretBytes(Utf8Encoded("key").bytes())` | `SecretBytes("key")` |
+  | `cipher.sealed(nonce, Utf8Encoded("h").bytes(), Utf8Encoded("t").bytes())`, `Utf8Decoded(cipher.opened(…))` | `cipher.sealed(nonce, "h", "t")`, `cipher.opened_text(nonce, "h", sealed)` (role `Sealing`) |
+  | `ArchiveFile(…, data: Utf8Encoded("…").bytes())` | `ArchiveFile(…, text: "…")` |
 
   The older forms stay; nothing leaves std. `Utf8Encoded` is a `ByteSource`.
   Book §26.5 (EN, RU) shows the new forms.

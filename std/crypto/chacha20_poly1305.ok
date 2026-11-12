@@ -1,6 +1,7 @@
 module crypto/chacha20_poly1305 v1.0.0;
 
 import "crypto/aead" take Sealing;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "crypto/secret" take SecretBytes;
 import "crypto/error" take HostOperation, InvalidCryptoInput, AuthenticationFailed;
 import "encoding/hex" take HexEncoded, HexDecoded;
@@ -32,6 +33,20 @@ object ChaCha20Poly1305 does Sealing {
     opened(nonce is @byte, aad is @byte, sealed is @byte) is @byte {
         HostOperation(operation: "aead-open:chacha20-poly1305", arguments: [key.export_bytes(), nonce, aad, sealed]).bytes();
     }
+
+    // Text, as UTF-8: cipher.sealed(nonce, "record 7", "balance: 42").
+    sealed(nonce is @byte, aad is string, text is string) is @byte {
+        self.sealed(nonce, Utf8Encoded(aad).bytes(), Utf8Encoded(text).bytes());
+    }
+
+    opened(nonce is @byte, aad is string, sealed is @byte) is @byte {
+        self.opened(nonce, Utf8Encoded(aad).bytes(), sealed);
+    }
+
+    // The plaintext as UTF-8 text.
+    opened_text(nonce is @byte, aad is string, sealed is @byte) is string {
+        Utf8Decoded(self.opened(nonce, Utf8Encoded(aad).bytes(), sealed)).string();
+    }
 }
 
 object XChaCha20Poly1305 does Sealing {
@@ -57,6 +72,20 @@ object XChaCha20Poly1305 does Sealing {
 
     opened(nonce is @byte, aad is @byte, sealed is @byte) is @byte {
         HostOperation(operation: "aead-open:xchacha20-poly1305", arguments: [key.export_bytes(), nonce, aad, sealed]).bytes();
+    }
+
+    // Text, as UTF-8: cipher.sealed(nonce, "record 7", "balance: 42").
+    sealed(nonce is @byte, aad is string, text is string) is @byte {
+        self.sealed(nonce, Utf8Encoded(aad).bytes(), Utf8Encoded(text).bytes());
+    }
+
+    opened(nonce is @byte, aad is string, sealed is @byte) is @byte {
+        self.opened(nonce, Utf8Encoded(aad).bytes(), sealed);
+    }
+
+    // The plaintext as UTF-8 text.
+    opened_text(nonce is @byte, aad is string, sealed is @byte) is string {
+        Utf8Decoded(self.opened(nonce, Utf8Encoded(aad).bytes(), sealed)).string();
     }
 }
 
@@ -94,5 +123,16 @@ test "XChaCha20-Poly1305 round-trips and authenticates" {
     test.is(cipher.opened(nonce, [], sealed), [1.byte()]);
     test.throws(AuthenticationFailed) {
         cipher.opened(nonce, [], sealed.slice(0, sealed.size() - 1));
+    };
+}
+
+test "a cipher seals and opens text" {
+    let cipher = ChaCha20Poly1305(SecretBytes((0..32).map() -> index { byte(index); }));
+    let nonce is @byte = (0..12).map() -> index { byte(index); };
+    let sealed = cipher.sealed(nonce, "record 7", "balance: 42 é");
+    test.is(cipher.opened_text(nonce, "record 7", sealed), "balance: 42 é");
+    test.is(cipher.opened(nonce, "record 7", sealed), cipher.opened(nonce, [114.byte(), 101.byte(), 99.byte(), 111.byte(), 114.byte(), 100.byte(), 32.byte(), 55.byte()], sealed));
+    test.throws(AuthenticationFailed) {
+        cipher.opened_text(nonce, "record 8", sealed);
     };
 }

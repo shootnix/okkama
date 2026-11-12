@@ -42,7 +42,9 @@ role Transaction {
     async execution(origin is Statement) is Execution;
     async rows(origin is Statement) is RowReading;
     async execution(sql is string, values is Sequencing<DbValue>) is Execution;
+    async execution(sql is string, values is ...DbValue) is Execution;
     query(sql is string, values is Sequencing<DbValue>) is DbQuery;
+    query(sql is string, values is ...DbValue) is DbQuery;
     async commit() is Transaction;
     async rollback() is Transaction;
     active() is bool;

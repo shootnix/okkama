@@ -10,14 +10,18 @@ role DbExecuting {
     async execution(origin is Statement) is Execution;
     async rows(origin is Statement) is RowReading;
     async execution(sql is string, values is Sequencing<DbValue>) is Execution;
+    async execution(sql is string, values is ...DbValue) is Execution;
     query(sql is string, values is Sequencing<DbValue>) is DbQuery;
+    query(sql is string, values is ...DbValue) is DbQuery;
 }
 
 role DbConnection {
     async execution(origin is Statement) is Execution;
     async rows(origin is Statement) is RowReading;
     async execution(sql is string, values is Sequencing<DbValue>) is Execution;
+    async execution(sql is string, values is ...DbValue) is Execution;
     query(sql is string, values is Sequencing<DbValue>) is DbQuery;
+    query(sql is string, values is ...DbValue) is DbQuery;
     async transaction(options is TransactionOptions) is Transaction;
     closed() is bool;
     close() is void;
