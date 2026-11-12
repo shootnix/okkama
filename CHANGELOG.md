@@ -106,6 +106,21 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   | `Problem(401, "expired").header("WWW-Authenticate", "Bearer")` | `ProblemReply(status: Status.unauthorized, detail: "expired", headers: Headers(Header(name: "WWW-Authenticate", value: "Bearer")))` |
   | `.header("Set-Cookie", "sid=…; Path=/; HttpOnly")` | `headers: Headers(SetCookie(name: "sid", value: token))` |
 
+- **A route table takes the most specific pattern and any number of routes
+  (#103, #104).** Patterns of one method may now overlap: segment by
+  segment, a literal wins over a parameter and a parameter over a final
+  wildcard, so `GET /users/me` sits beside `GET /users/:id` and
+  `GET /files/index` beside `GET /files/*path`. When the most specific
+  pattern has no route for the method, the next one is tried. Only two
+  routes of one method with the same shape (`/users/:id` and
+  `/users/:name`) are refused. The 256-route limit is gone: the table is a
+  segment tree, and finding a route no longer filters every route twice.
+
+  | routes in the table | 10 | 100 | 250 | 1000 |
+  |---|---|---|---|---|
+  | dispatch before, µs | 4.9 | 12.6 | 24.2 | refused |
+  | dispatch now, µs | 2.9 | 3.0 | 2.9 | 3.0 |
+
 - **The server answers HTTP/1.0 (#102).** `ab` works: no Host is required,
   responses are not chunked, and keep-alive applies only when asked for.
 - **RequestJson readers share one translation of reading failures (#84).**

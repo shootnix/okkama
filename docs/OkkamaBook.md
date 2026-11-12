@@ -5347,7 +5347,7 @@ Http2ServerSession (okkama-docs `docs/std/http2-server.md`) now owns independent
 H2 server supervision now covers shared HEADERS/CONTINUATION deadlines, physical DATA idle budgets, inactivity after the last handler, bounded protocol GOAWAY and unexpected task failures. 11 files /47 checks pass. Normal zero-disabled deadlines remain independent; failure GOAWAY cleanup has a separate one-second bound.
 
 
-Immutable Routes (okkama-docs `docs/std/http-routing.md`) compile literal/named/final-wildcard patterns, reject same-method intersections, route HEAD through GET and produce405 Allow. Raw segments decode once; encoded slash remains a parameter coordinate. Successor contexts preserve transport/cancellation facts. Actual H1/H2 HEAD tests verify body suppression; PERF-31 records constructor cost.
+Immutable Routes (okkama-docs `docs/std/http-routing.md`) compile literal/named/final-wildcard patterns into a segment tree and send a request to the most specific pattern: segment by segment a literal before a parameter before a wildcard (#103). Only two routes of one method with the same shape are refused; finding a route costs one step per segment, whatever the number of routes (#104). HEAD goes through GET, and a known path with another method gets 405 with Allow. Raw segments decode once; encoded slash remains a parameter coordinate. Successor contexts preserve transport/cancellation facts. Actual H1/H2 HEAD tests verify body suppression.
 
 
 `runtime/collections.string_map_snapshot`: required native-change full gate 779files /13,120checks PASS; frozen2172inputs and root runtime are byte-verified. Later std-only changes use separate focused gates.

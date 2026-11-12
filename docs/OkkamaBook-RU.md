@@ -5742,7 +5742,7 @@ Http2ServerSession (okkama-docs `docs/std/http2-server.md`) владеет не�
 H2 server supervision теперь покрывает общий бюджет HEADERS/CONTINUATION, независимый DATA idle, простой после последнего обработчика, ограниченный GOAWAY при ошибке протокола и неожиданные ошибки задач. 11 файлов /47 проверок проходят. Нулевые рабочие таймауты независимы; попытка отправки аварийного GOAWAY ограничена отдельной секундой.
 
 
-Неизменяемые Routes (okkama-docs `docs/std/http-routing.md`) поддерживают literal/named/final-wildcard patterns, отклоняют пересечения одного метода, направляют HEAD через GET и возвращают405 Allow. Сегменты декодируются один раз; encoded slash остаётся внутри параметра. Successor контекст сохраняет транспортные факты и отмену. Реальные H1/H2 тесты проверяют подавление тела HEAD; стоимость конструктора вынесена в PERF-31.
+Неизменяемые Routes (okkama-docs `docs/std/http-routing.md`) собирают literal/named/final-wildcard patterns в дерево сегментов и отдают запрос самому точному шаблону: сегмент за сегментом литерал раньше параметра, параметр раньше wildcard (#103). Отказ получают только два маршрута одного метода с одинаковой формой; поиск маршрута стоит один шаг на сегмент при любом числе маршрутов (#104). HEAD идёт через GET, известный путь с другим методом получает 405 с Allow. Сегменты декодируются один раз; encoded slash остаётся внутри параметра. Successor контекст сохраняет транспортные факты и отмену. Реальные H1/H2 тесты проверяют подавление тела HEAD.
 
 
 `runtime/collections.string_map_snapshot`: required native-change full gate 779files /13,120checks PASS; frozen2172inputs and root runtime are byte-verified. Later std-only changes use separate focused gates.

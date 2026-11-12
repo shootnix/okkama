@@ -33,10 +33,11 @@ import "web/exception" take Exception, ProblemReply;
 // problem body.
 //
 // Everything compiles into one std http/routing.Routes, so its rules are kept:
-// overlapping patterns for one method are rejected at construction, a known
-// path with another method gets 405 with Allow, and HEAD uses GET. Requests
-// Routes rejects itself (405, malformed path) are answered by WebRejection as
-// Exception problem replies, Allow included.
+// a request goes to the most specific pattern (/users/me before /users/:id,
+// /files/:name before /files/*path), two routes of one method with the same
+// shape are refused at construction, a known path with another method gets 405
+// with Allow, and HEAD uses GET. Requests Routes rejects itself (405, malformed
+// path) are answered by WebRejection as problem replies, Allow included.
 //
 // Paths: a Scope prefix starts with "/" and does not end with it. A route path
 // is "" (the scope itself, only inside a Scope) or starts with "/". The full
