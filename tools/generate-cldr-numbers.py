@@ -60,23 +60,64 @@ if numbering['version']!={'_unicodeVersion':'16.0.0','_cldrVersion':'46'}:raise 
 digits={name:entry['_digits'] for name,entry in numbering['numberingSystems'].items() if entry['_type']=='numeric'}
 if any(len(value)!=10 or len(set(value))!=10 for value in digits.values()):raise ValueError('unreviewed digits')
 
-def literal(value):return json.dumps(value,ensure_ascii=False,separators=(',',':'))
-def mapping(value):return literal(value).replace('{','[',1)[:-1]+']' if value else '[:]'
+from cldr_data import Tables
 
-text=['module locale/internal/numbers v1.0.0;','// Generated from SHA-checked CLDR 46.1.0 / Unicode 16.0.0.',
-      'import "compare" take Order;','import "strings/parse" take Number;',
-      'object CldrNumbers {has keys,rows is @string;',
-      'CldrNumbers(){keys='+literal('|'.join(sorted(rows)))+'.split("|");rows='+literal('|'.join(rows[k] for k in sorted(rows)))+'.split("|");}',
-      'row(tag is string) is @string{let index=self.search(tag,0,keys.size());if index<0{let empty is @string=[];empty;}else{let start=index*7;let values is @string=(start..start+7).map()->at{rows[at];};values;}}',
-      'profile(id is int) is @string{']
-for i,model in enumerate(models):text.append('if id=='+str(i)+'{return '+literal(model['fields'])+'.split("|");}')
-text.extend(['let empty is @string=[];empty;}','compact(id is int,long is bool) is %string:string{'])
-for i,model in enumerate(models):text.append('if id=='+str(i)+'{return if long{'+mapping(model['long'])+';}else{'+mapping(model['short'])+';};}')
-text.append('[:];}')
-text.append('digits(system is string) is string{let values is %string:string='+mapping(digits)+';if values.has(system){values[system];}else{"";}}')
-text.append('''hidden search(tag is string,start is int,stop is int) is int{
-if start>=stop{return -1;}let middle=start+((stop-start)/2).int();let order=tag.order(keys[middle]);
-if order==Order.equal{return middle;}if order==Order.less{self.search(tag,start,middle);}else{self.search(tag,middle+1,stop);}}
-}''')
-args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text('\n'.join(text)+'\n')
-print(f'compiled {len(rows)} locales, {len(models)} number profiles, {len(digits)} numeric systems')
+# The tables are runtime data (#223); the module only names them.
+tables=Tables('numbers')
+for tag,value in sorted(rows.items()):tables.add('row',tag,value.split('|'))
+for i,model in enumerate(models):
+    tables.add('profile',i,model['fields'].split('|'))
+    for style in ['short','long']:tables.add(style,i,[part for key,value in model[style].items() for part in (key,value)])
+for system,value in sorted(digits.items()):tables.add('digits',system,[value])
+data,records,size=tables.save()
+args.output.parent.mkdir(parents=True,exist_ok=True)
+args.output.write_text('''module locale/internal/numbers v1.0.0;
+
+// Generated from SHA-checked CLDR 46.1.0 / Unicode 16.0.0 by
+// tools/generate-cldr-numbers.py. The tables are runtime data
+// (cldr-numbers.dat, #223).
+import "runtime/cldr" take cldr_fields;
+
+object CldrNumbers {
+    CldrNumbers();
+
+    // Default, native, traditional and finance numbering systems, minimum
+    // grouping digits, the locale's systems and their profiles; empty for an
+    // unknown tag.
+    row(tag is string) is @string {
+        cldr_fields("numbers.row", tag);
+    }
+
+    // Symbols, then the decimal, scientific and percent patterns.
+    profile(id is int) is @string {
+        cldr_fields("numbers.profile", id.string());
+    }
+
+    // Compact patterns by "exponent:category".
+    compact(id is int, long is bool) is %string:string {
+        let table = if long {
+            "numbers.long";
+        }
+        else {
+            "numbers.short";
+        };
+        let pairs = cldr_fields(table, id.string());
+        let empty is %string:string = [:];
+        (0..(pairs.size() / 2).int()).reduce(empty) -> kept, index {
+            kept + [pairs[index * 2]: pairs[index * 2 + 1]];
+        };
+    }
+
+    // The ten digits of a numeric system; empty for an unknown one.
+    digits(system is string) is string {
+        let found = cldr_fields("numbers.digits", system);
+        if found.size() > 0 {
+            found[0];
+        }
+        else {
+            "";
+        };
+    }
+}
+''')
+print(f'compiled {len(rows)} locales, {len(models)} number profiles, {len(digits)} numeric systems; {records} records, {size} bytes in {data.name}')

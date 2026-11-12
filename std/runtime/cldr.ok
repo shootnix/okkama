@@ -1,0 +1,9 @@
+module runtime/cldr v1.0.0;
+
+// CLDR tables as runtime data (#223). tools/generate-cldr*.py write them to
+// cldr-<family>.dat; the runtime reads a file the first time one of its
+// tables is asked for. A table name starts with its family and a dot
+// ("numbers.row"); an unknown table is refused.
+
+// The fields of a record; empty when the table has no such key.
+native cldr_fields(table is string, key is string) is @string;
