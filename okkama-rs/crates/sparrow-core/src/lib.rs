@@ -135,6 +135,7 @@ pub struct Uncaught {
 }
 
 pub use okkama_runtime_core::failure::Site;
+pub use okkama_runtime_core::stdout;
 
 /// The call stack of an uncaught failure in Sparrow terms: function, number
 /// and text of the instruction of each frame. Empty for an empty stack.

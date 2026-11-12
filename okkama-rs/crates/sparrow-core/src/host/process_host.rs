@@ -202,6 +202,8 @@ pub(crate) fn launch(commands: &[Command]) -> io::Result<Vec<Spawned>> {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         builder.stdin(previous.take().map_or_else(Stdio::piped, Stdio::from));
+        // Buffered output goes before the child's own (#132).
+        let _ = okkama_runtime_core::stdout::flush();
         let mut child = builder.spawn()?;
         let input = child
             .stdin

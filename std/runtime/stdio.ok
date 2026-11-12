@@ -8,6 +8,13 @@ native stdout_write(data is @byte) is int;
 
 native stderr_write(data is @byte) is int;
 
+// Writes out what standard output holds back (#132). The runtimes buffer
+// standard output: a terminal gets every line as it ends, a pipe or a file the
+// bytes in blocks; it also goes out before standard error is written, before
+// standard input is read from a terminal, before a child process starts and
+// when the program ends.
+native stdout_flush() is bool;
+
 native stdin_read(limit is int) is @byte;
 
 native stdin_read_line() is @byte;

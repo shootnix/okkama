@@ -39,7 +39,15 @@ impl State {
                     return Ok(Value::Int(IntValue::from_i64(0)));
                 }
                 crate::budget::output(bytes.len()).map_err(Error::Exhausted)?;
-                let (stream, message): (&mut dyn Write, _) = if native == Native::StdoutWrite {
+                // Standard output is buffered (#132): its bytes go out on a
+                // flush, and before anything goes to standard error, so the two
+                // keep their order.
+                let stdout = native == Native::StdoutWrite;
+                if !stdout {
+                    retry(|| output.flush())
+                        .map_err(|error| io_failure(Native::StdoutWrite, error, "Cannot write standard output"))?;
+                }
+                let (stream, message): (&mut dyn Write, _) = if stdout {
                     (output, "Cannot write standard output")
                 } else {
                     (errors, "Cannot write standard error output")
@@ -49,9 +57,28 @@ impl State {
                 if written == 0 {
                     return Err(failure(native, "unexpected", message));
                 }
-                retry(|| stream.flush()).map_err(|error| io_failure(native, error, message))?;
+                if !stdout {
+                    retry(|| stream.flush()).map_err(|error| io_failure(native, error, message))?;
+                }
                 Ok(Value::Int(IntValue::from_u128(written as u128)))
             }
+            Native::StdoutFlush => {
+                retry(|| output.flush())
+                    .map_err(|error| io_failure(native, error, "Cannot write standard output"))?;
+                Ok(Value::Bool(true))
+            }
+            Native::StdinRead | Native::StdinReadLine if crate::stdout::terminal() && self.buffered.is_empty() => {
+                // A prompt on a terminal shows before the program waits for input.
+                retry(|| output.flush())
+                    .map_err(|error| io_failure(Native::StdoutWrite, error, "Cannot write standard output"))?;
+                self.read(native, args, arrays, input)
+            }
+            _ => self.read(native, args, arrays, input),
+        }
+    }
+
+    fn read(&mut self, native: Native, args: &[Value], arrays: &mut ArrayHeap, input: &mut dyn Read) -> Result<Value, Error> {
+        match native {
             Native::StdinRead => {
                 let limit = args[0].as_int()?;
                 if limit.signum() <= 0 {
@@ -275,7 +302,8 @@ mod tests {
         assert_eq!(value.as_int().unwrap().to_string(), "2");
         assert_eq!(out.bytes, [0, 255]);
         assert_eq!(out.calls, 2);
-        assert_eq!(out.flushes, 1);
+        // Standard output is buffered (#132): no flush per write...
+        assert_eq!(out.flushes, 0);
         assert!(err.is_empty());
         let value = state
             .execute(
@@ -289,6 +317,8 @@ mod tests {
             .unwrap();
         assert_eq!(value.as_int().unwrap().to_string(), "4");
         assert_eq!(err, [0, 255, 10, 42]);
+        // ...but before standard error is written, so the two keep their order.
+        assert_eq!(out.flushes, 1);
     }
 
     struct BrokenWriter;

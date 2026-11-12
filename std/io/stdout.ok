@@ -2,7 +2,7 @@ module io/stdout v1.0.0;
 
 import "io/stream" take Writing, WritingText, ByteSource, IncompleteWrite;
 import "encoding/utf" take Utf8Encoded;
-import "runtime/stdio" take stdout_write, stderr_write;
+import "runtime/stdio" take stdout_write, stderr_write, stdout_flush;
 
 // Process standard output capabilities.
 //
@@ -18,9 +18,15 @@ import "runtime/stdio" take stdout_write, stderr_write;
 // write() emits nothing; empty writeln() emits one LF. No method formats
 // arbitrary values: callers use explicit .string() or strings/format objects.
 //
-// The raw runtime boundary reports an accepted prefix length. A short count is
-// exposed as IncompleteWrite; errors are never retried here. flush() is a no-op
-// because these unbuffered capabilities retain no pending user-space bytes.
+// Standard output is buffered by the runtime, for every Stdout value at once: a
+// terminal gets each line as it ends, a pipe or a file gets the bytes in blocks.
+// Stdout().flush() writes out what is pending. The runtime also does that
+// before anything goes to standard error, before standard input is read from a
+// terminal, before a child process starts and when the program ends. Standard
+// error is not buffered; Stderr().flush() has nothing to do.
+//
+// The runtime boundary reports an accepted prefix length. A short count is
+// exposed as IncompleteWrite; errors are never retried here.
 
 object Stdout does Writing, WritingText {
     Stdout();
@@ -33,7 +39,9 @@ object Stdout does Writing, WritingText {
         self.write_bytes(bytes);
     }
 
-    flush() is void {}
+    flush() is void {
+        stdout_flush();
+    }
 
     write(values is ...string) is void {
         let data is @string = values...;

@@ -495,7 +495,7 @@ fn run_native(
     let result = if engine == "ir" {
         if mode == "test" {
             // Отчёт тестов — в stdout процесса; код выхода 0 — все прошли.
-            let mut stdout = std::io::stdout();
+            let mut stdout = okkama_runtime::stdout::Buffered;
             okkama_runtime::run_tests(module, &mut stdout)
                 .map(|passed| okkama_compiler::ir::IntValue::from_i64(i64::from(!passed)))
         } else {
@@ -512,7 +512,7 @@ fn run_native(
         };
         if mode == "test" {
             // The report goes to stdout; exit status 0 when every test passed.
-            return match sparrow_core::run_tests(bytes, Box::new(std::io::stdout())) {
+            return match sparrow_core::run_tests(bytes, Box::new(okkama_runtime::stdout::Buffered)) {
                 Ok(passed) => {
                     let mut reply = Reply::new(mode, "completed", "runtime");
                     reply.exit_status = Some(u8::from(!passed));

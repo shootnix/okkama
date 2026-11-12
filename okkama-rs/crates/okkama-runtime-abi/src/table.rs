@@ -629,5 +629,6 @@ natives! {
     FsMkdirAll = 643, "runtime/fs@1::mkdir_all/2", "(@byte, int) -> bool";
     FsCopyFile = 644, "runtime/fs@1::copy_file/3", "(@byte, @byte, bool) -> bool";
     FsRenameNoreplace = 645, "runtime/fs@1::rename_noreplace/2", "(@byte, @byte) -> bool";
+    StdoutFlush = 646, "runtime/stdio@1::stdout_flush/0", "() -> bool";
 }
 // retired: 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258

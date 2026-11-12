@@ -22,6 +22,7 @@ pub fn supported(native: Native) -> bool {
         Native::Utf8Encode
             | Native::StdoutWrite
             | Native::StderrWrite
+            | Native::StdoutFlush
             | Native::NumberTextIntParse
             | Native::NumberTextIntParseValid
             | Native::TimeSleepNanoseconds
@@ -71,16 +72,23 @@ pub fn call(runtime: &mut Runtime, function: usize, arguments: &[Word]) -> Resul
                 }
                 runtime.budget.written = written;
             }
+            // Standard output is the process buffer (#132); it goes out before
+            // standard error is written, so the two keep their order.
             let written = if native == Native::StdoutWrite {
-                std::io::Write::write_all(&mut std::io::stdout().lock(), &bytes)
+                okkama_runtime_core::stdout::write(&bytes)
             } else {
-                std::io::Write::write_all(&mut std::io::stderr().lock(), &bytes)
+                okkama_runtime_core::stdout::flush()
+                    .and_then(|()| std::io::Write::write_all(&mut std::io::stderr().lock(), &bytes))
             };
             match written {
                 Ok(()) => Ok((runtime.heap.int(bytes.len() as i64), Repr::Int)),
                 Err(error) => Err(Refusal::Failure(FailureKind::Program(error.to_string()))),
             }
         }
+        Native::StdoutFlush => match okkama_runtime_core::stdout::flush() {
+            Ok(()) => Ok((1, Repr::Raw)),
+            Err(error) => Err(Refusal::Failure(FailureKind::Program(error.to_string()))),
+        },
         Native::NumberTextIntParse | Native::NumberTextIntParseValid => {
             let radix = runtime.small_or_big(arguments[1]);
             let text = runtime.heap.text(arguments[0]);

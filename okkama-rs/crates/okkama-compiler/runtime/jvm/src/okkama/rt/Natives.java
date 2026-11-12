@@ -26,6 +26,12 @@ public final class Natives {
         return write(System.err, data);
     }
 
+    /** Стандартный вывод JVM сбрасывается при каждой записи; flush ничего не ждёт (#132). */
+    public static boolean runtime_stdio__stdout_flush() {
+        System.out.flush();
+        return true;
+    }
+
     private static BigInteger write(PrintStream stream, List<?> data) {
         byte[] bytes = toBytes(data);
         stream.write(bytes, 0, bytes.length);

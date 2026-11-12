@@ -17,6 +17,7 @@ pub mod integer;
 pub mod intrinsics;
 pub mod scalar;
 pub mod sched;
+pub mod stdout;
 pub mod strings;
 pub mod testing;
 pub mod worker;

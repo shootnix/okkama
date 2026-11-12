@@ -97,6 +97,7 @@ fn watchdog(flag: std::sync::Arc<std::sync::atomic::AtomicBool>) {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
+        sparrow_core::stdout::try_flush();
         let _ = std::io::Write::flush(&mut std::io::stdout());
         eprintln!("{}", sparrow_core::budget::Exhausted::Interrupted.message());
         std::process::exit(1);
@@ -109,7 +110,9 @@ fn execute(path: &Path, arguments: &[String], stats: bool, limits: sparrow_core:
         watchdog(flag.clone());
     }
     let arguments = arguments.iter().map(|a| a.clone().into_bytes()).collect();
-    match sparrow_core::run_described(bytes, arguments, stats, worker_command(path), limits) {
+    let result = sparrow_core::run_described(bytes, arguments, stats, worker_command(path), limits);
+    let _ = sparrow_core::stdout::flush();
+    match result {
         Ok(Ok(code)) => u8::try_from(code).map_err(|_| (1, format!("main() must return an int in 0..255, got {code}"))),
         Ok(Err((error, uncaught))) => {
             let code = report(error);
@@ -125,7 +128,7 @@ fn execute(path: &Path, arguments: &[String], stats: bool, limits: sparrow_core:
 
 fn test(path: &Path) -> Result<u8, Failure> {
     let (bytes, _) = load(path)?;
-    match sparrow_core::run_tests(bytes, Box::new(std::io::stdout())) {
+    match sparrow_core::run_tests(bytes, Box::new(sparrow_core::stdout::Buffered)) {
         Ok(passed) => Ok(u8::from(!passed)),
         Err(error) => Err((1, error.0)),
     }
@@ -138,6 +141,8 @@ fn answer(path: &Path) -> Result<u8, Failure> {
     let mut request = Vec::new();
     std::io::stdin().read_to_end(&mut request).map_err(|e| (3, format!("worker request: {e}")))?;
     let response = sparrow_core::run_worker(bytes, request, worker_command(path)).map_err(|e| (1, e.0))?;
+    // The action's own output, buffered (#132), comes before the response.
+    sparrow_core::stdout::flush().map_err(|e| (3, format!("worker response: {e}")))?;
     let mut out = std::io::stdout().lock();
     out.write_all(&response).and_then(|()| out.flush()).map_err(|e| (3, format!("worker response: {e}")))?;
     Ok(0)
@@ -266,7 +271,10 @@ fn main() -> ExitCode {
     let _allocation_report = okkama_allocation_counter::Report;
     #[cfg(not(feature = "allocation-stats"))]
     sparrow_core::budget::set_memory_probe(sparrow_core::budget::mimalloc_committed);
-    match run() {
+    let result = run();
+    // The program's buffered output goes before a failure report (#132).
+    let _ = sparrow_core::stdout::flush();
+    match result {
         Ok(code) => ExitCode::from(code),
         Err((code, message)) => {
             eprintln!("sparrow: {message}");

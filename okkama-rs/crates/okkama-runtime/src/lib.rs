@@ -22,6 +22,7 @@ pub use tests::run_tests;
 pub use worker::set_worker_command;
 pub use okkama_runtime_core::failure::Kind as FailureKind;
 pub use okkama_runtime_core::budget;
+pub use okkama_runtime_core::stdout;
 pub use okkama_runtime_core::host::default_environment;
 
 use std::fmt;

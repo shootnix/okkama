@@ -314,10 +314,8 @@ fn run(
             stderr.trim().to_string()
         }));
     };
-    // Печать действия до рамки — его stdout.
-    let mut stdout = std::io::stdout();
-    let _ = stdout.write_all(&output[..at]);
-    let _ = stdout.flush();
+    // Печать действия до рамки — его stdout, в буфер процесса (#132).
+    let _ = crate::stdout::write(&output[..at]);
     if !stderr.is_empty() {
         let mut stderr_stream = std::io::stderr();
         let _ = stderr_stream.write_all(stderr.as_bytes());
@@ -362,7 +360,8 @@ pub fn serve(execute: impl FnOnce(&str, Vec<Value>) -> Result<Value, String>, ty
             text(&mut response, &message);
         }
     }
+    // The action's own output, buffered (#132), comes before the response.
     let mut stdout = std::io::stdout();
-    let written = stdout.write_all(&response).and_then(|()| stdout.flush());
+    let written = crate::stdout::flush().and_then(|()| stdout.write_all(&response)).and_then(|()| stdout.flush());
     std::process::exit(if written.is_ok() { 0 } else { 70 });
 }
