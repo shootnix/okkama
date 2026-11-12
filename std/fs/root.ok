@@ -7,6 +7,9 @@ import "fs/error" take FileError, FileFailure;
 import "runtime/fs" take path_encode;
 import "runtime/fs_root" as rooted;
 import "io/stream" take Closing, InvalidReadLimit;
+import "fs/temp" take TemporaryDirectory;
+import "fs/file" take File, FileMode;
+import "encoding/utf" take Utf8Decoded;
 
 // Eager explicit root acquisition. Children own independent descriptors and
 // remain valid after root close; coordinates never become joined ambient paths.
@@ -77,6 +80,19 @@ object RootedEntry does Closing {
         }
     }
 
+    // The bytes from offset on, at most limit of them, read off the program's
+    // thread (#121): a slow disk holds up only the task that awaits it. Past
+    // the end of the file the piece is empty.
+    async piece(offset is int, limit is int) is @byte {
+        confirm limit > 0 else throw InvalidReadLimit.limit(limit);
+        try {
+            await rooted.rooted_entry_piece(state, offset, limit);
+        }
+        catch e is NativeFailure {
+            throw FileFailure(e).error();
+        }
+    }
+
     names(maximum is int) is @string {
         try {
             rooted.rooted_entry_names(state, maximum);
@@ -124,4 +140,53 @@ test "explicit root close is idempotent and child descriptor is independent" {
     else {
         test.ok(true);
     }
+}
+
+async test "a rooted piece is read off the program's thread" {
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "fs-root-test-");
+    let written = File(path: scratch.path().child("notes.txt"), mode: FileMode.writing);
+    written.text().write("hello, pieces");
+    written.close();
+    let root = FileRoot(directory: Directory(path: scratch.path()));
+    let entry = root.entry(["notes.txt"]);
+    test.is(Utf8Decoded(await entry.piece(offset: 0, limit: 5)).string(), "hello");
+    test.is(Utf8Decoded(await entry.piece(offset: 7, limit: 100)).string(), "pieces");
+    test.is(Utf8Decoded(entry.bytes_at(7, 6)).string(), "pieces");
+    test.is((await entry.piece(offset: 13, limit: 4)).size(), 0);
+    let reading is async (int, int) is @byte = entry.piece;
+    let first = spawn reading(0, 6);
+    let second = spawn reading(7, 6);
+    test.is(Utf8Decoded(await second).string() + Utf8Decoded(await first).string(), "pieceshello,");
+    test.ok(
+        try {
+            await entry.piece(offset: 0, limit: 0);
+            false;
+        }
+        catch e is InvalidReadLimit {
+            true;
+        }
+    );
+    let directory = root.entry([]);
+    test.ok(
+        try {
+            await directory.piece(offset: 0, limit: 1);
+            false;
+        }
+        catch e is FileError {
+            true;
+        }
+    );
+    entry.close();
+    test.ok(
+        try {
+            await entry.piece(offset: 0, limit: 1);
+            false;
+        }
+        catch e is FileError {
+            true;
+        }
+    );
+    directory.close();
+    root.close();
+    scratch.close();
 }

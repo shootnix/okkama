@@ -261,3 +261,144 @@ mod tests {
         assert_eq!((std::env::current_dir().unwrap(), std::env::var_os("OKKAMA_HOST_SESSION_TEST")), before);
     }
 }
+
+/// Pieces of one file read on the program's thread while the page cache holds
+/// them (#121), so only a read that would wait for the disk goes to a worker.
+/// Linux first asks `preadv2` with `RWF_NOWAIT`, which answers from the page
+/// cache or refuses. Where the file system cannot tell (overlayfs, tmpfs) and
+/// on other systems, `mincore` over a mapping of a window ahead of the read
+/// says how far the file is cached; the range is kept, so pieces read in order
+/// cost one check per window.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CachedRange {
+    from: u64,
+    through: u64,
+}
+
+/// How far ahead of a read one residency check looks.
+const CACHE_WINDOW: u64 = 1 << 20;
+
+impl CachedRange {
+    /// The bytes of `file` from `offset`, at most `limit`, when the read needs
+    /// no wait for the disk. `None`: the read would wait, or a check failed;
+    /// the caller then reads on a worker thread, which also reports a failure.
+    #[cfg(unix)]
+    pub fn read(&mut self, file: &std::fs::File, offset: u64, limit: usize) -> Option<Vec<u8>> {
+        use std::os::unix::fs::FileExt;
+        let end = offset.checked_add(limit as u64)?;
+        let mut buffer = vec![0u8; limit];
+        if !(self.from <= offset && end <= self.through) {
+            #[cfg(target_os = "linux")]
+            match read_nowait(file, &mut buffer, offset) {
+                Ok(count) => {
+                    buffer.truncate(count);
+                    return Some(buffer);
+                }
+                Err(error) if error.raw_os_error() == Some(libc::EAGAIN) => return None,
+                Err(_) => {}
+            }
+            let size = file.metadata().ok()?.len();
+            let stop = end.max(offset.saturating_add(CACHE_WINDOW)).min(size);
+            self.from = offset;
+            self.through = if offset < stop { resident_through(file, offset, stop)? } else { offset };
+            // Bytes past the end of the file need no disk.
+            if end.min(size) > self.through {
+                return None;
+            }
+        }
+        let count = file.read_at(&mut buffer, offset).ok()?;
+        buffer.truncate(count);
+        Some(buffer)
+    }
+
+    #[cfg(not(unix))]
+    pub fn read(&mut self, _file: &std::fs::File, _offset: u64, _limit: usize) -> Option<Vec<u8>> {
+        None
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn read_nowait(file: &std::fs::File, buffer: &mut [u8], offset: u64) -> std::io::Result<usize> {
+    use std::os::fd::AsRawFd;
+    let offset = libc::off_t::try_from(offset).map_err(|_| std::io::Error::from_raw_os_error(libc::EINVAL))?;
+    let piece = libc::iovec {
+        iov_base: buffer.as_mut_ptr().cast(),
+        iov_len: buffer.len(),
+    };
+    // SAFETY: one iovec over a live buffer; the descriptor is borrowed for the call.
+    let count = unsafe { libc::preadv2(file.as_raw_fd(), &piece, 1, offset, libc::RWF_NOWAIT) };
+    usize::try_from(count).map_err(|_| std::io::Error::last_os_error())
+}
+
+/// Up to where the page cache holds `file` from `start` (below `stop`, which
+/// is within the file): `mincore` over a read-only shared mapping of the
+/// range, unmapped at once. `None` when the check itself failed.
+#[cfg(unix)]
+fn resident_through(file: &std::fs::File, start: u64, stop: u64) -> Option<u64> {
+    use std::os::fd::AsRawFd;
+    static PAGE: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    let page = *PAGE.get_or_init(|| {
+        // SAFETY: sysconf has no preconditions.
+        let size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        u64::try_from(size).ok().filter(|size| *size > 0).unwrap_or(4096)
+    });
+    let first = start - start % page;
+    let length = usize::try_from(stop - first).ok()?;
+    let at = libc::off_t::try_from(first).ok()?;
+    let mut residency = vec![0u8; length.div_ceil(page as usize)];
+    // SAFETY: a fresh read-only mapping of `length` bytes that only mincore
+    // looks at; mincore writes one byte per page into `residency`, which has
+    // a byte for every page; the mapping is removed before return.
+    let answered = unsafe {
+        let address = libc::mmap(
+            std::ptr::null_mut(),
+            length,
+            libc::PROT_READ,
+            libc::MAP_SHARED,
+            file.as_raw_fd(),
+            at,
+        );
+        if address == libc::MAP_FAILED {
+            return None;
+        }
+        let answered = libc::mincore(address as _, length, residency.as_mut_ptr() as _) == 0;
+        libc::munmap(address, length);
+        answered
+    };
+    if !answered {
+        return None;
+    }
+    let cached = residency.iter().take_while(|state| *state & 1 == 1).count() as u64;
+    Some((first + cached * page).min(stop))
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod cached_range_tests {
+    use super::{CachedRange, resident_through};
+    use std::os::fd::AsRawFd;
+
+    #[test]
+    fn cached_pieces_are_read_at_once_and_evicted_ones_are_refused() {
+        let directory = std::env::temp_dir().join(format!("okkama-cached-range-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).expect("scratch directory");
+        let path = directory.join("pieces.bin");
+        std::fs::write(&path, vec![7u8; 256 * 1024]).expect("written file");
+        let file = std::fs::File::open(&path).expect("opened file");
+        let mut range = CachedRange::default();
+        assert_eq!(range.read(&file, 0, 65536).map(|piece| piece.len()), Some(65536));
+        assert_eq!(range.read(&file, 3 * 65536, 65536).map(|piece| piece.len()), Some(65536));
+        assert_eq!(range.read(&file, 300_000, 16).map(|piece| piece.len()), Some(0));
+        file.sync_all().expect("synced file");
+        // SAFETY: advice over the whole of an open descriptor.
+        unsafe {
+            libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_DONTNEED);
+        }
+        // tmpfs keeps its pages whatever the advice: nothing to refuse there.
+        if resident_through(&file, 0, 256 * 1024) == Some(256 * 1024) {
+            eprintln!("skipped: the file system keeps the pages");
+        } else {
+            assert_eq!(CachedRange::default().read(&file, 0, 65536), None);
+        }
+        std::fs::remove_dir_all(&directory).expect("removed scratch");
+    }
+}

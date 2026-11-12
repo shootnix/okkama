@@ -16,7 +16,7 @@ import "http/body" take BodyOpening, BodyReading, ByteBody, BodyClosed, BodyAlre
     TrailersUnavailable;
 import "http/conditional" take EntityTag, ParsedEntityTags, ByteRanges, ByteRange,
     ConditionalLimits, ConditionalItems, InvalidRange, InvalidEntityTag, ConditionalLimitExceeded;
-import "http/date" take HttpDate, ParsedHttpDate, InvalidHttpDate, HttpDateReferenceRequired;
+import "http/date" take HttpDate, ParsedHttpDate, InvalidHttpDate;
 import "http/negotiation" take AcceptedContentCodings, NoAcceptableValue, InvalidNegotiation;
 import "http/content_coding" take ContentCoding;
 import "url/percent" take PercentDecoded, PercentEncoded, UrlComponent, InvalidPercentEncoding;
@@ -1223,7 +1223,7 @@ hidden object StaticBodyReading does BodyReading {
                 maximum;
             };
             let bytes = if piece.file() {
-                entry.bytes_at(piece.start() + offset.value(), amount);
+                await entry.piece(offset: piece.start() + offset.value(), limit: amount);
             }
             else {
                 piece.bytes(offset.value(), amount);

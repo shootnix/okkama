@@ -8,11 +8,15 @@ use super::support::{
 };
 use super::Error;
 use crate::host;
+use crate::sched;
 use crate::{Value, abi::Native};
 use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::collections::VecDeque;
+use std::sync::{Condvar, Mutex, OnceLock, PoisonError};
 
 fn operation(native: Native) -> &'static str {
     native.name()
@@ -59,6 +63,8 @@ fn open_check(path: &Path, directory: bool) -> Result<(), HostError> {
 struct Rooted {
     path: PathBuf,
     closed: Cell<bool>,
+    /// How far the page cache was found to hold the file (#121).
+    cached: Cell<host::CachedRange>,
 }
 
 const ROOT: &str = "core.fs.root";
@@ -107,28 +113,178 @@ fn stat(native: Native, entry: &Rooted) -> Result<Value, Error> {
     ]))
 }
 
-fn read_at(native: Native, entry: &Rooted, offset: &crate::IntValue, limit: &crate::IntValue) -> Result<Value, Error> {
+/// Coordinates of a rooted read: an offset within exact integers and a limit
+/// of 1 byte to 1 MiB.
+fn coordinates(native: Native, offset: &crate::IntValue, limit: &crate::IntValue) -> Result<(u64, usize), Error> {
     let offset = offset.to_i64().filter(|offset| (0..=9_007_199_254_740_991).contains(offset));
     let limit = limit.to_i64().filter(|limit| (1..=1_048_576).contains(limit));
     let (Some(offset), Some(limit)) = (offset, limit) else {
         return Err(failure(ROOT, "invalid_input", native, "Invalid rooted read coordinates"));
     };
-    let regular = std::fs::symlink_metadata(&entry.path).is_ok_and(|meta| meta.is_file());
+    Ok((offset as u64, limit as usize))
+}
+
+/// Why a rooted read failed, in a form a worker thread can carry.
+enum PieceError {
+    Irregular,
+    Host(HostError),
+}
+
+/// A rooted regular file, opened for reading without following a link.
+fn opened(path: &Path) -> Result<std::fs::File, PieceError> {
+    let regular = std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_file());
     if !regular {
-        return Err(failure(ROOT, "invalid_input", native, "Only regular rooted files can be read"));
+        return Err(PieceError::Irregular);
     }
-    use std::os::unix::fs::{FileExt, OpenOptionsExt};
-    let file = std::fs::OpenOptions::new()
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW)
-        .open(&entry.path)
-        .map_err(|error| errno(ROOT, native, "Cannot read rooted file", io_error(&error)))?;
-    let mut buffer = vec![0; limit as usize];
+        .open(path)
+        .map_err(|error| PieceError::Host(io_error(&error)))
+}
+
+/// The bytes of `file` from `offset`, at most `limit`, waiting for the disk.
+fn read_from(file: &std::fs::File, offset: u64, limit: usize) -> Result<Vec<u8>, PieceError> {
+    use std::os::unix::fs::FileExt;
+    let mut buffer = vec![0; limit];
     let count = file
-        .read_at(&mut buffer, offset as u64)
-        .map_err(|error| errno(ROOT, native, "Cannot read rooted file", io_error(&error)))?;
+        .read_at(&mut buffer, offset)
+        .map_err(|error| PieceError::Host(io_error(&error)))?;
     buffer.truncate(count);
-    Ok(byte_array(buffer))
+    Ok(buffer)
+}
+
+/// The bytes of a rooted regular file from `offset`, at most `limit`.
+fn piece(path: &Path, offset: u64, limit: usize) -> Result<Vec<u8>, PieceError> {
+    read_from(&opened(path)?, offset, limit)
+}
+
+fn piece_error(native: Native, error: PieceError) -> Error {
+    match error {
+        PieceError::Irregular => failure(ROOT, "invalid_input", native, "Only regular rooted files can be read"),
+        PieceError::Host(error) => errno(ROOT, native, "Cannot read rooted file", error),
+    }
+}
+
+fn read_at(native: Native, entry: &Rooted, offset: &crate::IntValue, limit: &crate::IntValue) -> Result<Value, Error> {
+    let (offset, limit) = coordinates(native, offset, limit)?;
+    piece(&entry.path, offset, limit)
+        .map(byte_array)
+        .map_err(|error| piece_error(native, error))
+}
+
+type Job = Box<dyn FnOnce() + Send>;
+
+/// Readers that serve rooted reads off the program's thread (#121). A reader
+/// starts whenever the queue holds more jobs than idle readers, up to
+/// `MAX_READERS`, so a fast read does not wait behind slow ones; a reader
+/// without work for 10 seconds ends.
+const MAX_READERS: usize = 64;
+
+struct Readers {
+    jobs: VecDeque<Job>,
+    idle: usize,
+    total: usize,
+}
+
+fn readers() -> &'static (Mutex<Readers>, Condvar) {
+    static READERS: OnceLock<(Mutex<Readers>, Condvar)> = OnceLock::new();
+    READERS.get_or_init(|| {
+        (
+            Mutex::new(Readers {
+                jobs: VecDeque::new(),
+                idle: 0,
+                total: 0,
+            }),
+            Condvar::new(),
+        )
+    })
+}
+
+/// Hand `job` to a reader; `false` (the job dropped) when none can start.
+fn submit(job: Job) -> bool {
+    let (state, ready) = readers();
+    let mut readers = state.lock().unwrap_or_else(PoisonError::into_inner);
+    readers.jobs.push_back(job);
+    if readers.jobs.len() > readers.idle && readers.total < MAX_READERS {
+        let spawned = std::thread::Builder::new().name("okkama-read".into()).spawn(read_jobs);
+        if spawned.is_ok() {
+            readers.total += 1;
+        } else if readers.total == 0 {
+            readers.jobs.clear();
+            return false;
+        }
+    }
+    drop(readers);
+    ready.notify_one();
+    true
+}
+
+/// A reader: jobs in turn until none comes for 10 seconds.
+fn read_jobs() {
+    let (state, ready) = readers();
+    let mut readers = state.lock().unwrap_or_else(PoisonError::into_inner);
+    loop {
+        if let Some(job) = readers.jobs.pop_front() {
+            drop(readers);
+            job();
+            readers = state.lock().unwrap_or_else(PoisonError::into_inner);
+            continue;
+        }
+        readers.idle += 1;
+        let (guard, waited) = ready
+            .wait_timeout(readers, std::time::Duration::from_secs(10))
+            .unwrap_or_else(PoisonError::into_inner);
+        readers = guard;
+        readers.idle -= 1;
+        if waited.timed_out() && readers.jobs.is_empty() {
+            readers.total -= 1;
+            return;
+        }
+    }
+}
+
+/// `rooted_entry_piece`: the read of `read_at`, at once when the page cache
+/// holds it, otherwise on a reader thread.
+fn read_piece(native: Native, entry: &Rooted, offset: &crate::IntValue, limit: &crate::IntValue) -> Result<Value, Error> {
+    let (offset, limit) = coordinates(native, offset, limit)?;
+    let file = match opened(&entry.path) {
+        Ok(file) => file,
+        Err(error) => return Ok(Value::Future(sched::resolved(Err(rejected(piece_error(native, error)))))),
+    };
+    let mut cached = entry.cached.get();
+    let read = cached.read(&file, offset, limit);
+    entry.cached.set(cached);
+    if let Some(bytes) = read {
+        return Ok(Value::Future(sched::resolved(Ok(byte_array(bytes)))));
+    }
+    let promise = sched::promise();
+    let target = promise.clone();
+    let (pending, completion) = sched::external(move |outcome: Option<Result<Vec<u8>, PieceError>>| {
+        let settled = match outcome {
+            Some(Ok(bytes)) => Ok(byte_array(bytes)),
+            Some(Err(error)) => Err(rejected(piece_error(native, error))),
+            None => Err(rejected(failure(ROOT, "unexpected", native, "The rooted read was lost"))),
+        };
+        sched::settle(&target, settled);
+    });
+    promise.listen(move || pending.detach());
+    // A refused job drops its completion, which settles the read as lost.
+    submit(Box::new(move || completion.deliver(read_from(&file, offset, limit))));
+    Ok(Value::Future(promise))
+}
+
+/// A provider failure as the failure of a Future.
+fn rejected(error: Error) -> Rc<crate::failure::Failure> {
+    use crate::failure::{Failure, Kind};
+    match error {
+        Error::Failure(failure) => Failure::new(Kind::Native(Rc::new(failure))),
+        Error::Trap(message) | Error::InvalidState(message) | Error::Unsupported(message) => {
+            Failure::new(Kind::Program(message))
+        }
+        Error::Exhausted(exhausted) => Failure::new(Kind::Program(exhausted.message().into())),
+    }
 }
 
 fn names(native: Native, entry: &Rooted, maximum: &crate::IntValue) -> Result<Value, Error> {
@@ -306,6 +462,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             Ok(new_handle(Rooted {
                 path,
                 closed: Cell::new(false),
+                cached: Cell::default(),
             }))
         }
         "file_root_entry" => {
@@ -345,6 +502,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             Ok(new_handle(Rooted {
                 path: current,
                 closed: Cell::new(false),
+                cached: Cell::default(),
             }))
         }
         "file_root_closed" | "rooted_entry_closed" => Ok(Value::Bool(handle::<Rooted>(&args[0])?.closed.get())),
@@ -354,6 +512,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
         }
         "rooted_entry_stat" => stat(native, rooted(native, &args[0], ROOT)?),
         "rooted_entry_read" => read_at(native, rooted(native, &args[0], ROOT)?, int(&args[1])?, int(&args[2])?),
+        "rooted_entry_piece" => read_piece(native, rooted(native, &args[0], ROOT)?, int(&args[1])?, int(&args[2])?),
         "rooted_entry_names" => names(native, rooted(native, &args[0], ROOT)?, int(&args[1])?),
         // ---- snapshot ----
         "snapshot_root_open" => {
@@ -362,6 +521,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             Ok(new_handle(Rooted {
                 path,
                 closed: Cell::new(false),
+                cached: Cell::default(),
             }))
         }
         "snapshot_read" => {

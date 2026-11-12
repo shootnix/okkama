@@ -16,6 +16,10 @@ native rooted_entry_stat(entry is RootedEntryState) is %string:int;
 
 native rooted_entry_read(entry is RootedEntryState, offset is int, limit is int) is @byte;
 
+// The same read off the program's thread (#121): a slow disk holds up only
+// the task that awaits it.
+native async rooted_entry_piece(entry is RootedEntryState, offset is int, limit is int) is @byte;
+
 native rooted_entry_names(entry is RootedEntryState, maximum is int) is @string;
 
 native rooted_entry_closed(entry is RootedEntryState) is bool;

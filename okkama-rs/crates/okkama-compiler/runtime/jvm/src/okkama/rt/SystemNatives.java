@@ -86,6 +86,9 @@ public final class SystemNatives {
     static final class Rooted {
         Path path;
         boolean closed;
+        /** How far the page cache was found to hold the file (#121). */
+        long cachedFrom;
+        long cachedThrough;
     }
 
     private static String rootSymbol(String name, int arity) {
@@ -228,6 +231,257 @@ public final class SystemNatives {
         } catch (IOException error) {
             throw errno(ROOT, symbol, "Cannot read rooted file", reason(error));
         }
+    }
+
+    /**
+     * Rooted reads off the program's thread (#121): up to 64 readers, so a
+     * fast read does not wait behind slow ones; a reader without work for 10
+     * seconds ends.
+     */
+    private static final java.util.concurrent.ThreadPoolExecutor READERS = readers();
+
+    private static java.util.concurrent.ThreadPoolExecutor readers() {
+        java.util.concurrent.ThreadPoolExecutor pool = new java.util.concurrent.ThreadPoolExecutor(
+            64, 64, 10, java.util.concurrent.TimeUnit.SECONDS,
+            new java.util.concurrent.LinkedBlockingQueue<Runnable>(),
+            new java.util.concurrent.ThreadFactory() {
+                public Thread newThread(Runnable work) {
+                    Thread thread = new Thread(work, "okkama-read");
+                    thread.setDaemon(true);
+                    return thread;
+                }
+            });
+        pool.allowCoreThreadTimeOut(true);
+        return pool;
+    }
+
+    /** The bytes of a regular file from {@code offset}, at most {@code limit}; null for another kind. */
+    private static byte[] piece(Path path, long offset, int limit) throws IOException {
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+            return null;
+        }
+        try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
+            ByteBuffer buffer = ByteBuffer.allocate(limit);
+            int count = channel.read(buffer, offset);
+            byte[] bytes = new byte[Math.max(0, count)];
+            buffer.flip();
+            buffer.get(bytes);
+            return bytes;
+        }
+    }
+
+    /**
+     * A read from the page cache without waiting for the disk (#121), through
+     * FFM. Linux first asks {@code preadv2} with {@code RWF_NOWAIT}. Where the
+     * file system cannot tell (overlayfs, tmpfs) and on macOS, {@code mincore}
+     * over a mapping of a window ahead of the read says how far the file is
+     * cached, and {@code pread} reads; the entry keeps the range, so pieces
+     * read in order cost one check per window. {@code read} answers null when
+     * the read would wait or anything fails; the caller then reads on a
+     * worker, which also reports a failure.
+     */
+    private static final class CachedReads {
+        private static final java.lang.invoke.MethodHandle OPEN;
+        private static final java.lang.invoke.MethodHandle CLOSE;
+        private static final java.lang.invoke.MethodHandle PREADV2;
+        private static final java.lang.invoke.MethodHandle PREAD;
+        private static final java.lang.invoke.MethodHandle MMAP;
+        private static final java.lang.invoke.MethodHandle MUNMAP;
+        private static final java.lang.invoke.MethodHandle MINCORE;
+        private static final java.lang.invoke.MethodHandle LSEEK;
+        private static final int FLAGS;
+        private static final long WINDOW = 1L << 20;
+        private static final long PAGE;
+        private static final int RWF_NOWAIT = 0x8;
+        private static final int EAGAIN = 11;
+
+        static {
+            java.lang.invoke.MethodHandle open = null;
+            java.lang.invoke.MethodHandle close = null;
+            java.lang.invoke.MethodHandle preadv2 = null;
+            java.lang.invoke.MethodHandle pread = null;
+            java.lang.invoke.MethodHandle mmap = null;
+            java.lang.invoke.MethodHandle munmap = null;
+            java.lang.invoke.MethodHandle mincore = null;
+            java.lang.invoke.MethodHandle lseek = null;
+            long page = 4096;
+            String arch = System.getProperty("os.arch", "");
+            // O_RDONLY | O_NOFOLLOW | O_CLOEXEC.
+            int flags = Posix.MAC ? 0x100 | 0x1000000
+                : !Posix.LINUX ? -1
+                : arch.equals("amd64") || arch.equals("x86_64") ? 0x20000 | 0x80000
+                : arch.equals("aarch64") ? 0x8000 | 0x80000 : -1;
+            if (flags != -1) {
+                try {
+                    java.lang.foreign.FunctionDescriptor sized = java.lang.foreign.FunctionDescriptor.of(
+                        Posix.LONG, Posix.INT, Posix.PTR, Posix.LONG, Posix.LONG);
+                    open = Posix.function("open", java.lang.foreign.FunctionDescriptor.of(Posix.INT, Posix.PTR, Posix.INT));
+                    close = Posix.function("close", java.lang.foreign.FunctionDescriptor.of(Posix.INT, Posix.INT));
+                    pread = Posix.function("pread", sized);
+                    mmap = Posix.function("mmap", java.lang.foreign.FunctionDescriptor.of(
+                        Posix.PTR, Posix.PTR, Posix.LONG, Posix.INT, Posix.INT, Posix.INT, Posix.LONG));
+                    munmap = Posix.function("munmap", java.lang.foreign.FunctionDescriptor.of(Posix.INT, Posix.PTR, Posix.LONG));
+                    mincore = Posix.function("mincore", java.lang.foreign.FunctionDescriptor.of(
+                        Posix.INT, Posix.PTR, Posix.LONG, Posix.PTR));
+                    lseek = Posix.function("lseek", java.lang.foreign.FunctionDescriptor.of(
+                        Posix.LONG, Posix.INT, Posix.LONG, Posix.INT));
+                    java.lang.invoke.MethodHandle size = Posix.function(
+                        "getpagesize", java.lang.foreign.FunctionDescriptor.of(Posix.INT));
+                    page = (int) size.invokeExact();
+                    if (Posix.LINUX) {
+                        preadv2 = Posix.errnoFunction("preadv2", java.lang.foreign.FunctionDescriptor.of(
+                            Posix.LONG, Posix.INT, Posix.PTR, Posix.INT, Posix.LONG, Posix.INT));
+                    }
+                } catch (Throwable unavailable) {
+                    open = null;
+                }
+            }
+            OPEN = open;
+            CLOSE = close;
+            PREADV2 = preadv2;
+            PREAD = pread;
+            MMAP = mmap;
+            MUNMAP = munmap;
+            MINCORE = mincore;
+            LSEEK = lseek;
+            FLAGS = flags;
+            PAGE = page > 0 ? page : 4096;
+        }
+
+        static byte[] read(Rooted entry, long offset, int limit) {
+            if (OPEN == null) {
+                return null;
+            }
+            try (java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofConfined()) {
+                java.lang.foreign.MemorySegment name = arena.allocateFrom(entry.path.toString(), StandardCharsets.UTF_8);
+                int fd = (int) OPEN.invokeExact(name, FLAGS);
+                if (fd < 0) {
+                    return null;
+                }
+                try {
+                    java.lang.foreign.MemorySegment buffer = arena.allocate(limit);
+                    long end = offset + limit;
+                    if (!(entry.cachedFrom <= offset && end <= entry.cachedThrough)) {
+                        if (PREADV2 != null) {
+                            java.lang.foreign.MemorySegment state = Posix.state(arena);
+                            java.lang.foreign.MemorySegment piece = arena.allocate(16, 8);
+                            piece.set(java.lang.foreign.ValueLayout.ADDRESS, 0, buffer);
+                            piece.set(java.lang.foreign.ValueLayout.JAVA_LONG, 8, (long) limit);
+                            long count = (long) PREADV2.invokeExact(state, fd, piece, 1, offset, RWF_NOWAIT);
+                            if (count >= 0) {
+                                return copy(buffer, count);
+                            }
+                            if (Posix.errno(state) == EAGAIN) {
+                                return null;
+                            }
+                        }
+                        long size = (long) LSEEK.invokeExact(fd, 0L, 2);
+                        if (size < 0) {
+                            return null;
+                        }
+                        long stop = Math.min(Math.max(end, offset + WINDOW), size);
+                        long through = offset < stop ? residentThrough(arena, fd, offset, stop) : offset;
+                        if (through < 0) {
+                            return null;
+                        }
+                        entry.cachedFrom = offset;
+                        entry.cachedThrough = through;
+                        // Bytes past the end of the file need no disk.
+                        if (Math.min(end, size) > through) {
+                            return null;
+                        }
+                    }
+                    long count = (long) PREAD.invokeExact(fd, buffer, (long) limit, offset);
+                    return count < 0 ? null : copy(buffer, count);
+                } finally {
+                    int closed = (int) CLOSE.invokeExact(fd);
+                }
+            } catch (Throwable failed) {
+                return null;
+            }
+        }
+
+        private static byte[] copy(java.lang.foreign.MemorySegment buffer, long count) {
+            return buffer.asSlice(0, count).toArray(java.lang.foreign.ValueLayout.JAVA_BYTE);
+        }
+
+        /**
+         * Up to where the page cache holds the file from {@code start} (below
+         * {@code stop}, within the file): mincore over a mapping of the range;
+         * -1 when the check failed.
+         */
+        private static long residentThrough(java.lang.foreign.Arena arena, int fd, long start, long stop) throws Throwable {
+            long first = start - start % PAGE;
+            long length = stop - first;
+            java.lang.foreign.MemorySegment address = (java.lang.foreign.MemorySegment) MMAP.invokeExact(
+                java.lang.foreign.MemorySegment.NULL, length, 1, 1, fd, first);
+            if (address.address() == -1L) {
+                return -1;
+            }
+            try {
+                int pages = (int) ((length + PAGE - 1) / PAGE);
+                java.lang.foreign.MemorySegment residency = arena.allocate(pages);
+                if ((int) MINCORE.invokeExact(address, length, residency) != 0) {
+                    return -1;
+                }
+                int cached = 0;
+                while (cached < pages && (residency.get(java.lang.foreign.ValueLayout.JAVA_BYTE, cached) & 1) == 1) {
+                    cached++;
+                }
+                return Math.min(first + cached * PAGE, stop);
+            } finally {
+                int unmapped = (int) MUNMAP.invokeExact(address, length);
+            }
+        }
+    }
+
+    public static Future runtime_fs_root__rooted_entry_piece(Object handle, BigInteger offset, BigInteger limit) {
+        final String symbol = rootSymbol("rooted_entry_piece", 3);
+        final Rooted entry;
+        try {
+            entry = rooted(handle, "rooted_entry_piece", 3);
+        } catch (Failure closed) {
+            return Scheduler.resolved(null, closed);
+        }
+        if (offset.signum() < 0 || offset.compareTo(BigInteger.valueOf(9007199254740991L)) > 0
+                || limit.signum() <= 0 || limit.compareTo(BigInteger.valueOf(1048576)) > 0) {
+            return Scheduler.resolved(null, fail(ROOT, "invalid_input", symbol, "Invalid rooted read coordinates"));
+        }
+        final Path path = entry.path;
+        final long at = offset.longValue();
+        final int size = limit.intValue();
+        // From the page cache at once; only a read that would wait goes to a reader.
+        if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+            byte[] cached = CachedReads.read(entry, at, size);
+            if (cached != null) {
+                return Scheduler.resolved(Natives.fromBytes(cached, cached.length), null);
+            }
+        }
+        final Future promise = Future.promise();
+        final Scheduler.Op op = Scheduler.offload(READERS, new java.util.concurrent.Callable<Object>() {
+            public Object call() throws IOException {
+                return piece(path, at, size);
+            }
+        }, new Scheduler.Outcome() {
+            public void deliver(Object value, Throwable error) {
+                if (error instanceof IOException) {
+                    Scheduler.settle(promise, null, errno(ROOT, symbol, "Cannot read rooted file", reason((IOException) error)));
+                } else if (error != null) {
+                    Scheduler.settle(promise, null, fail(ROOT, "unexpected", symbol, "The rooted read failed"));
+                } else if (value == null) {
+                    Scheduler.settle(promise, null, fail(ROOT, "invalid_input", symbol, "Only regular rooted files can be read"));
+                } else {
+                    byte[] bytes = (byte[]) value;
+                    Scheduler.settle(promise, Natives.fromBytes(bytes, bytes.length), null);
+                }
+            }
+        });
+        promise.listen(new Runnable() {
+            public void run() {
+                op.detach();
+            }
+        });
+        return promise;
     }
 
     public static List<Object> runtime_fs_root__rooted_entry_names(Object handle, BigInteger maximum) {

@@ -13,16 +13,21 @@ use std::{
     fs::File,
     io::{Read, Write},
     os::unix::fs::{FileExt, MetadataExt, OpenOptionsExt},
+    sync::{Arc, OnceLock},
 };
 #[derive(Debug)]
 pub(crate) struct Rooted {
-    file: Option<File>,
+    /// Shared with a read in flight (#121), which keeps the descriptor open
+    /// until it ends even if the entry is closed meanwhile.
+    file: Option<Arc<File>>,
     /// A regular file, as the open saw it: a descriptor never changes kind,
     /// so reads need no stat of their own (#108).
     regular: bool,
     /// The metadata of the open's check, given to the first stat() instead
     /// of asking the descriptor again (#108).
     opened: Option<std::fs::Metadata>,
+    /// How far the page cache was found to hold the file (#121).
+    cached: okkama_runtime_core::host::CachedRange,
 }
 pub(crate) fn handles(n: Native) -> bool {
     n.symbol().starts_with("runtime/fs_root@1::") || n.symbol().starts_with("runtime/snapshot@1::")
@@ -49,6 +54,23 @@ fn host(n: Native, error: std::io::Error) -> ProviderError {
             ProviderError::Native(e)
         }
         other => other,
+    }
+}
+/// Rooted reads off the VM thread at once (#121): more than the slow reads a
+/// server usually has in flight, so a fast read does not wait behind them, and
+/// still a bound on blocking threads and buffers.
+const MAX_ROOTED_READS: usize = 64;
+static READ_SLOTS: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+/// An I/O error of a read on Tokio's blocking pool as the native's failure.
+fn read_failure(n: Native, error: std::io::Error) -> NativeFailure {
+    match host(n, error) {
+        ProviderError::Native(failure) => failure,
+        ProviderError::Engine(_) => NativeFailure {
+            domain: domain(n).into(),
+            code: "unexpected".into(),
+            operation: n.symbol().into(),
+            message: "Cannot read rooted file".into(),
+        },
     }
 }
 fn component(s: &str) -> bool {
@@ -82,17 +104,84 @@ impl Heap {
         };
         state
             .file
-            .as_ref()
+            .as_deref()
             .ok_or_else(|| fail(n, "already_closed", "Rooted handle is closed"))
+    }
+    fn rooted_shared(&self, n: Native, v: Slot) -> Result<Arc<File>, ProviderError> {
+        self.rooted_state(v)?
+            .file
+            .clone()
+            .ok_or_else(|| fail(n, "already_closed", "Rooted handle is closed"))
+    }
+    /// Offset and limit of a rooted read, checked.
+    fn rooted_coordinates(&self, n: Native, a: &[Slot]) -> Result<(u64, usize), ProviderError> {
+        let offset = self
+            .integer(a[1])?
+            .to_i64()
+            .filter(|v| (0..=9_007_199_254_740_991).contains(v))
+            .ok_or_else(|| fail(n, "invalid_input", "Invalid rooted offset"))?;
+        let limit = self
+            .integer(a[2])?
+            .to_i64()
+            .filter(|v| (1..=1_048_576).contains(v))
+            .ok_or_else(|| fail(n, "invalid_input", "Invalid rooted limit"))?;
+        if !self.rooted_state(a[0])?.regular {
+            return Err(fail(
+                n,
+                "invalid_input",
+                "Only regular rooted files can be read",
+            ));
+        }
+        Ok((offset as u64, limit as usize))
+    }
+    /// `rooted_entry_piece`: the read on Tokio's blocking pool (#121).
+    fn rooted_piece(&mut self, n: Native, a: &[Slot]) -> Result<Slot, ProviderError> {
+        let (offset, limit) = self.rooted_coordinates(n, a)?;
+        let file = self.rooted_shared(n, a[0])?;
+        // From the page cache at once; only a read that would wait for the
+        // disk goes to the blocking pool.
+        let Handle::Rooted(state) = self.handles.get_mut(a[0].bits)? else {
+            return Err(Error("expected rooted native handle".into()).into());
+        };
+        if let Some(bytes) = state.cached.read(&file, offset, limit) {
+            let bytes = self.native_byte_array(bytes)?;
+            return Ok(self.future_with_state(State::Ready(Ok(bytes)))?);
+        }
+        let slots = READ_SLOTS
+            .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(MAX_ROOTED_READS)))
+            .clone();
+        Ok(self.native_io(async move {
+            let lost = || NativeFailure {
+                domain: domain(n).into(),
+                code: "unexpected".into(),
+                operation: n.symbol().into(),
+                message: "The rooted read was lost".into(),
+            };
+            let permit = slots.acquire_owned().await.map_err(|_| lost())?;
+            let read = tokio::task::spawn_blocking(move || {
+                let _permit = permit;
+                let mut bytes = vec![0; limit];
+                file.read_at(&mut bytes, offset).map(|size| {
+                    bytes.truncate(size);
+                    bytes
+                })
+            });
+            match read.await {
+                Ok(Ok(bytes)) => Ok(bytes),
+                Ok(Err(error)) => Err(read_failure(n, error)),
+                Err(_) => Err(lost()),
+            }
+        })?)
     }
     fn root_new(&mut self, file: File, opened: Option<std::fs::Metadata>) -> Result<Slot, Error> {
         let regular = opened.as_ref().is_some_and(|meta| meta.is_file());
         Ok(Slot {
             tag: HANDLE,
             bits: self.handles.allocate(Handle::Rooted(Rooted {
-                file: Some(file),
+                file: Some(Arc::new(file)),
                 regular,
                 opened,
+                cached: Default::default(),
             }))?,
         })
     }
@@ -170,6 +259,9 @@ impl Heap {
             state.file.take();
             return Ok(Slot::boolean(true));
         }
+        if n == FsRootRootedEntryPiece {
+            return self.rooted_piece(n, a);
+        }
         let root = self.rooted(n, a[0])?;
         match n {
             FsRootFileRootEntry => {
@@ -227,26 +319,10 @@ impl Heap {
                 Ok(self.map_new(entries.into_iter())?)
             }
             FsRootRootedEntryRead => {
-                let offset = self
-                    .integer(a[1])?
-                    .to_i64()
-                    .filter(|v| (0..=9_007_199_254_740_991).contains(v))
-                    .ok_or_else(|| fail(n, "invalid_input", "Invalid rooted offset"))?;
-                let limit = self
-                    .integer(a[2])?
-                    .to_i64()
-                    .filter(|v| (1..=1_048_576).contains(v))
-                    .ok_or_else(|| fail(n, "invalid_input", "Invalid rooted limit"))?;
-                if !self.rooted_state(a[0])?.regular {
-                    return Err(fail(
-                        n,
-                        "invalid_input",
-                        "Only regular rooted files can be read",
-                    ));
-                }
-                let mut bytes = vec![0; limit as usize];
+                let (offset, limit) = self.rooted_coordinates(n, a)?;
+                let mut bytes = vec![0; limit];
                 let size = root
-                    .read_at(&mut bytes, offset as u64)
+                    .read_at(&mut bytes, offset)
                     .map_err(|e| host(n, e))?;
                 bytes.truncate(size);
                 Ok(self.native_byte_array(bytes)?)

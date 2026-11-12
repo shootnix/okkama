@@ -335,6 +335,25 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     refused, and the program ends with code 0; an HTTPS application stops the
     same way. `examples/web/https.ok` serves HTTPS and answers an HTTP/2 and
     an HTTP/1.1 client.
+- **Static files do not stall the server on a slow disk (#121).**
+  - `fs/root`: `await entry.piece(offset:, limit:)` reads a rooted file off
+    the program's thread. `http/static` reads file bodies with it, so
+    `Files(…)` and `FileReply` do too.
+  - Only a read that would wait for the disk goes to a worker. When the page
+    cache holds the range, the runtime reads at once: Linux asks `preadv2`
+    with `RWF_NOWAIT`; where the file system cannot tell (overlayfs, tmpfs)
+    and on macOS, `mincore` over a 1 MiB window ahead of the read, which the
+    entry keeps.
+  - Workers: an elastic pool of up to 64 threads in the IR engine and on the
+    JVM, Tokio's blocking pool with 64 slots in Sparrow.
+  - With the disk limited to 8 MB/s and four cold downloads in flight, a warm
+    1 KiB file now comes back as if alone: p99 0.24 ms on Sparrow instead of
+    543 ms, 4.0 ms on the IR engine instead of 537 ms, 4.3 ms on the JVM
+    instead of 559 ms.
+  - On a warm cache, 1 MiB files cost 7–10% on Sparrow and 8% on the JVM,
+    about half of it for awaiting a ready Future; the IR engine is unchanged.
+  - Opening, `stat` and the content digest of `tags: FileTags.content` stay
+    synchronous. Report: `okkama-docs/benchmarks/fs-121/REPORT.md`.
 - **The server frames every response.** A response of known length without a
   Content-Length gets one, and one of unknown length (`StreamReply`,
   `EventsReply`, compressed streams) is chunked for an HTTP/1.1 client.
