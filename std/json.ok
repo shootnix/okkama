@@ -865,7 +865,10 @@ test "values built in code are written compact and pretty" {
     );
     test.is(Json(fields: []).pretty(0), "{}");
     test.is(Json(JsonField("a", 1), JsonField("b", true)).string(), "{\"a\":1,\"b\":true}");
-    test.is(Json(fields: [JsonField("a", 1), JsonField("b", true)]).string(), "{\"a\":1,\"b\":true}");
+    test.is(
+        Json(fields: [JsonField("a", 1), JsonField("b", true)]).string(),
+        "{\"a\":1,\"b\":true}"
+    );
     test.is(Json().string(), "null");
     test.is(
         try {
