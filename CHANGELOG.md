@@ -121,6 +121,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   them (vscode-okkama 0.9.0); conformance `L04.test.close-text-bytes-pass`
   and `-fail`.
 
+- **Language: elementary functions, `min`, `max` and `clamp` (#192).**
+  `float` gains `floor()`, `ceil()`, `round()` (half away from zero),
+  `trunc()`, `exp()`, `ln()`, `log2()`, `log10()`, `sin()`, `cos()`, `tan()`,
+  `atan2(y)` (`x.atan2(y)` is the angle of the point (x, y)), `finite()` and
+  `nan()`; `int` and `float` gain `min(other)`, `max(other)` and
+  `clamp(low, high)`. A result that is not finite is an error, as for every
+  float. They are intrinsics of every engine; the Sparrow image format is
+  unchanged. Book, spec §6.6, Bible §5; `t/op/float-functions.ok`.
+
 ### Fixed
 
 - **A server's memory grew with every request (#503).** `examples/web/hello.ok`
