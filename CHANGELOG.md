@@ -313,6 +313,24 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     engine and Sparrow, an `SSLEngine` with a key manager on the JVM.
   - No client certificate is asked for; `TlsDetails.peer()` of such a
     connection says the peer presented none.
+- **A web application speaks HTTPS and stops on a signal (#80).**
+  - `WebApplication(routes).listen(address:, port:, tls: identity)` serves
+    HTTPS and offers HTTP/2 and HTTP/1.1 by ALPN. `server(address, port,
+    tls)` binds such a server without serving it; its own URL is https.
+  - `listen()` serves until SIGTERM or SIGINT. Then the server stops
+    accepting, the requests in flight get 10 seconds to finish, the server
+    closes and `listen()` returns, so the program goes on and can end with
+    code 0. A second signal during the drain ends the process at once.
+  - Underneath is a new runtime boundary, `runtime/signal`:
+    `signal_wait(["TERM", "INT"])` waits for one of the named signals and
+    answers its name. A signal is handled only
+    while some wait wants it; when the wait ends, by the signal or by
+    cancellation, the signal gets its earlier action back. The IR engine uses
+    a self-pipe and a dispatcher thread, Sparrow takes it through the bridge,
+    and the JVM uses `sun.misc.Signal`.
+  - `okkama-cli/tests/signals.rs` runs a real application on every engine:
+    a request in flight is answered after SIGTERM, new connections are
+    refused, and the program ends with code 0.
 - **The server frames every response.** A response of known length without a
   Content-Length gets one, and one of unknown length (`StreamReply`,
   `EventsReply`, compressed streams) is chunked for an HTTP/1.1 client.

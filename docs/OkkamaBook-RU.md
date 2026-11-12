@@ -4151,7 +4151,11 @@ RouteParameter(name:, value:))`; `/notes/` перенаправляется на
 `await sessions.started(SessionValue(name:, value:))` и её `cookie()`,
 `await sessions.session(request)` (401 без сессии) и
 `Around(CsrfProtection(sessions))` для токена `session.csrf()`.
-`WebApplication(routes).listen(address, port)` его обслуживает, а в тестах
+`WebApplication(routes).listen(address, port)` его обслуживает, а с
+`tls: TlsIdentity(certificates:, key:)` — по HTTPS, с HTTP/2 и HTTP/1.1 по
+ALPN. По SIGTERM или SIGINT сервер перестаёт принимать соединения, даёт
+запросам в работе 10 секунд и возвращается из `listen`; второй сигнал
+завершает процесс сразу. В тестах
 `await WebTestClient(routes).get("/notes/7")` проводит запрос через маршруты без
 сети и отвечает тем же `ClientResponse`, что получает настоящий клиент.
 

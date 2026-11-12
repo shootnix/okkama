@@ -16,7 +16,7 @@ use okkama_runtime_core::{IntValue, Value, sched};
 use std::rc::Rc;
 
 pub(crate) fn handles(native: Native) -> bool {
-    !native.signature().is_async || native.module() == "runtime/application"
+    !native.signature().is_async || native.module() == "runtime/application" || native.module() == "runtime/signal"
 }
 
 /// Core wakers of pending origin promises; origin deliveries wake them all.

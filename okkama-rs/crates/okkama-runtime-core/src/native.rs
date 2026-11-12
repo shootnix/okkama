@@ -29,6 +29,7 @@ pub mod numbers;
 pub mod postgres;
 pub mod process;
 pub mod regex;
+pub mod signal;
 pub mod sqlite;
 pub mod stdio;
 pub mod text;
@@ -113,6 +114,7 @@ pub fn execute(
         Provider::Numbers => numbers::execute(native, args),
         Provider::Buffer => buffer::execute(native, args, arrays),
         Provider::Compression => compression::execute(native, args, arrays),
+        Provider::Signal => signal::execute(native, args),
         Provider::Streams => context.streams.execute(
             native,
             args,
@@ -159,6 +161,7 @@ enum Provider {
     Numbers,
     Buffer,
     Compression,
+    Signal,
     Streams,
     /// UTF-8/16/32 и всё, чего нет у других providers (там — `Unsupported`).
     Utf,
@@ -249,6 +252,9 @@ fn route(native: Native) -> Provider {
     }
     if compression::handles(native) {
         return Provider::Compression;
+    }
+    if signal::handles(native) {
+        return Provider::Signal;
     }
     if matches!(
         native,

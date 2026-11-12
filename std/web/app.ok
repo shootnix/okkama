@@ -26,13 +26,23 @@ import "http/endpoint" take LoopbackEndpoints;
 import "http/body" take TextBody;
 import "http/status" take Status;
 import "time/duration" take Duration;
+import "runtime/signal" take signal_wait;
+import "net/tls" take TlsIdentity, TlsServerPolicy;
+import "http/version" take HttpVersion;
+import "collections/set" take Set, OrderedSet;
+import "async/scope" take FutureGroup;
+import "crypto/x509/trust" take PemTrustStore;
 
-// Binds a route table to a plaintext HTTP/1.1 listener.
+// Binds a route table to a listener: HTTP/1.1 in cleartext, or HTTPS with
+// HTTP/2 and HTTP/1.1 offered by ALPN (#80).
 //
-//     await WebApplication(routes).listen("127.0.0.1", 8000);
+//     await WebApplication(routes).listen(address: "127.0.0.1", port: 8000);
+//     await WebApplication(routes).listen(address: "0.0.0.0", port: 8443, tls: identity);
 //
-// The address is an IP literal; no name resolution happens here. listen()
-// serves until the server is closed. server() binds and returns the std
+// listen() serves until SIGTERM or SIGINT: then the server stops accepting,
+// gives the requests in flight 10 seconds to finish, closes, and listen()
+// returns; a second signal ends the process at once. The address is an IP
+// literal; no name resolution happens here. server() binds and returns the std
 // HttpServer without serving, for callers that own the lifetime themselves:
 // port 0 picks a free port, local_endpoint() reports it, and server.drain(limit:)
 // drains it.
@@ -77,9 +87,84 @@ object WebApplication {
 
     async listen(address is string, port is int) is void {
         let server = await self.server(address, port);
+        await AppServing(server).run();
+    }
+
+    // HTTPS: the identity's certificate and key, HTTP/2 and HTTP/1.1 by ALPN.
+    async listen(address is string, port is int, tls is TlsIdentity) is void {
+        let server = await self.server(address, port, tls);
+        await AppServing(server).run();
+    }
+
+    // The HTTPS server, bound and not serving; its own URL is https.
+    async server(address is string, port is int, tls is TlsIdentity) is HttpServer {
+        let host = IpAddress(address);
+        let listener = await TcpListening(port: port, address: host).listener();
+        let literal = if host.version() == IpVersion.v6 {
+            "[" + host.string() + "]";
+        }
+        else {
+            host.string();
+        };
+        let own = ParsedUrl("https://" + literal + ":" + listener::Local::port.string() + "/").parts();
+        let both is Set<HttpVersion> = OrderedSet([HttpVersion.http_1_1, HttpVersion.http_2]);
+        let secured = ServerPolicy(
+            protocols: both,
+            limits: policy.limits(),
+            timeouts: policy.timeouts(),
+            connections: policy.connections(),
+            ranges: policy.ranges()
+        );
+        HttpServer(
+            listener: listener,
+            handling: routes.table(),
+            url: own,
+            tls: TlsServerPolicy(identity: tls),
+            policy: secured,
+            clock: clock
+        );
+    }
+}
+
+// Serves until a signal, then drains: SIGTERM or SIGINT stops accepting, the
+// requests in flight get 10 seconds, and the server closes, which ends serve().
+hidden object AppServing {
+    has server is HttpServer;
+
+    AppServing(server is HttpServer) {
+        self.server = server;
+    }
+
+    async run() is void {
+        let watching is FutureGroup<bool> = FutureGroup();
+        watching.start(self.stopping());
+        defer await AppWatch(watching).close();
         defer await server.settled();
         defer server.close();
         await server.serve();
+    }
+
+    async stopping() is bool {
+        await signal_wait(["TERM", "INT"]);
+        await server.drain(limit: Duration(seconds: 10));
+        true;
+    }
+}
+
+// The signal watch ends with the serving: cancelled when still waiting.
+hidden object AppWatch {
+    has group is FutureGroup<bool>;
+
+    AppWatch(group is FutureGroup<bool>) {
+        self.group = group;
+    }
+
+    async close() is void {
+        group.cancel();
+        try {
+            await group.wait();
+        }
+        catch e is Cancelled {}
     }
 }
 
@@ -204,4 +289,36 @@ async test "a compressed reply reaches the client decoded" {
     );
     client.close();
     await server.drain(limit: Duration(seconds: 5));
+}
+
+// The test CA and its certificate for 127.0.0.1 and localhost, as in http/server.
+hidden const HTTPS_TEST_CA = "-----BEGIN CERTIFICATE-----\nMIIBdjCCARygAwIBAgIUZys025uW0l2NKLRJhlj/e/NZtfIwCgYIKoZIzj0EAwIw\nGTEXMBUGA1UEAwwOT2trYW1hIFRlc3QgQ0EwHhcNMjYxMTEyMTE0MjA0WhcNNDgx\nMDA3MTE0MjA0WjAZMRcwFQYDVQQDDA5Pa2thbWEgVGVzdCBDQTBZMBMGByqGSM49\nAgEGCCqGSM49AwEHA0IABBFw/aXocscUbo6jObHs1PCN29BcRR+2K50QaEkwFdOx\nkiif5hQH5S72ksR2gL1PtbmPVLJv9kGhSjylkFnWMFujQjBAMA8GA1UdEwEB/wQF\nMAMBAf8wDgYDVR0PAQH/BAQDAgEGMB0GA1UdDgQWBBR73vV9mqv7stVB91GaNnLI\n3GuydzAKBggqhkjOPQQDAgNIADBFAiAufmQhdmE0TO2RfIcZRNt/ucAEPVLBW03q\nIRbruIX6KgIhAJsOnAIaGBgywbvntzwVyjTtIurUqVEB8oy03JNCKmNx\n-----END CERTIFICATE-----\n";
+
+hidden const HTTPS_TEST_CERTIFICATE = "-----BEGIN CERTIFICATE-----\nMIIBwzCCAWigAwIBAgIUG8NUjoqvvLFxqO/t7iv/3Auy2PgwCgYIKoZIzj0EAwIw\nGTEXMBUGA1UEAwwOT2trYW1hIFRlc3QgQ0EwHhcNMjYxMTEyMTE0MjA0WhcNNDgx\nMDA3MTE0MjA0WjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIBBggq\nhkjOPQMBBwNCAAQaMDVadj3Njz0QDGkIC6mwMvsIrcKEgNpBpZ4p9lZl/U7IZOja\nGwl/oQS67X/YHf5rcfdxvcb70003NsmoexTLo4GSMIGPMBoGA1UdEQQTMBGCCWxv\nY2FsaG9zdIcEfwAAATAMBgNVHRMBAf8EAjAAMA4GA1UdDwEB/wQEAwIHgDATBgNV\nHSUEDDAKBggrBgEFBQcDATAdBgNVHQ4EFgQU/R0ad9cojv2dRtb8rSPoG2ncsPsw\nHwYDVR0jBBgwFoAUe971fZqr+7LVQfdRmjZyyNxrsncwCgYIKoZIzj0EAwIDSQAw\nRgIhANTVp7yf3QQovicpuurIeJL4z3SWS68504anbBieM2edAiEA7ypMFNH5e/jc\nmX+bVt3dCMxTaQwVY8/loOQTp0PWQLg=\n-----END CERTIFICATE-----\n";
+
+hidden const HTTPS_TEST_KEY = "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgooq/y5Wqru57uZ/f\nLtDqQBGy63m5uDllm9k87Q2FqQuhRANCAAQaMDVadj3Njz0QDGkIC6mwMvsIrcKE\ngNpBpZ4p9lZl/U7IZOjaGwl/oQS67X/YHf5rcfdxvcb70003NsmoexTL\n-----END PRIVATE KEY-----\n";
+
+async test "a web application serves HTTPS with HTTP/2 and HTTP/1.1 by ALPN" {
+    let greetings = Greetings();
+    let routes = WebRoutes(Get(path: "/hello/:name", endpoint: greetings.hello));
+    let identity = TlsIdentity(certificates: HTTPS_TEST_CERTIFICATE, key: HTTPS_TEST_KEY);
+    let server = (await WebApplication(routes).server("127.0.0.1", 0, identity)).started();
+    let base = "https://127.0.0.1:" + server::Local::port.string();
+    let both is Set<HttpVersion> = OrderedSet([HttpVersion.http_1_1, HttpVersion.http_2]);
+    let modern = HttpClient(
+        trust: PemTrustStore(HTTPS_TEST_CA),
+        endpoints: LoopbackEndpoints(),
+        protocols: both
+    );
+    let page = await modern.get(base + "/hello/Ada");
+    test.is(page::Head::version == HttpVersion.http_2, true);
+    test.is(await page.text(), "Hello, Ada!");
+    modern.close();
+    let older = HttpClient(trust: PemTrustStore(HTTPS_TEST_CA), endpoints: LoopbackEndpoints());
+    let plain = await older.get(base + "/hello/Bo");
+    test.is(plain::Head::version == HttpVersion.http_1_1, true);
+    test.is(await plain.text(), "Hello, Bo!");
+    older.close();
+    await server.drain(limit: Duration(seconds: 5));
+    test.is(server.closed(), true);
 }

@@ -3968,7 +3968,11 @@ and `HttpClient` asks for gzip and decodes it by itself. `web/session` keeps ses
 `await sessions.started(SessionValue(name:, value:))` and its `cookie()`,
 `await sessions.session(request)` (401 without one), and
 `Around(CsrfProtection(sessions))` for the token of `session.csrf()`.
-`WebApplication(routes).listen(address, port)` serves it, and in tests
+`WebApplication(routes).listen(address, port)` serves it, and with
+`tls: TlsIdentity(certificates:, key:)` it serves HTTPS with HTTP/2 and
+HTTP/1.1 by ALPN. On SIGTERM or SIGINT it stops accepting, gives the
+requests in flight 10 seconds and returns; a second signal ends the
+process at once. In tests
 `await WebTestClient(routes).get("/notes/7")` sends a request through the
 routes without a network and answers the `ClientResponse` a real client gets.
 

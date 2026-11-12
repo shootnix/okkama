@@ -615,5 +615,6 @@ natives! {
     CompressionCodecEnded = 629, "runtime/compression@1::codec_ended/1", "(CodecState) -> bool";
     CompressionCodecRemainder = 630, "runtime/compression@1::codec_remainder/1", "(CodecState) -> @byte";
     TlsTransportServer = 631, "runtime/tls_transport@1::server/5", "(SocketState, int, @string, @@byte, @byte) -> TlsState";
+    SignalSignalWait = 632, "runtime/signal@1::signal_wait/1", "async (@string) -> string";
 }
 // retired: 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258

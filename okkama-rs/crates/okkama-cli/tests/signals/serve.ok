@@ -1,0 +1,45 @@
+module app v1.0.0;
+
+// Run by tests/signals.rs (#80). Serves on the port named by the first
+// argument until SIGTERM or SIGINT, then says "stopped". /slow answers after
+// the number of seconds in the second argument, so a request can still be in
+// flight when the signal comes.
+import "web/app" take WebApplication;
+import "web/routing" take WebRoutes, Get;
+import "web/request" take WebRequest;
+import "web/reply" take TextReply;
+import "http/message" take Responding;
+import "cli/arguments" take ProcessArguments;
+import "strings/parse" take Number;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration;
+import "io/stdout" take Stdout;
+
+object Pages {
+    has delay is int;
+
+    Pages(delay is int) {
+        self.delay = delay;
+    }
+
+    async hello(request is WebRequest) is Responding {
+        TextReply("hello");
+    }
+
+    async slow(request is WebRequest) is Responding {
+        await SystemClock().wait(Duration(seconds: delay));
+        TextReply("slow and done");
+    }
+}
+
+async main() is int {
+    let arguments = ProcessArguments().strings();
+    let pages = Pages(Number(arguments[1]).int());
+    let routes = WebRoutes(
+        Get(path: "/", endpoint: pages.hello),
+        Get(path: "/slow", endpoint: pages.slow)
+    );
+    await WebApplication(routes).listen(address: "127.0.0.1", port: Number(arguments[0]).int());
+    Stdout().writeln("stopped");
+    0;
+}
