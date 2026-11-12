@@ -3961,7 +3961,8 @@ the most specific wins: `/notes/new` before `/notes/:id` before `/notes/*rest`.
 `Around(AccessLog(Stdout()))` or `Around(BearerAuth(token: secret))` in a table,
 a `Scope` or a `Resource` wraps its routes (`web/around`); an application's own
 around-handler does `Surrounding`.
-`web/session` keeps sessions: `Sessions(key:, store: MemorySessions())`,
+`Around(Compression())` gzips text and JSON replies for clients that accept it,
+and `HttpClient` asks for gzip and decodes it by itself. `web/session` keeps sessions: `Sessions(key:, store: MemorySessions())`,
 `await sessions.started(SessionValue(name:, value:))` and its `cookie()`,
 `await sessions.session(request)` (401 without one), and
 `Around(CsrfProtection(sessions))` for the token of `session.csrf()`.

@@ -3,12 +3,20 @@ module web/around v1.0.0;
 import "web/routing" take Surrounding, WebRouting, ExceptionScope, Fallback, WebRoutes, Around, Get,
     Scope;
 import "http/routing" take Route, RoutePattern, SlashPolicy;
+import "web/reply" take TextReply, StreamReply;
+import "http/body_coding" take GzipEncodedBody;
+import "http/body" take ByteBody, UnknownBodyLength;
+import "http/negotiation" take AcceptedContentCodings;
+import "http/content_coding" take ContentCoding;
+import "compression/gzip" take GzipCompressed, GzipDecompressed;
 import "http/handler" take Handling, HandlingResult, ResponseHandling;
 import "web/request" take WebRequest;
 import "web/exception" take Exception, ProblemReply;
 import "http/message" take Request, Response, Responding;
 import "http/status" take Status, StatusCode;
-import "http/header" take Headers, Header, HeaderName;
+import "http/header" take Headers, Header, HeaderName, HeadersWithout;
+import "numbers/bigint" take BigInt;
+import "compare" take Order;
 import "http/method" take Method, MethodName;
 import "http/request_context" take HttpRequestContext;
 import "http/target" take OriginTarget;
@@ -18,7 +26,7 @@ import "io/stream" take WritingText;
 import "time/clock" take Timing, SystemClock, MonotonicInstant, Instant;
 import "time/duration" take Duration;
 import "crypto/constant_time" take ConstantTimeEqual;
-import "encoding/utf" take Utf8Encoded;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "async/atomic" take Atomic;
 import "async/cancellation" take Cancellation;
 import "net/stream" take ConnectionEndpoints;
@@ -243,6 +251,134 @@ hidden object CorsMarking does Surrounding {
     }
 }
 
+// Replies gzipped for clients that accept gzip (#186): text, JSON,
+// JavaScript, XML and SVG of at least minimum bytes (1 KiB unless told) that
+// carry no Content-Encoding of their own:
+//
+//     WebRoutes(Around(Compression()), Get(path: "/notes", endpoint: notes.list))
+//
+// A reply in memory is compressed whole and keeps a Content-Length; a streamed
+// one is compressed as it goes. A compressed reply says Vary: Accept-Encoding,
+// its strong ETag becomes weak and it no longer offers ranges. HEAD, 204, 206
+// and 304 replies pass as they are.
+object Compression does Surrounding {
+    has minimum is int;
+
+    Compression(minimum is int = 1024) {
+        confirm minimum >= 0
+            else throw InvalidCompression.because("the minimum size must not be negative");
+        self.minimum = minimum;
+    }
+
+    async around(request is WebRequest, inner is async (WebRequest) is Responding) is Responding {
+        let answer = await inner(request);
+        let response = answer.response();
+        if !self.wanted(request, response) {
+            return answer;
+        }
+        let body = response.body();
+        let small = match body.contained() {
+            case Maybe.some(bytes) {
+                bytes.size() < minimum;
+            }
+            else {
+                try {
+                    body.length().order(BigInt(minimum.string())) == Order.less;
+                }
+                catch failure is UnknownBodyLength {
+                    false;
+                };
+            }
+        };
+        if small {
+            return answer;
+        }
+        let kept = HeadersWithout(
+            origin: response::Head::headers,
+            names: [
+                HeaderName("Content-Length"),
+                HeaderName("Accept-Ranges"),
+                HeaderName("ETag"),
+                HeaderName("Vary")
+            ]
+        ).headers();
+        let tag = response::Head::headers.maybe("ETag").text() else "";
+        let tagged = if tag == "" {
+            kept;
+        }
+        else {
+            if tag.starts_with("W/") {
+                kept.addition(Header(name: "ETag", value: tag));
+            }
+            else {
+                kept.addition(Header(name: "ETag", value: "W/" + tag));
+            }
+        };
+        let varied = response::Head::headers.maybe("Vary").text() else "";
+        let marked = tagged.addition(Header(name: "Content-Encoding", value: "gzip")).addition(
+            Header(name: "Vary", value: if varied == "" {
+                "Accept-Encoding";
+            }
+            else {
+                varied + ", Accept-Encoding";
+            })
+        );
+        match body.contained() {
+            case Maybe.some(bytes) {
+                let packed = GzipCompressed(bytes).bytes();
+                Response(
+                    status: response::Head::status,
+                    headers: marked.addition(
+                        Header(name: "Content-Length", value: packed.size().string())
+                    ),
+                    body: ByteBody(packed),
+                    version: response::Head::version
+                );
+            }
+            else {
+                Response(
+                    status: response::Head::status,
+                    headers: marked,
+                    body: GzipEncodedBody(origin: body),
+                    version: response::Head::version
+                );
+            }
+        };
+    }
+
+    // Whether the reply may be compressed for this request at all.
+    hidden wanted(request is WebRequest, response is Response) is bool {
+        let code = response::Head::code;
+        if request.method() == Method.head
+            || code < 200
+            || code == 204
+            || code == 206
+            || code == 304 {
+                return false;
+            }
+        let headers = response::Head::headers;
+        if headers.membership(HeaderName("Content-Encoding")) {
+            return false;
+        }
+        let accepted = request.header().list("Accept-Encoding");
+        if accepted.size() == 0
+            || !AcceptedContentCodings(accepted.join(", ")).quality(ContentCoding("gzip")).acceptable() {
+                return false;
+            }
+        let media = (headers.maybe("Content-Type").text() else "").lower();
+        let type = (media.split(";")[0] else "").trim();
+        type.starts_with("text/")
+            || type == "application/json"
+            || type == "application/javascript"
+            || type == "application/xml"
+            || type == "image/svg+xml"
+            || type.ends_with("+json")
+            || type.ends_with("+xml");
+    }
+}
+
+enum InvalidCompression is Error = (because(reason is string));
+
 enum InvalidBearerAuth is Error = (because(reason is string));
 
 // Lines written to an Atomic, for the tests below.
@@ -422,4 +558,90 @@ async test "cors answers preflights and marks replies to its origin" {
     test.ok(
         !foreign.response()::Head::headers.membership(HeaderName("Access-Control-Allow-Origin"))
     );
+}
+
+// Answers with a long text, a short one, a stream of unknown length, a
+// compressed body and an image, for the test below.
+hidden object CompressionProbe {
+    CompressionProbe() {}
+
+    async long(request is WebRequest) is Responding {
+        TextReply(
+            text: "tea ".repeat(1000),
+            headers: Headers(Header(name: "ETag", value: "\"v1\""))
+        );
+    }
+
+    async short(request is WebRequest) is Responding {
+        TextReply("tea");
+    }
+
+    async stream(request is WebRequest) is Responding {
+        StreamReply(
+            body: GzipEncodedBody(origin: ByteBody(Utf8Encoded("milk ".repeat(1000)).bytes())),
+            media_type: "text/plain"
+        );
+    }
+
+    async image(request is WebRequest) is Responding {
+        Response(
+            status: Status.ok,
+            headers: Headers(Header(name: "Content-Type", value: "image/png")),
+            body: ByteBody(Utf8Encoded("x".repeat(5000)).bytes())
+        );
+    }
+}
+
+async test "replies are gzipped for clients that accept it" {
+    let probe = CompressionProbe();
+    let routes = WebRoutes(
+        Around(Compression()),
+        Get(path: "/long", endpoint: probe.long),
+        Get(path: "/short", endpoint: probe.short),
+        Get(path: "/stream", endpoint: probe.stream),
+        Get(path: "/image", endpoint: probe.image),
+    );
+    let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(
+        local: IpEndpoint(address: IpAddress("127.0.0.1"), port: 80),
+        remote: IpEndpoint(address: IpAddress("127.0.0.1"), port: 50000)
+    );
+    let context = HttpRequestContext(
+        details: ExchangeDetails(endpoints: ends, version: HttpVersion.http_1_1),
+        cancellation: Cancellation().cancelling()
+    );
+    let gzip = Headers(Header(name: "Accept-Encoding", value: "br;q=1.0, gzip;q=0.8"));
+    let long = (await routes.handling(
+        Request(target: OriginTarget(path: "/long", query: Maybe<string>.none), headers: gzip),
+        context
+    )).response();
+    test.is(long::Head::headers.text("Content-Encoding"), "gzip");
+    test.is(long::Head::headers.text("Vary"), "Accept-Encoding");
+    test.is(long::Head::headers.text("ETag"), "W/\"v1\"");
+    let packed = long.body().contained() else [];
+    test.is(long::Head::headers.int("Content-Length"), packed.size());
+    test.is(
+        Utf8Decoded(GzipDecompressed(origin: packed, limit: 10000).bytes()).string(),
+        "tea ".repeat(1000)
+    );
+    let plain = (await routes.handling(
+        Request(target: OriginTarget(path: "/long", query: Maybe<string>.none)),
+        context
+    )).response();
+    test.ok(!plain::Head::headers.membership(HeaderName("Content-Encoding")));
+    let short = (await routes.handling(
+        Request(target: OriginTarget(path: "/short", query: Maybe<string>.none), headers: gzip),
+        context
+    )).response();
+    test.ok(!short::Head::headers.membership(HeaderName("Content-Encoding")));
+    let image = (await routes.handling(
+        Request(target: OriginTarget(path: "/image", query: Maybe<string>.none), headers: gzip),
+        context
+    )).response();
+    test.ok(!image::Head::headers.membership(HeaderName("Content-Encoding")));
+    let refused = Headers(Header(name: "Accept-Encoding", value: "gzip;q=0, identity"));
+    let none_wanted = (await routes.handling(
+        Request(target: OriginTarget(path: "/long", query: Maybe<string>.none), headers: refused),
+        context
+    )).response();
+    test.ok(!none_wanted::Head::headers.membership(HeaderName("Content-Encoding")));
 }

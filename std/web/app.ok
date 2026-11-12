@@ -6,14 +6,17 @@ import "net/tcp" take TcpListening;
 import "net/ip" take IpAddress, IpVersion;
 import "url/value" take ParsedUrl;
 import "time/clock" take Timing, SystemClock;
-import "web/routing" take WebRoutes, Get, Post, Scope, Fallback, WebSocket;
+import "web/routing" take WebRoutes, Get, Post, Scope, Fallback, WebSocket, Around;
+import "web/around" take Compression;
+import "compression/gzip" take GzipDecompressed;
+import "encoding/utf" take Utf8Decoded;
 import "web/request" take WebRequest;
 import "http/method" take MethodName;
 import "web/reply" take TextReply;
 import "http/message" take Responding, Request;
 import "http/handler" take WebSocketHandling;
 import "http/request_context" take HttpRequestContext;
-import "http/header" take Headers, Header;
+import "http/header" take Headers, Header, HeaderName;
 import "http/websocket" take WebSocketConnection, WebSocketLimits, TextWebSocketMessage;
 import "json" take Json, JsonField;
 import "http/websocket_client" take WebSocketConnecting, WebSocketPolicy;
@@ -91,6 +94,10 @@ hidden object Greetings {
 
     async echo(request is WebRequest) is Responding {
         TextReply(text: (await request.text(1024)).upper(), status: Status.created);
+    }
+
+    async long(request is WebRequest) is Responding {
+        TextReply("tea ".repeat(2000));
     }
 
     async missing(request is WebRequest) is Responding {
@@ -171,6 +178,30 @@ async test "a web application routes requests over loopback and drains" {
         "HI"
     );
     await socket.close(1000, "bye");
+    client.close();
+    await server.drain(limit: Duration(seconds: 5));
+}
+
+async test "a compressed reply reaches the client decoded" {
+    let greetings = Greetings();
+    let routes = WebRoutes(Around(Compression()), Get(path: "/long", endpoint: greetings.long));
+    let server = (await WebApplication(routes).server("127.0.0.1", 0)).started();
+    let base = "http://127.0.0.1:" + server::Local::port.string();
+    let client = HttpClient(endpoints: LoopbackEndpoints());
+    let page = await client.get(base + "/long");
+    test.ok(!page::Head::headers.membership(HeaderName("Content-Encoding")));
+    test.is(await page.text(), "tea ".repeat(2000));
+    let raw = await client.response(
+        Request(
+            url: base + "/long",
+            headers: Headers(Header(name: "Accept-Encoding", value: "gzip"))
+        )
+    );
+    test.is(raw::Head::headers.text("Content-Encoding"), "gzip");
+    test.is(
+        Utf8Decoded(GzipDecompressed(origin: await raw.bytes(), limit: 100000).bytes()).string(),
+        "tea ".repeat(2000)
+    );
     client.close();
     await server.drain(limit: Duration(seconds: 5));
 }

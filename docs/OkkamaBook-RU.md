@@ -4144,7 +4144,8 @@ RouteParameter(name:, value:))`; `/notes/` перенаправляется на
 `Around(BearerAuth(token: secret))` в таблице, `Scope` или `Resource`
 оборачивает их маршруты (`web/around`); свой обработчик вокруг маршрутов
 делает `Surrounding`.
-`web/session` хранит сессии: `Sessions(key:, store: MemorySessions())`,
+`Around(Compression())` сжимает gzip-ом текст и JSON для клиентов, которые
+его принимают, а `HttpClient` сам просит gzip и распаковывает его. `web/session` хранит сессии: `Sessions(key:, store: MemorySessions())`,
 `await sessions.started(SessionValue(name:, value:))` и её `cookie()`,
 `await sessions.session(request)` (401 без сессии) и
 `Around(CsrfProtection(sessions))` для токена `session.csrf()`.

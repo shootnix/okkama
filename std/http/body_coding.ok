@@ -1,0 +1,249 @@
+module http/body_coding v1.0.0;
+
+import "http/body" take BodyOpening, BodyReading, ByteBody, UnknownBodyLength, BodyClosed,
+    BodyAlreadyOpened;
+import "http/header" take Headers;
+import "compression/gzip" take GzipCompressor, GzipDecompressor, GzipCompressed, GzipDecompressed;
+import "compression/state" take Compressing, Decompressing, CompressionLimitExceeded;
+import "io/stream" take InvalidReadLimit;
+import "numbers/bigint" take BigInt;
+import "async/atomic" take Atomic;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+
+// Bodies with a content coding applied as they are read (#186): what a server
+// sends as Content-Encoding: gzip, and what a client gets back from it. Their
+// length is unknown, so HTTP/1.1 sends them in chunks; a body already in
+// memory is coded whole instead.
+//
+//     GzipEncodedBody(origin: response.body())
+//     GzipDecodedBody(origin: response.body(), limit: 10485760)
+
+// The origin compressed as gzip while it is read.
+object GzipEncodedBody does BodyOpening {
+    has origin is BodyOpening;
+    has level is int;
+    has opened is Atomic<bool>;
+
+    GzipEncodedBody(origin is BodyOpening, level is int = 6) {
+        self.origin = origin;
+        self.level = level;
+        opened = Atomic(false);
+    }
+
+    length() is BigInt {
+        throw UnknownBodyLength.unknown;
+    }
+
+    replayable() is bool {
+        origin.replayable();
+    }
+
+    reading() is BodyReading {
+        confirm opened.compare_and_replace(false, true) else throw BodyAlreadyOpened.opened;
+        let codec is Compressing = GzipCompressor(level: level);
+        CodedReading(
+            origin: origin.reading(),
+            compressor: Maybe.some(codec),
+            decompressor: Maybe<Decompressing>.none
+        );
+    }
+
+    contained() is Maybe<@byte> {
+        match origin.contained() {
+            case Maybe.some(bytes) {
+                Maybe.some(GzipCompressed(origin: bytes, level: level).bytes());
+            }
+            else {
+                Maybe<@byte>.none;
+            }
+        };
+    }
+}
+
+// The origin, a gzip stream, decompressed while it is read, at most limit
+// bytes in all (CompressionLimitExceeded past them). A damaged or cut stream is
+// InvalidCompressedData when it is read.
+object GzipDecodedBody does BodyOpening {
+    has origin is BodyOpening;
+    has limit is int;
+    has opened is Atomic<bool>;
+
+    GzipDecodedBody(origin is BodyOpening, limit is int) {
+        self.origin = origin;
+        self.limit = limit;
+        opened = Atomic(false);
+    }
+
+    length() is BigInt {
+        throw UnknownBodyLength.unknown;
+    }
+
+    replayable() is bool {
+        origin.replayable();
+    }
+
+    reading() is BodyReading {
+        confirm opened.compare_and_replace(false, true) else throw BodyAlreadyOpened.opened;
+        let codec is Decompressing = GzipDecompressor(limit: limit);
+        CodedReading(
+            origin: origin.reading(),
+            compressor: Maybe<Compressing>.none,
+            decompressor: Maybe.some(codec)
+        );
+    }
+
+    contained() is Maybe<@byte> {
+        Maybe<@byte>.none;
+    }
+}
+
+// Reads the origin in 64 KiB pieces through one codec and hands out its output.
+hidden object CodedReading does BodyReading {
+    has origin is BodyReading;
+    has compressor is Maybe<Compressing>;
+    has decompressor is Maybe<Decompressing>;
+    has ready is Atomic<@byte>;
+    has ended, shut is Atomic<bool>;
+
+    CodedReading(
+        origin is BodyReading,
+        compressor is Maybe<Compressing>,
+        decompressor is Maybe<Decompressing>
+    ) {
+        self.origin = origin;
+        self.compressor = compressor;
+        self.decompressor = decompressor;
+        let empty is @byte = [];
+        ready = Atomic(empty);
+        ended = Atomic(false);
+        shut = Atomic(false);
+    }
+
+    async bytes(limit is int) is @byte {
+        confirm limit > 0 else throw InvalidReadLimit.limit(limit);
+        confirm !shut.value() else throw BodyClosed.closed;
+        loop {
+            let waiting = ready.value();
+            if waiting.size() > 0 {
+                let taken = if waiting.size() < limit {
+                    waiting.size();
+                }
+                else {
+                    limit;
+                };
+                ready.replace(waiting.slice(taken, waiting.size()));
+                return waiting.slice(0, taken);
+            }
+            if ended.value() {
+                let empty is @byte = [];
+                return empty;
+            }
+            let chunk = await origin.bytes(65536);
+            ready.replace(self.coded(chunk));
+            if chunk.size() == 0 {
+                ended.replace(true);
+            }
+        }
+    }
+
+    trailers() is Headers {
+        origin.trailers();
+    }
+
+    closed() is bool {
+        shut.value();
+    }
+
+    close() is void {
+        if !shut.value() {
+            shut.replace(true);
+            origin.close();
+            match compressor {
+                case Maybe.some(codec) {
+                    codec.close();
+                }
+                else {}
+            }
+            match decompressor {
+                case Maybe.some(codec) {
+                    codec.close();
+                }
+                else {}
+            }
+        }
+    }
+
+    // The codec's output for a piece of input; an empty piece finishes it.
+    hidden coded(chunk is @byte) is @byte {
+        match compressor {
+            case Maybe.some(codec) {
+                if chunk.size() == 0 {
+                    codec.finish();
+                }
+                else {
+                    codec.write(chunk);
+                }
+                codec.output().bytes(1073741824);
+            }
+            else {
+                match decompressor {
+                    case Maybe.some(codec) {
+                        if chunk.size() == 0 {
+                            codec.finish();
+                        }
+                        else {
+                            codec.write(chunk);
+                        }
+                        codec.output().bytes(1073741824);
+                    }
+                    else {
+                        chunk;
+                    }
+                };
+            }
+        };
+    }
+}
+
+async test "a body is gzipped and gunzipped while it is read" {
+    let text = "The quick brown fox jumps over the lazy dog. ".repeat(3000);
+    let plain = Utf8Encoded(text).bytes();
+    let encoded = GzipEncodedBody(origin: ByteBody(plain));
+    let reading = encoded.reading();
+    let empty is @byte = [];
+    let packed = Atomic(empty);
+    loop {
+        let chunk = await reading.bytes(1000);
+        if chunk.size() == 0 {
+            last;
+        }
+        packed.replace(packed.value() + chunk);
+    }
+    reading.close();
+    test.ok(packed.value().size() * 10 < plain.size());
+    test.is(
+        Utf8Decoded(GzipDecompressed(origin: packed.value(), limit: plain.size()).bytes()).string(),
+        text
+    );
+    let decoded = GzipDecodedBody(origin: ByteBody(packed.value()), limit: plain.size()).reading();
+    let unpacked = Atomic(empty);
+    loop {
+        let chunk = await decoded.bytes(4096);
+        if chunk.size() == 0 {
+            last;
+        }
+        unpacked.replace(unpacked.value() + chunk);
+    }
+    test.is(Utf8Decoded(unpacked.value()).string(), text);
+    test.is(
+        GzipDecompressed(
+            origin: GzipEncodedBody(origin: ByteBody(plain)).contained() else [],
+            limit: plain.size()
+        ).bytes(),
+        plain
+    );
+    let small = GzipDecodedBody(origin: ByteBody(packed.value()), limit: 100).reading();
+    test.throws(CompressionLimitExceeded) {
+        await small.bytes(4096);
+    };
+}

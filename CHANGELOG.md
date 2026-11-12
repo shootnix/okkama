@@ -281,6 +281,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   - What one engine writes, Python's gzip and zlib read, and the other way
     round.
 
+- **Compressed replies and transparent decoding in the client (#186).**
+  - `WebRoutes(Around(Compression()), …)` gzips text, JSON, JavaScript, XML
+    and SVG replies of 1 KiB and more for clients that accept gzip. A reply in
+    memory keeps a Content-Length, and a stream is compressed as it goes. The
+    reply says `Vary: Accept-Encoding`, its strong ETag becomes weak and it
+    stops offering ranges.
+  - `HttpClient` sends `Accept-Encoding: gzip` on a request without its own
+    and decodes a gzip answer as it is read, up to the client's body limit;
+    `page.text()` is the decoded text. A request with its own
+    `Accept-Encoding` gets the bytes as sent.
+  - New module `http/body_coding`: `GzipEncodedBody(origin:)` and
+    `GzipDecodedBody(origin:, limit:)`, bodies coded as they are read.
+
 - **The server answers HTTP/1.0 (#102).** `ab` works: no Host is required,
   responses are not chunked, and keep-alive applies only when asked for.
 - **RequestJson readers share one translation of reading failures (#84).**

@@ -26,10 +26,13 @@ import "http/message" take Request, Response, InvalidHttpMessage;
 import "http/exchange" take ClientResponse, Exchanging, HttpClientKey;
 import "http/connection" take Http1Connecting, Http1Acquisition, HttpAcquisitionCleanup;
 import "http/http1_session" take Http1Exchange;
-import "http/endpoint" take HttpEndpointSelection, EndpointDenied, EndpointAllowing, PublicEndpoints, LoopbackEndpoints;
+import "http/endpoint" take HttpEndpointSelection, EndpointDenied, EndpointAllowing,
+    PublicEndpoints, LoopbackEndpoints;
 import "http/body" take BodyOpening, BodyReading, BodyClosed, BodyAlreadyOpened, UnknownBodyLength,
     EmptyBody, Content, JsonBody;
-import "http/header" take Headers, Header, HeaderName;
+import "http/header" take Headers, Header, HeaderName, HeadersWithout;
+import "http/body_coding" take GzipDecodedBody;
+import "strings/parse" take Number;
 import "net/dns" take Resolving, SystemResolution;
 import "net/tls" take TlsClientPolicy, TlsVersion;
 import "time/clock" take Timing;
@@ -77,7 +80,11 @@ object HttpClient does Exchanging, Closing {
             clock: clock
         );
         transport = built;
-        chain = ClientChain(transport: built, redirects: redirects).exchanging();
+        chain = ClientChain(
+            transport: built,
+            redirects: redirects,
+            limit: Number(limits.body_bytes().string()).int()
+        ).exchanging();
     }
 
     HttpClient(
@@ -99,7 +106,12 @@ object HttpClient does Exchanging, Closing {
             clock: clock
         );
         transport = built;
-        chain = ClientChain(transport: built, redirects: redirects, cookies: cookies).exchanging();
+        chain = ClientChain(
+            transport: built,
+            redirects: redirects,
+            cookies: cookies,
+            limit: Number(limits.body_bytes().string()).int()
+        ).exchanging();
     }
 
     closed() is bool {
@@ -131,15 +143,21 @@ object HttpClient does Exchanging, Closing {
     }
 
     async post(url is string, body is Content, headers is Headers = Headers()) is ClientResponse {
-        await chain.response(ContentRequest(url: url, method: Method.post, body: body, headers: headers).request());
+        await chain.response(
+            ContentRequest(url: url, method: Method.post, body: body, headers: headers).request()
+        );
     }
 
     async put(url is string, body is Content, headers is Headers = Headers()) is ClientResponse {
-        await chain.response(ContentRequest(url: url, method: Method.put, body: body, headers: headers).request());
+        await chain.response(
+            ContentRequest(url: url, method: Method.put, body: body, headers: headers).request()
+        );
     }
 
     async patch(url is string, body is Content, headers is Headers = Headers()) is ClientResponse {
-        await chain.response(ContentRequest(url: url, method: Method.patch, body: body, headers: headers).request());
+        await chain.response(
+            ContentRequest(url: url, method: Method.patch, body: body, headers: headers).request()
+        );
     }
 }
 
@@ -174,30 +192,95 @@ hidden object ClientTls {
 hidden object ClientChain {
     has chain is Exchanging;
 
-    ClientChain(transport is HttpTransport, redirects is Redirects) {
+    // limit: the most bytes a gzip answer may decode to, the client's body limit.
+    ClientChain(transport is HttpTransport, redirects is Redirects, limit is int) {
         let direct is Exchanging = transport;
-        chain = if redirects::Rules::limit > 0 {
+        let routed is Exchanging = if redirects::Rules::limit > 0 {
             let followed is Exchanging = Redirecting(origin: direct, policy: redirects);
             followed;
         }
         else {
             direct;
         };
+        chain = DecodingExchanging(origin: routed, limit: limit);
     }
 
-    ClientChain(transport is HttpTransport, redirects is Redirects, cookies is CookieStoring) {
-        let kept is Exchanging = CookieExchanging(origin: transport, jar: cookies, contexts: FirstPartyCookies());
-        chain = if redirects::Rules::limit > 0 {
+    ClientChain(
+        transport is HttpTransport,
+        redirects is Redirects,
+        cookies is CookieStoring,
+        limit is int
+    ) {
+        let kept is Exchanging = CookieExchanging(
+            origin: transport,
+            jar: cookies,
+            contexts: FirstPartyCookies()
+        );
+        let routed is Exchanging = if redirects::Rules::limit > 0 {
             let followed is Exchanging = Redirecting(origin: kept, policy: redirects);
             followed;
         }
         else {
             kept;
         };
+        chain = DecodingExchanging(origin: routed, limit: limit);
     }
 
     exchanging() is Exchanging {
         chain;
+    }
+}
+
+// Asks for gzip and decodes it (#186). A request without an Accept-Encoding of
+// its own goes out with Accept-Encoding: gzip, and a gzip answer to it comes
+// back decoded, without Content-Encoding and Content-Length, at most limit
+// bytes. A request that names its own Accept-Encoding gets the answer as sent.
+hidden object DecodingExchanging does Exchanging {
+    has origin is Exchanging;
+    has limit is int;
+
+    DecodingExchanging(origin is Exchanging, limit is int) {
+        self.origin = origin;
+        self.limit = limit;
+    }
+
+    async response(request is Request) is ClientResponse {
+        if request::Head::headers.membership(HeaderName("Accept-Encoding")) {
+            return await origin.response(request);
+        }
+        let asked = Request(
+            target: request::Head::target,
+            method: request::Head::method,
+            headers: request::Head::headers.addition(Header(name: "Accept-Encoding", value: "gzip")),
+            body: request.body(),
+            version: request::Head::version
+        );
+        let page = await origin.response(asked);
+        let coding = (page::Head::headers.maybe("Content-Encoding").text() else "").trim().lower();
+        let code = page::Head::code;
+        if (coding != "gzip" && coding != "x-gzip")
+            || request::Head::method == Method.head
+            || code == 204
+            || code == 304 {
+                return page;
+            }
+        let response = page::Exchange::response;
+        let headers = HeadersWithout(
+            origin: response::Head::headers,
+            names: [HeaderName("Content-Encoding"), HeaderName("Content-Length")]
+        ).headers();
+        let decoded = Response(
+            status: response::Head::status,
+            headers: headers,
+            body: GzipDecodedBody(origin: response.body(), limit: limit),
+            version: response::Head::version
+        );
+        ClientResponse(
+            request: page::Exchange::request,
+            response: decoded,
+            history: page::Exchange::history,
+            details: page::Exchange::details
+        );
     }
 }
 
@@ -319,7 +402,11 @@ object HttpTransport does Exchanging, Closing {
         if mixed.size() == 1 {
             confirm !self.closed() else throw ClientClosed.closed;
             let direct = HttpMixedDirectRequest(request);
-            let route = HttpEndpointSelection(url: direct.url(), resolver: resolver, access: policy.access());
+            let route = HttpEndpointSelection(
+                url: direct.url(),
+                resolver: resolver,
+                access: policy.access()
+            );
             let operation = mixed[0].operation();
             let published = Event();
             let cleanup = HttpSharedClientStartupCleanup(operation: operation, published: published);
@@ -418,7 +505,11 @@ object HttpTransport does Exchanging, Closing {
         if h2.size() == 1 {
             confirm !self.closed() else throw ClientClosed.closed;
             let direct = Http2DirectRequest(request);
-            let route = HttpEndpointSelection(url: direct.url(), resolver: resolver, access: policy.access());
+            let route = HttpEndpointSelection(
+                url: direct.url(),
+                resolver: resolver,
+                access: policy.access()
+            );
             let operation = h2[0].operation();
             let published = Event();
             let cleanup = HttpSharedClientStartupCleanup(operation: operation, published: published);
@@ -426,7 +517,13 @@ object HttpTransport does Exchanging, Closing {
             let reserving = operation.acquisition(
                 HttpClientKey(direct.url()).string(),
                 Http2ConversationConnecting(
-                    Http2Connecting(route: route, policy: tls, local: Http2Settings(), limits: policy.limits(), clock: clock)
+                    Http2Connecting(
+                        route: route,
+                        policy: tls,
+                        local: Http2Settings(),
+                        limits: policy.limits(),
+                        clock: clock
+                    )
                 ),
                 policy.timeouts().connection_timeout(),
                 clock
@@ -507,14 +604,23 @@ object HttpTransport does Exchanging, Closing {
         }
         confirm !self.closed() else throw ClientClosed.closed;
         let direct = HttpDirectRequest(request);
-        let route = HttpEndpointSelection(url: direct.url(), resolver: resolver, access: policy.access());
+        let route = HttpEndpointSelection(
+            url: direct.url(),
+            resolver: resolver,
+            access: policy.access()
+        );
         let operation = state.operation();
         let published = Event();
         let cleanup = HttpClientStartupCleanup(operation: operation, published: published);
         defer await cleanup.close();
         let lease = await operation.acquisition(
             HttpClientKey(direct.url()).string(),
-            Http1Connecting(route: route, policy: tls, limits: policy.limits().http1(), clock: clock),
+            Http1Connecting(
+                route: route,
+                policy: tls,
+                limits: policy.limits().http1(),
+                clock: clock
+            ),
             policy.timeouts().connection_timeout(),
             clock
         );
@@ -567,7 +673,13 @@ object HttpTransport does Exchanging, Closing {
             EmptyBody();
         }
         else {
-            HttpClientBody(origin: source, operation: operation, retained: lease, limit: policy.timeouts().body_idle_timeout(), clock: clock);
+            HttpClientBody(
+                origin: source,
+                operation: operation,
+                retained: lease,
+                limit: policy.timeouts().body_idle_timeout(),
+                clock: clock
+            );
         };
         let original = exchange.response();
         let response = Response(
@@ -828,7 +940,12 @@ hidden object HttpClientOperation does Closing {
         acquired.replace([connection]);
         acquisition_taken.set();
         confirm !self.closed() && !owner.closed() else throw ClientClosed.closed;
-        HttpClientAcquired(acquired: connection, permit: permit, transport: transport, reused: cached.size() == 1);
+        HttpClientAcquired(
+            acquired: connection,
+            permit: permit,
+            transport: transport,
+            reused: cached.size() == 1
+        );
     }
 
     finish() is void {
@@ -1139,7 +1256,13 @@ hidden object HttpClientBody does BodyOpening {
     reading() is BodyReading {
         confirm !operation.closed() else throw BodyClosed.closed;
         confirm opened.compare_and_replace(false, true) else throw BodyAlreadyOpened.opened;
-        HttpClientReading(origin: origin.reading(), operation: operation, retained: retained, limit: limit, clock: clock);
+        HttpClientReading(
+            origin: origin.reading(),
+            operation: operation,
+            retained: retained,
+            limit: limit,
+            clock: clock
+        );
     }
 
     destroy {
@@ -1199,7 +1322,11 @@ hidden object HttpClientReading does BodyReading {
         }
         let successful = Event();
         let reads is FutureGroup<@byte> = FutureGroup();
-        let cleanup = HttpClientReadCleanup(operation: operation, successful: successful, reads: reads);
+        let cleanup = HttpClientReadCleanup(
+            operation: operation,
+            successful: successful,
+            reads: reads
+        );
         defer await cleanup.close();
         let bounded is HttpDeadline<@byte> = HttpDeadline(
             origin: origin.bytes(amount),
@@ -1560,7 +1687,11 @@ hidden object HttpSharedClientOperation does Closing {
                 false;
             };
             if accepted {
-                return HttpSharedClientAcquired(acquired: connection, transport: transport, reused: selected.reused());
+                return HttpSharedClientAcquired(
+                    acquired: connection,
+                    transport: transport,
+                    reused: selected.reused()
+                );
             }
             // No exchange or request write was started. Release this obsolete
             // reservation and acquire a new conversation for the unsent request.
@@ -1903,7 +2034,13 @@ hidden object HttpSharedClientBody does BodyOpening {
     reading() is BodyReading {
         confirm !operation.closed() else throw BodyClosed.closed;
         confirm opened.compare_and_replace(false, true) else throw BodyAlreadyOpened.opened;
-        HttpSharedClientReading(origin: origin.reading(), operation: operation, retained: retained, limit: limit, clock: clock);
+        HttpSharedClientReading(
+            origin: origin.reading(),
+            operation: operation,
+            retained: retained,
+            limit: limit,
+            clock: clock
+        );
     }
 
     destroy {
