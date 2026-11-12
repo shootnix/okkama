@@ -67,6 +67,6 @@ enum InvalidFormEncoding is Error = (at(offset is int));
 
 test "form plus and literal plus have different encodings" {
     let parsed = ParsedForm(Utf8Encoded("a=+%2B").bytes()).parameters();
-    test.is(parsed.first("a"), " +");
+    test.is(parsed.text("a"), " +");
     test.is(FormUrlEncoded(parsed).string(), "a=+%2B");
 }

@@ -11,17 +11,30 @@ main() is int {
     let out = Stdout();
     let page = ParsedUrl("HTTPS://Docs.Example.com:8443/guide/intro.html?lang=en&lang=ru#setup").parts();
     out.writeln(page.string());
-    out.writeln("scheme ", page::Parts::scheme, ", host ", (page::Parts::host else "-"), ", port ", page::Parts::port else 443, ", path ", page::Parts::path);
+    out.writeln(
+        "scheme ",
+        page::Parts::scheme,
+        ", host ",
+        (page::Parts::host else "-"),
+        ", port ",
+        page::Parts::port else 443,
+        ", path ",
+        page::Parts::path
+    );
     out.writeln("named host: ", page.host_kind() == UrlHostKind.name);
     out.writeln("fragment: " + (page::Parts::fragment else "(none)"));
 
-    for ["../api/index.html", "/download", "?lang=de", "//cdn.example.com/x.js", "mailto:team@example.com"] -> link {
+    for [
+        "../api/index.html",
+        "/download",
+        "?lang=de",
+        "//cdn.example.com/x.js",
+        "mailto:team@example.com"
+    ] -> link {
         out.writeln(link, " -> ", page.resolved(ParsedUrl(link).parts()));
     }
 
-    let languages is @string = ParsedQuery(page::Parts::query else "").parameters().values("lang").map() -> value {
-        value;
-    };
+    let languages = ParsedQuery(page::Parts::query else "").parameters().list("lang");
     out.writeln("languages: " + languages.join(", "));
 
     let api = UrlParts(
