@@ -7,7 +7,7 @@ import "http/websocket" take WebSocketFailure, WebSocketClosed;
 import "io/stream" take AsyncReading;
 import "async/scope" take FutureGroup;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot, InvalidReading;
+import "io/decorators" take InvalidReading;
 import "http/internal/wire_bytes" take HttpWireBytes;
 
 // Memoized one-frame consumption, borrowed input and one supervised child per
@@ -66,7 +66,7 @@ hidden object WebSocketFrameInput {
                 }
                 throw WebSocketFailure.because("truncated frame");
             }
-            buffer.writing().write(ByteSnapshot(chunk));
+            buffer.writing().write(chunk);
         }
         buffer.content().bytes();
     }

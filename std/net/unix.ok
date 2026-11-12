@@ -7,6 +7,7 @@ import "net/stream" take ConnectionEndpoints;
 import "net/failure" take NetworkError, NetworkOperation, NetworkClosed;
 import "error" take InvalidArgument;
 import "runtime/network";
+import "io/decorators" take ByteSnapshot;
 
 // Exact filesystem address for the current host. UTF-8 byte length (including
 // room for a terminating NUL) is checked before sockaddr packing. No socket or
@@ -223,6 +224,11 @@ object UnixWriting does AsyncWriting {
 
     async write(source is ByteSource) is AsyncWriting {
         await owner.write_bytes(source);
+        self;
+    }
+
+    async write(bytes is @byte) is AsyncWriting {
+        await owner.write_bytes(ByteSnapshot(bytes));
         self;
     }
 }

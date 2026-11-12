@@ -6,7 +6,7 @@ import "http/internal/http2_frame" take ParsedHttp2FrameHeader, Http2Frame, Http
 import "io/stream" take AsyncReading;
 import "async/scope" take FutureGroup;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot, InvalidReading;
+import "io/decorators" take InvalidReading;
 
 // One lazy memoized frame; borrows transport and drains cancelled source work.
 object Http2FrameReading {
@@ -68,7 +68,7 @@ hidden object Http2FrameInput {
                 }
                 throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "partial frame header");
             }
-            header.writing().write(ByteSnapshot(chunk));
+            header.writing().write(chunk);
         }
         let parsed = ParsedHttp2FrameHeader(origin: header.content().bytes(), maximum: maximum).header();
         try {
@@ -103,7 +103,7 @@ hidden object Http2FrameInput {
                     0,
                     "partial frame payload"
                 );
-            payload.writing().write(ByteSnapshot(chunk));
+            payload.writing().write(chunk);
         }
         let frame = Http2Frame(header: parsed, payload: payload.content().bytes());
         Http2FrameRules(frame).check();

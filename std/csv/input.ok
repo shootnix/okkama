@@ -2,7 +2,7 @@ module csv/input v1.0.0;
 
 import "io/stream" take Reading;
 import "io/buffer" take ByteBuffer, ClosedBuffer;
-import "io/decorators" take ByteSnapshot, InvalidReading;
+import "io/decorators" take InvalidReading;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded, InvalidUtf8;
 import "csv" take CsvRows, CsvDialect, InvalidCsv, InvalidCsvLimits, CsvLimitExceeded, CsvLimit;
 
@@ -105,7 +105,7 @@ object CsvInput {
                 else throw InvalidReading.because("CSV origin returned more bytes than requested");
             last if chunk.size() == 0;
             confirm chunk.size() <= remaining else throw CsvByteLimitExceeded.exceeded;
-            buffer.writing().write(ByteSnapshot(chunk));
+            buffer.writing().write(chunk);
         }
         let text = Utf8Decoded(buffer.content().bytes()).string();
         let rows is @@string = CsvRows(

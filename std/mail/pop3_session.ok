@@ -6,7 +6,6 @@ import "mail/pop3_reply" take PopReply, PopReplyMode, PopReplyLimits;
 import "mail/pop3_reading" take PopReplyReading;
 import "mail/message" take MailMessage, ParsedMail;
 import "io/stream" take AsyncReading, AsyncWriting, Closing;
-import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Encoded;
 import "collections/sequence" take Sequencing;
 import "async/atomic" take Atomic;
@@ -337,7 +336,7 @@ hidden object PopWire does Closing {
 
     async read(command is PopCommand) is PopReply {
         confirm !self.closed() else throw PopSessionClosed.closed;
-        await output.write(ByteSnapshot(command.bytes()));
+        await output.write(command.bytes());
         let result = await PopReplyReading(
             origin: input,
             mode: command.mode(),

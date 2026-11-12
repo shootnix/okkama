@@ -17,7 +17,6 @@ import "url/form" take ParsedForm;
 import "url/query" take QueryParameters, QueryLimitExceeded;
 import "fs/temp" take TemporaryFile;
 import "fs/directory" take DirectoryLocating;
-import "io/decorators" take ByteSnapshot;
 
 object FormLimits {
     has fields, files is int;
@@ -1246,7 +1245,7 @@ hidden object FormFileSpooling {
             if bytes.size() == 0 {
                 last;
             }
-            file.write(ByteSnapshot(bytes));
+            file.write(bytes);
         }
         file.flush();
         complete.set();

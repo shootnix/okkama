@@ -21,7 +21,6 @@ import "random/source" take Randomizing, SecureRandom;
 import "encoding/hex" take HexEncoded;
 import "fs/stat" take FileKind;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 
 // Protocol flag values, stored snapshots and trusted-local Maildir operations.
 // Constructors are pure except explicit snapshots. Maildir filesystem effects
@@ -639,7 +638,7 @@ hidden object MaildirDelivery {
             prefix: ".okkama-"
         );
         let identifier = try {
-            temporary.write(ByteSnapshot(bytes));
+            temporary.write(bytes);
             temporary.flush();
             MaildirPublication(
                 path: origin.path(),
@@ -974,7 +973,7 @@ hidden object MaildirFileBytes {
                 else throw MimeLimitFailure.kind("body_bytes");
             confirm bytes.size() <= aggregate - buffer.content().size()
                 else throw MailboxLimitExceeded.kind("wire_bytes");
-            buffer.writing().write(ByteSnapshot(bytes));
+            buffer.writing().write(bytes);
         }
         buffer.content().bytes();
     }

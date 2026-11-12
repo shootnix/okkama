@@ -9,7 +9,6 @@ import "mail/imap_response" take ImapResponse, ImapResponseKind, ImapResponseLim
 import "collections/sequence" take Sequencing;
 import "mime/media_type" take MimeItems, MimePosition;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument;
 import "async/event" take Event;
 
@@ -372,7 +371,7 @@ hidden object ImapCommandPrefixJoin {
     bytes() is @byte {
         let buffer = ByteBuffer(first);
         defer buffer.closing().close();
-        buffer.writing().write(ByteSnapshot(second));
+        buffer.writing().write(second);
         buffer.content().bytes();
     }
 }

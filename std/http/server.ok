@@ -44,7 +44,6 @@ import "http/client_policy" take HttpLimits;
 import "collections/set" take Set, OrderedSet;
 import "collections/list" take List, EmptyList;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded;
-import "io/decorators" take ByteSnapshot;
 
 // Owned listener. In cleartext a single explicit protocol selects HTTP/1.1 or
 // prior-knowledge H2; with tls: (#209) the server speaks HTTPS and offers the
@@ -1402,9 +1401,9 @@ async test "a server answers over loopback, reads bodies, and drains" {
     test.is(await posted.text(), "POST /notes héllo");
     // A server accepts the absolute form too (RFC 9112 §3.2.2).
     let raw = await TcpConnecting(address: IpAddress("127.0.0.1"), port: server::Local::port).connection();
-    await raw.output().write(ByteSnapshot(Utf8Encoded(
+    await raw.output().write(Utf8Encoded(
         "GET " + base + "/absolute?y=2 HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
-    ).bytes()));
+    ).bytes());
     let answer = Atomic("");
     loop {
         let chunk = await raw.input().bytes(4096);

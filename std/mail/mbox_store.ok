@@ -12,7 +12,6 @@ import "fs/stat" take FileKind;
 import "fs/lock" take FileLock, FileLockMode;
 import "fs/temp" take TemporaryFile;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "io/stream" take Closing;
 import "random/source" take SecureRandom;
 import "encoding/hex" take HexEncoded;
@@ -283,7 +282,7 @@ hidden object MboxFileBytes {
             let bytes = reader.bytes(amount);
             last if bytes.size() == 0;
             confirm bytes.size() <= remaining else throw MboxLimitExceeded.kind("wire_bytes");
-            buffer.writing().write(ByteSnapshot(bytes));
+            buffer.writing().write(bytes);
         }
         buffer.content().bytes();
     }
@@ -356,7 +355,7 @@ hidden object MboxReplacement {
         lease.check();
         let temporary = TemporaryFile(directory: Directory(path.parent()), prefix: ".okkama-mbox-");
         try {
-            temporary.write(ByteSnapshot(wire));
+            temporary.write(wire);
             temporary.flush();
             FileEntry(temporary.path()).move(destination: path, overwrite: true);
         }

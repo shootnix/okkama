@@ -459,6 +459,10 @@ object TerminalOutput does Writing, WritingText {
         self.write_bytes(source.bytes());
     }
 
+    write(bytes is @byte) is void {
+        self.write_bytes(bytes);
+    }
+
     write(values is ...string) is void {
         let items is @string = values...;
         for items -> value {

@@ -29,6 +29,10 @@ object Stdout does Writing, WritingText {
         self.write_bytes(source.bytes());
     }
 
+    write(bytes is @byte) is void {
+        self.write_bytes(bytes);
+    }
+
     flush() is void {}
 
     write(values is ...string) is void {
@@ -61,6 +65,10 @@ object Stderr does Writing, WritingText {
 
     write(source is ByteSource) is void {
         self.write_bytes(source.bytes());
+    }
+
+    write(bytes is @byte) is void {
+        self.write_bytes(bytes);
     }
 
     flush() is void {}

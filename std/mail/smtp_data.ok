@@ -11,7 +11,6 @@ import "numbers/bigint" take BigInt;
 import "compare" take Order;
 import "io/stream" take ByteSource;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 
@@ -294,7 +293,7 @@ hidden object SmtpDataOutput {
     write(bytes is @byte) is void {
         confirm bytes.size() <= maximum - buffer.content().size()
             else throw SmtpLimitExceeded.kind("data_bytes");
-        buffer.writing().write(ByteSnapshot(bytes));
+        buffer.writing().write(bytes);
     }
 }
 

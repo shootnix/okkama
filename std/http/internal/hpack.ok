@@ -9,7 +9,6 @@ import "http/header" take HttpAsciiLowercase;
 import "collections/sequence" take Sequencing;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "async/atomic" take Atomic;
 
 object HpackBudget {
@@ -446,7 +445,7 @@ hidden object HpackOutput {
                 0,
                 "encoded HPACK byte budget"
             );
-        buffer.writing().write(ByteSnapshot(bytes));
+        buffer.writing().write(bytes);
     }
 
     bytes() is @byte {

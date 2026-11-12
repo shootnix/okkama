@@ -3,7 +3,6 @@ module url/percent v1.0.0;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "encoding/hex" take HexDecoded, InvalidHex;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 
 // Whole-component choices preserve their grammatical separators. Use data for
 // a single query name/value. These choices do not validate URL structure.
@@ -106,7 +105,7 @@ object PercentDecoded {
         let output = ByteBuffer();
         defer output.closing().close();
         let writer = output.writing();
-        writer.write(ByteSnapshot(Utf8Encoded(parts[0]).bytes()));
+        writer.write(Utf8Encoded(parts[0]).bytes());
         (1..parts.size()).reduce(parts[0].length()) -> at, index {
             let part = parts[index];
             confirm part.length() >= 2 else throw InvalidPercentEncoding.at(at);
@@ -116,9 +115,9 @@ object PercentDecoded {
             catch failure is InvalidHex {
                 throw InvalidPercentEncoding.at(at);
             };
-            writer.write(ByteSnapshot(octets));
+            writer.write(octets);
             if part.length() > 2 {
-                writer.write(ByteSnapshot(Utf8Encoded(part.slice(2, part.length())).bytes()));
+                writer.write(Utf8Encoded(part.slice(2, part.length())).bytes());
             }
             at + 1 + part.length();
         };

@@ -5,7 +5,6 @@ import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument;
 
 object QueryParameter {
@@ -327,7 +326,7 @@ hidden object ParameterText {
                     origin[index];
                 }
             };
-            writer.write(ByteSnapshot([octet]));
+            writer.write([octet]);
             cursor = cursor.following(width);
         }
         try {

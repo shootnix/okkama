@@ -7,7 +7,6 @@ import "mime/media_type" take MimeItems, MimePosition;
 import "collections/sequence" take Sequencing;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument, InvalidState;
 
 // Bounded structural data from one framed untagged response. Literal payloads
@@ -278,7 +277,7 @@ object ImapDataLexing {
                     else {
                         raw;
                     };
-                    buffer.writing().write(ByteSnapshot(Utf8Encoded(current).bytes()));
+                    buffer.writing().write(Utf8Encoded(current).bytes());
                 }
                 confirm at.index() == origin.length()
                     || origin.slice(at.index(), at.index() + 1) == " "

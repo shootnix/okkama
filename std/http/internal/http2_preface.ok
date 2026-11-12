@@ -6,7 +6,6 @@ import "http/internal/http2_frame" take Http2Frame, Http2FrameHeader, Http2Fault
 import "http/internal/http2_reading" take Http2FrameReading, EndOfHttp2Frames;
 import "io/stream" take AsyncReading, AsyncWriting;
 import "async/scope" take FutureGroup;
-import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Encoded;
 import "http/internal/wire_bytes" take HttpWireBytes;
 
@@ -46,7 +45,7 @@ hidden object Http2PrefaceOperation {
     }
 
     async emit(bytes is @byte) is void {
-        let pending = output.write(ByteSnapshot(bytes));
+        let pending = output.write(bytes);
         await pending;
     }
 
@@ -132,7 +131,7 @@ hidden object Http2ServerPrefaceOperation {
     }
 
     async emit(bytes is @byte) is void {
-        let pending = output.write(ByteSnapshot(bytes));
+        let pending = output.write(bytes);
         await pending;
     }
 

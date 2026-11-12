@@ -9,7 +9,6 @@ import "runtime/fs";
 import "fs/temp" take TemporaryDirectory;
 import "fs/directory" take Directory;
 import "fs/file" take File;
-import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Encoded;
 
 object FileLogOptions {
@@ -82,8 +81,11 @@ object LogFileState does Writing, Closing {
     }
 
     write(source is ByteSource) is void {
+        self.write(source.bytes());
+    }
+
+    write(bytes is @byte) is void {
         confirm !self.closed() else throw ClosedLogFile.closed;
-        let bytes = source.bytes();
         let handle = self.handle();
         try {
             let written = fs.write(handle, bytes);
@@ -190,6 +192,10 @@ object LogFile does Writing, Closing {
         state.write(source);
     }
 
+    write(bytes is @byte) is void {
+        state.write(bytes);
+    }
+
     flush() is void {
         state.flush();
     }
@@ -228,16 +234,16 @@ test "a log file appends, reopens and refuses writes once closed" {
     test.is(options.permissions().group()::Access::writable, false);
     test.is(options::Writes::flush_each, true);
     let logs = LogFile(path: path, options: options);
-    logs.write(ByteSnapshot(Utf8Encoded("one\n").bytes()));
+    logs.write(Utf8Encoded("one\n").bytes());
     logs.flush();
     logs.reopen();
-    logs.write(ByteSnapshot(Utf8Encoded("two\n").bytes()));
+    logs.write(Utf8Encoded("two\n").bytes());
     test.is(logs.closed(), false);
     logs.close();
     logs.close();
     test.is(logs.closed(), true);
     test.throws(ClosedLogFile) {
-        logs.write(ByteSnapshot(Utf8Encoded("three\n").bytes()));
+        logs.write(Utf8Encoded("three\n").bytes());
     };
     test.throws(ClosedLogFile) {
         logs.reopen();
@@ -250,7 +256,7 @@ test "a log file appends, reopens and refuses writes once closed" {
             sync_each: false
         )
     );
-    again.write(ByteSnapshot(Utf8Encoded("three\n").bytes()));
+    again.write(Utf8Encoded("three\n").bytes());
     again.close();
     test.is(File(path: path).text().content(), "one\ntwo\nthree\n");
     scratch.close();

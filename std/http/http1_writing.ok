@@ -7,7 +7,6 @@ import "http/header" take Headers;
 import "http/method" take Method, MethodName;
 import "http/version" take Http1VersionText;
 import "io/stream" take AsyncWriting;
-import "io/decorators" take ByteSnapshot;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
 
 // Canonical head bytes are fully bounded/validated before a lazy single write.
@@ -141,7 +140,7 @@ hidden object Http1HeadOutput {
     }
 
     writing(origin is AsyncWriting, wire is @byte) is Future<AsyncWriting> {
-        origin.write(ByteSnapshot(wire));
+        origin.write(wire);
     }
 }
 

@@ -209,7 +209,7 @@ hidden object MimeBase64Decoded {
                     confirm code <= 127
                         else throw InvalidTransferEncoding.located(index, "non-ASCII Base64 byte");
                     if code != 9 && code != 32 {
-                        buffer.writing().write(ByteSnapshot([origin[index]]));
+                        buffer.writing().write([origin[index]]);
                     }
                 }
             }

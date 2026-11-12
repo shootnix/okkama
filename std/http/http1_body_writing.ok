@@ -358,12 +358,12 @@ hidden object Http1TrailerWire {
                 )
             );
         }
-        writer.write(ByteSnapshot([13.byte(), 10.byte()]));
+        writer.write([13.byte(), 10.byte()]);
         let raw = buffer.content().bytes();
         ParsedHttp1Trailers(origin: Latin1Decoded(raw).string(), head: head, limits: limits).trailers();
         let final = ByteBuffer([48.byte(), 13.byte(), 10.byte()]);
         defer final.closing().close();
-        final.writing().write(ByteSnapshot(raw));
+        final.writing().write(raw);
         final.content().bytes();
     }
 }

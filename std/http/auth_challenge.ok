@@ -4,7 +4,6 @@ import "http/header" take HttpAsciiLowercase;
 import "http/media_type" take HttpMediaOctet, HttpMediaPosition, HttpMediaScanned, HttpMediaItems;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded, UnrepresentableLatin1Character;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 
 object AuthenticationParameter {
     has name, value is string;
@@ -337,11 +336,11 @@ hidden object AuthenticationChallengeScanning {
             if code == 92 {
                 confirm at + 1 < width
                     else throw InvalidAuthenticationChallenge.because("unfinished escape");
-                writer.write(ByteSnapshot([bytes[at + 1]]));
+                writer.write([bytes[at + 1]]);
                 position = position.following(at + 2);
             }
             else {
-                writer.write(ByteSnapshot([bytes[at]]));
+                writer.write([bytes[at]]);
                 position = position.following(at + 1);
             }
         }

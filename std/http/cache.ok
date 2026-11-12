@@ -20,7 +20,7 @@ import "async/event" take Event;
 import "async/lock" take Lock;
 import "async/scope" take FutureGroup;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot, InvalidReading;
+import "io/decorators" take InvalidReading;
 import "io/stream" take InvalidReadLimit, Closing;
 import "http/server" take HttpServer;
 import "http/server_policy" take ServerPolicy;
@@ -367,7 +367,7 @@ hidden object CacheBodyReading does BodyReading {
             if !overflow.ready() {
                 let held = buffer.content().size();
                 if chunk.size() <= budget - held {
-                    buffer.writing().write(ByteSnapshot(chunk));
+                    buffer.writing().write(chunk);
                 }
                 else {
                     overflow.set();

@@ -15,7 +15,6 @@ import "http/header" take Headers, HeaderName, HttpAsciiLowercase, Header;
 import "http/body" take BodyReading, ByteBody;
 import "http/media_type" take HttpMediaType;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded;
 import "encoding/single_byte" take AsciiDecoded, Latin1Decoded;
 import "json" take Json, ParsedJson;
@@ -198,7 +197,7 @@ object ClientResponse {
             if chunk.size() == 0 {
                 last;
             }
-            output.write(ByteSnapshot(chunk));
+            output.write(chunk);
         }
         joined.content().bytes();
     }

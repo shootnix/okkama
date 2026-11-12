@@ -4,7 +4,6 @@ import "logging/file" take FileLogOptions, LogFileState, ClosedLogFile;
 import "fs/path" take Path, PathStyle;
 import "fs/error" take FileFailure;
 import "io/stream" take ByteSource, Writing, Closing;
-import "io/decorators" take ByteSnapshot;
 import "async/atomic" take Atomic;
 import "numbers/bigint" take BigInt, InvalidBigInt;
 import "compare" take Order;
@@ -215,11 +214,14 @@ object RotatingLogFile does Writing, Closing {
     }
 
     write(source is ByteSource) is void {
+        self.write(source.bytes());
+    }
+
+    write(bytes is @byte) is void {
         confirm !file.closed() else throw ClosedLogFile.closed;
         if failures.value().size() > 0 {
             throw failures.value()[0];
         }
-        let bytes = ByteSnapshot(source.bytes());
         let now = clock.instant();
         try {
             let size = self.size();
@@ -358,7 +360,7 @@ test "a rotating file archives by generation and keeps the newest backups" {
         clock: clock
     );
     for ["a", "b", "c", "d", "e", "f", "g"] -> letter {
-        logs.write(ByteSnapshot(Utf8Encoded(letter.repeat(8) + "\n").bytes()));
+        logs.write(Utf8Encoded(letter.repeat(8) + "\n").bytes());
     }
     logs.close();
     let listed is @string = DirectoryEntries(origin: scratch).map() -> entry {
@@ -375,7 +377,7 @@ test "a rotating file archives by generation and keeps the newest backups" {
         "eeeeeeee\nffffffff\n"
     );
     test.throws(ClosedLogFile) {
-        logs.write(ByteSnapshot(Utf8Encoded("late").bytes()));
+        logs.write(Utf8Encoded("late").bytes());
     };
     test.throws(InvalidLogRotation) {
         RotatingLogFile(
@@ -408,11 +410,11 @@ test "an interval rotation names the archive by time" {
         backups: 1,
         clock: clock,
     );
-    logs.write(ByteSnapshot(Utf8Encoded("one\n").bytes()));
+    logs.write(Utf8Encoded("one\n").bytes());
     clock.advance(Duration(seconds: 30));
-    logs.write(ByteSnapshot(Utf8Encoded("two\n").bytes()));
+    logs.write(Utf8Encoded("two\n").bytes());
     clock.advance(Duration(seconds: 30));
-    logs.write(ByteSnapshot(Utf8Encoded("three\n").bytes()));
+    logs.write(Utf8Encoded("three\n").bytes());
     logs.close();
     let archive = Path(path.string() + ".archive.1.2023-11-14T22-14-20Z-1");
     test.is(File(path: archive).text().content(), "one\ntwo\n");

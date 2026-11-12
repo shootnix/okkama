@@ -267,7 +267,10 @@ object FileBytes does Reading, Writing, ByteSource, Batching<byte> {
     }
 
     write(source is ByteSource) is void {
-        let bytes is @byte = source.bytes();
+        self.write(source.bytes());
+    }
+
+    write(bytes is @byte) is void {
         try {
             let written is int = file_state_write(state, bytes);
             confirm written == bytes.size() else throw IncompleteWrite.after(written);

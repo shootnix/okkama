@@ -5,7 +5,6 @@ import "http/websocket" take WebSocketLimits, WebSocketMessage, TextWebSocketMes
     BinaryWebSocketMessage, WebSocketFailure, WebSocketClose, WebSocketClosed;
 import "io/stream" take Closing;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "async/atomic" take Atomic;
 import "encoding/utf" take Utf8Decoded, InvalidUtf8;
 import "strings/parse" take Number;
@@ -53,7 +52,7 @@ object WebSocketMessageAssembly does Closing {
         }
         confirm frame.payload().size() <= maximum - bytes.content().size()
             else throw WebSocketFailure.because("message byte limit");
-        bytes.writing().write(ByteSnapshot(frame.payload()));
+        bytes.writing().write(frame.payload());
         if !frame.final() {
             let empty is @WebSocketMessage = [];
             return empty;

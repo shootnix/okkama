@@ -5,7 +5,6 @@ import "encoding/base64" take Base64Encoded, Base64Decoded, InvalidBase64;
 import "encoding/hex" take HexDecoded, InvalidHex;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument;
 
 // Strict RFC 2047 words for explicitly unstructured, unfolded field bodies.
@@ -134,7 +133,7 @@ object DecodedWords {
             }
             let start = position.index();
             if start == origin.length() {
-                writer.write(ByteSnapshot(Utf8Encoded(origin.slice(space, start)).bytes()));
+                writer.write(Utf8Encoded(origin.slice(space, start)).bytes());
                 last;
             }
             loop {
@@ -147,7 +146,7 @@ object DecodedWords {
             let token = origin.slice(start, position.index());
             let encoded = token.length() >= 2 && token.slice(0, 2) == "=?";
             if !previous.encoded() || !encoded {
-                writer.write(ByteSnapshot(Utf8Encoded(origin.slice(space, start)).bytes()));
+                writer.write(Utf8Encoded(origin.slice(space, start)).bytes());
             }
             let text = if encoded {
                 ParsedEncodedWord(origin: token, offset: start).string();
@@ -155,7 +154,7 @@ object DecodedWords {
             else {
                 token;
             };
-            writer.write(ByteSnapshot(Utf8Encoded(text).bytes()));
+            writer.write(Utf8Encoded(text).bytes());
             previous = previous.following(encoded);
             confirm output.content().size() <= maximum
                 else throw EncodedWordLimitExceeded.kind("output");
@@ -308,18 +307,18 @@ hidden object QWordBytes {
                 catch failure is InvalidHex {
                     throw InvalidEncodedWord.located(offset + index, "invalid Q escape");
                 };
-                writer.write(ByteSnapshot(bytes));
+                writer.write(bytes);
                 position = position.following(index + 3);
             }
             else {
                 confirm code >= 33 && code <= 126 && code != 63
                     else throw InvalidEncodedWord.located(offset + index, "invalid Q literal");
-                writer.write(ByteSnapshot([if code == 95 {
+                writer.write([if code == 95 {
                     32.byte();
                 }
                 else {
                     code.byte();
-                }]));
+                }]);
                 position = position.following(index + 1);
             }
         }

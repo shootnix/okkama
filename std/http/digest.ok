@@ -18,7 +18,6 @@ import "url/percent" take PercentEncoded, UrlComponent;
 import "encoding/hex" take HexEncoded, HexDecoded, InvalidHex;
 import "runtime/crypto" as native_crypto;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "async/atomic" take Atomic;
 import "http/exchange" take ClientResponse, Exchanging;
 import "random/source" take SecureRandom;
@@ -450,14 +449,14 @@ hidden object DigestQuoted {
         let output = ByteBuffer();
         defer output.closing().close();
         let writer = output.writing();
-        writer.write(ByteSnapshot([34.byte()]));
+        writer.write([34.byte()]);
         for bytes -> octet {
             if octet.int() == 34 || octet.int() == 92 {
-                writer.write(ByteSnapshot([92.byte()]));
+                writer.write([92.byte()]);
             }
-            writer.write(ByteSnapshot([octet]));
+            writer.write([octet]);
         }
-        writer.write(ByteSnapshot([34.byte()]));
+        writer.write([34.byte()]);
         Latin1Decoded(output.content().bytes()).string();
     }
 }

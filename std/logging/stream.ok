@@ -6,7 +6,6 @@ import "logging/level" take LogLevel;
 import "logging/line" take TextLogLine, JsonLogLine;
 import "time/zone" take TimeZone, FixedZone;
 import "io/stream" take Writing;
-import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "terminal/session" take TerminalOutput;
 import "terminal/style" take TextStyle, StyledText, DefaultColor;
@@ -100,7 +99,7 @@ object TextStreamLogs does LogWriting {
 
     write(record is LogRecord) is void {
         let line = TextLogLine(origin: record, zone: zone).string();
-        origin.write(ByteSnapshot(Utf8Encoded(line + "\n").bytes()));
+        origin.write(Utf8Encoded(line + "\n").bytes());
     }
 }
 
@@ -113,7 +112,7 @@ object JsonStreamLogs does LogWriting {
 
     write(record is LogRecord) is void {
         let line = JsonLogLine(record).string();
-        origin.write(ByteSnapshot(Utf8Encoded(line + "\n").bytes()));
+        origin.write(Utf8Encoded(line + "\n").bytes());
     }
 }
 

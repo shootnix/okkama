@@ -7,7 +7,6 @@ import "collections/sequence" take Sequencing;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "io/stream" take ByteSource;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument;
 
 // Explicit mboxrd content: LF archive framing, CRLF MIME, reversible From
@@ -226,7 +225,7 @@ hidden object MboxOutput {
             }
             throw MboxLimitExceeded.kind(kind);
         }
-        buffer.writing().write(ByteSnapshot(bytes));
+        buffer.writing().write(bytes);
     }
 }
 

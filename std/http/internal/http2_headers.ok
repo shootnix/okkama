@@ -8,7 +8,6 @@ import "http/internal/hpack_tables" take HpackField;
 import "io/stream" take AsyncReading, AsyncWriting;
 import "collections/sequence" take Sequencing;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "async/atomic" take Atomic;
 import "async/scope" take FutureGroup;
 import "http/internal/wire_bytes" take HttpWireBytes;
@@ -143,7 +142,7 @@ hidden object Http2HeaderInput {
                 0,
                 "encoded field block budget"
             );
-        buffer.writing().write(ByteSnapshot(fragment));
+        buffer.writing().write(fragment);
         let complete = Atomic((first.header().flags().int() & 4) != 0);
         let count = Atomic(1);
         let stream = first.header().stream();
@@ -194,7 +193,7 @@ hidden object Http2HeaderInput {
                     0,
                     "encoded field block budget"
                 );
-            buffer.writing().write(ByteSnapshot(bytes));
+            buffer.writing().write(bytes);
             complete.replace((following.header().flags().int() & 4) != 0);
             count.replace(count.value() + 1);
         }
@@ -305,7 +304,7 @@ hidden object Http2HeaderOutput {
     }
 
     async emit(frame is Http2Frame) is void {
-        let pending = origin.write(ByteSnapshot(frame.bytes()));
+        let pending = origin.write(frame.bytes());
         await pending;
     }
 

@@ -9,7 +9,6 @@ import "net/stream" take StreamConnection, StreamReading, StreamWriting, Connect
     StreamFailure;
 import "net/failure" take NetworkOperation, NetworkClosed;
 import "io/stream" take Closing;
-import "io/decorators" take ByteSnapshot;
 import "strings/parse" take Number;
 import "net/ip" take IpAddress;
 import "async/event" take Event;
@@ -462,7 +461,7 @@ async test "numeric TCP reports actual OS-selected endpoints" {
     let server = await pending;
     defer server.close();
     test.ok(client.endpoints().remote_endpoint() == listener.local_endpoint());
-    await client.output().write(ByteSnapshot([7.byte()]));
+    await client.output().write([7.byte()]);
     test.is(await server.input().bytes(1), [7.byte()]);
 }
 

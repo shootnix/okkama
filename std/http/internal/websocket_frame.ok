@@ -6,7 +6,6 @@ import "encoding/utf" take ByteOrder;
 import "http/internal/wire_bytes" take HttpWireBytes;
 import "runtime/binary" take binary_masked_slice;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 
 object WebSocketFrameHeader {
     has opcode, length is int;
@@ -236,7 +235,7 @@ object WebSocketMaskedBytes {
             else {
                 origin.size() - start;
             };
-            writing.write(ByteSnapshot(binary_masked_slice(origin, mask, offset, start, count)));
+            writing.write(binary_masked_slice(origin, mask, offset, start, count));
             position = position.following(start + count);
         }
         output.content().bytes();

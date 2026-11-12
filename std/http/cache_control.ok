@@ -4,7 +4,6 @@ import "http/header" take Headers, Header, HeaderName, HttpAsciiLowercase;
 import "http/media_type" take HttpMediaOctet, HttpMediaPosition, HttpMediaScanned, HttpMediaItems;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 
 // Preserve duplicates: a repeated freshness directive cannot authorize reuse.
 hidden object CacheDirective {
@@ -232,11 +231,11 @@ hidden object CacheControlScanning {
             }
             if code == 92 {
                 confirm at + 1 < width else throw InvalidCacheControl.because("unfinished escape");
-                writer.write(ByteSnapshot([bytes[at + 1]]));
+                writer.write([bytes[at + 1]]);
                 cursor = cursor.following(at + 2);
             }
             else {
-                writer.write(ByteSnapshot([bytes[at]]));
+                writer.write([bytes[at]]);
                 cursor = cursor.following(at + 1);
             }
         }

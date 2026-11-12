@@ -5,7 +5,6 @@ import "encoding/utf" take Utf8Encoded, Utf8Decoded, Utf16Encoded, Utf16Decoded,
 import "encoding/base64" take Base64Encoded, Base64Decoded, InvalidBase64;
 import "mime/media_type" take MimePosition;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument;
 
 // Bounded, eager IMAP4rev1 mailbox-name values. No connection or negotiation.
@@ -208,7 +207,7 @@ hidden object ImapUtf7Parser {
             };
             confirm piece.length() <= limits::Limits::scalars - count.index()
                 else throw ImapNameLimitExceeded.kind("scalars");
-            buffer.writing().write(ByteSnapshot(Utf8Encoded(piece).bytes()));
+            buffer.writing().write(Utf8Encoded(piece).bytes());
             count = count.following(count.index() + piece.length());
         }
         let decoded = Utf8Decoded(buffer.content().bytes()).string();
@@ -318,7 +317,7 @@ hidden object ImapNameOutput {
     write(origin is string) is void {
         confirm origin.length() <= maximum - buffer.content().size()
             else throw ImapNameLimitExceeded.kind("wire_bytes");
-        buffer.writing().write(ByteSnapshot(Utf8Encoded(origin).bytes()));
+        buffer.writing().write(Utf8Encoded(origin).bytes());
     }
 }
 

@@ -5,7 +5,6 @@ import "mail/imap_command_reading" take ImapTag, ImapCommandLimits, ImapCommandR
     ImapCommandInput, ImapReplyMode, ImapContinuationWriting, ImapNoContinuation,
     ImapCommandLimitExceeded, ImapResponseObserving;
 import "io/stream" take AsyncReading, AsyncWriting, Closing;
-import "io/decorators" take ByteSnapshot;
 import "async/channel" take Channel, Sending;
 import "async/lock" take Lock;
 import "async/event" take Event;
@@ -98,7 +97,7 @@ object ImapCommandChannel does Closing {
             ImapNoContinuation();
         };
         let logout = command.name() == "LOGOUT";
-        await output.write(ByteSnapshot(command.bytes(tag)));
+        await output.write(command.bytes(tag));
         let result = await ImapCommandInput(
             origin: input,
             tag: tag,
@@ -132,7 +131,7 @@ object ImapCommandChannel does Closing {
         defer cleanup.close();
         let state = await states.receiving().item();
         let tag = ImapTag("O" + state.serial().string());
-        await output.write(ByteSnapshot(ImapCommand(simple: ImapSimpleCommand.idle).bytes(tag)));
+        await output.write(ImapCommand(simple: ImapSimpleCommand.idle).bytes(tag));
         let action = ImapIdleWireInput(
             input: input,
             output: output,
@@ -212,7 +211,7 @@ object ImapLiteralWriting does ImapContinuationWriting {
     }
 
     async write() is int {
-        await output.write(ByteSnapshot(command.literal_bytes()));
+        await output.write(command.literal_bytes());
         1;
     }
 }
@@ -306,7 +305,7 @@ hidden object ImapDoneWriting {
     async write() is int {
         await stop.wait();
         sent.set();
-        await output.write(ByteSnapshot(Utf8Encoded("DONE\r\n").bytes()));
+        await output.write(Utf8Encoded("DONE\r\n").bytes());
         1;
     }
 }

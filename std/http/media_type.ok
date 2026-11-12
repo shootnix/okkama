@@ -8,7 +8,6 @@ import "collections/ordering" take Sorted, LowerBound;
 import "collections/list" take List, EmptyList;
 import "compare" take Comparing, Order;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument;
 
 // HTTP parameters retain literal extension names: no MIME RFC2231 assembly.
@@ -399,11 +398,11 @@ object HttpMediaScanning {
             if code == 92 {
                 confirm at + 1 < width
                     else throw InvalidHttpMediaType.located(at, "unfinished quoted pair");
-                writer.write(ByteSnapshot([bytes[at + 1]]));
+                writer.write([bytes[at + 1]]);
                 position = position.following(at + 2);
             }
             else {
-                writer.write(ByteSnapshot([bytes[at]]));
+                writer.write([bytes[at]]);
                 position = position.following(at + 1);
             }
         }

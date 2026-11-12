@@ -7,7 +7,6 @@ import "encoding/single_byte" take AsciiDecoded;
 import "strings/join" take Joined;
 import "io/stream" take ByteSource;
 import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument, InvalidState;
 
 // Bounded ASCII SMTP reply values and incremental framing (RFC 5321).
@@ -209,7 +208,7 @@ hidden object SmtpReplyValue {
                 else throw SmtpLimitExceeded.kind("line_bytes");
             confirm bytes.size() <= limits::Limits::wire_bytes - buffer.content().size()
                 else throw SmtpLimitExceeded.kind("wire_bytes");
-            buffer.writing().write(ByteSnapshot(bytes));
+            buffer.writing().write(bytes);
             text;
         };
         status = code;

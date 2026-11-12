@@ -4,7 +4,6 @@ import "io/stream" take ByteSource, Writing, WritingText, Reading, Closing, Inco
     InvalidReadLimit;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded;
 import "fs/path" take Path;
-import "io/decorators" take ByteSnapshot;
 import "io/buffer" take ByteBuffer;
 import "async/atomic" take Atomic;
 import "os/command" take Command, Commanding, InheritedCommand;
@@ -171,9 +170,8 @@ object Process {
         }
     }
 
-    input_write(source is ByteSource) is void {
+    input_write(content is @byte) is void {
         self.start();
-        let content is @byte = source.bytes();
         let written is int = try {
             process_state_input_write(state, content);
         }
@@ -271,18 +269,22 @@ object ProcessInput does Writing, WritingText, Closing {
     }
 
     write(source is ByteSource) is void {
-        owner.input_write(source);
+        owner.input_write(source.bytes());
+    }
+
+    write(bytes is @byte) is void {
+        owner.input_write(bytes);
     }
 
     // Text, as UTF-8.
     write(values is ...string) is void {
         let text is @string = values...;
-        owner.input_write(ByteSnapshot(Utf8Encoded(text.join("")).bytes()));
+        owner.input_write(Utf8Encoded(text.join("")).bytes());
     }
 
     writeln(values is ...string) is void {
         let text is @string = values...;
-        owner.input_write(ByteSnapshot(Utf8Encoded(text.join("") + "\n").bytes()));
+        owner.input_write(Utf8Encoded(text.join("") + "\n").bytes());
     }
 
     flush() is void {
@@ -361,7 +363,7 @@ hidden object ProcessStreamDrain {
             last if chunk.size() == 0;
             taken.replace(taken.value() + chunk.size());
             confirm taken.value() <= limit else throw OutputLimitExceeded.limit(limit);
-            output.write(ByteSnapshot(chunk));
+            output.write(chunk);
         }
         joined.content().bytes();
     }
@@ -398,7 +400,7 @@ async test "a process is fed through its input and read through its output" {
         directory: WorkingDirectory(),
     ));
     let input = ProcessInput(origin: process);
-    input.write(ByteSnapshot([byte(111), byte(107)]));
+    input.write([byte(111), byte(107)]);
     input.flush();
     test.ok(!input.closed());
     input.close();
