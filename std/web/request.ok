@@ -3,8 +3,10 @@ module web/request v1.0.0;
 import "http/method" take Method;
 import "http/message" take Request, BodyLimitExceeded;
 import "http/request_context" take HttpRequestContext;
-import "http/header" take Headers, Header, HeaderName, MissingHeader;
+import "http/header" take Headers, Header, HeaderName;
 import "http/cookie" take RequestCookies;
+import "http/routing" take RoutePattern, RouteSegmentKind;
+import "url/percent" take PercentEncoded, UrlComponent;
 import "strings/parse" take Number, Truth, InvalidInteger, InvalidBoolean;
 import "http/target" take RequestTargetKind, OriginTarget;
 import "http/media_type" take HttpMediaType, InvalidHttpMediaType;
@@ -35,10 +37,21 @@ import "async/cancellation" take Cancellation;
 object WebRequest {
     has origin is Request;
     has details is HttpRequestContext;
+    has links is WebLinks;
 
-    WebRequest(request is Request, context is HttpRequestContext) {
+    // links: the named routes of the table, for link(); a table gives its own.
+    WebRequest(request is Request, context is HttpRequestContext, links is WebLinks = WebLinks()) {
         origin = request;
         details = context;
+        self.links = links;
+    }
+
+    // The path of a named route with its parameters filled in, percent-encoded
+    // (#106): request.link("user", RouteParameter(name: "id", value: "7")) is
+    // "/users/7" for Get(path: "/users/:id", endpoint: users.show, name: "user").
+    link(name is string, parameters is ...RouteParameter) is string {
+        let given is @RouteParameter = parameters...;
+        links.link(name, given);
     }
 
     request() is Request {
@@ -76,26 +89,6 @@ object WebRequest {
         CookieValues(RequestCookies(origin));
     }
 
-    // Route parameter declared by the matched pattern. A missing name means the
-    // endpoint is mounted on a pattern that does not declare it: a server bug.
-    path(name is string) is string {
-        let parameters = details.parameters();
-        confirm parameters.has(name) else throw MissingRouteParameter.name(name);
-        parameters[name];
-    }
-
-    // A query parameter, or none: request.query("limit") else "10". A required
-    // one: request.query("q") else throw Exception.status(400, "q required").
-    query(name is string) is Maybe<string> {
-        let parameters = self.parameters();
-        if parameters.membership(name) {
-            Maybe<string>.some(parameters.first(name));
-        }
-        else {
-            Maybe<string>.none;
-        }
-    }
-
     // Query decoded the way browsers and URLSearchParams encode it
     // (application/x-www-form-urlencoded: "+" is a space). The raw RFC 3986
     // query stays available through request().target().query(). It is decoded
@@ -127,25 +120,6 @@ object WebRequest {
         }
         catch failure is QueryLimitExceeded {
             throw Exception.status(400, failure.text());
-        }
-    }
-
-    header(name is string) is string {
-        try {
-            origin::Head::headers.first(HeaderName(name));
-        }
-        catch failure is MissingHeader {
-            throw Exception.status(400, "missing header: " + name);
-        }
-    }
-
-    header(name is string, fallback is string) is string {
-        let field = HeaderName(name);
-        if origin::Head::headers.membership(field) {
-            origin::Head::headers.first(field);
-        }
-        else {
-            fallback;
         }
     }
 
@@ -491,6 +465,101 @@ hidden object CookieValues does RequestValues {
     }
 }
 
+// A value for a route parameter in a link (#106):
+// request.link("user", RouteParameter(name: "id", value: "7")).
+object RouteParameter {
+    has name is string;
+    has value is string;
+
+    RouteParameter(name is string, value is string) {
+        self.name = name;
+        self.value = value;
+    }
+
+    cap Pair {
+        name is string {
+            name;
+        }
+
+        value is string {
+            value;
+        }
+    }
+}
+
+// The named routes of a table, by name, for links (#106). WebRoutes makes its
+// own and hands it to every WebRequest; WebLinks() has none.
+object WebLinks {
+    has patterns is %string:string;
+
+    WebLinks() {
+        patterns = [:];
+    }
+
+    WebLinks(patterns is %string:string) {
+        self.patterns = patterns;
+    }
+
+    // The path of the route named name with its parameters filled in. A
+    // parameter becomes one percent-encoded segment; a final wildcard keeps
+    // its slashes, and an empty one adds nothing. InvalidWebLink for an
+    // unknown name, a parameter the pattern lacks, or one it needs and lacks.
+    link(name is string, parameters is @RouteParameter) is string {
+        confirm patterns.has(name) else throw InvalidWebLink.because("no route is named " + name);
+        let parts = RoutePattern(patterns[name]).parts();
+        let declared is @string = parts.filter() -> part {
+            part::Segment::kind != RouteSegmentKind.literal;
+        }.map() -> part {
+            part::Segment::text;
+        };
+        for parameters -> parameter {
+            confirm declared.contains(parameter::Pair::name)
+                else throw InvalidWebLink.because(
+                    "the route " + name + " has no parameter " + parameter::Pair::name
+                );
+        }
+        let given is %string:string = parameters.reduce([:]) -> kept, parameter {
+            kept + [parameter::Pair::name: parameter::Pair::value];
+        };
+        let start is @string = [];
+        let pieces is @string = parts.reduce(start) -> kept, part {
+            let kind = part::Segment::kind;
+            let text = part::Segment::text;
+            if kind == RouteSegmentKind.literal {
+                kept + [PercentEncoded(origin: text, component: UrlComponent.path_segment).string()];
+            }
+            else {
+                confirm given.has(text)
+                    else throw InvalidWebLink.because("a link to " + name + " needs " + text);
+                let value = given[text];
+                if kind == RouteSegmentKind.wildcard {
+                    if value == "" {
+                        kept;
+                    }
+                    else {
+                        let segments is @string = value.split("/").map() -> segment {
+                            PercentEncoded(origin: segment, component: UrlComponent.path_segment).string();
+                        };
+                        kept + segments;
+                    }
+                }
+                else {
+                    confirm value != ""
+                        else throw InvalidWebLink.because(
+                            "parameter " + text + " of " + name + " is empty"
+                        );
+                    kept + [
+                        PercentEncoded(origin: value, component: UrlComponent.path_segment).string()
+                    ];
+                }
+            }
+        };
+        "/" + pieces.join("/");
+    }
+}
+
+enum InvalidWebLink is Error = (because(reason is string));
+
 enum MissingRouteParameter is Error = (name(name is string));
 
 enum InvalidBodyLimit is Error = (limit(limit is int));
@@ -819,9 +888,9 @@ test "the query is decoded once and read many times" {
         request: Request(target: OriginTarget(path: "/", query: Maybe.some("a=1&b=x+y&a=2"))),
         context: context
     );
-    test.is(request.query("a") else "", "1");
-    test.is(request.query("b") else "", "x y");
-    test.is(request.query("c") else "none", "none");
+    test.is(request.query().text("a"), "1");
+    test.is(request.query().text("b"), "x y");
+    test.is(request.query().maybe("c").text() else "none", "none");
     test.is(request.parameters().first("a"), "1");
     let broken = WebRequest(
         request: Request(target: OriginTarget(path: "/", query: Maybe.some("a=%FF"))),
@@ -830,7 +899,7 @@ test "the query is decoded once and read many times" {
     for [1, 2] -> attempt {
         test.is(
             try {
-                broken.query("a") else "";
+                broken.query().maybe("a").text() else "";
             }
             catch Exception.status(code, _) {
                 code.string();
@@ -931,5 +1000,35 @@ test "values a client sent are read by name, and a bad one is 400" {
     );
     test.throws(MissingRouteParameter) {
         request.path().text("slug");
+    };
+}
+
+test "links fill the parameters of named routes" {
+    let links = WebLinks(
+        ["user": "/users/:id", "file": "/files/*path", "home": "/", "about": "/about/"]
+    );
+    test.is(links.link("user", [RouteParameter(name: "id", value: "7")]), "/users/7");
+    test.is(links.link("user", [RouteParameter(name: "id", value: "a b/c")]), "/users/a%20b%2Fc");
+    test.is(
+        links.link("file", [RouteParameter(name: "path", value: "docs/a b.txt")]),
+        "/files/docs/a%20b.txt"
+    );
+    test.is(links.link("file", [RouteParameter(name: "path", value: "")]), "/files");
+    test.is(links.link("home", []), "/");
+    test.is(links.link("about", []), "/about/");
+    test.throws(InvalidWebLink) {
+        links.link("nobody", []);
+    };
+    test.throws(InvalidWebLink) {
+        links.link("user", []);
+    };
+    test.throws(InvalidWebLink) {
+        links.link(
+            "user",
+            [RouteParameter(name: "id", value: "7"), RouteParameter(name: "x", value: "1")]
+        );
+    };
+    test.throws(InvalidWebLink) {
+        links.link("user", [RouteParameter(name: "id", value: "")]);
     };
 }

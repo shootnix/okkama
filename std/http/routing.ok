@@ -23,6 +23,11 @@ enum RouteSegmentKind = (literal, parameter, wildcard);
 
 enum InvalidRoute is Error = (because(reason is string));
 
+// What a table does with a path no route matches when the same path with or
+// without its final slash does (#105): strict sends it to the fallback,
+// redirect answers 308 to the declared form.
+enum SlashPolicy = (strict, redirect);
+
 // Split raw separators first, then decode once. Encoded slash remains data in
 // one segment, never a second match position. No Unicode/case normalization.
 hidden object RoutedPath {
@@ -296,20 +301,29 @@ object Route {
     has method is Maybe<Method>;
     has pattern is RoutePattern;
     has handling is Handling;
+    has name is string;
 
-    Route(method is Method, pattern is RoutePattern, handling is Handling) {
+    // name is how links find the route (web/request link, #106); "" for none.
+    Route(method is Method, pattern is RoutePattern, handling is Handling, name is string = "") {
         self.method = Maybe.some(method);
         self.pattern = pattern;
         self.handling = handling;
+        self.name = name;
     }
 
     // A route for every method, as web/routing's Any (#78). A more specific
     // pattern still wins, and on the same pattern a route of the request's own
     // method wins over this one.
-    Route(pattern is RoutePattern, handling is Handling) {
+    Route(pattern is RoutePattern, handling is Handling, name is string = "") {
         method = Maybe<Method>.none;
         self.pattern = pattern;
         self.handling = handling;
+        self.name = name;
+    }
+
+    // The name links find the route by, or "".
+    name() is string {
+        name;
     }
 
     // The method; a route for every method has none and throws.
@@ -393,6 +407,7 @@ object Routes does Handling {
     has routes is @Route;
     has fallback is Handling;
     has rejection is RouteRejecting;
+    has slashes is SlashPolicy;
 
     Routes(routes is Sequencing<Route>, fallback is Handling) {
         let snapshot is @Route = (0..routes.size()).map() -> index {
@@ -404,9 +419,18 @@ object Routes does Handling {
         self.routes = snapshot;
         self.fallback = fallback;
         rejection = EmptyRouteRejection();
+        slashes = SlashPolicy.strict;
     }
 
-    Routes(routes is Sequencing<Route>, fallback is Handling, rejection is RouteRejecting) {
+    // slashes: SlashPolicy.redirect answers a path no route matches with 308 to
+    // the same path with or without its final slash, when that one matches
+    // (#105); strict, the default, sends it to the fallback.
+    Routes(
+        routes is Sequencing<Route>,
+        fallback is Handling,
+        rejection is RouteRejecting,
+        slashes is SlashPolicy = SlashPolicy.strict
+    ) {
         let snapshot is @Route = (0..routes.size()).map() -> index {
             routes.item(index);
         };
@@ -416,6 +440,7 @@ object Routes does Handling {
         self.routes = snapshot;
         self.fallback = fallback;
         self.rejection = rejection;
+        self.slashes = slashes;
     }
 
     async invoke(handler is Handling, request is Request, context is HttpRequestContext) is HandlingResult {
@@ -459,6 +484,46 @@ object Routes does Handling {
         let matching = tree.matching(path, 0);
         if matching.size() > 0 {
             return rejection.disallowed(request, self.allowed(matching));
+        }
+        if slashes == SlashPolicy.redirect && raw != "/" {
+            let other = if raw.ends_with("/") {
+                raw.slice(0, raw.length() - 1);
+            }
+            else {
+                raw + "/";
+            };
+            let found is @@string = try {
+                [RoutedPath(other).segments()];
+            }
+            catch e is InvalidRoute {
+                [];
+            };
+            if found.size() > 0 && tree.matching(found[0], 0).size() > 0 {
+                let query = if target.kind() == RequestTargetKind.origin {
+                    target.query();
+                }
+                else {
+                    let url = target.url();
+                    url::Parts::query;
+                };
+                let location = match query {
+                    case Maybe.some(text) {
+                        other + "?" + text;
+                    }
+                    else {
+                        other;
+                    }
+                };
+                return ResponseHandling(
+                    Response(
+                        status: Status.permanent_redirect,
+                        headers: Headers(
+                            Header(name: HeaderName("Location"), value: location),
+                            Header(name: HeaderName("Content-Length"), value: "0")
+                        )
+                    )
+                );
+            }
         }
         await self.invoke(fallback, request, context);
     }
@@ -960,6 +1025,9 @@ hidden object RouteDispatch {
         if response::Head::status == Status.method_not_allowed {
             return code + " " + headers.first(HeaderName("Allow"));
         }
+        if response::Head::status == Status.permanent_redirect {
+            return code + " " + headers.first(HeaderName("Location"));
+        }
         code;
     }
 }
@@ -1130,4 +1198,29 @@ async test "a table takes more than 256 routes" {
     test.is(await table.answer(Method.get, "/items/0/a"), "item 0 part=a");
     test.is(await table.answer(Method.get, "/items/299/b"), "item 299 part=b");
     test.is(await table.answer(Method.get, "/items/300/b"), "fallback");
+}
+
+async test "a table redirects a path to its declared form with or without the final slash" {
+    let routes is @Route = [
+        Route(method: Method.get, pattern: RoutePattern("/notes"), handling: RouteProbe("notes")),
+        Route(
+            method: Method.post,
+            pattern: RoutePattern("/drafts/"),
+            handling: RouteProbe("drafts")
+        ),
+    ];
+    let strict = RouteDispatch(Routes(routes: routes, fallback: RouteProbe("fallback")));
+    test.is(await strict.answer(Method.get, "/notes/"), "fallback");
+    let table = Routes(
+        routes: routes,
+        fallback: RouteProbe("fallback"),
+        rejection: EmptyRouteRejection(),
+        slashes: SlashPolicy.redirect
+    );
+    let redirecting = RouteDispatch(table);
+    test.is(await redirecting.answer(Method.get, "/notes"), "notes");
+    test.is(await redirecting.answer(Method.get, "/notes/"), "308 /notes");
+    test.is(await redirecting.answer(Method.post, "/drafts"), "308 /drafts/");
+    test.is(await redirecting.answer(Method.get, "/other/"), "fallback");
+    test.is(await redirecting.answer(Method.get, "/"), "fallback");
 }

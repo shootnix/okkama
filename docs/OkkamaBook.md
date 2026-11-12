@@ -3952,7 +3952,9 @@ the connection with `for await connection -> message` and answers with
 `send_text`, `send_bytes` or `send_json`.
 `Resource("/notes", Get(notes.list), Post(notes.add))` writes a path once for
 several methods; `Route(method: Method.options, path:, endpoint:)` routes any
-one method and `Any(path:, endpoint:)` every method. When patterns overlap,
+one method and `Any(path:, endpoint:)` every method. A route takes `name:`,
+and an endpoint builds its path with `request.link(name, RouteParameter(name:,
+value:))`; `/notes/` is redirected to a declared `/notes`. When patterns overlap,
 the most specific wins: `/notes/new` before `/notes/:id` before `/notes/*rest`.
 `Around(AccessLog(Stdout()))` or `Around(BearerAuth(token: secret))` in a table,
 a `Scope` or a `Resource` wraps its routes (`web/around`); an application's own

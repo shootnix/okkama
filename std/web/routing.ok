@@ -1,6 +1,6 @@
 module web/routing v1.0.0;
 
-import "http/routing" as http_routing take Routes, Route, RoutePattern, RouteRejecting;
+import "http/routing" as http_routing take Routes, Route, RoutePattern, RouteRejecting, SlashPolicy;
 import "http/handler" take Handling, HandlingKind, HandlingResult, ResponseHandling,
     WebSocketHandling, WebSocketHandlingResult;
 import "http/request_context" take HttpRequestContext;
@@ -20,7 +20,7 @@ import "async/cancellation" take Cancellation;
 import "net/stream" take ConnectionEndpoints;
 import "net/endpoint" take IpEndpoint;
 import "net/ip" take IpAddress;
-import "web/request" take WebRequest;
+import "web/request" take WebRequest, WebLinks, RouteParameter;
 import "web/exception" take Exception, ProblemReply;
 
 // Route tables built from controller actions. An endpoint is any bound action
@@ -88,18 +88,27 @@ role WebRouting {
 
     // The code this element puts around the routes beside it. Only Around has one.
     around() is Maybe<Surrounding>;
+
+    // The table's answer to a path that differs from a route only by its final
+    // slash. Only Slashes has one.
+    slashes() is Maybe<http_routing.SlashPolicy>;
 }
 
 object Get does WebRouting {
     has origin is MethodRoute;
 
-    Get(path is string, endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Maybe.some(Method.get), path: path, endpoint: endpoint);
+    Get(path is string, endpoint is async (WebRequest) is Responding, name is string = "") {
+        origin = MethodRoute(
+            method: Maybe.some(Method.get),
+            path: path,
+            endpoint: endpoint,
+            name: name
+        );
     }
 
     // Inside a Resource, which gives the path: Resource("/notes", Get(notes.list)).
     Get(endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Maybe.some(Method.get), path: "", endpoint: endpoint);
+        origin = MethodRoute(method: Maybe.some(Method.get), path: "", endpoint: endpoint, name: "");
     }
 
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
@@ -112,19 +121,33 @@ object Get does WebRouting {
 
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
+    }
+
+    slashes() is Maybe<http_routing.SlashPolicy> {
+        Maybe<http_routing.SlashPolicy>.none;
     }
 }
 
 object Post does WebRouting {
     has origin is MethodRoute;
 
-    Post(path is string, endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Maybe.some(Method.post), path: path, endpoint: endpoint);
+    Post(path is string, endpoint is async (WebRequest) is Responding, name is string = "") {
+        origin = MethodRoute(
+            method: Maybe.some(Method.post),
+            path: path,
+            endpoint: endpoint,
+            name: name
+        );
     }
 
     // Inside a Resource, which gives the path.
     Post(endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Maybe.some(Method.post), path: "", endpoint: endpoint);
+        origin = MethodRoute(
+            method: Maybe.some(Method.post),
+            path: "",
+            endpoint: endpoint,
+            name: ""
+        );
     }
 
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
@@ -137,19 +160,28 @@ object Post does WebRouting {
 
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
+    }
+
+    slashes() is Maybe<http_routing.SlashPolicy> {
+        Maybe<http_routing.SlashPolicy>.none;
     }
 }
 
 object Put does WebRouting {
     has origin is MethodRoute;
 
-    Put(path is string, endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Maybe.some(Method.put), path: path, endpoint: endpoint);
+    Put(path is string, endpoint is async (WebRequest) is Responding, name is string = "") {
+        origin = MethodRoute(
+            method: Maybe.some(Method.put),
+            path: path,
+            endpoint: endpoint,
+            name: name
+        );
     }
 
     // Inside a Resource, which gives the path.
     Put(endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Maybe.some(Method.put), path: "", endpoint: endpoint);
+        origin = MethodRoute(method: Maybe.some(Method.put), path: "", endpoint: endpoint, name: "");
     }
 
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
@@ -162,19 +194,33 @@ object Put does WebRouting {
 
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
+    }
+
+    slashes() is Maybe<http_routing.SlashPolicy> {
+        Maybe<http_routing.SlashPolicy>.none;
     }
 }
 
 object Patch does WebRouting {
     has origin is MethodRoute;
 
-    Patch(path is string, endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Maybe.some(Method.patch), path: path, endpoint: endpoint);
+    Patch(path is string, endpoint is async (WebRequest) is Responding, name is string = "") {
+        origin = MethodRoute(
+            method: Maybe.some(Method.patch),
+            path: path,
+            endpoint: endpoint,
+            name: name
+        );
     }
 
     // Inside a Resource, which gives the path.
     Patch(endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Maybe.some(Method.patch), path: "", endpoint: endpoint);
+        origin = MethodRoute(
+            method: Maybe.some(Method.patch),
+            path: "",
+            endpoint: endpoint,
+            name: ""
+        );
     }
 
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
@@ -187,19 +233,33 @@ object Patch does WebRouting {
 
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
+    }
+
+    slashes() is Maybe<http_routing.SlashPolicy> {
+        Maybe<http_routing.SlashPolicy>.none;
     }
 }
 
 object Delete does WebRouting {
     has origin is MethodRoute;
 
-    Delete(path is string, endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Maybe.some(Method.delete), path: path, endpoint: endpoint);
+    Delete(path is string, endpoint is async (WebRequest) is Responding, name is string = "") {
+        origin = MethodRoute(
+            method: Maybe.some(Method.delete),
+            path: path,
+            endpoint: endpoint,
+            name: name
+        );
     }
 
     // Inside a Resource, which gives the path.
     Delete(endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Maybe.some(Method.delete), path: "", endpoint: endpoint);
+        origin = MethodRoute(
+            method: Maybe.some(Method.delete),
+            path: "",
+            endpoint: endpoint,
+            name: ""
+        );
     }
 
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
@@ -212,6 +272,10 @@ object Delete does WebRouting {
 
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
+    }
+
+    slashes() is Maybe<http_routing.SlashPolicy> {
+        Maybe<http_routing.SlashPolicy>.none;
     }
 }
 
@@ -220,13 +284,18 @@ object Delete does WebRouting {
 object Route does WebRouting {
     has origin is MethodRoute;
 
-    Route(method is Method, path is string, endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Maybe.some(method), path: path, endpoint: endpoint);
+    Route(
+        method is Method,
+        path is string,
+        endpoint is async (WebRequest) is Responding,
+        name is string = ""
+    ) {
+        origin = MethodRoute(method: Maybe.some(method), path: path, endpoint: endpoint, name: name);
     }
 
     // Inside a Resource, which gives the path.
     Route(method is Method, endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Maybe.some(method), path: "", endpoint: endpoint);
+        origin = MethodRoute(method: Maybe.some(method), path: "", endpoint: endpoint, name: "");
     }
 
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
@@ -239,6 +308,10 @@ object Route does WebRouting {
 
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
+    }
+
+    slashes() is Maybe<http_routing.SlashPolicy> {
+        Maybe<http_routing.SlashPolicy>.none;
     }
 }
 
@@ -249,13 +322,13 @@ object Route does WebRouting {
 object Any does WebRouting {
     has origin is MethodRoute;
 
-    Any(path is string, endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Maybe<Method>.none, path: path, endpoint: endpoint);
+    Any(path is string, endpoint is async (WebRequest) is Responding, name is string = "") {
+        origin = MethodRoute(method: Maybe<Method>.none, path: path, endpoint: endpoint, name: name);
     }
 
     // Inside a Resource, which gives the path.
     Any(endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Maybe<Method>.none, path: "", endpoint: endpoint);
+        origin = MethodRoute(method: Maybe<Method>.none, path: "", endpoint: endpoint, name: "");
     }
 
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
@@ -268,6 +341,10 @@ object Any does WebRouting {
 
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
+    }
+
+    slashes() is Maybe<http_routing.SlashPolicy> {
+        Maybe<http_routing.SlashPolicy>.none;
     }
 }
 
@@ -299,6 +376,10 @@ object Resource does WebRouting {
                 else throw InvalidWebRoute.because(
                     "a Fallback belongs to WebRoutes, not to the resource " + full
                 );
+            confirm routing.slashes() == Maybe<http_routing.SlashPolicy>.none
+                else throw InvalidWebRoute.because(
+                    "Slashes belongs to WebRoutes, not to the resource " + full
+                );
             collected + routing.routes(full, inner);
         };
         for all -> route {
@@ -316,6 +397,10 @@ object Resource does WebRouting {
 
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
+    }
+
+    slashes() is Maybe<http_routing.SlashPolicy> {
+        Maybe<http_routing.SlashPolicy>.none;
     }
 }
 
@@ -349,6 +434,39 @@ object Around does WebRouting {
 
     around() is Maybe<Surrounding> {
         Maybe.some(origin);
+    }
+
+    slashes() is Maybe<http_routing.SlashPolicy> {
+        Maybe<http_routing.SlashPolicy>.none;
+    }
+}
+
+// What WebRoutes does with a path that differs from a route only by its final
+// slash (#105). By default it answers 308 to the declared form, so /notes/
+// reaches /notes; WebRoutes(Slashes(SlashPolicy.strict), …) sends such paths to
+// the Fallback instead. Only at the top of WebRoutes.
+object Slashes does WebRouting {
+    has policy is http_routing.SlashPolicy;
+
+    Slashes(policy is http_routing.SlashPolicy) {
+        self.policy = policy;
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
+        let empty is @http_routing.Route = [];
+        empty;
+    }
+
+    fallback() is Maybe<Fallback> {
+        Maybe<Fallback>.none;
+    }
+
+    around() is Maybe<Surrounding> {
+        Maybe<Surrounding>.none;
+    }
+
+    slashes() is Maybe<http_routing.SlashPolicy> {
+        Maybe.some(policy);
     }
 }
 
@@ -395,6 +513,10 @@ object Scope does WebRouting {
                 else throw InvalidWebRoute.because(
                     "a Fallback belongs to WebRoutes, not to the scope " + prefix
                 );
+            confirm routing.slashes() == Maybe<http_routing.SlashPolicy>.none
+                else throw InvalidWebRoute.because(
+                    "Slashes belongs to WebRoutes, not to the scope " + prefix
+                );
         }
         let inner = scopes + own + WebArounds(routings).scopes();
         let empty is @http_routing.Route = [];
@@ -409,6 +531,10 @@ object Scope does WebRouting {
 
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
+    }
+
+    slashes() is Maybe<http_routing.SlashPolicy> {
+        Maybe<http_routing.SlashPolicy>.none;
     }
 }
 
@@ -432,6 +558,10 @@ object Fallback does WebRouting {
 
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
+    }
+
+    slashes() is Maybe<http_routing.SlashPolicy> {
+        Maybe<http_routing.SlashPolicy>.none;
     }
 
     // The endpoint it answers with.
@@ -545,16 +675,97 @@ hidden object WebRouteTable {
         self.fallback = fallback;
     }
 
+    // The routes are compiled once, and once more when some are named: then
+    // every endpoint's chain starts with the table's links (#106).
     routes() is http_routing.Routes {
-        let chain = scopes + WebArounds(routings).scopes();
-        let empty is @http_routing.Route = [];
-        let all is @http_routing.Route = routings.reduce(empty) -> collected, routing {
-            collected + routing.routes("", chain);
+        let plain = scopes + WebArounds(routings).scopes();
+        let first = self.compiled(plain);
+        let named = first.filter() -> route {
+            route.name() != "";
+        };
+        let chain is @ExceptionScope = if named.size() == 0 {
+            plain;
+        }
+        else {
+            let linked is @ExceptionScope = [LinkScope(WebLinks(self.patterns(named)))];
+            linked + plain;
+        };
+        let all = if named.size() == 0 {
+            first;
+        }
+        else {
+            self.compiled(chain);
         };
         http_routing.Routes(
             routes: all,
             fallback: WebEndpoint(fallback, chain),
-            rejection: WebRejection()
+            rejection: WebRejection(),
+            slashes: WebSlashesOf(routings).policy()
+        );
+    }
+
+    hidden compiled(chain is @ExceptionScope) is @http_routing.Route {
+        let empty is @http_routing.Route = [];
+        routings.reduce(empty) -> collected, routing {
+            collected + routing.routes("", chain);
+        };
+    }
+
+    // The patterns of the named routes by name; a name used twice is refused.
+    hidden patterns(named is @http_routing.Route) is %string:string {
+        let names is @string = named.map() -> route {
+            route.name();
+        };
+        let ordered = names.ordering();
+        for (0..ordered.size()) -> index {
+            confirm (index == 0 || ordered[index] != ordered[index - 1])
+                else throw InvalidWebRoute.because("two routes are named " + ordered[index]);
+        }
+        named.reduce([:]) -> kept, route {
+            kept + [route.name(): route.pattern().string()];
+        };
+    }
+}
+
+// The table's answer to paths that differ from a route only by the final slash:
+// a 308 to the declared form unless a Slashes says otherwise (#105).
+hidden object WebSlashesOf {
+    has routings is @WebRouting;
+
+    WebSlashesOf(routings is @WebRouting) {
+        self.routings = routings;
+    }
+
+    policy() is http_routing.SlashPolicy {
+        let start is @http_routing.SlashPolicy = [];
+        let found is @http_routing.SlashPolicy = routings.reduce(start) -> kept, routing {
+            match routing.slashes() {
+                case Maybe.some(policy) {
+                    kept + [policy];
+                }
+                else {
+                    kept;
+                }
+            };
+        };
+        confirm found.size() <= 1
+            else throw InvalidWebRoute.because("WebRoutes takes at most one Slashes");
+        found[0] else http_routing.SlashPolicy.redirect;
+    }
+}
+
+// The table's links at the head of every chain, so endpoints can call
+// request.link (#106).
+hidden object LinkScope does ExceptionScope {
+    has links is WebLinks;
+
+    LinkScope(links is WebLinks) {
+        self.links = links;
+    }
+
+    async scoped(request is WebRequest, endpoint is async (WebRequest) is Responding) is Responding {
+        await endpoint(
+            WebRequest(request: request.request(), context: request.context(), links: links)
         );
     }
 }
@@ -638,17 +849,20 @@ hidden object MethodRoute {
     has method is Maybe<Method>;
     has path is string;
     has endpoint is async (WebRequest) is Responding;
+    has name is string;
 
     MethodRoute(
         method is Maybe<Method>,
         path is string,
-        endpoint is async (WebRequest) is Responding
+        endpoint is async (WebRequest) is Responding,
+        name is string
     ) {
         confirm path == "" || path.starts_with("/")
             else throw InvalidWebRoute.because("route path must be empty or start with /: " + path);
         self.method = method;
         self.path = path;
         self.endpoint = endpoint;
+        self.name = name;
     }
 
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
@@ -661,10 +875,10 @@ hidden object MethodRoute {
         let handling = WebEndpoint(endpoint, scopes);
         let route = match method {
             case Maybe.some(one) {
-                http_routing.Route(method: one, pattern: compiled, handling: handling);
+                http_routing.Route(method: one, pattern: compiled, handling: handling, name: name);
             }
             else {
-                http_routing.Route(pattern: compiled, handling: handling);
+                http_routing.Route(pattern: compiled, handling: handling, name: name);
             }
         };
         [route];
@@ -708,6 +922,10 @@ object WebSocket does WebRouting {
 
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
+    }
+
+    slashes() is Maybe<http_routing.SlashPolicy> {
+        Maybe<http_routing.SlashPolicy>.none;
     }
 }
 
@@ -870,6 +1088,11 @@ hidden object RoutingProbe {
     async refusal(request is WebRequest) is Responding {
         throw Exception.status(409, name);
     }
+
+    async linked(request is WebRequest) is Responding {
+        let link = request.link("note", RouteParameter(name: "id", value: name));
+        Response(status: Status.ok, headers: Headers(Header(name: "X-Answer", value: link)));
+    }
 }
 
 // Writes its name into the trace on the way in and on the way out, and may
@@ -929,6 +1152,9 @@ hidden object RoutingDispatch {
         let code = StatusCode(status).number().string();
         if status == Status.method_not_allowed {
             return code + " " + headers.first(HeaderName("Allow"));
+        }
+        if status == Status.permanent_redirect {
+            return code + " " + headers.first(HeaderName("Location"));
         }
         code;
     }
@@ -1088,4 +1314,62 @@ async test "an around refuses a WebSocket upgrade or lets it go on" {
     test.is(live.kind(), HandlingKind.response);
     test.is(live.response()::Head::status, Status.unauthorized);
     test.is(trace.value().join(" "), "log> auth> <log 401");
+}
+
+async test "a path with or without its final slash is redirected to the declared one" {
+    let probe = RoutingProbe("notes");
+    let table = RoutingDispatch(
+        WebRoutes(
+            Get(path: "/notes", endpoint: probe.answer),
+            Scope("/api", Get(path: "/", endpoint: probe.answer))
+        )
+    );
+    test.is(await table.answer(Method.get, "/notes/"), "308 /notes");
+    test.is(await table.answer(Method.get, "/api"), "308 /api/");
+    test.is(await table.answer(Method.get, "/api/"), "notes");
+    test.is(await table.answer(Method.get, "/elsewhere/"), "404");
+    let strict = RoutingDispatch(
+        WebRoutes(
+            Slashes(http_routing.SlashPolicy.strict),
+            Get(path: "/notes", endpoint: probe.answer)
+        )
+    );
+    test.is(await strict.answer(Method.get, "/notes/"), "404");
+    test.throws(InvalidWebRoute) {
+        WebRoutes(
+            Scope(
+                "/api",
+                Slashes(http_routing.SlashPolicy.strict),
+                Get(path: "/a", endpoint: probe.answer)
+            )
+        );
+    };
+    test.throws(InvalidWebRoute) {
+        WebRoutes(
+            Slashes(http_routing.SlashPolicy.strict),
+            Slashes(http_routing.SlashPolicy.redirect)
+        );
+    };
+}
+
+async test "named routes give links to endpoints" {
+    let seven = RoutingProbe("7");
+    let spaced = RoutingProbe("a b");
+    let table = RoutingDispatch(
+        WebRoutes(
+            Get(path: "/notes/:id", endpoint: seven.answer, name: "note"),
+            Get(path: "/seven", endpoint: seven.linked),
+            Scope("/api", Post(path: "/spaced", endpoint: spaced.linked)),
+            Fallback(seven.linked),
+        )
+    );
+    test.is(await table.answer(Method.get, "/seven"), "/notes/7");
+    test.is(await table.answer(Method.post, "/api/spaced"), "/notes/a%20b");
+    test.is(await table.answer(Method.get, "/nowhere/at/all"), "/notes/7");
+    test.throws(InvalidWebRoute) {
+        WebRoutes(
+            Get(path: "/a", endpoint: seven.answer, name: "x"),
+            Post(path: "/b", endpoint: seven.answer, name: "x")
+        );
+    };
 }

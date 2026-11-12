@@ -4133,7 +4133,10 @@ endpoint: notes.one), Post(…)), Fallback(notes.missing))`. Без `Fallback` �
 `send_bytes` или `send_json`.
 `Resource("/notes", Get(notes.list), Post(notes.add))` пишет путь один раз для
 нескольких методов; `Route(method: Method.options, path:, endpoint:)` — маршрут
-любого одного метода, `Any(path:, endpoint:)` — всех методов. Если шаблоны
+любого одного метода, `Any(path:, endpoint:)` — всех методов. Маршрут берёт
+`name:`, а endpoint строит его путь через `request.link(name,
+RouteParameter(name:, value:))`; `/notes/` перенаправляется на объявленный
+`/notes`. Если шаблоны
 пересекаются, побеждает самый точный: `/notes/new` раньше `/notes/:id`, а тот
 раньше `/notes/*rest`. `Around(AccessLog(Stdout()))` или
 `Around(BearerAuth(token: secret))` в таблице, `Scope` или `Resource`

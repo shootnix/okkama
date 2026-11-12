@@ -84,7 +84,9 @@ hidden object Greetings {
     Greetings();
 
     async hello(request is WebRequest) is Responding {
-        TextReply("Hello, " + request.path("name") + (request.query("mark") else "") + "!");
+        TextReply(
+            "Hello, " + request.path().text("name") + (request.query().maybe("mark").text() else "") + "!"
+        );
     }
 
     async echo(request is WebRequest) is Responding {

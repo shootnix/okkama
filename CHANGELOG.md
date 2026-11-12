@@ -211,6 +211,28 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   application's own `WebSocketConnection` or `WebSocketMessage` must add the
   new actions.
 
+- **Trailing slashes, links to named routes, CORS (#105, #106, #77).**
+  - A `WebRoutes` table answers a path that differs from a route only by its
+    final slash with 308 to the declared form (`/notes/` → `/notes`);
+    `WebRoutes(Slashes(SlashPolicy.strict), …)` turns it off. Underneath,
+    `http/routing.Routes` takes `slashes: SlashPolicy.redirect` and stays
+    strict by default.
+  - A route takes `name:` (`Get(path: "/users/:id", endpoint: users.show,
+    name: "user")`), and an endpoint builds its path with
+    `request.link("user", RouteParameter(name: "id", value: "7"))`, percent-encoded.
+  - `Cors(origin: "https://app.example")` in a table or a scope answers
+    preflight requests and marks replies to that origin.
+- **The old WebRequest readers are gone.** `request.path(name)`,
+  `query(name)`, `header(name)` and `header(name, fallback)` did what the
+  json-style readers do; the owner, 2026-11-12, approved removing them.
+
+  | Before | After |
+  |---|---|
+  | `request.path("id")` | `request.path().text("id")` |
+  | `request.query("q") else ""` | `request.query().maybe("q").text() else ""` |
+  | `request.header("X-Id")` | `request.header().text("X-Id")` |
+  | `request.header("X-Id", "")` | `request.header().maybe("X-Id").text() else ""` |
+
 - **The server answers HTTP/1.0 (#102).** `ab` works: no Host is required,
   responses are not chunked, and keep-alive applies only when asked for.
 - **RequestJson readers share one translation of reading failures (#84).**

@@ -19,7 +19,7 @@ object Greeter {
     Greeter();
 
     async hello(request is WebRequest) is Responding {
-        let name = request.query("name") else "";
+        let name = request.query().maybe("name").text() else "";
         let who = if name == "" {
             "Незнакомец";
         }

@@ -1,12 +1,15 @@
 module web/around v1.0.0;
 
-import "web/routing" take Surrounding, WebRoutes, Around, Get, Scope;
+import "web/routing" take Surrounding, WebRouting, ExceptionScope, Fallback, WebRoutes, Around, Get,
+    Scope;
+import "http/routing" take Route, RoutePattern, SlashPolicy;
+import "http/handler" take Handling, HandlingResult, ResponseHandling;
 import "web/request" take WebRequest;
 import "web/exception" take Exception, ProblemReply;
 import "http/message" take Request, Response, Responding;
 import "http/status" take Status, StatusCode;
 import "http/header" take Headers, Header, HeaderName;
-import "http/method" take MethodName;
+import "http/method" take Method, MethodName;
 import "http/request_context" take HttpRequestContext;
 import "http/target" take OriginTarget;
 import "http/exchange" take ExchangeDetails;
@@ -89,7 +92,7 @@ object BearerAuth does Surrounding {
     }
 
     async around(request is WebRequest, inner is async (WebRequest) is Responding) is Responding {
-        let given = request.header("Authorization", "");
+        let given = request.header().maybe("Authorization").text() else "";
         if !given.lower().starts_with("bearer ") {
             return ProblemReply(
                 status: Status.unauthorized,
@@ -111,6 +114,132 @@ object BearerAuth does Surrounding {
             );
         }
         await inner(request);
+    }
+}
+
+// Cross-origin requests from one origin, in one line of a table or a scope:
+//
+//     WebRoutes(Cors(origin: "https://app.example"), Resource("/notes", Get(notes.list), Post(notes.add)))
+//
+// A preflight OPTIONS request below it is answered 204 with the method and the
+// headers it asks for, before any Around (a browser sends no credentials then);
+// a route of its own for OPTIONS on a path still wins. Replies to requests from
+// the origin carry Access-Control-Allow-Origin. "*" allows every origin;
+// credentials are not allowed.
+object Cors does WebRouting {
+    has origin is string;
+
+    Cors(origin is string) {
+        confirm origin != "" else throw InvalidCors.because("an origin is required");
+        self.origin = origin;
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @Route {
+        [
+            Route(
+                method: Method.options,
+                pattern: RoutePattern(prefix + "/*preflight"),
+                handling: CorsPreflight(origin)
+            )
+        ];
+    }
+
+    fallback() is Maybe<Fallback> {
+        Maybe<Fallback>.none;
+    }
+
+    around() is Maybe<Surrounding> {
+        Maybe.some(CorsMarking(origin));
+    }
+
+    slashes() is Maybe<SlashPolicy> {
+        Maybe<SlashPolicy>.none;
+    }
+}
+
+enum InvalidCors is Error = (because(reason is string));
+
+// The Access-Control-Allow-Origin a request from origin gets, if any.
+hidden object CorsOrigin {
+    has allowed is string;
+    has request is Request;
+
+    CorsOrigin(allowed is string, request is Request) {
+        self.allowed = allowed;
+        self.request = request;
+    }
+
+    fields() is @Header {
+        let given = request::Head::headers.maybe("Origin").text() else "";
+        if given == "" || (allowed != "*" && given != allowed) {
+            let none_here is @Header = [];
+            return none_here;
+        }
+        if allowed == "*" {
+            [Header(name: "Access-Control-Allow-Origin", value: "*")];
+        }
+        else {
+            [
+                Header(name: "Access-Control-Allow-Origin", value: given),
+                Header(name: "Vary", value: "Origin")
+            ];
+        }
+    }
+}
+
+hidden object CorsPreflight does Handling {
+    has origin is string;
+
+    CorsPreflight(origin is string) {
+        self.origin = origin;
+    }
+
+    async handling(request is Request, context is HttpRequestContext) is HandlingResult {
+        let allowed = CorsOrigin(allowed: origin, request: request).fields();
+        let asked = request::Head::headers.maybe("Access-Control-Request-Method").text() else "";
+        let fields is @Header = if allowed.size() == 0 || asked == "" {
+            allowed;
+        }
+        else {
+            let requested = request::Head::headers.maybe("Access-Control-Request-Headers").text() else "";
+            let named is @Header = if requested == "" {
+                [];
+            }
+            else {
+                [Header(name: "Access-Control-Allow-Headers", value: requested)];
+            };
+            allowed + [
+                Header(name: "Access-Control-Allow-Methods", value: asked),
+                Header(name: "Access-Control-Max-Age", value: "600")
+            ] + named;
+        };
+        ResponseHandling(Response(status: Status.no_content, headers: Headers(entries: fields)));
+    }
+}
+
+hidden object CorsMarking does Surrounding {
+    has origin is string;
+
+    CorsMarking(origin is string) {
+        self.origin = origin;
+    }
+
+    async around(request is WebRequest, inner is async (WebRequest) is Responding) is Responding {
+        let answer = await inner(request);
+        let fields = CorsOrigin(allowed: origin, request: request.request()).fields();
+        if fields.size() == 0 {
+            return answer;
+        }
+        let response = answer.response();
+        let marked = fields.reduce(response::Head::headers) -> headers, field {
+            headers.addition(field);
+        };
+        Response(
+            status: response::Head::status,
+            headers: marked,
+            body: response.body(),
+            version: response::Head::version
+        );
     }
 }
 
@@ -227,4 +356,70 @@ async test "bearer authentication lets only the token through" {
     test.throws(InvalidBearerAuth) {
         BearerAuth(token: "");
     };
+}
+
+async test "cors answers preflights and marks replies to its origin" {
+    let probe = AroundProbe();
+    let routes = WebRoutes(
+        Cors(origin: "https://app.example"),
+        Around(BearerAuth(token: "s3cret")),
+        Get(path: "/notes", endpoint: probe.answer),
+    );
+    let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(
+        local: IpEndpoint(address: IpAddress("127.0.0.1"), port: 80),
+        remote: IpEndpoint(address: IpAddress("127.0.0.1"), port: 50000)
+    );
+    let context = HttpRequestContext(
+        details: ExchangeDetails(endpoints: ends, version: HttpVersion.http_1_1),
+        cancellation: Cancellation().cancelling()
+    );
+    let preflight = await routes.handling(
+        Request(
+            target: OriginTarget(path: "/notes", query: Maybe<string>.none),
+            method: Method.options,
+            headers: Headers(
+                Header(name: "Origin", value: "https://app.example"),
+                Header(name: "Access-Control-Request-Method", value: "POST"),
+                Header(name: "Access-Control-Request-Headers", value: "authorization, content-type"),
+            )
+        ),
+        context
+    );
+    let answered = preflight.response();
+    test.is(answered::Head::status, Status.no_content);
+    test.is(answered::Head::headers.text("Access-Control-Allow-Origin"), "https://app.example");
+    test.is(answered::Head::headers.text("Access-Control-Allow-Methods"), "POST");
+    test.is(
+        answered::Head::headers.text("Access-Control-Allow-Headers"),
+        "authorization, content-type"
+    );
+    let actual = await routes.handling(
+        Request(
+            target: OriginTarget(path: "/notes", query: Maybe<string>.none),
+            headers: Headers(
+                Header(name: "Origin", value: "https://app.example"),
+                Header(name: "Authorization", value: "Bearer s3cret"),
+            )
+        ),
+        context
+    );
+    test.is(actual.response()::Head::status, Status.ok);
+    test.is(
+        actual.response()::Head::headers.text("Access-Control-Allow-Origin"),
+        "https://app.example"
+    );
+    test.is(actual.response()::Head::headers.text("Vary"), "Origin");
+    let foreign = await routes.handling(
+        Request(
+            target: OriginTarget(path: "/notes", query: Maybe<string>.none),
+            headers: Headers(
+                Header(name: "Origin", value: "https://evil.example"),
+                Header(name: "Authorization", value: "Bearer s3cret"),
+            )
+        ),
+        context
+    );
+    test.ok(
+        !foreign.response()::Head::headers.membership(HeaderName("Access-Control-Allow-Origin"))
+    );
 }
