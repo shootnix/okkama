@@ -29,13 +29,13 @@ async main() is int {
     for notes -> note {
         let body = note.maybe("body").text() else "(empty)";
         let mark = if note.flag("pinned") { "*"; } else { " "; };
-        out.writeln(mark + " " + note.int("id").string() + ". " + note.text("title") + ": " + body);
+        out.writeln(mark, " ", note.int("id"), ". ", note.text("title"), ": ", body);
     }
 
     let found = await db.query("SELECT body FROM notes WHERE title = ?", [Param("quotes")]).one();
     out.writeln("quotes: " + found.text("body"));
     let missing = await db.query("SELECT id FROM notes WHERE title = ?", [Param("todo")]).maybe();
-    out.writeln("todo exists: " + (missing != Maybe<Row>.none).string());
+    out.writeln("todo exists: ", missing != Maybe<Row>.none);
 
     // A failed step undoes the whole transaction.
     let change = await db.transaction(TransactionOptions());
@@ -46,9 +46,9 @@ async main() is int {
     }
     catch DbFailure.detailed(kind, _, code, _) {
         await change.rollback();
-        out.writeln("rolled back: " + (kind == DbFailureKind.constraint).string() + " constraint, code " + code);
+        out.writeln("rolled back: ", kind == DbFailureKind.constraint, " constraint, code ", code);
     }
     let pinned = await db.query("SELECT count(*) AS n FROM notes WHERE pinned = 1", []).one();
-    out.writeln("pinned notes: " + pinned.int("n").string());
+    out.writeln("pinned notes: ", pinned.int("n"));
     0;
 }

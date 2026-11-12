@@ -29,7 +29,7 @@ main() is int {
         else {
             "  ";
         };
-        out.writeln(marker + entry.path().string());
+        out.writeln(marker, entry.path());
     }
 
     // Count the HTML files of the tree.
@@ -41,7 +41,7 @@ main() is int {
             count;
         }
     };
-    out.writeln(pages.string() + " pages");
+    out.writeln(pages, " pages");
 
     DirectoryTree(origin: Directory(path: root)).remove();
     0;

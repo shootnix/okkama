@@ -4044,10 +4044,10 @@ destination: logs)` пишет через
 `log(LogLevel.info, "started")`, добавляет поля и причину и создаёт дочерние
 логгеры через `child("db")`. Запись показывает `record::Entry::level` и
 `::message`. Писатели составляются:
-- `AllowedLogs(origin:, allowing: LevelThresholds(fallback:, overrides:))`
-  фильтрует по уровню для каждого имени;
-- `RedactedLogs(origin:, names: ["card"], replacement:)` скрывает поля;
-- `TextStreamLogs`/`JsonStreamLogs` пишут строки, а `BroadcastLogs`,
+- `AllowedLogs(origin:, level: LogLevel.info, overrides: ["shop.db":
+  LogLevel.debug])` фильтрует по уровню для каждого имени через точку;
+- `RedactedLogs(origin:, names: ["card"])` пишет эти поля как `"[redacted]"`;
+- `TextStreamLogs(origin:)` (в UTC, если не задан `zone:`) и `JsonStreamLogs` пишут строки, а `BroadcastLogs`,
   `FallbackLogs` и `CollectedLogs` раздают, подстраховывают и хранят записи;
 - `QueuedLogs`, `LogFile`, `RotatingLogFile` и `SyslogLogs` ставят в очередь,
   дописывают, ротируют и отправляют датаграммы RFC 5424.

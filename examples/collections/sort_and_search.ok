@@ -12,7 +12,7 @@ main() is int {
     out.writeln("sorted: " + scores.map() -> score {
         score.string();
     }.join(" "));
-    out.writeln("lowest " + scores.first().string() + ", highest " + scores.last().string());
+    out.writeln("lowest ", scores.first(), ", highest ", scores.last());
 
     // Equal keys keep their input order.
     let names = SortedBy(origin: ["Grace", "Ada", "Alan", "Barbara"], key: (name is string) is int { name.length(); });
@@ -20,8 +20,8 @@ main() is int {
         name;
     }.join(", "));
 
-    out.writeln("scores below 80: " + LowerBound(origin: scores, item: 80).index().string());
-    out.writeln("first 95 at " + PositionOf(origin: scores, item: 95).index().string());
+    out.writeln("scores below 80: ", LowerBound(origin: scores, item: 80).index());
+    out.writeln("first 95 at ", PositionOf(origin: scores, item: 95).index());
     let absent = try {
         PositionOf(origin: scores, item: 60).index().string();
     }

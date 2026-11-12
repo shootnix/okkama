@@ -22,11 +22,11 @@ object Printer does TomlVisitor {
     }
 
     integer(value is int) is void {
-        out.writeln(name + " = " + value.string());
+        out.writeln(name, " = ", value);
     }
 
     real(value is float) is void {
-        out.writeln(name + " = " + value.string());
+        out.writeln(name, " = ", value);
     }
 
     infinity(negative is bool) is void {
@@ -38,11 +38,11 @@ object Printer does TomlVisitor {
     }
 
     boolean(value is bool) is void {
-        out.writeln(name + " = " + value.string());
+        out.writeln(name, " = ", value);
     }
 
     elements(values is Sequencing<TomlValue>) is void {
-        out.writeln(name + " = " + values.size().string() + " values:");
+        out.writeln(name, " = ", values.size(), " values:");
         for (0..values.size()) -> index {
             values.item(index).accept(Printer(out: out, name: name + "[" + index.string() + "]"));
         }
@@ -56,20 +56,19 @@ object Printer does TomlVisitor {
     }
 
     local_date(value is TomlLocalDate) is void {
-        out.writeln(name + " = date " + value.string() + ", year " + value::Calendar::year.string());
+        out.writeln(name, " = date ", value, ", year ", value::Calendar::year);
     }
 
     local_time(value is TomlLocalTime) is void {
-        out.writeln(name + " = time " + value.string() + ", hour " + value::Clock::hour.string());
+        out.writeln(name, " = time ", value, ", hour ", value::Clock::hour);
     }
 
     local_datetime(value is TomlLocalDateTime) is void {
-        out.writeln(name + " = local " + value.string());
+        out.writeln(name, " = local ", value);
     }
 
     offset_datetime(value is TomlOffsetDateTime) is void {
-        out.writeln(name + " = instant " + value.string() + ", offset "
-            + value.offset()::Offset::minutes.string() + " min");
+        out.writeln(name, " = instant ", value, ", offset ", value.offset()::Offset::minutes, " min");
     }
 }
 
@@ -89,7 +88,7 @@ main() is int {
     ).root();
 
     document.accept(Printer(out: out, name: ""));
-    out.writeln("has owner: " + document.membership("owner").string());
+    out.writeln("has owner: ", document.membership("owner"));
 
     let broken = try {
         ParsedToml("a = 1\na = 2\n").root();

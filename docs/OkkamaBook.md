@@ -3864,10 +3864,11 @@ destination: logs)` logs with `log(LogLevel.info, "started")`. Its clock is
 the system's unless `clock:` is given, and `fields:` adds fields to every
 record. A call adds fields and a cause, and `child("db")` makes a child. A record
 shows `record::Entry::level` and `::message`. Writers compose:
-- `AllowedLogs(origin:, allowing: LevelThresholds(fallback:, overrides:))`
-  filters by level per name;
-- `RedactedLogs(origin:, names: ["card"], replacement:)` hides fields;
-- `TextStreamLogs`/`JsonStreamLogs` write lines, and `BroadcastLogs`,
+- `AllowedLogs(origin:, level: LogLevel.info, overrides: ["shop.db":
+  LogLevel.debug])` filters by level per dotted name;
+- `RedactedLogs(origin:, names: ["card"])` writes those fields as
+  `"[redacted]"`;
+- `TextStreamLogs(origin:)` (UTC unless `zone:`) and `JsonStreamLogs` write lines, and `BroadcastLogs`,
   `FallbackLogs`, `CollectedLogs` fan out, fall back and keep records;
 - `QueuedLogs`, `LogFile`, `RotatingLogFile` and `SyslogLogs` queue, append,
   rotate and send RFC 5424 datagrams.

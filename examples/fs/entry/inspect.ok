@@ -12,22 +12,22 @@ import "io/stdout" take Stdout;
 main() is int {
     let out = Stdout();
     let notes = FileEntry(path: Path("notes.txt"));
-    out.writeln("before: " + notes.existence().string());
+    out.writeln("before: ", notes.existence());
 
     let file = File(path: notes.path(), mode: FileMode.writing);
     file.text().writeln("buy milk");
     file.close();
 
     let stat = notes.stat();
-    out.writeln("after: " + notes.existence().string());
-    out.writeln("file: " + (stat::Shape::kind == FileKind.file).string());
-    out.writeln("bytes: " + stat::Shape::size.string());
-    out.writeln("owner reads: " + stat.mode().owner()::Access::readable.string());
+    out.writeln("after: ", notes.existence());
+    out.writeln("file: ", stat::Shape::kind == FileKind.file);
+    out.writeln("bytes: ", stat::Shape::size);
+    out.writeln("owner reads: ", stat.mode().owner()::Access::readable);
 
     notes.move(Path("notes.old"));
     let old = FileEntry(path: Path("notes.old"));
-    out.writeln("moved: " + notes.existence().string() + " " + old.existence().string());
+    out.writeln("moved: ", notes.existence(), " ", old.existence());
     old.remove();
-    out.writeln("removed: " + old.existence().string());
+    out.writeln("removed: ", old.existence());
     0;
 }

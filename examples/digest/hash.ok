@@ -15,19 +15,19 @@ main() is int {
     let out = Stdout();
     let text = Utf8Encoded(origin: "hello world").bytes();
 
-    out.writeln("sha256   " + HexEncoded(Sha256(text).bytes()).string());
+    out.writeln("sha256   ", HexEncoded(Sha256(text).bytes()));
     out.writeln("sha512   " + HexEncoded(Sha512(text).bytes()).string().slice(0, 32) + "…");
-    out.writeln("sha3-256 " + HexEncoded(Sha3_256(text).bytes()).string());
+    out.writeln("sha3-256 ", HexEncoded(Sha3_256(text).bytes()));
     out.writeln("blake2b  " + HexEncoded(Blake2b(length: 64, origin: text).bytes()).string().slice(0, 32) + "…");
 
     // Piece by piece gives the same digest as all at once.
     let streamed = Sha256().state(Utf8Encoded(origin: "hello ").bytes()).state(Utf8Encoded(origin: "world").bytes());
-    out.writeln("streamed matches: " + (streamed.bytes() == Sha256(text).bytes()).string());
+    out.writeln("streamed matches: ", streamed.bytes() == Sha256(text).bytes());
 
     // A shared prefix branches without being recomputed.
     let prefix = Sha256().state(Utf8Encoded(origin: "user:").bytes());
     let ada = prefix.state(Utf8Encoded(origin: "ada").bytes());
     let bob = prefix.state(Utf8Encoded(origin: "bob").bytes());
-    out.writeln("branches differ: " + (ada.bytes() != bob.bytes()).string());
+    out.writeln("branches differ: ", ada.bytes() != bob.bytes());
     0;
 }

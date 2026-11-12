@@ -19,7 +19,7 @@ async main() is int {
     let printf = InheritedCommand(program: Path("printf"), arguments: ["%s|%s", "a b", "c;d"]);
     let printed = await CommandCapture(origin: printf, limit: 1024).completion();
     out.writeln(printed::Captured::output);
-    out.writeln("success: " + printed.exit().success().string());
+    out.writeln("success: ", printed.exit().success());
 
     // Explicit context: an environment of our own, and the exit code.
     let check = Command(
@@ -30,7 +30,7 @@ async main() is int {
     );
     let checked = await CommandCapture(origin: check, limit: 1024).completion();
     out.write("stderr: " + checked::Captured::errors);
-    out.writeln("exit code: " + checked.exit().code().string());
+    out.writeln("exit code: ", checked.exit().code());
 
     // Standard input, then a pipeline: sort | uniq -c style counting.
     let sort = InheritedCommand(program: Path("sort"));

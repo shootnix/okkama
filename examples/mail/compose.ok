@@ -3,8 +3,6 @@ module examples/mail/compose v1.0.0;
 import "mail/message" take MailMessage, ParsedMail;
 import "mail/mailbox" take Maildir;
 import "fs/temp" take TemporaryDirectory;
-import "fs/directory" take Directory;
-import "fs/path" take Path;
 import "random/source" take PcgRandom;
 import "time/clock" take Timing, Instant, MonotonicInstant;
 import "time/duration" take Duration;
@@ -48,7 +46,7 @@ main() is int {
     out.writeln("subject: ", back.headers().first("Subject"));
     out.writeln("from: ", back.headers().first("From"));
 
-    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "maildir-");
+    let scratch = TemporaryDirectory(prefix: "maildir-");
     let box = Maildir(scratch.path().child("inbox")).created();
     box.add(message);
     box.add(back);

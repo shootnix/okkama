@@ -72,11 +72,11 @@ async main() is int {
 
     for ["buy tea", "call Ada"] -> text {
         let created = await client.post(url: base + "/api/notes", body: JsonBody(Json(JsonField("text", text))));
-        out.writeln("POST /api/notes -> " + created::Head::code.string() + " " + await created.text());
+        out.writeln("POST /api/notes -> ", created::Head::code, " ", await created.text());
     }
     for ["/api/notes", "/api/notes?limit=1", "/api/notes/2", "/api/notes/9", "/elsewhere"] -> path {
         let page = await client.get(base + path);
-        out.writeln("GET " + path + " -> " + page::Head::code.string() + " " + await page.text());
+        out.writeln("GET ", path, " -> ", page::Head::code, " ", await page.text());
     }
 
     client.close();

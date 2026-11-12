@@ -19,16 +19,16 @@ async main() is int {
     let report = (event is FileEvent) is void {
         let kind = event::Change::kind;
         if kind == FileEventKind.created {
-            out.writeln("created  " + event.path().string());
+            out.writeln("created  ", event.path());
         }
         else if kind == FileEventKind.modified {
-            out.writeln("modified " + event.path().string());
+            out.writeln("modified ", event.path());
         }
         else if kind == FileEventKind.renamed {
-            out.writeln("renamed  " + event.previous_path().string() + " -> " + event.path().string());
+            out.writeln("renamed  ", event.previous_path(), " -> ", event.path());
         }
         else {
-            out.writeln("removed  " + event.path().string());
+            out.writeln("removed  ", event.path());
         }
     };
 

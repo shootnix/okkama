@@ -19,19 +19,19 @@ main() is int {
     let sum = File(path: path).binary().reduce(0) -> total, b {
         total + b.int();
     };
-    out.writeln("sum " + sum.string());
+    out.writeln("sum ", sum);
 
     let file = File(path: path, mode: FileMode.reading_and_writing);
     let data = file.binary();
-    out.writeln("first " + data.byte().int().string());
+    out.writeln("first ", data.byte().int());
     out.writeln("next three " + data.bytes(3).map() -> b { b.int().string(); }.join(" "));
-    out.writeln("rest " + data.bytes().size().string() + " bytes");
+    out.writeln("rest ", data.bytes().size(), " bytes");
 
     data.seek(1, SeekOrigin.start);
-    out.writeln("at " + data.offset().string() + ": " + data.byte().int().string());
+    out.writeln("at ", data.offset(), ": ", data.byte().int());
     data.truncate(4);
     file.close();
-    out.writeln("now " + File(path: path).binary().bytes().size().string() + " bytes");
+    out.writeln("now ", File(path: path).binary().bytes().size(), " bytes");
 
     FileEntry(path: path).remove();
     0;

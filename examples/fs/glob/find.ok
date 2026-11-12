@@ -25,16 +25,16 @@ main() is int {
 
     out.writeln("sources:");
     for MatchingPaths(root: app, pattern: "src/*.ok") -> path {
-        out.writeln("  " + path.string());
+        out.writeln("  ", path);
     }
     out.writeln("tests anywhere:");
     for MatchingPaths(root: app, pattern: "**/*-test.ok") -> path {
-        out.writeln("  " + path.string());
+        out.writeln("  ", path);
     }
     let late = MatchingPaths(root: app, pattern: "logs/2026-1?.log").map() -> path {
         path.string();
     };
-    out.writeln("late logs: " + late.size().string());
+    out.writeln("late logs: ", late.size());
 
     let refused = try {
         MatchingPaths(root: app, pattern: "src/[a-").map() -> path { path.string(); };

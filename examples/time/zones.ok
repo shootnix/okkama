@@ -13,16 +13,16 @@ main() is int {
     let york = Zone("America/New_York");
 
     let meeting = berlin.instant(IsoText("2026-12-01T09:00:00").local_date_time());
-    out.writeln("instant: " + meeting.string());
+    out.writeln("instant: ", meeting);
     let there = ZonedDateTime(instant: meeting, zone: york);
-    out.writeln("New York: " + there.local_datetime().string() + " " + there.abbreviation());
+    out.writeln("New York: ", there.local_datetime(), " ", there.abbreviation());
 
     // When summer time ends, 02:30 happens twice: the earlier one is taken
     // unless the fold asks for the later.
     let twice = IsoText("2026-10-25T02:30:00").local_date_time();
     let early = berlin.instant(twice);
     let late = berlin.instant(local: twice, fold: Fold.later);
-    out.writeln("02:30 twice: " + early.string() + " and " + late.string());
+    out.writeln("02:30 twice: ", early, " and ", late);
 
     // When it starts, 02:30 never happens.
     let gap = try {

@@ -10,8 +10,7 @@ import "time/date" take Weekday;
 main() is int {
     let out = Stdout();
     let month = YearMonth(year: 2026, month: 2);
-    out.writeln("February " + month::Calendar::year.string() + ", "
-        + MonthDates(origin: month).size().string() + " days");
+    out.writeln("February ", month::Calendar::year, ", ", MonthDates(origin: month).size(), " days");
     out.writeln("Mo Tu We Th Fr Sa Su");
     for CalendarMonth(origin: month, first_weekday: Weekday.monday) -> week {
         let cells is @string = week.map() -> date {
@@ -27,8 +26,8 @@ main() is int {
         };
         out.writeln(cells.join(" "));
     }
-    out.writeln("2028 is leap: " + Year(2028).leap().string() + ", 2100: " + Year(2100).leap().string());
+    out.writeln("2028 is leap: ", Year(2028).leap(), ", 2100: ", Year(2100).leap());
     let week = IsoWeek(year: 2026, week: 53);
-    out.writeln("2026-W53: " + week.first().string() + " .. " + week.last().string());
+    out.writeln("2026-W53: ", week.first(), " .. ", week.last());
     0;
 }

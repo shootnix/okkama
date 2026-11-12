@@ -11,16 +11,16 @@ import "io/stdout" take Stdout;
 main() is int {
     let out = Stdout();
     let stamp = Rfc3339("2026-08-11T12:30:45.125+05:00");
-    out.writeln("as read: " + stamp.string());
-    out.writeln("in UTC:  " + stamp.instant().string());
+    out.writeln("as read: ", stamp);
+    out.writeln("in UTC:  ", stamp.instant());
 
     let date = IsoText("2026-08-11").date();
     let printed = FormattedDate(origin: date, pattern: "%d/%m/%Y").string();
     out.writeln("printed: " + printed);
-    out.writeln("read back: " + FormattedDate(text: printed, pattern: "%d/%m/%Y").date().string());
+    out.writeln("read back: ", FormattedDate(text: printed, pattern: "%d/%m/%Y").date());
     // Reading a local date-time needs every field down to the second.
     let local = FormattedLocalDateTime(text: "2026-08-11 14:30:00", pattern: "%Y-%m-%d %H:%M:%S").local_date_time();
-    out.writeln("local: " + FormattedLocalDateTime(origin: local, pattern: "%H:%M on %d.%m.%Y").string());
+    out.writeln("local: ", FormattedLocalDateTime(origin: local, pattern: "%H:%M on %d.%m.%Y"));
 
     let wrong = try {
         Rfc3339("2026-08-11 12:30:45Z").string();

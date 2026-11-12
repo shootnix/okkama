@@ -20,7 +20,7 @@ object Greeting does Handling {
     Greeting();
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
-        Stdout().writeln("server got: " + MethodName(request::Head::method).string() + " " + request::Head::target.path());
+        Stdout().writeln("server got: ", MethodName(request::Head::method), " ", request::Head::target.path());
         ResponseHandling(Response(status: Status.ok, content: TextBody(text: "Hello, wörld!")));
     }
 }

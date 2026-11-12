@@ -23,10 +23,10 @@ main() is int {
 
     for DirectoryEntries(origin: Directory(path: root)) -> entry {
         if entry.kind() == FileKind.directory {
-            out.writeln("dir  " + entry.path().string());
+            out.writeln("dir  ", entry.path());
         }
         else {
-            out.writeln("file " + entry.path().string() + ", " + entry.stat()::Shape::size.string() + " bytes");
+            out.writeln("file ", entry.path(), ", ", entry.stat()::Shape::size, " bytes");
         }
     }
 

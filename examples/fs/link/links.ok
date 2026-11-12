@@ -19,17 +19,17 @@ main() is int {
     }
     let current = SymbolicLink(path: Path("releases/current"));
     current.create(Path("v1"));
-    out.writeln("current -> " + current.target().string());
+    out.writeln("current -> ", current.target());
     current.remove();
     current.create(Path("v2"));
-    out.writeln("current -> " + current.target().string());
+    out.writeln("current -> ", current.target());
 
     let config = Path("releases/v2/config.toml");
     File(path: config, mode: FileMode.writing).text().write("port = 80");
     let backup = Path("releases/config.backup");
     HardLink(source: FileEntry(path: config), destination: backup).create();
     File(path: config, mode: FileMode.appending).text().write("\nhost = \"a\"");
-    out.writeln("backup sees: " + File(path: backup).text().lines().size().string() + " lines");
+    out.writeln("backup sees: ", File(path: backup).text().lines().size(), " lines");
 
     let refused = try {
         SymbolicLink(path: config).remove();

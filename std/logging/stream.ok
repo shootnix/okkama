@@ -87,7 +87,8 @@ object TextStreamLogs does LogWriting {
     has origin is Writing;
     has zone is TimeZone;
 
-    TextStreamLogs(origin is Writing, zone is TimeZone) {
+    // Times are written in UTC unless a zone is given.
+    TextStreamLogs(origin is Writing, zone is TimeZone = FixedZone(name: "UTC", offset: Duration(seconds: 0))) {
         self.origin = origin;
         self.zone = zone;
     }

@@ -18,15 +18,15 @@ async main() is int {
     input.close();
     let heard = upper.output().text(limit: 64);
     out.write("heard: " + heard);
-    out.writeln("exit: " + (await upper.exit()).success().string());
+    out.writeln("exit: ", (await upper.exit()).success());
     upper.close();
 
     let sleeper = Process(command: InheritedCommand(program: Path("sleep"), arguments: ["60"]));
-    out.writeln("running: " + sleeper.running().string());
+    out.writeln("running: ", sleeper.running());
     sleeper.signal(Signal.terminate);
     let ended = await sleeper.exit();
-    out.writeln("terminated: " + (ended::Status::kind == ExitKind.terminated).string());
-    out.writeln("running: " + sleeper.running().string());
+    out.writeln("terminated: ", ended::Status::kind == ExitKind.terminated);
+    out.writeln("running: ", sleeper.running());
     sleeper.close();
     0;
 }

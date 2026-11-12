@@ -88,6 +88,25 @@ object Path does Comparing<Path> {
         );
     }
 
+    // The last part: Path("var/log/app.log").name() is "app.log"; "" for a root.
+    name() is string {
+        let unified = if path_style == PathStyle.windows {
+            origin.replace("\\", "/");
+        }
+        else {
+            origin;
+        };
+        let parts is @string = unified.split("/").filter() -> part {
+            part != "";
+        };
+        if parts.size() == 0 {
+            "";
+        }
+        else {
+            parts.last();
+        }
+    }
+
     absolute() is bool {
         path_absolute(origin, PathStyleCode(origin: path_style).code());
     }
@@ -209,4 +228,11 @@ test "empty paths and parts are refused" {
     test.throws(InvalidPath) {
         Path("a").child("");
     };
+}
+
+test "a path names its last part" {
+    test.is(Path("var/log/app.log", PathStyle.posix).name(), "app.log");
+    test.is(Path("var/log/", PathStyle.posix).name(), "log");
+    test.is(Path("/", PathStyle.posix).name(), "");
+    test.is(Path("C:\\Users\\alice", PathStyle.windows).name(), "alice");
 }

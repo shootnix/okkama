@@ -112,6 +112,12 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
   | `FixedResolution(HostAddresses(host: HostName(…), addresses: […]))` | `FixedResolution(["api.example.test": ["192.0.2.10"]])` |
   | `Utf8Decoded(message.bytes()).string().split("\r\n").join("\n")` | `message.string()` |
   | `headers().first(MessageHeaderName("Subject"))` | `headers().first("Subject")` |
+  | `AllowedLogs(origin:, allowing: LevelThresholds(fallback:, overrides: [LevelOverride(name: LogName("shop", "db"), level:)]))` | `AllowedLogs(origin:, level: LogLevel.info, overrides: ["shop.db": LogLevel.debug])` |
+  | `TextStreamLogs(origin:, zone: FixedZone(name: "UTC", …))`, `RedactedLogs(…, replacement: Json(…))` | `TextStreamLogs(origin:)` (UTC), `RedactedLogs(origin:, names:)` (`"[redacted]"`) |
+  | `TemporaryDirectory(parent: Directory(path: Path(".")), prefix:)` | `TemporaryDirectory(prefix:)`, in `Environment().temporary()` |
+  | `TemporaryFile(directory: Directory(path: root), prefix:)` | `scratch.file(prefix:)`; `file.write([…])`, `file.write("text")`, `file.size()` |
+  | `entry.path().string().slice(root.string().length() + 1, …)` | `entry.path().name()` |
+  | `out.writeln("lowest " + scores.first().string())` | `out.writeln("lowest ", scores.first())` (159 lines in `examples/`) |
 
   The older forms stay; nothing leaves std. `Utf8Encoded` is a `ByteSource`.
   Book §26.5 (EN, RU) shows the new forms.

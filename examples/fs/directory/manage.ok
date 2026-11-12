@@ -11,17 +11,17 @@ import "io/stdout" take Stdout;
 main() is int {
     let out = Stdout();
     let drafts = Directory(path: Path("drafts"));
-    out.writeln("exists before: " + drafts.existence().string());
+    out.writeln("exists before: ", drafts.existence());
     drafts.create();
-    out.writeln("exists after: " + drafts.existence().string());
+    out.writeln("exists after: ", drafts.existence());
 
     drafts.move(Path("published"));
     let published = Directory(path: Path("published"));
-    out.writeln("drafts: " + drafts.existence().string() + ", published: " + published.existence().string());
+    out.writeln("drafts: ", drafts.existence(), ", published: ", published.existence());
 
     // An empty directory goes with remove().
     published.remove();
-    out.writeln("published removed: " + (!published.existence()).string());
+    out.writeln("published removed: ", !published.existence());
 
     // A full one goes with DirectoryTree.
     let archive = Directory(path: Path("archive"));
@@ -31,6 +31,6 @@ main() is int {
     note.text().write("kept");
     note.close();
     DirectoryTree(origin: archive).remove();
-    out.writeln("archive removed: " + (!archive.existence()).string());
+    out.writeln("archive removed: ", !archive.existence());
     0;
 }

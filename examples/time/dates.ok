@@ -11,17 +11,17 @@ main() is int {
     let out = Stdout();
     let release = Date(year: 2026, month: 11, day: 11);
     let deadline = release.shifted(30);
-    out.writeln("release:  " + release.string());
-    out.writeln("deadline: " + deadline.string());
-    out.writeln("days: " + release.days_until(deadline).string());
+    out.writeln("release:  ", release);
+    out.writeln("deadline: ", deadline);
+    out.writeln("days: ", release.days_until(deadline));
 
     // A leap day and the day after it.
     let leap = IsoText("2028-02-29").date();
-    out.writeln("after the leap day: " + leap.shifted(1).string());
+    out.writeln("after the leap day: ", leap.shifted(1));
 
     // Day numbers count from 0001-01-01; equal numbers mean the same day.
     let number = release.day_number();
-    out.writeln("day number: " + number.string());
-    out.writeln("same day: " + (Date(day_number: number) == release).string());
+    out.writeln("day number: ", number);
+    out.writeln("same day: ", Date(day_number: number) == release);
     0;
 }

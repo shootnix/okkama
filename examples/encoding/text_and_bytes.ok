@@ -11,13 +11,13 @@ import "io/stdout" take Stdout;
 main() is int {
     let out = Stdout();
     let bytes = Utf8Encoded(origin: "Привет, 猫").bytes();
-    out.writeln("UTF-8 bytes: " + bytes.size().string());
-    out.writeln("hex: " + HexEncoded(origin: bytes).string());
+    out.writeln("UTF-8 bytes: ", bytes.size());
+    out.writeln("hex: ", HexEncoded(origin: bytes));
     let token = Base64Encoded(origin: bytes).string();
     out.writeln("base64: " + token);
-    out.writeln("url-safe: " + Base64Encoded(origin: bytes, alphabet: Base64Alphabet.url).string());
-    out.writeln("back: " + Utf8Decoded(origin: Base64Decoded(origin: token).bytes()).string());
-    out.writeln("UTF-16 bytes: " + Utf16Encoded(origin: "Привет, 猫", order: ByteOrder.big).bytes().size().string());
+    out.writeln("url-safe: ", Base64Encoded(origin: bytes, alphabet: Base64Alphabet.url));
+    out.writeln("back: ", Utf8Decoded(origin: Base64Decoded(origin: token).bytes()));
+    out.writeln("UTF-16 bytes: ", Utf16Encoded(origin: "Привет, 猫", order: ByteOrder.big).bytes().size());
 
     // Broken input is refused with the offset of the first bad byte.
     let broken = HexDecoded(origin: "48ff69").bytes();

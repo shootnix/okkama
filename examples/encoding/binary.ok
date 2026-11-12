@@ -13,11 +13,11 @@ main() is int {
     let record = IntegerBytes(value: 8080, size: 2, signedness: Signedness.unsigned, order: ByteOrder.big).bytes()
         + FloatBytes(value: 2.5, width: FloatWidth.bits32, order: ByteOrder.little).bytes()
         + IntegerBytes(value: -3, size: 1, signedness: Signedness.signed, order: ByteOrder.big).bytes();
-    out.writeln("record: " + HexEncoded(origin: record).string());
+    out.writeln("record: ", HexEncoded(origin: record));
 
-    out.writeln("port: " + Binary(bytes: record.slice(0, 2), order: ByteOrder.big).int(Signedness.unsigned).string());
-    out.writeln("ratio: " + Binary(bytes: record.slice(2, 6), order: ByteOrder.little).float(FloatWidth.bits32).string());
-    out.writeln("delta: " + Binary(bytes: record.slice(6, 7), order: ByteOrder.big).int(Signedness.signed).string());
-    out.writeln("same byte unsigned: " + Binary(bytes: record.slice(6, 7), order: ByteOrder.big).int(Signedness.unsigned).string());
+    out.writeln("port: ", Binary(bytes: record.slice(0, 2), order: ByteOrder.big).int(Signedness.unsigned));
+    out.writeln("ratio: ", Binary(bytes: record.slice(2, 6), order: ByteOrder.little).float(FloatWidth.bits32));
+    out.writeln("delta: ", Binary(bytes: record.slice(6, 7), order: ByteOrder.big).int(Signedness.signed));
+    out.writeln("same byte unsigned: ", Binary(bytes: record.slice(6, 7), order: ByteOrder.big).int(Signedness.unsigned));
     0;
 }

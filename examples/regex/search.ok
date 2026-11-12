@@ -12,7 +12,7 @@ main() is int {
     let request = Regex("(?<method>[A-Z]+) (?<path>/\\w*) (?<status>\\d{3})");
 
     let first = FirstRegexMatch(origin: log, regex: request);
-    out.writeln("first: " + first.text() + " at " + first.range()::Bounds::start.string());
+    out.writeln("first: ", first.text(), " at ", first.range()::Bounds::start);
 
     for RegexMatches(origin: log, regex: request) -> found {
         out.writeln(found.group("method").text() + " " + found.group("path").text() + " -> " + found.group("status").text());
@@ -26,7 +26,7 @@ main() is int {
             count;
         }
     };
-    out.writeln("failures: " + failures.string());
+    out.writeln("failures: ", failures);
 
     // A whole string, case-insensitively.
     let code = Regex(expression: "[a-z]{3}-\\d{4}", flags: [RegexFlag.ignore_case]);

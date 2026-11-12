@@ -23,7 +23,7 @@ main() is int {
     let lock = file.lock(FileLockMode.exclusive) else panic "the counter is busy";
     let count = Number(origin: file.text().content()).int();
     file.text().rewrite((count + 1).string());
-    out.writeln("locked exclusively: " + file.locked(FileLockMode.exclusive).string());
+    out.writeln("locked exclusively: ", file.locked(FileLockMode.exclusive));
 
     // Another taker finds it busy and goes its own way.
     let other = File(path: path);

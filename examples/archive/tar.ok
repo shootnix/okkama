@@ -28,16 +28,15 @@ main() is int {
         ))
         .prefix(ArchiveDirectory(path: ArchivePath("docs"), metadata: stamp));
     let bytes = TarArchive(entries).bytes();
-    out.writeln("archive: " + bytes.size().string() + " bytes");
+    out.writeln("archive: ", bytes.size(), " bytes");
 
     let limits = ArchiveLimits(entries: 10, entry_size: 1024, total_size: 4096, path_length: 100);
     for ParsedTar(origin: bytes, limits: limits).entries() -> entry {
         if entry.kind() == ArchiveEntryKind.directory {
-            out.writeln("dir  " + entry.path().string());
+            out.writeln("dir  ", entry.path());
         }
         else {
-            out.writeln("file " + entry.path().string() + " modified "
-                + entry.metadata().modification().string());
+            out.writeln("file ", entry.path(), " modified ", entry.metadata().modification());
         }
     }
 

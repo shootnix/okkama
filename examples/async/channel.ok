@@ -50,7 +50,7 @@ async main() is int {
     let produce is async () is int = Producer(output: channel.sending()).run;
     let producing = spawn produce();
     let lengths = await Consumer(input: channel.receiving()).run();
-    out.writeln("sent " + (await producing).string() + " words");
+    out.writeln("sent ", await producing, " words");
     out.writeln("lengths: " + lengths);
     0;
 }
