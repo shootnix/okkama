@@ -23,6 +23,7 @@
 pub mod analysis;
 pub mod codegen;
 pub mod diagnostics;
+pub mod doc;
 pub mod ide;
 pub mod ir;
 pub mod jit;
