@@ -30,7 +30,9 @@ import "http/endpoint" take HttpEndpointSelection, EndpointDenied, EndpointAllow
 import "http/body" take BodyOpening, BodyReading, BodyClosed, BodyAlreadyOpened, UnknownBodyLength,
     EmptyBody, Content, JsonBody;
 import "http/header" take Headers, Header, HeaderName, HeadersWithout;
-import "http/body_coding" take GzipDecodedBody;
+import "http/body_coding" take GzipDecodedBody, BrotliDecodedBody;
+import "compression/brotli" take BrotliDecompressor;
+import "compression/state" take UnsupportedCompression;
 import "strings/parse" take Number;
 import "net/dns" take Resolving, SystemResolution;
 import "net/tls" take TlsClientPolicy, TlsVersion;
@@ -191,7 +193,8 @@ hidden object ClientTls {
 hidden object ClientChain {
     has chain is Exchanging;
 
-    // limit: the most bytes a gzip answer may decode to, the client's body limit.
+    // limit: the most bytes a compressed answer may decode to, the client's body
+    // limit.
     ClientChain(transport is HttpTransport, redirects is Redirects, limit is int) {
         let direct is Exchanging = transport;
         let routed is Exchanging = if redirects::Rules::limit > 0 {
@@ -230,17 +233,27 @@ hidden object ClientChain {
     }
 }
 
-// Asks for gzip and decodes it (#186). A request without an Accept-Encoding of
-// its own goes out with Accept-Encoding: gzip, and a gzip answer to it comes
-// back decoded, without Content-Encoding and Content-Length, at most limit
-// bytes. A request that names its own Accept-Encoding gets the answer as sent.
+// Asks for Brotli and gzip and decodes them (#186, #184). A request without an
+// Accept-Encoding of its own goes out with Accept-Encoding: br, gzip (gzip
+// alone on the JVM, which has no Brotli codec), and a compressed answer to it
+// comes back decoded, without Content-Encoding and Content-Length, at most
+// limit bytes. A request that names its own Accept-Encoding gets the answer as
+// sent.
 hidden object DecodingExchanging does Exchanging {
     has origin is Exchanging;
     has limit is int;
+    has brotli is bool;
 
     DecodingExchanging(origin is Exchanging, limit is int) {
         self.origin = origin;
         self.limit = limit;
+        brotli = try {
+            BrotliDecompressor(limit: 1);
+            true;
+        }
+        catch failure is UnsupportedCompression {
+            false;
+        };
     }
 
     async response(request is Request) is ClientResponse {
@@ -250,14 +263,22 @@ hidden object DecodingExchanging does Exchanging {
         let asked = Request(
             target: request::Head::target,
             method: request::Head::method,
-            headers: request::Head::headers.addition(Header(name: "Accept-Encoding", value: "gzip")),
+            headers: request::Head::headers.addition(
+                Header(name: "Accept-Encoding", value: if brotli {
+                    "br, gzip";
+                }
+                else {
+                    "gzip";
+                })
+            ),
             body: request.body(),
             version: request::Head::version
         );
         let page = await origin.response(asked);
         let coding = (page::Head::headers.maybe("Content-Encoding").text() else "").trim().lower();
         let code = page::Head::code;
-        if (coding != "gzip" && coding != "x-gzip")
+        let gzip = coding == "gzip" || coding == "x-gzip";
+        if (!gzip && !(brotli && coding == "br"))
             || request::Head::method == Method.head
             || code == 204
             || code == 304 {
@@ -271,7 +292,13 @@ hidden object DecodingExchanging does Exchanging {
         let decoded = Response(
             status: response::Head::status,
             headers: headers,
-            body: GzipDecodedBody(origin: response.body(), limit: limit),
+            body: if gzip {
+                let decoded is BodyOpening = GzipDecodedBody(origin: response.body(), limit: limit);
+                decoded;
+            }
+            else {
+                BrotliDecodedBody(origin: response.body(), limit: limit);
+            },
             version: response::Head::version
         );
         ClientResponse(

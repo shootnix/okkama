@@ -2,7 +2,11 @@
 //! gzip (RFC 1952) на miniz_oxide. Заголовок и хвост gzip (CRC-32, ISIZE)
 //! строятся и проверяются здесь; Adler-32 zlib проверяет miniz_oxide. Один
 //! объект сжимает или распаковывает один поток; Sparrow берёт эти natives
-//! через мост синхронных natives (`native_origin`).
+//! через мост синхронных natives (`native_origin`). zstd и Brotli (#184)
+//! живут в подмодулях за теми же natives.
+mod brotli_codec;
+mod zstd_codec;
+
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -38,6 +42,20 @@ struct Fail(&'static str, String);
 
 fn invalid(message: impl Into<String>) -> Fail {
     Fail("invalid_input", message.into())
+}
+
+fn exceeded(limit: u64) -> Fail {
+    Fail("resource_exhausted", format!("Decompressed data exceeds {limit} bytes"))
+}
+
+/// A codec of a format outside miniz_oxide (zstd, Brotli) behind the same
+/// natives.
+trait Stream {
+    fn write(&mut self, input: &[u8]) -> Result<Vec<u8>, Fail>;
+    fn finish(&mut self) -> Result<Vec<u8>, Fail>;
+    /// A compressor has finished; a decompressor has met the end of its stream.
+    fn ended(&self) -> bool;
+    fn remainder(&self) -> Vec<u8>;
 }
 
 const fn crc_table() -> [u32; 256] {
@@ -303,10 +321,7 @@ impl Decompressor {
                     let produced = &buffer[..result.bytes_written];
                     self.produced += produced.len() as u64;
                     if self.produced > self.limit {
-                        return Err(Fail(
-                            "resource_exhausted",
-                            format!("Decompressed data exceeds {} bytes", self.limit),
-                        ));
+                        return Err(exceeded(self.limit));
                     }
                     if self.format == Format::Gzip {
                         self.crc = crc32(self.crc, produced);
@@ -341,6 +356,38 @@ impl Decompressor {
 enum Codec {
     Compress(Compressor),
     Decompress(Decompressor),
+    Other(Box<dyn Stream>),
+}
+
+/// The levels a format takes: 0..9 for DEFLATE, 1..22 for zstd, 0..11 for
+/// Brotli.
+fn levels(format: &str) -> Option<(i64, i64)> {
+    match format {
+        "deflate" | "zlib" | "gzip" => Some((0, 9)),
+        "zstd" => Some((1, 22)),
+        "brotli" => Some((0, 11)),
+        _ => None,
+    }
+}
+
+fn open(format: &str, compressing: bool, level: i64, limit: u64) -> Result<Codec, Fail> {
+    let deflate = |format| {
+        if compressing {
+            Codec::Compress(Compressor::new(format, level as u8))
+        } else {
+            Codec::Decompress(Decompressor::new(format, limit))
+        }
+    };
+    Ok(match (format, compressing) {
+        ("deflate", _) => deflate(Format::Deflate),
+        ("zlib", _) => deflate(Format::Zlib),
+        ("gzip", _) => deflate(Format::Gzip),
+        ("zstd", true) => Codec::Other(Box::new(zstd_codec::ZstdCompressor::new(level as i32)?)),
+        ("zstd", false) => Codec::Other(Box::new(zstd_codec::ZstdDecompressor::new(limit)?)),
+        ("brotli", true) => Codec::Other(Box::new(brotli_codec::BrotliCompressor::new(level as u32))),
+        ("brotli", false) => Codec::Other(Box::new(brotli_codec::BrotliDecompressor::new(limit))),
+        _ => return Err(invalid("Unknown compression format")),
+    })
 }
 
 fn failure(native: Native, Fail(code, message): Fail) -> Error {
@@ -399,24 +446,23 @@ pub fn execute(native: Native, args: &[Value], arrays: &mut ArrayHeap) -> Result
             Ok(super::support::int_value(i64::from(adler32(initial, &bytes(&args[0], arrays)?))))
         }
         CompressionCodecOpen => {
-            let format = match args[0].as_string()? {
-                "deflate" => Format::Deflate,
-                "zlib" => Format::Zlib,
-                "gzip" => Format::Gzip,
-                _ => return Err(failure(native, invalid("Unknown compression format"))),
+            let format = args[0].as_string()?;
+            let Some((low, high)) = levels(format) else {
+                return Err(failure(native, invalid("Unknown compression format")));
             };
             let compressing = args[1].as_bool()?;
-            let codec = if compressing {
-                let Some(level) = args[2].as_int()?.to_i64().filter(|level| (0..=9).contains(level)) else {
-                    return Err(failure(native, invalid("Compression level must be 0..9")));
+            let (level, limit) = if compressing {
+                let Some(level) = args[2].as_int()?.to_i64().filter(|level| (low..=high).contains(level)) else {
+                    return Err(failure(native, invalid(format!("Compression level must be {low}..{high}"))));
                 };
-                Codec::Compress(Compressor::new(format, level as u8))
+                (level, 1)
             } else {
                 let Some(limit) = args[3].as_int()?.to_i64().filter(|limit| *limit > 0) else {
                     return Err(failure(native, invalid("Decompression limit must be positive")));
                 };
-                Codec::Decompress(Decompressor::new(format, limit as u64))
+                (0, limit as u64)
             };
+            let codec = open(format, compressing, level, limit).map_err(|fail| failure(native, fail))?;
             Ok(Value::Handle(Rc::new(RefCell::new(codec))))
         }
         CompressionCodecWrite => {
@@ -424,6 +470,7 @@ pub fn execute(native: Native, args: &[Value], arrays: &mut ArrayHeap) -> Result
             let out = match &mut *state(&args[0])?.borrow_mut() {
                 Codec::Compress(codec) => codec.write(&input),
                 Codec::Decompress(codec) => codec.write(&input),
+                Codec::Other(codec) => codec.write(&input),
             }
             .map_err(|fail| failure(native, fail))?;
             Ok(array(arrays, out))
@@ -432,6 +479,7 @@ pub fn execute(native: Native, args: &[Value], arrays: &mut ArrayHeap) -> Result
             let out = match &mut *state(&args[0])?.borrow_mut() {
                 Codec::Compress(codec) => codec.finish(),
                 Codec::Decompress(codec) => codec.finish(),
+                Codec::Other(codec) => codec.finish(),
             }
             .map_err(|fail| failure(native, fail))?;
             Ok(array(arrays, out))
@@ -439,11 +487,13 @@ pub fn execute(native: Native, args: &[Value], arrays: &mut ArrayHeap) -> Result
         CompressionCodecEnded => Ok(Value::Bool(match &*state(&args[0])?.borrow() {
             Codec::Compress(codec) => codec.finished,
             Codec::Decompress(codec) => codec.stage == Stage::Ended,
+            Codec::Other(codec) => codec.ended(),
         })),
         CompressionCodecRemainder => {
             let out = match &*state(&args[0])?.borrow() {
                 Codec::Compress(_) => Vec::new(),
                 Codec::Decompress(codec) => codec.remainder.clone(),
+                Codec::Other(codec) => codec.remainder(),
             };
             Ok(array(arrays, out))
         }
@@ -477,6 +527,77 @@ mod tests {
         for format in [Format::Deflate, Format::Zlib, Format::Gzip] {
             assert_eq!(roundtrip(format, &data, 13), data);
             assert_eq!(roundtrip(format, b"", 1), b"");
+        }
+    }
+
+    fn other_roundtrip(format: &str, level: i64, data: &[u8], pieces: usize) -> (Vec<u8>, usize) {
+        let Ok(Codec::Other(mut compressor)) = open(format, true, level, 1) else { panic!("open") };
+        let mut packed = Vec::new();
+        for chunk in data.chunks((data.len() / pieces).max(1)) {
+            packed.extend(compressor.write(chunk).ok().expect("write"));
+        }
+        packed.extend(compressor.finish().ok().expect("finish"));
+        assert!(compressor.ended());
+        assert!(compressor.finish().is_err());
+        let size = packed.len();
+        packed.extend_from_slice(b"rest");
+        let Ok(Codec::Other(mut decompressor)) = open(format, false, 0, 1 << 30) else { panic!("open") };
+        let mut plain = Vec::new();
+        for chunk in packed.chunks(7) {
+            plain.extend(decompressor.write(chunk).ok().expect("decompress"));
+        }
+        assert!(decompressor.finish().is_ok());
+        assert!(decompressor.ended());
+        assert_eq!(decompressor.remainder(), b"rest");
+        (plain, size)
+    }
+
+    #[test]
+    fn zstd_and_brotli_round_trip_and_keep_the_remainder() {
+        let data: Vec<u8> = (0..300_000u32).map(|n| (n % 251) as u8 ^ (n / 1000) as u8).collect();
+        for (format, level) in [("zstd", 3), ("zstd", 19), ("brotli", 5), ("brotli", 11), ("brotli", 0)] {
+            let (plain, size) = other_roundtrip(format, level, &data, 13);
+            assert_eq!(plain, data, "{format} {level}");
+            assert!(size * 4 < data.len(), "{format} {level}: {size}");
+            assert_eq!(other_roundtrip(format, level, b"", 1).0, b"");
+        }
+    }
+
+    #[test]
+    fn zstd_and_brotli_refuse_damage_truncation_and_overflow() {
+        let data = b"tea ".repeat(1000);
+        for format in ["zstd", "brotli"] {
+            let Ok(Codec::Other(mut compressor)) = open(format, true, levels(format).unwrap().0 + 1, 1) else {
+                panic!("open")
+            };
+            let mut packed = compressor.write(&data).ok().unwrap();
+            packed.extend(compressor.finish().ok().unwrap());
+            let Ok(Codec::Other(mut small)) = open(format, false, 0, 100) else { panic!("open") };
+            assert!(matches!(small.write(&packed), Err(Fail("resource_exhausted", _))), "{format}");
+            let Ok(Codec::Other(mut cut)) = open(format, false, 0, 1 << 20) else { panic!("open") };
+            assert!(cut.write(&packed[..packed.len() - 3]).is_ok());
+            assert!(matches!(cut.finish(), Err(Fail("invalid_input", _))), "{format}");
+            let Ok(Codec::Other(mut garbage)) = open(format, false, 0, 1 << 20) else { panic!("open") };
+            let noise: Vec<u8> = (0..64u8).map(|n| n.wrapping_mul(37) ^ 0xA5).collect();
+            let refused = garbage.write(&noise).is_err() || garbage.finish().is_err();
+            assert!(refused, "{format}");
+        }
+        assert!(levels("zstd") == Some((1, 22)) && levels("brotli") == Some((0, 11)));
+        assert!(open("lzma", true, 1, 1).is_err());
+    }
+
+    #[test]
+    fn zstd_and_brotli_read_what_the_reference_tools_wrote() {
+        // `printf 'hello, world' | zstd` (1.5.7) and `| brotli` (1.2.1), the reference CLIs.
+        let zstd = [
+            0x28, 0xb5, 0x2f, 0xfd, 0x04, 0x58, 0x61, 0x00, 0x00, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x2c, 0x20, 0x77,
+            0x6f, 0x72, 0x6c, 0x64, 0x42, 0x12, 0x1b, 0x6d,
+        ];
+        let brotli = [0x8f, 0x05, 0x80, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x2c, 0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x03];
+        for (format, packed) in [("zstd", &zstd[..]), ("brotli", &brotli[..])] {
+            let Ok(Codec::Other(mut codec)) = open(format, false, 0, 64) else { panic!("open") };
+            assert_eq!(codec.write(packed).ok().unwrap(), b"hello, world", "{format}");
+            assert!(codec.finish().is_ok());
         }
     }
 

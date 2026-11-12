@@ -3,15 +3,17 @@ module compression/internal/codec v1.0.0;
 import "runtime/compression" take CodecState, codec_open, codec_write, codec_finish, codec_ended,
     codec_remainder;
 import "compression/state" take Compressing, Decompressing, CompressionOutput,
-    CompressionLimitExceeded, InvalidCompressionLimit, InvalidCompressedData;
+    CompressionLimitExceeded, InvalidCompressionLimit, InvalidCompressedData,
+    UnsupportedCompression;
 import "io/stream" take Reading;
 import "async/atomic" take Atomic;
 import "error" take InvalidArgument, InvalidState;
 
-// The codecs behind compression/gzip, compression/deflate and
-// compression/zlib: the runtime's streaming DEFLATE in one of its framings
-// (format "deflate", "zlib" or "gzip"), one object per stream. Output waits in
-// the codec until output() takes it.
+// The codecs behind compression/gzip, compression/deflate, compression/zlib,
+// compression/zstd and compression/brotli: the runtime's streaming codec of a
+// format ("deflate", "zlib", "gzip", "zstd" or "brotli"), one object per
+// stream. Output waits in the codec until output() takes it. An engine without
+// a codec for the format throws UnsupportedCompression when one is made.
 
 object NativeCompressor does Compressing {
     has state is CodecState;
@@ -19,9 +21,8 @@ object NativeCompressor does Compressing {
     has done, shut is Atomic<bool>;
 
     NativeCompressor(format is string, level is int) {
-        confirm level >= 0 && level <= 9
-            else throw InvalidArgument.because("compression level must be 0..9");
-        state = codec_open(format, true, level, 1);
+        CodecLevel(format: format, level: level).check();
+        state = CodecOpening(format: format, compressing: true, level: level, limit: 1).state();
         let empty is @byte = [];
         pending = Atomic(empty);
         done = Atomic(false);
@@ -73,7 +74,7 @@ object NativeDecompressor does Decompressing {
 
     NativeDecompressor(format is string, limit is int) {
         confirm limit > 0 else throw InvalidCompressionLimit.maximum(limit);
-        state = codec_open(format, false, 0, limit);
+        state = CodecOpening(format: format, compressing: false, level: 0, limit: limit).state();
         self.limit = limit;
         let empty is @byte = [];
         pending = Atomic(empty);
@@ -144,6 +145,68 @@ object NativeDecompressor does Decompressing {
     }
 }
 
+// The levels a format takes: 0..9 for DEFLATE and its framings, 1..22 for
+// zstd, 0..11 for Brotli.
+hidden object CodecLevel {
+    has format is string;
+    has level is int;
+
+    CodecLevel(format is string, level is int) {
+        self.format = format;
+        self.level = level;
+    }
+
+    check() is void {
+        let low = if format == "zstd" {
+            1;
+        }
+        else {
+            0;
+        };
+        let high = if format == "zstd" {
+            22;
+        }
+        else {
+            if format == "brotli" {
+                11;
+            }
+            else {
+                9;
+            };
+        };
+        confirm level >= low && level <= high
+            else throw InvalidArgument.because(
+                "compression level must be " + low.string() + ".." + high.string()
+            );
+    }
+}
+
+// The runtime codec for a format; UnsupportedCompression where the engine has
+// none.
+hidden object CodecOpening {
+    has format is string;
+    has compressing is bool;
+    has level, limit is int;
+
+    CodecOpening(format is string, compressing is bool, level is int, limit is int) {
+        self.format = format;
+        self.compressing = compressing;
+        self.level = level;
+        self.limit = limit;
+    }
+
+    state() is CodecState {
+        try {
+            codec_open(format, compressing, level, limit);
+        }
+        catch failure is NativeFailure {
+            confirm failure.code() != "unsupported"
+                else throw UnsupportedCompression.format(format);
+            throw InvalidArgument.because(failure.text());
+        };
+    }
+}
+
 // The domain error of a failure of the runtime codec.
 object CodecFailure {
     has failure is NativeFailure;
@@ -175,9 +238,8 @@ object NativeCompressed {
     }
 
     bytes() is @byte {
-        confirm level >= 0 && level <= 9
-            else throw InvalidArgument.because("compression level must be 0..9");
-        let state = codec_open(format, true, level, 1);
+        CodecLevel(format: format, level: level).check();
+        let state = CodecOpening(format: format, compressing: true, level: level, limit: 1).state();
         codec_write(state, origin) + codec_finish(state);
     }
 }
