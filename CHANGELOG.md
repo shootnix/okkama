@@ -438,6 +438,29 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   - `mime/word` sizes, splits, validates and Q-decodes encoded words by
     code.
   - Each change has a characterization test that passes before and after.
+- **MIME parts, property lists, IMAP names, mailbox names and mail dates
+  compare codes (#163, #171, #173, #174, #175).** Release builds, Sparrow
+  and IR, before → after:
+
+  | operation | Sparrow | IR |
+  |---|---|---|
+  | XML property list, ASCII strings | 204 → 89 µs | 2.33 → 1.99 ms |
+  | XML property list, Cyrillic strings | 214 → 94 µs | 2.38 → 2.02 ms |
+  | IMAP name to modified UTF-7 and back, Cyrillic | 34.3 → 23.6 µs | 374 → 285 µs |
+  | IMAP keyword flag | 1.26 → 0.36 µs | 10.3 → 8.8 µs |
+  | mail date with a comment, plus a Message-ID | 54.6 → 9.1 µs | 429 → 201 µs |
+  | two-part MIME message | 269 → 257 µs | 7.38 → 7.37 ms |
+
+  - `mime/part` finds a header's colon with `find` and checks boundary
+    characters by code ranges.
+  - `plist/parse` scans XML text, checks characters and decodes entities
+    by code; text without `&` or `\r` is taken as it is.
+  - `mail/imap_name` encodes and parses modified UTF-7 by code.
+  - `mail/mailbox` checks keywords, storage identifiers and Maildir names
+    by code and matches Maildir flag letters by code.
+  - `mail/message` takes each date token with one slice instead of writing
+    a buffer byte by byte, and checks Message-ID characters by code.
+  - Each change has a characterization test that passes before and after.
 
 ## [0.5.4] — 2026-11-12
 
