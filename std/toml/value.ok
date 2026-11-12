@@ -1,6 +1,7 @@
 module toml/value v1.0.0;
 
 import "collections/sequence" take Sequencing;
+import "async/atomic" take Atomic;
 
 // Immutable TOML values; not a TOML document parser or printer.
 //
@@ -265,8 +266,24 @@ object TomlArray does TomlValue {
     }
 }
 
+// A table reads like json (#140): text(name), int(name), float(name),
+// boolean(name), get(name) for a nested table, tables(name) for an array of
+// tables, texts(name), ints(name), floats(name) and booleans(name) for arrays,
+// local_date(name), local_time(name), local_date_time(name) and
+// date_time(name) for the TOML dates, and maybe(name) for a key that may be
+// absent:
+//
+//     let config = ParsedToml(text).root();
+//     config.get("server").int("port");
+//     config.maybe("debug").boolean() else false;
+//     for config.tables("replica") -> replica { replica.text("host"); }
+//
+// A missing key is MissingTomlMember; a value of another kind is
+// TomlKindMismatch, which names the key and both kinds. No value is converted:
+// an integer is not a float, and inf and nan are not floats either.
 object TomlTable does TomlValue {
     has origin is @TomlMember;
+    has positions is %string:int;
 
     TomlTable(members is Sequencing<TomlMember>) {
         let size = members.size();
@@ -276,12 +293,7 @@ object TomlTable does TomlValue {
             members.item(index);
         };
         origin = snapshot;
-        for (0..snapshot.size()) -> index {
-            for (0..index) -> previous {
-                confirm snapshot[previous].name() != snapshot[index].name()
-                    else throw DuplicateTomlMember.name(snapshot[index].name());
-            }
-        }
+        positions = TomlNames(snapshot).positions();
     }
 
     // The same, one argument per part: TomlTable(a, b).
@@ -294,12 +306,7 @@ object TomlTable does TomlValue {
             listed.item(index);
         };
         origin = snapshot;
-        for (0..snapshot.size()) -> index {
-            for (0..index) -> previous {
-                confirm snapshot[previous].name() != snapshot[index].name()
-                    else throw DuplicateTomlMember.name(snapshot[index].name());
-            }
-        }
+        positions = TomlNames(snapshot).positions();
     }
 
     TomlTable(members is Sequencing<TomlMember>, maximum_members is int) {
@@ -311,12 +318,7 @@ object TomlTable does TomlValue {
             members.item(index);
         };
         origin = snapshot;
-        for (0..snapshot.size()) -> index {
-            for (0..index) -> previous {
-                confirm snapshot[previous].name() != snapshot[index].name()
-                    else throw DuplicateTomlMember.name(snapshot[index].name());
-            }
-        }
+        positions = TomlNames(snapshot).positions();
     }
 
     members() is Sequencing<TomlMember> {
@@ -324,12 +326,12 @@ object TomlTable does TomlValue {
     }
 
     membership(name is string) is bool {
-        self.index(name) >= 0;
+        positions.has(name);
     }
 
     value(name is string) is TomlValue {
-        let index = self.index(name);
-        confirm index >= 0 else throw MissingTomlMember.name(name);
+        confirm positions.has(name) else throw MissingTomlMember.name(name);
+        let index = positions[name];
         origin[index].value();
     }
 
@@ -337,15 +339,416 @@ object TomlTable does TomlValue {
         to.members(origin);
     }
 
-    hidden index(name is string) is int {
-        (0..origin.size()).reduce(-1) -> found, index {
-            if origin[index].name() == name {
-                index;
-            }
-            else {
-                found;
-            }
+    text(name is string) is string {
+        TomlRead(name: name, value: self.value(name)).text();
+    }
+
+    int(name is string) is int {
+        TomlRead(name: name, value: self.value(name)).int();
+    }
+
+    float(name is string) is float {
+        TomlRead(name: name, value: self.value(name)).float();
+    }
+
+    boolean(name is string) is bool {
+        TomlRead(name: name, value: self.value(name)).boolean();
+    }
+
+    // The nested table under name: [server] or server = { … }.
+    get(name is string) is TomlTable {
+        TomlRead(name: name, value: self.value(name)).table();
+    }
+
+    // The tables of an array of tables: [[replica]].
+    tables(name is string) is @TomlTable {
+        TomlRead(name: name, value: self.value(name)).tables();
+    }
+
+    texts(name is string) is @string {
+        TomlRead(name: name, value: self.value(name)).texts();
+    }
+
+    ints(name is string) is @int {
+        TomlRead(name: name, value: self.value(name)).ints();
+    }
+
+    floats(name is string) is @float {
+        TomlRead(name: name, value: self.value(name)).floats();
+    }
+
+    booleans(name is string) is @bool {
+        TomlRead(name: name, value: self.value(name)).booleans();
+    }
+
+    local_date(name is string) is TomlLocalDate {
+        TomlRead(name: name, value: self.value(name)).local_date();
+    }
+
+    local_time(name is string) is TomlLocalTime {
+        TomlRead(name: name, value: self.value(name)).local_time();
+    }
+
+    local_date_time(name is string) is TomlLocalDateTime {
+        TomlRead(name: name, value: self.value(name)).local_date_time();
+    }
+
+    // An offset date-time: 1979-05-27T07:32:00Z.
+    date_time(name is string) is TomlOffsetDateTime {
+        TomlRead(name: name, value: self.value(name)).date_time();
+    }
+
+    // A key that may be absent: its reads give Maybe, so a fallback is
+    // `config.maybe("debug").boolean() else false`; a value of another kind is
+    // still TomlKindMismatch.
+    maybe(name is string) is TomlMaybeReader {
+        TomlMaybeReader(table: self, name: name);
+    }
+}
+
+// The reads of a key that may be absent; see TomlTable.maybe.
+object TomlMaybeReader {
+    has table is TomlTable;
+    has name is string;
+
+    TomlMaybeReader(table is TomlTable, name is string) {
+        self.table = table;
+        self.name = name;
+    }
+
+    text() is Maybe<string> {
+        if table.membership(name) {
+            return Maybe.some(table.text(name));
+        }
+        Maybe<string>.none;
+    }
+
+    int() is Maybe<int> {
+        if table.membership(name) {
+            return Maybe.some(table.int(name));
+        }
+        Maybe<int>.none;
+    }
+
+    float() is Maybe<float> {
+        if table.membership(name) {
+            return Maybe.some(table.float(name));
+        }
+        Maybe<float>.none;
+    }
+
+    boolean() is Maybe<bool> {
+        if table.membership(name) {
+            return Maybe.some(table.boolean(name));
+        }
+        Maybe<bool>.none;
+    }
+
+    get() is Maybe<TomlTable> {
+        if table.membership(name) {
+            return Maybe.some(table.get(name));
+        }
+        Maybe<TomlTable>.none;
+    }
+
+    tables() is Maybe<@TomlTable> {
+        if table.membership(name) {
+            return Maybe.some(table.tables(name));
+        }
+        Maybe<@TomlTable>.none;
+    }
+
+    texts() is Maybe<@string> {
+        if table.membership(name) {
+            return Maybe.some(table.texts(name));
+        }
+        Maybe<@string>.none;
+    }
+
+    ints() is Maybe<@int> {
+        if table.membership(name) {
+            return Maybe.some(table.ints(name));
+        }
+        Maybe<@int>.none;
+    }
+
+    date_time() is Maybe<TomlOffsetDateTime> {
+        if table.membership(name) {
+            return Maybe.some(table.date_time(name));
+        }
+        Maybe<TomlOffsetDateTime>.none;
+    }
+}
+
+// A value of another kind than the read asked for: the key (with [index] for
+// an array item), the kind asked for and the kind found, as TOML names them:
+// string, integer, float, inf, nan, boolean, array, table, local date, local
+// time, local date-time, offset date-time.
+enum TomlKindMismatch is Error = (member(name is string, expected is string, found is string));
+
+// The member positions by name; a repeated name is DuplicateTomlMember.
+hidden object TomlNames {
+    has members is @TomlMember;
+
+    TomlNames(members is @TomlMember) {
+        self.members = members;
+    }
+
+    positions() is %string:int {
+        let empty is %string:int = [:];
+        (0..members.size()).reduce(empty) -> kept, index {
+            let name = members[index].name();
+            confirm !kept.has(name) else throw DuplicateTomlMember.name(name);
+            kept + [name: index];
         };
+    }
+}
+
+// One value read as the kind asked for, through one accept().
+hidden object TomlRead {
+    has name is string;
+    has value is TomlValue;
+
+    TomlRead(name is string, value is TomlValue) {
+        self.name = name;
+        self.value = value;
+    }
+
+    text() is string {
+        let seen = self.seen("string");
+        seen.string();
+    }
+
+    int() is int {
+        let seen = self.seen("integer");
+        seen.int();
+    }
+
+    float() is float {
+        let seen = self.seen("float");
+        seen.float();
+    }
+
+    boolean() is bool {
+        let seen = self.seen("boolean");
+        seen.bool();
+    }
+
+    table() is TomlTable {
+        let seen = self.seen("table");
+        TomlTable(seen.member_list());
+    }
+
+    local_date() is TomlLocalDate {
+        let seen = self.seen("local date");
+        seen.date();
+    }
+
+    local_time() is TomlLocalTime {
+        let seen = self.seen("local time");
+        seen.time();
+    }
+
+    local_date_time() is TomlLocalDateTime {
+        let seen = self.seen("local date-time");
+        seen.local_moment();
+    }
+
+    date_time() is TomlOffsetDateTime {
+        let seen = self.seen("offset date-time");
+        seen.moment();
+    }
+
+    tables() is @TomlTable {
+        let items = self.items();
+        (0..items.size()).map() -> index {
+            TomlRead(name: name + "[" + index.string() + "]", value: items[index]).table();
+        };
+    }
+
+    texts() is @string {
+        let items = self.items();
+        (0..items.size()).map() -> index {
+            TomlRead(name: name + "[" + index.string() + "]", value: items[index]).text();
+        };
+    }
+
+    ints() is @int {
+        let items = self.items();
+        (0..items.size()).map() -> index {
+            TomlRead(name: name + "[" + index.string() + "]", value: items[index]).int();
+        };
+    }
+
+    floats() is @float {
+        let items = self.items();
+        (0..items.size()).map() -> index {
+            TomlRead(name: name + "[" + index.string() + "]", value: items[index]).float();
+        };
+    }
+
+    booleans() is @bool {
+        let items = self.items();
+        (0..items.size()).map() -> index {
+            TomlRead(name: name + "[" + index.string() + "]", value: items[index]).boolean();
+        };
+    }
+
+    hidden items() is @TomlValue {
+        let seen = self.seen("array");
+        seen.item_list();
+    }
+
+    hidden seen(expected is string) is TomlCapture {
+        let capture = TomlCapture();
+        value.accept(capture);
+        confirm capture.kind() == expected
+            else throw TomlKindMismatch.member(name, expected, capture.kind());
+        capture;
+    }
+}
+
+// What one accept() gave: the kind and, for the kinds read, the value.
+hidden object TomlCapture does TomlVisitor {
+    has found is Atomic<string>;
+    has string_value is Atomic<string>;
+    has integer_value is Atomic<int>;
+    has float_value is Atomic<float>;
+    has boolean_value is Atomic<bool>;
+    has element_values is Atomic<@TomlValue>;
+    has member_values is Atomic<@TomlMember>;
+    has dates is Atomic<@TomlLocalDate>;
+    has times is Atomic<@TomlLocalTime>;
+    has local_moments is Atomic<@TomlLocalDateTime>;
+    has moments is Atomic<@TomlOffsetDateTime>;
+
+    TomlCapture() {
+        found = Atomic("");
+        string_value = Atomic("");
+        integer_value = Atomic(0);
+        float_value = Atomic(0.0);
+        boolean_value = Atomic(false);
+        let no_elements is @TomlValue = [];
+        element_values = Atomic(no_elements);
+        let no_members is @TomlMember = [];
+        member_values = Atomic(no_members);
+        let no_dates is @TomlLocalDate = [];
+        dates = Atomic(no_dates);
+        let no_times is @TomlLocalTime = [];
+        times = Atomic(no_times);
+        let no_local is @TomlLocalDateTime = [];
+        local_moments = Atomic(no_local);
+        let no_moments is @TomlOffsetDateTime = [];
+        moments = Atomic(no_moments);
+    }
+
+    kind() is string {
+        found.value();
+    }
+
+    text(value is string) is void {
+        found.replace("string");
+        string_value.replace(value);
+    }
+
+    integer(value is int) is void {
+        found.replace("integer");
+        integer_value.replace(value);
+    }
+
+    real(value is float) is void {
+        found.replace("float");
+        float_value.replace(value);
+    }
+
+    infinity(negative is bool) is void {
+        found.replace("inf");
+    }
+
+    not_a_number() is void {
+        found.replace("nan");
+    }
+
+    boolean(value is bool) is void {
+        found.replace("boolean");
+        boolean_value.replace(value);
+    }
+
+    elements(values is Sequencing<TomlValue>) is void {
+        found.replace("array");
+        let listed is @TomlValue = (0..values.size()).map() -> index {
+            values.item(index);
+        };
+        element_values.replace(listed);
+    }
+
+    members(values is Sequencing<TomlMember>) is void {
+        found.replace("table");
+        let listed is @TomlMember = (0..values.size()).map() -> index {
+            values.item(index);
+        };
+        member_values.replace(listed);
+    }
+
+    local_date(value is TomlLocalDate) is void {
+        found.replace("local date");
+        dates.replace([value]);
+    }
+
+    local_time(value is TomlLocalTime) is void {
+        found.replace("local time");
+        times.replace([value]);
+    }
+
+    local_datetime(value is TomlLocalDateTime) is void {
+        found.replace("local date-time");
+        local_moments.replace([value]);
+    }
+
+    offset_datetime(value is TomlOffsetDateTime) is void {
+        found.replace("offset date-time");
+        moments.replace([value]);
+    }
+
+    // The value of the kind found.
+    string() is string {
+        string_value.value();
+    }
+
+    int() is int {
+        integer_value.value();
+    }
+
+    float() is float {
+        float_value.value();
+    }
+
+    bool() is bool {
+        boolean_value.value();
+    }
+
+    item_list() is @TomlValue {
+        element_values.value();
+    }
+
+    member_list() is @TomlMember {
+        member_values.value();
+    }
+
+    date() is TomlLocalDate {
+        dates.value()[0];
+    }
+
+    time() is TomlLocalTime {
+        times.value()[0];
+    }
+
+    local_moment() is TomlLocalDateTime {
+        local_moments.value()[0];
+    }
+
+    moment() is TomlOffsetDateTime {
+        moments.value()[0];
     }
 }
 
@@ -630,7 +1033,9 @@ test "mixed array retains order and dispatches snapshot" {
 }
 
 test "ordered literal table names and typed lookup" {
-    let table = TomlTable(TomlMember(name: "", value: TomlInteger(9007199254740993)), TomlMember(name: "a.b", value: TomlBoolean(true))
+    let table = TomlTable(
+        TomlMember(name: "", value: TomlInteger(9007199254740993)),
+        TomlMember(name: "a.b", value: TomlBoolean(true))
     );
     test.ok(table.membership(""));
     test.ok(table.membership("a.b"));
@@ -652,7 +1057,10 @@ test "ordered literal table names and typed lookup" {
 
 test "duplicate keys reject and distinct Unicode names survive" {
     try {
-        TomlTable(TomlMember(name: "x", value: TomlBoolean(true)), TomlMember(name: "x", value: TomlBoolean(false)));
+        TomlTable(
+            TomlMember(name: "x", value: TomlBoolean(true)),
+            TomlMember(name: "x", value: TomlBoolean(false))
+        );
         test.fail("duplicate accepted");
     }
     catch DuplicateTomlMember.name(name) {
@@ -703,7 +1111,10 @@ test "temporal coordinates preserve year zero and leap notation" {
     test.is([date::Calendar::year, date::Calendar::month, date::Calendar::day], [0, 2, 29]);
     test.is(date.string(), "0000-02-29");
     let time = TomlLocalTime(hour: 23, minute: 59, second: 60, nanosecond: 123400000);
-    test.is([time::Clock::hour, time::Clock::minute, time::Clock::second, time::Clock::nanosecond], [23, 59, 60, 123400000]);
+    test.is(
+        [time::Clock::hour, time::Clock::minute, time::Clock::second, time::Clock::nanosecond],
+        [23, 59, 60, 123400000]
+    );
     test.is(time.string(), "23:59:60.1234");
     let local = TomlLocalDateTime(date: date, time: time);
     test.is(local.date(), date);
@@ -723,8 +1134,14 @@ test "temporal coordinates preserve year zero and leap notation" {
 test "temporal canonical boundaries and precision" {
     test.is(TomlLocalDate(year: 9999, month: 12, day: 31).string(), "9999-12-31");
     test.is(TomlLocalTime(hour: 0, minute: 0, second: 0, nanosecond: 0).string(), "00:00:00");
-    test.is(TomlLocalTime(hour: 1, minute: 2, second: 3, nanosecond: 1).string(), "01:02:03.000000001");
-    test.is(TomlLocalTime(hour: 1, minute: 2, second: 3, nanosecond: 999999999).string(), "01:02:03.999999999");
+    test.is(
+        TomlLocalTime(hour: 1, minute: 2, second: 3, nanosecond: 1).string(),
+        "01:02:03.000000001"
+    );
+    test.is(
+        TomlLocalTime(hour: 1, minute: 2, second: 3, nanosecond: 999999999).string(),
+        "01:02:03.999999999"
+    );
     test.is(TomlOffset(0).string(), "Z");
     test.is(TomlOffset(1439).string(), "+23:59");
     test.is(TomlOffset(-1439).string(), "-23:59");

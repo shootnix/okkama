@@ -1,7 +1,8 @@
 module plist/parse v1.0.0;
 
 import "plist/value" take PlistValue, PlistBoolean, PlistInteger, PlistReal, PlistString, PlistData,
-    PlistDate, PlistUid, PlistArray, PlistDictionary, PlistMember;
+    PlistDate, PlistUid, PlistArray, PlistDictionary, PlistMember, PlistKindMismatch, PlistKind,
+    MissingPlistMember;
 import "collections/list" take List, EmptyList;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal, InvalidDecimal;
@@ -47,6 +48,13 @@ object ParsedPlist {
         self.maximum_input = maximum_input;
         self.maximum_nodes = maximum_nodes;
         self.maximum_depth = maximum_depth;
+    }
+
+    // The root as a dictionary, read like json (#141):
+    // ParsedPlist(bytes).dictionary().text("CFBundleIdentifier"). A root of
+    // another kind is PlistKindMismatch.
+    dictionary() is PlistDictionary {
+        PlistDictionary(PlistMember("", self.root())).get("");
     }
 
     root() is PlistValue {
@@ -554,12 +562,13 @@ hidden object PlistXmlEvents {
     root() is PlistValue {
         let error = xml_events_error(state);
         // The tokenizer's bounds are the plist's node and depth budgets.
-        let reason = if error.starts_with("elements nested deeper") || error.starts_with("more than") {
-            "node or depth budget exceeded";
-        }
-        else {
-            error;
-        };
+        let reason = if error.starts_with("elements nested deeper")
+            || error.starts_with("more than") {
+                "node or depth budget exceeded";
+            }
+            else {
+                error;
+            };
         confirm error == "" else throw self.located(xml_events_offset(state), reason);
         let wrapper = self.significant(0);
         confirm wrapper < count
@@ -1375,4 +1384,50 @@ test "XML plist text decodes references and line breaks and scans for delimiters
         }
     );
     test.is(PlistXmlText(" \t x y \r\n").stripped(), "x y");
+}
+
+test "a plist dictionary reads like json (#141)" {
+    let text = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict>" +
+        "<key>CFBundleIdentifier</key><string>org.okkama.demo</string>" +
+        "<key>CFBundleVersion</key><integer>42</integer>" +
+        "<key>Scale</key><real>1.5</real>" +
+        "<key>LSUIElement</key><true/>" +
+        "<key>Icon</key><data>AQID</data>" +
+        "<key>Built</key><date>2026-11-13T10:00:00Z</date>" +
+        "<key>Tags</key><array><string>a</string><string>b</string></array>" +
+        "<key>Window</key><dict><key>Width</key><integer>800</integer></dict>" +
+        "<key>Documents</key><array><dict><key>Name</key><string>Text</string></dict></array>" +
+        "</dict></plist>";
+    let info = ParsedPlist(Utf8Encoded(text).bytes()).dictionary();
+    test.is(info.text("CFBundleIdentifier"), "org.okkama.demo");
+    test.is(info.int("CFBundleVersion"), 42);
+    test.is(info.float("Scale"), 1.5);
+    test.is(info.boolean("LSUIElement"), true);
+    test.is(info.data("Icon"), [byte(1), byte(2), byte(3)]);
+    test.is(info.date("Built").unix_duration().nanoseconds().int(), 1794564000000000000);
+    test.is(info.texts("Tags"), ["a", "b"]);
+    test.is(info.get("Window").int("Width"), 800);
+    let names is @string = info.dictionaries("Documents").map() -> document {
+        document.text("Name");
+    };
+    test.is(names, ["Text"]);
+    test.is(info.maybe("Hidden").boolean() else false, false);
+    test.is(info.maybe("LSUIElement").boolean() else false, true);
+    test.throws(MissingPlistMember) {
+        info.text("Absent");
+    };
+    let mismatch = try {
+        info.text("CFBundleVersion");
+    }
+    catch PlistKindMismatch.member(name, expected, found) {
+        name + " " + (expected == PlistKind.string_value).string() + " " +
+            (found == PlistKind.integer_value).string();
+    };
+    test.is(mismatch, "CFBundleVersion true true");
+    test.throws(PlistKindMismatch) {
+        info.float("CFBundleVersion");
+    };
+    test.throws(PlistKindMismatch) {
+        ParsedPlist(Utf8Encoded("<plist><true/></plist>").bytes()).dictionary();
+    };
 }

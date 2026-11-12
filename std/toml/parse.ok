@@ -2,7 +2,8 @@ module toml/parse v1.0.0;
 
 import "toml/value" take TomlValue, TomlVisitor, TomlInteger, TomlFloat, TomlString, TomlBoolean,
     TomlInfinity, TomlNaN, TomlArray, TomlTable, TomlMember, TomlLocalDate, TomlLocalTime,
-    TomlLocalDateTime, TomlOffset, TomlOffsetDateTime;
+    TomlLocalDateTime, TomlOffset, TomlOffsetDateTime, TomlKindMismatch, MissingTomlMember,
+    DuplicateTomlMember;
 import "runtime/toml" take TomlParseState, TomlNodeState, toml_parse_state, toml_parse_valid,
     toml_parse_offset, toml_parse_line, toml_parse_column, toml_parse_message, toml_parse_root,
     toml_node_kind, toml_node_size, toml_node_integer, toml_node_real, toml_node_boolean,
@@ -31,8 +32,9 @@ import "runtime/toml" take TomlParseState, TomlNodeState, toml_parse_state, toml
 // implicit parent declarations and most-recent array-of-table binding.
 // See docs/std/toml-parse-guide.md. This module does not write TOML documents.
 //
-//     let settings = ParsedToml("name='Ada'\nenabled=true").root();
-//     settings.value("name").accept(observer);
+//     let config = ParsedToml(text).root();
+//     config.get("server").int("port");             // read like json (#140)
+//     config.maybe("debug").boolean() else false;
 //
 // Run tests as a root module, because dependency test blocks are not executed:
 // okkama run -t std/toml/parse.ok
@@ -122,7 +124,12 @@ hidden object TomlNode {
             }
             case 8 {
                 let c = toml_node_coordinates(origin);
-                let result is TomlValue = TomlLocalTime(hour: c[0], minute: c[1], second: c[2], nanosecond: c[3]);
+                let result is TomlValue = TomlLocalTime(
+                    hour: c[0],
+                    minute: c[1],
+                    second: c[2],
+                    nanosecond: c[3]
+                );
                 result;
             }
             case 9 {
@@ -243,4 +250,49 @@ test "header-defined tables cannot be reopened with dotted keys" {
         message;
     };
     test.ok(invalid.length() > 0);
+}
+
+test "a parsed table reads like json (#140)" {
+    let text = "title = \"demo\"\nratio = 0.5\nports = [80, 443]\ntags = [\"a\", \"b\"]\n" +
+        "updated = 1979-05-27T07:32:00Z\nbirthday = 1979-05-27\nlimit = inf\n\n" +
+        "[server]\nhost = \"example.org\"\nport = 8080\ndebug = true\n\n" +
+        "[[replica]]\nhost = \"a\"\n\n[[replica]]\nhost = \"b\"\n";
+    let config = ParsedToml(text).root();
+    test.is(config.text("title"), "demo");
+    test.is(config.float("ratio"), 0.5);
+    test.is(config.ints("ports"), [80, 443]);
+    test.is(config.texts("tags"), ["a", "b"]);
+    test.is(config.get("server").int("port"), 8080);
+    test.is(config.get("server").boolean("debug"), true);
+    test.is(config.maybe("debug").boolean() else false, false);
+    test.is(config.get("server").maybe("debug").boolean() else false, true);
+    test.is(config.maybe("server").get() == Maybe<TomlTable>.none, false);
+    let hosts is @string = config.tables("replica").map() -> replica {
+        replica.text("host");
+    };
+    test.is(hosts, ["a", "b"]);
+    test.is(config.date_time("updated").string(), "1979-05-27T07:32:00Z");
+    test.is(config.local_date("birthday").string(), "1979-05-27");
+    test.throws(MissingTomlMember) {
+        config.text("absent");
+    };
+    test.throws(TomlKindMismatch) {
+        config.int("title");
+    };
+    test.throws(TomlKindMismatch) {
+        config.float("limit");
+    };
+    test.throws(TomlKindMismatch) {
+        config.maybe("ports").text();
+    };
+    let named is @string = try {
+        config.texts("ports");
+    }
+    catch TomlKindMismatch.member(name, expected, found) {
+        [name, expected, found];
+    };
+    test.is(named, ["ports[0]", "string", "integer"]);
+    test.throws(DuplicateTomlMember) {
+        TomlTable(TomlMember("a", TomlInteger(1)), TomlMember("a", TomlInteger(2)));
+    };
 }
