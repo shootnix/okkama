@@ -69,6 +69,10 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   - Ranges below 2^63 are sampled in 64-bit arithmetic: `integer(0, 1000000)`
     takes Sparrow 353 → 140 ns and IR 850 → 602 ns (release builds).
 
+- **`debug/dumper` shows rats on Sparrow (#508).** Sparrow printed a rat as
+  `<native>` and an array of rats as `@native`, while the IR engine printed
+  `1/2 (rat)`. The debug bridge now converts a rat like other values.
+
 ### Changed
 
 - **The HTTP server is faster than Python's `http.server` (#75, #76, #81,
@@ -517,6 +521,27 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     lists and likely subtags exactly as before on all three engines.
   - The std inventory and coverage matrix of the conformance suite are
     rewritten for 0.5.5.
+- **Sparrow carries module constants as data (#506).** A constant's value
+  used to be built by its init function, one instruction per element, and
+  Cranelift compiled that function at the first read. The Sparrow image now
+  carries plain constants as data: scalars, arrays and maps of them. Tomato
+  builds the value at the first read without running code.
+
+  Release builds, before → after:
+
+  | constant | Sparrow build | start |
+  |---|---|---|
+  | 1 000 strings | 32 → 7 ms | 12 → 8 ms |
+  | 2 000 strings | 166 → 8 ms | 14 → 8 ms |
+  | 8 000 strings | 54 → 11 ms | 28 → 9 ms |
+  | the CLDR tables as constants, one date | 2 105 → 177 ms | 324 → 77 ms |
+
+  An empty program builds in 8 ms. Of the 177 ms for the CLDR tables, the
+  front end takes 168, parsing and evaluating 3 MB of literals.
+  - The image format is SPB 15: programs built by earlier releases must be
+    rebuilt.
+  - Constants with enum cases or rationals keep their init functions.
+  - The IR engine and the JVM are unchanged.
 
 ## [0.5.4] — 2026-11-12
 
