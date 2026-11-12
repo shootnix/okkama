@@ -1,6 +1,6 @@
 module http/form v1.0.0;
 
-import "http/body" take BodyReading, BodyClosed;
+import "http/body" take BodyReading, BodyClosed, ByteBody;
 import "http/header" take Headers, Header, HeaderName, HeaderLimits, HttpAsciiLowercase;
 import "mime/media_type" take MediaType, MediaTypeLimits, MimeToken, MimeCharacter;
 import "encoding/single_byte" take Latin1Decoded, Latin1Encoded, AsciiDecoded;
@@ -216,12 +216,12 @@ hidden object FormBoundarySearch {
             else {
                 0;
             });
+            let padding = suffix.characters();
             loop {
                 let at = position.value();
-                if at >= suffix.length()
-                    || (suffix.slice(at, at + 1) != " " && suffix.slice(at, at + 1) != "\t") {
-                        last;
-                    }
+                if at >= padding.size() || (padding[at].code() != 32 && padding[at].code() != 9) {
+                    last;
+                }
                 position.replace(at + 1);
             }
             let at = position.value();
@@ -736,24 +736,27 @@ hidden object FormDispositionRules {
         let quoted = Atomic(false);
         let escaped = Atomic(false);
         let start = Atomic(0);
-        for (0..origin.length()) -> index {
-            let scalar = origin.slice(index, index + 1);
+        // Code points, compared by code (#168); their indexes are the
+        // string's, so the name slices stay the same.
+        let characters = origin.characters();
+        for (0..characters.size()) -> index {
+            let code = characters[index].code();
             if escaped.value() {
                 escaped.replace(false);
                 next;
             }
-            if quoted.value() && scalar == "\\" {
+            if quoted.value() && code == 92 {
                 escaped.replace(true);
                 next;
             }
-            if scalar == "\"" {
+            if code == 34 {
                 quoted.replace(!quoted.value());
                 next;
             }
-            if !quoted.value() && scalar == ";" {
+            if !quoted.value() && code == 59 {
                 start.replace(index + 1);
             }
-            if !quoted.value() && scalar == "=" {
+            if !quoted.value() && code == 61 {
                 let name = Header(name: HeaderName("x"), value: origin.slice(start.value(), index)).value();
                 confirm name.split("*").size() == 1
                     else throw InvalidMultipartForm.because(
@@ -1354,4 +1357,34 @@ test "multipart boundary is bounded ASCII, including quoted MIME spaces" {
     catch e is InvalidMultipartForm {
         true;
     });
+}
+
+async test "a multipart form reads parts after padded boundaries and quoted parameters" {
+    let wire = "--b  \r\nContent-Disposition: form-data; name=\"a;x=y\"\r\n\r\none\r\n--b\t\r\n" +
+        "Content-Disposition: form-data; name=\"f\"; filename=\"x\\\"y\"\r\n\r\ntwo\r\n--b-- \r\n";
+    let form = ParsedMultipartForm(
+        origin: ByteBody(Utf8Encoded(wire).bytes()).reading(),
+        boundary: "b",
+        limits: FormLimits()
+    );
+    let parts = form.parts();
+    let first = await parts.part();
+    test.is(first.name(), "a;x=y");
+    let one = first.body();
+    test.is(Utf8Decoded(await one.bytes(100)).string(), "one");
+    test.is((await one.bytes(100)).size(), 0);
+    let second = await parts.part();
+    test.is(second.name() + " " + second.filename(), "f x\"y");
+    let two = second.body();
+    test.is(Utf8Decoded(await two.bytes(100)).string(), "two");
+    test.is((await two.bytes(100)).size(), 0);
+    test.ok(
+        try {
+            FormDispositionRules("form-data; name*=UTF-8''x");
+            false;
+        }
+        catch e is InvalidMultipartForm {
+            true;
+        }
+    );
 }
