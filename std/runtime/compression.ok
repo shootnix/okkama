@@ -1,0 +1,25 @@
+module runtime/compression v1.0.0;
+
+// Streaming DEFLATE (RFC 1951) with its zlib (RFC 1950) and gzip (RFC 1952)
+// framings. One state compresses or decompresses one stream; failures are
+// NativeFailure of domain core.compression: invalid_input for damaged data,
+// resource_exhausted past the output limit, invalid_state after the end.
+native object CodecState;
+
+// format: "deflate", "zlib" or "gzip". level 0..9 compresses; limit is the
+// most bytes a decompressor may produce in all (positive), unused when
+// compressing.
+native codec_open(format is string, compress is bool, level is int, limit is int) is CodecState;
+
+// The output that the input makes available now, possibly none.
+native codec_write(state is CodecState, source is @byte) is @byte;
+
+// Compressing: the rest of the output, trailer included. Decompressing: no
+// output, and a failure unless the stream has ended.
+native codec_finish(state is CodecState) is @byte;
+
+// Whether a decompressor has met the end of its stream.
+native codec_ended(state is CodecState) is bool;
+
+// The bytes a decompressor received after the end of its stream.
+native codec_remainder(state is CodecState) is @byte;

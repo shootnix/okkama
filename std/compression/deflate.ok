@@ -1,0 +1,201 @@
+module compression/deflate v1.0.0;
+
+import "compression/internal/codec" take NativeCompressor, NativeDecompressor, NativeCompressed,
+    NativeDecompressed;
+import "compression/state" take Compressing, Decompressing, CompressionLimitExceeded,
+    InvalidCompressedData;
+import "compression/read" take CompressedReading, DecompressedReading;
+import "io/stream" take Reading;
+import "io/buffer" take ByteBuffer;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "async/atomic" take Atomic;
+
+// raw DEFLATE (RFC 1951) without a header or checksum, as inside ZIP entries (#183).
+//
+//     let packed = DeflateCompressed(data).bytes();
+//     let data = DeflateDecompressed(origin: packed, limit: 10485760).bytes();
+//
+// A stream goes through the Compressing and Decompressing roles, for example
+// with compression/read:
+//
+//     let packed = CompressedReading(origin: input, compressor: DeflateCompressor());
+//
+// Decompression is bounded: limit is the most bytes it may produce, past which
+// it throws CompressionLimitExceeded; damaged data is InvalidCompressedData.
+
+// Bytes compressed whole; level 0 (store) to 9 (smallest), 6 unless told.
+object DeflateCompressed {
+    has origin is @byte;
+    has level is int;
+
+    DeflateCompressed(origin is @byte, level is int = 6) {
+        self.origin = origin;
+        self.level = level;
+    }
+
+    bytes() is @byte {
+        NativeCompressed(origin: origin, format: "deflate", level: level).bytes();
+    }
+}
+
+// Compressed bytes decompressed whole, at most limit bytes of them. Bytes after
+// the end of the compressed stream are InvalidCompressedData.
+object DeflateDecompressed {
+    has origin is @byte;
+    has limit is int;
+
+    DeflateDecompressed(origin is @byte, limit is int) {
+        self.origin = origin;
+        self.limit = limit;
+    }
+
+    bytes() is @byte {
+        NativeDecompressed(origin: origin, format: "deflate", limit: limit).bytes();
+    }
+}
+
+// A stream compressor: write, then finish; output() takes what is ready.
+object DeflateCompressor does Compressing {
+    has codec is NativeCompressor;
+
+    DeflateCompressor(level is int = 6) {
+        codec = NativeCompressor(format: "deflate", level: level);
+    }
+
+    write(origin is @byte) is void {
+        codec.write(origin);
+    }
+
+    output() is Reading {
+        codec.output();
+    }
+
+    finish() is void {
+        codec.finish();
+    }
+
+    finished() is bool {
+        codec.finished();
+    }
+
+    close() is void {
+        codec.close();
+    }
+
+    closed() is bool {
+        codec.closed();
+    }
+}
+
+// A stream decompressor of at most limit bytes; remainder() gives the bytes
+// after the end of the stream.
+object DeflateDecompressor does Decompressing {
+    has codec is NativeDecompressor;
+
+    DeflateDecompressor(limit is int) {
+        codec = NativeDecompressor(format: "deflate", limit: limit);
+    }
+
+    write(origin is @byte) is void {
+        codec.write(origin);
+    }
+
+    output() is Reading {
+        codec.output();
+    }
+
+    finish() is void {
+        codec.finish();
+    }
+
+    finished() is bool {
+        codec.finished();
+    }
+
+    close() is void {
+        codec.close();
+    }
+
+    closed() is bool {
+        codec.closed();
+    }
+
+    remainder() is @byte {
+        codec.remainder();
+    }
+}
+
+test "deflate round-trips text whole and by pieces" {
+    let text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(200);
+    let data = Utf8Encoded(text).bytes();
+    let packed = DeflateCompressed(data).bytes();
+    test.ok(packed.size() * 4 < data.size());
+    test.is(
+        Utf8Decoded(DeflateDecompressed(origin: packed, limit: data.size()).bytes()).string(),
+        text
+    );
+    test.is(DeflateDecompressed(origin: DeflateCompressed([]).bytes(), limit: 1).bytes().size(), 0);
+    let codec = DeflateDecompressor(limit: data.size());
+    let half = (packed.size() / 2).int();
+    codec.write(packed.slice(0, half));
+    codec.write(packed.slice(half, packed.size()) + Utf8Encoded("after").bytes());
+    codec.finish();
+    test.is(Utf8Decoded(codec.output().bytes(data.size() + 1)).string(), text);
+    test.is(Utf8Decoded(codec.remainder()).string(), "after");
+    codec.close();
+    let stream = DecompressedReading(
+        origin: CompressedReading(
+            origin: ByteBuffer(data).reading(),
+            compressor: DeflateCompressor(level: 9)
+        ),
+        decompressor: DeflateDecompressor(limit: data.size())
+    );
+    let empty is @byte = [];
+    let unpacked = Atomic(empty);
+    loop {
+        let chunk = stream.bytes(4096);
+        if chunk.size() == 0 {
+            last;
+        }
+        unpacked.replace(unpacked.value() + chunk);
+    }
+    test.is(Utf8Decoded(unpacked.value()).string(), text);
+}
+
+test "deflate refuses damaged data and output past its limit" {
+    let data = Utf8Encoded("tea ".repeat(1000)).bytes();
+    let packed = DeflateCompressed(data).bytes();
+    test.throws(CompressionLimitExceeded) {
+        DeflateDecompressed(origin: packed, limit: 100).bytes();
+    };
+    test.throws(InvalidCompressedData) {
+        DeflateDecompressed(origin: packed.slice(0, packed.size() - 3), limit: data.size()).bytes();
+    };
+    test.throws(InvalidCompressedData) {
+        DeflateDecompressed(origin: packed + [0.byte()], limit: data.size()).bytes();
+    };
+}
+
+test "deflate reads what another implementation wrote" {
+    // Python's deflate module, "hello, world".
+    let packed is @byte = [
+        203.byte(),
+        72.byte(),
+        205.byte(),
+        201.byte(),
+        201.byte(),
+        215.byte(),
+        81.byte(),
+        40.byte(),
+        207.byte(),
+        47.byte(),
+        202.byte(),
+        73.byte(),
+        1.byte(),
+        0.byte()
+    ];
+    test.is(
+        Utf8Decoded(DeflateDecompressed(origin: packed, limit: 64).bytes()).string(),
+        "hello, world"
+    );
+}

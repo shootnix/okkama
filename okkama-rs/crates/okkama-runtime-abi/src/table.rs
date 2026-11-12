@@ -609,5 +609,10 @@ natives! {
     FsFileStateOpen = 623, "runtime/fs@1::file_state_open/3", "(@byte, int, string) -> FileState";
     FsFileStateLocked = 624, "runtime/fs@1::file_state_locked/2", "(FileState, int) -> bool";
     FsFileStateRewriteText = 625, "runtime/fs@1::file_state_rewrite_text/2", "(FileState, @string) -> int";
+    CompressionCodecOpen = 626, "runtime/compression@1::codec_open/4", "(string, bool, int, int) -> CodecState";
+    CompressionCodecWrite = 627, "runtime/compression@1::codec_write/2", "(CodecState, @byte) -> @byte";
+    CompressionCodecFinish = 628, "runtime/compression@1::codec_finish/1", "(CodecState) -> @byte";
+    CompressionCodecEnded = 629, "runtime/compression@1::codec_ended/1", "(CodecState) -> bool";
+    CompressionCodecRemainder = 630, "runtime/compression@1::codec_remainder/1", "(CodecState) -> @byte";
 }
 // retired: 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258

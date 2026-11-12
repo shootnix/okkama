@@ -36,7 +36,10 @@ object CompressedReading does Reading, Closing {
     }
 
     CompressedReading(origin is Reading, compressor is Compressing, chunk_size is int) {
-        stream = CompressionReading(flow: CompressingFlow(origin, compressor), chunk_size: chunk_size);
+        stream = CompressionReading(
+            flow: CompressingFlow(origin, compressor),
+            chunk_size: chunk_size
+        );
     }
 
     bytes(limit is int) is @byte {
@@ -60,7 +63,10 @@ object DecompressedReading does Reading, Closing {
     }
 
     DecompressedReading(origin is Reading, decompressor is Decompressing, chunk_size is int) {
-        stream = CompressionReading(flow: DecompressingFlow(origin, decompressor), chunk_size: chunk_size);
+        stream = CompressionReading(
+            flow: DecompressingFlow(origin, decompressor),
+            chunk_size: chunk_size
+        );
     }
 
     bytes(limit is int) is @byte {

@@ -263,6 +263,24 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     can both read it.
   - `examples/web/login.ok` logs in, reads, posts with the token and logs out.
 
+- **gzip, deflate and zlib (#183).**
+  - New modules `compression/gzip`, `compression/deflate` and
+    `compression/zlib`. Each has whole-value objects,
+    `GzipCompressed(data).bytes()` and `GzipDecompressed(origin: packed,
+    limit: n).bytes()`, and stream codecs, `GzipCompressor(level:)` and
+    `GzipDecompressor(limit:)`, for the existing `Compressing` and
+    `Decompressing` roles, so `CompressedReading` and `DecompressedReading`
+    work with them.
+  - Decompression is bounded by `limit` (`CompressionLimitExceeded`).
+    Damaged data, a wrong checksum, a cut stream or bytes after the end are
+    `InvalidCompressedData`.
+  - The runtime has a streaming DEFLATE: miniz_oxide in the Rust engines
+    (Sparrow through the bridge of synchronous natives) and java.util.zip on
+    the JVM. The gzip header, CRC-32 and length are written and checked on
+    all three.
+  - What one engine writes, Python's gzip and zlib read, and the other way
+    round.
+
 - **The server answers HTTP/1.0 (#102).** `ab` works: no Host is required,
   responses are not chunked, and keep-alive applies only when asked for.
 - **RequestJson readers share one translation of reading failures (#84).**

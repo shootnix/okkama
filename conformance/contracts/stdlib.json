@@ -679,6 +679,36 @@
       }
     },
     {
+      "id": "STD.COMPRESSION.DEFLATE",
+      "title": "std compression/deflate public contract (DeflateCompressed, DeflateCompressor, DeflateDecompressed, DeflateDecompressor)",
+      "family": "Standard library: compression",
+      "spec_refs": [
+        "std/compression/deflate.ok"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+      }
+    },
+    {
+      "id": "STD.COMPRESSION.GZIP",
+      "title": "std compression/gzip public contract (GzipCompressed, GzipCompressor, GzipDecompressed, GzipDecompressor)",
+      "family": "Standard library: compression",
+      "spec_refs": [
+        "std/compression/gzip.ok"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+      }
+    },
+    {
       "id": "STD.COMPRESSION.READ",
       "title": "std compression/read public contract (CompressedReading, CompressionFlow, DecompressedReading)",
       "family": "Standard library: compression",
@@ -695,10 +725,40 @@
     },
     {
       "id": "STD.COMPRESSION.STATE",
-      "title": "std compression/state public contract (Compressing, CompressionLimitExceeded, CompressionOutput, Decompressing, DecompressionBudget, InvalidCompressionLimit)",
+      "title": "std compression/state public contract (Compressing, CompressionLimitExceeded, CompressionOutput, Decompressing, DecompressionBudget, InvalidCompressedData, InvalidCompressionLimit)",
       "family": "Standard library: compression",
       "spec_refs": [
         "std/compression/state.ok"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+      }
+    },
+    {
+      "id": "STD.COMPRESSION.ZLIB",
+      "title": "std compression/zlib public contract (ZlibCompressed, ZlibCompressor, ZlibDecompressed, ZlibDecompressor)",
+      "family": "Standard library: compression",
+      "spec_refs": [
+        "std/compression/zlib.ok"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+      }
+    },
+    {
+      "id": "STD.COMPRESSION.INTERNAL.CODEC",
+      "title": "std compression/internal/codec public contract (CodecFailure, NativeCompressed, NativeCompressor, NativeDecompressed, NativeDecompressor)",
+      "family": "Standard library: compression",
+      "spec_refs": [
+        "std/compression/internal/codec.ok"
       ],
       "status": "mandatory",
       "aspects": {
@@ -6349,6 +6409,22 @@
       "family": "Standard library: runtime",
       "spec_refs": [
         "std/runtime/collections.ok"
+      ],
+      "status": "informative",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: module owns no public declarations",
+        "invalid": "n/a: module owns no public declarations",
+        "interaction": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+      },
+      "notes": "Native substrate module; its behaviour is observed through the public modules that compose it."
+    },
+    {
+      "id": "STD.RUNTIME.COMPRESSION",
+      "title": "std runtime/compression public contract (no public declarations)",
+      "family": "Standard library: runtime",
+      "spec_refs": [
+        "std/runtime/compression.ok"
       ],
       "status": "informative",
       "aspects": {

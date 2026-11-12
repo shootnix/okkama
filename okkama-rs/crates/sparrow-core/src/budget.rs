@@ -84,7 +84,7 @@ pub enum Reach {
 /// to the runtime is in no list until someone puts it in one, and the test
 /// `every_native_is_classified` fails until then.
 const PURE: &[&str] = &[
-    "runtime/bigint", "runtime/binary", "runtime/buffer", "runtime/bytes", "runtime/collation",
+    "runtime/bigint", "runtime/binary", "runtime/buffer", "runtime/bytes", "runtime/collation", "runtime/compression",
     "runtime/collections", "runtime/crypto", "runtime/csv_state", "runtime/db", "runtime/debug",
     "runtime/decimal", "runtime/diff", "runtime/format", "runtime/hex", "runtime/host_crypto",
     "runtime/hpack", "runtime/html", "runtime/idna", "runtime/io_decorators", "runtime/json",

@@ -249,6 +249,10 @@ object DecompressionBudget {
 // Stable diagnostics; retain the configured maximum without leaking host text.
 enum CompressionLimitExceeded is Error = (maximum(maximum is int));
 
+// Compressed data a decompressor cannot read: not of its format, damaged, a
+// checksum that does not match, or a stream cut short.
+enum InvalidCompressedData is Error = (because(reason is string));
+
 enum InvalidCompressionLimit is Error = (maximum(maximum is int));
 
 test "compression output is finite consuming and independently closable" {

@@ -9,6 +9,7 @@ pub mod application;
 pub mod buffer;
 pub mod bytes;
 pub mod collation;
+pub mod compression;
 pub mod encoding;
 pub mod formats;
 pub mod fs;
@@ -111,6 +112,7 @@ pub fn execute(
         Provider::Encoding => encoding::execute(native, args, arrays),
         Provider::Numbers => numbers::execute(native, args),
         Provider::Buffer => buffer::execute(native, args, arrays),
+        Provider::Compression => compression::execute(native, args, arrays),
         Provider::Streams => context.streams.execute(
             native,
             args,
@@ -156,6 +158,7 @@ enum Provider {
     Encoding,
     Numbers,
     Buffer,
+    Compression,
     Streams,
     /// UTF-8/16/32 и всё, чего нет у других providers (там — `Unsupported`).
     Utf,
@@ -243,6 +246,9 @@ fn route(native: Native) -> Provider {
     }
     if buffer::handles(native) {
         return Provider::Buffer;
+    }
+    if compression::handles(native) {
+        return Provider::Compression;
     }
     if matches!(
         native,
