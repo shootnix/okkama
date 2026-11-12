@@ -51,7 +51,10 @@ object Redirecting does Exchanging {
         loop {
             let result = await origin.response(state.request());
             let retained = Event();
-            let cleanup = RedirectResponseCleanup(response: result::Exchange::response, retained: retained);
+            let cleanup = RedirectResponseCleanup(
+                response: result::Exchange::response,
+                retained: retained
+            );
             defer cleanup.close();
             let accumulated = RedirectHistory(previous: state.history(), result: result).items();
             let status = result::Head::status;
@@ -81,7 +84,11 @@ object Redirecting does Exchanging {
                 location: candidates.item(0),
                 policy: policy
             ).url();
-            let following = RedirectRequest(origin: effective, destination: destination, status: status).request();
+            let following = RedirectRequest(
+                origin: effective,
+                destination: destination,
+                status: status
+            ).request();
             let key = RedirectKey(following).string();
             confirm !state.known(key) else throw RedirectLoop.detected;
             confirm accumulated.size() < 20 else throw TooManyRedirects.exceeded;
@@ -185,7 +192,8 @@ hidden object RedirectDestination {
         let parts = resolved;
         confirm parts::Parts::scheme == "http" || parts::Parts::scheme == "https"
             else throw UnsafeRedirect.because("non-HTTP Location");
-        confirm parts::Parts::host != Maybe<string>.none && parts::Parts::userinfo == Maybe<string>.none
+        confirm parts::Parts::host != Maybe<string>.none
+            && parts::Parts::userinfo == Maybe<string>.none
             else throw UnsafeRedirect.because("invalid Location authority");
         confirm policy::Rules::https_downgrade
             || base::Parts::scheme != "https"
@@ -228,7 +236,10 @@ hidden object RedirectRequest {
             confirm origin.body().replayable() else throw NonReplayableRedirect.not_replayable;
             origin.body();
         };
-        let without_host = HeadersWithout(origin: origin::Head::headers, names: [HeaderName("Host")]).headers();
+        let without_host = HeadersWithout(
+            origin: origin::Head::headers,
+            names: [HeaderName("Host")]
+        ).headers();
         let payload_fields = if rewritten {
             HeadersWithout(
                 origin: without_host,

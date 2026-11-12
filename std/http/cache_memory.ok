@@ -80,7 +80,9 @@ object CachedHttpEntry {
             fields;
         }
         else {
-            fields.addition(Header(name: HeaderName("Date"), value: HttpDate(timing.received()).string()));
+            fields.addition(
+                Header(name: HeaderName("Date"), value: HttpDate(timing.received()).string())
+            );
         };
         freshness = CacheFreshness(headers: dated, timing: timing);
         vary = CacheVary(fields).names();
@@ -145,12 +147,20 @@ object CachedHttpEntry {
         // are conservative even without origin Vary metadata.
         let partitions is @HeaderName = [HeaderName("Authorization"), HeaderName("Cookie")];
         for partitions -> name {
-            if !CacheFieldMatching(left: request::Head::headers, right: other::Head::headers, name: name).matches() {
+            if !CacheFieldMatching(
+                left: request::Head::headers,
+                right: other::Head::headers,
+                name: name
+            ).matches() {
                 return false;
             }
         }
         for vary -> name {
-            if !CacheFieldMatching(left: request::Head::headers, right: other::Head::headers, name: name).matches() {
+            if !CacheFieldMatching(
+                left: request::Head::headers,
+                right: other::Head::headers,
+                name: name
+            ).matches() {
                 return false;
             }
         }
@@ -189,7 +199,9 @@ object CachedHttpEntry {
             fields;
         }
         else {
-            fields.addition(Header(name: HeaderName("Date"), value: HttpDate(timing.received()).string()));
+            fields.addition(
+                Header(name: HeaderName("Date"), value: HttpDate(timing.received()).string())
+            );
         };
         let original = result::Exchange::response;
         let body is BodyOpening = if request::Head::method == Method.head {
@@ -200,7 +212,12 @@ object CachedHttpEntry {
         };
         ClientResponse(
             request: request,
-            response: Response(status: original::Head::status, headers: dated, body: body, version: original::Head::version),
+            response: Response(
+                status: original::Head::status,
+                headers: dated,
+                body: body,
+                version: original::Head::version
+            ),
             details: result::Exchange::details
         );
     }

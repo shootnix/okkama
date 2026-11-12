@@ -30,7 +30,9 @@ object Http2DataScheduler {
         chunk = 16384;
         let empty is @Http2SendingSlot = [];
         slots = Atomic(empty);
-        connection = Atomic(Http2FlowWindow(scope: Http2FaultScope.connection, stream: 0, remaining: 65535));
+        connection = Atomic(
+            Http2FlowWindow(scope: Http2FaultScope.connection, stream: 0, remaining: 65535)
+        );
         reserved = Atomic(0);
         changed = Atomic(Event());
         highest = Atomic(0);
@@ -55,7 +57,9 @@ object Http2DataScheduler {
         self.chunk = chunk;
         let empty is @Http2SendingSlot = [];
         slots = Atomic(empty);
-        connection = Atomic(Http2FlowWindow(scope: Http2FaultScope.connection, stream: 0, remaining: 65535));
+        connection = Atomic(
+            Http2FlowWindow(scope: Http2FaultScope.connection, stream: 0, remaining: 65535)
+        );
         reserved = Atomic(0);
         changed = Atomic(Event());
         highest = Atomic(0);
@@ -124,7 +128,12 @@ object Http2DataScheduler {
     data(stream is int, bytes is @byte, end_stream is bool) is Future<bool> {
         confirm bytes.size() <= 1048576 && (bytes.size() > 0 || end_stream)
             else throw Http2OutputLimit.exceeded;
-        let operation = Http2DataSending(owner: self, slot: self.slot(stream), bytes: bytes, end_stream: end_stream);
+        let operation = Http2DataSending(
+            owner: self,
+            slot: self.slot(stream),
+            bytes: bytes,
+            end_stream: end_stream
+        );
         operation.delivered();
     }
 
@@ -282,7 +291,9 @@ object Http2SendingSlot {
 
     Http2SendingSlot(stream is int, initial is int) {
         self.stream = stream;
-        window = Atomic(Http2FlowWindow(scope: Http2FaultScope.stream, stream: stream, remaining: initial));
+        window = Atomic(
+            Http2FlowWindow(scope: Http2FaultScope.stream, stream: stream, remaining: initial)
+        );
         reserved = Atomic(0);
         let empty is @Http2DataGrant = [];
         grant = Atomic(empty);

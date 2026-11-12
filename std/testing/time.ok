@@ -19,7 +19,14 @@ object ManualClock does Timing {
         CheckContext().verify();
         domain = clock_domain(true);
         cell = Atomic(
-            ManualClockFrame(wall: start, elapsed: Duration(seconds: 0), waiters: [], serial: 0, closed: false, dispatching: false)
+            ManualClockFrame(
+                wall: start,
+                elapsed: Duration(seconds: 0),
+                waiters: [],
+                serial: 0,
+                closed: false,
+                dispatching: false
+            )
         );
     }
 
@@ -117,7 +124,14 @@ object ManualClock does Timing {
             }
         };
         cell.replace(
-            ManualClockFrame(wall: old.wall(), elapsed: old.elapsed(), waiters: added, serial: id, closed: false, dispatching: old.dispatching())
+            ManualClockFrame(
+                wall: old.wall(),
+                elapsed: old.elapsed(),
+                waiters: added,
+                serial: id,
+                closed: false,
+                dispatching: old.dispatching()
+            )
         );
         defer self.remove(id);
         await signal.wait();
@@ -131,7 +145,14 @@ object ManualClock does Timing {
             return;
         }
         cell.replace(
-            ManualClockFrame(wall: old.wall(), elapsed: old.elapsed(), waiters: [], serial: old.serial(), closed: true, dispatching: old.dispatching())
+            ManualClockFrame(
+                wall: old.wall(),
+                elapsed: old.elapsed(),
+                waiters: [],
+                serial: old.serial(),
+                closed: true,
+                dispatching: old.dispatching()
+            )
         );
         for old.waiters() -> entry {
             entry.signal().set();

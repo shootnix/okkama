@@ -220,7 +220,12 @@ hidden object HpackBlockInput {
                 offset = offset.following(parsed.following());
             }
             else {
-                let literal = HpackLiteral(origin: origin, offset: offset.offset(), fixed: fixed, table: table);
+                let literal = HpackLiteral(
+                    origin: origin,
+                    offset: offset.offset(),
+                    fixed: fixed,
+                    table: table
+                );
                 let field = literal.field();
                 if literal.incremental() {
                     table = table.added(field);
@@ -320,7 +325,11 @@ hidden object HpackLiteral {
         let indexed = ParsedHpackInteger(origin: origin, offset: offset, prefix: prefix);
         let position = HpackReadOffset(indexed.following());
         let name = if indexed.int() == 0 {
-            let literal = ParsedHpackString(origin: origin, offset: position.offset(), maximum: 1048576);
+            let literal = ParsedHpackString(
+                origin: origin,
+                offset: position.offset(),
+                maximum: 1048576
+            );
             position = position.following(literal.following());
             Latin1Decoded(literal.bytes()).string();
         }

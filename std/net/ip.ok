@@ -167,7 +167,9 @@ object IpNetwork {
     }
 
     broadcast() is IpAddress {
-        IpAddress(PackedIpText(IpNetworkBytes(origin: base.bytes(), prefix: length, upper: true).bytes()).string());
+        IpAddress(
+            PackedIpText(IpNetworkBytes(origin: base.bytes(), prefix: length, upper: true).bytes()).string()
+        );
     }
 
     membership(address is IpAddress) is bool {

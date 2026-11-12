@@ -372,7 +372,10 @@ hidden object StoredMailContent {
     }
 
     message() is MailMessage {
-        ParsedMail(origin: MimePart(headers: origin.headers(), body: origin.body(), limits: limits).bytes(), limits: limits).message();
+        ParsedMail(
+            origin: MimePart(headers: origin.headers(), body: origin.body(), limits: limits).bytes(),
+            limits: limits
+        ).message();
     }
 }
 
@@ -618,15 +621,28 @@ hidden object MaildirDelivery {
         defer access.close();
         let limits = origin.limits();
         let entries = MaildirEntries(origin: origin.path(), maximum: limits::Limits::messages).values();
-        confirm entries.size() < limits::Limits::messages else throw MailboxLimitExceeded.kind("messages");
-        let bytes = MimePart(headers: message.headers(), body: message.body(), limits: limits.mime()).bytes();
+        confirm entries.size() < limits::Limits::messages
+            else throw MailboxLimitExceeded.kind("messages");
+        let bytes = MimePart(
+            headers: message.headers(),
+            body: message.body(),
+            limits: limits.mime()
+        ).bytes();
         confirm bytes.size() <= limits::Limits::wire_bytes
             else throw MailboxLimitExceeded.kind("wire_bytes");
-        let temporary = TemporaryFile(directory: Directory(origin.path().child("tmp")), prefix: ".okkama-");
+        let temporary = TemporaryFile(
+            directory: Directory(origin.path().child("tmp")),
+            prefix: ".okkama-"
+        );
         let identifier = try {
             temporary.write(ByteSnapshot(bytes));
             temporary.flush();
-            MaildirPublication(path: origin.path(), temporary: temporary, entries: entries, random: random).identifier();
+            MaildirPublication(
+                path: origin.path(),
+                temporary: temporary,
+                entries: entries,
+                random: random
+            ).identifier();
         }
         catch failure is Error {
             try {

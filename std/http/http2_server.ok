@@ -15,7 +15,8 @@ import "http/internal/http2_preface" take Http2ServerPreface;
 import "http/internal/http2_settings" take Http2PeerSettings;
 import "http/internal/http2_input" take Http2ConnectionInput, Http2ReceivingEvents,
     Http2ReceivingBarrier, Http2ReadBoundary;
-import "http/internal/http2_output" take Http2ConnectionOutput, Http2OutputTicket, Http2OutputStopped;
+import "http/internal/http2_output" take Http2ConnectionOutput, Http2OutputTicket,
+    Http2OutputStopped;
 import "http/internal/http2_sending" take Http2DataScheduler;
 import "http/internal/http2_receiving" take Http2ReceiveFlow;
 import "http/internal/http2_body" take Http2BodyBuffer, Http2BodyEvents, Http2IncomingBody,
@@ -64,7 +65,15 @@ object Http2ServerSession does Closing {
             && policy.protocols().membership(HttpVersion.http_2)
             && !owner.closed()
             else throw InvalidState.because("H2 server requires selected H2 transport and policy");
-        state = Http2ServerState(input: input, output: output, owner: owner, handling: handling, details: details, policy: policy, clock: clock);
+        state = Http2ServerState(
+            input: input,
+            output: output,
+            owner: owner,
+            handling: handling,
+            details: details,
+            policy: policy,
+            clock: clock
+        );
     }
 
     closed() is bool {
@@ -257,7 +266,11 @@ hidden object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier,
         let preface = Http2ServerPreface(input: input, output: output_origin, settings: local).settings();
         let timeout = policy.timeouts().headers_timeout();
         let selected = if timeout::Span::seconds > 0.rat() {
-            let bounded is Within<Http2PeerSettings> = Within(origin: preface, limit: timeout, clock: clock);
+            let bounded is Within<Http2PeerSettings> = Within(
+                origin: preface,
+                limit: timeout,
+                clock: clock
+            );
             bounded.outcome();
         }
         else {
@@ -342,7 +355,11 @@ hidden object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier,
             let waiting = if interval::Span::seconds > 0.rat()
                 && active.value().size() == 0
                 && !reading_busy.value() {
-                    let deadline is Within<Event> = Within(origin: pending, limit: interval, clock: clock);
+                    let deadline is Within<Event> = Within(
+                        origin: pending,
+                        limit: interval,
+                        clock: clock
+                    );
                     deadline.outcome();
                 }
                 else {
@@ -370,7 +387,13 @@ hidden object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier,
         }
         try {
             let ticket = output.submit(
-                [Http2GoAwayFrame(last_stream: highest.value(), code: Http2FaultView(failure).code(), debug: []).frame()]
+                [
+                    Http2GoAwayFrame(
+                        last_stream: highest.value(),
+                        code: Http2FaultView(failure).code(),
+                        debug: []
+                    ).frame()
+                ]
             );
             let bounded is Within<bool> = Within(
                 origin: ticket.delivered(),
@@ -587,7 +610,13 @@ hidden object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier,
     stop_accepting() is void {
         if !draining.ready() && !self.closed() {
             draining.set();
-            goodbye.replace([output.submit([Http2GoAwayFrame(last_stream: highest.value(), code: 0, debug: []).frame()])]);
+            goodbye.replace(
+                [
+                    output.submit(
+                        [Http2GoAwayFrame(last_stream: highest.value(), code: 0, debug: []).frame()]
+                    )
+                ]
+            );
             self.wake();
         }
     }
@@ -729,7 +758,9 @@ hidden object Http2ServerStream {
                 self.stream(),
                 "invalid request trailers"
             );
-        buffers.value()[0].ending(Http2Trailers(fields: block.fields(), stream: self.stream()).headers());
+        buffers.value()[0].ending(
+            Http2Trailers(fields: block.fields(), stream: self.stream()).headers()
+        );
     }
 
     async run() is bool {
@@ -759,7 +790,10 @@ hidden object Http2ServerStream {
                 clock: owner.clock()
             );
             let request = head.request(opening);
-            let context = HttpRequestContext(details: owner.details(), cancellation: cancelled.cancelling());
+            let context = HttpRequestContext(
+                details: owner.details(),
+                cancellation: cancelled.cancelling()
+            );
             let expected = head.headers().values(HeaderName("expect"));
             let unsupported = expected.size() > 0
                 && (expected.size() != 1
@@ -776,7 +810,11 @@ hidden object Http2ServerStream {
                 let pending = owner.handling().handling(request, context);
                 let timeout = owner.policy().timeouts().handling_timeout();
                 let bounded = if timeout::Span::seconds > 0.rat() {
-                    let deadline is Within<HandlingResult> = Within(origin: pending, limit: timeout, clock: owner.clock());
+                    let deadline is Within<HandlingResult> = Within(
+                        origin: pending,
+                        limit: timeout,
+                        clock: owner.clock()
+                    );
                     deadline.outcome();
                 }
                 else {
@@ -996,7 +1034,11 @@ hidden object Http2ServerBodySending {
                 }
             }
             let offered = if bytes.size() == 0 {
-                let trailers = Http2OrdinaryFields(origin: source.trailers(), request: false, stream: stream).fields();
+                let trailers = Http2OrdinaryFields(
+                    origin: source.trailers(),
+                    request: false,
+                    stream: stream
+                ).fields();
                 Http2Trailers(fields: trailers, stream: stream);
                 if trailers.size() > 0 {
                     output.headers(stream, trailers, budget, 16384, true).delivered();
@@ -1049,7 +1091,12 @@ hidden object Http2ServerBody does BodyOpening {
     }
 
     reading() is BodyReading {
-        Http2ServerBodyReading(entry: entry, origin: origin.reading(), timeout: timeout, clock: clock);
+        Http2ServerBodyReading(
+            entry: entry,
+            origin: origin.reading(),
+            timeout: timeout,
+            clock: clock
+        );
     }
 }
 
@@ -1209,7 +1256,11 @@ hidden object Http2ServerWireInput does AsyncReading, Http2ReadBoundary {
         let pending = if !first && kind.value() == 0 && remaining.value() > 0 {
             let interval = owner.policy().timeouts().body_idle_timeout();
             if interval::Span::seconds > 0.rat() {
-                let idle is Within<@byte> = Within(origin: reading, limit: interval, clock: owner.clock());
+                let idle is Within<@byte> = Within(
+                    origin: reading,
+                    limit: interval,
+                    clock: owner.clock()
+                );
                 idle.outcome();
             }
             else {

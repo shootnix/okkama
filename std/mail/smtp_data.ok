@@ -156,7 +156,9 @@ hidden object SmtpDataValue {
             else {
                 rendered;
             };
-        let declared = SmtpDataMime(mime).requires_eight_bit(ParsedMime(origin: content, limits: mime).node());
+        let declared = SmtpDataMime(mime).requires_eight_bit(
+            ParsedMime(origin: content, limits: mime).node()
+        );
         let high = content.reduce(false) -> found, octet {
             found || octet.int() > 127;
         };
@@ -175,7 +177,11 @@ hidden object SmtpDataValue {
         let start = MimePosition(0);
         loop {
             last if start.index() == content.size();
-            let end = SmtpDataLine(origin: content, start: start.index(), maximum: limits::Limits::line_bytes).end();
+            let end = SmtpDataLine(
+                origin: content,
+                start: start.index(),
+                maximum: limits::Limits::line_bytes
+            ).end();
             if content[start.index()].int() == 46 {
                 output.write([46.byte()]);
             }
@@ -307,7 +313,10 @@ hidden object SmtpDataOutput {
 
 test "SMTP DATA counts original content and quotes a dot-only line" {
     let message = ParsedMail(Utf8Encoded("\r\n.\r\n").bytes()).message();
-    let prepared = PreparedSmtpData(origin: message, capabilities: SmtpCapabilities(SmtpReply(250, ["server", "SIZE 5"])));
+    let prepared = PreparedSmtpData(
+        origin: message,
+        capabilities: SmtpCapabilities(SmtpReply(250, ["server", "SIZE 5"]))
+    );
     test.is(prepared.message_size(), 5);
     test.is(Utf8Decoded(prepared.bytes()).string(), "\r\n..\r\n.\r\n");
 }

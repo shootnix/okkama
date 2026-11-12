@@ -115,11 +115,21 @@ object DbPool does Closing {
     has owner is DbPoolState;
 
     DbPool(origin is DbConnecting, options is PoolOptions, clock is Timing) {
-        owner = DbPoolState(origin: PortableDbAcquiring(origin), options: options, clock: clock, health: UncheckedDbConnections());
+        owner = DbPoolState(
+            origin: PortableDbAcquiring(origin),
+            options: options,
+            clock: clock,
+            health: UncheckedDbConnections()
+        );
     }
 
     DbPool(origin is DbConnecting, options is PoolOptions, clock is Timing, health is DbChecking) {
-        owner = DbPoolState(origin: PortableDbAcquiring(origin), options: options, clock: clock, health: health);
+        owner = DbPoolState(
+            origin: PortableDbAcquiring(origin),
+            options: options,
+            clock: clock,
+            health: health
+        );
     }
 
     async connection() is PooledConnection {
@@ -151,7 +161,12 @@ object DbPreparedPool does Closing {
     has owner is DbPoolState;
 
     DbPreparedPool(origin is DbAcquiring, options is PoolOptions, clock is Timing) {
-        owner = DbPoolState(origin: origin, options: options, clock: clock, health: UncheckedDbConnections());
+        owner = DbPoolState(
+            origin: origin,
+            options: options,
+            clock: clock,
+            health: UncheckedDbConnections()
+        );
     }
 
     DbPreparedPool(
@@ -288,7 +303,12 @@ object DbPoolState {
     }
 
     snapshot() is PoolSnapshot {
-        PoolSnapshot(acquisitions: leases.value().size(), idle: idle.value().size(), waiting: waiting.value(), capacity: options::Size::maximum);
+        PoolSnapshot(
+            acquisitions: leases.value().size(),
+            idle: idle.value().size(),
+            waiting: waiting.value(),
+            capacity: options::Size::maximum
+        );
     }
 
     async stopping() is PooledConnection {
@@ -345,7 +365,11 @@ object DbPoolState {
             else {
                 let id = serial.value() + 1;
                 serial.replace(id);
-                let record = DbPhysical(pending: origin.acquisition(), born: clock.monotonic_instant(), serial: id);
+                let record = DbPhysical(
+                    pending: origin.acquisition(),
+                    born: clock.monotonic_instant(),
+                    serial: id
+                );
                 let old = records.value();
                 let all is @DbPhysical = (0..old.size() + 1).map() -> index {
                     if index < old.size() {
@@ -374,7 +398,12 @@ object DbPoolState {
                 throw;
             };
             let owned = Event();
-            let anchor = DbUnpublishedPhysical(owner: self, physical: physical, connection: connection, owned: owned);
+            let anchor = DbUnpublishedPhysical(
+                owner: self,
+                physical: physical,
+                connection: connection,
+                owned: owned
+            );
             defer await anchor.close();
             let expired = (options.lifetime()::Span::seconds > 0.rat()
                 && clock.monotonic_instant().minus(physical.born())::Span::seconds >= options.lifetime()::Span::seconds)
@@ -389,7 +418,12 @@ object DbPoolState {
             }
             confirm !self.closed() else throw DbClosed.closed;
             await self.warm();
-            let lease = PooledConnection(owner: self, physical: physical, origin: connection, permit: permit);
+            let lease = PooledConnection(
+                owner: self,
+                physical: physical,
+                origin: connection,
+                permit: permit
+            );
             let old = leases.value();
             let all is @PooledConnection = (0..old.size() + 1).map() -> index {
                 if index < old.size() {
@@ -413,7 +447,11 @@ object DbPoolState {
             }
             let id = serial.value() + 1;
             serial.replace(id);
-            let physical = DbPhysical(pending: origin.acquisition(), born: clock.monotonic_instant(), serial: id);
+            let physical = DbPhysical(
+                pending: origin.acquisition(),
+                born: clock.monotonic_instant(),
+                serial: id
+            );
             let old = records.value();
             let all is @DbPhysical = (0..old.size() + 1).map() -> index {
                 if index < old.size() {
@@ -642,7 +680,12 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
         let opening = await physical.transactions();
         let transaction = await opening.prepared_transaction(options);
         transactions.replace([transaction]);
-        PooledTransaction(origin: transaction, lease_closed: stopped, readers: readers, preparation: transaction);
+        PooledTransaction(
+            origin: transaction,
+            lease_closed: stopped,
+            readers: readers,
+            preparation: transaction
+        );
     }
 
     close() is void {
@@ -700,6 +743,7 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
     destroy {
         self.close();
     }
+
     // db.execution(sql, values) and db.query(sql, values).one(): the values
     // are always bound, never pasted into the SQL.
     async execution(sql is string, values is Sequencing<DbValue>) is Execution {
@@ -819,6 +863,7 @@ object PooledTransaction does Transaction, DbExecuting, DbPreparing {
         await origin.rollback();
         self;
     }
+
     // db.execution(sql, values) and db.query(sql, values).one(): the values
     // are always bound, never pasted into the SQL.
     async execution(sql is string, values is Sequencing<DbValue>) is Execution {
@@ -978,14 +1023,26 @@ test "pool bounds precede physical acquisition" {
     let zero = Duration(seconds: 0);
     let one = Duration(seconds: 1);
     test.ok(try {
-        PoolOptions(minimum: 2, maximum: 1, idle_timeout: zero, lifetime: zero, acquisition_timeout: one);
+        PoolOptions(
+            minimum: 2,
+            maximum: 1,
+            idle_timeout: zero,
+            lifetime: zero,
+            acquisition_timeout: one
+        );
         false;
     }
     catch e is InvalidPoolOptions {
         true;
     });
     test.ok(try {
-        PoolOptions(minimum: 0, maximum: 1, idle_timeout: zero, lifetime: zero, acquisition_timeout: zero);
+        PoolOptions(
+            minimum: 0,
+            maximum: 1,
+            idle_timeout: zero,
+            lifetime: zero,
+            acquisition_timeout: zero
+        );
         false;
     }
     catch e is InvalidPoolOptions {

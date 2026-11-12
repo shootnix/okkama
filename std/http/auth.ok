@@ -125,7 +125,11 @@ object BasicExchanging does Exchanging {
     has scoped is ScopedAuthorization;
 
     BasicExchanging(origin is Exchanging, scope is UrlParts, credentials is BasicCredentials) {
-        scoped = ScopedAuthorization(origin: origin, scope: scope, authorization: BasicAuthorization(credentials));
+        scoped = ScopedAuthorization(
+            origin: origin,
+            scope: scope,
+            authorization: BasicAuthorization(credentials)
+        );
     }
 
     async response(request is Request) is ClientResponse {

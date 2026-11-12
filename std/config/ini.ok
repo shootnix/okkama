@@ -269,7 +269,12 @@ object ParsedIni does IniContent {
     }
 
     document() is IniDocument {
-        IniParse(origin: origin, maximum_input: maximum_input, maximum_sections: maximum_sections, maximum_entries: maximum_entries).document();
+        IniParse(
+            origin: origin,
+            maximum_input: maximum_input,
+            maximum_sections: maximum_sections,
+            maximum_entries: maximum_entries
+        ).document();
     }
 
     print(to is IniWriting) is void {
@@ -469,7 +474,11 @@ hidden object IniNames {
             IniNames(settled: settled, recent: joined, count: count + 1);
         }
         else {
-            IniNames(settled: settled + joined.slice(1, joined.length()), recent: char(0).string(), count: 0);
+            IniNames(
+                settled: settled + joined.slice(1, joined.length()),
+                recent: char(0).string(),
+                count: 0
+            );
         }
     }
 }

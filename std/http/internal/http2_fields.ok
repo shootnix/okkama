@@ -30,7 +30,12 @@ object Http2RequestFields {
                     stream,
                     "authority target requires CONNECT"
                 );
-            Http2HostAgreement(fields: request::Head::headers, scheme: "", authority: target.string(), stream: stream);
+            Http2HostAgreement(
+                fields: request::Head::headers,
+                scheme: "",
+                authority: target.string(),
+                stream: stream
+            );
             [
                 HpackField(name: ":method", value: "CONNECT"),
                 HpackField(name: ":authority", value: target.string())
@@ -89,7 +94,12 @@ hidden object Http2RequestControl {
         AbsoluteTarget(url);
         let parts = url;
         let authority = parts.authority();
-        Http2HostAgreement(fields: request::Head::headers, scheme: parts::Parts::scheme, authority: authority, stream: stream);
+        Http2HostAgreement(
+            fields: request::Head::headers,
+            scheme: parts::Parts::scheme,
+            authority: authority,
+            stream: stream
+        );
         let target = request::Head::target;
         let path = match target.kind() {
             case RequestTargetKind.asterisk {
@@ -178,22 +188,22 @@ hidden object Http2AuthorityKey {
                 number;
             }
             else {
-            if scheme == "https" {
-                443;
-            }
-            else {
-                if scheme == "http" {
-                    80;
+                if scheme == "https" {
+                    443;
                 }
                 else {
-                    throw Http2Fault.detailed(
-                        Http2FaultScope.stream,
-                        1,
-                        stream,
-                        "explicit authority port required"
-                    );
+                    if scheme == "http" {
+                        80;
+                    }
+                    else {
+                        throw Http2Fault.detailed(
+                            Http2FaultScope.stream,
+                            1,
+                            stream,
+                            "explicit authority port required"
+                        );
+                    }
                 }
-            }
             }
         };
         key = (authority::Parts::host else "") + ":" + port.string();
@@ -280,7 +290,12 @@ object ParsedHttp2Response {
     has headers is Headers;
 
     ParsedHttp2Response(origin is @HpackField, stream is int, end_stream is bool) {
-        let section = Http2FieldSection(origin: origin, allowed: [":status"], request: false, stream: stream);
+        let section = Http2FieldSection(
+            origin: origin,
+            allowed: [":status"],
+            request: false,
+            stream: stream
+        );
         let value = section.pseudos().value(":status");
         let bytes = Latin1Encoded(value).bytes();
         confirm bytes.size() == 3
@@ -379,7 +394,12 @@ object ParsedHttp2Request {
                 );
             hosts.item(0);
         };
-        Http2HostAgreement(fields: section.headers(), scheme: scheme, authority: raw, stream: stream);
+        Http2HostAgreement(
+            fields: section.headers(),
+            scheme: scheme,
+            authority: raw,
+            stream: stream
+        );
         let authority = try {
             ParsedUrl("//" + raw).parts();
         }
@@ -623,7 +643,11 @@ object Http2PseudoFields {
 }
 
 test "response pseudo-status stays outside ordinary Headers" {
-    let response = ParsedHttp2Response(origin: [HpackField(":status", "200")], stream: 1, end_stream: true);
+    let response = ParsedHttp2Response(
+        origin: [HpackField(":status", "200")],
+        stream: 1,
+        end_stream: true
+    );
     test.is(response.status(), Status.ok);
     test.is(response.headers().entries().size(), 0);
 }

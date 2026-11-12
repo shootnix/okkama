@@ -430,7 +430,16 @@ object CompleteLanguageTag {
             return self.parse(preferred, registry, depth + 1);
         }
         if registry.grandfathered(lower) {
-            return LanguageTagValue(language: "", extlangs: [], script: "", region: "", variants: [], extensions: [], private_use: [], opaque: lower);
+            return LanguageTagValue(
+                language: "",
+                extlangs: [],
+                script: "",
+                region: "",
+                variants: [],
+                extensions: [],
+                private_use: [],
+                opaque: lower
+            );
         }
         let parts = lower.split("-");
         let source = LanguageTagParts(parts);
@@ -442,7 +451,16 @@ object CompleteLanguageTag {
                     else throw InvalidLocale.located(source.offset(index), "private-use subtag");
                 parts[index];
             };
-            return LanguageTagValue(language: "", extlangs: [], script: "", region: "", variants: [], extensions: [], private_use: private_use, opaque: "");
+            return LanguageTagValue(
+                language: "",
+                extlangs: [],
+                script: "",
+                region: "",
+                variants: [],
+                extensions: [],
+                private_use: private_use,
+                opaque: ""
+            );
         }
         confirm LocaleSubtag(parts[0]).language()
             else throw InvalidLocale.located(0, "primary language");
@@ -934,7 +952,10 @@ test "locale normalizes complete coordinates and parses variants" {
     test.is(Locale(language: "EN", region: "us").string(), "en-US");
     test.is(LocaleFromLanguageTag("sR-lATN-rs").locale().string(), "sr-Latn-RS");
     test.is(LocaleFromLanguageTag("de-1996").locale().variants().item(0), "1996");
-    test.is(Locale(language: "sl", script: "", region: "", variants: ["ROZAJ", "BISKE"]).string(), "sl-rozaj-biske");
+    test.is(
+        Locale(language: "sl", script: "", region: "", variants: ["ROZAJ", "BISKE"]).string(),
+        "sl-rozaj-biske"
+    );
 }
 
 test "locale absence and duplicate spelling have typed diagnostics" {

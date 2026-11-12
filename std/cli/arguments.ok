@@ -12,15 +12,27 @@ object ProcessArguments does Sequencing<@byte>, Iterating<@byte> {
     has origin is @@byte;
 
     ProcessArguments() {
-        origin = ArgumentSnapshot(arguments: process_arguments(), maximum_arguments: 4096, maximum_bytes: 1048576).items();
+        origin = ArgumentSnapshot(
+            arguments: process_arguments(),
+            maximum_arguments: 4096,
+            maximum_bytes: 1048576
+        ).items();
     }
 
     ProcessArguments(arguments is Sequencing<@byte>) {
-        origin = ArgumentSnapshot(arguments: arguments, maximum_arguments: 4096, maximum_bytes: 1048576).items();
+        origin = ArgumentSnapshot(
+            arguments: arguments,
+            maximum_arguments: 4096,
+            maximum_bytes: 1048576
+        ).items();
     }
 
     ProcessArguments(arguments is Sequencing<@byte>, maximum_arguments is int, maximum_bytes is int) {
-        origin = ArgumentSnapshot(arguments: arguments, maximum_arguments: maximum_arguments, maximum_bytes: maximum_bytes).items();
+        origin = ArgumentSnapshot(
+            arguments: arguments,
+            maximum_arguments: maximum_arguments,
+            maximum_bytes: maximum_bytes
+        ).items();
     }
 
     cursor() is Cursor<@byte> {
@@ -45,6 +57,7 @@ object ProcessArguments does Sequencing<@byte>, Iterating<@byte> {
         confirm origin.size() > 0 else throw EmptySequence.empty;
         origin[origin.size() - 1];
     }
+
     // The arguments as text, read as strict UTF-8. A bad one throws
     // InvalidArgumentEncoding with its index and byte offset.
     strings() is @string {
@@ -124,6 +137,10 @@ test "an argument that is not UTF-8 is refused with its place" {
         index == 1 && offset == 1;
     });
     test.throws(ArgumentLimitExceeded) {
-        ProcessArguments(arguments: [[97.byte()], [98.byte()]], maximum_arguments: 1, maximum_bytes: 10);
+        ProcessArguments(
+            arguments: [[97.byte()], [98.byte()]],
+            maximum_arguments: 1,
+            maximum_bytes: 10
+        );
     };
 }

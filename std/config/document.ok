@@ -95,7 +95,9 @@ hidden object JsonSettingTree {
                 confirm value.size() <= 4096 else throw SettingLimitExceeded.exceeded;
                 for value.names() -> name {
                     let child is @string = path + [name];
-                    JsonSettingTree(path: child, source: source, entries: entries, depth: depth - 1).add(value.get(name));
+                    JsonSettingTree(path: child, source: source, entries: entries, depth: depth - 1).add(
+                        value.get(name)
+                    );
                 }
             }
             case JsonKind.array_value {
@@ -108,7 +110,11 @@ hidden object JsonSettingTree {
             }
             else {
                 entries.append(
-                    SettingEntry(key: SettingKey(path), values: [JsonSettingText(value).text()], source: source)
+                    SettingEntry(
+                        key: SettingKey(path),
+                        values: [JsonSettingText(value).text()],
+                        source: source
+                    )
                 );
             }
         }
@@ -280,7 +286,12 @@ hidden object TomlSettingVisitor does TomlVisitor {
                         member.name();
                     }
                 };
-                let visitor = TomlSettingVisitor(path: child, source: source, entries: entries, depth: depth - 1);
+                let visitor = TomlSettingVisitor(
+                    path: child,
+                    source: source,
+                    entries: entries,
+                    depth: depth - 1
+                );
                 member.value().accept(visitor);
                 visitor.valid();
             }
@@ -457,7 +468,9 @@ hidden object SettingEmission {
 
 test "a JSON document becomes settings: nested members extend the key, arrays are values" {
     let settings = JsonSettings(
-        document: ParsedJson("{\"db\":{\"host\":\"h\",\"port\":5432},\"tags\":[\"a\",\"b\"],\"on\":true}").root(),
+        document: ParsedJson(
+            "{\"db\":{\"host\":\"h\",\"port\":5432},\"tags\":[\"a\",\"b\"],\"on\":true}"
+        ).root(),
         source: SettingSource(kind: SettingSourceKind.document, name: "test.json")
     );
     test.is(settings.entry(SettingKey("db", "host")).values().item(0), "h");

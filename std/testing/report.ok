@@ -114,7 +114,9 @@ object HumanTestReport {
                 self.line("  " + ReportText(TestFailureText(failures.item(at)).string()).string());
             };
             self.line(
-                TestStatusName(result::Outcome::status).string() + " " + ReportText(result::Outcome::name).string() + (if result::Outcome::skip_reason != "" {
+                TestStatusName(result::Outcome::status).string() + " " + ReportText(
+                    result::Outcome::name
+                ).string() + (if result::Outcome::skip_reason != "" {
                     " (" + ReportText(result::Outcome::skip_reason).string() + ")";
                 }
                 else {
@@ -187,7 +189,9 @@ object TapTestReport {
             }
             else {
                 "not ok ";
-            }) + (index + 1).string() + " - " + ReportText(result::Outcome::name).string().split("#").join(
+            }) + (index + 1).string() + " - " + ReportText(result::Outcome::name).string().split(
+                "#"
+            ).join(
                 "\\#"
             ) +
                 (if status == TestStatus.skipped {
@@ -261,8 +265,14 @@ object JsonTestReport {
             JsonField("status", Json(TestStatusName(result::Outcome::status).string())),
             JsonField("duration_ns", Json(result.duration().nanoseconds().string())),
             JsonField("failures", Json(items: problems)),
-            JsonField("stdout_base64", Json(Base64Encoded(result.output()::Captured::output).string())),
-            JsonField("stderr_base64", Json(Base64Encoded(result.output()::Captured::errors).string())),
+            JsonField(
+                "stdout_base64",
+                Json(Base64Encoded(result.output()::Captured::output).string())
+            ),
+            JsonField(
+                "stderr_base64",
+                Json(Base64Encoded(result.output()::Captured::errors).string())
+            ),
             JsonField("truncated", Json(result.output()::Captured::truncated)),
             JsonField("skip_reason", Json(result::Outcome::skip_reason))
         );
@@ -411,15 +421,23 @@ object JUnitTestReport {
         let capture is @XmlNode = [
             XmlElement(
                 name: XmlName("properties"),
-                children: [self.property("captured-output-truncated", if output::Captured::truncated {
-                    "true";
-                }
-                else {
-                    "false";
-                })]
+                children: [
+                    self.property("captured-output-truncated", if output::Captured::truncated {
+                        "true";
+                    }
+                    else {
+                        "false";
+                    })
+                ]
             ),
-            XmlElement(name: XmlName("system-out"), children: [XmlText(Base64Encoded(output::Captured::output).string())]),
-            XmlElement(name: XmlName("system-err"), children: [XmlText(Base64Encoded(output::Captured::errors).string())])
+            XmlElement(
+                name: XmlName("system-out"),
+                children: [XmlText(Base64Encoded(output::Captured::output).string())]
+            ),
+            XmlElement(
+                name: XmlName("system-err"),
+                children: [XmlText(Base64Encoded(output::Captured::errors).string())]
+            )
         ];
         let children is @XmlNode = (0..terminal.size() + capture.size()).map() -> index {
             if index < terminal.size() {
@@ -482,7 +500,9 @@ hidden object JUnitSeconds {
 test "empty TAP report carries an explicit skipped plan" {
     let duration = Duration(seconds: 0);
     test.is(
-        TapTestReport(TestReport(start: Instant(duration), duration: duration, seed: 0, results: [])).string(),
+        TapTestReport(
+            TestReport(start: Instant(duration), duration: duration, seed: 0, results: [])
+        ).string(),
         "TAP version 13\n1..0 # SKIP empty report\n# seed=0\n"
     );
 }

@@ -7,8 +7,8 @@ import "collections/ordering" take LowerBound, Ranked;
 import "compare" take Comparing, Order;
 import "async/atomic" take Atomic;
 import "config/key" take SettingKey;
-import "config/source" take Settings, SettingEntry, SettingOverlay, SettingSource, SettingSourceKind,
-    SettingKeyIndex;
+import "config/source" take Settings, SettingEntry, SettingOverlay, SettingSource,
+    SettingSourceKind, SettingKeyIndex;
 import "encoding/utf" take Utf8Encoded;
 import "strings/parse" take Number, Truth;
 import "terminal/width" take WrappedDisplay, DisplayWidth;
@@ -262,7 +262,11 @@ hidden object CommandSyntax {
         self.options = options_copy;
         self.flags = flags_copy;
         self.operands = operands_copy;
-        let validation = CliSyntaxValidation(options: options_copy, flags: flags_copy, operands: operands_copy);
+        let validation = CliSyntaxValidation(
+            options: options_copy,
+            flags: flags_copy,
+            operands: operands_copy
+        );
         validation.validate();
         aliases = validation.aliases();
     }
@@ -327,7 +331,9 @@ hidden object CliSyntaxValidation {
             Ranked(item: index, key: keys[index]);
         };
         let sorted = ranked.ordering();
-        let incompatible = (0..sorted.size()).reduce(CliKeyFailure(position: declarations, message: "")) -> old, index {
+        let incompatible = (0..sorted.size()).reduce(
+            CliKeyFailure(position: declarations, message: "")
+        ) -> old, index {
             if index > 0
                 && sorted[index - 1].key().order(sorted[index].key()) == Order.equal
                 && sorted[index - 1].item() < options.size() {
@@ -369,7 +375,9 @@ hidden object CliSyntaxValidation {
             operand.key();
         };
         let operand_index = SettingKeyIndex(operand_keys);
-        let prefix = (0..operands.size()).reduce(CliOperandPrefix(repeated: operands.size(), optional: operands.size())) -> prior, index {
+        let prefix = (0..operands.size()).reduce(
+            CliOperandPrefix(repeated: operands.size(), optional: operands.size())
+        ) -> prior, index {
             confirm declared.position(operand_keys[index]) < 0
                 else throw InvalidCommandSyntax.because("operand key is already declared");
             let duplicate = operand_index.position(operand_keys[index]);
@@ -548,7 +556,9 @@ hidden object CliAliasIndex {
                 flags[index - options.size()].names();
             };
             (0..aliases.size()).reduce(items) -> prior, alias {
-                prior.prefix(CliAliasSlot(spelling: aliases.item(alias), ordinal: index * 32 + alias));
+                prior.prefix(
+                    CliAliasSlot(spelling: aliases.item(alias), ordinal: index * 32 + alias)
+                );
             };
         };
         let materialized is @CliAliasSlot = CursorItems(slots.cursor()).map() -> slot {
@@ -936,7 +946,13 @@ hidden object CliParsing {
 
     CliParsing(origin is CliCommand, arguments is @string) {
         command = Atomic(origin);
-        syntax = Atomic(CommandSyntax(options: origin.options(), flags: origin.flags(), operands: origin.operands()));
+        syntax = Atomic(
+            CommandSyntax(
+                options: origin.options(),
+                flags: origin.flags(),
+                operands: origin.operands()
+            )
+        );
         let root is @CliCommand = [origin];
         path = Atomic(root);
         position = Atomic(0);
@@ -970,7 +986,11 @@ hidden object CliParsing {
         confirm command.value().commands().size() == 0
             else throw CliFailure.detailed(arguments.size(), "", "child command required");
         self.finish_operands();
-        Invocation(command: command.value(), path: path.value(), settings: Settings(entries.value().entries()));
+        Invocation(
+            command: command.value(),
+            path: path.value(),
+            settings: Settings(entries.value().entries())
+        );
     }
 
     hidden option_index(name is string) is int {
@@ -1076,16 +1096,26 @@ hidden object CliParsing {
                     text;
                 }
             };
-            entries.replace(entries.value().replaced(SettingEntry(key: option.key(), values: revised, source: source)));
+            entries.replace(
+                entries.value().replaced(
+                    SettingEntry(key: option.key(), values: revised, source: source)
+                )
+            );
         }
         else {
-            entries.replace(entries.value().replaced(SettingEntry(key: option.key(), values: [text], source: source)));
+            entries.replace(
+                entries.value().replaced(
+                    SettingEntry(key: option.key(), values: [text], source: source)
+                )
+            );
         }
     }
 
     hidden flag(flag is Flag) is void {
         entries.replace(
-            entries.value().replaced(SettingEntry(key: flag.key(), values: ["true"], source: source))
+            entries.value().replaced(
+                SettingEntry(key: flag.key(), values: ["true"], source: source)
+            )
         );
     }
 
@@ -1105,7 +1135,13 @@ hidden object CliParsing {
             let selected = children[found];
             path.replace(path.value() + [selected]);
             command.replace(selected);
-            syntax.replace(CommandSyntax(options: selected.options(), flags: selected.flags(), operands: selected.operands()));
+            syntax.replace(
+                CommandSyntax(
+                    options: selected.options(),
+                    flags: selected.flags(),
+                    operands: selected.operands()
+                )
+            );
         }
         else {
             let old = operands.value();
@@ -1150,7 +1186,11 @@ hidden object CliParsing {
                 let texts is @string = (0..size).map() -> index {
                     values[at + index].token();
                 };
-                entries.replace(entries.value().replaced(SettingEntry(key: spec.key(), values: texts, source: source)));
+                entries.replace(
+                    entries.value().replaced(
+                        SettingEntry(key: spec.key(), values: texts, source: source)
+                    )
+                );
             }
             consumed.replace(at + size);
         }
@@ -1220,14 +1260,24 @@ hidden object Usage {
                 }
                 else {
                     "";
-                } + (if option::Spec::help == "" { "\n"; } else { "\n    " + option::Spec::help + "\n"; });
+                } + (if option::Spec::help == "" {
+                    "\n";
+                }
+                else {
+                    "\n    " + option::Spec::help + "\n";
+                });
         };
         let values = values_lines.join("");
         let flags_lines is @string = origin.flags().map() -> flag {
             let names is @string = flag.names().map() -> name {
                 name;
             };
-            "  " + names.join(", ") + (if flag::Spec::help == "" { "\n"; } else { "\n    " + flag::Spec::help + "\n"; });
+            "  " + names.join(", ") + (if flag::Spec::help == "" {
+                "\n";
+            }
+            else {
+                "\n    " + flag::Spec::help + "\n";
+            });
         };
         let flags = flags_lines.join("");
         let files_lines is @string = origin.operands().map() -> operand {
@@ -1236,11 +1286,21 @@ hidden object Usage {
             }
             else {
                 "";
-            } + (if operand::Spec::help == "" { "\n"; } else { "\n    " + operand::Spec::help + "\n"; });
+            } + (if operand::Spec::help == "" {
+                "\n";
+            }
+            else {
+                "\n    " + operand::Spec::help + "\n";
+            });
         };
         let files = files_lines.join("");
         let commands_lines is @string = origin.commands().map() -> child {
-            "  " + child::Spec::name + (if child::Spec::summary == "" { "\n"; } else { "\n    " + child::Spec::summary + "\n"; });
+            "  " + child::Spec::name + (if child::Spec::summary == "" {
+                "\n";
+            }
+            else {
+                "\n    " + child::Spec::summary + "\n";
+            });
         };
         let commands = commands_lines.join("");
         let text = "Usage: " + program + options + operands + children + "\n" + origin::Spec::summary + "\n" +
@@ -1432,7 +1492,9 @@ test "options, flags and operands are read back by name" {
         flags: [Flag(name: "loud", short: "l"), Flag(name: "help", short: "h")],
         operands: [Operand(name: "FILE", count: OperandCount.repeated)],
     );
-    let call = greet.invocation(["-n", "Ada", "--times=3", "-lt", "x", "--tag", "y", "a.txt", "--", "-b.txt"]);
+    let call = greet.invocation(
+        ["-n", "Ada", "--times=3", "-lt", "x", "--tag", "y", "a.txt", "--", "-b.txt"]
+    );
     test.is(call.text("name") else "world", "Ada");
     test.is(call.int("times") else 1, 3);
     test.ok(call.flag("loud"));
@@ -1478,7 +1540,11 @@ test "typed readers name the option when a value is malformed" {
 test "a subcommand is the declared object; ancestor options stop at the child" {
     let add = CliCommand(name: "add", summary: "Add an item", operands: [Operand(name: "TEXT")]);
     let list = CliCommand(name: "list", summary: "Show items", flags: [Flag(name: "all")]);
-    let todo = CliCommand(name: "todo", flags: [Flag(name: "verbose", short: "v")], commands: [add, list]);
+    let todo = CliCommand(
+        name: "todo",
+        flags: [Flag(name: "verbose", short: "v")],
+        commands: [add, list]
+    );
     let call = todo.invocation(["-v", "add", "buy milk"]);
     test.ok(call.command() == add);
     test.ok(call.command() != list);
@@ -1511,7 +1577,13 @@ test "bad arguments are refused with their index" {
         options: [Option(name: "mode", short: "m")],
         operands: [Operand(name: "FROM"), Operand(name: "TO")],
     );
-    let failures is @string = [["--mode"], ["--colour"], ["a"], ["a", "b", "c"], ["--mode", "x", "--mode", "y", "a", "b"]].map() -> arguments {
+    let failures is @string = [
+        ["--mode"],
+        ["--colour"],
+        ["a"],
+        ["a", "b", "c"],
+        ["--mode", "x", "--mode", "y", "a", "b"]
+    ].map() -> arguments {
         try {
             copy.invocation(arguments);
             "accepted";
@@ -1537,7 +1609,10 @@ test "declarations are checked when made" {
         CliCommand(name: "x", flags: [Flag(name: "Bad")]);
     };
     test.throws(InvalidCommandSyntax) {
-        CliCommand(name: "x", operands: [Operand(name: "A", count: OperandCount.repeated), Operand(name: "B")]);
+        CliCommand(
+            name: "x",
+            operands: [Operand(name: "A", count: OperandCount.repeated), Operand(name: "B")]
+        );
     };
     test.throws(InvalidCommandSyntax) {
         CliCommand(name: "-x");

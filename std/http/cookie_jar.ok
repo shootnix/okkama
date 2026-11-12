@@ -320,10 +320,17 @@ hidden object CookieRecord does Comparing<CookieRecord> {
             domain == endpoint::Origin::domain;
         }
         else {
-            CookieDomainMatch(cookie: domain, request: endpoint::Origin::domain, address: endpoint::Origin::address).matches();
+            CookieDomainMatch(
+                cookie: domain,
+                request: endpoint::Origin::domain,
+                address: endpoint::Origin::address
+            ).matches();
         };
         if !domain_matches
-            || !CookiePathMatch(cookie: cookie.attributes()::Attributes::path, request: endpoint::Origin::path).matches() {
+            || !CookiePathMatch(
+                cookie: cookie.attributes()::Attributes::path,
+                request: endpoint::Origin::path
+            ).matches() {
                 return false;
             }
         let site = cookie.attributes()::Attributes::same_site;
@@ -340,11 +347,22 @@ hidden object CookieRecord does Comparing<CookieRecord> {
             && partition == other.partition()
             && (CookieDomainMatch(cookie: domain, request: other.domain(), address: false).matches()
             || CookieDomainMatch(cookie: other.domain(), request: domain, address: false).matches())
-            && CookiePathMatch(cookie: cookie.attributes()::Attributes::path, request: other.cookie().attributes()::Attributes::path).matches();
+            && CookiePathMatch(
+                cookie: cookie.attributes()::Attributes::path,
+                request: other.cookie().attributes()::Attributes::path
+            ).matches();
     }
 
     accessed(index is int) is CookieRecord {
-        CookieRecord(cookie: cookie, domain: domain, partition: partition, host_only: host_only, created: created, creation_order: creation_order, access_order: index);
+        CookieRecord(
+            cookie: cookie,
+            domain: domain,
+            partition: partition,
+            host_only: host_only,
+            created: created,
+            creation_order: creation_order,
+            access_order: index
+        );
     }
 
     replaced(other is CookieRecord) is CookieRecord {
@@ -397,7 +415,13 @@ hidden object CookieJarUpdate {
         let index = counter + 1;
         confirm index <= 9007199254740991
             else throw InvalidCookie.because("jar revision limit exceeded");
-        let proposed = CookieRecord(cookie: cookie, endpoint: endpoint, context: context, created: now, index: index);
+        let proposed = CookieRecord(
+            cookie: cookie,
+            endpoint: endpoint,
+            context: context,
+            created: now,
+            index: index
+        );
         let overlaid = if endpoint::Origin::secure {
             false;
         }
@@ -551,7 +575,10 @@ object SavedCookieJar {
 
     file() is FileEntry {
         let text = origin.persisted_text();
-        let scratch = TemporaryDirectory(parent: Directory(destination.path().parent()), prefix: "okkama-cookie-");
+        let scratch = TemporaryDirectory(
+            parent: Directory(destination.path().parent()),
+            prefix: "okkama-cookie-"
+        );
         defer scratch.close();
         let temporary = TemporaryFile(directory: Directory(scratch.path()), prefix: "snapshot-");
         defer temporary.close();
@@ -930,7 +957,15 @@ hidden object ParsedCookieStoreRow {
             flags: selected
         );
         let cookie = Cookie(name: fields[0], value: fields[1], attributes: attrs);
-        CookieRecord(cookie: cookie, domain: domain, partition: partition, host_only: host_only, created: created, creation_order: creation_order, access_order: access_order);
+        CookieRecord(
+            cookie: cookie,
+            domain: domain,
+            partition: partition,
+            host_only: host_only,
+            created: created,
+            creation_order: creation_order,
+            access_order: access_order
+        );
     }
 }
 

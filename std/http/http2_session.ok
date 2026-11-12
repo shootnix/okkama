@@ -47,7 +47,14 @@ object Http2Session does Closing {
         peer is Http2PeerSettings,
         limits is HttpLimits
     ) {
-        state = Http2SessionState(input: input, output: output, owner: owner, local: local, peer: peer, limits: limits);
+        state = Http2SessionState(
+            input: input,
+            output: output,
+            owner: owner,
+            local: local,
+            peer: peer,
+            limits: limits
+        );
     }
 
     closed() is bool {
@@ -331,7 +338,13 @@ hidden object Http2SessionState does Http2ReceivingEvents, Http2BodyEvents {
                 && entries.value().size() < 100
                 && entries.value().size() < capacity {
                     let stream = ids.value().next_stream();
-                    let entry = Http2StreamHolding(owner: self, stream: stream, request: request, known: known, declared: declared);
+                    let entry = Http2StreamHolding(
+                        owner: self,
+                        stream: stream,
+                        request: request,
+                        known: known,
+                        declared: declared
+                    );
                     ids.replace(ids.value().allocated());
                     sender.open(stream);
                     flow.register(stream);
@@ -624,7 +637,13 @@ hidden object Http2StreamHolding {
     async run() is bool {
         let signal = Http2HoldingSignal(ready);
         defer signal.close();
-        let entry = Http2StreamEntry(owner: owner, stream: stream, request: request, known: known, declared: declared);
+        let entry = Http2StreamEntry(
+            owner: owner,
+            stream: stream,
+            request: request,
+            known: known,
+            declared: declared
+        );
         let cleanup = Http2HoldingCleanup(entry);
         defer await cleanup.close();
         origin.replace([entry]);
@@ -747,7 +766,12 @@ hidden object Http2SessionExchange {
         let head = entry.head();
         let opening = Http2SessionBody(entry);
         let response = head.response(opening);
-        let result = Http2Exchange(request: request, response: response, information: entry.information(), lease: entry);
+        let result = Http2Exchange(
+            request: request,
+            response: response,
+            information: entry.information(),
+            lease: entry
+        );
         if entry.buffer().wire_ended()
             && entry.lengths().size() == 1
             && entry.lengths()[0].sign() == 0 {
@@ -934,7 +958,11 @@ hidden object Http2StreamEntry does Closing {
             life.replace(life.value().remote_headers(true));
             return;
         }
-        let head = ParsedHttp2Response(origin: block.fields(), stream: stream, end_stream: block.end_stream());
+        let head = ParsedHttp2Response(
+            origin: block.fields(),
+            stream: stream,
+            end_stream: block.end_stream()
+        );
         let known = Http2BodyLength(origin: head.headers(), stream: stream).known();
         let status = head.status();
         let class = StatusCode(status).class();

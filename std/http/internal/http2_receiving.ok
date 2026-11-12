@@ -24,7 +24,9 @@ object Http2ReceiveFlow does Http2BodyEvents {
             else throw InvalidState.because("invalid receive slot limit");
         self.controls = controls;
         self.maximum = maximum;
-        window = Atomic(Http2FlowWindow(scope: Http2FaultScope.connection, stream: 0, remaining: 65535));
+        window = Atomic(
+            Http2FlowWindow(scope: Http2FaultScope.connection, stream: 0, remaining: 65535)
+        );
         let empty is @Http2ReceivingSlot = [];
         slots = Atomic(empty);
         highest = Atomic(0);

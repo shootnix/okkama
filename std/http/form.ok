@@ -118,7 +118,9 @@ object ParsedMultipartForm {
     ParsedMultipartForm(origin is BodyReading, boundary is string, limits is FormLimits) {
         let checked = FormBoundary(boundary);
         confirm !origin.closed() else throw MultipartFormClosed.closed;
-        session = MultipartSession(MultipartState(origin: origin, boundary: checked.string(), limits: limits));
+        session = MultipartSession(
+            MultipartState(origin: origin, boundary: checked.string(), limits: limits)
+        );
     }
 
     parts() is MultipartParts {
@@ -232,10 +234,18 @@ hidden object FormBoundarySearch {
                 throw InvalidMultipartForm.because("boundary padding budget");
             }
             if suffix.length() - at >= 2 && suffix.slice(at, at + 2) == "\r\n" {
-                return [FormBoundarySpot(position: start, width: marker.length() + at + 2, ending: closing)];
+                return [
+                    FormBoundarySpot(
+                        position: start,
+                        width: marker.length() + at + 2,
+                        ending: closing
+                    )
+                ];
             }
             if closing && eof && after + at == text.length() {
-                return [FormBoundarySpot(position: start, width: marker.length() + at, ending: true)];
+                return [
+                    FormBoundarySpot(position: start, width: marker.length() + at, ending: true)
+                ];
             }
         }
         [];
@@ -403,7 +413,12 @@ hidden object MultipartState {
     async initialize() is bool {
         let discarded = Atomic(0);
         loop {
-            let found = FormBoundarySearch(text: tail.value(), marker: "--" + boundary, initial: true, eof: eof.ready()).first();
+            let found = FormBoundarySearch(
+                text: tail.value(),
+                marker: "--" + boundary,
+                initial: true,
+                eof: eof.ready()
+            ).first();
             if found.size() > 0 {
                 let spot = found[0];
                 confirm discarded.value() + spot.position() <= 8192
@@ -554,11 +569,18 @@ hidden object MultipartState {
                 complete.set();
                 return [];
             }
-            let available = FormBoundarySearch(text: tail.value(), marker: marker, initial: false, eof: eof.ready()).first();
+            let available = FormBoundarySearch(
+                text: tail.value(),
+                marker: marker,
+                initial: false,
+                eof: eof.ready()
+            ).first();
             if available.size() > 0 {
                 let spot = available[0];
                 safe.replace(spot.position());
-                spots.replace([FormBoundarySpot(position: 0, width: spot.width(), ending: spot.ending())]);
+                spots.replace(
+                    [FormBoundarySpot(position: 0, width: spot.width(), ending: spot.ending())]
+                );
                 next;
             }
             confirm !eof.ready() else throw InvalidMultipartForm.because("truncated part body");
@@ -1158,7 +1180,11 @@ object ParsedUrlEncodedForm {
             text.replace(text.value() + Latin1Decoded(bytes).string());
         }
         let parameters = try {
-            ParsedForm(origin: Latin1Encoded(text.value()).bytes(), maximum_parameters: limits::Limits::fields, maximum_bytes: cap).parameters();
+            ParsedForm(
+                origin: Latin1Encoded(text.value()).bytes(),
+                maximum_parameters: limits::Limits::fields,
+                maximum_bytes: cap
+            ).parameters();
         }
         catch e is QueryLimitExceeded {
             throw FormLimitExceeded.kind("fields");
