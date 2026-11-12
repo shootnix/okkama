@@ -349,36 +349,20 @@ fn declarations(file: &Path) -> Vec<Declaration> {
         .collect()
 }
 
-/// Комментарий модуля: строки `//` сразу после объявления `module`.
+/// Обзор модуля по правилу единой модели документации (`crate::doc`, #512).
 fn module_doc(file: &Path) -> String {
     let Ok(text) = std::fs::read_to_string(file) else {
         return String::new();
     };
-    let mut lines = text.lines().skip_while(|line| !line.trim_start().starts_with("module "));
-    lines.next();
-    let doc: Vec<&str> = lines
-        .skip_while(|line| line.trim().is_empty() || line.trim_start().starts_with("import "))
-        .take_while(|line| line.trim_start().starts_with("//"))
-        .map(|line| line.trim_start().trim_start_matches("//").strip_prefix(' ').unwrap_or_else(|| line.trim_start().trim_start_matches("//")))
-        .collect();
-    doc.join("\n")
+    let Ok(source) = SourceFile::new(file.display().to_string(), text) else {
+        return String::new();
+    };
+    crate::doc::module_overview(&source)
 }
 
 /// Строки `//` прямо над объявлением, начинающимся в `offset`.
 fn comment_above(source: &SourceFile, offset: u32) -> String {
-    let line = source.location(offset).line;
-    let mut lines = Vec::new();
-    let mut current = line.saturating_sub(1);
-    while current >= 1 {
-        let text = source.line_text(current).trim_start();
-        let Some(comment) = text.strip_prefix("//") else {
-            break;
-        };
-        lines.push(comment.strip_prefix(' ').unwrap_or(comment).to_string());
-        current -= 1;
-    }
-    lines.reverse();
-    lines.join("\n")
+    crate::doc::comment_above(source, offset)
 }
 
 #[cfg(test)]

@@ -1582,3 +1582,141 @@ fn traversal_steps_own_their_cursor_and_keep_no_record_of_past_ones() {
     assert!(main.contains(&format!("region.leave {step_region}, keep {successor}")), "{main}");
     assert!(!main.contains(&format!("region.track %0, {successor}")), "{main}");
 }
+
+// ---- okkama man (#512)
+
+fn std_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../std")
+}
+
+fn man(args: &[&str]) -> Output {
+    okkama()
+        .arg("man")
+        .args(args)
+        .env("OKKAMA_STDLIB_DIR", std_dir())
+        .env_remove("OKKAMA_IMPORT_DIRS")
+        .env_remove("PAGER")
+        .output()
+        .expect("run okkama man")
+}
+
+#[test]
+fn man_shows_a_std_module_with_or_without_the_std_prefix() {
+    let output = man(&["io/stdout"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let page = stdout(&output);
+    assert!(page.starts_with("NAME\n    io/stdout"), "{page}");
+    assert!(page.contains("\nVERSION\n    v1.0.0\n"), "{page}");
+    assert!(page.contains("\nPUBLIC API\n"), "{page}");
+    assert!(page.contains("    object Stdout does Writing, WritingText\n"), "{page}");
+    // Through a pipe: no escapes, at most 80 columns of prose.
+    assert!(!page.contains('\u{1b}'));
+    assert_eq!(stdout(&man(&["std/io/stdout"])), page);
+}
+
+#[test]
+fn man_shows_a_declaration_and_an_action() {
+    let output = man(&["io/stdout", "Stdout"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let page = stdout(&output);
+    assert!(page.starts_with("NAME\n    io/stdout Stdout"), "{page}");
+    assert!(page.contains("\nDECLARATION\n    object Stdout"), "{page}");
+    let output = man(&["io/stdout", "Stdout.writeln"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let page = stdout(&output);
+    assert!(page.starts_with("NAME\n    io/stdout Stdout.writeln"), "{page}");
+    assert!(page.contains("writeln(values is ...string) is void"), "{page}");
+    assert!(!page.contains("flush() is void"), "{page}");
+}
+
+#[test]
+fn man_refuses_unknown_modules_and_names_clearly() {
+    let output = man(&["no/such/module"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("no module no/such/module"), "{}", stderr(&output));
+    let output = man(&["io/stdout", "Nope"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("has no public declaration `Nope`; it has Stdout"), "{}", stderr(&output));
+    let output = man(&["io/stdout", "Stdout.nope"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("has no public member `nope`"), "{}", stderr(&output));
+    let output = man(&["../etc/passwd"]);
+    assert_eq!(output.status.code(), Some(1));
+    let output = man(&["io/../../etc"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("is not a module path"), "{}", stderr(&output));
+    let output = man(&["--format", "pdf", "io/stdout"]);
+    assert_eq!(output.status.code(), Some(2));
+}
+
+#[test]
+fn man_reads_a_file_of_ones_own_and_refuses_an_ambiguous_path() {
+    let dir = std::env::temp_dir().join(format!("okkama-cli-man-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("json.ok"),
+        "module json;\n\n// A json of my own.\n\n// Says hello.\nobject Hello {\n    Hello() {}\n}\n",
+    )
+    .unwrap();
+    let local = okkama()
+        .args(["man", "./json.ok"])
+        .current_dir(&dir)
+        .env("OKKAMA_STDLIB_DIR", std_dir())
+        .env_remove("PAGER")
+        .output()
+        .unwrap();
+    assert!(local.status.success(), "{}", stderr(&local));
+    let page = stdout(&local);
+    assert!(page.starts_with("NAME\n    json - A json of my own.\n"), "{page}");
+    assert!(!page.contains("VERSION"), "{page}");
+    let ambiguous = okkama()
+        .args(["man", "json"])
+        .current_dir(&dir)
+        .env("OKKAMA_STDLIB_DIR", std_dir())
+        .env_remove("PAGER")
+        .output()
+        .unwrap();
+    assert_eq!(ambiguous.status.code(), Some(1));
+    assert!(stderr(&ambiguous).contains("is both"), "{}", stderr(&ambiguous));
+    let std_json = okkama()
+        .args(["man", "std/json"])
+        .current_dir(&dir)
+        .env("OKKAMA_STDLIB_DIR", std_dir())
+        .env_remove("PAGER")
+        .output()
+        .unwrap();
+    assert!(stdout(&std_json).starts_with("NAME\n    json - "), "{}", stdout(&std_json));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn man_writes_markdown_and_an_index() {
+    let output = man(&["--format", "markdown", "io/stdout"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let page = stdout(&output);
+    assert!(page.starts_with("# io/stdout\n"), "{page}");
+    assert!(page.contains("### object Stdout\n\n```okkama\nobject Stdout does Writing, WritingText\n```"), "{page}");
+    let output = man(&[]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let index = stdout(&output);
+    assert!(index.starts_with("OKKAMA STANDARD LIBRARY\n"), "{index}");
+    assert!(index.contains("\nio\n"), "{index}");
+    assert!(index.contains("    io/stdout "), "{index}");
+    assert!(index.contains("\ntop level\n"), "{index}");
+}
+
+#[test]
+fn man_survives_a_reader_that_leaves_early() {
+    let mut child = okkama()
+        .args(["man", "json"])
+        .env("OKKAMA_STDLIB_DIR", std_dir())
+        .env_remove("PAGER")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take());
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.code().is_some(), "killed by a signal");
+    assert!(!stderr(&output).contains("panicked"), "{}", stderr(&output));
+}

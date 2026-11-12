@@ -14,7 +14,7 @@
 mod complete;
 mod index;
 mod lint;
-mod outline;
+pub(crate) mod outline;
 mod std_paths;
 pub use std_paths::{StdCompletion, StdKind, std_completions};
 
@@ -321,25 +321,10 @@ impl<'a> LineIndex<'a> {
 }
 
 /// Комментарий `//` непосредственно над объявлением, начинающимся в `offset`
-/// (строки без `//`, пустая строка между — конец комментария).
+/// (строки без `//`, пустая строка между — конец комментария): правило единой
+/// модели документации (`crate::doc`, #512).
 pub fn doc_comment(source: &SourceFile, offset: u32) -> String {
-    let text = source.text();
-    let offset = (offset as usize).min(text.len());
-    let line_start = text[..offset].rfind('\n').map_or(0, |at| at + 1);
-    let mut lines = Vec::new();
-    let mut end = line_start;
-    while end > 0 {
-        let previous_end = end - 1;
-        let previous_start = text[..previous_end].rfind('\n').map_or(0, |at| at + 1);
-        let line = text[previous_start..previous_end].trim();
-        let Some(comment) = line.strip_prefix("//") else {
-            break;
-        };
-        lines.push(comment.strip_prefix(' ').unwrap_or(comment).to_string());
-        end = previous_start;
-    }
-    lines.reverse();
-    lines.join("\n")
+    crate::doc::comment_above(source, offset)
 }
 
 /// Markdown наведения: сигнатура в блоке `okkama`, затем документация.

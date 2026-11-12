@@ -25,6 +25,7 @@ static ALLOCATOR: allocation_stats::Counting = allocation_stats::Counting;
 mod core;
 mod import_paths;
 mod lsp;
+mod man;
 mod ocs;
 mod repl;
 
@@ -54,6 +55,7 @@ USAGE:
     okkama check <FILE|->
     okkama fmt [-w|--check] <FILE|->...
     okkama lint <FILE>...
+    okkama man [MODULE [NAME | NAME.ACTION]] [--format text|markdown]
     okkama lsp
     okkama repl
     okkama env
@@ -73,6 +75,8 @@ COMMANDS:
     check     Check a program and its imports; report every compile-time error
     fmt       Format source files (`-w` rewrites them, `--check` only reports)
     lint      Check programs and report errors, warnings and lint findings
+    man       Show the reference page of a module, a declaration or an action,
+              from its doc comments; without MODULE, the index of std
     env       Show where okkama finds std, the native library, ICU and Java
     lsp       Run the language server (LSP over stdio) for editors
     repl      Read-eval-print loop on the IR engine: statements, expressions,
@@ -452,6 +456,7 @@ fn run(args: &[String]) -> Outcome {
             Some("ir") => Outcome::success(IR_HELP.to_string()),
             Some("build") => Outcome::success(BUILD_HELP.to_string()),
             Some("exec") => Outcome::success(EXEC_HELP.to_string()),
+            Some("man") => Outcome::success(man::HELP.to_string()),
             Some(other) => Outcome::usage(&format!("unknown command `{other}`")),
         },
         "-V" | "--version" => Outcome::success(format!("okkama {}\n", env!("CARGO_PKG_VERSION"))),
@@ -464,6 +469,7 @@ fn run(args: &[String]) -> Outcome {
         "fmt" => fmt_command(rest),
         "env" => env_command(rest),
         "lint" => lint_command(rest),
+        "man" => man::command(rest),
         "ir" => ir_command(rest),
         "build" => build_command(rest),
         "exec" => sparrow_exec_command(rest),

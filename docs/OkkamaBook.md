@@ -4448,6 +4448,62 @@ what was meant:
 | `non-exhaustive-match` | a `match` over a payload-free enum misses cases |
 | `hidden-error` | a public action throws a hidden error enum |
 
+### 28.4 `okkama man`
+
+A module documents itself in ordinary `//` comments, and `okkama man` reads
+them (#512):
+
+```text
+okkama man                          the index of std, by area
+okkama man io/stdout                a module (std/io/stdout: std only)
+okkama man io/stdout Stdout         one declaration
+okkama man io/stdout Stdout.write   one action, every overload
+okkama man ./src/app.ok             a file of your own
+okkama man --format markdown json   the page as Markdown
+```
+
+A page has the sections NAME, VERSION, SYNOPSIS, DESCRIPTION, PUBLIC API,
+ERRORS, ENGINE NOTES and SEE ALSO, each only when there is something to say.
+Signatures come from the declarations themselves; hidden declarations, fields
+and tests never appear. Enums that are `Error` go under ERRORS.
+
+Where a comment belongs:
+- The comment right after the `module` line documents the module. An older
+  overview after the imports counts too.
+- The comment right above a declaration, with no blank line between,
+  documents that declaration. This holds for the members of objects and roles
+  as well.
+- A comment that a blank line separates from everything documents nothing.
+
+```okkama
+module shop/cart v1.0.0;
+
+// A shopping cart: lines of goods and their total.
+//
+//     let cart = Cart();
+//     cart.added(sku: "tea", quantity: 2).total();
+
+import "math/decimal" take Decimal;
+
+// The lines so far; empty when made.
+object Cart {
+    // The total of all lines, exact.
+    total() is Decimal { … }
+}
+```
+
+The text of a comment is a CommonMark subset:
+- paragraphs and headings;
+- lists;
+- inline code;
+- fenced or indented code blocks;
+- links and simple tables.
+
+A heading named Synopsis, Errors, Engine notes or See also in a module overview
+fills that section. Otherwise the first code block is the synopsis. On a
+terminal the page is wrapped to its width, headings are bold unless `NO_COLOR`
+is set, and `$PAGER` shows it when set. Through a pipe it is plain text.
+
 ## Chapter 29. What Okkama Deliberately Leaves Out
 
 Explicitly not part of Okkama 1.0 — these are decisions, not gaps:
