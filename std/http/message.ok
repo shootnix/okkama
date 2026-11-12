@@ -3,14 +3,14 @@ module http/message v1.0.0;
 import "http/method" take Method, MethodName;
 import "http/status" take Status, StatusCode, StatusClass;
 import "http/header" take Headers, Header, HeaderName;
-import "http/body" take BodyOpening, EmptyBody, Content, TextBody;
+import "http/body" take BodyOpening, BodyReading, EmptyBody, Content, TextBody, UnknownBodyLength;
 import "http/version" take HttpVersion;
 import "http/target" take RequestTarget, RequestTargetSnapshot, RequestTargetMethod, AbsoluteTarget;
 import "url/value" take ParsedUrl;
-import "io/buffer" take ByteBuffer;
-import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Decoded;
 import "async/atomic" take Atomic;
+import "numbers/bigint" take BigInt;
+import "compare" take Order;
 
 // Immutable message metadata retains the body opening's declared capability.
 // It never opens, measures, closes or queries replayability during construction.
@@ -76,23 +76,51 @@ object Request {
     }
 
     // The whole body, at most limit bytes: await request.bytes(limit: 65536).
-    // A longer body throws BodyLimitExceeded.
+    // A longer body throws BodyLimitExceeded, without being read when it
+    // declares its length (#76). A body in memory is handed out as it is;
+    // a streamed one is copied once, when its chunks are joined.
     async bytes(limit is int) is @byte {
         confirm limit >= 0 else throw BodyLimitExceeded.limit(limit);
-        let input = body.reading();
+        let declared is @BigInt = try {
+            [body.length()];
+        }
+        catch e is UnknownBodyLength {
+            let unknown is @BigInt = [];
+            unknown;
+        };
+        confirm declared.size() == 0 || declared[0].order(BigInt(limit.string())) != Order.greater
+            else throw BodyLimitExceeded.limit(limit);
+        match body.contained() {
+            case Maybe.some(whole) {
+                confirm whole.size() <= limit else throw BodyLimitExceeded.limit(limit);
+                whole;
+            }
+            else {
+                await self.streamed(body.reading(), limit);
+            }
+        }
+    }
+
+    hidden async streamed(input is BodyReading, limit is int) is @byte {
         defer input.close();
-        let joined = ByteBuffer();
-        defer joined.closing().close();
-        let output = joined.writing();
+        let empty is @@byte = [];
+        let chunks = Atomic(empty);
         let taken = Atomic(0);
         loop {
             let chunk = await input.bytes(65536);
             last if chunk.size() == 0;
             taken.replace(taken.value() + chunk.size());
             confirm taken.value() <= limit else throw BodyLimitExceeded.limit(limit);
-            output.write(ByteSnapshot(chunk));
+            chunks.replace(chunks.value() + [chunk]);
         }
-        joined.content().bytes();
+        let parts = chunks.value();
+        if parts.size() == 1 {
+            return parts[0];
+        }
+        let start is @byte = [];
+        parts.reduce(start) -> all, part {
+            all + part;
+        };
     }
 
     // The whole body as UTF-8 text, at most limit bytes.
@@ -228,3 +256,43 @@ async test "a request reads its whole body within a limit" {
         await again.bytes(limit: 3);
     };
 }
+
+// Declares a million bytes and has none to read: a body that must be refused
+// by its declared length alone.
+hidden object DeclaredBody does BodyOpening {
+    DeclaredBody();
+
+    length() is BigInt {
+        BigInt("1000000");
+    }
+
+    replayable() is bool {
+        false;
+    }
+
+    contained() is Maybe<@byte> {
+        Maybe<@byte>.none;
+    }
+
+    reading() is BodyReading {
+        throw InvalidHttpMessage.because("the body was read");
+    }
+}
+
+async test "a declared length over the limit is refused before reading" {
+    let declared = Request(url: "http://example.test/upload", method: Method.post, body: DeclaredBody());
+    let refusal = try {
+        await declared.bytes(limit: 1024);
+        "read";
+    }
+    catch BodyLimitExceeded.limit(limit) {
+        "refused at " + limit.string();
+    }
+    catch failure is InvalidHttpMessage {
+        "read";
+    };
+    test.is(refusal, "refused at 1024");
+    let streamed = Request(url: "http://example.test/notes", method: Method.post, body: TextBody(text: "two words").opening());
+    test.is(await streamed.text(limit: 9), "two words");
+}
+
