@@ -32,7 +32,7 @@ import "async/cancellation" take Cancellation;
 import "async/timeout" take Within, TimedOut;
 import "time/clock" take Timing, SystemClock;
 import "time/duration" take Duration;
-import "http/body" take TextBody;
+import "http/body" take TextBody, EmptyBody, BodyOpening;
 import "http/client" take HttpClient;
 import "http/endpoint" take LoopbackEndpoints;
 import "net/ip" take IpAddress;
@@ -567,8 +567,10 @@ hidden object HttpServerPeer {
             phase.replace(0);
             seen.replace(prefix.value().size());
             if completed.value() > 0 && prefix.value().size() == 0 {
+                // As much as the next request may need, not one byte: its
+                // head usually arrives whole and needs no second read (#100).
                 let idle_deadline is HttpServerDeadline<@byte> = HttpServerDeadline(
-                    waiting: connection.input().bytes(1),
+                    waiting: connection.input().bytes(4096),
                     limit: policy.timeouts().keep_alive_timeout(),
                     clock: clock
                 );
@@ -623,21 +625,29 @@ hidden object HttpServerPeer {
                     await pending;
                     return true;
                 }
-            let continuing = HttpServerContinueInput(
-                origin: connection.input(),
-                output: connection.output(),
-                expected: expected
-            );
-            let lease = HttpServerBodyLease();
-            let body = Http1BodyReading(
-                origin: HttpServerTimedInput(continuing, policy.timeouts().body_idle_timeout(), clock),
-                owner: lease,
-                plan: plan,
-                prefix: received.remainder(),
-                head: head.headers(),
-                limits: limits
-            );
-            let request = head.request(Http1IncomingBody(body));
+            // A request without a body has nothing to read or drain (#100).
+            let incoming is HttpServerIncoming = if plan::Plan::kind == Http1BodyKind.empty && !expected {
+                HttpServerNoBody(received.remainder());
+            }
+            else {
+                let continuing = HttpServerContinueInput(
+                    origin: connection.input(),
+                    output: connection.output(),
+                    expected: expected
+                );
+                HttpServerStreamedBody(
+                    continuing: continuing,
+                    body: Http1BodyReading(
+                        origin: HttpServerTimedInput(continuing, policy.timeouts().body_idle_timeout(), clock),
+                        owner: HttpServerBodyLease(),
+                        plan: plan,
+                        prefix: received.remainder(),
+                        head: head.headers(),
+                        limits: limits
+                    )
+                );
+            };
+            let request = head.request(incoming.opening());
             let details = ExchangeDetails(endpoints: connection.endpoints(), version: head::Head::version);
             let context = HttpRequestContext(details: details, cancellation: cancelled.cancelling());
             phase.replace(1);
@@ -716,7 +726,7 @@ hidden object HttpServerPeer {
             }
             phase.replace(2);
             let original = result.response();
-            let response = if expected && !continuing.started() {
+            let response = if expected && !incoming.started() {
                 Response(
                     status: original::Head::status,
                     headers: ReplacedHeader(
@@ -746,19 +756,72 @@ hidden object HttpServerPeer {
                 || !outgoing::Plan::reuse_after_eof {
                     return true;
                 }
-            loop {
-                if body.closed() {
-                    last;
-                }
-                let reading = body.bytes(65536);
-                let bytes = await reading;
-                if bytes.size() == 0 {
-                    last;
-                }
-            }
-            prefix.replace(body.remainder());
+            let rest = await incoming.drained();
+            prefix.replace(rest);
             completed.replace(completed.value() + 1);
         }
+    }
+}
+
+// What the server reads of a request body: the opening for the handler,
+// whether 100 Continue went out, and after the response the rest of the body,
+// drained, with the bytes past it that start the next request.
+hidden role HttpServerIncoming {
+    opening() is BodyOpening;
+    started() is bool;
+    async drained() is @byte;
+}
+
+// No body (#100): nothing to read and nothing to drain.
+hidden object HttpServerNoBody does HttpServerIncoming {
+    has rest is @byte;
+
+    HttpServerNoBody(rest is @byte) {
+        self.rest = rest;
+    }
+
+    opening() is BodyOpening {
+        EmptyBody();
+    }
+
+    started() is bool {
+        false;
+    }
+
+    async drained() is @byte {
+        rest;
+    }
+}
+
+hidden object HttpServerStreamedBody does HttpServerIncoming {
+    has continuing is HttpServerContinueInput;
+    has body is Http1BodyReading;
+
+    HttpServerStreamedBody(continuing is HttpServerContinueInput, body is Http1BodyReading) {
+        self.continuing = continuing;
+        self.body = body;
+    }
+
+    opening() is BodyOpening {
+        Http1IncomingBody(body);
+    }
+
+    started() is bool {
+        continuing.started();
+    }
+
+    async drained() is @byte {
+        loop {
+            if body.closed() {
+                last;
+            }
+            let reading = body.bytes(65536);
+            let bytes = await reading;
+            if bytes.size() == 0 {
+                last;
+            }
+        }
+        body.remainder();
     }
 }
 
