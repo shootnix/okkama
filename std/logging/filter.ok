@@ -3,7 +3,7 @@ module logging/filter v1.0.0;
 import "logging/name" take LogName;
 import "logging/level" take LogLevel, LogLevelOrder;
 import "logging/record" take LogRecord, LogContext;
-import "logging/write" take LogWriting, CollectedLogs;
+import "logging/write" take LogWriting, CollectedLogs, DiscardingLogs;
 import "collections/sequence" take Sequencing;
 import "compare" take Order;
 import "logging/field" take LogFields;
@@ -157,6 +157,10 @@ object AllowedLogs does LogWriting {
             origin.write(record);
         }
     }
+
+    enabled(name is LogName, level is LogLevel) is bool {
+        allowing.allowed(name, level) && origin.enabled(name, level);
+    }
 }
 
 hidden object EnabledLog {
@@ -233,4 +237,21 @@ test "thresholds and filters take levels by dotted name" {
         ));
     }
     test.is(kept.size(), 1);
+}
+
+test "allowed logs say which levels pass before a record exists" {
+    let logs = AllowedLogs(
+        origin: CollectedLogs(),
+        level: LogLevel.info,
+        overrides: ["shop.db": LogLevel.debug]
+    );
+    test.ok(!logs.enabled(LogName("shop"), LogLevel.debug));
+    test.ok(logs.enabled(LogName("shop"), LogLevel.warning));
+    test.ok(logs.enabled(LogName(["shop", "db"]), LogLevel.debug));
+    test.ok(
+        !AllowedLogs(origin: DiscardingLogs(), level: LogLevel.debug).enabled(
+            LogName("shop"),
+            LogLevel.error
+        )
+    );
 }

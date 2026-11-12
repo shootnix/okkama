@@ -58,6 +58,10 @@ object RedactedLogs does LogWriting {
             ChangedLogRecord(origin: record, fields: LogFields(fields), causes: causes).record()
         );
     }
+
+    enabled(name is LogName, level is LogLevel) is bool {
+        origin.enabled(name, level);
+    }
 }
 
 object RedactedCauseLogs does LogWriting {
@@ -79,6 +83,10 @@ object RedactedCauseLogs does LogWriting {
         origin.write(
             ChangedLogRecord(origin: record, fields: record.context().fields(), causes: causes).record()
         );
+    }
+
+    enabled(name is LogName, level is LogLevel) is bool {
+        origin.enabled(name, level);
     }
 }
 

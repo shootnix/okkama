@@ -10,14 +10,23 @@ import "logging/field" take LogFields;
 import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
 
+// A destination of log records. enabled() answers whether a record of that
+// logger name and level would be written at all: NamedLogging asks it before
+// it reads the clock or builds the record, so a disabled level costs almost
+// nothing (#180). A writer that cannot tell answers true.
 role LogWriting {
     write(origin is LogRecord) is void;
+    enabled(name is LogName, level is LogLevel) is bool;
 }
 
 object DiscardingLogs does LogWriting {
     DiscardingLogs();
 
     write(origin is LogRecord) is void {}
+
+    enabled(name is LogName, level is LogLevel) is bool {
+        false;
+    }
 }
 
 object CollectedLogs does LogWriting {
@@ -42,6 +51,10 @@ object CollectedLogs does LogWriting {
         confirm old.size() < capacity else throw LogCollectionLimit.exceeded;
         let revised is @LogRecord = old + [record];
         origin.replace(revised);
+    }
+
+    enabled(name is LogName, level is LogLevel) is bool {
+        true;
     }
 
     size() is int {
@@ -94,6 +107,13 @@ object BroadcastLogs does LogWriting {
             throw LogDeliveryFailure.failed(failed.size(), failed[0].text());
         }
     }
+
+    // Any destination that would write it.
+    enabled(name is LogName, level is LogLevel) is bool {
+        destinations.reduce(false) -> any, destination {
+            any || destination.enabled(name, level);
+        };
+    }
 }
 
 object FallbackLogs does LogWriting {
@@ -117,6 +137,11 @@ object FallbackLogs does LogWriting {
             }
         }
     }
+
+    // The fallback writes only what the primary failed to write.
+    enabled(name is LogName, level is LogLevel) is bool {
+        primary.enabled(name, level);
+    }
 }
 
 object BestEffortLogs does LogWriting {
@@ -135,6 +160,10 @@ object BestEffortLogs does LogWriting {
         catch failure is Error {
             count.replace((count.value() + BigInt("1")));
         }
+    }
+
+    enabled(name is LogName, level is LogLevel) is bool {
+        origin.enabled(name, level);
     }
 
     failures() is BigInt {
@@ -176,4 +205,25 @@ test "collected, broadcast, fallback and best-effort writers" {
         BroadcastLogs(first, full).write(record);
     };
     test.is(first.size(), 2);
+}
+
+test "writers say which records they would write" {
+    let app = LogName("app");
+    test.ok(!DiscardingLogs().enabled(app, LogLevel.debug));
+    test.ok(CollectedLogs().enabled(app, LogLevel.debug));
+    test.ok(BroadcastLogs(DiscardingLogs(), CollectedLogs()).enabled(app, LogLevel.info));
+    test.ok(!BroadcastLogs(DiscardingLogs(), DiscardingLogs()).enabled(app, LogLevel.info));
+    test.ok(
+        !FallbackLogs(primary: DiscardingLogs(), fallback: CollectedLogs()).enabled(
+            app,
+            LogLevel.info
+        )
+    );
+    test.ok(
+        FallbackLogs(primary: CollectedLogs(), fallback: DiscardingLogs()).enabled(
+            app,
+            LogLevel.info
+        )
+    );
+    test.ok(!BestEffortLogs(DiscardingLogs()).enabled(app, LogLevel.error));
 }

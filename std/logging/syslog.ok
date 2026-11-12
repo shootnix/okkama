@@ -310,6 +310,10 @@ object SyslogLogs does LogWriting, LogDraining, Closing {
         queue.write(record);
     }
 
+    enabled(name is LogName, level is LogLevel) is bool {
+        true;
+    }
+
     async drain() is void {
         await queue.drain();
     }

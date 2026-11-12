@@ -281,6 +281,11 @@ object QueuedLogs does LogWriting, LogDraining, Closing {
         }
     }
 
+    // The queue cannot tell what its delivery keeps: filter before it.
+    enabled(name is LogName, level is LogLevel) is bool {
+        true;
+    }
+
     async drain() is void {
         await state.drain();
     }

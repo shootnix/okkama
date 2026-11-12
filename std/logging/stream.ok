@@ -101,6 +101,10 @@ object TextStreamLogs does LogWriting {
         let line = TextLogLine(origin: record, zone: zone).string();
         origin.write(Utf8Encoded(line + "\n").bytes());
     }
+
+    enabled(name is LogName, level is LogLevel) is bool {
+        true;
+    }
 }
 
 object JsonStreamLogs does LogWriting {
@@ -113,6 +117,10 @@ object JsonStreamLogs does LogWriting {
     write(record is LogRecord) is void {
         let line = JsonLogLine(record).string();
         origin.write(Utf8Encoded(line + "\n").bytes());
+    }
+
+    enabled(name is LogName, level is LogLevel) is bool {
+        true;
     }
 }
 
@@ -135,6 +143,10 @@ object TextTerminalLogs does LogWriting {
             )
         );
     }
+
+    enabled(name is LogName, level is LogLevel) is bool {
+        true;
+    }
 }
 
 object JsonTerminalLogs does LogWriting {
@@ -153,6 +165,10 @@ object JsonTerminalLogs does LogWriting {
                 style: styles.style(record::Entry::level)
             )
         );
+    }
+
+    enabled(name is LogName, level is LogLevel) is bool {
+        true;
     }
 }
 
