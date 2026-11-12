@@ -4,8 +4,8 @@ import "http/http1_head" take Http1Limits, Http1LimitExceeded, Http1RequestHead,
     ParsedHttp1RequestHead, ParsedHttp1ResponseHead;
 import "http/message" take InvalidHttpMessage;
 import "io/stream" take AsyncReading;
-import "io/decorators" take ByteSnapshot, InvalidReading;
-import "io/buffer" take ByteBuffer;
+import "io/decorators" take InvalidReading;
+import "async/atomic" take Atomic;
 import "encoding/single_byte" take Latin1Decoded;
 import "async/scope" take FutureScope, Supervising;
 
@@ -160,33 +160,28 @@ hidden object Http1HeadInput<T> {
     }
 
     async read_from(input is AsyncReading) is T {
-        let output = ByteBuffer();
-        defer output.closing().close();
-        let writing = output.writing();
-        let state = Http1BoundaryTail();
-        let first = Http1HeadBoundary(prefix: "", chunk: prefix);
-        let consumed = first.after();
-        let piece = if consumed < 0 {
-            prefix;
+        // The whole head came with the prefix: one decoding, no buffer and no
+        // read (#503).
+        let text = Latin1Decoded(prefix).string();
+        let found = text.find("\r\n\r\n") else -1;
+        if found >= 0 {
+            confirm found + 4 <= limits::Limits::head_bytes
+                else throw Http1LimitExceeded.kind("head_bytes");
+            return decode(text.slice(0, found + 4), prefix.slice(found + 4, prefix.size()), found + 4, limits);
         }
-        else {
-            prefix.slice(0, consumed);
-        };
-        confirm piece.size() <= limits::Limits::head_bytes
+        confirm prefix.size() <= limits::Limits::head_bytes
             else throw Http1LimitExceeded.kind("head_bytes");
-        writing.write(ByteSnapshot(piece));
-        if consumed >= 0 {
-            return decode(
-                Latin1Decoded(output.content().bytes()).string(),
-                prefix.slice(consumed, prefix.size()),
-                piece.size(),
-                limits
-            );
+        // Pieces of the head so far, joined once when it is complete.
+        let empty is @@byte = [];
+        let pieces = Atomic(empty);
+        if prefix.size() > 0 {
+            pieces.replace([prefix]);
         }
-        state = state.following(first.tail());
+        let used = Atomic(prefix.size());
+        let state = Http1BoundaryTail();
+        state = state.following(Http1HeadBoundary(prefix: "", chunk: prefix).tail());
         loop {
-            let used = output.content().size();
-            let remaining = limits::Limits::head_bytes - used;
+            let remaining = limits::Limits::head_bytes - used.value();
             confirm remaining > 0 else throw Http1LimitExceeded.kind("head_bytes");
             let requested = if chunk_bytes < remaining {
                 chunk_bytes;
@@ -201,21 +196,21 @@ hidden object Http1HeadInput<T> {
                 else throw InvalidHttpMessage.because("EOF before complete HTTP1 head");
             let boundary = Http1HeadBoundary(prefix: state.string(), chunk: chunk);
             let after = boundary.after();
-            let accepted = if after < 0 {
-                chunk;
-            }
-            else {
-                chunk.slice(0, after);
-            };
-            writing.write(ByteSnapshot(accepted));
             if after >= 0 {
-                return decode(
-                    Latin1Decoded(output.content().bytes()).string(),
-                    chunk.slice(after, chunk.size()),
-                    used + after,
-                    limits
-                );
+                let parts = pieces.value() + [chunk.slice(0, after)];
+                let start is @byte = [];
+                let whole is @byte = if parts.size() == 1 {
+                    parts[0];
+                }
+                else {
+                    parts.reduce(start) -> all, part {
+                        all + part;
+                    };
+                };
+                return decode(Latin1Decoded(whole).string(), chunk.slice(after, chunk.size()), used.value() + after, limits);
             }
+            pieces.replace(pieces.value() + [chunk]);
+            used.replace(used.value() + chunk.size());
             state = state.following(boundary.tail());
         }
     }
