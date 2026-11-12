@@ -17,9 +17,27 @@ const NESTED = [[1, 2], [3]];
 hidden const INNER = 7;
 const RATE is float = 2.5;
 const FLAG = 3 > 2 && !false;
+// Sparrow carries plain constants as data and builds them on first read (#506).
+const WORDS = ["alpha", "", "βeta", "say \"hi\"", "😀"];
+const NUMBERS = [0, -1, 4611686018427387903, 4611686018427387904, -4611686018427387905, 123456789012345678901234567890];
+const FLOATS = [0.5, -2.25, 1e300];
+const LETTERS = ['a', 'Ж', '😀'];
+const OCTETS = [byte(0), byte(255), byte(7)];
+const BY_NUMBER = [1: "one", 12345678901234567890: "big"];
+const BY_LETTER = ['a': 1, 'b': 2];
+const BY_FLAG = [true: "yes", false: "no"];
+const TABLES = ["a": [1, 2, 3], "b": []];
+const ROWS = [["k": 1], ["k": 2, "m": 3]];
+const DEEP = [[["x"]], [[]]];
+const EMPTY_WORDS is @string = [];
+const EMPTY_MAP is %string:int = [:];
+const MANY = [
+    "w0", "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "w10", "w11", "w12", "w13", "w14", "w15",
+    "w16", "w17", "w18", "w19", "w20", "w21", "w22", "w23", "w24", "w25", "w26", "w27", "w28", "w29", "w30", "w31"
+];
 
 main() is int {
-    let t = Tap(12);
+    let t = Tap(26);
     t = t.is(BIG.string(), "1180591620717411303424", "a big integer stays exact");
     t = t.is(HALF, rat(1, 2), "1 / 2 is a rat");
     t = t.ok(ORDERED == [Level.low, Level.high], "an array of enum cases");
@@ -32,5 +50,19 @@ main() is int {
     t = t.is(RATE, 2.5, "a typed float constant");
     t = t.ok(FLAG, "boolean operators");
     t = t.is(ORDERED.size() + NAMES.size(), 4, "constants in expressions");
+    t = t.is(WORDS.join("|"), "alpha||βeta|say \"hi\"|😀", "strings, empty, escaped and beyond ASCII");
+    t = t.is((NUMBERS[3] + NUMBERS[4] + NUMBERS[5]).string(), "123456789012345678901234567889", "integers around the small range and big ones");
+    t = t.is(FLOATS[0] + FLOATS[1], -1.75, "floats");
+    t = t.ok(FLOATS[2] > 1e299, "a large float");
+    t = t.is(LETTERS[1].code() + LETTERS[2].code(), 129558, "chars");
+    t = t.is(OCTETS[1].int() + OCTETS[2].int(), 262, "bytes");
+    t = t.is(BY_NUMBER[12345678901234567890] + BY_NUMBER[1], "bigone", "a map with integer keys, a big one too");
+    t = t.is(BY_LETTER['b'] + BY_LETTER['a'], 3, "a map with char keys");
+    t = t.is(BY_FLAG[false] + BY_FLAG[true], "noyes", "a map with bool keys");
+    t = t.is(TABLES["a"].size() + TABLES["b"].size(), 3, "a map of arrays, one empty");
+    t = t.is(ROWS[1]["m"] + ROWS[0]["k"], 4, "an array of maps");
+    t = t.is(DEEP[0][0][0] + DEEP[1].size().string(), "x1", "deep nesting");
+    t = t.is(EMPTY_WORDS.size() + EMPTY_MAP.size(), 0, "an empty array and an empty map");
+    t = t.is(MANY[31] + MANY.size().string(), "w3132", "a longer table");
     t.done();
 }

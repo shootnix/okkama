@@ -68,7 +68,7 @@ result. Comments start with `;`.
 ## 3. The shape of a file
 
 ```text
-sparrow 14                      ; format version
+sparrow 15                      ; format version
 module "name" "version"         ; the module's name and version (may be "")
 type t0 …                       ; the type table, in order
 enum enum0 "Name" ["a", "b"]    ; enums with their cases
@@ -76,11 +76,20 @@ role role0 "Name" { method "m" [t…] -> t… … }
 object obj0 "Name" { field "f" t… … does role0 [f…] destroy f… }
 handle "Name"                   ; opaque host types (handles)
 cap cap0 "Name" obj0 { field "f" f… }
-global g0 t3 f2                ; a module constant: type and init (#153)
+global g0 t3 f2 [data …]       ; a module constant: type, init (#153), value as data (#506)
 function f0 "symbol" [async] [native "…"] [intrinsic "…" [obj…] [f…]] { … }
 entry f3                        ; the program's main
 tests { test "name" f5 … }      ; or a test profile
 ```
+
+A module constant (`const`, #153) is a global: `global.get` reads it, and
+the first read builds it. A constant whose value is plain data — scalars,
+arrays and maps of them — carries that value in the file after `data`, and the
+runtime builds it there without running code (#506): a scalar is written as in
+`const` (`str "a"`, `int 7`), an array as `array N` and its N items, a map as
+`map N` and N key–value pairs. Its init then only reads the global. A table of
+thousands of strings costs a few bytes each in the file and no instructions;
+before format 15 each element was an instruction of the init.
 
 Every table is indexed by position, and the index is written out: `t3`,
 `obj2`, `role0`, `f5`, `enum1`, `cap0`. The assembler checks that the indices

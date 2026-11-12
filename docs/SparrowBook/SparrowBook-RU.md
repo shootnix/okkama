@@ -55,7 +55,7 @@ okkama exec prog.spb                       # запуск SPB внутри okkam
 
 ```text
 ; Hello from Sparrow assembly: a native writes the UTF-8 bytes of a string.
-sparrow 14
+sparrow 15
 module "hello" "1.0.0"
 type t0 int
 type t1 str
@@ -97,7 +97,7 @@ Hello, Sparrow!
 ## 3. Устройство файла
 
 ```text
-sparrow 14                      ; версия формата
+sparrow 15                      ; версия формата
 module "name" "version"         ; имя и версия модуля (можно "")
 type t0 …                       ; таблица типов по порядку
 enum enum0 "Name" ["a", "b"]    ; enum и его варианты
@@ -105,11 +105,20 @@ role role0 "Name" { method "m" [t…] -> t… … }
 object obj0 "Name" { field "f" t… … does role0 [f…] destroy f… }
 handle "Name"                   ; непрозрачные типы хоста (handle)
 cap cap0 "Name" obj0 { field "f" f… }
-global g0 t3 f2                ; константа модуля: тип и init (#153)
+global g0 t3 f2 [data …]       ; константа модуля: тип, init (#153), значение данными (#506)
 function f0 "symbol" [async] [native "…"] [intrinsic "…" [obj…] [f…]] { … }
 entry f3                        ; main программы
 tests { test "name" f5 … }      ; или тестовый профиль
 ```
+
+Константа модуля (`const`, #153) — это global: его читает `global.get`, а
+строит первое чтение. Константа, чьё значение — простые данные (скаляры,
+массивы и словари из них), несёт это значение в файле после `data`, и рантайм
+строит его сам, без исполнения кода (#506): скаляр записан как у `const`
+(`str "a"`, `int 7`), массив — `array N` и N элементов, словарь — `map N` и
+N пар ключ–значение. Init такой константы только читает global. Таблица из
+тысяч строк стоит в файле по несколько байт на элемент и ни одной инструкции;
+до формата 15 каждый элемент был инструкцией init.
 
 Каждая таблица индексируется по позиции, и индекс пишется явно: `t3`, `obj2`,
 `role0`, `f5`, `enum1`, `cap0`. Ассемблер проверяет, что индексы идут подряд,
@@ -173,7 +182,7 @@ BigInt.
 
 ```text
 ; 30! with a loop: exact integers grow into BigInt transparently.
-sparrow 14
+sparrow 15
 module "factorial" "1.0.0"
 type t0 int
 type t1 bool
@@ -233,7 +242,7 @@ $ sparrow run factorial.spb
 
 ```text
 ; Fibonacci with edge moves: the jump back writes both loop registers at once.
-sparrow 14
+sparrow 15
 module "fibonacci" "1.0.0"
 type t0 int
 type t1 bool
@@ -283,7 +292,7 @@ $ sparrow run fibonacci.spb; echo $?
 ```text
 ; Objects, a role with two implementations, dispatch through role slots and
 ; a successor (a changed copy of an immutable object).
-sparrow 14
+sparrow 15
 module "shapes" "1.0.0"
 type t0 int
 type t1 object obj0
@@ -373,7 +382,7 @@ $ sparrow run shapes.spb; echo $?
 ```text
 ; Arrays are built through a linear builder; `arr.lookup` and `map.lookup`
 ; branch on whether the element exists.
-sparrow 14
+sparrow 15
 module "collections" "1.0.0"
 type t0 int
 type t1 array t0
@@ -447,7 +456,7 @@ $ sparrow run collections.spb; echo $?
 ```text
 ; A closure value: `fn.closure` fills the leading parameters of its function
 ; with captures; `call.fn` passes the rest.
-sparrow 14
+sparrow 15
 module "closures" "1.0.0"
 type t0 int
 type t1 fn [t0] -> t0
@@ -492,7 +501,7 @@ $ sparrow run closures.spb; echo $?
 ```text
 ; Throwing and catching: an object that does the builtin Error role is
 ; thrown; a handler range sends failures to a `catch`, which matches the type.
-sparrow 14
+sparrow 15
 module "errors" "1.0.0"
 type t0 int
 type t1 str
@@ -580,7 +589,7 @@ sparrow: Sparrow assembly line 0: Sparrow @main instruction 2: register r2 may b
 ; Ownership regions: an object with `destroy` is tracked and adopted by the
 ; region of its scope; leaving the region runs `destroy`, on the failure path
 ; too (`region.unwind`).
-sparrow 14
+sparrow 15
 module "resources" "1.0.0"
 type t0 int
 type t1 str
@@ -654,7 +663,7 @@ closing data.txt
 ```text
 ; Async functions: a call makes a cold future, `await` runs it to its value,
 ; `fut.spawn` starts one now so it runs while the caller goes on.
-sparrow 14
+sparrow 15
 module "tasks" "1.0.0"
 type t0 int
 type t1 future t0
@@ -702,7 +711,7 @@ async.
 ```text
 ; A test profile: `tests` lists parameterless functions; `sparrow test` runs
 ; each on a fresh runtime and reports it. A failure fails the test.
-sparrow 14
+sparrow 15
 module "testing" "1.0.0"
 type t0 int
 type t1 bool

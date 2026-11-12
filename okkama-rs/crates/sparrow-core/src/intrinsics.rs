@@ -779,8 +779,24 @@ pub(crate) fn global(ctx: &mut Ctx, runtime: &mut Runtime, index: usize) -> Resu
     if let Some(Some(word)) = runtime.globals.get(index) {
         return Ok(*word);
     }
-    let init = runtime.loaded.program.globals[index].init.0 as usize;
-    let word = call_function(ctx, runtime, init, &[]).ok_or("the init of a constant failed")?;
+    // A constant carried as data is built here, once, without its init
+    // (#506); the data is not needed afterwards.
+    let word = match runtime.loaded.program.globals[index].data.take() {
+        Some(data) => {
+            let ty = runtime.loaded.program.globals[index].ty;
+            match crate::ops::materialize(runtime, &data, ty) {
+                Ok(word) => word,
+                Err(error) => {
+                    runtime.loaded.program.globals[index].data = Some(data);
+                    return Err(error);
+                }
+            }
+        }
+        None => {
+            let init = runtime.loaded.program.globals[index].init.0 as usize;
+            call_function(ctx, runtime, init, &[]).ok_or("the init of a constant failed")?
+        }
+    };
     runtime.constants.push((word, Repr::Ref));
     runtime.globals[index] = Some(word);
     Ok(word)
