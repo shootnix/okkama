@@ -280,7 +280,11 @@ object SyslogLogs does LogWriting, LogDraining, Closing {
         queue_options is LogQueueOptions,
         scope is Supervising<int>
     ) {
-        queue = QueuedLogs(origin: UdpSyslogDelivery(origin: origin, options: options), options: queue_options, scope: scope);
+        queue = QueuedLogs(
+            origin: UdpSyslogDelivery(origin: origin, options: options),
+            options: queue_options,
+            scope: scope
+        );
     }
 
     SyslogLogs(
@@ -293,7 +297,10 @@ object SyslogLogs does LogWriting, LogDraining, Closing {
         scope is Supervising<int>
     ) {
         queue = QueuedLogs(
-            origin: UdpSyslogDelivery(origin: origin, options: SyslogOptions(facility, host, application, 2048)),
+            origin: UdpSyslogDelivery(
+                origin: origin,
+                options: SyslogOptions(facility, host, application, 2048)
+            ),
             options: LogQueueOptions(capacity: capacity, overflow: overflow),
             scope: scope
         );
@@ -356,34 +363,79 @@ test "syslog severities follow RFC 5424" {
 }
 
 test "syslog options check header names and the payload size" {
-    let options = SyslogOptions(facility: SyslogFacility.local0, host: "", application: "api", maximum_payload: 1024);
+    let options = SyslogOptions(
+        facility: SyslogFacility.local0,
+        host: "",
+        application: "api",
+        maximum_payload: 1024
+    );
     test.is(options::Settings::host, "-");
     test.is(options::Settings::application, "api");
     test.is(options::Settings::maximum_payload, 1024);
     test.throws(InvalidSyslogOptions) {
-        SyslogOptions(facility: SyslogFacility.user, host: "my host", application: "api", maximum_payload: 1024);
+        SyslogOptions(
+            facility: SyslogFacility.user,
+            host: "my host",
+            application: "api",
+            maximum_payload: 1024
+        );
     };
     test.throws(InvalidSyslogOptions) {
-        SyslogOptions(facility: SyslogFacility.user, host: "h", application: "a".repeat(49), maximum_payload: 1024);
+        SyslogOptions(
+            facility: SyslogFacility.user,
+            host: "h",
+            application: "a".repeat(49),
+            maximum_payload: 1024
+        );
     };
     test.throws(InvalidSyslogOptions) {
-        SyslogOptions(facility: SyslogFacility.user, host: "h", application: "a", maximum_payload: 65508);
+        SyslogOptions(
+            facility: SyslogFacility.user,
+            host: "h",
+            application: "a",
+            maximum_payload: 65508
+        );
     };
 }
 
 test "a syslog message is an RFC 5424 header, a BOM and the JSON line" {
-    let options = SyslogOptions(facility: SyslogFacility.local0, host: "web1", application: "api", maximum_payload: 1024);
+    let options = SyslogOptions(
+        facility: SyslogFacility.local0,
+        host: "web1",
+        application: "api",
+        maximum_payload: 1024
+    );
     let record = SyslogTestRecord(seconds: 1700000000.rat(), level: LogLevel.info, process: 7).record();
     let bytes = SyslogMessage(record: record, options: options).bytes();
     let header = "<134>1 2023-11-14T22:13:20Z web1 api 7 - - ";
     test.is(Utf8Encoded(header).bytes(), bytes.slice(0, header.length()));
     test.is(bytes.slice(header.length(), header.length() + 3), [239.byte(), 187.byte(), 191.byte()]);
-    test.is(Utf8Encoded(JsonLogLine(record).string()).bytes(), bytes.slice(header.length() + 3, bytes.size()));
-    let precise = SyslogTestRecord(seconds: 17000000001234567.rat() / 10000000.rat(), level: LogLevel.critical, process: 0).record();
-    let kernel = SyslogOptions(facility: SyslogFacility.kernel, host: "h", application: "a", maximum_payload: 1024);
+    test.is(
+        Utf8Encoded(JsonLogLine(record).string()).bytes(),
+        bytes.slice(header.length() + 3, bytes.size())
+    );
+    let precise = SyslogTestRecord(
+        seconds: 17000000001234567.rat() / 10000000.rat(),
+        level: LogLevel.critical,
+        process: 0
+    ).record();
+    let kernel = SyslogOptions(
+        facility: SyslogFacility.kernel,
+        host: "h",
+        application: "a",
+        maximum_payload: 1024
+    );
     let prefix = "<2>1 2023-11-14T22:13:20.123456Z h a - - - ";
-    test.is(Utf8Encoded(prefix).bytes(), SyslogMessage(record: precise, options: kernel).bytes().slice(0, prefix.length()));
-    let tight = SyslogOptions(facility: SyslogFacility.user, host: "h", application: "a", maximum_payload: 20);
+    test.is(
+        Utf8Encoded(prefix).bytes(),
+        SyslogMessage(record: precise, options: kernel).bytes().slice(0, prefix.length())
+    );
+    let tight = SyslogOptions(
+        facility: SyslogFacility.user,
+        host: "h",
+        application: "a",
+        maximum_payload: 20
+    );
     test.throws(DatagramTooLarge) {
         SyslogMessage(record: record, options: tight).bytes();
     };

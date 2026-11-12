@@ -263,7 +263,10 @@ object QueuedLogs does LogWriting, LogDraining, Closing {
         overflow is LogOverflow,
         scope is Supervising<int>
     ) {
-        state = LogQueueState(origin: SynchronousLogDelivery(origin), options: LogQueueOptions(capacity: capacity, overflow: overflow));
+        state = LogQueueState(
+            origin: SynchronousLogDelivery(origin),
+            options: LogQueueOptions(capacity: capacity, overflow: overflow)
+        );
         self.scope = scope;
     }
 
@@ -414,7 +417,12 @@ hidden object FailingQueueRun {
     }
 
     async run(scope is Supervising<int>) is int {
-        let logs = QueuedLogs(origin: CollectedLogs(capacity: 0), capacity: 4, overflow: LogOverflow.reject, scope: scope);
+        let logs = QueuedLogs(
+            origin: CollectedLogs(capacity: 0),
+            capacity: 4,
+            overflow: LogOverflow.reject,
+            scope: scope
+        );
         logs.write(QueuedRecord("lost").record());
         try {
             await logs.drain();
@@ -432,7 +440,10 @@ hidden object FailingQueueRun {
 
 test "queue options keep their bounds" {
     test.is(LogQueueOptions(capacity: 1, overflow: LogOverflow.reject)::Limits::capacity, 1);
-    test.is(LogQueueOptions(capacity: 65536, overflow: LogOverflow.drop_oldest)::Limits::overflow == LogOverflow.drop_oldest, true);
+    test.is(
+        LogQueueOptions(capacity: 65536, overflow: LogOverflow.drop_oldest)::Limits::overflow == LogOverflow.drop_oldest,
+        true
+    );
     test.throws(InvalidLogQueue) {
         LogQueueOptions(capacity: 0, overflow: LogOverflow.reject);
     };
@@ -449,7 +460,9 @@ async test "a full queue rejects the record" {
     test.is(run.rejected(), true);
     test.is(run.dropped(), "1");
     test.is(run.refused(), true);
-    let messages is @string = sink.records().map() -> record { record::Entry::message; };
+    let messages is @string = sink.records().map() -> record {
+        record::Entry::message;
+    };
     test.is(messages, ["1", "2", "3"]);
 }
 
@@ -460,7 +473,9 @@ async test "a full queue drops the newest record" {
     test.is(await scope.outcome(), 0);
     test.is(run.rejected(), false);
     test.is(run.dropped(), "1");
-    let messages is @string = sink.records().map() -> record { record::Entry::message; };
+    let messages is @string = sink.records().map() -> record {
+        record::Entry::message;
+    };
     test.is(messages, ["1", "2", "3"]);
 }
 
@@ -471,7 +486,9 @@ async test "a full queue drops the oldest record" {
     test.is(await scope.outcome(), 0);
     test.is(run.rejected(), false);
     test.is(run.dropped(), "1");
-    let messages is @string = sink.records().map() -> record { record::Entry::message; };
+    let messages is @string = sink.records().map() -> record {
+        record::Entry::message;
+    };
     test.is(messages, ["1", "3", "4"]);
 }
 

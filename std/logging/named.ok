@@ -93,7 +93,13 @@ object NamedLogging does Logging {
     }
 
     child(segment is string) is NamedLogging {
-        NamedLogging(name: ChildLogName(origin: name, segment: segment).name(), destination: destination, clock: clock, fields: fields, process: process);
+        NamedLogging(
+            name: ChildLogName(origin: name, segment: segment).name(),
+            destination: destination,
+            clock: clock,
+            fields: fields,
+            process: process
+        );
     }
 
     name() is LogName {
@@ -109,7 +115,13 @@ object NamedLogging does Logging {
             LogRecord(occurred: at, level: level, message: message, context: context);
         }
         else {
-            LogRecord(occurred: at, level: level, message: message, context: context, cause: causes[0]);
+            LogRecord(
+                occurred: at,
+                level: level,
+                message: message,
+                context: context,
+                cause: causes[0]
+            );
         };
         destination.write(record);
     }
