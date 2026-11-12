@@ -19,6 +19,8 @@ import "json" take Json, JsonField;
 import "encoding/utf" take Utf8Encoded;
 import "web/internal/reply" take ReplyResponse, InvalidReply;
 
+// An HTTP failure an endpoint throws: `throw Exception.status(404, "no such
+// note")`.
 enum Exception is Error = (status(code is int, detail is string));
 
 // The problem-details reply of an HTTP failure (4xx or 5xx).
@@ -27,6 +29,7 @@ object ProblemReply does Responding {
     has message is string;
     has given is Headers;
 
+    // An `application/problem+json` reply with status and detail (RFC 9457).
     ProblemReply(status is Status, detail is string, headers is Headers = Headers()) {
         let number = StatusCode(status).number();
         confirm number >= 400 && number <= 599
@@ -36,6 +39,7 @@ object ProblemReply does Responding {
         given = headers;
     }
 
+    // The status's reason phrase.
     title() is string {
         let phrase = StatusCode(code).phrase();
         if phrase == "" {
@@ -46,6 +50,7 @@ object ProblemReply does Responding {
         }
     }
 
+    // The response it makes.
     response() is Response {
         let problem = Json(
             JsonField("type", "about:blank"),
@@ -61,6 +66,7 @@ object ProblemReply does Responding {
         ).response();
     }
 
+    // The status and detail.
     cap Problem {
         status is Status {
             code;

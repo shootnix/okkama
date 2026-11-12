@@ -34,13 +34,16 @@ import "web/request" take WebRequest;
 import "web/reply" take TextReply, JsonReply, CreatedReply;
 import "json" take Json, JsonField;
 
+// Calls a route table like an HTTP client, without a network, for tests.
 object WebTestClient {
     has routes is Handling;
 
+    // A client of routes.
     WebTestClient(routes is Handling) {
         self.routes = routes;
     }
 
+    // The table's response to request.
     async response(request is Request) is ClientResponse {
         let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(
             local: IpEndpoint(address: IpAddress("127.0.0.1"), port: 80),
@@ -71,30 +74,37 @@ object WebTestClient {
         ClientResponse(request: request, response: response, details: details);
     }
 
+    // GET target.
     async get(target is string) is ClientResponse {
         await self.response(TestRequest(target: target, method: Method.get).request());
     }
 
+    // HEAD target.
     async head(target is string) is ClientResponse {
         await self.response(TestRequest(target: target, method: Method.head).request());
     }
 
+    // OPTIONS target.
     async options(target is string) is ClientResponse {
         await self.response(TestRequest(target: target, method: Method.options).request());
     }
 
+    // DELETE target.
     async delete(target is string) is ClientResponse {
         await self.response(TestRequest(target: target, method: Method.delete).request());
     }
 
+    // POST body to target.
     async post(target is string, body is Content, headers is Headers = Headers()) is ClientResponse {
         await self.response(TestRequest(target: target, method: Method.post).request(body, headers));
     }
 
+    // PUT body to target.
     async put(target is string, body is Content, headers is Headers = Headers()) is ClientResponse {
         await self.response(TestRequest(target: target, method: Method.put).request(body, headers));
     }
 
+    // PATCH body to target.
     async patch(target is string, body is Content, headers is Headers = Headers()) is ClientResponse {
         await self.response(
             TestRequest(target: target, method: Method.patch).request(body, headers)

@@ -9,13 +9,17 @@ module regex/escape v1.0.0;
 
 import "runtime/regex" take regex_escape;
 
+// Text as a regex that matches exactly that text:
+// `Regex(EscapedRegex("1+1").string())`.
 object EscapedRegex {
     has source is string;
 
+    // The literal pattern for origin.
     EscapedRegex(origin is string) {
         source = origin;
     }
 
+    // The escaped pattern.
     string() is string {
         regex_escape(source);
     }

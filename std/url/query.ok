@@ -1,5 +1,15 @@
 module url/query v1.0.0;
 
+// The query of a URL as parameters, read like json.
+//
+//     let query = ParsedQuery("q=tea&page=2&tag=a&tag=b").parameters();
+//     query.text("q");                         // "tea"
+//     query.maybe("page").int() else 1;        // 2
+//     query.list("tag");                       // ["a", "b"]
+//     query.boolean("all");                    // MissingQueryParameter when absent
+//
+// A parameter written without `=` is present but unassigned.
+
 import "url/percent" take PercentEncoded, UrlComponent;
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
@@ -8,38 +18,46 @@ import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument;
 import "strings/parse" take Number, Truth, InvalidInteger, InvalidBoolean;
 
+// One parameter of a query.
 object QueryParameter {
     has key, text is string;
     has assignment is bool;
 
+    // A parameter without a value: `?debug`.
     QueryParameter(name is string) {
         key = name;
         text = "";
         assignment = false;
     }
 
+    // A parameter with a value.
     QueryParameter(name is string, value is string) {
         key = name;
         text = value;
         assignment = true;
     }
 
+    // Its name.
     name() is string {
         key;
     }
 
+    // Its value; "" when it has none.
     value() is string {
         text;
     }
 
+    // Whether it was written with `=`.
     assigned() is bool {
         assignment;
     }
 }
 
+// The parameters of a query, in order.
 object QueryParameters {
     has origin is @QueryParameter;
 
+    // The parameters as given.
     QueryParameters(entries is Sequencing<QueryParameter>) {
         origin = ParameterSnapshot(origin: entries, maximum: 10000).entries();
     }
@@ -50,14 +68,17 @@ object QueryParameters {
         origin = ParameterSnapshot(origin: listed, maximum: 10000).entries();
     }
 
+    // The parameters, at most maximum_parameters of them.
     QueryParameters(entries is Sequencing<QueryParameter>, maximum_parameters is int) {
         origin = ParameterSnapshot(origin: entries, maximum: maximum_parameters).entries();
     }
 
+    // Every parameter, in order.
     entries() is Sequencing<QueryParameter> {
         origin;
     }
 
+    // Whether a parameter has that name.
     membership(name is string) is bool {
         origin.reduce(false) -> found, entry {
             found || entry.name() == name;
@@ -123,6 +144,7 @@ object QueryParameters {
         QueryMaybeValue(name: name, value: Maybe<string>.none);
     }
 
+    // The encoded query, without `?`.
     string() is string {
         let encoded is @string = origin.map() -> entry {
             let name = PercentEncoded(origin: entry.name(), component: UrlComponent.data).string();
@@ -154,12 +176,14 @@ object ParsedQuery {
     has origin is string;
     has maximum_parameters, maximum_bytes is int;
 
+    // Reads a query, at most 10000 parameters and 1 MiB.
     ParsedQuery(origin is string) {
         self.origin = origin;
         maximum_parameters = 10000;
         maximum_bytes = 1048576;
     }
 
+    // Reads a query within these limits.
     ParsedQuery(origin is string, maximum_parameters is int, maximum_bytes is int) {
         confirm maximum_parameters >= 0 && maximum_bytes >= 0
             else throw InvalidArgument.because("query limits must be nonnegative");
@@ -168,6 +192,7 @@ object ParsedQuery {
         self.maximum_bytes = maximum_bytes;
     }
 
+    // The parameters; InvalidQueryEncoding for a bad escape.
     parameters() is QueryParameters {
         confirm origin.length() <= maximum_bytes
             else throw QueryLimitExceeded.kind("bytes");
@@ -186,15 +211,18 @@ object QueryMaybeValue {
     has name is string;
     has value is Maybe<string>;
 
+    // Made by QueryParameters.maybe(name); not constructed directly.
     QueryMaybeValue(name is string, value is Maybe<string>) {
         self.name = name;
         self.value = value;
     }
 
+    // The value, or none when the parameter is absent.
     text() is Maybe<string> {
         value;
     }
 
+    // The value as an int, or none.
     int() is Maybe<int> {
         match value {
             case Maybe.some(text) {
@@ -211,6 +239,7 @@ object QueryMaybeValue {
         }
     }
 
+    // The value as true or false, or none.
     boolean() is Maybe<bool> {
         match value {
             case Maybe.some(text) {
@@ -228,13 +257,16 @@ object QueryMaybeValue {
     }
 }
 
+// No parameter has that name.
 enum MissingQueryParameter is Error = (name(name is string));
 
 // A parameter whose value is not what its reader expects.
 enum InvalidQueryValue is Error = (named(name is string, value is string, expected is string));
 
+// A bad escape in the query; offset and reason say where and why.
 enum InvalidQueryEncoding is Error = (located(offset is int, reason is string));
 
+// Too many parameters or bytes; kind says which.
 enum QueryLimitExceeded is Error = (kind(kind is string));
 
 // Importable collaborators shared with form parsing; no mutable parser state
@@ -261,11 +293,14 @@ hidden object ParameterSnapshot {
     }
 }
 
+// Parameters read from bytes as a query or a form; ParsedQuery and ParsedForm
+// use it.
 object ParameterParsing {
     has origin is @byte;
     has form is bool;
     has maximum_parameters, maximum_bytes is int;
 
+    // Reads origin as a form (`+` is a space) or a query, within the limits.
     ParameterParsing(origin is @byte, form is bool, maximum_parameters is int, maximum_bytes is int) {
         confirm maximum_parameters >= 0 && maximum_bytes >= 0
             else throw InvalidArgument.because("query limits must be nonnegative");
@@ -275,6 +310,7 @@ object ParameterParsing {
         self.maximum_bytes = maximum_bytes;
     }
 
+    // The parameters.
     parameters() is QueryParameters {
         let size = origin.size();
         confirm size <= maximum_bytes else throw QueryLimitExceeded.kind("bytes");

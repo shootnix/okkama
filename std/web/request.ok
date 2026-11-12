@@ -36,6 +36,8 @@ import "async/cancellation" take Cancellation;
 // The body is read once and kept: text(), json(), form() and bytes() may be
 // called again, by an Around and then by the endpoint, and give the same bytes.
 
+// The request as an endpoint sees it: parameters, query, fields and a bounded
+// body.
 object WebRequest {
     has origin is Request;
     has details is HttpRequestContext;
@@ -59,14 +61,17 @@ object WebRequest {
         links.link(name, given);
     }
 
+    // The HTTP request underneath.
     request() is Request {
         origin;
     }
 
+    // The connection it came on.
     context() is HttpRequestContext {
         details;
     }
 
+    // Its method.
     method() is Method {
         origin::Head::method;
     }
@@ -128,6 +133,7 @@ object WebRequest {
         }
     }
 
+    // The body, at most limit bytes; BodyLimitExceeded past it.
     async bytes(limit is int) is @byte {
         confirm limit >= 0 else throw InvalidBodyLimit.limit(limit);
         let earlier = kept.value();
@@ -149,6 +155,7 @@ object WebRequest {
         content;
     }
 
+    // The body as UTF-8 text, at most limit bytes.
     async text(limit is int) is string {
         let content = await self.bytes(limit);
         try {
@@ -228,10 +235,16 @@ object WebRequest {
 // first value and list() all of them; list() of a header field gives the
 // members of its list, and of an absent name [].
 role RequestValues {
+    // The value called name; MissingRouteParameter, or the query's error, when
+    // absent.
     text(name is string) is string;
+    // The value as an int.
     int(name is string) is int;
+    // The value as true or false.
     boolean(name is string) is bool;
+    // Every value called name.
     list(name is string) is @string;
+    // The value, or none when absent.
     maybe(name is string) is RequestMaybeValue;
 }
 
@@ -242,16 +255,19 @@ object RequestMaybeValue {
     has name is string;
     has value is Maybe<string>;
 
+    // Made by maybe(name); not constructed directly.
     RequestMaybeValue(kind is string, name is string, value is Maybe<string>) {
         self.kind = kind;
         self.name = name;
         self.value = value;
     }
 
+    // The value, or none.
     text() is Maybe<string> {
         value;
     }
 
+    // The value as an int, or none.
     int() is Maybe<int> {
         match value {
             case Maybe.some(text) {
@@ -263,6 +279,7 @@ object RequestMaybeValue {
         };
     }
 
+    // The value as true or false, or none.
     boolean() is Maybe<bool> {
         match value {
             case Maybe.some(text) {
@@ -484,11 +501,13 @@ object RouteParameter {
     has name is string;
     has value is string;
 
+    // A route parameter and its value.
     RouteParameter(name is string, value is string) {
         self.name = name;
         self.value = value;
     }
 
+    // The name and value.
     cap Pair {
         name is string {
             name;
@@ -505,10 +524,12 @@ object RouteParameter {
 object WebLinks {
     has patterns is %string:string;
 
+    // No named routes.
     WebLinks() {
         patterns = [:];
     }
 
+    // Paths of named routes, to build links from.
     WebLinks(patterns is %string:string) {
         self.patterns = patterns;
     }
@@ -571,10 +592,13 @@ object WebLinks {
     }
 }
 
+// A link to a route that is not named, or a parameter it lacks.
 enum InvalidWebLink is Error = (because(reason is string));
 
+// The route has no parameter of that name.
 enum MissingRouteParameter is Error = (name(name is string));
 
+// A negative body limit.
 enum InvalidBodyLimit is Error = (limit(limit is int));
 
 // The request body as JSON. Same reading API as json.Json, but every reading
@@ -584,22 +608,27 @@ enum InvalidBodyLimit is Error = (limit(limit is int));
 object RequestJson {
     has origin is Json;
 
+    // A request's JSON body; json(limit) makes it.
     RequestJson(origin is Json) {
         self.origin = origin;
     }
 
+    // The value as Json.
     root() is Json {
         origin;
     }
 
+    // Which JSON kind it is.
     kind() is JsonKind {
         origin.kind();
     }
 
+    // Its RFC 6901 pointer, for errors.
     pointer() is string {
         origin.pointer();
     }
 
+    // This string; a 400 reply when it is not one.
     text() is string {
         try {
             origin.text();
@@ -609,6 +638,7 @@ object RequestJson {
         }
     }
 
+    // This number.
     number() is Decimal {
         try {
             origin.number();
@@ -618,6 +648,7 @@ object RequestJson {
         }
     }
 
+    // This true or false.
     boolean() is bool {
         try {
             origin.boolean();
@@ -627,6 +658,7 @@ object RequestJson {
         }
     }
 
+    // This integer of any size.
     integer() is BigInt {
         try {
             origin.integer();
@@ -636,6 +668,7 @@ object RequestJson {
         }
     }
 
+    // This int.
     int() is int {
         try {
             origin.int();
@@ -645,6 +678,7 @@ object RequestJson {
         }
     }
 
+    // How many items or members.
     size() is int {
         try {
             origin.size();
@@ -654,6 +688,7 @@ object RequestJson {
         }
     }
 
+    // The member names.
     names() is @string {
         try {
             origin.names();
@@ -663,6 +698,7 @@ object RequestJson {
         }
     }
 
+    // Whether the member exists.
     has(name is string) is bool {
         try {
             origin.has(name);
@@ -672,6 +708,7 @@ object RequestJson {
         }
     }
 
+    // The array items.
     items() is @RequestJson {
         let values = try {
             origin.items();
@@ -685,6 +722,7 @@ object RequestJson {
         wrapped;
     }
 
+    // The item at index.
     at(index is int) is RequestJson {
         try {
             RequestJson(origin.at(index));
@@ -694,6 +732,7 @@ object RequestJson {
         }
     }
 
+    // The member called name; a 400 reply when absent.
     get(name is string) is RequestJson {
         try {
             RequestJson(origin.get(name));
@@ -714,42 +753,52 @@ object RequestJson {
         }
     }
 
+    // The member as a string.
     text(name is string) is string {
         self.get(name).text();
     }
 
+    // The member as a number.
     number(name is string) is Decimal {
         self.get(name).number();
     }
 
+    // The member as an integer of any size.
     integer(name is string) is BigInt {
         self.get(name).integer();
     }
 
+    // The member as an int.
     int(name is string) is int {
         self.get(name).int();
     }
 
+    // The member as true or false.
     boolean(name is string) is bool {
         self.get(name).boolean();
     }
 
+    // The member's items.
     list(name is string) is @RequestJson {
         self.get(name).items();
     }
 }
 
+// A member that may be absent, read with a fallback.
 object RequestJsonOptional {
     has origin is JsonMaybeReader;
 
+    // Made by RequestJson.maybe(name); not constructed directly.
     RequestJsonOptional(origin is JsonMaybeReader) {
         self.origin = origin;
     }
 
+    // Whether the member is there and not null.
     present() is bool {
         origin.present();
     }
 
+    // Its pointer, for errors.
     pointer() is string {
         origin.pointer();
     }
@@ -763,6 +812,7 @@ object RequestJsonOptional {
         RequestJson(found);
     }
 
+    // The member as a string, or fallback.
     text(fallback is string) is string {
         try {
             origin.text() else fallback;
@@ -772,6 +822,7 @@ object RequestJsonOptional {
         }
     }
 
+    // The member as a number, or fallback.
     number(fallback is Decimal) is Decimal {
         try {
             origin.number() else fallback;
@@ -781,6 +832,7 @@ object RequestJsonOptional {
         }
     }
 
+    // The member as true or false, or fallback.
     boolean(fallback is bool) is bool {
         try {
             origin.boolean() else fallback;
@@ -790,6 +842,7 @@ object RequestJsonOptional {
         }
     }
 
+    // The member as an int, or fallback.
     int(fallback is int) is int {
         try {
             origin.int() else fallback;
@@ -799,6 +852,7 @@ object RequestJsonOptional {
         }
     }
 
+    // The member's items, or none.
     items() is @RequestJson {
         let values is @Json = try {
             origin.list() else [];

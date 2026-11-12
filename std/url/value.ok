@@ -1,5 +1,18 @@
 module url/value v1.0.0;
 
+// URLs read and taken apart (RFC 3986).
+//
+//     let parts = ParsedUrl("https://user@example.org:8443/a/b?q=1#top").parts();
+//     parts::Parts::scheme;                    // "https"
+//     parts::Parts::host else "";              // "example.org"
+//     parts::Parts::port else 443;             // 8443
+//     parts::Parts::path;                      // "/a/b"
+//     ParsedQuery(parts::Parts::query else "").parameters().text("q");   // "1"
+//     parts.resolved(ParsedUrl("../c").parts()).string();
+//
+// The parts are kept as written; string() writes the URL back, and resolved()
+// and normalized() follow RFC 3986.
+
 import "url/percent" take PercentEncoded, PercentDecoded, UrlComponent, InvalidPercentEncoding;
 import "encoding/utf" take InvalidUtf8;
 import "error" take InvalidArgument;
@@ -55,6 +68,7 @@ hidden object UrlFragment {
     }
 }
 
+// Text that is not a URL; offset and reason say where and why.
 enum InvalidUrl is Error = (located(offset is int, reason is string));
 
 // Importable implementation collaborator, not a complete URL parser.
@@ -62,6 +76,7 @@ object UrlComponentText {
     has origin is string;
     has component is UrlComponent;
 
+    // origin checked and kept as written for component.
     UrlComponentText(origin is string, component is UrlComponent) {
         confirm component == UrlComponent.query
             || component == UrlComponent.fragment
@@ -225,6 +240,7 @@ object UrlComponentText {
     }
 }
 
+// What a URL's host is: none, a name, an IP address, or another form.
 enum UrlHostKind = (empty, name, address, future);
 
 hidden role UrlHost {
@@ -629,12 +645,16 @@ hidden object UrlAsciiText {
     }
 }
 
+// The URL has no `//authority`.
 enum MissingUrlAuthority is Error = (missing);
 
+// The URL names no port.
 enum MissingUrlPort is Error = (missing);
 
+// The host is an address, not a name.
 enum UrlHostIsNotName is Error = (not_name);
 
+// The host is a name, not an address.
 enum UrlHostIsNotAddress is Error = (not_address);
 
 hidden object UrlPieces {
@@ -1080,6 +1100,7 @@ object UrlParts {
         }
     }
 
+    // The URL, canonical.
     string() is string {
         (if scheme_text == "" {
             "";
@@ -1132,6 +1153,7 @@ object UrlParts {
         );
     }
 
+    // What its host is.
     host_kind() is UrlHostKind {
         self.host_value().kind();
     }
@@ -1163,10 +1185,12 @@ object UrlParts {
 object ParsedUrl {
     has origin is string;
 
+    // Reads origin; nothing is checked until parts() is asked.
     ParsedUrl(origin is string) {
         self.origin = origin;
     }
 
+    // Its parts; InvalidUrl says where the text is wrong.
     parts() is UrlParts {
         UrlCanonical(pieces: UrlReading(origin).pieces()).parts();
     }

@@ -47,17 +47,20 @@ import "crypto/x509/trust" take PemTrustStore;
 // port 0 picks a free port, local_endpoint() reports it, and server.drain(limit:)
 // drains it.
 
+// A route table served on an address and port.
 object WebApplication {
     has routes is WebRoutes;
     has policy is ServerPolicy;
     has clock is Timing;
 
+    // Serves routes with the default policy.
     WebApplication(routes is WebRoutes) {
         self.routes = routes;
         policy = ServerPolicy();
         clock = SystemClock();
     }
 
+    // Serves routes with policy, on clock.
     WebApplication(routes is WebRoutes, policy is ServerPolicy, clock is Timing) {
         self.routes = routes;
         self.policy = policy;
@@ -85,6 +88,7 @@ object WebApplication {
         );
     }
 
+    // Serves on address and port until the process stops.
     async listen(address is string, port is int) is void {
         let stopping = AppStopping();
         defer await stopping.close();

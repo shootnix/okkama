@@ -16,17 +16,21 @@ import "regex/match" take RegexMatching;
 import "regex/pattern" take Regex;
 import "regex/search" take RegexMatches;
 
+// A text cut at every match of a pattern: `RegexParts(origin: "a, b,c", regex:
+// Regex(",\\s*"))`.
 object RegexParts does Iterating<string> {
     has source is string;
     has pattern is Regex;
     has maximum is int;
 
+    // origin cut at every match.
     RegexParts(origin is string, regex is Regex) {
         source = origin;
         pattern = regex;
         maximum = -1;
     }
 
+    // origin cut at the first limit matches; the rest is the last part.
     RegexParts(origin is string, regex is Regex, limit is int) {
         confirm limit > 0 else throw InvalidRegexSplitLimit.limit(limit);
         source = origin;
@@ -34,6 +38,7 @@ object RegexParts does Iterating<string> {
         maximum = limit;
     }
 
+    // Walks the parts.
     cursor() is Cursor<string> {
         RegexPartsCursor(
             origin: source,
@@ -112,6 +117,7 @@ hidden object RegexPartsCursor does Cursor<string> {
     }
 }
 
+// A negative limit.
 enum InvalidRegexSplitLimit is Error = (limit(limit is int));
 
 test "parts keep empty fields and honour a limit" {

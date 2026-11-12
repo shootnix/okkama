@@ -25,14 +25,25 @@ import "strings/parse" take Number, InvalidInteger;
 import "runtime/regex" take RegexMatchState, regex_match_capture_count, regex_match_capture_name,
     regex_match_capture_index, regex_match_capture_span;
 
+// One match: its text, where it is and its capture groups.
 role RegexMatching {
+    // The matched text.
     text() is string;
+    // Where the match is in the input.
     range() is RegexRange;
+    // The capture group at index, 1 for the first; MissingRegexCapture past the
+    // last.
     capture(index is int) is RegexCapture;
+    // The named group; MissingRegexGroup when the pattern has none.
     group(name is string) is RegexCapture;
+    // Every capture group, in order.
     captures() is @RegexCapture;
+    // The named group's text; UnmatchedRegexCapture when it did not take part.
     text(name is string) is string;
+    // The named group's text as an int.
     int(name is string) is int;
+    // The named group, or none when it did not take part:
+    // `found.maybe("port").int() else 80`.
     maybe(name is string) is RegexMaybeValue;
 }
 
@@ -42,19 +53,23 @@ object RegexMatch does RegexMatching {
     has source is string;
     has state is RegexMatchState;
 
+    // Made by the searches; not constructed directly.
     RegexMatch(origin is string, state is RegexMatchState) {
         source = origin;
         self.state = state;
     }
 
+    // The matched text.
     text() is string {
         self.capture(0).text();
     }
 
+    // Where the match is in the input.
     range() is RegexRange {
         self.capture(0).range();
     }
 
+    // The capture group at index.
     capture(index is int) is RegexCapture {
         let count = regex_match_capture_count(state);
         confirm index >= 0 && index <= count
@@ -67,12 +82,14 @@ object RegexMatch does RegexMatching {
         );
     }
 
+    // The named group.
     group(name is string) is RegexCapture {
         let index = regex_match_capture_index(state, name);
         confirm index >= 0 else throw MissingRegexGroup.name(name);
         RegexCapture(origin: source, state: state, index: index, name: name);
     }
 
+    // Every capture group, in order.
     captures() is @RegexCapture {
         let count = regex_match_capture_count(state);
         let values is @RegexCapture = (1..count + 1).map() -> index {
@@ -125,15 +142,18 @@ object RegexMaybeValue {
     has name is string;
     has value is Maybe<string>;
 
+    // Made by maybe(name); not constructed directly.
     RegexMaybeValue(name is string, value is Maybe<string>) {
         self.name = name;
         self.value = value;
     }
 
+    // The group's text, or none.
     text() is Maybe<string> {
         value;
     }
 
+    // The group's text as an int, or none.
     int() is Maybe<int> {
         match value {
             case Maybe.some(text) {
@@ -158,6 +178,7 @@ object RegexCapture {
     has position is int;
     has label is string;
 
+    // Made by capture() and group(); not constructed directly.
     RegexCapture(
         origin is string,
         state is RegexMatchState,
@@ -170,6 +191,7 @@ object RegexCapture {
         label = name;
     }
 
+    // Its index and name ("" for an unnamed group).
     cap Group {
         index is int {
             position;
@@ -180,16 +202,19 @@ object RegexCapture {
         }
     }
 
+    // Whether the group took part in the match.
     matched() is bool {
         self.span()["start"] >= 0;
     }
 
+    // Its text; UnmatchedRegexCapture when it did not take part.
     text() is string {
         confirm self.matched() else throw UnmatchedRegexCapture.index(position);
         let span = self.span();
         source.slice(span["start"], span["end"]);
     }
 
+    // Where it is; UnmatchedRegexCapture when it did not take part.
     range() is RegexRange {
         confirm self.matched() else throw UnmatchedRegexCapture.index(position);
         let span = self.span();
@@ -201,10 +226,13 @@ object RegexCapture {
     }
 }
 
+// No capture group has that index.
 enum MissingRegexCapture is Error = (index(index is int));
 
+// No group has that name.
 enum MissingRegexGroup is Error = (name(name is string));
 
+// The group did not take part in the match.
 enum UnmatchedRegexCapture is Error = (index(index is int));
 
 // A named group whose text is not what its reader expects.
