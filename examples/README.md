@@ -206,11 +206,12 @@ program writes `HttpClient()` and a real URL.
 
 ## web, http/websocket
 
-Each program serves on a free loopback port and calls itself, so it needs no
-network, and drains its server at the end.
+Each program except `web/hello.ok` serves on a free loopback port and calls
+itself, so it needs no network, and drains its server at the end.
 
 | Program | Task |
 |---|---|
+| `web/hello.ok` | the smallest web application: one route answers «Привет, Вася!» from `?name=Вася`, «Привет, Незнакомец!» without it; it serves on port 8080 until stopped, for a browser (no `.expected`, `check.py` skips it) |
 | `web/notes.ok` | a JSON service: routes under a prefix, a path parameter, a JSON body, a query parameter with a default, a fallback |
 | `http/websocket/echo.ok` | a WebSocket server checks the Origin against its own URL and answers each message; the client sends, reads and closes |
 

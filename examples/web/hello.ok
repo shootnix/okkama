@@ -1,0 +1,38 @@
+module examples/web/hello v1.0.0;
+
+import "web/app" take WebApplication;
+import "web/routing" take WebRoutes, Get;
+import "web/request" take WebRequest;
+import "web/reply" take Text;
+import "http/handler" take HandlingResult;
+import "io/stdout" take Stdout;
+
+// The smallest web application: GET /?name=Вася answers «Привет, Вася!», and
+// without a name «Привет, Незнакомец!». It serves until stopped (Ctrl+C):
+//
+//     okkama run examples/web/hello.ok
+//     open http://127.0.0.1:8080/?name=Вася
+//
+// It has no .expected file, so examples/check.py does not run it.
+
+object Greeter {
+    Greeter();
+
+    async hello(request is WebRequest) is HandlingResult {
+        let name = request.query("name") else "";
+        let who = if name == "" {
+            "Незнакомец";
+        }
+        else {
+            name;
+        };
+        Text(status: 200, text: "Привет, " + who + "!\n");
+    }
+}
+
+async main() is int {
+    let greeter = Greeter();
+    Stdout().writeln("Слушаю http://127.0.0.1:8080/?name=Вася");
+    await WebApplication(WebRoutes(Get(path: "/", endpoint: greeter.hello))).listen("127.0.0.1", 8080);
+    0;
+}
