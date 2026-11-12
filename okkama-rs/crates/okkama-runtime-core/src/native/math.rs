@@ -709,12 +709,39 @@ pub fn execute(native: Native, args: &[Value], context: &Context) -> Result<Valu
                 ));
             }
             let span = crate::integer::subtract(stop, start);
-            let two_64 = IntValue::from_big(Big::from_u64(2).power(64));
-            let threshold = crate::integer::divide(&two_64, &span).expect("non-zero").1;
+            // Выборка — пара выходов (старший, младший) на каждое 64-битное
+            // слово, которое нужно числу span - 1; до 2^64 это одна пара, как
+            // всегда. Выборка ниже 2^(64·слов) mod span тянется заново (#507).
+            if let Some(small) = span.to_i64() {
+                // span < 2^63: та же выборка и тот же ответ без больших чисел.
+                let small = small.unsigned_abs();
+                let threshold = small.wrapping_neg() % small;
+                loop {
+                    let high = pcg.advance();
+                    let low = pcg.advance();
+                    let sample = (high << 32) | low;
+                    if sample >= threshold {
+                        let offset = IntValue::from_u128(u128::from(sample % small));
+                        return Ok(Value::Int(crate::integer::add(start, &offset)));
+                    }
+                }
+            }
+            let largest = crate::integer::subtract(&span, &IntValue::from_i64(1));
+            let words = largest.to_big().bits().div_ceil(64).max(1);
+            let exponent = u32::try_from(64 * words).map_err(|_| {
+                failure("core.random", "resource_exhausted", native, "Random range is too wide")
+            })?;
+            let modulus = IntValue::from_big(Big::from_u64(2).power(exponent));
+            let threshold = crate::integer::divide(&modulus, &span).expect("non-zero").1;
+            let word = Big::from_u64(2).power(64);
             loop {
-                let high = pcg.advance();
-                let low = pcg.advance();
-                let sample = IntValue::from_u128((u128::from(high) << 32) + u128::from(low));
+                let mut sample = Big::zero();
+                for _ in 0..words {
+                    let high = pcg.advance();
+                    let low = pcg.advance();
+                    sample = sample.multiply(&word).add(&Big::from_u64((high << 32) | low));
+                }
+                let sample = IntValue::from_big(sample);
                 if crate::integer::compare(&sample, &threshold).is_ge() {
                     let offset = crate::integer::divide(&sample, &span).expect("non-zero").1;
                     return Ok(Value::Int(crate::integer::add(start, &offset)));
