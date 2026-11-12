@@ -1,6 +1,7 @@
 module checksum/adler32 v1.0.0;
 
 import "checksum/state" take Checksumming, InvalidChecksumInitial;
+import "runtime/checksum" take checksum_adler32;
 
 // Adler-32 of an immutable byte chunk continued from an unsigned 32-bit seed.
 // Adler32() and Adler32(bytes) use seed 1. Adler32(origin: bytes, initial: initial) rejects seeds
@@ -40,13 +41,9 @@ object Adler32 does Checksumming {
         self.initial = initial;
     }
 
+    // Computed by the runtime (#193).
     checksum() is int {
-        let normalized = (((initial >> 16) % 65521) << 16) | ((initial & 65535) % 65521);
-        origin.reduce(normalized) -> checksum, octet {
-            let low = ((checksum & 65535) + octet.int()) % 65521;
-            let high = ((checksum >> 16) + low) % 65521;
-            (high << 16) | low;
-        };
+        checksum_adler32(origin, initial);
     }
 
     state(origin is @byte) is ^Adler32 {

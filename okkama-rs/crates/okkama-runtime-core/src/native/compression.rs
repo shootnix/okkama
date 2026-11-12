@@ -68,6 +68,47 @@ fn crc32(crc: u32, bytes: &[u8]) -> u32 {
     !c
 }
 
+/// CRC-16/CCITT register `crc` (polynomial 0x1021, MSB first, no reflection,
+/// no final xor) continued by bytes (#193).
+fn crc16(crc: u16, bytes: &[u8]) -> u16 {
+    let mut c = crc;
+    for &byte in bytes {
+        c ^= u16::from(byte) << 8;
+        for _ in 0..8 {
+            c = if c & 0x8000 != 0 { (c << 1) ^ 0x1021 } else { c << 1 };
+        }
+    }
+    c
+}
+
+/// Adler-32 (RFC 1950) packed sums `seed` continued by bytes; both halves of
+/// the seed are first reduced modulo 65521, as zlib does (#193).
+fn adler32(seed: u32, bytes: &[u8]) -> u32 {
+    const MODULUS: u32 = 65521;
+    // The largest run whose sums cannot overflow a u32 before reduction.
+    const RUN: usize = 5552;
+    let mut low = (seed & 0xFFFF) % MODULUS;
+    let mut high = (seed >> 16) % MODULUS;
+    for run in bytes.chunks(RUN) {
+        for &byte in run {
+            low += u32::from(byte);
+            high += low;
+        }
+        low %= MODULUS;
+        high %= MODULUS;
+    }
+    (high << 16) | low
+}
+
+/// The `initial` of a checksum native: 0..=`maximum`.
+fn seed(native: Native, value: &Value, maximum: u32) -> Result<u32, Error> {
+    super::support::int(value)?
+        .to_i64()
+        .and_then(|seed| u32::try_from(seed).ok())
+        .filter(|seed| *seed <= maximum)
+        .ok_or_else(|| failure(native, Fail("invalid_input", "checksum seed out of range".into())))
+}
+
 struct Compressor {
     engine: Box<CompressorOxide>,
     format: Format,
@@ -336,12 +377,27 @@ pub fn handles(native: Native) -> bool {
             | CompressionCodecFinish
             | CompressionCodecEnded
             | CompressionCodecRemainder
+            | ChecksumChecksumCrc32
+            | ChecksumChecksumCrc16
+            | ChecksumChecksumAdler32
     )
 }
 
 pub fn execute(native: Native, args: &[Value], arrays: &mut ArrayHeap) -> Result<Value, Error> {
     use Native::*;
     match native {
+        ChecksumChecksumCrc32 => {
+            let initial = seed(native, &args[1], u32::MAX)?;
+            Ok(super::support::int_value(i64::from(crc32(initial, &bytes(&args[0], arrays)?))))
+        }
+        ChecksumChecksumCrc16 => {
+            let initial = seed(native, &args[1], 0xFFFF)? as u16;
+            Ok(super::support::int_value(i64::from(crc16(initial, &bytes(&args[0], arrays)?))))
+        }
+        ChecksumChecksumAdler32 => {
+            let initial = seed(native, &args[1], u32::MAX)?;
+            Ok(super::support::int_value(i64::from(adler32(initial, &bytes(&args[0], arrays)?))))
+        }
         CompressionCodecOpen => {
             let format = match args[0].as_string()? {
                 "deflate" => Format::Deflate,
@@ -422,6 +478,18 @@ mod tests {
             assert_eq!(roundtrip(format, &data, 13), data);
             assert_eq!(roundtrip(format, b"", 1), b"");
         }
+    }
+
+    #[test]
+    fn crc16_and_adler32_reference_checks() {
+        assert_eq!(crc16(0xFFFF, b"123456789"), 10673);
+        assert_eq!(crc16(0, b"123456789"), 12739);
+        assert_eq!(adler32(1, b"Wikipedia"), 300286872);
+        assert_eq!(adler32(1, &[0, 128, 255]), 33685888);
+        assert_eq!(adler32(adler32(1, b"Wiki"), b"pedia"), 300286872);
+        let long = vec![255u8; 100_000];
+        let stepwise = long.iter().fold(1u32, |sum, byte| adler32(sum, &[*byte]));
+        assert_eq!(adler32(1, &long), stepwise);
     }
 
     #[test]

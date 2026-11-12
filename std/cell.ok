@@ -2,32 +2,24 @@ module cell v1.0.0;
 
 import "async/atomic" take Atomic;
 
-/*
-=head1 NAME
-
-cell - a mutable value for synchronous code
-
-=head1 DESCRIPTION
-
-Cell(value: initial) holds one value; value() reads it and replace(value) puts a
-new one. It is the mutable variable of synchronous code: an accumulator a loop
-updates, a position a parser advances, headers gathered while reading.
-
-    let total = Cell(0);
-    for items -> item { total.replace(total.value() + item.price()); }
-    total.value();
-
-A Cell stays in synchronous code, and the compiler checks it: an async action
-cannot create, receive or use one, and an object's field cannot hold one. With
-no suspension point in synchronous code, every read and write is whole with
-respect to tasks. State shared between tasks is async/atomic's Atomic.
-
-A Cell is a value container, not a resource: it needs no close() and holds no
-OS resource. Values read from it are ordinary immutable Okkama values; cells
-compare by identity.
-
-=cut
-*/
+// A mutable value for synchronous code.
+//
+// Cell(value: initial) holds one value; value() reads it and replace(value) puts a
+// new one. It is the mutable variable of synchronous code: an accumulator a loop
+// updates, a position a parser advances, headers gathered while reading.
+//
+//     let total = Cell(0);
+//     for items -> item { total.replace(total.value() + item.price()); }
+//     total.value();
+//
+// A Cell stays in synchronous code, and the compiler checks it: an async action
+// cannot create, receive or use one, and an object's field cannot hold one. With
+// no suspension point in synchronous code, every read and write is whole with
+// respect to tasks. State shared between tasks is async/atomic's Atomic.
+//
+// A Cell is a value container, not a resource: it needs no close() and holds no
+// OS resource. Values read from it are ordinary immutable Okkama values; cells
+// compare by identity.
 object Cell<T> {
     has state is Atomic<T>;
 

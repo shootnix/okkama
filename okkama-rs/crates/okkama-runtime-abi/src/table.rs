@@ -619,5 +619,8 @@ natives! {
     FsRootRootedEntryPiece = 633, "runtime/fs_root@1::rooted_entry_piece/3", "async (RootedEntryState, int, int) -> @byte";
     NumberTextFloatParseValid = 634, "runtime/number_text@1::float_parse_valid/1", "(string) -> bool";
     NumberTextFloatParse = 635, "runtime/number_text@1::float_parse/1", "(string) -> float";
+    ChecksumChecksumCrc32 = 636, "runtime/checksum@1::checksum_crc32/2", "(@byte, int) -> int";
+    ChecksumChecksumCrc16 = 637, "runtime/checksum@1::checksum_crc16/2", "(@byte, int) -> int";
+    ChecksumChecksumAdler32 = 638, "runtime/checksum@1::checksum_adler32/2", "(@byte, int) -> int";
 }
 // retired: 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258

@@ -1,13 +1,14 @@
 module checksum/crc v1.0.0;
 
 import "checksum/state" take Checksumming, InvalidChecksumInitial;
+import "runtime/checksum" take checksum_crc32, checksum_crc16;
 
 // Immutable CRC values over byte chunks. Both objects compute lazily in checksum()
 // without mutation or memoization. state(bytes) computes the receiver's value,
 // then returns a successor retaining only the new chunk and resulting seed.
 // Input arrays and earlier states remain unchanged; branches and repeats are
 // valid. Empty chunks preserve the initial value. No I/O or owned resources.
-// Each byte takes eight bounded bit steps; results are non-negative integers.
+// The runtime computes them (#193); results are non-negative integers.
 // These checksums are not cryptographic digests. Encode text explicitly.
 //
 //     let first = Crc32([byte(49), byte(50), byte(51), byte(52)]);
@@ -40,18 +41,9 @@ object Crc32 does Checksumming {
         self.initial = initial;
     }
 
+    // Computed by the runtime (#193), the same CRC as eight bit steps a byte.
     checksum() is int {
-        let result = origin.reduce(initial ^ 0xFFFFFFFF) -> checksum, octet {
-            (0..8).reduce(checksum ^ octet.int()) -> bits, index {
-                if (bits & 1) != 0 {
-                    (bits >> 1) ^ 0xEDB88320;
-                }
-                else {
-                    bits >> 1;
-                }
-            };
-        };
-        result ^ 0xFFFFFFFF;
+        checksum_crc32(origin, initial);
     }
 
     state(origin is @byte) is ^Crc32 {
@@ -85,17 +77,9 @@ object Crc16Ccitt does Checksumming {
         self.initial = initial;
     }
 
+    // Computed by the runtime (#193).
     checksum() is int {
-        origin.reduce(initial) -> checksum, octet {
-            (0..8).reduce(checksum ^ (octet.int() << 8)) -> bits, index {
-                if (bits & 0x8000) != 0 {
-                    ((bits << 1) ^ 0x1021) & 0xFFFF;
-                }
-                else {
-                    (bits << 1) & 0xFFFF;
-                }
-            };
-        };
+        checksum_crc16(origin, initial);
     }
 
     state(origin is @byte) is ^Crc16Ccitt {

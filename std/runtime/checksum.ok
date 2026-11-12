@@ -1,0 +1,45 @@
+module runtime/checksum v1.0.0;
+
+// Checksums of checksum/crc and checksum/adler32 (#193), continued from a
+// seed. checksum_crc32 takes and gives a finalized CRC-32/ISO-HDLC (as zlib);
+// checksum_crc16 runs the CCITT register (polynomial 0x1021, MSB first, no
+// reflection, no final xor) from the seed; checksum_adler32 gives the packed
+// sums of RFC 1950, normalizing both halves of the seed.
+native checksum_crc32(origin is @byte, initial is int) is int;
+
+native checksum_crc16(origin is @byte, initial is int) is int;
+
+native checksum_adler32(origin is @byte, initial is int) is int;
+
+test "reference vectors" {
+    let digits = [
+        byte(49),
+        byte(50),
+        byte(51),
+        byte(52),
+        byte(53),
+        byte(54),
+        byte(55),
+        byte(56),
+        byte(57)
+    ];
+    test.is(checksum_crc32(digits, 0), 3421780262);
+    test.is(checksum_crc16(digits, 65535), 10673);
+    test.is(
+        checksum_adler32(
+            [
+                byte(87),
+                byte(105),
+                byte(107),
+                byte(105),
+                byte(112),
+                byte(101),
+                byte(100),
+                byte(105),
+                byte(97)
+            ],
+            1
+        ),
+        300286872
+    );
+}
