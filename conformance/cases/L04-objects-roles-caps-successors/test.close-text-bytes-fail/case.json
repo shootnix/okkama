@@ -1,0 +1,37 @@
+{
+  "schema": "ocs-case/1",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "TEST.RUNNER",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "test",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#14"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "status": "mandatory",
+  "id": "L04.test.close-text-bytes-fail",
+  "title": "failed float, text and byte assertions make the test run exit 1",
+  "purpose": "Run embedded tests whose float, text and byte assertions fail.",
+  "expect": {
+    "outcome": "success",
+    "exit_status": 1,
+    "stdout": "ignore",
+    "justification": "The embedded test runner's report format is not normative (spec 14 fixes only the exit status)."
+  },
+  "provenance": {
+    "origin": "authored for #187 from the cited contract text",
+    "expected_basis": "spec 14: 1.0 and 1.5 are 0.5 apart, beyond 0.1; a negative tolerance fails; the texts part at scalar 5; the byte arrays differ in size; the CLI returns 1 when any test fails."
+  }
+}

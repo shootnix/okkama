@@ -3103,11 +3103,19 @@ Every running test receives an automatic `test` binding—no import:
 test.ok(condition);
 test.is(actual, expected);
 test.isnt(actual, expected);
+test.close(actual, expected, tolerance);
+test.text(actual, expected);
+test.bytes(actual, expected);
 test.fail("explanation");
 test.skip("reason");
 ```
 
 `ok` requires exact bool; `is` and `isnt` use strict/deep Okkama equality;
+`close` takes three floats and passes when the values are equal or no further
+apart than the tolerance (a NaN is never close; a negative tolerance fails);
+`text` compares two strings and reports where they part: the scalar, its line
+and column in the expected text, and eight scalars around it; `bytes` compares
+two `@byte` arrays and reports the first differing offset, or the sizes;
 `fail` records its string. `skip` ends the test and reports it as skipped
 (`--- SKIP: name` and the reason): the code after it does not run, no `catch`
 takes it, and cleanup runs as for any failure. A skipped test does not fail the
@@ -4933,7 +4941,8 @@ runtime foundations so that stdlib APIs are not grown around temporary
 interpreter shortcuts. The defined minimum for examples is:
 
 - intrinsic test assertions are implemented as contextual `test.is`,
-  `test.isnt`, `test.ok`, and `test.fail`; bundled `test/more` provides the
+  `test.isnt`, `test.ok`, `test.close`, `test.text`, `test.bytes` and
+  `test.fail`; bundled `test/more` provides the
   reusable object facade;
 - simple string behaviors such as `.uppercase()` / `.lower()`;
 - array helpers only if 1.0 examples keep needing them.

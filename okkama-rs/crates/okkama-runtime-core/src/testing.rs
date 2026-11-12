@@ -155,3 +155,124 @@ pub fn java_double(value: f64) -> String {
     format!("{sign}{}.{fraction}E{exponent}", &digits[..1])
 }
 
+
+// ----- test.close, test.text, test.bytes (#187) -----
+// The IR engine and Sparrow write these messages; Tests.java on the JVM
+// writes the same.
+
+/// `test.close(actual, expected, tolerance)`: within `tolerance` of each
+/// other. A NaN is never close; a negative or NaN tolerance is a failure.
+pub fn close_failure(
+    actual: f64,
+    expected: f64,
+    tolerance: f64,
+    text: impl Fn(f64) -> String,
+) -> Option<String> {
+    if tolerance.is_nan() || tolerance < 0.0 {
+        return Some(format!("tolerance must be zero or more, got {}", text(tolerance)));
+    }
+    if actual == expected || (actual - expected).abs() <= tolerance {
+        return None;
+    }
+    Some(format!(
+        "expected {} within {}, got {} (off by {})",
+        text(expected),
+        text(tolerance),
+        text(actual),
+        text((actual - expected).abs())
+    ))
+}
+
+/// `test.text(actual, expected)`: where the texts part, in scalars and as
+/// line and column of the expected text, with eight scalars around it.
+pub fn text_failure(actual: &str, expected: &str) -> Option<String> {
+    if actual == expected {
+        return None;
+    }
+    let left: Vec<char> = actual.chars().collect();
+    let right: Vec<char> = expected.chars().collect();
+    let at = left.iter().zip(&right).take_while(|(a, e)| a == e).count();
+    let line = 1 + right[..at].iter().filter(|&&c| c == '\n').count();
+    let column = 1 + at - right[..at].iter().rposition(|&c| c == '\n').map_or(0, |p| p + 1);
+    let start = at.saturating_sub(8);
+    let window = |chars: &[char]| -> String {
+        quoted(&chars[start.min(chars.len())..(at + 8).min(chars.len())])
+    };
+    Some(format!(
+        "text differs at scalar {at} (line {line}, column {column}): expected {}, got {}; lengths {} and {}",
+        window(&right),
+        window(&left),
+        right.len(),
+        left.len()
+    ))
+}
+
+/// `test.bytes(actual, expected)`: the first offset where they part.
+pub fn bytes_failure(actual: &[u8], expected: &[u8]) -> Option<String> {
+    if actual == expected {
+        return None;
+    }
+    let at = actual.iter().zip(expected).take_while(|(a, e)| a == e).count();
+    if at < actual.len() && at < expected.len() {
+        return Some(format!(
+            "bytes differ at offset {at}: expected 0x{:02x}, got 0x{:02x}; sizes {} and {}",
+            expected[at],
+            actual[at],
+            expected.len(),
+            actual.len()
+        ));
+    }
+    Some(format!(
+        "bytes differ in size: expected {}, got {}; equal up to offset {at}",
+        expected.len(),
+        actual.len()
+    ))
+}
+
+/// Text in double quotes, with \\, \", \n, \r, \t and \u{…} for other controls.
+fn quoted(chars: &[char]) -> String {
+    let mut out = String::from("\"");
+    for &c in chars {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => out.push_str(&format!("\\u{{{:x}}}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+#[cfg(test)]
+mod checks {
+    use super::*;
+
+    #[test]
+    fn messages_name_where_values_part() {
+        let text = |value: f64| value.to_string();
+        assert_eq!(close_failure(1.0, 1.05, 0.1, text), None);
+        assert_eq!(
+            close_failure(1.0, 1.5, 0.1, text).unwrap(),
+            "expected 1.5 within 0.1, got 1 (off by 0.5)"
+        );
+        assert!(close_failure(f64::NAN, 1.0, 1.0, text).is_some());
+        assert!(close_failure(1.0, 1.0, -1.0, text).unwrap().starts_with("tolerance"));
+        assert_eq!(text_failure("abc", "abc"), None);
+        assert_eq!(
+            text_failure("one\ntwo", "one\ntoo").unwrap(),
+            "text differs at scalar 5 (line 2, column 2): expected \"one\\ntoo\", got \"one\\ntwo\"; lengths 7 and 7"
+        );
+        assert_eq!(
+            bytes_failure(&[1, 2, 3], &[1, 9, 3]).unwrap(),
+            "bytes differ at offset 1: expected 0x09, got 0x02; sizes 3 and 3"
+        );
+        assert_eq!(
+            bytes_failure(&[1, 2], &[1, 2, 3]).unwrap(),
+            "bytes differ in size: expected 3, got 2; equal up to offset 2"
+        );
+    }
+}

@@ -908,6 +908,90 @@ public final class Intrinsics {
         }
     }
 
+    // test.close, test.text, test.bytes (#187): the messages of
+    // okkama-runtime-core/src/testing.rs.
+    public static void test_close(Object actual, Object expected, Object tolerance) {
+        double a = (Double) actual;
+        double e = (Double) expected;
+        double t = (Double) tolerance;
+        if (Double.isNaN(t) || t < 0.0) {
+            Tests.fail("tolerance must be zero or more, got " + Tests.show(tolerance));
+            return;
+        }
+        if (a == e || Math.abs(a - e) <= t) {
+            return;
+        }
+        Tests.fail("expected " + Tests.show(expected) + " within " + Tests.show(tolerance) + ", got "
+            + Tests.show(actual) + " (off by " + Tests.show(Math.abs(a - e)) + ")");
+    }
+
+    public static void test_text(Object actual, Object expected) {
+        String a = (String) actual;
+        String e = (String) expected;
+        if (a.equals(e)) {
+            return;
+        }
+        int[] left = a.codePoints().toArray();
+        int[] right = e.codePoints().toArray();
+        int at = 0;
+        while (at < left.length && at < right.length && left[at] == right[at]) {
+            at++;
+        }
+        int line = 1;
+        int lineStart = 0;
+        for (int i = 0; i < at; i++) {
+            if (right[i] == '\n') {
+                line++;
+                lineStart = i + 1;
+            }
+        }
+        int start = Math.max(0, at - 8);
+        Tests.fail("text differs at scalar " + at + " (line " + line + ", column " + (at - lineStart + 1)
+            + "): expected " + quoted(right, start, at + 8) + ", got " + quoted(left, start, at + 8)
+            + "; lengths " + right.length + " and " + left.length);
+    }
+
+    private static String quoted(int[] scalars, int start, int stop) {
+        StringBuilder out = new StringBuilder("\"");
+        for (int i = Math.min(start, scalars.length); i < Math.min(stop, scalars.length); i++) {
+            int c = scalars[i];
+            switch (c) {
+                case '\\' -> out.append("\\\\");
+                case '"' -> out.append("\\\"");
+                case '\n' -> out.append("\\n");
+                case '\r' -> out.append("\\r");
+                case '\t' -> out.append("\\t");
+                default -> {
+                    if (c < 0x20 || c == 0x7f) {
+                        out.append("\\u{").append(Integer.toHexString(c)).append('}');
+                    } else {
+                        out.appendCodePoint(c);
+                    }
+                }
+            }
+        }
+        return out.append('"').toString();
+    }
+
+    public static void test_bytes(Object actual, Object expected) {
+        byte[] a = Natives.toBytes((java.util.List<?>) actual);
+        byte[] e = Natives.toBytes((java.util.List<?>) expected);
+        if (java.util.Arrays.equals(a, e)) {
+            return;
+        }
+        int at = 0;
+        while (at < a.length && at < e.length && a[at] == e[at]) {
+            at++;
+        }
+        if (at < a.length && at < e.length) {
+            Tests.fail(String.format("bytes differ at offset %d: expected 0x%02x, got 0x%02x; sizes %d and %d",
+                at, e[at] & 0xff, a[at] & 0xff, e.length, a.length));
+        } else {
+            Tests.fail("bytes differ in size: expected " + e.length + ", got " + a.length
+                + "; equal up to offset " + at);
+        }
+    }
+
     public static void test_fail(Object message) {
         Tests.fail((String) message);
     }

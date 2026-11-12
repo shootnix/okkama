@@ -76,6 +76,9 @@ pub enum Intrinsic {
     TestIsnt,
     TestFail,
     TestSkip,
+    TestClose,
+    TestText,
+    TestBytes,
 }
 
 impl Intrinsic {
@@ -147,6 +150,9 @@ impl Intrinsic {
             "okkama.test.isnt" => TestIsnt,
             "okkama.test.fail" => TestFail,
             "okkama.test.skip" => TestSkip,
+            "okkama.test.close" => TestClose,
+            "okkama.test.text" => TestText,
+            "okkama.test.bytes" => TestBytes,
             _ => return None,
         })
     }
@@ -494,13 +500,27 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
             Value(runtime.heap.int(remaining), Repr::Int)
         }
         FakeSet | FakeGet | FakeHas | FakeRemove | FakeClear | FakeSize => fake_storage(runtime, function, intrinsic, args),
-        TestOk | TestIs | TestIsnt | TestFail => {
+        TestOk | TestIs | TestIsnt | TestFail | TestClose | TestText | TestBytes => {
             if runtime.host.as_ref().is_none_or(|h| h.test_failures.is_none()) {
                 return program_failure("The test capability is available only inside a running test");
             }
             let message = match intrinsic {
                 TestOk => (args[0] == 0).then(|| "expected true, got false".to_owned()),
                 TestFail => Some(runtime.heap.text(args[0]).to_owned()),
+                TestClose => okkama_runtime_core::testing::close_failure(
+                    f64::from_bits(args[0]),
+                    f64::from_bits(args[1]),
+                    f64::from_bits(args[2]),
+                    crate::scalar::float_text,
+                ),
+                TestText => okkama_runtime_core::testing::text_failure(
+                    runtime.heap.text(args[0]),
+                    runtime.heap.text(args[1]),
+                ),
+                TestBytes => okkama_runtime_core::testing::bytes_failure(
+                    &runtime.heap.byte_view(args[0]),
+                    &runtime.heap.byte_view(args[1]),
+                ),
                 _ => {
                     let f = &runtime.loaded.program.functions[function];
                     let ty = f.registers[f.params[0].0 as usize];

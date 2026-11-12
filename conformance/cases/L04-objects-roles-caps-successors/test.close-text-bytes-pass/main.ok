@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+test "floats within a tolerance" {
+    test.close(0.1 + 0.2, 0.3, 1.0e-12);
+    test.close(1.0, 1.0, 0.0);
+    test.close(-2.5, -2.4, 0.1000001);
+}
+
+test "equal text and bytes" {
+    test.text("one\ntwo 😀", "one\ntwo 😀");
+    test.text("", "");
+    test.bytes([byte(0), byte(255)], [byte(0), byte(255)]);
+    let nothing is @byte = [];
+    test.bytes(nothing, nothing);
+}
+
+main() is int {
+    0;
+}
