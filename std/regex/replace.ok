@@ -390,3 +390,25 @@ test "a broken template is refused with its offset" {
         "offset 0"
     );
 }
+
+test "a regex replaces the way a literal substitution does" {
+    for [
+        ["\\d+", "a1 b22 c"],
+        ["x*", "abc"],
+        ["\\d", "none"],
+        ["a|", "banana"],
+        ["😀", "a😀b😀"],
+        ["$", "ab"],
+        ["", ""],
+    ] -> pair {
+        let regex = Regex(pair[0]);
+        test.is(
+            regex.replaced(origin: pair[1], by: "<$1>"),
+            RegexSubstitution(
+                origin: pair[1],
+                regex: regex,
+                replacing: LiteralRegexReplacement("<$1>")
+            ).string()
+        );
+    }
+}

@@ -4,8 +4,8 @@ import "collections/iteration" take Cursor, Iterating, IterationEnded;
 import "regex/pattern" take Regex, RegexQuery, RegexMatchObservation, RegexRangeOutsideInput,
     NoRegexMatch;
 import "regex/range" take RegexRange;
-import "regex/match" take RegexCapture, RegexMatch, RegexMatching, UnmatchedRegexCapture,
-    MissingRegexGroup;
+import "regex/match" take RegexCapture, RegexMatch, RegexMatching, RegexMaybeValue,
+    UnmatchedRegexCapture, MissingRegexGroup;
 
 // Mandatory searches are matches themselves: read them directly.
 // Work is lazy and memoized by an opaque query state on the first observation.
@@ -70,6 +70,18 @@ object FirstRegexMatch does RegexMatching {
     captures() is @RegexCapture {
         observation.match().captures();
     }
+
+    text(name is string) is string {
+        observation.match().text(name);
+    }
+
+    int(name is string) is int {
+        observation.match().int(name);
+    }
+
+    maybe(name is string) is RegexMaybeValue {
+        observation.match().maybe(name);
+    }
 }
 
 object PrefixRegexMatch does RegexMatching {
@@ -112,6 +124,18 @@ object PrefixRegexMatch does RegexMatching {
     captures() is @RegexCapture {
         observation.match().captures();
     }
+
+    text(name is string) is string {
+        observation.match().text(name);
+    }
+
+    int(name is string) is int {
+        observation.match().int(name);
+    }
+
+    maybe(name is string) is RegexMaybeValue {
+        observation.match().maybe(name);
+    }
 }
 
 object EntireRegexMatch does RegexMatching {
@@ -153,6 +177,18 @@ object EntireRegexMatch does RegexMatching {
 
     captures() is @RegexCapture {
         observation.match().captures();
+    }
+
+    text(name is string) is string {
+        observation.match().text(name);
+    }
+
+    int(name is string) is int {
+        observation.match().int(name);
+    }
+
+    maybe(name is string) is RegexMaybeValue {
+        observation.match().maybe(name);
     }
 }
 
@@ -328,5 +364,73 @@ test "matches walk every non-overlapping match" {
             found.text();
         }.join(","),
         ""
+    );
+}
+
+test "a regex finds what the search objects find" {
+    let span = (found is RegexMatching) is string {
+        found.range()::Bounds::start.string() + "-" + found.range()::Bounds::end.string();
+    };
+    for [
+        ["\\d+", "a1 b22 c"],
+        ["x*", "abc"],
+        ["\\d", "none"],
+        ["a|", "banana"],
+        ["^", "ab"],
+        ["$", "ab"],
+        ["\\d*", "a1"],
+        ["\\w+", "one two"],
+        ["😀|я", "a😀я😀"],
+        ["", ""],
+    ] -> pair {
+        let regex = Regex(pair[0]);
+        let all = regex.all(pair[1]).map() -> each {
+            span(each);
+        }.join(",");
+        let lazy = RegexMatches(origin: pair[1], regex: regex).map() -> each {
+            span(each);
+        }.join(",");
+        test.is(all, lazy);
+        test.is(regex.found(pair[1]), RegexMatches(origin: pair[1], regex: regex).found());
+        let first = match regex.first(pair[1]) {
+            case Maybe.some(each) {
+                span(each);
+            }
+            else {
+                "none";
+            }
+        };
+        let mandatory = try {
+            span(FirstRegexMatch(origin: pair[1], regex: regex));
+        }
+        catch error is NoRegexMatch {
+            "none";
+        };
+        test.is(first, mandatory);
+    }
+}
+
+test "search results read named groups too" {
+    let date = FirstRegexMatch(
+        origin: "due 2026-11",
+        regex: Regex("(?<year>\\d{4})-(?<month>\\d{2})(-(?<day>\\d{2}))?")
+    );
+    test.is(date.int("year"), 2026);
+    test.is(date.text("month"), "11");
+    test.is(date.maybe("day").text() else "", "");
+    test.is(PrefixRegexMatch(origin: "7x", regex: Regex("(?<n>\\d)")).int("n"), 7);
+    test.is(EntireRegexMatch(origin: "7", regex: Regex("(?<n>\\d)")).text("n"), "7");
+    let walked = RegexMatches(origin: "a=1 b=2", regex: Regex("(?<key>\\w)=(?<value>\\d)")).map() -> each {
+        each.text("key") + (each.int("value") * 10).string();
+    }.join(" ");
+    test.is(walked, "a10 b20");
+    test.is(
+        try {
+            date.int("month") + date.int("day");
+        }
+        catch UnmatchedRegexCapture.index(index) {
+            -index;
+        },
+        -4
     );
 }
