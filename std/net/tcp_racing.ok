@@ -12,13 +12,17 @@ import "collections/sequence" take Sequencing;
 import "time/clock" take Timing;
 import "time/duration" take Duration;
 
+// Happy Eyeballs (RFC 8305): attempts on several addresses, started a stagger
+// apart, the first to connect wins.
 object TcpRacing {
     has race is TcpEndpointRace;
 
+    // Races origins with the default stagger.
     TcpRacing(origins is Sequencing<IpEndpoint>) {
         race = TcpEndpointRace(origins);
     }
 
+    // Races origins delay apart with options on clock.
     TcpRacing(
         origins is Sequencing<IpEndpoint>,
         options is TcpOptions,
@@ -28,6 +32,7 @@ object TcpRacing {
         race = TcpEndpointRace(origins: origins, options: options, delay: delay, clock: clock);
     }
 
+    // The first connection made; the others are closed.
     async connection() is TcpConnection {
         await race.connection();
     }

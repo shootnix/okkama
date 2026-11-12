@@ -1,5 +1,19 @@
 module net/tls v1.0.0;
 
+// TLS 1.2 and 1.3 over a TCP connection, client and server.
+//
+//     let plain = await TcpConnecting(address: address, port: 443).connection();
+//     let secure = await TlsClientHandshake(
+//         origin: plain,
+//         server: DnsCertificateIdentity(HostName("example.org")),
+//         policy: TlsClientPolicy(trust: SystemTrustStore()),
+//     ).connection();
+//     defer secure.close();
+//     await secure.output().write(request);
+//
+// A server takes a TlsIdentity (PEM certificates and key) in a TlsServerPolicy.
+// ALPN protocols are offered in the policy; details() tells what was agreed.
+
 import "crypto/x509/trust" take TrustStore, TrustedCertificates;
 import "collections/set" take Set, OrderedSet;
 import "collections/sequence" take Sequencing;
@@ -27,6 +41,7 @@ import "net/ip" take IpAddress;
 import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 
+// TLS 1.2 or 1.3.
 enum TlsVersion = (tls1_2, tls1_3);
 
 // Reusable immutable inputs, without a server identity, clock, filesystem
@@ -36,6 +51,7 @@ object TlsClientPolicy {
     has enabled is Set<TlsVersion>;
     has advertised is @string;
 
+    // Trusts trust; TLS 1.2 and 1.3, no ALPN.
     TlsClientPolicy(trust is TrustStore) {
         roots = TrustedCertificates(trust.certificates());
         let defaults is Set<TlsVersion> = OrderedSet([TlsVersion.tls1_2, TlsVersion.tls1_3]);
@@ -43,6 +59,7 @@ object TlsClientPolicy {
         advertised = [];
     }
 
+    // Trusts trust with these versions and ALPN protocols.
     TlsClientPolicy(
         trust is TrustStore,
         versions is Set<TlsVersion>,
@@ -78,19 +95,23 @@ object TlsClientPolicy {
         advertised = values;
     }
 
+    // The trusted roots.
     trust() is TrustStore {
         roots;
     }
 
+    // The versions offered.
     versions() is Set<TlsVersion> {
         enabled;
     }
 
+    // The ALPN protocols offered, such as `http/1.1`.
     protocols() is Sequencing<string> {
         advertised;
     }
 }
 
+// A policy with no versions or a bad protocol name.
 enum InvalidTlsPolicy is Error = (because(reason is string));
 
 // A server's certificate chain and private key, from PEM text (#209):
@@ -108,6 +129,7 @@ object TlsIdentity {
     has certificates is string;
     has key is string;
 
+    // A certificate chain and its private key, both PEM.
     TlsIdentity(certificates is string, key is string) {
         TlsIdentityText(certificates: certificates, key: key).check();
         self.certificates = certificates;
@@ -131,6 +153,7 @@ object TlsServerPolicy {
     has own is TlsIdentity;
     has enabled is Set<TlsVersion>;
 
+    // Serves identity with versions, TLS 1.2 and 1.3 unless told.
     TlsServerPolicy(
         identity is TlsIdentity,
         versions is Set<TlsVersion> = OrderedSet([TlsVersion.tls1_2, TlsVersion.tls1_3])
@@ -141,10 +164,12 @@ object TlsServerPolicy {
         enabled = versions;
     }
 
+    // The identity.
     identity() is TlsIdentity {
         own;
     }
 
+    // The versions accepted.
     versions() is Set<TlsVersion> {
         enabled;
     }
@@ -159,6 +184,7 @@ object TlsServerHandshake {
     has policy is TlsServerPolicy;
     has protocols is @string;
 
+    // A server handshake on origin, choosing among protocols.
     TlsServerHandshake(
         origin is TcpConnection,
         policy is TlsServerPolicy,
@@ -173,6 +199,7 @@ object TlsServerHandshake {
         self.protocols = names;
     }
 
+    // Completes the handshake; TlsFailure when it fails.
     async connection() is TlsConnection {
         let mask = if policy.versions().membership(TlsVersion.tls1_2) {
             1;
@@ -208,6 +235,7 @@ object TlsServerHandshake {
     }
 }
 
+// Certificates or a key that cannot be read.
 enum InvalidTlsIdentity is Error = (because(reason is string));
 
 // The DER inside the PEM text of an identity.
@@ -262,10 +290,13 @@ hidden object TlsIdentityText {
     }
 }
 
+// Where a TLS failure happened.
 enum TlsPhase = (handshaking, verifying, reading, writing, closing);
 
+// The handshake or a record failed; phase and reason say where and why.
 enum TlsFailure is Error = (detailed(phase is TlsPhase, reason is string));
 
+// A client handshake to be made.
 object TlsClientHandshake {
     has origin is TlsTcpOrigin;
     has ends is ConnectionEndpoints<IpEndpoint>;
@@ -273,6 +304,7 @@ object TlsClientHandshake {
     has policy is TlsClientPolicy;
     has clock is Timing;
 
+    // A handshake on origin that checks the server is server.
     TlsClientHandshake(
         origin is TcpConnection,
         server is CertificateIdentity,
@@ -285,6 +317,7 @@ object TlsClientHandshake {
         clock = SystemClock();
     }
 
+    // The same, checking certificate dates on clock.
     TlsClientHandshake(
         origin is TcpConnection,
         server is CertificateIdentity,
@@ -298,6 +331,8 @@ object TlsClientHandshake {
         self.clock = clock;
     }
 
+    // Completes the handshake; TlsFailure when it or the certificate check
+    // fails.
     async connection() is TlsConnection {
         let mask = if policy.versions().membership(TlsVersion.tls1_2) {
             1;
@@ -391,12 +426,14 @@ hidden object TlsUnpublished {
     }
 }
 
+// An open TLS connection.
 object TlsConnection does Closing {
     has state is tls.TlsState;
     has info is TlsDetails;
     has busy is Atomic<bool>;
     has lock is Lock;
 
+    // Made by the handshakes; not constructed directly.
     TlsConnection(state is tls.TlsState, ends is ConnectionEndpoints<IpEndpoint>) {
         self.state = state;
         busy = Atomic(false);
@@ -430,22 +467,27 @@ object TlsConnection does Closing {
         };
     }
 
+    // The reading side.
     input() is TlsReading {
         TlsReading(self);
     }
 
+    // The writing side.
     output() is TlsWriting {
         TlsWriting(self);
     }
 
+    // What was agreed: version, cipher, protocol and the peer's chain.
     details() is TlsDetails {
         info;
     }
 
+    // Whether the connection is closed.
     closed() is bool {
         tls.closed(state);
     }
 
+    // Closes the connection; closing again does nothing.
     close() is void {
         tls.close(state);
     }
@@ -454,6 +496,7 @@ object TlsConnection does Closing {
         tls.close(state);
     }
 
+    // Sends close_notify and closes the writing side.
     async shutdown() is void {
         try {
             let pending = tls.shutdown(state);
@@ -464,6 +507,7 @@ object TlsConnection does Closing {
         }
     }
 
+    // Used by input() and output(); programs read and write through those.
     async read_bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         confirm busy.compare_and_replace(false, true)
@@ -479,6 +523,7 @@ object TlsConnection does Closing {
         }
     }
 
+    // Used by input() and output(); programs read and write through those.
     async write_bytes(source is ByteSource) is bool {
         let guards is FutureGroup<LockGuard> = FutureGroup();
         let writing is FutureGroup<bool> = FutureGroup();
@@ -512,12 +557,14 @@ object TlsConnection does Closing {
     }
 }
 
+// What a TLS handshake agreed.
 object TlsDetails {
     has ends is ConnectionEndpoints<IpEndpoint>;
     has certificates is @CertificateChain;
     has version is TlsVersion;
     has cipher, protocol is string;
 
+    // Details as given.
     TlsDetails(
         ends is ConnectionEndpoints<IpEndpoint>,
         peer is CertificateChain,
@@ -547,6 +594,7 @@ object TlsDetails {
         self.protocol = protocol;
     }
 
+    // The connection's two ends.
     endpoints() is ConnectionEndpoints<IpEndpoint> {
         ends;
     }
@@ -575,21 +623,26 @@ object TlsDetails {
     }
 }
 
+// The reading side of a TLS connection.
 object TlsReading does AsyncReading, Closing {
     has owner is TlsConnection;
 
+    // Made by input(); not constructed directly.
     TlsReading(owner is TlsConnection) {
         self.owner = owner;
     }
 
+    // Whether the reading side is closed.
     closed() is bool {
         owner.closed();
     }
 
+    // Closes the reading side; closing again does nothing.
     close() is void {
         owner.close();
     }
 
+    // At most limit decrypted bytes; [] at the end.
     async bytes(limit is int) is @byte {
         await owner.read_bytes(limit);
     }
@@ -607,26 +660,32 @@ hidden object TlsReadTicket {
     }
 }
 
+// The writing side of a TLS connection.
 object TlsWriting does AsyncWriting, Closing {
     has owner is TlsConnection;
 
+    // Made by output(); not constructed directly.
     TlsWriting(owner is TlsConnection) {
         self.owner = owner;
     }
 
+    // Whether the writing side is closed.
     closed() is bool {
         owner.closed();
     }
 
+    // Closes the writing side; closing again does nothing.
     close() is void {
         owner.close();
     }
 
+    // Encrypts and writes the bytes of source.
     async write(source is ByteSource) is AsyncWriting {
         await owner.write_bytes(source);
         self;
     }
 
+    // Encrypts and writes the bytes.
     async write(bytes is @byte) is AsyncWriting {
         await owner.write_bytes(ByteSnapshot(bytes));
         self;

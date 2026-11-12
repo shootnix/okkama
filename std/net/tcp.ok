@@ -1,10 +1,18 @@
 module net/tcp v1.0.0;
 
-// Immutable connection option request. Defaults keep keepalive off and turn
-// Nagle's algorithm off (TCP_NODELAY), as Go and Node do: a request and its
-// answer leave at once instead of waiting up to 40 ms for an acknowledgement
-// (#116). Construction applies no socket options; the eventual connection
-// operation owns application and unsupported failures.
+// TCP connections and listeners.
+//
+//     let connection = await TcpConnecting(address: IpAddress("127.0.0.1"), port: 8080).connection();
+//     defer connection.close();
+//     await connection.output().write(request);
+//     let reply = await connection.input().bytes(4096);
+//
+//     let listener = await TcpListening(port: 0).listener();
+//     let port = listener::Local::port;
+//     let accepted = await listener.connection();
+//
+// TcpEndpointRace and net/tcp_racing's TcpRacing try several addresses a little
+// apart and keep the first to connect (Happy Eyeballs).
 
 import "error" take InvalidArgument;
 import "runtime/network" as network;
@@ -27,24 +35,29 @@ import "time/duration" take Duration, DurationUnit;
 import "net/endpoint" take HostEndpoint, HostName;
 import "net/dns" take Resolving, SystemResolution, FixedResolution, HostAddresses;
 
+// How a connection behaves: keep-alive and no-delay.
 object TcpOptions {
     has keep is bool;
     has immediate is bool;
 
+    // No keep-alive, no-delay on.
     TcpOptions() {
         keep = false;
         immediate = true;
     }
 
+    // The options as given.
     TcpOptions(keep_alive is bool, no_delay is bool) {
         keep = keep_alive;
         immediate = no_delay;
     }
 
+    // Whether idle connections are probed.
     keep_alive() is bool {
         keep;
     }
 
+    // Whether small writes go out at once (Nagle off).
     no_delay() is bool {
         immediate;
     }
@@ -68,6 +81,8 @@ object TcpListeningOptions {
         queued = 128;
     }
 
+    // How a listener binds: address reuse, dual-stack, and a backlog of pending
+    // connections.
     TcpListeningOptions(address_reuse is bool, dual_stack is bool, backlog is int) {
         confirm backlog >= 0
             else throw InvalidArgument.because(
@@ -78,47 +93,58 @@ object TcpListeningOptions {
         queued = backlog;
     }
 
+    // Whether the address may be reused at once.
     address_reuse() is bool {
         reuse;
     }
 
+    // Whether an IPv6 listener takes IPv4 too.
     dual_stack() is bool {
         dual;
     }
 
+    // How many connections may wait to be accepted.
     backlog() is int {
         queued;
     }
 }
 
+// An open TCP connection.
 object TcpConnection does Closing {
     has origin is StreamConnection;
 
+    // Made by TcpConnecting and TcpListener; not constructed directly.
     TcpConnection(state is network.SocketState) {
         origin = StreamConnection(state);
     }
 
+    // The reading side.
     input() is StreamReading {
         origin.input();
     }
 
+    // The writing side.
     output() is StreamWriting {
         origin.output();
     }
 
+    // Its two ends.
     endpoints() is ConnectionEndpoints<IpEndpoint> {
         origin.endpoints();
     }
 
+    // Whether the connection is closed.
     closed() is bool {
         origin.closed();
     }
 
+    // Closes the connection; closing again does nothing.
     close() is void {
         origin.close();
     }
 }
 
+// A connection to be made.
 object TcpConnecting {
     has remote is @IpEndpoint;
     has host is string;
@@ -126,6 +152,7 @@ object TcpConnecting {
     has resolver is Resolving;
     has options is TcpOptions;
 
+    // To remote with the default options.
     TcpConnecting(remote is IpEndpoint) {
         confirm remote::Parts::port > 0
             else throw InvalidArgument.because("TCP destination port must be positive");
@@ -136,6 +163,7 @@ object TcpConnecting {
         options = TcpOptions();
     }
 
+    // To remote with options.
     TcpConnecting(remote is IpEndpoint, options is TcpOptions) {
         confirm remote::Parts::port > 0
             else throw InvalidArgument.because("TCP destination port must be positive");
@@ -183,6 +211,7 @@ object TcpConnecting {
         options = TcpOptions(keep_alive: keep_alive, no_delay: no_delay);
     }
 
+    // Connects; NetworkFailure when it cannot.
     async connection() is TcpConnection {
         if remote.size() == 1 {
             return await self.direct(remote[0]);
@@ -222,23 +251,27 @@ object TcpConnecting {
     }
 }
 
+// A listener to be opened.
 object TcpListening {
     has local is IpEndpoint;
     has options is TcpListeningOptions;
     has accepted is TcpOptions;
 
+    // On local with the default options.
     TcpListening(local is IpEndpoint) {
         self.local = local;
         options = TcpListeningOptions();
         accepted = TcpOptions();
     }
 
+    // On local with options.
     TcpListening(local is IpEndpoint, options is TcpListeningOptions) {
         self.local = local;
         self.options = options;
         accepted = TcpOptions();
     }
 
+    // On local; accepted connections get accepted's options.
     TcpListening(local is IpEndpoint, options is TcpListeningOptions, accepted is TcpOptions) {
         self.local = local;
         self.options = options;
@@ -265,6 +298,7 @@ object TcpListening {
         accepted = TcpOptions(keep_alive: keep_alive, no_delay: no_delay);
     }
 
+    // Opens the listener.
     async listener() is TcpListener {
         let state = try {
             network.tcp_bound(
@@ -300,11 +334,13 @@ object TcpListening {
     }
 }
 
+// An open listener.
 object TcpListener does Closing {
     has state is network.TcpListenerState;
     has local is IpEndpoint;
     has accepted is TcpOptions;
 
+    // Made by TcpListening; not constructed directly.
     TcpListener(state is network.TcpListenerState, accepted is TcpOptions) {
         let endpoint = try {
             let fields = network.tcp_listener_endpoint(state);
@@ -327,14 +363,17 @@ object TcpListener does Closing {
         self.accepted = accepted;
     }
 
+    // Where it listens.
     local_endpoint() is IpEndpoint {
         local;
     }
 
+    // Whether the listener is closed.
     closed() is bool {
         network.tcp_listener_closed(state);
     }
 
+    // Closes the listener; closing again does nothing.
     close() is void {
         try {
             network.tcp_listener_close(state);
@@ -348,6 +387,7 @@ object TcpListener does Closing {
         }
     }
 
+    // The next connection, once one comes.
     async connection() is TcpConnection {
         confirm !self.closed() else throw NetworkClosed.closed;
         try {
@@ -373,6 +413,7 @@ object TcpListener does Closing {
         network.tcp_listener_close(state);
     }
 
+    // The port it listens on, also when 0 asked the system to pick.
     cap Local {
         port is int {
             local::Parts::port;
@@ -526,6 +567,7 @@ object TcpEndpointRace {
     has delay is Duration;
     has clock is Timing;
 
+    // Races origins 250 ms apart.
     TcpEndpointRace(origins is Sequencing<IpEndpoint>) {
         endpoints = TcpRaceEndpoints(origins).items();
         options = TcpOptions();
@@ -533,6 +575,7 @@ object TcpEndpointRace {
         clock = SystemClock();
     }
 
+    // Races origins delay apart with options.
     TcpEndpointRace(
         origins is Sequencing<IpEndpoint>,
         options is TcpOptions,
@@ -547,6 +590,7 @@ object TcpEndpointRace {
         self.clock = clock;
     }
 
+    // The first connection made; the others are closed.
     async connection() is TcpConnection {
         let started is @Event = (0..endpoints.size()).map() -> index {
             Event();
@@ -817,6 +861,7 @@ hidden object TcpRaceCleanup {
     }
 }
 
+// A race of no endpoints, or a negative delay.
 enum InvalidTcpRace is Error = (because(reason is string));
 
 test "the race keeps the first family first and interleaves the other" {

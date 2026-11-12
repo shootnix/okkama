@@ -1,57 +1,50 @@
 module async/atomic v1.0.0;
 
-// Shared single-value effect capability.
+// One value that tasks share and replace whole.
 //
-// Atomic(value: initial) creates an initialized cell. value() observes its current
-// value; replace(value) publishes one complete value. compare_and_replace(expected,
-// revised) publishes only when the current value equals expected, returning true on
-// success and false on mismatch. Equality is Okkama's existing strict structural
-// comparison; incomparable values raise a programming failure without publication.
-// Equal replacement is a successful publication. This is value CAS, not an ABA-safe
-// revision protocol: applications requiring monotonicity store and validate their
-// own revision as part of T. Atomic capabilities themselves compare by identity.
+//     let hits = Atomic(0);
+//     hits.replace(hits.value() + 1);
+//     if hits.compare_and_replace(expected: 3, revised: 0) { … }
 //
-// All operations are synchronous, have no suspension point, and are linearizable
-// among tasks sharing one interpreter. Subsequent observations see the complete
-// publication. No cross-process/shared-memory or host-thread guarantee is provided.
-// A sequence of operations is not a transaction. No callbacks run inside an operation.
-//
-// Returned values are ordinary Okkama values, not mutable references into the cell.
-// Nested effect capabilities remain shared. Stored resource capabilities are borrowed:
-// their owner's close/defer/destroy contract still applies; Atomic does not acquire
-// resource ownership or extend scoped resource lifetimes. Prefer immutable snapshots.
-//
-// close() is explicit and idempotent, drops the stored value, and affects all aliases.
-// All subsequent reads and writes throw AtomicClosed.closed. Dropping an alias does not
-// close the cell; no OS resource or waiter requires implicit destroy. No null/empty
-// sentinel can be read. The cell's identity is stable; object fields remain immutable.
+// Every operation is synchronous and has no suspension point, so it is whole
+// with respect to other tasks. compare_and_replace publishes only when the
+// value equals expected; equality is structural. For a value only synchronous
+// code touches, cell's Cell is enough.
 
 import "io/stream" take Closing;
 
+// One value shared between tasks, replaced whole.
 object Atomic<T> does Closing {
+    // An atomic holding value.
     Atomic(value is T) {}
 
+    // The value now; AtomicClosed after close.
     value() is T {
         panic "Atomic.value is a VM intrinsic";
     }
 
+    // Puts value in.
     replace(value is T) is void {
         panic "Atomic.replace is a VM intrinsic";
     }
 
+    // Puts revised in only when the value equals expected; whether it did.
     compare_and_replace(expected is T, revised is T) is bool {
         panic "Atomic.compare_and_replace is a VM intrinsic";
     }
 
+    // Whether it is closed.
     closed() is bool {
         panic "Atomic.closed is a VM intrinsic";
     }
 
+    // Closes it; closing again does nothing.
     close() is void {
         panic "Atomic.close is a VM intrinsic";
     }
 }
 
+// The atomic was closed.
 enum AtomicClosed is Error = (closed);
 
 test "an atomic replaces, compares and closes" {

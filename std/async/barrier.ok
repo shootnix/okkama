@@ -31,51 +31,66 @@ module async/barrier v1.0.0;
 // `reset()` first wakes every old waiter with `BrokenBarrier`, then advances to
 // a fresh unbroken generation. It never moves an old waiter into the new one.
 
+// A meeting point: each of parties tasks waits until all have arrived, then all
+// go on together.
 object Barrier {
     has amount is int;
 
+    // A barrier for parties tasks, at least one.
     Barrier(parties is int) {
         confirm parties > 0 else throw InvalidPartyCount.parties(parties);
         amount = parties;
     }
 
+    // Waits for the others; the arrival index, 0 to parties - 1, the last one
+    // parties - 1.
     async wait() is int {
         panic "Barrier.wait is a VM intrinsic";
     }
 
+    // A snapshot of the barrier now.
     state() is BarrierState {
         panic "Barrier.state is a VM intrinsic";
     }
 
+    // Breaks the barrier: every waiter gets BrokenBarrier.
     abort() is void {
         panic "Barrier.abort is a VM intrinsic";
     }
 
+    // Starts a new generation after a break.
     reset() is void {
         panic "Barrier.reset is a VM intrinsic";
     }
 }
 
+// A snapshot of a barrier.
 object BarrierState {
+    // How many tasks it waits for.
     parties() is int {
         panic "BarrierState.parties is a VM intrinsic";
     }
 
+    // How many are waiting now.
     waiters() is int {
         panic "BarrierState.waiters is a VM intrinsic";
     }
 
+    // How many times it has released everyone.
     generation() is int {
         panic "BarrierState.generation is a VM intrinsic";
     }
 
+    // Whether it is broken.
     broken() is bool {
         panic "BarrierState.broken is a VM intrinsic";
     }
 }
 
+// A barrier for fewer than one task.
 enum InvalidPartyCount is Error = (parties(parties is int));
 
+// The barrier was aborted, or a waiter was cancelled.
 enum BrokenBarrier is Error = (broken);
 
 async test "a barrier releases every party with its arrival index" {

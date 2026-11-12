@@ -32,23 +32,31 @@ import "io/stream" take Closing;
 // when that shape expresses the domain. Use `Lock` for genuinely shared resource
 // boundaries which cannot naturally have one state-owning task.
 
+// Mutual exclusion between tasks: one guard at a time.
 object Lock {
+    // A lock nobody holds.
     Lock() {}
 
+    // Waits for the lock; close the guard to let it go: `let guard = await
+    // lock.guard(); defer guard.close();`.
     async guard() is LockGuard {
         panic "Lock.guard is a VM intrinsic";
     }
 
+    // Whether someone holds it.
     locked() is bool {
         panic "Lock.locked is a VM intrinsic";
     }
 }
 
+// The held lock.
 object LockGuard does Closing {
+    // Whether the lock is closed.
     closed() is bool {
         panic "LockGuard.closed is a VM intrinsic";
     }
 
+    // Closes the lock; closing again does nothing.
     close() is void {
         panic "LockGuard.close is a VM intrinsic";
     }

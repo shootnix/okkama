@@ -1,21 +1,36 @@
 module net/public_suffix v1.0.0;
 
+// The Public Suffix List, built in: which part of a host name is a public
+// suffix and which is the registrable domain.
+//
+//     let list = PublicSuffixList();
+//     list.suffix(HostName("www.example.co.uk"));        // co.uk
+//     list.registrable(HostName("www.example.co.uk"));   // example.co.uk
+//     list.public(HostName("github.io"));                // true
+//
+// Cookies use it so a site cannot set a cookie for a whole suffix.
+
 import "net/endpoint" take HostName;
 import "runtime/public_suffix" take public_suffix_name, registrable_name, public_suffix_version;
 
 // The represented list includes the pinned ICANN and PRIVATE sections. There
 // is no runtime network update or host-installed public suffix database.
 object PublicSuffixList {
+    // The bundled list.
     PublicSuffixList();
 
+    // Which release of the list.
     version() is string {
         public_suffix_version();
     }
 
+    // The public suffix of origin.
     suffix(origin is HostName) is HostName {
         HostName(public_suffix_name(origin.ascii()));
     }
 
+    // The registrable domain of origin; MissingRegistrableDomain for a suffix
+    // itself.
     registrable(origin is HostName) is HostName {
         let domain = try {
             registrable_name(origin.ascii());
@@ -29,6 +44,7 @@ object PublicSuffixList {
         HostName(domain);
     }
 
+    // Whether origin is a public suffix.
     public(origin is HostName) is bool {
         let present = try {
             self.registrable(origin);
@@ -41,6 +57,7 @@ object PublicSuffixList {
     }
 }
 
+// A public suffix has no registrable domain.
 enum MissingRegistrableDomain is Error = (host(name is string));
 
 test "private boundaries and wildcard exceptions are explicit pinned policy" {

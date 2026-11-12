@@ -18,15 +18,18 @@ import "net/failure" take NetworkClosed, NetworkError, NetworkOperation;
 import "runtime/network";
 import "runtime/net" take ip_parse;
 
+// How multicast is sent: hop limit and loopback.
 object MulticastOptions {
     has hops is int;
     has local_delivery is bool;
 
+    // Hop limit 1, loopback on.
     MulticastOptions() {
         hops = 1;
         local_delivery = true;
     }
 
+    // The options as given; hop_limit is 0 to 255.
     MulticastOptions(hop_limit is int, loopback is bool) {
         confirm hop_limit >= 0 && hop_limit <= 255
             else throw InvalidArgument.because(
@@ -36,15 +39,18 @@ object MulticastOptions {
         local_delivery = loopback;
     }
 
+    // How many routers a datagram may cross.
     hop_limit() is int {
         hops;
     }
 
+    // Whether this host hears its own sends.
     loopback() is bool {
         local_delivery;
     }
 }
 
+// An address that is not a multicast group.
 enum InvalidMulticastGroup is Error = (origin(origin is string));
 
 // Pure validated request. Every membership() call attempts a new acquisition;
@@ -55,6 +61,7 @@ object MulticastJoining {
     has interface is NetworkInterface;
     has options is MulticastOptions;
 
+    // Joins group on interface with socket.
     MulticastJoining(
         socket is UdpSocket,
         group is IpAddress,
@@ -69,6 +76,7 @@ object MulticastJoining {
         self.options = options;
     }
 
+    // Joins and gives the membership.
     membership() is MulticastMembership {
         MulticastMembership(socket: socket, group: group, interface: interface, options: options);
     }
@@ -86,6 +94,7 @@ object MulticastMembership does UdpMembership {
     has joined is IpAddress;
     has device is NetworkInterface;
 
+    // A joined group.
     MulticastMembership(
         socket is UdpSocket,
         group is IpAddress,
@@ -115,18 +124,22 @@ object MulticastMembership does UdpMembership {
         device = interface;
     }
 
+    // The group.
     group() is IpAddress {
         joined;
     }
 
+    // The interface.
     interface() is NetworkInterface {
         device;
     }
 
+    // Whether the membership is closed.
     closed() is bool {
         lease.closed();
     }
 
+    // Closes the membership; closing again does nothing.
     close() is void {
         lease.close();
     }

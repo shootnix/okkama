@@ -28,26 +28,32 @@ module async/event v1.0.0;
 // Create a fresh event for a fresh readiness cycle. Use `Channel` when each
 // individual signal is a message which must be consumed exactly once.
 
+// A flag tasks wait for; once set, it stays set.
 object Event {
     has initial is bool;
 
+    // An event not yet set.
     Event() {
         initial = false;
     }
 
+    // An event set or not.
     Event(ready is bool) {
         initial = ready;
     }
 
+    // Waits until the event is set.
     async wait() is Event {
         panic "Event.wait is a VM intrinsic";
         self;
     }
 
+    // Sets it; every waiter goes on.
     set() is void {
         panic "Event.set is a VM intrinsic";
     }
 
+    // Whether it is set.
     ready() is bool {
         panic "Event.ready is a VM intrinsic";
     }

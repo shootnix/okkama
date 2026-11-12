@@ -62,38 +62,51 @@ import "async/event" take Event;
 // One scope owns one homogeneous child result type. Nest another scope when one
 // operation owns children of another type.
 
+// Somewhere futures are started and watched.
 role Supervising<T> {
+    // Starts origin under supervision.
     start(origin is Future<T>) is void;
+    // How many are still running.
     active() is int;
+    // Asks all of them to stop.
     cancel() is void;
 }
 
+// Futures started together and waited for together; failures are not lost.
 object FutureGroup<T> does Supervising<T> {
+    // An empty group.
     FutureGroup() {}
 
+    // Starts origin in the group; FinishedFutureGroup after wait().
     start(origin is Future<T>) is void {
         throw FinishedFutureGroup.finished;
     }
 
+    // How many are still running.
     active() is int {
         panic "FutureGroup.active is a VM intrinsic";
     }
 
+    // Closes the group and asks every child to stop; wait() afterwards.
     cancel() is void {
         panic "FutureGroup.cancel is a VM intrinsic";
     }
 
+    // Closes the group and waits for every child; the first failure is thrown.
     async wait() is FutureGroup<T> {
         panic "FutureGroup.wait is a VM intrinsic";
         self;
     }
 }
 
+// A block run with a group that is waited for before it ends.
 object FutureScope<T, R> {
     has action is async (Supervising<T>) is R;
 
+    // Runs action with a group of its own.
     FutureScope(:action);
 
+    // action's result, after every future it started has ended.
     async outcome() is R {
         let group is FutureGroup<T> = FutureGroup();
         await group.wait();
@@ -101,6 +114,7 @@ object FutureScope<T, R> {
     }
 }
 
+// The group was already waited for or cancelled.
 enum FinishedFutureGroup is Error = (finished);
 
 async test "a group waits for its children and seals" {

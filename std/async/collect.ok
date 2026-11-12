@@ -72,50 +72,65 @@ import "async/event" take Event;
 // completion request cancels the stream's unfinished inputs and waits for their
 // cleanup.
 
+// Every future's result, in input order, once all succeed; the first failure
+// cancels the rest.
 object AllFutures<T> {
     has origins is Sequencing<Future<T>>;
 
+    // Runs origins.
     AllFutures(:origins);
 
+    // The results in input order.
     async results() is Sequencing<T> {
         panic "AllFutures.results is a VM intrinsic";
     }
 }
 
+// The result of whichever future settles first; the others are cancelled.
 object Raced<T> {
     has origins is Sequencing<Future<T>>;
 
+    // Races origins; an empty list is NoFutures.
     Raced(:origins);
 
+    // The first result, or the first failure.
     async winner() is T {
         throw NoFutures.none;
     }
 }
 
+// The result of the first future to succeed; failures wait for the others.
 object FirstSuccessful<T> {
     has origins is Sequencing<Future<T>>;
 
+    // Runs origins.
     FirstSuccessful(:origins);
 
+    // The first success; when all fail, the first failure.
     async outcome() is T {
         throw NoFutures.none;
     }
 }
 
+// Futures handed out in the order they finish.
 object FutureCompletions<T> {
     has origins is Sequencing<Future<T>>;
 
+    // Watches origins.
     FutureCompletions(:origins);
 
+    // How many have not been handed out.
     remaining_count() is int {
         panic "FutureCompletions.remaining_count is a VM intrinsic";
     }
 
+    // The next future to finish.
     async completion() is Future<T> {
         throw NoFutures.none;
     }
 }
 
+// There were no futures to race.
 enum NoFutures is Error = (none);
 
 async test "all futures, races and first successes" {

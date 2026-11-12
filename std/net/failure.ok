@@ -1,5 +1,11 @@
 module net/failure v1.0.0;
 
+// What went wrong with a connection, as one kind code takes it apart by.
+//
+//     catch NetworkFailure.detailed(kind, operation, code, message) { if kind == NetworkFailureKind.refused { … } }
+//
+// NetworkError turns a runtime failure into that error.
+
 import "async/timeout" take TimedOut;
 import "error" take InvalidArgument;
 
@@ -7,6 +13,7 @@ import "error" take InvalidArgument;
 // They contain no socket, native symbol, host errno or provider handle.
 enum NetworkOperation = (resolving, binding, listening, accepting, connecting, reading, writing, shutting_down, closing);
 
+// The kinds of network failure code usually tells apart.
 enum NetworkFailureKind = (refused, reset, aborted, unreachable, timed_out, address_in_use, permission_denied, resource_exhausted, unsupported, other);
 
 // Immutable observation: attempted operation, portable kind and exact diagnostic.
@@ -50,16 +57,19 @@ object NetworkError {
     has operation is NetworkOperation;
     has failure is NativeFailure;
 
+    // The runtime failure of operation.
     NetworkError(operation is NetworkOperation, failure is NativeFailure) {
         self.operation = operation;
         self.failure = failure;
     }
 
+    // Whether the failure is a network one.
     applicable() is bool {
         let code = failure.code();
         failure.domain() == "core.net" && code != "would_block" && code != "interrupted";
     }
 
+    // The NetworkFailure it means.
     error() is Error {
         confirm self.applicable()
             else throw InvalidArgument.because("native failure is not a terminal core.net failure");

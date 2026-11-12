@@ -23,19 +23,23 @@ import "async/scope" take FutureGroup;
 import "error" take InvalidState, InvalidArgument;
 import "runtime/tls_transport" as tls;
 
+// The two ends of a connection.
 object ConnectionEndpoints<T> {
     has local is T;
     has remote is T;
 
+    // local and remote ends.
     ConnectionEndpoints(local is T, remote is T) {
         self.local = local;
         self.remote = remote;
     }
 
+    // This end.
     local_endpoint() is T {
         local;
     }
 
+    // The other end.
     remote_endpoint() is T {
         remote;
     }
@@ -51,6 +55,7 @@ object StreamConnection does Closing {
     has writer_closed is Event;
     has reader_busy is Atomic<bool>;
 
+    // A connection over a runtime socket; TCP and TLS make them.
     StreamConnection(state is network.SocketState) {
         let snapshots = try {
             let local = network.tcp_endpoint(state, false);
@@ -76,22 +81,27 @@ object StreamConnection does Closing {
         reader_busy = Atomic(false);
     }
 
+    // The reading side.
     input() is StreamReading {
         StreamReading(self);
     }
 
+    // The writing side.
     output() is StreamWriting {
         StreamWriting(self);
     }
 
+    // Its two ends.
     endpoints() is ConnectionEndpoints<IpEndpoint> {
         ends;
     }
 
+    // Whether the connection is closed.
     closed() is bool {
         network.closed(state);
     }
 
+    // Closes the connection; closing again does nothing.
     close() is void {
         try {
             network.close(state);
@@ -109,10 +119,12 @@ object StreamConnection does Closing {
         network.close(state);
     }
 
+    // Whether the reading side is closed.
     input_closed() is bool {
         network.closed(state) || network.stream_half_closed(state, false);
     }
 
+    // Used by input() and output(); programs read and write through those.
     close_input() is void {
         try {
             network.stream_shutdown(state, false);
@@ -126,6 +138,7 @@ object StreamConnection does Closing {
         }
     }
 
+    // Used by input() and output(); programs read and write through those.
     async read_bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         confirm !self.input_closed() else throw NetworkClosed.closed;
@@ -146,10 +159,12 @@ object StreamConnection does Closing {
         }
     }
 
+    // Whether the writing side is closed.
     output_closed() is bool {
         writer_closed.ready() || network.closed(state) || network.stream_half_closed(state, true);
     }
 
+    // Used by input() and output(); programs read and write through those.
     close_output() is void {
         writer_closed.set();
         if writer_count.value() == 0 {
@@ -157,6 +172,7 @@ object StreamConnection does Closing {
         }
     }
 
+    // Sends the end of the stream; the other side reads to its end.
     shutdown_output() is void {
         try {
             network.stream_shutdown(state, true);
@@ -170,6 +186,7 @@ object StreamConnection does Closing {
         }
     }
 
+    // Used by input() and output(); programs read and write through those.
     reserve_output() is void {
         confirm !self.output_closed() else throw NetworkClosed.closed;
         confirm writer_count.value() < 9007199254740991
@@ -181,6 +198,7 @@ object StreamConnection does Closing {
         writer_count.replace(writer_count.value() + 1);
     }
 
+    // Used by input() and output(); programs read and write through those.
     released_output() is void {
         writer_count.replace(writer_count.value() - 1);
         if writer_count.value() == 0 && writer_closed.ready() {
@@ -188,6 +206,7 @@ object StreamConnection does Closing {
         }
     }
 
+    // Used by input() and output(); programs read and write through those.
     async write_bytes(source is ByteSource) is bool {
         self.reserve_output();
         let ticket = StreamWriteTicket(self.output());
@@ -273,79 +292,98 @@ object StreamConnection does Closing {
 object TlsTcpOrigin {
     has input is StreamReading;
 
+    // The TCP side a TLS session starts from; net/tls uses it.
     TlsTcpOrigin(input is StreamReading) {
         self.input = input;
     }
 
+    // Starts a client session.
     client(versions is int, protocols is @string, server is string) is tls.TlsState {
         input.tls_client(versions, protocols, server);
     }
 
+    // Starts a server session.
     server(versions is int, protocols is @string, certificates is @@byte, key is @byte) is tls.TlsState {
         input.tls_server(versions, protocols, certificates, key);
     }
 }
 
+// The reading side of a connection.
 object StreamReading does AsyncReading, Closing {
     has owner is StreamConnection;
 
+    // Made by input(); not constructed directly.
     StreamReading(owner is StreamConnection) {
         self.owner = owner;
     }
 
+    // Whether the reading side is closed.
     closed() is bool {
         owner.input_closed();
     }
 
+    // Closes the reading side; closing again does nothing.
     close() is void {
         owner.close_input();
     }
 
+    // At most limit bytes once they come; [] when the other side has finished.
     async bytes(limit is int) is @byte {
         await owner.read_bytes(limit);
     }
 
+    // Starts a TLS client session on this connection; net/tls uses it.
     tls_client(versions is int, protocols is @string, server is string) is tls.TlsState {
         owner.upgrade_tls(versions, protocols, server);
     }
 
+    // Starts a TLS server session on this connection; net/tls uses it.
     tls_server(versions is int, protocols is @string, certificates is @@byte, key is @byte) is tls.TlsState {
         owner.upgrade_tls_server(versions, protocols, certificates, key);
     }
 }
 
+// The writing side of a connection.
 object StreamWriting does AsyncWriting, Closing {
     has owner is StreamConnection;
 
+    // Made by output(); not constructed directly.
     StreamWriting(owner is StreamConnection) {
         self.owner = owner;
     }
 
+    // Whether the writing side is closed.
     closed() is bool {
         owner.output_closed();
     }
 
+    // Closes the writing side; closing again does nothing.
     close() is void {
         owner.close_output();
     }
 
+    // Sends the end of the stream.
     shutdown() is void {
         owner.shutdown_output();
     }
 
+    // Used by input() and output(); programs read and write through those.
     reserve() is void {
         owner.reserve_output();
     }
 
+    // Used by input() and output(); programs read and write through those.
     released() is void {
         owner.released_output();
     }
 
+    // Writes the bytes of source once the network takes them.
     async write(source is ByteSource) is AsyncWriting {
         await owner.write_bytes(source);
         self;
     }
 
+    // Writes the bytes once the network takes them.
     async write(bytes is @byte) is AsyncWriting {
         await owner.write_bytes(ByteSnapshot(bytes));
         self;
@@ -400,12 +438,14 @@ hidden object StreamWritingCleanup {
     }
 }
 
+// Waits for writes still in flight when a connection closes; used inside std.
 object StreamWriteCleanup {
     has guards is FutureGroup<LockGuard>;
     has writing is FutureGroup<bool>;
     has pending is Atomic<@Future<LockGuard>>;
     has taken is Event;
 
+    // The writes to wait for.
     StreamWriteCleanup(
         guards is FutureGroup<LockGuard>,
         writing is FutureGroup<bool>,
@@ -418,6 +458,7 @@ object StreamWriteCleanup {
         self.taken = taken;
     }
 
+    // Waits for them.
     async close() is void {
         if guards.active() > 0 {
             guards.cancel();
@@ -446,19 +487,23 @@ object StreamWriteCleanup {
     }
 }
 
+// A runtime failure of a stream, as the error it means.
 object StreamFailure {
     has operation is NetworkOperation;
     has failure is NativeFailure;
 
+    // The failure of operation.
     StreamFailure(operation is NetworkOperation, failure is NativeFailure) {
         self.operation = operation;
         self.failure = failure;
     }
 
+    // Whether it is a stream failure.
     applicable() is bool {
         NetworkError(operation: operation, failure: failure).applicable();
     }
 
+    // The error.
     error() is Error {
         confirm self.applicable()
             else throw InvalidArgument.because(

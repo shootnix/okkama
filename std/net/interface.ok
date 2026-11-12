@@ -18,6 +18,7 @@ import "collections/sequence" take Sequencing;
 import "encoding/utf" take Utf8Decoded;
 import "error" take InvalidArgument;
 
+// A network interface of this host, as seen when asked.
 object NetworkInterface {
     has label is string;
     has identity is int;
@@ -25,6 +26,7 @@ object NetworkInterface {
     has active is bool;
     has local is bool;
 
+    // An interface as given.
     NetworkInterface(
         name is string,
         index is int,
@@ -48,22 +50,27 @@ object NetworkInterface {
         local = loopback;
     }
 
+    // Its name, such as `eth0`.
     name() is string {
         label;
     }
 
+    // Its index.
     index() is int {
         identity;
     }
 
+    // Its addresses with their prefixes.
     addresses() is Sequencing<IpInterface> {
         assigned;
     }
 
+    // Whether it is up.
     up() is bool {
         active;
     }
 
+    // Whether it is the loopback.
     loopback() is bool {
         local;
     }

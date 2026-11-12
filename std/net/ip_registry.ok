@@ -1,28 +1,23 @@
 module net/ip_registry v1.0.0;
 
+// The IANA special-purpose address registries, built in; IpAddress.properties()
+// reads them. Programs do not need this module directly.
+
 import "encoding/hex" take HexDecoded;
 import "error" take InvalidArgument;
 
-// Generated offline from pinned IANA data, retrieved 2026-09-25.
-// Special-purpose registries: 2025-10-09; IPv6 address space: 2025-10-23.
-// Regenerate with docs/audits/evidence/ip-properties/generate.py.
-// Longest prefix wins. Special assignments override equal-length space rows.
-// Internal flag bits: unspecified=1, loopback=2, link_local=4, private_network=8,
-// global=16, multicast=32, reserved=64, documentation=128. Blank/N/A is not True.
-// Public users receive IpAddress.properties(), never this numeric encoding.
-// SHA256 ipv4.csv: e3e39e76d00b1677335db8e9a805c7b9480ea2f4dc9e33f0b93cd3a905128d73
-// SHA256 ipv6.csv: 775feea0621dec8735a44fbf30f762e721e8f0a1b3ab7eb341961a88cfce2139
-// SHA256 ipv6-space.csv: 41fef65d7a5fb32076175ffac1b663a9153d5593d3e2c840696ed8ffa1c7af29
-
+// The registry flags of an address.
 object IpClassification {
     has origin is @byte;
 
+    // The flags of the address bytes origin.
     IpClassification(origin is @byte) {
         confirm origin.size() == 4 || origin.size() == 16
             else throw InvalidArgument.because("IP classification needs 4 or 16 bytes");
         self.origin = origin;
     }
 
+    // The flags as bits.
     flags() is int {
         if origin.size() == 4 {
             // 0.0.0.0/32
