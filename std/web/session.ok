@@ -1,0 +1,527 @@
+module web/session v1.0.0;
+
+import "web/request" take WebRequest, RequestMaybeValue;
+import "web/routing" take Surrounding, WebRoutes, Around, Get, Post;
+import "web/exception" take Exception, ProblemReply;
+import "web/reply" take TextReply, RedirectReply;
+import "http/message" take Request, Responding;
+import "http/method" take Method;
+import "http/status" take Status;
+import "http/header" take Headers, Header, HeaderField;
+import "http/cookie" take SetCookie, ExpiredCookie;
+import "http/target" take OriginTarget;
+import "http/body" take ByteBody;
+import "http/handler" take HandlingResult;
+import "http/request_context" take HttpRequestContext;
+import "http/exchange" take ExchangeDetails;
+import "http/version" take HttpVersion;
+import "net/stream" take ConnectionEndpoints;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "crypto/secret" take SecretBytes;
+import "crypto/hmac" take Hmac, HmacHash;
+import "crypto/constant_time" take ConstantTimeEqual;
+import "encoding/base64" take Base64Encoded, Base64Alphabet;
+import "encoding/utf" take Utf8Encoded;
+import "random/source" take Randomizing, SecureRandom;
+import "time/clock" take Timing, SystemClock, Instant;
+import "time/duration" take Duration;
+import "async/atomic" take Atomic;
+import "async/cancellation" take Cancellation;
+import "compare" take Order;
+
+// Sessions kept on the server, found by a signed cookie (#208):
+//
+//     let sessions = Sessions(key: secret, store: MemorySessions());
+//
+//     async login(request is WebRequest) is Responding {
+//         let started = await sessions.started(SessionValue(name: "user", value: name));
+//         RedirectReply(location: "/", headers: Headers(started.cookie()));
+//     }
+//
+//     async home(request is WebRequest) is Responding {
+//         let session = await sessions.session(request);   // 401 without one
+//         TextReply("hi " + session.text("user"));
+//     }
+//
+//     async logout(request is WebRequest) is Responding {
+//         RedirectReply(location: "/", headers: Headers(await sessions.ended(request)));
+//     }
+//
+// The cookie (sid unless told) holds a random 256-bit id and its HMAC-SHA256
+// under key, so an id the server did not give out is refused before the store
+// is asked. The cookie carries the safe defaults of SetCookie (Path=/, Secure,
+// HttpOnly, SameSite=Lax) and Max-Age of the lifetime, 7 days unless told.
+// Around(CsrfProtection(sessions)) makes requests that change state carry the
+// session's csrf() token.
+
+// A value kept in a session: SessionValue(name: "user", value: "ada").
+object SessionValue {
+    has name is string;
+    has value is string;
+
+    SessionValue(name is string, value is string) {
+        self.name = name;
+        self.value = value;
+    }
+
+    cap Pair {
+        name is string {
+            name;
+        }
+
+        value is string {
+            value;
+        }
+    }
+}
+
+// Where the values of sessions are kept between requests, by session id.
+role SessionStoring {
+    async values(id is string) is Maybe<%string:string>;
+    async save(id is string, values is %string:string) is void;
+    async remove(id is string) is void;
+}
+
+// Sessions in the memory of the process: lost when it stops. A session is
+// forgotten lifetime after it was saved; past 10000 sessions the expired ones
+// are dropped on the next save.
+object MemorySessions does SessionStoring {
+    has entries is Atomic<%string:%string:string>;
+    has expiries is Atomic<%string:Instant>;
+    has clock is Timing;
+    has lifetime is Duration;
+
+    MemorySessions(clock is Timing = SystemClock(), lifetime is Duration = Duration(days: 7)) {
+        let none_yet is %string:%string:string = [:];
+        entries = Atomic(none_yet);
+        let no_expiry is %string:Instant = [:];
+        expiries = Atomic(no_expiry);
+        self.clock = clock;
+        self.lifetime = lifetime;
+    }
+
+    async values(id is string) is Maybe<%string:string> {
+        let known = entries.value();
+        if !known.has(id) {
+            return Maybe<%string:string>.none;
+        }
+        let expiry = expiries.value()[id] else clock.instant();
+        if expiry.order(clock.instant()) != Order.greater {
+            self.forget(id);
+            return Maybe<%string:string>.none;
+        }
+        Maybe.some(known[id]);
+    }
+
+    async save(id is string, values is %string:string) is void {
+        let now = clock.instant();
+        let live = if entries.value().size() < 10000 {
+            entries.value();
+        }
+        else {
+            let due = expiries.value();
+            let kept is @string = due.keys().filter() -> key {
+                due[key].order(now) == Order.greater;
+            };
+            let left is %string:%string:string = kept.reduce([:]) -> map, key {
+                map + [key: entries.value()[key]];
+            };
+            left;
+        };
+        entries.replace(live + [id: values]);
+        expiries.replace(expiries.value() + [id: now + lifetime]);
+    }
+
+    async remove(id is string) is void {
+        self.forget(id);
+    }
+
+    hidden forget(id is string) is void {
+        let one is %string:%string:string = [id: [:]];
+        entries.replace(entries.value() - one);
+        let gone is %string:Instant = [id: clock.instant()];
+        expiries.replace(expiries.value() - gone);
+    }
+}
+
+// The sessions of an application: started by a login, found from the request
+// cookie, ended by a logout.
+object Sessions {
+    has key is SecretBytes;
+    has store is SessionStoring;
+    has cookie is string;
+    has lifetime is Duration;
+    has random is Randomizing;
+
+    Sessions(
+        key is SecretBytes,
+        store is SessionStoring = MemorySessions(),
+        cookie is string = "sid",
+        lifetime is Duration = Duration(days: 7),
+        random is Randomizing = SecureRandom()
+    ) {
+        confirm key.size() >= 16
+            else throw InvalidSessions.because("a session key needs at least 16 bytes");
+        confirm cookie != "" else throw InvalidSessions.because("a session cookie needs a name");
+        self.key = key;
+        self.store = store;
+        self.cookie = cookie;
+        self.lifetime = lifetime;
+        self.random = random;
+    }
+
+    // A new session holding values, kept in the store. Its cookie() goes into
+    // the reply that starts it.
+    async started(values is ...SessionValue) is Session {
+        let given is @SessionValue = values...;
+        let id = SessionText(random.bytes(32)).string();
+        let kept is %string:string = given.reduce([:]) -> map, value {
+            map + [value::Pair::name: value::Pair::value];
+        };
+        await store.save(id, kept);
+        self.opened(id, kept);
+    }
+
+    // The session the request's cookie names: Exception 401 when there is no
+    // cookie, its signature is wrong, or the store no longer has it.
+    async session(request is WebRequest) is Session {
+        let found = await self.found(request);
+        match found {
+            case Maybe.some(session) {
+                session;
+            }
+            else {
+                throw Exception.status(401, "a session is required");
+            }
+        };
+    }
+
+    // The session the request's cookie names, if there is a valid one.
+    async found(request is WebRequest) is Maybe<Session> {
+        let given = request.cookies().maybe(cookie).text() else "";
+        let dot = given.find(".");
+        let id = match dot {
+            case Maybe.some(position) {
+                given.slice(0, position);
+            }
+            else {
+                "";
+            }
+        };
+        if id == ""
+            || !ConstantTimeEqual(
+                left: Utf8Encoded(self.signed(id)).bytes(),
+                right: Utf8Encoded(given).bytes()
+            ).matches() {
+                return Maybe<Session>.none;
+            }
+        let values = await store.values(id);
+        match values {
+            case Maybe.some(map) {
+                Maybe.some(self.opened(id, map));
+            }
+            else {
+                Maybe<Session>.none;
+            }
+        };
+    }
+
+    // Ends the request's session: the store forgets it, and the answer is the
+    // field that removes the cookie.
+    async ended(request is WebRequest) is HeaderField {
+        let found = await self.found(request);
+        match found {
+            case Maybe.some(session) {
+                await store.remove(session.id());
+            }
+            else {}
+        }
+        ExpiredCookie(cookie);
+    }
+
+    hidden opened(id is string, values is %string:string) is Session {
+        Session(
+            id: id,
+            values: values,
+            cookie: SetCookie(name: cookie, value: self.signed(id), max_age: lifetime),
+            token: SessionText(Hmac(HmacHash.sha256, key, "csrf\n" + id).bytes()).string()
+        );
+    }
+
+    // The cookie value of an id: the id and its signature.
+    hidden signed(id is string) is string {
+        id + "." + SessionText(Hmac(HmacHash.sha256, key, "sid\n" + id).bytes()).string();
+    }
+}
+
+enum InvalidSessions is Error = (because(reason is string));
+
+enum MissingSessionValue is Error = (name(name is string));
+
+// One session as an endpoint sees it.
+object Session {
+    has id is string;
+    has values is %string:string;
+    has field is SetCookie;
+    has token is string;
+
+    Session(id is string, values is %string:string, cookie is SetCookie, token is string) {
+        self.id = id;
+        self.values = values;
+        field = cookie;
+        self.token = token;
+    }
+
+    id() is string {
+        id;
+    }
+
+    // A value the session was started with; MissingSessionValue when it has
+    // none, a server mistake.
+    text(name is string) is string {
+        confirm values.has(name) else throw MissingSessionValue.name(name);
+        values[name];
+    }
+
+    // A value that may be absent: session.maybe("theme").text() else "light".
+    maybe(name is string) is RequestMaybeValue {
+        let found = if values.has(name) {
+            Maybe.some(values[name]);
+        }
+        else {
+            Maybe<string>.none;
+        };
+        RequestMaybeValue(kind: "session value", name: name, value: found);
+    }
+
+    // The token a form or a script sends back with a request that changes
+    // state, for CsrfProtection: a form field csrf or an X-CSRF-Token field.
+    csrf() is string {
+        token;
+    }
+
+    // The Set-Cookie field that gives the browser this session.
+    cookie() is HeaderField {
+        field;
+    }
+}
+
+// Requests that change state carry the session's token (#208). A POST, PUT,
+// PATCH or DELETE with a valid session cookie needs an X-CSRF-Token field or,
+// in a urlencoded form, a field csrf equal to session.csrf(); otherwise it is
+// refused with 403. Requests without a session pass: nothing in them acts on
+// a session.
+object CsrfProtection does Surrounding {
+    has sessions is Sessions;
+
+    CsrfProtection(sessions is Sessions) {
+        self.sessions = sessions;
+    }
+
+    async around(request is WebRequest, inner is async (WebRequest) is Responding) is Responding {
+        let method = request.method();
+        if method == Method.get
+            || method == Method.head
+            || method == Method.options
+            || method == Method.trace {
+                return await inner(request);
+            }
+        let found = await sessions.found(request);
+        let expected = match found {
+            case Maybe.some(session) {
+                session.csrf();
+            }
+            else {
+                "";
+            }
+        };
+        if expected == "" {
+            return await inner(request);
+        }
+        let header = request.header().maybe("X-CSRF-Token").text() else "";
+        let given = if header != "" {
+            header;
+        }
+        else {
+            await CsrfFormToken(request).token();
+        };
+        if !ConstantTimeEqual(
+            left: Utf8Encoded(expected).bytes(),
+            right: Utf8Encoded(given).bytes()
+        ).matches() {
+            return ProblemReply(status: Status.forbidden, detail: "a CSRF token is required");
+        }
+        await inner(request);
+    }
+}
+
+// The csrf field of a urlencoded form body, "" for another body.
+hidden object CsrfFormToken {
+    has request is WebRequest;
+
+    CsrfFormToken(request is WebRequest) {
+        self.request = request;
+    }
+
+    async token() is string {
+        let media = request.header().maybe("Content-Type").text() else "";
+        if !media.lower().starts_with("application/x-www-form-urlencoded") {
+            return "";
+        }
+        let form = await request.form(65536);
+        if form.membership("csrf") {
+            form.first("csrf");
+        }
+        else {
+            "";
+        }
+    }
+}
+
+// Bytes as URL-safe Base64 without padding, for ids, signatures and tokens.
+hidden object SessionText {
+    has bytes is @byte;
+
+    SessionText(bytes is @byte) {
+        self.bytes = bytes;
+    }
+
+    string() is string {
+        Base64Encoded(origin: bytes, alphabet: Base64Alphabet.url).string().replace("=", "");
+    }
+}
+
+hidden object SessionSite {
+    has sessions is Sessions;
+
+    SessionSite(sessions is Sessions) {
+        self.sessions = sessions;
+    }
+
+    async login(request is WebRequest) is Responding {
+        let started = await sessions.started(SessionValue(name: "user", value: "ada"));
+        RedirectReply(
+            location: "/",
+            headers: Headers(started.cookie(), Header(name: "X-Csrf", value: started.csrf()))
+        );
+    }
+
+    async home(request is WebRequest) is Responding {
+        let session = await sessions.session(request);
+        TextReply("hi " + session.text("user") + " " + (session.maybe("theme").text() else "light"));
+    }
+
+    async change(request is WebRequest) is Responding {
+        TextReply("changed " + (await request.form(1024)).first("note"));
+    }
+
+    async logout(request is WebRequest) is Responding {
+        RedirectReply(location: "/", headers: Headers(await sessions.ended(request)));
+    }
+}
+
+// The answer to a request: status, then the body or a header, for the test.
+hidden object SessionDispatch {
+    has routes is WebRoutes;
+
+    SessionDispatch(routes is WebRoutes) {
+        self.routes = routes;
+    }
+
+    async result(method is Method, path is string, headers is Headers, body is string) is HandlingResult {
+        let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(
+            local: IpEndpoint(address: IpAddress("127.0.0.1"), port: 80),
+            remote: IpEndpoint(address: IpAddress("127.0.0.1"), port: 50000)
+        );
+        let context = HttpRequestContext(
+            details: ExchangeDetails(endpoints: ends, version: HttpVersion.http_1_1),
+            cancellation: Cancellation().cancelling()
+        );
+        let request = Request(
+            target: OriginTarget(path: path, query: Maybe<string>.none),
+            method: method,
+            headers: headers,
+            body: ByteBody(Utf8Encoded(body).bytes())
+        );
+        await routes.handling(request, context);
+    }
+}
+
+async test "a session starts with a signed cookie, is found again and ends" {
+    let sessions = Sessions(key: SecretBytes("0123456789abcdef0123456789abcdef"));
+    let site = SessionSite(sessions);
+    let table = SessionDispatch(
+        WebRoutes(
+            Around(CsrfProtection(sessions)),
+            Post(path: "/login", endpoint: site.login),
+            Get(path: "/", endpoint: site.home),
+            Post(path: "/notes", endpoint: site.change),
+            Post(path: "/logout", endpoint: site.logout),
+        )
+    );
+    let anonymous = await table.result(Method.get, "/", Headers(), "");
+    test.is(anonymous.response()::Head::status, Status.unauthorized);
+    let login = (await table.result(Method.post, "/login", Headers(), "")).response();
+    test.is(login::Head::status, Status.see_other);
+    let set = login::Head::headers.text("Set-Cookie");
+    test.ok(set.starts_with("sid=") && set.contains("; HttpOnly") && set.contains("Max-Age=604800"));
+    let value = set.slice(4, set.find(";") else set.length());
+    let token = login::Head::headers.text("X-Csrf");
+    let cookie = Headers(Header(name: "Cookie", value: "sid=" + value));
+    let home = (await table.result(Method.get, "/", cookie, "")).response();
+    test.is(home::Head::status, Status.ok);
+    let forged = Headers(Header(name: "Cookie", value: "sid=" + value.slice(0, 43) + ".AAAA"));
+    test.is(
+        (await table.result(Method.get, "/", forged, "")).response()::Head::status,
+        Status.unauthorized
+    );
+    let bare = await table.result(
+        Method.post,
+        "/notes",
+        Headers(
+            Header(name: "Cookie", value: "sid=" + value),
+            Header(name: "Content-Type", value: "application/x-www-form-urlencoded")
+        ),
+        "note=tea"
+    );
+    test.is(bare.response()::Head::status, Status.forbidden);
+    let formed = await table.result(
+        Method.post,
+        "/notes",
+        Headers(
+            Header(name: "Cookie", value: "sid=" + value),
+            Header(name: "Content-Type", value: "application/x-www-form-urlencoded")
+        ),
+        "note=tea&csrf=" + token
+    );
+    test.is(formed.response()::Head::status, Status.ok);
+    let scripted = await table.result(
+        Method.post,
+        "/notes",
+        Headers(
+            Header(name: "Cookie", value: "sid=" + value),
+            Header(name: "Content-Type", value: "application/x-www-form-urlencoded"),
+            Header(name: "X-CSRF-Token", value: token),
+        ),
+        "note=milk"
+    );
+    test.is(scripted.response()::Head::status, Status.ok);
+    let logout = (await table.result(
+        Method.post,
+        "/logout",
+        Headers(
+            Header(name: "Cookie", value: "sid=" + value),
+            Header(name: "X-CSRF-Token", value: token)
+        ),
+        ""
+    )).response();
+    test.ok(logout::Head::headers.text("Set-Cookie").contains("Max-Age=0"));
+    test.is(
+        (await table.result(Method.get, "/", cookie, "")).response()::Head::status,
+        Status.unauthorized
+    );
+    test.throws(InvalidSessions) {
+        Sessions(key: SecretBytes("short"));
+    };
+}

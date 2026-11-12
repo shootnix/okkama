@@ -247,6 +247,22 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     `StaticFiles(…, parameter: "file")` taking the file from a wildcard route
     parameter, and `files.file_response(request, path)`.
 
+- **Sessions and CSRF protection (#208).** New module `web/session`:
+  - `Sessions(key: secret, store: MemorySessions())` keeps sessions on the
+    server, found by a cookie holding a random 256-bit id signed with
+    HMAC-SHA256.
+  - `await sessions.started(SessionValue(name: "user", value: name))` gives a
+    session whose `cookie()` goes into the reply. `await
+    sessions.session(request)` is 401 without a valid one. `session.text("user")`
+    reads a value, and `await sessions.ended(request)` gives the field that
+    removes the cookie.
+  - `Around(CsrfProtection(sessions))` makes POST, PUT, PATCH and DELETE with
+    a session carry `session.csrf()` as `X-CSRF-Token` or as a form field
+    `csrf`.
+  - A web request now keeps its body once read, so an Around and the endpoint
+    can both read it.
+  - `examples/web/login.ok` logs in, reads, posts with the token and logs out.
+
 - **The server answers HTTP/1.0 (#102).** `ab` works: no Host is required,
   responses are not chunked, and keep-alive applies only when asked for.
 - **RequestJson readers share one translation of reading failures (#84).**

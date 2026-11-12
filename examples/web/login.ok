@@ -1,0 +1,112 @@
+module examples/web/login v1.0.0;
+
+import "web/routing" take WebRoutes, Get, Post, Around;
+import "web/session" take Sessions, MemorySessions, SessionValue, CsrfProtection;
+import "web/testing" take WebTestClient;
+import "web/request" take WebRequest;
+import "web/reply" take TextReply, RedirectReply;
+import "http/message" take Request, Responding;
+import "http/method" take Method;
+import "http/header" take Headers, Header;
+import "http/body" take TextBody;
+import "http/target" take ParsedRequestTarget;
+import "crypto/secret" take SecretBytes;
+import "io/stdout" take Stdout;
+
+// A login with a session kept on the server: POST /login starts it, GET /
+// reads it and hands out its CSRF token, POST /notes needs that token, POST
+// /logout ends it. The program calls its routes with WebTestClient and carries
+// the session cookie itself, as a browser would. A real application reads the
+// key from its secrets, not from the source.
+
+object Site {
+    has sessions is Sessions;
+
+    Site(sessions is Sessions) {
+        self.sessions = sessions;
+    }
+
+    async login(request is WebRequest) is Responding {
+        let user = (await request.form(1024)).first("user");
+        let started = await sessions.started(SessionValue(name: "user", value: user));
+        RedirectReply(location: "/", headers: Headers(started.cookie()));
+    }
+
+    async home(request is WebRequest) is Responding {
+        let session = await sessions.session(request);
+        TextReply(
+            text: "hi " + session.text("user"),
+            headers: Headers(Header(name: "X-CSRF-Token", value: session.csrf()))
+        );
+    }
+
+    async note(request is WebRequest) is Responding {
+        TextReply("saved " + (await request.form(1024)).first("note"));
+    }
+
+    async logout(request is WebRequest) is Responding {
+        RedirectReply(location: "/", headers: Headers(await sessions.ended(request)));
+    }
+
+    routes() is WebRoutes {
+        WebRoutes(
+            Around(CsrfProtection(sessions)),
+            Post(path: "/login", endpoint: self.login),
+            Get(path: "/", endpoint: self.home),
+            Post(path: "/notes", endpoint: self.note),
+            Post(path: "/logout", endpoint: self.logout),
+        );
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    let sessions = Sessions(
+        key: SecretBytes("example key, at least 16 bytes"),
+        store: MemorySessions()
+    );
+    let client = WebTestClient(Site(sessions).routes());
+    let form = Headers(Header(name: "Content-Type", value: "application/x-www-form-urlencoded"));
+
+    let login = await client.post("/login", TextBody("user=ada"), form);
+    let set = login::Head::headers.text("Set-Cookie");
+    out.writeln("POST /login -> ", login::Head::code, ", cookie ", set.slice(0, 4), "…");
+    let cookie = Header(name: "Cookie", value: set.slice(0, set.find(";") else set.length()));
+
+    let home = await client.response(
+        Request(
+            target: ParsedRequestTarget(origin: "/", method: Method.get).target(),
+            headers: Headers(cookie)
+        )
+    );
+    out.writeln("GET / -> ", home::Head::code, " ", await home.text());
+    let token = home::Head::headers.text("X-CSRF-Token");
+
+    let refused = await client.post(
+        "/notes",
+        TextBody("note=tea"),
+        Headers(cookie, Header(name: "Content-Type", value: "application/x-www-form-urlencoded"))
+    );
+    out.writeln("POST /notes without the token -> ", refused::Head::code);
+    let saved = await client.post(
+        "/notes",
+        TextBody("note=tea&csrf=" + token),
+        Headers(cookie, Header(name: "Content-Type", value: "application/x-www-form-urlencoded"))
+    );
+    out.writeln("POST /notes with the token -> ", saved::Head::code, " ", await saved.text());
+
+    let logout = await client.post(
+        "/logout",
+        TextBody(""),
+        Headers(cookie, Header(name: "X-CSRF-Token", value: token))
+    );
+    out.writeln("POST /logout -> ", logout::Head::code);
+    let gone = await client.response(
+        Request(
+            target: ParsedRequestTarget(origin: "/", method: Method.get).target(),
+            headers: Headers(cookie)
+        )
+    );
+    out.writeln("GET / -> ", gone::Head::code);
+    0;
+}

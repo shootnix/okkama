@@ -19,6 +19,7 @@ import "math/decimal" take Decimal;
 import "numbers/bigint" take BigInt;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
 import "web/exception" take Exception;
+import "async/atomic" take Atomic;
 import "http/exchange" take ExchangeDetails;
 import "http/version" take HttpVersion;
 import "net/stream" take ConnectionEndpoints;
@@ -32,18 +33,22 @@ import "async/cancellation" take Cancellation;
 // translate transport problems itself. The std Request and context stay
 // reachable through request() and context().
 //
-// The body can be consumed once: text(), json(), form() and bytes() all read it.
+// The body is read once and kept: text(), json(), form() and bytes() may be
+// called again, by an Around and then by the endpoint, and give the same bytes.
 
 object WebRequest {
     has origin is Request;
     has details is HttpRequestContext;
     has links is WebLinks;
+    has kept is Atomic<@@byte>;
 
     // links: the named routes of the table, for link(); a table gives its own.
     WebRequest(request is Request, context is HttpRequestContext, links is WebLinks = WebLinks()) {
         origin = request;
         details = context;
         self.links = links;
+        let unread is @@byte = [];
+        kept = Atomic(unread);
     }
 
     // The path of a named route with its parameters filled in, percent-encoded
@@ -125,12 +130,22 @@ object WebRequest {
 
     async bytes(limit is int) is @byte {
         confirm limit >= 0 else throw InvalidBodyLimit.limit(limit);
+        let earlier = kept.value();
+        if earlier.size() == 1 {
+            confirm earlier[0].size() <= limit
+                else throw Exception.status(
+                    413,
+                    "request body exceeds " + limit.string() + " bytes"
+                );
+            return earlier[0];
+        }
         let content = try {
             await origin.bytes(limit: limit);
         }
         catch e is BodyLimitExceeded {
             throw Exception.status(413, "request body exceeds " + limit.string() + " bytes");
         };
+        kept.replace([content]);
         content;
     }
 
