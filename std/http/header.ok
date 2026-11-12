@@ -20,7 +20,8 @@ object HeaderName does Comparing<HeaderName> {
             throw InvalidHeader.detailed(origin, "field name must be an HTTP token");
         };
         spelling = checked;
-        canonical = HttpAsciiLowercase(checked).string();
+        // A token is ASCII, where the builtin lower() is the ASCII mapping.
+        canonical = checked.lower();
     }
 
     string() is string {

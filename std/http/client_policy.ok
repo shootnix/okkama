@@ -7,7 +7,6 @@ import "collections/set" take Set, OrderedSet;
 import "numbers/bigint" take BigInt;
 import "compare" take Order;
 import "time/duration" take Duration, DurationUnit;
-import "encoding/single_byte" take Latin1Encoded;
 import "net/tls" take TlsClientPolicy;
 
 // Explicit, reusable inputs; these objects never resolve or acquire a socket.
@@ -46,11 +45,21 @@ object HttpLimits {
         body_bytes;
     }
 
+    // Once per limits (#503): a server asks for them on every request.
     http1() is Http1Limits {
-        let amount = Latin1Encoded(body_bytes.string()).bytes().reduce(0) -> count, octet {
-            count * 10 + octet.int() - 48;
+        once let limits = Http1Limits(
+            head_bytes: header_bytes,
+            line_bytes: line_bytes,
+            fields: 128,
+            body_bytes: self.body_amount()
+        );
+        limits;
+    }
+
+    hidden body_amount() is int {
+        body_bytes.string().characters().reduce(0) -> count, character {
+            count * 10 + character.code() - 48;
         };
-        Http1Limits(head_bytes: header_bytes, line_bytes: line_bytes, fields: 128, body_bytes: amount);
     }
 }
 

@@ -558,6 +558,7 @@ hidden object HttpServerPeer {
         if policy.protocols().membership(HttpVersion.http_2) {
             return await self.h2_requests(connection);
         }
+        let limits = policy.limits().http1();
         let empty is @byte = [];
         let prefix = Atomic(empty);
         let completed = Atomic(0);
@@ -583,7 +584,7 @@ hidden object HttpServerPeer {
             let reading = Http1RequestHeadReading(
                 origin: HttpServerObservedInput(connection.input(), seen),
                 prefix: prefix.value(),
-                limits: policy.limits().http1(),
+                limits: limits,
                 chunk_bytes: 4096
             ).head();
             let deadline is HttpServerDeadline<Http1HeadRead<Http1RequestHead>> = HttpServerDeadline(
@@ -602,7 +603,7 @@ hidden object HttpServerPeer {
                 || head.target().kind() == RequestTargetKind.absolute
                 || head.target().kind() == RequestTargetKind.asterisk
                 else throw BadRequest.because("origin, absolute or asterisk target required");
-            let plan = Http1RequestFraming(head: head, limits: policy.limits().http1()).plan();
+            let plan = Http1RequestFraming(head: head, limits: limits).plan();
             let expectations = head.headers().values(HeaderName("Expect"));
             let expected = expectations.size() > 0;
             if expected
@@ -617,7 +618,7 @@ hidden object HttpServerPeer {
                         origin: connection.output(),
                         response: response,
                         method: head::Head::method,
-                        limits: policy.limits().http1()
+                        limits: limits
                     ).output();
                     await pending;
                     return true;
@@ -634,7 +635,7 @@ hidden object HttpServerPeer {
                 plan: plan,
                 prefix: received.remainder(),
                 head: head.headers(),
-                limits: policy.limits().http1()
+                limits: limits
             );
             let request = head.request(Http1IncomingBody(body));
             let details = ExchangeDetails(endpoints: connection.endpoints(), version: head::Head::version);
@@ -691,7 +692,7 @@ hidden object HttpServerPeer {
                         origin: connection.output(),
                         response: refusal,
                         method: head::Head::method,
-                        limits: policy.limits().http1()
+                        limits: limits
                     ).output();
                     await refusing;
                     return true;
@@ -733,7 +734,7 @@ hidden object HttpServerPeer {
                 origin: connection.output(),
                 response: response,
                 method: head::Head::method,
-                limits: policy.limits().http1()
+                limits: limits
             ).output();
             sent.replace(true);
             await sending;
@@ -744,7 +745,7 @@ hidden object HttpServerPeer {
                     response::Head::version
                 ),
                 method: head::Head::method,
-                limits: policy.limits().http1()
+                limits: limits
             ).plan();
             if server.stopping_acceptance()
                 || !plan::Plan::reuse_after_eof

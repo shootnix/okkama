@@ -3,8 +3,7 @@ module http/http1_message_writing v1.0.0;
 import "http/message" take Request, Response, InvalidHttpMessage;
 import "http/http1_head" take Http1RequestHead, Http1ResponseHead, Http1Limits,
     ParsedHttp1RequestHead;
-import "http/http1_framing" take Http1RequestFraming, Http1ResponseFraming, Http1BodyPlan,
-    Http1BodyKind;
+import "http/http1_framing" take Http1BodyPlan, Http1BodyKind;
 import "http/http1_writing" take Http1RequestHeadWriting, Http1ResponseHeadWriting, Http1RequestHeadWire,
     Http1ResponseHeadWire;
 import "io/decorators" take ByteSnapshot;
@@ -65,10 +64,11 @@ hidden object Http1MessageOutput {
             headers: request::Head::headers,
             version: request::Head::version
         );
-        let plan = Http1RequestFraming(head: head, limits: limits).plan();
+        let wire = Http1RequestHeadWire(head: head, limits: limits);
+        let plan = wire.plan();
         let whole = self.whole(request.body(), plan, limits);
         if whole.size() == 1 {
-            return origin.write(ByteSnapshot(Http1RequestHeadWire(head: head, limits: limits).bytes() + whole[0]));
+            return origin.write(ByteSnapshot(wire.bytes() + whole[0]));
         }
         let writing = Http1RequestHeadWriting(origin: origin, head: head, limits: limits);
         self.writing(writing.output(), request.body(), plan, head.headers(), limits, true);
@@ -80,10 +80,11 @@ hidden object Http1MessageOutput {
             headers: response::Head::headers,
             version: response::Head::version
         );
-        let plan = Http1ResponseFraming(head: head, method: method, limits: limits).plan();
+        let wire = Http1ResponseHeadWire(head: head, method: method, limits: limits);
+        let plan = wire.plan();
         let whole = self.whole(response.body(), plan, limits);
         if whole.size() == 1 {
-            return origin.write(ByteSnapshot(Http1ResponseHeadWire(head: head, method: method, limits: limits).bytes() + whole[0]));
+            return origin.write(ByteSnapshot(wire.bytes() + whole[0]));
         }
         let writing = Http1ResponseHeadWriting(origin: origin, head: head, method: method, limits: limits);
         self.writing(writing.output(), response.body(), plan, head.headers(), limits, false);

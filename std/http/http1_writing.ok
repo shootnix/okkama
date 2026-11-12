@@ -2,7 +2,7 @@ module http/http1_writing v1.0.0;
 
 import "http/status" take StatusCode;
 import "http/http1_head" take Http1RequestHead, Http1ResponseHead, Http1Limits, Http1LimitExceeded;
-import "http/http1_framing" take Http1RequestFraming, Http1ResponseFraming;
+import "http/http1_framing" take Http1RequestFraming, Http1ResponseFraming, Http1BodyPlan;
 import "http/header" take Headers;
 import "http/method" take Method, MethodName;
 import "http/version" take Http1VersionText;
@@ -30,7 +30,8 @@ object Http1RequestHeadWriting {
 }
 
 // The bytes of a head, for a writer that sends the head and a body that is
-// already in memory in one write (#115).
+// already in memory in one write (#115). The head knows its framing plan,
+// made once for the writer and for the check before the bytes (#503).
 object Http1RequestHeadWire {
     has head is Http1RequestHead;
     has limits is Http1Limits;
@@ -40,8 +41,14 @@ object Http1RequestHeadWire {
         self.limits = limits;
     }
 
+    plan() is Http1BodyPlan {
+        once let plan = Http1RequestFraming(head: head, limits: limits).plan();
+        plan;
+    }
+
     bytes() is @byte {
-        Http1HeadOutput().request_wire(head, limits);
+        self.plan();
+        Http1HeadOutput().request_bytes(head, limits);
     }
 }
 
@@ -56,8 +63,14 @@ object Http1ResponseHeadWire {
         self.limits = limits;
     }
 
+    plan() is Http1BodyPlan {
+        once let plan = Http1ResponseFraming(head: head, method: method, limits: limits).plan();
+        plan;
+    }
+
     bytes() is @byte {
-        Http1HeadOutput().response_wire(head, method, limits);
+        self.plan();
+        Http1HeadOutput().response_bytes(head, limits);
     }
 }
 
@@ -91,6 +104,11 @@ hidden object Http1HeadOutput {
 
     request_wire(head is Http1RequestHead, limits is Http1Limits) is @byte {
         Http1RequestFraming(head: head, limits: limits).plan();
+        self.request_bytes(head, limits);
+    }
+
+    // The bytes of a head whose framing is already checked.
+    request_bytes(head is Http1RequestHead, limits is Http1Limits) is @byte {
         let start = MethodName(head::Head::method).string() + " " + head.target().string() + " " + Http1VersionText(
             head::Head::version
         ).string();
@@ -110,6 +128,11 @@ hidden object Http1HeadOutput {
 
     response_wire(head is Http1ResponseHead, method is Method, limits is Http1Limits) is @byte {
         Http1ResponseFraming(head: head, method: method, limits: limits).plan();
+        self.response_bytes(head, limits);
+    }
+
+    // The bytes of a head whose framing is already checked.
+    response_bytes(head is Http1ResponseHead, limits is Http1Limits) is @byte {
         let start = Http1VersionText(head::Head::version).string() + " " + StatusCode(head::Head::status).number().string() + " " + StatusCode(
             head::Head::status
         ).phrase();

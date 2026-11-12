@@ -158,7 +158,8 @@ object Http1FramingFields {
     }
 
     list(name is string) is @string {
-        let values = origin.values(HeaderName(name));
+        let field = HeaderName(name);
+        let values = origin.values(field);
         if values.size() == 0 {
             let empty is @string = [];
             return empty;
@@ -178,7 +179,7 @@ object Http1FramingFields {
         };
         let items = joined.split(",");
         let clean is @string = items.map() -> value {
-            let part = Header(name: HeaderName(name), value: value).value();
+            let part = Header(name: field, value: value).value();
             confirm part != "" else throw InvalidHttpMessage.because("empty framing list member");
             part;
         };
