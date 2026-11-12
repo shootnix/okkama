@@ -9,6 +9,10 @@ native path_child(origin is string, part is string, style is int) is string;
 
 native path_absolute(origin is string, style is int) is bool;
 
+// The anchor (volume and root, "" for a relative path), then the names: `.` and
+// repeated separators go away, `..` stays (#124).
+native path_parts(origin is string, style is int) is @string;
+
 // Raw filesystem capabilities shared by every high-level filesystem module.
 native object FileHandle;
 

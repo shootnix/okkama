@@ -1,7 +1,7 @@
 module fs/path v1.0.0;
 
 import "compare" take Comparing, Order;
-import "runtime/fs" take path_join, path_parent, path_child, path_absolute;
+import "runtime/fs" take path_join, path_parent, path_child, path_absolute, path_parts;
 import "runtime/system" take system_platform;
 
 // Purely lexical paths for native and foreign path grammars.
@@ -109,6 +109,145 @@ object Path does Comparing<Path> {
 
     absolute() is bool {
         path_absolute(origin, PathStyleCode(origin: path_style).code());
+    }
+
+    // The names of the path, after the root of an absolute one:
+    // Path("/srv/app/a.log").parts() is ["/", "srv", "app", "a.log"], and
+    // Path("docs/guide.md").parts() is ["docs", "guide.md"]. `.` and repeated
+    // separators go away, `..` stays.
+    parts() is @string {
+        let found = self.anchored();
+        if found[0] == "" {
+            found.drop(1);
+        }
+        else {
+            found;
+        }
+    }
+
+    // The name without its extension: "guide" for guide.md, "archive.tar" for
+    // archive.tar.gz; a name without an extension (notes, .bashrc) stays whole.
+    stem() is string {
+        let name = self.name();
+        let extension = self.extension();
+        if extension == "" {
+            name;
+        }
+        else {
+            name.slice(0, name.length() - extension.length() - 1);
+        }
+    }
+
+    // What follows the last dot of the name, without the dot: "md" for guide.md.
+    // It is "" when the name has no dot, starts with its only dot (.bashrc) or
+    // ends with one (notes.).
+    extension() is string {
+        let name = self.name();
+        let pieces = name.split(".");
+        let tail = pieces.last();
+        let dot = name.length() - tail.length() - 1;
+        if pieces.size() > 1 && dot > 0 && tail != "" {
+            tail;
+        }
+        else {
+            "";
+        }
+    }
+
+    // The path with another extension: Path("docs/guide.md").extension_replaced("html")
+    // is docs/guide.html, "" removes the extension, and a name without one gains
+    // it. A leading dot ("html" or ".html") is optional.
+    extension_replaced(extension is string) is Path {
+        confirm extension.split("/").size() == 1 && extension.split("\\").size() == 1
+            else throw InvalidPath.because("an extension cannot hold a separator");
+        let bare = if extension.length() > 0 && extension.slice(0, 1) == "." {
+            extension.slice(1, extension.length());
+        }
+        else {
+            extension;
+        };
+        let found = self.anchored();
+        confirm found.size() > 1 && self.name() != ""
+            else throw InvalidPath.because("a root has no name to change");
+        let name = if bare == "" {
+            self.stem();
+        }
+        else {
+            self.stem() + "." + bare;
+        };
+        let kept is @string = found.take(found.size() - 1).filter() -> part {
+            part != "";
+        };
+        Path(path_join(kept + [name], PathStyleCode(origin: path_style).code()), path_style);
+    }
+
+    // The path from base to this one, by the names alone:
+    // Path("/srv/app/logs").relative_to(Path("/srv")) is app/logs, and a path
+    // relative to itself is ".". A path outside base, or of another grammar, is
+    // refused. Names compare exactly.
+    relative_to(base is Path) is Path {
+        confirm base::Grammar::style == path_style
+            else throw InvalidPath.because("paths of different styles have no relative path");
+        let mine = self.anchored();
+        let theirs = path_parts(base.string(), PathStyleCode(origin: path_style).code());
+        let shared = theirs.size() <= mine.size()
+            && (0..theirs.size()).reduce(true) -> same, index {
+                same && mine[index] == theirs[index];
+            };
+        confirm shared else throw InvalidPath.because(origin + " is not under " + base.string());
+        let rest = mine.drop(theirs.size());
+        if rest.size() == 0 {
+            Path(".", path_style);
+        }
+        else {
+            Path(path_join(rest, PathStyleCode(origin: path_style).code()), path_style);
+        }
+    }
+
+    // `.` and `..` resolved by the names alone, without asking the disk:
+    // Path("a/./b/../c").normalized() is a/c. A `..` above the root of an
+    // absolute path goes away; one above the start of a relative path stays.
+    normalized() is Path {
+        let found = self.anchored();
+        let anchor = found[0];
+        let end = if anchor == "" {
+            "";
+        }
+        else {
+            anchor.slice(anchor.length() - 1, anchor.length());
+        };
+        let rooted = end == "/" || end == "\\";
+        let start is @string = [];
+        let names = found.drop(1).reduce(start) -> kept, name {
+            if name == ".." && kept.size() > 0 && kept.last() != ".." {
+                kept.take(kept.size() - 1);
+            }
+            else {
+                if name == ".." && rooted && kept.size() == 0 {
+                    kept;
+                }
+                else {
+                    kept + [name];
+                }
+            }
+        };
+        let all is @string = if anchor == "" {
+            names;
+        }
+        else {
+            [anchor] + names;
+        };
+        if all.size() == 0 {
+            Path(".", path_style);
+        }
+        else {
+            Path(path_join(all, PathStyleCode(origin: path_style).code()), path_style);
+        }
+    }
+
+    // The anchor ("" for a relative path), then the names.
+    hidden anchored() is @string {
+        path_parts(origin, PathStyleCode(origin: path_style).code());
     }
 
     order(other is Path) is Order {
@@ -235,4 +374,78 @@ test "a path names its last part" {
     test.is(Path("var/log/", PathStyle.posix).name(), "log");
     test.is(Path("/", PathStyle.posix).name(), "");
     test.is(Path("C:\\Users\\alice", PathStyle.windows).name(), "alice");
+}
+
+test "names, extensions, relative and normalized paths come from the text alone" {
+    let page = Path("docs/guide.md", PathStyle.posix);
+    test.is(page.parts(), ["docs", "guide.md"]);
+    test.is(page.stem(), "guide");
+    test.is(page.extension(), "md");
+    test.is(page.extension_replaced("html").string(), "docs/guide.html");
+    test.is(page.extension_replaced(".txt").string(), "docs/guide.txt");
+    test.is(page.extension_replaced("").string(), "docs/guide");
+    test.is(Path("archive.tar.gz", PathStyle.posix).stem(), "archive.tar");
+    test.is(Path("archive.tar.gz", PathStyle.posix).extension(), "gz");
+    test.is(Path(".bashrc", PathStyle.posix).stem(), ".bashrc");
+    test.is(Path(".bashrc", PathStyle.posix).extension(), "");
+    test.is(Path("notes.", PathStyle.posix).extension(), "");
+    test.is(Path("notes", PathStyle.posix).extension_replaced("txt").string(), "notes.txt");
+    test.is(
+        Path("/srv/app/./logs//a.log", PathStyle.posix).parts(),
+        ["/", "srv", "app", "logs", "a.log"]
+    );
+    test.is(Path("/", PathStyle.posix).parts(), ["/"]);
+    test.is(Path(".", PathStyle.posix).parts().size(), 0);
+    let logs = Path("/srv/app/logs", PathStyle.posix);
+    test.is(logs.relative_to(Path("/srv", PathStyle.posix)).string(), "app/logs");
+    test.is(logs.relative_to(Path("/srv/app/logs/", PathStyle.posix)).string(), ".");
+    test.is(Path("a/./b/../c", PathStyle.posix).normalized().string(), "a/c");
+    test.is(Path("../a/../../b", PathStyle.posix).normalized().string(), "../../b");
+    test.is(Path("/../a/..", PathStyle.posix).normalized().string(), "/");
+    test.is(Path("a/..", PathStyle.posix).normalized().string(), ".");
+    let refused is @bool = [
+        try {
+            Path("/etc", PathStyle.posix).relative_to(Path("/srv", PathStyle.posix));
+            false;
+        }
+        catch InvalidPath.because(_reason) {
+            true;
+        },
+        try {
+            Path("srv", PathStyle.posix).relative_to(Path("/srv", PathStyle.posix));
+            false;
+        }
+        catch InvalidPath.because(_reason) {
+            true;
+        },
+        try {
+            Path("/", PathStyle.posix).extension_replaced("txt");
+            false;
+        }
+        catch InvalidPath.because(_reason) {
+            true;
+        },
+        try {
+            page.extension_replaced("a/b");
+            false;
+        }
+        catch InvalidPath.because(_reason) {
+            true;
+        }
+    ];
+    test.is(refused, [true, true, true, true]);
+}
+
+test "windows paths keep their drive and share as the anchor" {
+    let report = Path("C:\\Users\\alice\\report.docx", PathStyle.windows);
+    test.is(report.parts(), ["C:\\", "Users", "alice", "report.docx"]);
+    test.is(report.stem(), "report");
+    test.is(report.extension_replaced("pdf").string(), "C:\\Users\\alice\\report.pdf");
+    test.is(report.relative_to(Path("C:\\Users", PathStyle.windows)).string(), "alice\\report.docx");
+    test.is(Path("C:\\a\\..\\b\\.\\c", PathStyle.windows).normalized().string(), "C:\\b\\c");
+    test.is(
+        Path("\\\\server\\share\\dir\\f.txt", PathStyle.windows).parts(),
+        ["\\\\server\\share\\", "dir", "f.txt"]
+    );
+    test.is(Path("C:notes.txt", PathStyle.windows).parts(), ["C:", "notes.txt"]);
 }

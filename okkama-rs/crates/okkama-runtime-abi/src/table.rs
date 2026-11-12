@@ -625,5 +625,6 @@ natives! {
     SystemSecureInteger = 639, "runtime/system@1::secure_integer/2", "(int, int) -> int";
     SystemSecureFloat = 640, "runtime/system@1::secure_float/0", "() -> float";
     CldrCldrFields = 641, "runtime/cldr@1::cldr_fields/2", "(string, string) -> @string";
+    FsPathParts = 642, "runtime/fs@1::path_parts/2", "(string, int) -> @string";
 }
 // retired: 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258

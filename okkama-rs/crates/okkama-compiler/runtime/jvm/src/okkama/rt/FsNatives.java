@@ -420,6 +420,30 @@ public final class FsNatives {
         return spec.canonpath(parent);
     }
 
+    /**
+     * Якорь пути (том и корень, {@code ""} у относительного), затем его имена:
+     * {@code .} и повторные разделители уходят, {@code ..} остаётся (#124).
+     */
+    public static List<Object> runtime_fs__path_parts(String path, BigInteger style) {
+        Spec spec = spec(style, "path_parts", 2);
+        if (path.isEmpty() || path.indexOf('\0') >= 0) {
+            throw fail("invalid_input", "path_parts", 2, "Invalid lexical path");
+        }
+        String[] split = spec.splitpath(spec.canonpath(path));
+        boolean rooted = split[1].startsWith("/") || (spec == WIN32 && split[1].startsWith("\\"));
+        ArrayList<Object> parts = new ArrayList<Object>();
+        parts.add(split[0] + (rooted ? spec.rootdir() : ""));
+        for (String name : spec.splitdir(split[1])) {
+            if (!name.isEmpty() && !name.equals(".")) {
+                parts.add(name);
+            }
+        }
+        if (!split[2].isEmpty() && !split[2].equals(".")) {
+            parts.add(split[2]);
+        }
+        return parts;
+    }
+
     public static String runtime_fs__path_child(String path, String part, BigInteger style) {
         Spec spec = spec(style, "path_child", 3);
         if (path.isEmpty() || part.isEmpty()) {

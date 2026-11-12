@@ -351,6 +351,20 @@ fn path_parent(spec: Spec, path: &str) -> String {
     spec.canonpath(&parent)
 }
 
+/// The anchor of a path (its volume and root, `""` for a relative path), then
+/// its names: `.` and repeated separators go away, `..` stays (#124).
+fn path_parts(spec: Spec, path: &str) -> Vec<String> {
+    let canonical = spec.canonpath(path);
+    let [volume, directory, file] = spec.splitpath(&canonical);
+    let rooted = directory.starts_with('/') || (matches!(spec, Spec::Win32) && directory.starts_with('\\'));
+    let mut parts = vec![format!("{volume}{}", if rooted { spec.rootdir() } else { "" })];
+    parts.extend(spec.splitdir(&directory).into_iter().filter(|name| !name.is_empty() && name != "."));
+    if !file.is_empty() && file != "." {
+        parts.push(file);
+    }
+    parts
+}
+
 /// Путь потомка как `File::Spec->catfile`.
 fn child(path: &str, name: &str) -> String {
     Spec::Unix.catfile(&[path.to_string(), name.to_string()])
@@ -1263,6 +1277,14 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
                 return Err(fail(native, "invalid_input", "Invalid lexical path"));
             }
             Ok(text(joined(spec, &[path.to_string(), part.to_string()])))
+        }
+        "path_parts" => {
+            let spec = spec(native, int(&args[1])?)?;
+            let path = string(&args[0])?;
+            if path.is_empty() || path.contains('\0') {
+                return Err(fail(native, "invalid_input", "Invalid lexical path"));
+            }
+            Ok(string_array(path_parts(spec, path)))
         }
         "path_absolute" => {
             let spec = spec(native, int(&args[1])?)?;
