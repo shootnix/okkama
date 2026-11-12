@@ -12,18 +12,18 @@ main() is int {
     let latencies = [12.0, 15.0, 11.0, 30.0, 14.0, 13.0, 15.0, 16.0];
 
     let sample = Sample(values: latencies);
-    out.writeln("mean " + sample.mean().string() + " ms, median " + sample.median().string() + " ms");
-    out.writeln("sample deviation " + sample.deviation().string());
+    out.writeln("mean ", sample.mean(), " ms, median ", sample.median(), " ms");
+    out.writeln("sample deviation ", sample.deviation());
     out.writeln("quartiles " + sample.quantiles(4).map() -> q { q.string(); }.join(", "));
     out.writeln("inclusive " + sample.quantiles(count: 4, method: QuantileMethod.inclusive).map() -> q { q.string(); }.join(", "));
-    out.writeln("population variance " + Population(values: latencies).variance().string());
-    out.writeln("most frequent " + Modes(values: latencies).first().string());
+    out.writeln("population variance ", Population(values: latencies).variance());
+    out.writeln("most frequent ", Modes(values: latencies).first());
 
     let hours = [1.0, 2.0, 3.0, 4.0];
     let costs = [3.0, 5.0, 7.0, 9.0];
     let fit = Pairs(left: hours, right: costs).line();
-    out.writeln("cost = " + fit::Line::slope.string() + " * hours + " + fit::Line::intercept.string());
-    out.writeln("6 hours cost " + fit.prediction(at: 6.0).string());
+    out.writeln("cost = ", fit::Line::slope, " * hours + ", fit::Line::intercept);
+    out.writeln("6 hours cost ", fit.prediction(at: 6.0));
 
     let empty is @float = [];
     let refused = try {

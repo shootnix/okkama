@@ -22,8 +22,7 @@ object Orders does Handling {
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
         let order = ParsedJson(await request.text(limit: 4096)).root();
-        Stdout().writeln("server got: " + MethodName(request::Head::method).string() + " " + request::Head::target.path()
-            + " for " + order.int("count").string() + " " + order.text("item"));
+        Stdout().writeln("server got: ", MethodName(request::Head::method), " ", request::Head::target.path(), " for ", order.int("count"), " ", order.text("item"));
         ResponseHandling(Response(status: Status.created, content: JsonBody(Json(JsonField("id", 7), JsonField("state", "new")))));
     }
 }
@@ -39,7 +38,7 @@ async main() is int {
     let reply = await client.post(url: base + "/orders", body: JsonBody(order));
     confirm reply::Head::status == Status.created else panic "order not created";
     let created = await reply.json();
-    Stdout().writeln("order " + created.int("id").string() + " is " + created.text("state"));
+    Stdout().writeln("order ", created.int("id"), " is ", created.text("state"));
 
     client.close();
     await server.drain(limit: Duration(seconds: 5));

@@ -20,7 +20,7 @@ object NoPages does Handling {
     NoPages();
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
-        Stdout().writeln("server got: " + MethodName(request::Head::method).string() + " " + request::Head::target.path());
+        Stdout().writeln("server got: ", MethodName(request::Head::method), " ", request::Head::target.path());
         ResponseHandling(Response(status: Status.not_found));
     }
 }
@@ -46,8 +46,8 @@ async main() is int {
         }
     };
     Stdout().writeln(said);
-    Stdout().writeln("client error: " + (reply::Head::class == StatusClass.client_error).string());
-    Stdout().writeln(reply::Head::code.string() + " " + StatusCode(status).phrase());
+    Stdout().writeln("client error: ", reply::Head::class == StatusClass.client_error);
+    Stdout().writeln(reply::Head::code, " ", StatusCode(status).phrase());
 
     client.close();
     await server.drain(limit: Duration(seconds: 5));

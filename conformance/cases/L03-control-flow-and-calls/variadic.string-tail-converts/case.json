@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.variadic.string-tail-converts",
+  "title": "a ...string tail turns values into text with their string()",
+  "purpose": "A value that is not a string reaches a ...string tail through its own string(): scalars, objects and role values. The conversion is a last resort, so overloads that fit as written still win (#352).",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.VARIADIC",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    },
+    {
+      "contract": "CALL.OVERLOADS",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "count: 5, ok: true, rat: 3/4, f: 1.5, c: z\npoint: P7 role: P2\nany int string\n1|P3|x\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.8",
+    "docs/okkama-spec-11072026.md#11.8.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for the text conversion of ...string tails",
+    "expected_basis": "Book 18.4: each tail value of a ...string parameter that is not a string is converted with its string() when no signature fits without a conversion."
+  },
+  "status": "mandatory"
+}

@@ -1,10 +1,12 @@
 module os/process v1.0.0;
 
-import "io/stream" take ByteSource, Writing, Reading, Closing, IncompleteWrite, InvalidReadLimit;
-import "encoding/utf" take Utf8Decoded;
+import "io/stream" take ByteSource, Writing, WritingText, Reading, Closing, IncompleteWrite, InvalidReadLimit;
+import "encoding/utf" take Utf8Decoded, Utf8Encoded;
 import "fs/path" take Path;
 import "io/decorators" take ByteSnapshot;
-import "os/command" take Command, Commanding;
+import "io/buffer" take ByteBuffer;
+import "async/atomic" take Atomic;
+import "os/command" take Command, Commanding, InheritedCommand;
 import "os/directory" take WorkingDirectory;
 import "os/environment" take Environment;
 import "runtime/process" take ProcessState, process_state_create, process_state_start,
@@ -68,6 +70,19 @@ object Process {
     Process(command is Commanding) {
         origin = command;
         state = process_state_create();
+    }
+
+    // Its stdin, stdout and stderr: process.input().write("text\n").
+    input() is ProcessInput {
+        ProcessInput(origin: self);
+    }
+
+    output() is ProcessOutput {
+        ProcessOutput(origin: self);
+    }
+
+    errors() is ProcessErrors {
+        ProcessErrors(origin: self);
     }
 
     id() is int {
@@ -247,7 +262,7 @@ object Process {
     }
 }
 
-object ProcessInput does Writing, Closing {
+object ProcessInput does Writing, WritingText, Closing {
     has owner is Process;
 
     ProcessInput(origin is Process) {
@@ -256,6 +271,17 @@ object ProcessInput does Writing, Closing {
 
     write(source is ByteSource) is void {
         owner.input_write(source);
+    }
+
+    // Text, as UTF-8.
+    write(values is ...string) is void {
+        let text is @string = values...;
+        owner.input_write(ByteSnapshot(Utf8Encoded(text.join("")).bytes()));
+    }
+
+    writeln(values is ...string) is void {
+        let text is @string = values...;
+        owner.input_write(ByteSnapshot(Utf8Encoded(text.join("") + "\n").bytes()));
     }
 
     flush() is void {
@@ -281,6 +307,12 @@ object ProcessOutput does Reading {
     bytes(limit is int) is @byte {
         owner.output_bytes(limit);
     }
+
+    // Everything up to the end of the stream as UTF-8 text, at most limit
+    // bytes; more throws OutputLimitExceeded.
+    text(limit is int) is string {
+        Utf8Decoded(ProcessStreamDrain(owner: owner, errors: false, limit: limit).bytes()).string();
+    }
 }
 
 object ProcessErrors does Reading {
@@ -293,7 +325,48 @@ object ProcessErrors does Reading {
     bytes(limit is int) is @byte {
         owner.error_bytes(limit);
     }
+
+    // Everything up to the end of the stream as UTF-8 text, at most limit bytes.
+    text(limit is int) is string {
+        Utf8Decoded(ProcessStreamDrain(owner: owner, errors: true, limit: limit).bytes()).string();
+    }
 }
+
+// One output stream of a process read to its end, within a limit.
+hidden object ProcessStreamDrain {
+    has owner is Process;
+    has errors is bool;
+    has limit is int;
+
+    ProcessStreamDrain(owner is Process, errors is bool, limit is int) {
+        confirm limit >= 0 else throw InvalidReadLimit.limit(limit);
+        self.owner = owner;
+        self.errors = errors;
+        self.limit = limit;
+    }
+
+    bytes() is @byte {
+        let joined = ByteBuffer();
+        defer joined.closing().close();
+        let output = joined.writing();
+        let taken = Atomic(0);
+        loop {
+            let chunk = if errors {
+                owner.error_bytes(65536);
+            }
+            else {
+                owner.output_bytes(65536);
+            };
+            last if chunk.size() == 0;
+            taken.replace(taken.value() + chunk.size());
+            confirm taken.value() <= limit else throw OutputLimitExceeded.limit(limit);
+            output.write(ByteSnapshot(chunk));
+        }
+        joined.content().bytes();
+    }
+}
+
+enum OutputLimitExceeded is Error = (limit(limit is int));
 
 enum MissingExitCode is Error = (missing);
 
@@ -341,6 +414,25 @@ async test "a process is fed through its input and read through its output" {
     test.ok(!process.running());
     process.close();
     process.close();
+}
+
+async test "a process takes text and answers text" {
+    let process = Process(command: InheritedCommand(program: Path("cat")));
+    let input = process.input();
+    input.write("héllo", " ");
+    input.writeln("world");
+    input.close();
+    test.is(process.output().text(limit: 64), "héllo world\n");
+    test.is(process.errors().text(limit: 64), "");
+    test.ok((await process.exit()).success());
+    process.close();
+
+    let noisy = Process(command: InheritedCommand(program: Path("printf"), arguments: ["0123456789"]));
+    test.throws(OutputLimitExceeded) {
+        noisy.output().text(limit: 4);
+    };
+    await noisy.exit();
+    noisy.close();
 }
 
 async test "a signal ends a running process" {

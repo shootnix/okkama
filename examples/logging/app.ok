@@ -4,14 +4,13 @@ import "logging/named" take NamedLogging, LogProcessReading;
 import "logging/name" take LogName;
 import "logging/level" take LogLevel;
 import "logging/field" take LogFields;
-import "logging/filter" take AllowedLogs, LevelThresholds, LevelOverride;
+import "logging/filter" take AllowedLogs;
 import "logging/redact" take RedactedLogs;
 import "logging/stream" take TextStreamLogs, JsonStreamLogs;
 import "logging/write" take BroadcastLogs, CollectedLogs;
-import "json" take Json, JsonField;
+import "json" take JsonField;
 import "time/clock" take Timing, Instant, MonotonicInstant;
-import "time/duration" take Duration, DurationUnit;
-import "time/zone" take FixedZone;
+import "time/duration" take Duration;
 import "io/stdout" take Stdout;
 
 // A program logs through NamedLogging: a name, where records go, a clock and
@@ -43,17 +42,12 @@ object FixedProcess does LogProcessReading {
 }
 
 main() is int {
-    let utc = FixedZone(name: "UTC", offset: Duration(seconds: 0));
     let kept = CollectedLogs();
     // Debug is shown for "shop.db" only; everything else starts at info.
-    let levels = LevelThresholds(fallback: LogLevel.info, overrides: [LevelOverride(name: LogName("shop", "db"), level: LogLevel.debug)]);
     let destination = AllowedLogs(
-        origin: RedactedLogs(
-            origin: BroadcastLogs(TextStreamLogs(origin: Stdout(), zone: utc), kept),
-            names: ["card"],
-            replacement: Json("[hidden]"),
-        ),
-        allowing: levels,
+        origin: RedactedLogs(origin: BroadcastLogs(TextStreamLogs(origin: Stdout()), kept), names: ["card"]),
+        level: LogLevel.info,
+        overrides: ["shop.db": LogLevel.debug],
     );
     let shop = NamedLogging(
         name: LogName("shop"),
@@ -75,7 +69,7 @@ main() is int {
         shop.log(LogLevel.error, "order refused", LogFields(JsonField("order", 18)), error);
     }
 
-    Stdout().writeln("kept " + kept.size().string() + " records; the last one as JSON:");
+    Stdout().writeln("kept ", kept.size(), " records; the last one as JSON:");
     JsonStreamLogs(Stdout()).write(kept.records().last());
     0;
 }

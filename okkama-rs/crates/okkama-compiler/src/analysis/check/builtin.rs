@@ -98,6 +98,12 @@ impl Checker<'_, '_> {
     }
 
     /// Сигнатура builtin-действия: параметры и результат (`None` — нет такого).
+    /// Whether a builtin value has `string()` answering a string.
+    pub(super) fn builtin_text(&self, receiver: &Ty) -> bool {
+        self.builtin_signature(receiver, "string")
+            .is_some_and(|(_, params, result)| params.is_empty() && result == Some(Ty::Str))
+    }
+
     fn builtin_signature(
         &self,
         receiver: &Ty,

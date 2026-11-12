@@ -5,7 +5,9 @@ import "fs/entry" take FileEntry;
 import "fs/error" take FileError, FileFailure;
 import "fs/path" take Path;
 import "io/decorators" take ByteSnapshot;
-import "io/stream" take ByteSource, Reading, Writing, Closing, IncompleteWrite, InvalidReadLimit;
+import "io/stream" take ByteSource, Reading, Writing, WritingText, Closing, IncompleteWrite, InvalidReadLimit;
+import "encoding/utf" take Utf8Encoded;
+import "os/environment" take Environment;
 import "runtime/fs" take FileState, TemporaryDirectoryState, path_encode, path_decode,
     file_state_read, file_state_write, file_state_flush, file_state_close, file_state_closed,
     temporary_file_create, temporary_file_path, temporary_file_preserve, temporary_directory_create,
@@ -38,7 +40,7 @@ import "runtime/fs" take FileState, TemporaryDirectoryState, path_encode, path_d
 // TemporaryDirectory.close() recursively deletes its contents. Symbolic links
 // are removed as leaves; their targets are never traversed or deleted.
 
-object TemporaryFile does Reading, Writing, Closing {
+object TemporaryFile does Reading, Writing, WritingText, Closing {
     has state is FileState;
 
     TemporaryFile(directory is DirectoryLocating, prefix is string) {
@@ -72,6 +74,21 @@ object TemporaryFile does Reading, Writing, Closing {
             throw FileFailure(failure).error();
         };
         confirm written == content.size() else throw IncompleteWrite.after(written);
+    }
+
+    write(bytes is @byte) is void {
+        self.write(ByteSnapshot(bytes));
+    }
+
+    // Text, as UTF-8.
+    write(values is ...string) is void {
+        let text is @string = values...;
+        self.write(Utf8Encoded(text.join("")));
+    }
+
+    writeln(values is ...string) is void {
+        let text is @string = values...;
+        self.write(Utf8Encoded(text.join("") + "\n"));
     }
 
     flush() is void {
@@ -114,6 +131,11 @@ object TemporaryFile does Reading, Writing, Closing {
         }
     }
 
+    // Its size in bytes on disk now.
+    size() is int {
+        FileEntry(path: self.path()).stat()::Shape::size;
+    }
+
     preserve(destination is Path) is void {
         try {
             temporary_file_preserve(state, path_encode(destination.string()));
@@ -145,7 +167,9 @@ object TemporaryFilePreservation {
 object TemporaryDirectory does DirectoryLocating, Closing {
     has state is TemporaryDirectoryState;
 
-    TemporaryDirectory(parent is DirectoryLocating, prefix is string) {
+    // In the system's directory for temporary files unless a parent is given:
+    // TemporaryDirectory(prefix: "build-").
+    TemporaryDirectory(parent is DirectoryLocating = Environment().temporary(), prefix is string = "okkama-") {
         state = try {
             temporary_directory_create(
                 path_encode(parent.path().string()),
@@ -155,6 +179,11 @@ object TemporaryDirectory does DirectoryLocating, Closing {
         catch failure is NativeFailure {
             throw FileFailure(failure: failure, path: parent.path().string()).error();
         };
+    }
+
+    // A temporary file inside it: scratch.file(prefix: "upload-").
+    file(prefix is string = "okkama-") is TemporaryFile {
+        TemporaryFile(directory: self, prefix: prefix);
     }
 
     path() is Path {
@@ -268,5 +297,19 @@ test "a scratch directory is a place to make scratch files in" {
     let inner = TemporaryDirectory(parent: scratch, prefix: "inner-");
     test.is(inner.path().parent() == scratch.path(), true);
     inner.close();
+    scratch.close();
+}
+
+test "a temporary directory makes its own files and takes text" {
+    let scratch = TemporaryDirectory(prefix: "fs-temp-text-");
+    test.ok(scratch.path().name().starts_with("fs-temp-text-"));
+    let notes = scratch.file(prefix: "notes-");
+    test.is(notes.path().parent(), scratch.path());
+    notes.write("héllo", " ");
+    notes.writeln("world");
+    notes.write([byte(33)]);
+    notes.flush();
+    test.is(notes.size(), 14);
+    notes.close();
     scratch.close();
 }

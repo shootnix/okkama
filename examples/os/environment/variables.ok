@@ -15,7 +15,7 @@ main() is int {
         "APP_TOKEN": "secret",
     ]);
 
-    out.writeln("home: " + isolated.home().path().string());
+    out.writeln("home: ", isolated.home().path());
     let editor = try {
         isolated.variable("EDITOR");
     }
@@ -25,16 +25,16 @@ main() is int {
     out.writeln("editor: " + editor);
 
     let child = isolated.addition("APP_ENV", "production").difference("APP_TOKEN");
-    out.writeln("child has APP_ENV: " + child.membership("APP_ENV").string());
-    out.writeln("child has APP_TOKEN: " + child.membership("APP_TOKEN").string());
-    out.writeln("parent still has APP_TOKEN: " + isolated.membership("APP_TOKEN").string());
+    out.writeln("child has APP_ENV: ", child.membership("APP_ENV"));
+    out.writeln("child has APP_TOKEN: ", child.membership("APP_TOKEN"));
+    out.writeln("parent still has APP_TOKEN: ", isolated.membership("APP_TOKEN"));
 
     for SearchPath(environment: isolated) -> directory {
-        out.writeln("search: " + directory.string());
+        out.writeln("search: ", directory);
     }
 
     // The process environment, read once.
     let system = Environment();
-    out.writeln("process PATH set: " + system.membership("PATH").string());
+    out.writeln("process PATH set: ", system.membership("PATH"));
     0;
 }

@@ -15,16 +15,16 @@ main() is int {
 
     out.write(changes.unified());
     out.write(changes.contextual(1));
-    out.writeln("similarity: " + changes.ratio().string());
+    out.writeln("similarity: ", changes.ratio());
 
     for changes.edits() -> edit {
         if edit::Line::kind == DiffEditKind.removed {
-            out.writeln("line " + (edit::Line::left + 1).string() + " removed: " + edit::Line::text);
+            out.writeln("line ", edit::Line::left + 1, " removed: ", edit::Line::text);
         }
         else if edit::Line::kind == DiffEditKind.added {
-            out.writeln("line " + (edit::Line::right + 1).string() + " added: " + edit::Line::text);
+            out.writeln("line ", edit::Line::right + 1, " added: ", edit::Line::text);
         }
     }
-    out.writeln("unchanged prints nothing: " + (Diff(left: before, right: before).unified() == "").string());
+    out.writeln("unchanged prints nothing: ", Diff(left: before, right: before).unified() == "");
     0;
 }

@@ -1,6 +1,8 @@
 module net/stream v1.0.0;
 
 import "io/stream" take AsyncReading, AsyncWriting, ByteSource, Closing, InvalidReadLimit;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Encoded;
 import "runtime/network" as network;
 import "net/failure" take NetworkClosed, NetworkError, NetworkOperation, NetworkFailure,
     NetworkFailureKind;
@@ -295,6 +297,18 @@ object StreamWriting does AsyncWriting, Closing {
 
     async write(source is ByteSource) is AsyncWriting {
         await owner.write_bytes(source);
+        self;
+    }
+
+    async write(bytes is @byte) is AsyncWriting {
+        await owner.write_bytes(ByteSnapshot(bytes));
+        self;
+    }
+
+    // Text, as UTF-8: await connection.output().write("hello\n").
+    async write(values is ...string) is AsyncWriting {
+        let text is @string = values...;
+        await owner.write_bytes(Utf8Encoded(text.join("")));
         self;
     }
 }

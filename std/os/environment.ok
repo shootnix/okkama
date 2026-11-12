@@ -74,6 +74,12 @@ object Environment {
 
     // The home directory this environment names (HOME, or USERPROFILE on
     // Windows), not the account database's (os/account's User().home()).
+    // The directory for temporary files: TMPDIR, then TMP and TEMP, else /tmp.
+    temporary() is Directory {
+        let found = origin["TMPDIR"] else (origin["TMP"] else (origin["TEMP"] else "/tmp"));
+        Directory(path: Path(found));
+    }
+
     home() is Directory {
         let path is string = try {
             environment_home(origin);
@@ -287,4 +293,10 @@ test "the search path keeps order and duplicates; an empty part is the current d
 test "the process environment is a snapshot" {
     let system = Environment();
     test.ok(system == system.addition("OKKAMA_TEST_ONLY", "1").difference("OKKAMA_TEST_ONLY"));
+}
+
+test "an environment knows its directory for temporary files" {
+    test.is(Environment(values: ["TMPDIR": "/scratch", "TEMP": "/other"]).temporary().path().string(), "/scratch");
+    test.is(Environment(values: ["TEMP": "/other"]).temporary().path().string(), "/other");
+    test.is(Environment(values: ["HOME": "/home/ada"]).temporary().path().string(), "/tmp");
 }

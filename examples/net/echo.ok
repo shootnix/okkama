@@ -1,9 +1,7 @@
 module examples/net/echo v1.0.0;
 
-import "encoding/utf" take Utf8Decoded, Utf8Encoded;
-import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Decoded;
 import "io/stdout" take Stdout;
-import "net/endpoint" take IpEndpoint;
 import "net/ip" take IpAddress;
 import "net/tcp" take TcpConnecting, TcpListening;
 
@@ -16,18 +14,18 @@ async main() is int {
     let listener = await TcpListening(port: 0).listener();
     defer listener.close();
     let port = listener::Local::port;
-    out.writeln("listening on a system-chosen port: " + (port > 0).string());
+    out.writeln("listening on a system-chosen port: ", port > 0);
 
     let client = await TcpConnecting(address: IpAddress("127.0.0.1"), port: port, no_delay: true).connection();
     defer client.close();
     let server = await listener.connection();
     defer server.close();
-    out.writeln("peer is loopback: " + (server.endpoints().remote_endpoint().address() == IpAddress("127.0.0.1")).string());
+    out.writeln("peer is loopback: ", server.endpoints().remote_endpoint().address() == IpAddress("127.0.0.1"));
 
-    await client.output().write(ByteSnapshot(Utf8Encoded(origin: "hello over tcp").bytes()));
+    await client.output().write("hello over tcp");
     let received = await server.input().bytes(64);
-    await server.output().write(ByteSnapshot(received));
+    await server.output().write(received);
     let echoed = await client.input().bytes(64);
-    out.writeln("echoed: " + Utf8Decoded(echoed).string());
+    out.writeln("echoed: ", Utf8Decoded(echoed));
     0;
 }

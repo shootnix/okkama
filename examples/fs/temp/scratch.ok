@@ -2,9 +2,7 @@ module examples/fs/temp/scratch v1.0.0;
 
 import "fs/directory" take Directory, DirectoryEntries;
 import "fs/entry" take FileEntry;
-import "fs/path" take Path;
-import "fs/temp" take TemporaryDirectory, TemporaryFile, TemporaryFilePreservation;
-import "io/decorators" take ByteSnapshot;
+import "fs/temp" take TemporaryDirectory;
 import "io/stdout" take Stdout;
 
 // Scratch space with unpredictable names: a temporary directory removes its
@@ -13,30 +11,30 @@ import "io/stdout" take Stdout;
 
 main() is int {
     let out = Stdout();
-    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "build-");
+    let scratch = TemporaryDirectory(prefix: "build-");
     let root = scratch.path();
-    out.writeln("named build-: " + root.string().starts_with("build-").string());
+    out.writeln("named build-: ", root.name().starts_with("build-"));
 
-    let upload = TemporaryFile(directory: Directory(path: root), prefix: "upload-");
-    upload.write(ByteSnapshot([byte(1), byte(2), byte(3)]));
+    let upload = scratch.file(prefix: "upload-");
+    upload.write([byte(1), byte(2), byte(3)]);
     upload.flush();
-    out.writeln("inside: " + (upload.path().parent() == root).string());
-    out.writeln("bytes: " + FileEntry(path: upload.path()).stat()::Shape::size.string());
+    out.writeln("inside: ", upload.path().parent() == root);
+    out.writeln("bytes: ", upload.size());
 
     let report = root.child("report.bin");
-    TemporaryFilePreservation(origin: upload, destination: report).preserve();
+    upload.preserve(report);
     upload.close();
-    let names is @string = DirectoryEntries(origin: Directory(path: root)).map() -> entry {
-        entry.path().string().slice(root.string().length() + 1, entry.path().string().length());
+    let names is @string = DirectoryEntries(origin: scratch).map() -> entry {
+        entry.path().name();
     };
     out.writeln("kept: " + names[0]);
 
-    let throwaway = TemporaryFile(directory: Directory(path: root), prefix: "tmp-");
+    let throwaway = scratch.file(prefix: "tmp-");
     let gone = throwaway.path();
     throwaway.close();
-    out.writeln("deleted: " + (!FileEntry(path: gone).existence()).string());
+    out.writeln("deleted: ", !FileEntry(path: gone).existence());
 
     scratch.close();
-    out.writeln("tree removed: " + (!Directory(path: root).existence()).string());
+    out.writeln("tree removed: ", !Directory(path: root).existence());
     0;
 }

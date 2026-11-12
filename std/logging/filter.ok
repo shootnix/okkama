@@ -52,6 +52,19 @@ object LevelThresholds does LogAllowing {
         self.overrides = snapshot;
     }
 
+    // Levels by dotted logger name, the longest name winning:
+    // LevelThresholds(fallback: LogLevel.info, overrides: ["shop.db": LogLevel.debug]).
+    LevelThresholds(fallback is LogLevel, overrides is %string:LogLevel = [:]) {
+        let names = overrides.keys();
+        let levels = overrides.values();
+        confirm names.size() <= 1024 else throw InvalidLogThreshold.invalid;
+        let listed is @LevelOverride = (0..names.size()).map() -> index {
+            LevelOverride(name: LogName(names[index].split(".")), level: levels[index]);
+        };
+        self.fallback = fallback;
+        self.overrides = listed;
+    }
+
     allowed(name is LogName, level is LogLevel) is bool {
         let choice = overrides.reduce(LogThresholdChoice(level: fallback, size: 0)) -> old, override {
             let prefix = override.name().segments();
@@ -100,6 +113,13 @@ object AllowedLogs does LogWriting {
     AllowedLogs(origin is LogWriting, allowing is LogAllowing) {
         self.origin = origin;
         self.allowing = allowing;
+    }
+
+    // Records at `level` and above, with other levels for some loggers:
+    // AllowedLogs(origin: logs, level: LogLevel.info, overrides: ["shop.db": LogLevel.debug]).
+    AllowedLogs(origin is LogWriting, level is LogLevel, overrides is %string:LogLevel = [:]) {
+        self.origin = origin;
+        allowing = LevelThresholds(fallback: level, overrides: overrides);
     }
 
     write(record is LogRecord) is void {
@@ -152,3 +172,23 @@ test "thresholds: the most specific override wins; allowed logs drop the rest" {
     }
     test.is(collected.size(), 1);
 }
+
+test "thresholds and filters take levels by dotted name" {
+    let levels = LevelThresholds(fallback: LogLevel.info, overrides: ["shop.db": LogLevel.debug, "shop.db.slow": LogLevel.error]);
+    test.ok(levels.allowed(LogName("shop", "db"), LogLevel.debug));
+    test.ok(!levels.allowed(LogName("shop"), LogLevel.debug));
+    test.ok(!levels.allowed(LogName("shop", "db", "slow"), LogLevel.warning));
+    test.ok(LevelThresholds(fallback: LogLevel.warning).allowed(LogName("any"), LogLevel.error));
+    let kept = CollectedLogs();
+    let filtered = AllowedLogs(origin: kept, level: LogLevel.info, overrides: ["shop.db": LogLevel.debug]);
+    for [LogName("shop"), LogName("shop", "db")] -> name {
+        filtered.write(LogRecord(
+            occurred: Instant(Duration(seconds: 0)),
+            level: LogLevel.debug,
+            message: "m",
+            context: LogContext(name: name, fields: LogFields(), process: 1),
+        ));
+    }
+    test.is(kept.size(), 1);
+}
+

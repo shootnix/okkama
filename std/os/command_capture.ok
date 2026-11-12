@@ -1,8 +1,10 @@
 module os/command_capture v1.0.0;
 
-import "encoding/utf" take Utf8Decoded;
+import "encoding/utf" take Utf8Decoded, Utf8Encoded;
+import "io/stream" take ByteSource;
+import "io/decorators" take ByteSnapshot;
 import "fs/path" take Path;
-import "os/command" take Command, Commanding;
+import "os/command" take Command, Commanding, InheritedCommand;
 import "os/directory" take WorkingDirectory;
 import "os/environment" take Environment;
 import "os/process" take Exit, ExitKind, MissingExitCode, ProcessFailure;
@@ -37,20 +39,29 @@ enum CapturedStream = (output, errors);
 
 object CommandCapture {
     has command is Commanding;
-    has input is @byte;
+    has input is ByteSource;
     has limit is int;
     has state is ProcessState;
 
     CommandCapture(origin is Commanding, limit is int) {
         command = origin;
-        input = [];
+        let empty is @byte = [];
+        input = ByteSnapshot(empty);
         self.limit = limit;
         state = process_state_create();
     }
 
     CommandCapture(origin is Commanding, input is @byte, limit is int) {
         command = origin;
-        self.input = input;
+        self.input = ByteSnapshot(input);
+        self.limit = limit;
+        state = process_state_create();
+    }
+
+    // Standard input as UTF-8 text: CommandCapture(…, text: "b\na\n", limit: 1024).
+    CommandCapture(origin is Commanding, text is string, limit is int) {
+        command = origin;
+        input = Utf8Encoded(text);
         self.limit = limit;
         state = process_state_create();
     }
@@ -68,7 +79,7 @@ object CommandCapture {
             );
             let captured is CapturedProcess = await process_state_capture(
                 state,
-                input,
+                input.bytes(),
                 limit,
             );
             let overflow is int = captured_process_overflow(captured);
@@ -131,8 +142,20 @@ object CompletedCommand {
         completed_exit;
     }
 
-    // What the process wrote to stdout and stderr.
+    // What the process wrote to stdout and stderr, as UTF-8 text. Output that
+    // is not UTF-8 throws InvalidUtf8 here; ::Bytes keeps it exact.
     cap Captured {
+        output is string {
+            Utf8Decoded(captured_output).string();
+        }
+
+        errors is string {
+            Utf8Decoded(captured_errors).string();
+        }
+    }
+
+    // The exact bytes of stdout and stderr.
+    cap Bytes {
         output is @byte {
             captured_output;
         }
@@ -155,8 +178,8 @@ async test "output, errors and the exit are captured" {
         directory: WorkingDirectory(),
     );
     let done = await CommandCapture(origin: shell, limit: 1024).completion();
-    test.is(Utf8Decoded(origin: done::Captured::output).string(), "out");
-    test.is(Utf8Decoded(origin: done::Captured::errors).string(), "err");
+    test.is(done::Captured::output, "out");
+    test.is(done::Captured::errors, "err");
     test.ok(done.exit()::Status::kind == ExitKind.exited);
     test.is(done.exit().code(), 3);
     test.ok(!done.exit().success());
@@ -170,11 +193,11 @@ async test "input is written whole and closed; arguments are never split" {
         directory: WorkingDirectory(),
     );
     let printed = await CommandCapture(origin: echo, limit: 64).completion();
-    test.is(Utf8Decoded(origin: printed::Captured::output).string(), "a b|c;d");
+    test.is(printed::Captured::output, "a b|c;d");
     test.ok(printed.exit().success());
     let cat = Command(program: Path("cat"), arguments: [], environment: Environment(), directory: WorkingDirectory());
     let copied = await CommandCapture(origin: cat, input: [byte(104), byte(105)], limit: 64).completion();
-    test.is(copied::Captured::output, [byte(104), byte(105)]);
+    test.is(copied::Bytes::output, [byte(104), byte(105)]);
 }
 
 async test "limits are checked: zero is refused, more output than allowed fails" {
@@ -230,3 +253,11 @@ async test "a missing program fails; a killed one has no exit code" {
         done.exit().code();
     };
 }
+
+async test "standard input can be text" {
+    let cat = InheritedCommand(program: Path("cat"));
+    let copied = await CommandCapture(origin: cat, text: "hé\n", limit: 64).completion();
+    test.is(copied::Captured::output, "hé\n");
+    test.is(copied::Bytes::output, [byte(104), byte(195), byte(169), byte(10)]);
+}
+

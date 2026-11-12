@@ -34,18 +34,17 @@ main() is int {
                 out.writeln("help requested for " + call.path().join(" "));
             }
             else if call.command() == add {
-                out.writeln("add \"" + call.operands().join(" ") + "\" with priority "
-                    + (call.int("priority") else 3).string());
+                out.writeln("add \"", call.operands().join(" "), "\" with priority ", call.int("priority") else 3);
             }
             else if call.command() == list {
-                out.writeln("list, including done: " + call.flag("all").string());
+                out.writeln("list, including done: ", call.flag("all"));
             }
             else {
                 out.writeln("close item " + call.operands()[0]);
             }
         }
         catch CliFailure.detailed(index, token, message) {
-            out.writeln("error at argument " + index.string() + ": " + message);
+            out.writeln("error at argument ", index, ": ", message);
         }
     }
 

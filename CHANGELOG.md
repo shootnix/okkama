@@ -12,6 +12,21 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
 
 ### Added
 
+- **Language: a `...string` tail turns values into text (#352).** The owner,
+  2026-11-12: `Formatted("foo: {}, bar: {}", foo, bar)`. A value that is not
+  a string reaches a `...string` tail through its own `string()`: `int`,
+  `float`, `rat`, `byte`, `bool`, `char`, and objects and role values whose
+  type answers `string() is string`.
+  - `out.writeln("count: ", 5, ", ready: ", true)` prints `count: 5, ready:
+    true`, and `out.writeln(Formatted("{} version {}", id, id.version()))`
+    fills the slots. `strings/format` gains `Formatted(pattern, values...)`.
+  - The checker inserts the call, so IR, Sparrow and the JVM run the same code.
+    The conversion is the last resort: a signature that fits as written wins,
+    so `kind(1, "a")` still picks `...any`. A value without `string()` is a
+    compile error; a spread `values...` is not converted.
+  - Book §18.4 and Bible §13.4 (EN, RU); conformance cases
+    `L03.variadic.string-tail-converts` and `…-rejects-textless`.
+
 - **Language: `for`, `map`, `filter`, `reduce` and `find` walk `Batching<T>`
   sources (#465).** `collections/iteration` gains `role Batching<T> {
   batch() is @T; }` for sources consumed as they are read.
@@ -67,6 +82,45 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     highlighting.
 
 ### Changed
+
+- **Examples pass: objects answer in the form people use (#352).** The
+  owner, 2026-11-12: «любой объект сам знает, какую информацию и в каком виде
+  он должен предоставить… а не городи вокруг заборы из декодеров,
+  форматтеров». `docs/std-principles.md` §1 records the rule. The 61 programs
+  in `examples/` were read with the owner, and the std behind them changed:
+
+  | Before | After |
+  |---|---|
+  | `Duration(value: 5.rat(), unit: DurationUnit.second)` | `Duration(seconds: 5)` |
+  | `Json([JsonField("id", 7)])` | `Json(JsonField("id", 7))` |
+  | `Headers([a, b])`, `LogFields([…])`, `SettingKey(["server", "port"])` | `Headers(a, b)`, `LogFields(…)`, `SettingKey("server", "port")` (32 objects) |
+  | `HttpClient(resolver: FixedResolution([]), endpoints: ListedNetworks([IpNetwork(…)]))` | `HttpClient(endpoints: LoopbackEndpoints())` |
+  | `FutureGroup` + `serving.start(server.serve())` + `serving.wait()` | `server.started()`; `drain(limit:)` waits |
+  | a loop over `request.body().reading()` | `await request.text(limit: 4096)` |
+  | `StatusCode(page::Head::status).number()` | `page::Head::code` |
+  | `server.local_endpoint()::Parts::port` | `server::Local::port` |
+  | `WebRoutes(routings: [Scope(prefix: "/api", routings: […])], fallback: f)` | `WebRoutes(Scope("/api", Get(…), Post(…)), Fallback(f))` |
+  | `Rfc3339(origin: instant, offset: utc).string()` | `instant.string()` |
+  | `IsoDate(origin: date).string()`, `DaysBetween(left:, right:).count()` | `date.string()`, `release.days_until(deadline)` |
+  | `GregorianDay(GregorianDay(d).number()).date()` | `Date(day_number: d.day_number())` |
+  | `Zoned(local:, zone:, fold:).instant()` | `berlin.instant(local)` (`Fold.earlier` by default) |
+  | `TemplateBindings(TemplateBinding(path: TemplatePath(…), value: …))` | `template.string(["user.name": "Ada"])` |
+  | `Utf8Decoded(origin: done::Captured::output).string()` | `done::Captured::output` (text; `::Bytes` keeps bytes) |
+  | `ProcessInput(origin: p).write(ByteSnapshot(Utf8Encoded(…).bytes()))` | `p.input().write("text\n")`; `p.output().text(limit:)` |
+  | `InheritedCommand(program:, arguments: [])` | `InheritedCommand(program:)` |
+  | `client.output().write(ByteSnapshot(Utf8Encoded(…).bytes()))` | `client.output().write("hello")` |
+  | `FixedResolution(HostAddresses(host: HostName(…), addresses: […]))` | `FixedResolution(["api.example.test": ["192.0.2.10"]])` |
+  | `Utf8Decoded(message.bytes()).string().split("\r\n").join("\n")` | `message.string()` |
+  | `headers().first(MessageHeaderName("Subject"))` | `headers().first("Subject")` |
+  | `AllowedLogs(origin:, allowing: LevelThresholds(fallback:, overrides: [LevelOverride(name: LogName("shop", "db"), level:)]))` | `AllowedLogs(origin:, level: LogLevel.info, overrides: ["shop.db": LogLevel.debug])` |
+  | `TextStreamLogs(origin:, zone: FixedZone(name: "UTC", …))`, `RedactedLogs(…, replacement: Json(…))` | `TextStreamLogs(origin:)` (UTC), `RedactedLogs(origin:, names:)` (`"[redacted]"`) |
+  | `TemporaryDirectory(parent: Directory(path: Path(".")), prefix:)` | `TemporaryDirectory(prefix:)`, in `Environment().temporary()` |
+  | `TemporaryFile(directory: Directory(path: root), prefix:)` | `scratch.file(prefix:)`; `file.write([…])`, `file.write("text")`, `file.size()` |
+  | `entry.path().string().slice(root.string().length() + 1, …)` | `entry.path().name()` |
+  | `out.writeln("lowest " + scores.first().string())` | `out.writeln("lowest ", scores.first())` (159 lines in `examples/`) |
+
+  The older forms stay; nothing leaves std. `Utf8Encoded` is a `ByteSource`.
+  Book §26.5 (EN, RU) shows the new forms.
 
 - **Language: `hidden` marks an action (#365).** An action that only its own
   object calls is written `hidden secret() is int { … }`, one by one, and
@@ -948,6 +1002,15 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
     server, web routes, WebSocket, caching, proxies and mime.
 
 ### Fixed
+
+- **An overloaded constructor or action lost the expected type of an array
+  or map literal (#501).** `Pair([A(), B()])` beside `Pair(name is string)`
+  was "Array elements have incompatible types A and B", and so was
+  `Doc(items: [A(), B()])` beside `Doc(items is ...Part)`. A named call no
+  longer counts variadic signatures, and a collection literal picks the only
+  parameter that takes a collection. Case `L03.overload.collection-literal-argument`.
+- **`make install-pgo` stopped in training (#500).** `tools/pgo/json.ok` and
+  workload `05-strings` used removed json and `strings/parse` APIs.
 
 - **http/server: draining and closing hung (#496).** `ServerDrain(…).drain()`
   never returned, even with no request served and with a limit, and

@@ -16,11 +16,11 @@ main() is int {
     let text = "name,city\r\n\"Ada, Countess\",London\r\n\"say \"\"hi\"\"\",Paris\r\n";
 
     for CsvRows(text) -> row {
-        out.writeln(row.size().string() + " fields: " + row.join(" | "));
+        out.writeln(row.size(), " fields: ", row.join(" | "));
     }
 
     let rows is @@string = CsvRows(text).map() -> row { row; };
-    out.writeln("same text again: " + (CsvString(rows).string() == text).string());
+    out.writeln("same text again: ", CsvString(rows).string() == text);
 
     let semicolons = CsvDialect(delimiter: ";", quote: "'", line_ending: "\n");
     out.write(CsvString(rows: [["a;b", "c"], ["d", "it's"]], dialect: semicolons).string());

@@ -50,9 +50,9 @@ object Command does Commanding {
 
     Command(
         program is Path,
-        arguments is @string,
         environment is Environment,
         directory is DirectoryLocating,
+        arguments is @string = [],
     ) {
         command_program = program;
         command_arguments = arguments;
@@ -123,7 +123,7 @@ object InheritedCommand does Commanding {
 
     InheritedCommand(
         program is Path,
-        arguments is @string,
+        arguments is @string = [],
     ) {
         command_program = program;
         command_arguments = arguments;

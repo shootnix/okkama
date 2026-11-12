@@ -74,7 +74,7 @@ async main() is int {
         out.writeln(text + " -> " + (await connection.message()).text());
     }
     await connection.close(1000, "bye");
-    out.writeln("closed: " + connection.closed().string());
+    out.writeln("closed: ", connection.closed());
 
     await server.drain(limit: Duration(seconds: 5));
     0;

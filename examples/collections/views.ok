@@ -17,7 +17,7 @@ main() is int {
     }
 
     for Chunked(origin: readings, size: 3) -> batch {
-        out.writeln("batch of " + batch.size().string());
+        out.writeln("batch of ", batch.size());
     }
 
     let rises = Pairwise(origin: readings).reduce(0) -> count, pair {
@@ -28,8 +28,8 @@ main() is int {
             count;
         }
     };
-    out.writeln("rises: " + rises.string());
+    out.writeln("rises: ", rises);
     let plus is (int, int) is int = (total is int, value is int) is int { total + value; };
-    out.writeln("sum: " + Reduced(origin: readings, initial: 0, action: plus).total().string());
+    out.writeln("sum: ", Reduced(origin: readings, initial: 0, action: plus).total());
     0;
 }

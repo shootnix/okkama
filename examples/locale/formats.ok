@@ -40,7 +40,7 @@ main() is int {
     let out = Stdout();
     let supported = [Locale("en"), Locale("de"), Locale("fr"), Locale("ru")];
     let asked = [BasicLanguageRange("de-CH"), BasicLanguageRange("en")];
-    out.writeln("chosen: " + LookedUpLocale(requested: asked, available: supported, fallback: Locale("en")).locale().string());
+    out.writeln("chosen: ", LookedUpLocale(requested: asked, available: supported, fallback: Locale("en")).locale());
 
     let number = NumberFormat(
         notation: NumberNotation.standard,
@@ -52,23 +52,19 @@ main() is int {
     let amount = Decimal("1234567.891");
     let day = Date(year: 2026, month: 11, day: 12);
     for supported -> locale {
-        out.writeln(locale.string() + ": "
-            + LocalizedDecimal(origin: amount, locale: locale, format: number).string() + " | "
-            + LocalizedCurrency(amount: Decimal("-1234.5"), currency: Currency("EUR"), locale: locale, format: money).string() + " | "
-            + LocalizedDate(origin: day, locale: locale, style: DateStyle.long).string() + " | "
-            + LocalizedList(values: ["tea", "milk", "bread"], locale: locale, kind: ListKind.conjunction, style: ListStyle.long).string());
+        out.writeln(locale, ": ", LocalizedDecimal(origin: amount, locale: locale, format: number), " | ", LocalizedCurrency(amount: Decimal("-1234.5"), currency: Currency("EUR"), locale: locale, format: money), " | ", LocalizedDate(origin: day, locale: locale, style: DateStyle.long), " | ", LocalizedList(values: ["tea", "milk", "bread"], locale: locale, kind: ListKind.conjunction, style: ListStyle.long));
     }
 
     // Reading a localized number back gives the same decimal.
     let german = LocalizedDecimal(origin: amount, locale: Locale("de"), format: number).string();
     let parsed = LocalizedDecimalFromString(origin: german, locale: Locale("de"), format: number).decimal();
-    out.writeln("read back " + german + ": " + (parsed == Decimal("1234567.89")).string());
+    out.writeln("read back ", german, ": ", parsed == Decimal("1234567.89"));
 
     // Plural categories decide which message form to use.
     for [1, 2, 5, 21] -> count {
         let russian = PluralCategoryOf(origin: PluralNumber(count.string()), locale: Locale("ru"), kind: PluralKind.cardinal).category();
         let english = PluralCategoryOf(origin: PluralNumber(count.string()), locale: Locale("en"), kind: PluralKind.cardinal).category();
-        out.writeln(count.string() + ": en " + CategoryName(english).string() + ", ru " + CategoryName(russian).string());
+        out.writeln(count, ": en ", CategoryName(english), ", ru ", CategoryName(russian));
     }
     0;
 }

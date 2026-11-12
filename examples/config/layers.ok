@@ -45,14 +45,14 @@ main() is int {
     out.writeln("cors.origins = " + settings.texts("cors.origins").join(", "));
     out.writeln("server.timeout = " + (settings.text("server.timeout") else "30s"));
     let workers_count = settings.int("server.workers") else 1;
-    out.writeln("workers as a number: " + (workers_count * 2).string() + " threads at two per worker");
+    out.writeln("workers as a number: ", workers_count * 2, " threads at two per worker");
 
     // A broken file names its line and column.
     try {
         ParsedIni("[server\nhost = x\n").document();
     }
     catch InvalidIni.located(row, column, message) {
-        out.writeln("app.ini:" + row.string() + ":" + column.string() + ": " + message);
+        out.writeln("app.ini:", row, ":", column, ": ", message);
     }
     0;
 }

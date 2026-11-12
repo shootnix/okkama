@@ -1320,14 +1320,18 @@
     },
     "normal": {
      "cases": [
+      "L03.overload.collection-literal-argument",
       "L03.overloads.results-differ-by-parameter-types",
       "L03.overloads.selection",
-      "L03.variadic.overload-by-tail-type"
+      "L03.variadic.overload-by-tail-type",
+      "L03.variadic.string-tail-converts"
      ],
      "mandatory_cases": [
+      "L03.overload.collection-literal-argument",
       "L03.overloads.results-differ-by-parameter-types",
       "L03.overloads.selection",
-      "L03.variadic.overload-by-tail-type"
+      "L03.variadic.overload-by-tail-type",
+      "L03.variadic.string-tail-converts"
      ],
      "requirement": "required"
     }
@@ -1355,11 +1359,13 @@
     "interaction": {
      "cases": [
       "L03.variadic.calls",
-      "L03.variadic.overloaded"
+      "L03.variadic.overloaded",
+      "L03.variadic.string-tail-converts"
      ],
      "mandatory_cases": [
       "L03.variadic.calls",
-      "L03.variadic.overloaded"
+      "L03.variadic.overloaded",
+      "L03.variadic.string-tail-converts"
      ],
      "requirement": "required"
     },
@@ -1370,6 +1376,7 @@
       "L03.variadic.missing-prefix",
       "L03.variadic.named-call",
       "L03.variadic.overload-empty-tail-ambiguous",
+      "L03.variadic.string-tail-rejects-textless",
       "L03.variadic.tail-type"
      ],
      "mandatory_cases": [
@@ -1378,6 +1385,7 @@
       "L03.variadic.missing-prefix",
       "L03.variadic.named-call",
       "L03.variadic.overload-empty-tail-ambiguous",
+      "L03.variadic.string-tail-rejects-textless",
       "L03.variadic.tail-type"
      ],
      "requirement": "required"
@@ -1385,13 +1393,17 @@
     "normal": {
      "cases": [
       "L01.gram.unpack.forms",
+      "L03.overload.collection-literal-argument",
       "L03.variadic.calls",
-      "L03.variadic.overload-by-tail-type"
+      "L03.variadic.overload-by-tail-type",
+      "L03.variadic.string-tail-converts"
      ],
      "mandatory_cases": [
       "L01.gram.unpack.forms",
+      "L03.overload.collection-literal-argument",
       "L03.variadic.calls",
-      "L03.variadic.overload-by-tail-type"
+      "L03.variadic.overload-by-tail-type",
+      "L03.variadic.string-tail-converts"
      ],
      "requirement": "required"
     }
@@ -14356,7 +14368,7 @@
     "std/http/endpoint.ok"
    ],
    "status": "mandatory",
-   "title": "std http/endpoint public contract (AllEndpoints, EndpointAllowing, EndpointDenied, EndpointSelectionLimit, HttpEndpointSelection, InvalidHttpEndpoint, ListedNetworks, PublicEndpoints)"
+   "title": "std http/endpoint public contract (AllEndpoints, EndpointAllowing, EndpointDenied, EndpointSelectionLimit, HttpEndpointSelection, InvalidHttpEndpoint, ListedNetworks, LoopbackEndpoints, PublicEndpoints)"
   },
   {
    "aspects": {
@@ -16036,7 +16048,7 @@
     "std/http/message.ok"
    ],
    "status": "mandatory",
-   "title": "std http/message public contract (InvalidHttpMessage, Request, RequestCoordinates, Response)"
+   "title": "std http/message public contract (BodyLimitExceeded, InvalidHttpMessage, Request, RequestCoordinates, Response)"
   },
   {
    "aspects": {
@@ -23152,7 +23164,7 @@
     "std/os/process.ok"
    ],
    "status": "mandatory",
-   "title": "std os/process public contract (Exit, ExitKind, MissingExitCode, Process, ProcessErrors, ProcessFailure, ProcessInput, ProcessOutput, Signal, UnsupportedSignal)"
+   "title": "std os/process public contract (Exit, ExitKind, MissingExitCode, OutputLimitExceeded, Process, ProcessErrors, ProcessFailure, ProcessInput, ProcessOutput, Signal, UnsupportedSignal)"
   },
   {
    "aspects": {
@@ -25844,7 +25856,7 @@
     "std/strings/format.ok"
    ],
    "status": "mandatory",
-   "title": "std strings/format public contract (Formatted, InvalidFormat)"
+   "title": "std strings/format public contract (FormatProbe, Formatted, InvalidFormat)"
   },
   {
    "aspects": {
@@ -27954,7 +27966,7 @@
     "std/web/routing.ok"
    ],
    "status": "mandatory",
-   "title": "std web/routing public contract (Delete, ExceptionScope, Get, InvalidWebRoute, Patch, Post, Put, Scope, WebRoutes, WebRouting)"
+   "title": "std web/routing public contract (Delete, ExceptionScope, Fallback, Get, InvalidWebRoute, Patch, Post, Put, RoutingProbe, Scope, WebRoutes, WebRouting)"
   },
   {
    "aspects": {
@@ -32656,5 +32668,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "274d3bc5745b8064d4c01c7d494de8db8aa3612c5f15bf76e8816a8cad27081e"
+ "suite_tree_sha256": "59567a3aeb16fdbd01e35a66bb853624e43bf7408e993209b69895b8598ca6fc"
 }

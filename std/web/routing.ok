@@ -13,17 +13,18 @@ import "web/exception" take Exception, Problem;
 // serve many routes and keep its dependencies in its own fields:
 //
 //     WebRoutes(
-//         [
-//             Get("/health", system.health),
-//             Scope("/api", [
-//                 Scope("/users", UserExceptions(), [
-//                     Post("", users.register),
-//                     Get("/:id", users.show)
-//                 ])
-//             ])
-//         ],
-//         system.missing
+//         Get(path: "/health", endpoint: system.health),
+//         Scope("/api",
+//             Scope("/users", UserExceptions(),
+//                 Post(path: "", endpoint: users.register),
+//                 Get(path: "/:id", endpoint: users.show),
+//             ),
+//         ),
+//         Fallback(system.missing),
 //     );
+//
+// Without a Fallback, a request no route matches is answered 404 with a
+// problem body.
 //
 // Everything compiles into one std http/routing.Routes, so its rules are kept:
 // overlapping patterns for one method are rejected at construction, a known
@@ -51,6 +52,9 @@ role ExceptionScope {
 
 role WebRouting {
     routes(prefix is string, scopes is @ExceptionScope) is @Route;
+
+    // The answer for requests no route matches. Only Fallback has one.
+    fallback() is Maybe<Fallback>;
 }
 
 object Get does WebRouting {
@@ -62,6 +66,10 @@ object Get does WebRouting {
 
     routes(prefix is string, scopes is @ExceptionScope) is @Route {
         origin.routes(prefix, scopes);
+    }
+
+    fallback() is Maybe<Fallback> {
+        Maybe<Fallback>.none;
     }
 }
 
@@ -75,6 +83,10 @@ object Post does WebRouting {
     routes(prefix is string, scopes is @ExceptionScope) is @Route {
         origin.routes(prefix, scopes);
     }
+
+    fallback() is Maybe<Fallback> {
+        Maybe<Fallback>.none;
+    }
 }
 
 object Put does WebRouting {
@@ -86,6 +98,10 @@ object Put does WebRouting {
 
     routes(prefix is string, scopes is @ExceptionScope) is @Route {
         origin.routes(prefix, scopes);
+    }
+
+    fallback() is Maybe<Fallback> {
+        Maybe<Fallback>.none;
     }
 }
 
@@ -99,6 +115,10 @@ object Patch does WebRouting {
     routes(prefix is string, scopes is @ExceptionScope) is @Route {
         origin.routes(prefix, scopes);
     }
+
+    fallback() is Maybe<Fallback> {
+        Maybe<Fallback>.none;
+    }
 }
 
 object Delete does WebRouting {
@@ -110,6 +130,10 @@ object Delete does WebRouting {
 
     routes(prefix is string, scopes is @ExceptionScope) is @Route {
         origin.routes(prefix, scopes);
+    }
+
+    fallback() is Maybe<Fallback> {
+        Maybe<Fallback>.none;
     }
 }
 
@@ -132,18 +156,83 @@ object Scope does WebRouting {
         self.routings = routings;
     }
 
+    // The routes one by one: Scope("/api", Get(…), Post(…)).
+    Scope(prefix is string, routings is ...WebRouting) {
+        self.prefix = WebPrefix(prefix).string();
+        let bare is @ExceptionScope = [];
+        own = bare;
+        let listed is @WebRouting = routings...;
+        self.routings = listed;
+    }
+
+    // Scope("/users", UserExceptions(), Post(…), Get(…)).
+    Scope(prefix is string, exceptions is ExceptionScope, routings is ...WebRouting) {
+        self.prefix = WebPrefix(prefix).string();
+        let single is @ExceptionScope = [exceptions];
+        own = single;
+        let listed is @WebRouting = routings...;
+        self.routings = listed;
+    }
+
     routes(outer is string, scopes is @ExceptionScope) is @Route {
+        for routings -> routing {
+            confirm routing.fallback() == Maybe<Fallback>.none
+                else throw InvalidWebRoute.because("a Fallback belongs to WebRoutes, not to the scope " + prefix);
+        }
         let inner = ScopeList(left: scopes, right: own).scopes();
         let empty is @Route = [];
         routings.reduce(empty) -> all, routing {
             RouteList(left: all, right: routing.routes(outer + prefix, inner)).routes();
         };
     }
+
+    fallback() is Maybe<Fallback> {
+        Maybe<Fallback>.none;
+    }
+}
+
+// The answer for requests no route matches: WebRoutes(Get(…), Fallback(app.missing)).
+// Without one, WebRoutes answers 404 with a problem body.
+object Fallback does WebRouting {
+    has endpoint is async (WebRequest) is HandlingResult;
+
+    Fallback(endpoint is async (WebRequest) is HandlingResult) {
+        self.endpoint = endpoint;
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @Route {
+        let empty is @Route = [];
+        empty;
+    }
+
+    fallback() is Maybe<Fallback> {
+        Maybe.some(self);
+    }
+
+    // The endpoint it answers with.
+    answering() is async (WebRequest) is HandlingResult {
+        endpoint;
+    }
 }
 
 // The application's route table. It is the Handling given to HttpServer.
 object WebRoutes does Handling {
     has origin is Routes;
+
+    // The routes one by one, with at most one Fallback among them:
+    // WebRoutes(Scope("/api", Get(…), Post(…)), Fallback(app.missing)).
+    WebRoutes(routings is ...WebRouting) {
+        let listed is @WebRouting = routings...;
+        let bare is @ExceptionScope = [];
+        origin = WebRouteTable(routings: listed, scopes: bare, fallback: WebFallbackOf(listed).endpoint()).routes();
+    }
+
+    // WebRoutes(AppExceptions(), Get(…), Fallback(…)).
+    WebRoutes(exceptions is ExceptionScope, routings is ...WebRouting) {
+        let listed is @WebRouting = routings...;
+        let single is @ExceptionScope = [exceptions];
+        origin = WebRouteTable(routings: listed, scopes: single, fallback: WebFallbackOf(listed).endpoint()).routes();
+    }
 
     WebRoutes(routings is @WebRouting, fallback is async (WebRequest) is HandlingResult) {
         let bare is @ExceptionScope = [];
@@ -167,6 +256,43 @@ object WebRoutes does Handling {
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
         await origin.handling(request, context);
+    }
+}
+
+// The endpoint of the one Fallback among routings, or a 404 problem.
+hidden object WebFallbackOf {
+    has routings is @WebRouting;
+
+    WebFallbackOf(routings is @WebRouting) {
+        self.routings = routings;
+    }
+
+    endpoint() is async (WebRequest) is HandlingResult {
+        let found is @Fallback = routings.reduce([]) -> kept, routing {
+            match routing.fallback() {
+                case Maybe.some(fallback) {
+                    kept + [fallback];
+                }
+                else {
+                    kept;
+                }
+            }
+        };
+        confirm found.size() <= 1 else throw InvalidWebRoute.because("WebRoutes takes at most one Fallback");
+        if found.size() == 1 {
+            found[0].answering();
+        }
+        else {
+            WebNotFound().answer;
+        }
+    }
+}
+
+hidden object WebNotFound {
+    WebNotFound();
+
+    async answer(request is WebRequest) is HandlingResult {
+        Problem(status: 404, detail: "no route matches");
     }
 }
 
@@ -356,3 +482,25 @@ test "scope prefixes are absolute and have no trailing slash" {
         WebPrefix("/");
     };
 }
+
+object RoutingProbe {
+    RoutingProbe();
+
+    async answer(request is WebRequest) is HandlingResult {
+        Problem(status: 418, detail: "probe");
+    }
+}
+
+test "routes take one Fallback, and only at the top" {
+    let probe = RoutingProbe();
+    WebRoutes(Get(path: "/a", endpoint: probe.answer), Fallback(probe.answer));
+    WebRoutes(Scope("/api", Get(path: "/a", endpoint: probe.answer)));
+    test.throws(InvalidWebRoute) {
+        WebRoutes(Fallback(probe.answer), Fallback(probe.answer));
+    };
+    test.throws(InvalidWebRoute) {
+        WebRoutes(Scope("/api", Get(path: "/a", endpoint: probe.answer), Fallback(probe.answer)));
+    };
+    test.is(Fallback(probe.answer).routes("", []).size(), 0);
+}
+

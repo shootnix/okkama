@@ -32,6 +32,16 @@ So:
 - **Tell, don't ask.** An object is given work and returns a result. Code
   that reads three fields of an object and computes something from them
   belongs inside that object, as an action.
+- **An object knows what it gives, and in what form** (the owner,
+  2026-11-12: «любой объект сам знает, какую информацию и в каком виде он
+  должен предоставить. имплементируй это знание внутри его метода, а не
+  городи вокруг заборы из декодеров, форматтеров и прочей нечисти»). A
+  caller never wraps an answer in a decoder or a formatter to use it:
+  `done::Captured::output` is text and `done::Bytes::output` the exact
+  bytes; `message.string()`, `instant.string()`, `date.days_until(other)`,
+  `process.output().text(limit:)`, `connection.output().write("text")`.
+  Decoders and formatters stay for the rare explicit case, and the object's
+  own action uses them inside.
 - **No accessors by default.** An action whose body only returns a field
   (`cents() is int { cents; }`) is an accessor. Add one only when there is no
   other way, and ask whether the caller should instead hand the object its
@@ -269,7 +279,9 @@ code before they are made.
 5. **Constructors** take named arguments with defaults; one constructor with
    defaults instead of overloads; the plain construction works (§2).
 6. **No matryoshkas.** The common task is one to three lines; the
-   inventory's nesting column finds the rest (§2).
+   inventory's nesting column finds the rest (§2). No caller wraps an answer
+   in a decoder or formatter: the object answers in the form people use
+   (§1).
 7. **Enums** for named numbers and for closed sets of choices (§2).
 8. **Iteration** with `for` and `Batching`; no closure walkers (§2).
 9. **Failures**: one domain enum, below its throwers, wrapping natives (§6).

@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.overload.collection-literal-argument",
+  "title": "an array or map literal selects the overload that takes a collection",
+  "purpose": "When several signatures fit a call's form, an array or map literal argument is typed by the only parameter that takes a collection; a named call never selects a variadic signature (#501).",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.OVERLOADS",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "CALL.VARIADIC",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "2\n2\n102\n3\n11\n-1\n2\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.8",
+    "docs/okkama-spec-11072026.md#11.8.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #501",
+    "expected_basis": "spec 11.8 and Book 17.4: a role-typed array parameter types a heterogeneous literal; variadic calls are positional-only."
+  },
+  "status": "mandatory"
+}
