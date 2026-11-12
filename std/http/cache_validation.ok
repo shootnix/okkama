@@ -192,32 +192,23 @@ hidden object Cache304Fields {
 hidden object CacheMergedFields {
     has result is Headers;
 
+    // Stored fields, then the updated ones, made into one Headers (#112).
     CacheMergedFields(stored is Headers, updated is Headers) {
-        let state = CacheFieldState(stored);
-        for updated.entries() -> field {
-            state = state.following(field);
-        }
-        result = state.headers();
+        let kept = stored.entries();
+        let added = updated.entries();
+        let all is @Header = (0..kept.size() + added.size()).map() -> index {
+            if index < kept.size() {
+                kept.item(index);
+            }
+            else {
+                added.item(index - kept.size());
+            }
+        };
+        result = Headers(entries: all, limits: stored.limits());
     }
 
     headers() is Headers {
         result;
-    }
-}
-
-hidden object CacheFieldState {
-    has result is Headers;
-
-    CacheFieldState(origin is Headers) {
-        result = origin;
-    }
-
-    headers() is Headers {
-        result;
-    }
-
-    following(field is Header) is ^CacheFieldState {
-        ^result = result.addition(field);
     }
 }
 

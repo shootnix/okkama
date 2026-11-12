@@ -2,45 +2,57 @@ module web/internal/reply v1.0.0;
 
 import "http/message" take Response;
 import "http/status" take Status, StatusCode;
-import "http/header" take Headers, Header, HeaderName, HttpAsciiLowercase;
+import "http/header" take Headers, Header, HeaderName;
 import "http/body" take ByteBody, EmptyBody;
+import "collections/list" take List, EmptyList;
 
 // Shared response assembly for web/reply and web/exception. Replies own their
 // representation and framing metadata: callers may add other fields, but never
 // Content-Type, Content-Length or Transfer-Encoding.
 
+// Fields are kept newest first on a persistent list, so adding one costs the
+// same however many came before; the array is gathered once (#83).
 object ReplyHeaders {
-    has origin is @Header;
+    has origin is List<Header>;
 
     ReplyHeaders() {
-        let empty is @Header = [];
+        let empty is List<Header> = EmptyList();
         origin = empty;
     }
 
     ReplyHeaders(origin is @Header) {
-        self.origin = origin;
+        let empty is List<Header> = EmptyList();
+        self.origin = origin.reduce(empty) -> fields, header {
+            fields.prefix(header);
+        };
     }
 
     added(name is string, value is string) is ReplyHeaders {
-        let lowered = HttpAsciiLowercase(name).string();
+        let field = HeaderName(name);
+        let lowered = field.lowercase();
         confirm lowered != "content-type"
             && lowered != "content-length"
             && lowered != "transfer-encoding"
             else throw InvalidReply.because(name + " is owned by the reply itself");
-        let header = Header(name: HeaderName(name), value: value);
-        let following is @Header = (0..origin.size() + 1).map() -> index {
-            if index < origin.size() {
-                origin[index];
-            }
-            else {
-                header;
-            }
-        };
-        ReplyHeaders(following);
+        let following is ReplyHeaders = self.prefixed(Header(name: field, value: value));
+        following;
+    }
+
+    hidden prefixed(header is Header) is ^ReplyHeaders {
+        ^origin = origin.prefix(header);
     }
 
     entries() is @Header {
-        origin;
+        once let fields is @Header = self.gathered();
+        fields;
+    }
+
+    hidden gathered() is @Header {
+        let empty is @Header = [];
+        let newest is @Header = origin.reduce(empty) -> fields, header {
+            fields + [header];
+        };
+        newest.reversed();
     }
 }
 
@@ -106,16 +118,7 @@ hidden object ReplyFields {
     }
 
     entries() is @Header {
-        let more = extra.entries();
-        let all is @Header = (0..fixed.size() + more.size()).map() -> index {
-            if index < fixed.size() {
-                fixed[index];
-            }
-            else {
-                more[index - fixed.size()];
-            }
-        };
-        all;
+        fixed + extra.entries();
     }
 }
 

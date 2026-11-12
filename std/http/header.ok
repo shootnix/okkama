@@ -154,10 +154,13 @@ object HeaderLimits {
 object Headers {
     has origin is @Header;
     has limits is HeaderLimits;
+    has used is int;
 
     Headers(entries is Sequencing<Header>) {
         let bounds = HeaderLimits();
-        origin = HeaderSnapshot(entries: entries, limits: bounds).entries();
+        let snapshot = HeaderSnapshot(entries: entries, limits: bounds);
+        origin = snapshot.entries();
+        used = snapshot.used();
         limits = bounds;
     }
 
@@ -165,12 +168,16 @@ object Headers {
     Headers(entries is ...Header) {
         let listed is @Header = entries...;
         let bounds = HeaderLimits();
-        origin = HeaderSnapshot(entries: listed, limits: bounds).entries();
+        let snapshot = HeaderSnapshot(entries: listed, limits: bounds);
+        origin = snapshot.entries();
+        used = snapshot.used();
         limits = bounds;
     }
 
     Headers(entries is Sequencing<Header>, limits is HeaderLimits) {
-        origin = HeaderSnapshot(entries: entries, limits: limits).entries();
+        let snapshot = HeaderSnapshot(entries: entries, limits: limits);
+        origin = snapshot.entries();
+        used = snapshot.used();
         self.limits = limits;
     }
 
@@ -207,17 +214,19 @@ object Headers {
         values;
     }
 
+    // Only the new field is checked against the limits; the others were
+    // checked when they came in (#112).
     addition(entry is Header) is Headers {
         confirm origin.size() < limits::Limits::entries else throw HeaderLimitExceeded.kind("entries");
-        let values is @Header = (0..origin.size() + 1).map() -> index {
-            if index < origin.size() {
-                origin[index];
-            }
-            else {
-                entry;
-            }
-        };
-        Headers(entries: values, limits: limits);
+        let bytes = entry.name().string().length() + entry.value().length() + 4;
+        confirm bytes <= limits::Limits::bytes - used else throw HeaderLimitExceeded.kind("bytes");
+        let extended is Headers = self.extended(entry, bytes);
+        extended;
+    }
+
+    hidden extended(entry is Header, bytes is int) is ^Headers {
+        ^origin = origin + [entry];
+        ^used = used + bytes;
     }
 }
 
@@ -238,14 +247,18 @@ object HeadersWithout {
 
     headers() is Headers {
         let source = origin.entries();
-        let entries is @Header = (0..source.size()).map() -> index {
-            source.item(index);
-        };
-        let kept is @Header = entries.filter() -> entry {
+        let empty is @Header = [];
+        let kept is @Header = (0..source.size()).reduce(empty) -> fields, index {
+            let entry = source.item(index);
             let excluded = selected.reduce(false) -> found, name {
                 found || name == entry.name().lowercase();
             };
-            !excluded;
+            if excluded {
+                fields;
+            }
+            else {
+                fields + [entry];
+            }
         };
         Headers(entries: kept, limits: origin.limits());
     }
@@ -342,6 +355,7 @@ object HttpAsciiLowercase {
 
 hidden object HeaderSnapshot {
     has origin is @Header;
+    has amount is int;
 
     HeaderSnapshot(entries is Sequencing<Header>, limits is HeaderLimits) {
         let count = entries.size();
@@ -350,16 +364,21 @@ hidden object HeaderSnapshot {
         let values is @Header = (0..count).map() -> index {
             entries.item(index);
         };
-        let used = values.reduce(0) -> total, entry {
+        let total = values.reduce(0) -> sum, entry {
             let bytes = entry.name().string().length() + entry.value().length() + 4;
-            confirm bytes <= limits::Limits::bytes - total else throw HeaderLimitExceeded.kind("bytes");
-            total + bytes;
+            confirm bytes <= limits::Limits::bytes - sum else throw HeaderLimitExceeded.kind("bytes");
+            sum + bytes;
         };
         origin = values;
+        amount = total;
     }
 
     entries() is @Header {
         origin;
+    }
+
+    used() is int {
+        amount;
     }
 }
 
@@ -390,5 +409,23 @@ test "a field value is trimmed and checked in one pass" {
     test.is(reason("del\u{7f}"), "control in field value");
     test.is(reason("snow \u{2603}"), "field value is not an octet string");
     test.is(reason("\n then \u{2603}"), "field value is not an octet string");
+}
+
+test "adding a field checks only the new one against the limits" {
+    let small = HeaderLimits(3, 40);
+    let fields = Headers(entries: [Header(name: HeaderName("A"), value: "1")], limits: small);
+    let more = fields.addition(Header(name: HeaderName("B"), value: "22")).addition(Header(name: HeaderName("C"), value: "333"));
+    test.is(more.entries().size(), 3);
+    test.is(more.entries().item(2).value(), "333");
+    test.is(fields.entries().size(), 1);
+    test.throws(HeaderLimitExceeded) {
+        more.addition(Header(name: HeaderName("D"), value: "4"));
+    };
+    // A: 1 takes 6 bytes of 12, B: 22 would take 7 more.
+    let tight = Headers(entries: [Header(name: HeaderName("A"), value: "1")], limits: HeaderLimits(10, 12));
+    test.throws(HeaderLimitExceeded) {
+        tight.addition(Header(name: HeaderName("B"), value: "22"));
+    };
+    test.is(tight.addition(Header(name: HeaderName("B"), value: "2")).entries().size(), 2);
 }
 
