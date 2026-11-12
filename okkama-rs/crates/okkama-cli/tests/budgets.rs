@@ -213,7 +213,7 @@ object Worker {
 async main() is int {
     let count = Atomic(0);
     loop {
-        last if count.value() == 100000;
+        last if count.value() == 500000;
         let worker = Worker();
         worker.start();
         await worker.settled();
@@ -226,8 +226,8 @@ async main() is int {
 
 #[test]
 fn finished_tasks_and_their_groups_are_collected() {
-    let output = run("sparrow", WORKERS, &["--max-memory", "96M", "--timeout", "120"]);
-    assert_eq!(String::from_utf8_lossy(&output.stdout).trim_end(), "100000", "{}", String::from_utf8_lossy(&output.stderr));
+    let output = run("sparrow", WORKERS, &["--max-memory", "64M", "--timeout", "120"]);
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim_end(), "500000", "{}", String::from_utf8_lossy(&output.stderr));
     assert_eq!(output.status.code(), Some(0));
 }
 
