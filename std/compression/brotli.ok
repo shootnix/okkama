@@ -1,0 +1,247 @@
+module compression/brotli v1.0.0;
+
+import "compression/internal/codec" take NativeCompressor, NativeDecompressor, NativeCompressed,
+    NativeDecompressed;
+import "compression/state" take Compressing, Decompressing, CompressionLimitExceeded,
+    InvalidCompressedData, UnsupportedCompression;
+import "compression/read" take CompressedReading, DecompressedReading;
+import "io/stream" take Reading;
+import "io/buffer" take ByteBuffer;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "async/atomic" take Atomic;
+import "error" take InvalidArgument;
+
+// Brotli (RFC 7932): what browsers ask for as Content-Encoding: br (#184).
+// Smaller than gzip on text, slower to compress at the high levels.
+//
+//     let packed = BrotliCompressed(data).bytes();
+//     let data = BrotliDecompressed(origin: packed, limit: 10485760).bytes();
+//
+// A stream goes through the Compressing and Decompressing roles, for example
+// with compression/read:
+//
+//     let packed = CompressedReading(origin: input, compressor: BrotliCompressor());
+//
+// Decompression is bounded: limit is the most bytes it may produce, past which
+// it throws CompressionLimitExceeded; damaged data is InvalidCompressedData.
+// The JVM engine has no Brotli codec: there every object here throws
+// UnsupportedCompression when it is made or used.
+
+// Bytes compressed whole; level 0 (fastest) to 11 (smallest and slowest), 11
+// unless told, as in the reference library. Web servers compressing on the fly
+// usually take 4 to 6.
+object BrotliCompressed {
+    has origin is @byte;
+    has level is int;
+
+    BrotliCompressed(origin is @byte, level is int = 11) {
+        self.origin = origin;
+        self.level = level;
+    }
+
+    bytes() is @byte {
+        NativeCompressed(origin: origin, format: "brotli", level: level).bytes();
+    }
+}
+
+// Compressed bytes decompressed whole, at most limit bytes of them. Bytes after
+// the end of the compressed stream are InvalidCompressedData.
+object BrotliDecompressed {
+    has origin is @byte;
+    has limit is int;
+
+    BrotliDecompressed(origin is @byte, limit is int) {
+        self.origin = origin;
+        self.limit = limit;
+    }
+
+    bytes() is @byte {
+        NativeDecompressed(origin: origin, format: "brotli", limit: limit).bytes();
+    }
+}
+
+// A stream compressor: write, then finish; output() takes what is ready.
+object BrotliCompressor does Compressing {
+    has codec is NativeCompressor;
+
+    BrotliCompressor(level is int = 11) {
+        codec = NativeCompressor(format: "brotli", level: level);
+    }
+
+    write(origin is @byte) is void {
+        codec.write(origin);
+    }
+
+    output() is Reading {
+        codec.output();
+    }
+
+    finish() is void {
+        codec.finish();
+    }
+
+    finished() is bool {
+        codec.finished();
+    }
+
+    close() is void {
+        codec.close();
+    }
+
+    closed() is bool {
+        codec.closed();
+    }
+}
+
+// A stream decompressor of at most limit bytes; remainder() gives the bytes
+// after the end of the stream.
+object BrotliDecompressor does Decompressing {
+    has codec is NativeDecompressor;
+
+    BrotliDecompressor(limit is int) {
+        codec = NativeDecompressor(format: "brotli", limit: limit);
+    }
+
+    write(origin is @byte) is void {
+        codec.write(origin);
+    }
+
+    output() is Reading {
+        codec.output();
+    }
+
+    finish() is void {
+        codec.finish();
+    }
+
+    finished() is bool {
+        codec.finished();
+    }
+
+    close() is void {
+        codec.close();
+    }
+
+    closed() is bool {
+        codec.closed();
+    }
+
+    remainder() is @byte {
+        codec.remainder();
+    }
+}
+
+// Whether this engine has a Brotli codec, for the tests below.
+hidden object BrotliTestEngine {
+    BrotliTestEngine() {}
+
+    codec() is bool {
+        try {
+            BrotliCompressor();
+            true;
+        }
+        catch failure is UnsupportedCompression {
+            false;
+        };
+    }
+}
+
+test "brotli round-trips text whole and by pieces" {
+    let text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(200);
+    let data = Utf8Encoded(text).bytes();
+    if BrotliTestEngine().codec() {
+        let packed = BrotliCompressed(data).bytes();
+        test.ok(packed.size() * 4 < data.size());
+        test.is(
+            Utf8Decoded(BrotliDecompressed(origin: packed, limit: data.size()).bytes()).string(),
+            text
+        );
+        test.is(
+            BrotliDecompressed(origin: BrotliCompressed([]).bytes(), limit: 1).bytes().size(),
+            0
+        );
+        let codec = BrotliDecompressor(limit: data.size());
+        let half = (packed.size() / 2).int();
+        codec.write(packed.slice(0, half));
+        codec.write(packed.slice(half, packed.size()) + Utf8Encoded("after").bytes());
+        codec.finish();
+        test.is(Utf8Decoded(codec.output().bytes(data.size() + 1)).string(), text);
+        test.is(Utf8Decoded(codec.remainder()).string(), "after");
+        codec.close();
+        let stream = DecompressedReading(
+            origin: CompressedReading(
+                origin: ByteBuffer(data).reading(),
+                compressor: BrotliCompressor(level: 11)
+            ),
+            decompressor: BrotliDecompressor(limit: data.size())
+        );
+        let empty is @byte = [];
+        let unpacked = Atomic(empty);
+        loop {
+            let chunk = stream.bytes(4096);
+            if chunk.size() == 0 {
+                last;
+            }
+            unpacked.replace(unpacked.value() + chunk);
+        }
+        test.is(Utf8Decoded(unpacked.value()).string(), text);
+    }
+    else {
+        test.throws(UnsupportedCompression) {
+            BrotliCompressed(data).bytes();
+        };
+        test.throws(UnsupportedCompression) {
+            BrotliDecompressor(limit: 10);
+        };
+    }
+}
+
+test "brotli refuses damaged data, output past its limit and a level out of range" {
+    test.throws(InvalidArgument) {
+        BrotliCompressed(origin: [], level: 12).bytes();
+    };
+    if BrotliTestEngine().codec() {
+        let data = Utf8Encoded("tea ".repeat(1000)).bytes();
+        let packed = BrotliCompressed(data).bytes();
+        test.throws(CompressionLimitExceeded) {
+            BrotliDecompressed(origin: packed, limit: 100).bytes();
+        };
+        test.throws(InvalidCompressedData) {
+            BrotliDecompressed(origin: packed.slice(0, packed.size() - 3), limit: data.size()).bytes();
+        };
+        test.throws(InvalidCompressedData) {
+            BrotliDecompressed(origin: packed + [0.byte()], limit: data.size()).bytes();
+        };
+        test.throws(InvalidCompressedData) {
+            BrotliDecompressed(origin: Utf8Encoded("not brotli at all").bytes(), limit: 100).bytes();
+        };
+    }
+}
+
+test "brotli reads what the reference tool wrote" {
+    if BrotliTestEngine().codec() {
+        // `printf 'hello, world' | brotli` (brotli 1.2.1).
+        let packed is @byte = [
+            143.byte(),
+            5.byte(),
+            128.byte(),
+            104.byte(),
+            101.byte(),
+            108.byte(),
+            108.byte(),
+            111.byte(),
+            44.byte(),
+            32.byte(),
+            119.byte(),
+            111.byte(),
+            114.byte(),
+            108.byte(),
+            100.byte(),
+            3.byte()
+        ];
+        test.is(
+            Utf8Decoded(BrotliDecompressed(origin: packed, limit: 64).bytes()).string(),
+            "hello, world"
+        );
+    }
+}

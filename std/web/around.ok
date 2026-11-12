@@ -4,11 +4,13 @@ import "web/routing" take Surrounding, WebRouting, ExceptionScope, Fallback, Web
     Scope;
 import "http/routing" take Route, RoutePattern, SlashPolicy;
 import "web/reply" take TextReply, StreamReply;
-import "http/body_coding" take GzipEncodedBody;
-import "http/body" take ByteBody, UnknownBodyLength;
+import "http/body_coding" take GzipEncodedBody, BrotliEncodedBody;
+import "http/body" take ByteBody, UnknownBodyLength, BodyOpening, OneShotBody;
 import "http/negotiation" take AcceptedContentCodings;
 import "http/content_coding" take ContentCoding;
 import "compression/gzip" take GzipCompressed, GzipDecompressed;
+import "compression/brotli" take BrotliCompressor, BrotliCompressed, BrotliDecompressed;
+import "compression/state" take UnsupportedCompression;
 import "http/handler" take Handling, HandlingResult, ResponseHandling;
 import "web/request" take WebRequest;
 import "web/exception" take Exception, ProblemReply;
@@ -251,11 +253,15 @@ hidden object CorsMarking does Surrounding {
     }
 }
 
-// Replies gzipped for clients that accept gzip (#186): text, JSON,
+// Replies compressed for clients that accept it (#186, #184): text, JSON,
 // JavaScript, XML and SVG of at least minimum bytes (1 KiB unless told) that
 // carry no Content-Encoding of their own:
 //
 //     WebRoutes(Around(Compression()), Get(path: "/notes", endpoint: notes.list))
+//
+// Brotli (br, level 5) goes to a client that takes it at least as gladly as
+// gzip, whatever order it lists them in; gzip to the others. The JVM engine
+// has no Brotli codec and sends gzip only.
 //
 // A reply in memory is compressed whole and keeps a Content-Length; a streamed
 // one is compressed as it goes. A compressed reply says Vary: Accept-Encoding,
@@ -263,17 +269,20 @@ hidden object CorsMarking does Surrounding {
 // and 304 replies pass as they are.
 object Compression does Surrounding {
     has minimum is int;
+    has brotli is bool;
 
     Compression(minimum is int = 1024) {
         confirm minimum >= 0
             else throw InvalidCompression.because("the minimum size must not be negative");
         self.minimum = minimum;
+        brotli = CompressionCodecs().brotli();
     }
 
     async around(request is WebRequest, inner is async (WebRequest) is Responding) is Responding {
         let answer = await inner(request);
         let response = answer.response();
-        if !self.wanted(request, response) {
+        let coding = self.coding(request, response);
+        if coding == "" {
             return answer;
         }
         let body = response.body();
@@ -315,7 +324,7 @@ object Compression does Surrounding {
             }
         };
         let varied = response::Head::headers.maybe("Vary").text() else "";
-        let marked = tagged.addition(Header(name: "Content-Encoding", value: "gzip")).addition(
+        let marked = tagged.addition(Header(name: "Content-Encoding", value: coding)).addition(
             Header(name: "Vary", value: if varied == "" {
                 "Accept-Encoding";
             }
@@ -325,7 +334,12 @@ object Compression does Surrounding {
         );
         match body.contained() {
             case Maybe.some(bytes) {
-                let packed = GzipCompressed(bytes).bytes();
+                let packed = if coding == "br" {
+                    BrotliCompressed(origin: bytes, level: 5).bytes();
+                }
+                else {
+                    GzipCompressed(bytes).bytes();
+                };
                 Response(
                     status: response::Head::status,
                     headers: marked.addition(
@@ -336,44 +350,75 @@ object Compression does Surrounding {
                 );
             }
             else {
+                let encoded is BodyOpening = if coding == "br" {
+                    BrotliEncodedBody(origin: body);
+                }
+                else {
+                    GzipEncodedBody(origin: body);
+                };
                 Response(
                     status: response::Head::status,
                     headers: marked,
-                    body: GzipEncodedBody(origin: body),
+                    body: encoded,
                     version: response::Head::version
                 );
             }
         };
     }
 
-    // Whether the reply may be compressed for this request at all.
-    hidden wanted(request is WebRequest, response is Response) is bool {
+    // The coding for this reply, "br" or "gzip", or "" when it is not to be
+    // compressed.
+    hidden coding(request is WebRequest, response is Response) is string {
         let code = response::Head::code;
         if request.method() == Method.head
             || code < 200
             || code == 204
             || code == 206
             || code == 304 {
-                return false;
+                return "";
             }
         let headers = response::Head::headers;
         if headers.membership(HeaderName("Content-Encoding")) {
-            return false;
+            return "";
         }
-        let accepted = request.header().list("Accept-Encoding");
-        if accepted.size() == 0
-            || !AcceptedContentCodings(accepted.join(", ")).quality(ContentCoding("gzip")).acceptable() {
-                return false;
-            }
         let media = (headers.maybe("Content-Type").text() else "").lower();
         let type = (media.split(";")[0] else "").trim();
-        type.starts_with("text/")
+        let compressible = type.starts_with("text/")
             || type == "application/json"
             || type == "application/javascript"
             || type == "application/xml"
             || type == "image/svg+xml"
             || type.ends_with("+json")
             || type.ends_with("+xml");
+        let accepted = request.header().list("Accept-Encoding");
+        if !compressible || accepted.size() == 0 {
+            return "";
+        }
+        let codings = AcceptedContentCodings(accepted.join(", "));
+        let gzip = codings.quality(ContentCoding("gzip"));
+        let br = codings.quality(ContentCoding("br"));
+        if brotli && br.acceptable() && br.order(gzip) != Order.less {
+            return "br";
+        }
+        if gzip.acceptable() {
+            return "gzip";
+        }
+        "";
+    }
+}
+
+// Which codecs this engine has: the JVM has no Brotli (#184).
+hidden object CompressionCodecs {
+    CompressionCodecs() {}
+
+    brotli() is bool {
+        try {
+            BrotliCompressor(level: 0);
+            true;
+        }
+        catch failure is UnsupportedCompression {
+            false;
+        };
     }
 }
 
@@ -561,7 +606,7 @@ async test "cors answers preflights and marks replies to its origin" {
 }
 
 // Answers with a long text, a short one, a stream of unknown length, a
-// compressed body and an image, for the test below.
+// compressed body, JSON of unknown length and an image, for the test below.
 hidden object CompressionProbe {
     CompressionProbe() {}
 
@@ -583,6 +628,13 @@ hidden object CompressionProbe {
         );
     }
 
+    async json(request is WebRequest) is Responding {
+        StreamReply(
+            body: OneShotBody(ByteBody(Utf8Encoded("{\"tea\": 1}".repeat(300)).bytes()).reading()),
+            media_type: "application/json"
+        );
+    }
+
     async image(request is WebRequest) is Responding {
         Response(
             status: Status.ok,
@@ -592,7 +644,7 @@ hidden object CompressionProbe {
     }
 }
 
-async test "replies are gzipped for clients that accept it" {
+async test "replies are compressed for clients that accept it" {
     let probe = CompressionProbe();
     let routes = WebRoutes(
         Around(Compression()),
@@ -600,6 +652,7 @@ async test "replies are gzipped for clients that accept it" {
         Get(path: "/short", endpoint: probe.short),
         Get(path: "/stream", endpoint: probe.stream),
         Get(path: "/image", endpoint: probe.image),
+        Get(path: "/json", endpoint: probe.json),
     );
     let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(
         local: IpEndpoint(address: IpAddress("127.0.0.1"), port: 80),
@@ -609,7 +662,7 @@ async test "replies are gzipped for clients that accept it" {
         details: ExchangeDetails(endpoints: ends, version: HttpVersion.http_1_1),
         cancellation: Cancellation().cancelling()
     );
-    let gzip = Headers(Header(name: "Accept-Encoding", value: "br;q=1.0, gzip;q=0.8"));
+    let gzip = Headers(Header(name: "Accept-Encoding", value: "br;q=0.5, gzip;q=0.8"));
     let long = (await routes.handling(
         Request(target: OriginTarget(path: "/long", query: Maybe<string>.none), headers: gzip),
         context
@@ -644,4 +697,53 @@ async test "replies are gzipped for clients that accept it" {
         context
     )).response();
     test.ok(!none_wanted::Head::headers.membership(HeaderName("Content-Encoding")));
+    // A browser lists gzip first and br later at the same weight: br wins
+    // where the engine has it (#184).
+    let browser = Headers(Header(name: "Accept-Encoding", value: "gzip, deflate, br, zstd"));
+    let brotli = CompressionCodecs().brotli();
+    let chosen = if brotli {
+        "br";
+    }
+    else {
+        "gzip";
+    };
+    let packed_long = (await routes.handling(
+        Request(target: OriginTarget(path: "/long", query: Maybe<string>.none), headers: browser),
+        context
+    )).response();
+    test.is(packed_long::Head::headers.text("Content-Encoding"), chosen);
+    if brotli {
+        let squeezed = packed_long.body().contained() else [];
+        test.is(packed_long::Head::headers.int("Content-Length"), squeezed.size());
+        test.is(
+            Utf8Decoded(BrotliDecompressed(origin: squeezed, limit: 10000).bytes()).string(),
+            "tea ".repeat(1000)
+        );
+    }
+    let only_br = Headers(Header(name: "Accept-Encoding", value: "br"));
+    let streamed = (await routes.handling(
+        Request(target: OriginTarget(path: "/json", query: Maybe<string>.none), headers: only_br),
+        context
+    )).response();
+    if brotli {
+        test.is(streamed::Head::headers.text("Content-Encoding"), "br");
+        test.ok(!streamed::Head::headers.membership(HeaderName("Content-Length")));
+        let reading = streamed.body().reading();
+        let empty is @byte = [];
+        let gathered = Atomic(empty);
+        loop {
+            let chunk = await reading.bytes(4096);
+            if chunk.size() == 0 {
+                last;
+            }
+            gathered.replace(gathered.value() + chunk);
+        }
+        test.is(
+            Utf8Decoded(BrotliDecompressed(origin: gathered.value(), limit: 10000).bytes()).string(),
+            "{\"tea\": 1}".repeat(300)
+        );
+    }
+    else {
+        test.ok(!streamed::Head::headers.membership(HeaderName("Content-Encoding")));
+    }
 }

@@ -55,6 +55,9 @@ public final class CompressionNatives {
             case "deflate" -> Format.DEFLATE;
             case "zlib" -> Format.ZLIB;
             case "gzip" -> Format.GZIP;
+            // zstd and Brotli (#184) need libraries the JVM runtime does not carry.
+            case "zstd", "brotli" -> throw failure("unsupported", "codec_open/4",
+                "The " + format + " codec is not available on the JVM");
             default -> throw failure("invalid_input", "codec_open/4", "Unknown compression format");
         };
         codec.compressing = compress;

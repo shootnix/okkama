@@ -4,19 +4,27 @@ import "http/body" take BodyOpening, BodyReading, ByteBody, UnknownBodyLength, B
     BodyAlreadyOpened;
 import "http/header" take Headers;
 import "compression/gzip" take GzipCompressor, GzipDecompressor, GzipCompressed, GzipDecompressed;
-import "compression/state" take Compressing, Decompressing, CompressionLimitExceeded;
+import "compression/brotli" take BrotliCompressor, BrotliDecompressor, BrotliCompressed,
+    BrotliDecompressed;
+import "compression/state" take Compressing, Decompressing, CompressionLimitExceeded,
+    UnsupportedCompression;
 import "io/stream" take InvalidReadLimit;
 import "numbers/bigint" take BigInt;
 import "async/atomic" take Atomic;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 
-// Bodies with a content coding applied as they are read (#186): what a server
-// sends as Content-Encoding: gzip, and what a client gets back from it. Their
-// length is unknown, so HTTP/1.1 sends them in chunks; a body already in
-// memory is coded whole instead.
+// Bodies with a content coding applied as they are read (#186, #184): what a
+// server sends as Content-Encoding: gzip or br, and what a client gets back
+// from it. Their length is unknown, so HTTP/1.1 sends them in chunks; a body
+// already in memory is coded whole instead.
 //
 //     GzipEncodedBody(origin: response.body())
 //     GzipDecodedBody(origin: response.body(), limit: 10485760)
+//     BrotliEncodedBody(origin: response.body())
+//     BrotliDecodedBody(origin: response.body(), limit: 10485760)
+//
+// The JVM engine has no Brotli codec: there the Brotli bodies throw
+// UnsupportedCompression when they are read.
 
 // The origin compressed as gzip while it is read.
 object GzipEncodedBody does BodyOpening {
@@ -85,6 +93,86 @@ object GzipDecodedBody does BodyOpening {
     reading() is BodyReading {
         confirm opened.compare_and_replace(false, true) else throw BodyAlreadyOpened.opened;
         let codec is Decompressing = GzipDecompressor(limit: limit);
+        CodedReading(
+            origin: origin.reading(),
+            compressor: Maybe<Compressing>.none,
+            decompressor: Maybe.some(codec)
+        );
+    }
+
+    contained() is Maybe<@byte> {
+        Maybe<@byte>.none;
+    }
+}
+
+// The origin compressed as Brotli while it is read; level 5 unless told, a
+// usual level for compressing on the fly.
+object BrotliEncodedBody does BodyOpening {
+    has origin is BodyOpening;
+    has level is int;
+    has opened is Atomic<bool>;
+
+    BrotliEncodedBody(origin is BodyOpening, level is int = 5) {
+        self.origin = origin;
+        self.level = level;
+        opened = Atomic(false);
+    }
+
+    length() is BigInt {
+        throw UnknownBodyLength.unknown;
+    }
+
+    replayable() is bool {
+        origin.replayable();
+    }
+
+    reading() is BodyReading {
+        confirm opened.compare_and_replace(false, true) else throw BodyAlreadyOpened.opened;
+        let codec is Compressing = BrotliCompressor(level: level);
+        CodedReading(
+            origin: origin.reading(),
+            compressor: Maybe.some(codec),
+            decompressor: Maybe<Decompressing>.none
+        );
+    }
+
+    contained() is Maybe<@byte> {
+        match origin.contained() {
+            case Maybe.some(bytes) {
+                Maybe.some(BrotliCompressed(origin: bytes, level: level).bytes());
+            }
+            else {
+                Maybe<@byte>.none;
+            }
+        };
+    }
+}
+
+// The origin, a Brotli stream, decompressed while it is read, at most limit
+// bytes in all (CompressionLimitExceeded past them). A damaged or cut stream is
+// InvalidCompressedData when it is read.
+object BrotliDecodedBody does BodyOpening {
+    has origin is BodyOpening;
+    has limit is int;
+    has opened is Atomic<bool>;
+
+    BrotliDecodedBody(origin is BodyOpening, limit is int) {
+        self.origin = origin;
+        self.limit = limit;
+        opened = Atomic(false);
+    }
+
+    length() is BigInt {
+        throw UnknownBodyLength.unknown;
+    }
+
+    replayable() is bool {
+        origin.replayable();
+    }
+
+    reading() is BodyReading {
+        confirm opened.compare_and_replace(false, true) else throw BodyAlreadyOpened.opened;
+        let codec is Decompressing = BrotliDecompressor(limit: limit);
         CodedReading(
             origin: origin.reading(),
             compressor: Maybe<Compressing>.none,
@@ -246,4 +334,57 @@ async test "a body is gzipped and gunzipped while it is read" {
     test.throws(CompressionLimitExceeded) {
         await small.bytes(4096);
     };
+}
+
+async test "a body is compressed and decompressed as Brotli while it is read" {
+    let text = "The quick brown fox jumps over the lazy dog. ".repeat(3000);
+    let plain = Utf8Encoded(text).bytes();
+    let available = try {
+        BrotliCompressor();
+        true;
+    }
+    catch failure is UnsupportedCompression {
+        false;
+    };
+    if available {
+        let reading = BrotliEncodedBody(origin: ByteBody(plain)).reading();
+        let empty is @byte = [];
+        let packed = Atomic(empty);
+        loop {
+            let chunk = await reading.bytes(1000);
+            if chunk.size() == 0 {
+                last;
+            }
+            packed.replace(packed.value() + chunk);
+        }
+        reading.close();
+        test.ok(packed.value().size() * 10 < plain.size());
+        test.is(BrotliDecompressed(origin: packed.value(), limit: plain.size()).bytes(), plain);
+        let decoded = BrotliDecodedBody(origin: ByteBody(packed.value()), limit: plain.size()).reading();
+        let unpacked = Atomic(empty);
+        loop {
+            let chunk = await decoded.bytes(4096);
+            if chunk.size() == 0 {
+                last;
+            }
+            unpacked.replace(unpacked.value() + chunk);
+        }
+        test.is(Utf8Decoded(unpacked.value()).string(), text);
+        test.is(
+            BrotliDecompressed(
+                origin: BrotliEncodedBody(origin: ByteBody(plain)).contained() else [],
+                limit: plain.size()
+            ).bytes(),
+            plain
+        );
+        let small = BrotliDecodedBody(origin: ByteBody(packed.value()), limit: 100).reading();
+        test.throws(CompressionLimitExceeded) {
+            await small.bytes(4096);
+        };
+    }
+    else {
+        test.throws(UnsupportedCompression) {
+            BrotliEncodedBody(origin: ByteBody(plain)).reading();
+        };
+    }
 }

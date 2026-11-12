@@ -679,6 +679,21 @@
       }
     },
     {
+      "id": "STD.COMPRESSION.BROTLI",
+      "title": "std compression/brotli public contract (BrotliCompressed, BrotliCompressor, BrotliDecompressed, BrotliDecompressor)",
+      "family": "Standard library: compression",
+      "spec_refs": [
+        "std/compression/brotli.ok"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+      }
+    },
+    {
       "id": "STD.COMPRESSION.DEFLATE",
       "title": "std compression/deflate public contract (DeflateCompressed, DeflateCompressor, DeflateDecompressed, DeflateDecompressor)",
       "family": "Standard library: compression",
@@ -725,7 +740,7 @@
     },
     {
       "id": "STD.COMPRESSION.STATE",
-      "title": "std compression/state public contract (Compressing, CompressionLimitExceeded, CompressionOutput, Decompressing, DecompressionBudget, InvalidCompressedData, InvalidCompressionLimit)",
+      "title": "std compression/state public contract (Compressing, CompressionLimitExceeded, CompressionOutput, Decompressing, DecompressionBudget, InvalidCompressedData, InvalidCompressionLimit, UnsupportedCompression)",
       "family": "Standard library: compression",
       "spec_refs": [
         "std/compression/state.ok"
@@ -744,6 +759,21 @@
       "family": "Standard library: compression",
       "spec_refs": [
         "std/compression/zlib.ok"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+      }
+    },
+    {
+      "id": "STD.COMPRESSION.ZSTD",
+      "title": "std compression/zstd public contract (ZstdCompressed, ZstdCompressor, ZstdDecompressed, ZstdDecompressor)",
+      "family": "Standard library: compression",
+      "spec_refs": [
+        "std/compression/zstd.ok"
       ],
       "status": "mandatory",
       "aspects": {
@@ -2030,7 +2060,7 @@
     },
     {
       "id": "STD.HTTP.BODY_CODING",
-      "title": "std http/body_coding public contract (GzipDecodedBody, GzipEncodedBody)",
+      "title": "std http/body_coding public contract (BrotliDecodedBody, BrotliEncodedBody, GzipDecodedBody, GzipEncodedBody)",
       "family": "Standard library: http",
       "spec_refs": [
         "std/http/body_coding.ok"
