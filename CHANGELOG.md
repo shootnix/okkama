@@ -1009,6 +1009,14 @@ simplified or rewritten to the principles of `docs/std-principles.md`.
 
 ### Fixed
 
+- **An array of arrays could not be passed as a role of roles (#488).**
+  `CartesianProduct(origins: [["a", "b"], ["x", "y"]])` failed on every engine
+  with "IR lowering of builtin role adapters … is not implemented yet". The
+  checker accepts `@@T` as `Sequencing<Sequencing<T>>`, but lowering wrapped
+  only objects and variants at a role element. An inner array now gets the
+  same builtin array adapter as a top-level one, at any depth. Case
+  `L05.boundary.nested-array-as-role-of-roles`; `collections/combinatorics`
+  tests products of literals.
 - **An overloaded constructor or action lost the expected type of an array
   or map literal (#501).** `Pair([A(), B()])` beside `Pair(name is string)`
   was "Array elements have incompatible types A and B", and so was

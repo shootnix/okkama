@@ -59,7 +59,7 @@ pub(super) fn lower_method(
         (AdapterKind::Sequence, "item") => {
             let items = a.field(ctx, 0);
             let item = a.get(ctx, items, values[1]);
-            let item = a.cross(item, &result_ty)?;
+            let item = a.cross(ctx, item, &result_ty)?;
             a.ret(item);
         }
         (AdapterKind::Sequence, name @ ("first" | "last")) => {
@@ -80,7 +80,7 @@ pub(super) fn lower_method(
             };
             let message = format!("Cannot read {name} item of an empty sequence");
             let item = a.lookup(ctx, items, index, message);
-            let item = a.cross(item, &result_ty)?;
+            let item = a.cross(ctx, item, &result_ty)?;
             a.ret(item);
         }
         (AdapterKind::Sequence, "cursor") => {
@@ -103,7 +103,7 @@ pub(super) fn lower_method(
             let items = a.field(ctx, 0);
             let at = a.field(ctx, 1);
             let item = a.lookup(ctx, items, at, "Array cursor is exhausted".to_string());
-            let item = a.cross(item, &result_ty)?;
+            let item = a.cross(ctx, item, &result_ty)?;
             a.ret(item);
         }
         (AdapterKind::Cursor, "successor") => {
@@ -346,7 +346,7 @@ impl Adapter {
     }
 
     /// Элемент массива на границе элемента роли.
-    fn cross(&mut self, value: ValueId, target: &Type) -> Result<ValueId> {
+    fn cross(&mut self, ctx: &mut Ctx<'_, '_>, value: ValueId, target: &Type) -> Result<ValueId> {
         let ty = self.b.value_type(value).clone();
         if ty == *target {
             return Ok(value);
@@ -355,11 +355,62 @@ impl Adapter {
             (Type::Object(_) | Type::Variant(_), Type::Role(_)) => {
                 Ok(self.emit(InstKind::RoleWrap(value), target.clone()))
             }
+            // An inner array becomes a role of its own through the same
+            // builtin adapter a top-level array gets: `@@string` as
+            // `Sequencing<Sequencing<string>>` (#488). Deeper nesting follows,
+            // because the inner adapter's actions cross their items in turn.
+            (Type::Array(_), Type::Role(_)) => self.nested(ctx, value, target),
             _ => Err(LoweringError::unsupported(
                 self.span,
-                "IR lowering of builtin role adapters (arrays and scalars as roles) is not implemented yet.",
+                "IR lowering of builtin role adapters (scalars as roles) is not implemented yet.",
             )),
         }
+    }
+
+    /// `value` (an element of type S, an array) as the role T of this
+    /// adapter's `ArraySequence<S, T>` / `ArrayCursor<S, T>` instance.
+    fn nested(&mut self, ctx: &mut Ctx<'_, '_>, value: ValueId, target: &Type) -> Result<ValueId> {
+        let unsupported = |span| {
+            LoweringError::unsupported(span, "IR lowering of this nested array role is not implemented yet.")
+        };
+        let env = &ctx.objects[self.object.0].env;
+        let (Some((_, source)), Some((_, role))) = (env.first(), env.get(1)) else {
+            return Err(internal(self.span, "array adapter without its element types"));
+        };
+        let (Ty::Array(inner), Ty::Role(role_id, role_args)) = (source.clone(), role.clone()) else {
+            return Err(unsupported(self.span));
+        };
+        let standard = ctx.reg.standard;
+        if ![standard.sequencing, standard.iterating, standard.sizing].contains(&Some(role_id)) {
+            return Err(unsupported(self.span));
+        }
+        let mut element = role_args.first().cloned().unwrap_or_else(|| (*inner).clone());
+        if element == Ty::Never {
+            element = Ty::Int;
+        }
+        let from = if *inner == Ty::Never { element.clone() } else { (*inner).clone() };
+        let decl = ctx
+            .reg
+            .adapters
+            .array_sequence
+            .ok_or_else(|| internal(self.span, "no Sequencing role for array adapters"))?;
+        let adapter = ctx.object_instance(decl, vec![from, element], self.span)?;
+        // An untagged `[]` takes the adapter field's type.
+        let field = ctx.objects[adapter.0].fields[0].1.clone();
+        let items = if *self.b.value_type(value) == field {
+            value
+        } else {
+            self.emit(InstKind::Retag(value), field)
+        };
+        let ctor = ctx.adapter_ctor(adapter);
+        let object = self.emit(
+            InstKind::Call {
+                func: ctor,
+                args: vec![items],
+            },
+            Type::Object(adapter),
+        );
+        Ok(self.emit(InstKind::RoleWrap(object), target.clone()))
     }
 
     /// Курсор `ArrayCursor<S, T>` с позиции `at`, как ссылка `Cursor<T>`.

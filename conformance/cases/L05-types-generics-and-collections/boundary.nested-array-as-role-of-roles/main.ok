@@ -1,0 +1,31 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "collections/sequence" take Sequencing;
+import "collections/combinatorics" take CartesianProduct;
+
+object Depth {
+    Depth();
+
+    total(rows is Sequencing<Sequencing<int>>) is int {
+        (0..rows.size()).reduce(0) -> sum, index {
+            let row = rows.item(index);
+            sum + (0..row.size()).reduce(0) -> inner, at { inner + row.item(at); };
+        };
+    }
+
+    deep(cube is Sequencing<Sequencing<Sequencing<string>>>) is string {
+        cube.item(1).item(0).item(1) + cube.last().last().first();
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    for CartesianProduct(origins: [["a", "b"], ["x", "y"]]) -> pair {
+        out.writeln(pair.join(""));
+    }
+    let d = Depth();
+    out.writeln(d.total([[1, 2], [3], []]));
+    out.writeln(d.deep([[["p", "q"]], [["r", "s"], ["t"]]]));
+    0;
+}
