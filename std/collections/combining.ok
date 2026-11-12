@@ -32,30 +32,37 @@ import "collections/iteration" take Cursor, Iterating, IterationEnded;
 // Every cursor in this module is immutable. successor() returns the next
 // cursor and leaves the receiver at its original item.
 
+// Two values side by side.
 object Pair<A, B> {
     has left is A;
     has right is B;
 
+    // first and second.
     Pair(first is A, second is B) {
         left = first;
         right = second;
     }
 
+    // The first value.
     first() is A {
         left;
     }
 
+    // The second value.
     second() is B {
         right;
     }
 }
 
+// Items of left and right taken in pairs, stopping with the shorter one.
 object Zipped<A, B> does Iterating<Pair<A, B>> {
     has left is Iterating<A>;
     has right is Iterating<B>;
 
+    // Pairs of left and right.
     Zipped(:left, :right);
 
+    // Walks the items.
     cursor() is Cursor<Pair<A, B>> {
         ZippedCursor(left: left.cursor(), right: right.cursor());
     }
@@ -82,12 +89,16 @@ hidden object ZippedCursor<A, B> does Cursor<Pair<A, B>> {
     }
 }
 
+// Items of left and right taken in pairs; sides of different lengths are
+// UnequalSizes.
 object StrictlyZipped<A, B> does Iterating<Pair<A, B>> {
     has left is Iterating<A>;
     has right is Iterating<B>;
 
+    // Pairs of left and right, which must be the same length.
     StrictlyZipped(:left, :right);
 
+    // Walks the items.
     cursor() is Cursor<Pair<A, B>> {
         StrictlyZippedCursor(left: left.cursor(), right: right.cursor());
     }
@@ -120,13 +131,17 @@ hidden object StrictlyZippedCursor<A, B> does Cursor<Pair<A, B>> {
     }
 }
 
+// StrictlyZipped sides of different lengths.
 enum UnequalSizes is Error = (unequal);
 
+// The items of each origin, one after another.
 object Chained<T> does Iterating<T> {
     has origins is Iterating<Iterating<T>>;
 
+    // The origins in order.
     Chained(:origins);
 
+    // Walks the items.
     cursor() is Cursor<T> {
         ChainedCursorSearch(origins: origins.cursor()).cursor();
     }

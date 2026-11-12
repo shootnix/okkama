@@ -41,10 +41,13 @@ import "error" take InvalidArgument;
 // multiplication of all dimension sizes. Consumers should normally stop
 // early or combine these iterators with Taken.
 
+// Every choice of size items of origin, in order, without repeating an item:
+// [a, b], [a, c], [b, c].
 object Combinations<T> does Iterating<@T> {
     has origin is Sequencing<T>;
     has amount is int;
 
+    // Choices of size items from origin.
     Combinations(origin is Sequencing<T>, size is int) {
         confirm size >= 0
             else throw InvalidArgument.because("combination size cannot be negative");
@@ -52,6 +55,7 @@ object Combinations<T> does Iterating<@T> {
         amount = size;
     }
 
+    // Walks the items.
     cursor() is Cursor<@T> {
         let positions is @int = (0..amount).map() -> index {
             index;
@@ -146,10 +150,13 @@ hidden object CombinationCursor<T> does Cursor<@T> {
     }
 }
 
+// Every choice of size items of origin where an item may come again: [a, a],
+// [a, b], [b, b].
 object CombinationsWithReplacement<T> does Iterating<@T> {
     has origin is Sequencing<T>;
     has amount is int;
 
+    // Choices of size items from origin, repeats allowed.
     CombinationsWithReplacement(origin is Sequencing<T>, size is int) {
         confirm size >= 0
             else throw InvalidArgument.because("combination size cannot be negative");
@@ -157,6 +164,7 @@ object CombinationsWithReplacement<T> does Iterating<@T> {
         amount = size;
     }
 
+    // Walks the items.
     cursor() is Cursor<@T> {
         let positions is @int = (0..amount).map() -> index {
             0;
@@ -251,15 +259,18 @@ hidden object ReplacementCombinationCursor<T> does Cursor<@T> {
     }
 }
 
+// Every ordering of the items of origin, or of size of them.
 object Permutations<T> does Iterating<@T> {
     has origin is Sequencing<T>;
     has amount is int;
 
+    // Every ordering of all the items.
     Permutations(origin is Sequencing<T>) {
         self.origin = origin;
         amount = -1;
     }
 
+    // Every ordering of size of the items.
     Permutations(origin is Sequencing<T>, size is int) {
         confirm size >= 0
             else throw InvalidArgument.because("permutation size cannot be negative");
@@ -267,6 +278,7 @@ object Permutations<T> does Iterating<@T> {
         amount = size;
     }
 
+    // Walks the items.
     cursor() is Cursor<@T> {
         // Without a size, a permutation takes every item.
         let count is int = if amount < 0 {
@@ -375,11 +387,14 @@ hidden object PermutationCursor<T> does Cursor<@T> {
     }
 }
 
+// Every way to take one item from each origin, the last one changing fastest.
 object CartesianProduct<T> does Iterating<@T> {
     has origins is Sequencing<Sequencing<T>>;
 
+    // The product of origins.
     CartesianProduct(:origins);
 
+    // Walks the items.
     cursor() is Cursor<@T> {
         let positions is @int = (0..origins.size()).map() -> index {
             0;

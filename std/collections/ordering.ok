@@ -45,21 +45,26 @@ import "size" take Sizing;
 // the same Comparing policy. They deliberately do not spend O(n) validating
 // that precondition on every O(log n) query.
 
+// The items of origin in ascending order, sorted once when first asked.
 object Sorted<T: Comparing<T>> does Sequencing<T>, Iterating<T>, Sizing {
     has origin is Iterating<T>;
 
+    // Sorts origin by the items' own order; equal items keep their order.
     Sorted(origin is Iterating<T>) {
         self.origin = origin;
     }
 
+    // Walks in ascending order.
     cursor() is Cursor<T> {
         OrderedCursor(values: self.ordered(), position: 0);
     }
 
+    // How many items.
     size() is int {
         self.ordered().size();
     }
 
+    // The item at index in sorted order.
     item(index is int) is T {
         let ordered = self.ordered();
         confirm index >= 0 && index < ordered.size()
@@ -67,12 +72,14 @@ object Sorted<T: Comparing<T>> does Sequencing<T>, Iterating<T>, Sizing {
         ordered[index];
     }
 
+    // The least item.
     first() is T {
         let ordered = self.ordered();
         confirm ordered.size() > 0 else throw EmptySequence.empty;
         ordered[0];
     }
 
+    // The greatest item.
     last() is T {
         let ordered = self.ordered();
         confirm ordered.size() > 0 else throw EmptySequence.empty;
@@ -88,23 +95,29 @@ object Sorted<T: Comparing<T>> does Sequencing<T>, Iterating<T>, Sizing {
     }
 }
 
+// The items of origin ordered by a key, which is computed once per item.
 object SortedBy<T, K: Comparing<K>> does Sequencing<T>, Iterating<T>, Sizing {
     has origin is Iterating<T>;
     has key is (T) is K;
 
+    // Sorts origin by key: `SortedBy(origin: jobs, key: (job is Job) is int {
+    // job.priority(); })`.
     SortedBy(origin is Iterating<T>, key is (T) is K) {
         self.origin = origin;
         self.key = key;
     }
 
+    // Walks in key order.
     cursor() is Cursor<T> {
         RankedCursor(values: self.ranked(), position: 0);
     }
 
+    // How many items.
     size() is int {
         self.ranked().size();
     }
 
+    // The item at index in key order.
     item(index is int) is T {
         let ranked = self.ranked();
         confirm index >= 0 && index < ranked.size()
@@ -112,12 +125,14 @@ object SortedBy<T, K: Comparing<K>> does Sequencing<T>, Iterating<T>, Sizing {
         ranked[index].item();
     }
 
+    // The item with the least key.
     first() is T {
         let ranked = self.ranked();
         confirm ranked.size() > 0 else throw EmptySequence.empty;
         ranked[0].item();
     }
 
+    // The item with the greatest key.
     last() is T {
         let ranked = self.ranked();
         confirm ranked.size() > 0 else throw EmptySequence.empty;
@@ -133,23 +148,28 @@ object SortedBy<T, K: Comparing<K>> does Sequencing<T>, Iterating<T>, Sizing {
     }
 }
 
+// An item with the key it is ordered by.
 object Ranked<T, K: Comparing<K>> does Comparing<Ranked<T, K>> {
     has origin is T;
     has ranking is K;
 
+    // item ordered by key.
     Ranked(item is T, key is K) {
         origin = item;
         ranking = key;
     }
 
+    // The item.
     item() is T {
         origin;
     }
 
+    // Its key.
     key() is K {
         ranking;
     }
 
+    // Compares the keys only.
     order(other is Ranked<T, K>) is Order {
         ranking.order(other.key());
     }
@@ -160,11 +180,13 @@ object PositionOf<T: Comparing<T>> {
     has origin is Sequencing<T>;
     has sought is T;
 
+    // Finds item in sorted origin by binary search.
     PositionOf(origin is Sequencing<T>, item is T) {
         self.origin = origin;
         sought = item;
     }
 
+    // The index of an equal item; MissingItem when there is none.
     index() is int {
         let position = LowerBound(origin: origin, item: sought).index();
         confirm position < origin.size()
@@ -179,11 +201,13 @@ object LowerBound<T: Comparing<T>> {
     has origin is Sequencing<T>;
     has sought is T;
 
+    // In sorted origin, where item would go before any equal ones.
     LowerBound(origin is Sequencing<T>, item is T) {
         self.origin = origin;
         sought = item;
     }
 
+    // The first index whose item is not less than item.
     index() is int {
         self.search(0, origin.size());
     }
@@ -209,11 +233,13 @@ object UpperBound<T: Comparing<T>> {
     has origin is Sequencing<T>;
     has sought is T;
 
+    // In sorted origin, where item would go after any equal ones.
     UpperBound(origin is Sequencing<T>, item is T) {
         self.origin = origin;
         sought = item;
     }
 
+    // The first index whose item is greater than item.
     index() is int {
         self.search(0, origin.size());
     }
@@ -286,6 +312,7 @@ hidden object RankedCursor<T, K: Comparing<K>> does Cursor<T> {
     }
 }
 
+// The item is not in the sequence.
 enum MissingItem is Error = (missing);
 
 test "sorted orders values by their own comparison" {

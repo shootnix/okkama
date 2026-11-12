@@ -1,14 +1,33 @@
 module collections/sequence v1.0.0;
 
+// A role for collections with a size and items by index.
+//
+//     let names is Sequencing<string> = Sorted(origin: raw);
+//     names.size();
+//     names.item(0);
+//     names.first();
+//     names.last();
+//     for names -> name { … }
+//
+// Arrays, Sorted, Repeated and many other collections play it, so code that
+// needs indexed access can take any of them.
+
 import "collections/iteration" take Cursor, Iterating;
 import "size" take Sizing;
 
+// A collection with a size and an item at each index.
 role Sequencing<T> {
+    // Walks the items in index order.
     cursor() is Cursor<T>;
+    // How many items.
     size() is int;
+    // The item at index, from 0; OutOfRange outside 0 to size() - 1.
     item(index is int) is T;
+    // The item at 0; EmptySequence when there is none.
     first() is T;
+    // The last item; EmptySequence when there is none.
     last() is T;
 }
 
+// first() or last() of an empty sequence.
 enum EmptySequence is Error = (empty);

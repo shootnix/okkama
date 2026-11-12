@@ -107,12 +107,15 @@ hidden object CursorStepCursor<T> does Cursor<CursorStep<T>> {
     }
 }
 
+// Each item of origin through mapping, as the walk goes.
 object Mapped<A, B> does Iterating<B> {
     has origin is Iterating<A>;
     has mapping is (A) is B;
 
+    // origin mapped by mapping.
     Mapped(:origin, :mapping);
 
+    // Walks the items.
     cursor() is Cursor<B> {
         MappedCursorSearch(origin: origin.cursor(), mapping: mapping).cursor();
     }
@@ -181,12 +184,15 @@ hidden object EmptyMappedCursor<A, B> does Cursor<B> {
     }
 }
 
+// The items of origin for which condition holds.
 object Filtered<T> does Iterating<T> {
     has origin is Iterating<T>;
     has condition is (T) is bool;
 
+    // origin filtered by condition.
     Filtered(:origin, :condition);
 
+    // Walks the items.
     cursor() is Cursor<T> {
         FilteredCursorSearch(origin: origin.cursor(), condition: condition).cursor();
     }
@@ -252,16 +258,19 @@ hidden object EmptyFilteredCursor<T> does Cursor<T> {
     }
 }
 
+// The first count items of origin.
 object Taken<T> does Iterating<T> {
     has origin is Iterating<T>;
     has amount is int;
 
+    // At most count items; count must not be negative.
     Taken(origin is Iterating<T>, count is int) {
         confirm count >= 0 else throw InvalidArgument.because("take count cannot be negative");
         self.origin = origin;
         amount = count;
     }
 
+    // Walks the items.
     cursor() is Cursor<T> {
         TakenCursor(origin: origin.cursor(), remaining: amount);
     }
@@ -293,16 +302,19 @@ hidden object TakenCursor<T> does Cursor<T> {
     }
 }
 
+// The items of origin after the first count.
 object Dropped<T> does Iterating<T> {
     has origin is Iterating<T>;
     has amount is int;
 
+    // origin without its first count items.
     Dropped(origin is Iterating<T>, count is int) {
         confirm count >= 0 else throw InvalidArgument.because("drop count cannot be negative");
         self.origin = origin;
         amount = count;
     }
 
+    // Walks the items.
     cursor() is Cursor<T> {
         DroppedCursorSearch(origin: origin.cursor(), count: amount).cursor();
     }
@@ -332,12 +344,15 @@ hidden object DroppedCursorSearch<T> {
     }
 }
 
+// The items of origin up to the first one for which condition fails.
 object TakenWhile<T> does Iterating<T> {
     has origin is Iterating<T>;
     has condition is (T) is bool;
 
+    // origin while condition holds.
     TakenWhile(:origin, :condition);
 
+    // Walks the items.
     cursor() is Cursor<T> {
         TakenWhileCursorSearch(origin: origin.cursor(), condition: condition).cursor();
     }
@@ -397,12 +412,15 @@ hidden object EmptyTakenWhileCursor<T> does Cursor<T> {
     }
 }
 
+// The items of origin from the first one for which condition fails.
 object DroppedWhile<T> does Iterating<T> {
     has origin is Iterating<T>;
     has condition is (T) is bool;
 
+    // origin after condition stops holding.
     DroppedWhile(:origin, :condition);
 
+    // Walks the items.
     cursor() is Cursor<T> {
         DroppedWhileCursorSearch(origin: origin.cursor(), condition: condition).cursor();
     }
@@ -427,16 +445,19 @@ hidden object DroppedWhileCursorSearch<T> {
     }
 }
 
+// The items of origin in arrays of size, the last one maybe shorter.
 object Chunked<T> does Iterating<@T> {
     has origin is Iterating<T>;
     has amount is int;
 
+    // origin in chunks of size; size must be positive.
     Chunked(origin is Iterating<T>, size is int) {
         confirm size > 0 else throw InvalidArgument.because("chunk size must be positive");
         self.origin = origin;
         amount = size;
     }
 
+    // Walks the items.
     cursor() is Cursor<@T> {
         ChunkedCursor(origin: origin.cursor(), size: amount);
     }
@@ -475,21 +496,27 @@ hidden object ChunkedCursor<T> does Cursor<@T> {
     }
 }
 
+// The items of each inner collection of origin, one level down.
 object Flattened<T> does Iterating<T> {
     has origin is Iterating<Iterating<T>>;
 
+    // origin flattened by one level.
     Flattened(:origin);
 
+    // Walks the items.
     cursor() is Cursor<T> {
         Chained(origins: origin).cursor();
     }
 }
 
+// Each item of origin with the next: (a, b), (b, c), …
 object Pairwise<T> does Iterating<Pair<T, T>> {
     has origin is Iterating<T>;
 
+    // Adjacent pairs of origin.
     Pairwise(:origin);
 
+    // Walks the items.
     cursor() is Cursor<Pair<T, T>> {
         PairwiseCursor(origin: origin.cursor());
     }
@@ -516,13 +543,17 @@ hidden object PairwiseCursor<T> does Cursor<Pair<T, T>> {
     }
 }
 
+// Running results: initial, then action applied to each item and the result so
+// far.
 object Accumulated<T, R> does Iterating<R> {
     has origin is Iterating<T>;
     has initial is R;
     has action is (R, T) is R;
 
+    // Running results of action over origin, starting with initial.
     Accumulated(:origin, :initial, :action);
 
+    // Walks the items.
     cursor() is Cursor<R> {
         AccumulatedCursor(
             origin: origin.cursor(),
@@ -581,13 +612,16 @@ hidden object ExhaustedAccumulatedCursor<R> does Cursor<R> {
     }
 }
 
+// The final result of action over every item of origin.
 object Reduced<T, R> {
     has origin is Iterating<T>;
     has initial is R;
     has action is (R, T) is R;
 
+    // action over origin, starting with initial.
     Reduced(:origin, :initial, :action);
 
+    // The result after the last item.
     total() is R {
         origin.reduce(initial) -> total, item {
             action(total, item);
@@ -595,30 +629,37 @@ object Reduced<T, R> {
     }
 }
 
+// The items of a sequence from last to first.
 object Reversed<T> does Sequencing<T>, Iterating<T>, Sizing {
     has origin is Sequencing<T>;
 
+    // origin reversed.
     Reversed(:origin);
 
+    // Walks the items.
     cursor() is Cursor<T> {
         ReversedCursor(origin: origin, position: origin.size() - 1);
     }
 
+    // How many items.
     size() is int {
         origin.size();
     }
 
+    // The item at index from the end.
     item(index is int) is T {
         confirm index >= 0 && index < self.size()
             else throw OutOfRange.because("reverse index is outside the sequence");
         origin.item(self.size() - 1 - index);
     }
 
+    // origin's last item.
     first() is T {
         confirm self.size() > 0 else throw EmptySequence.empty;
         origin.last();
     }
 
+    // origin's first item.
     last() is T {
         confirm self.size() > 0 else throw EmptySequence.empty;
         origin.first();
@@ -651,12 +692,14 @@ hidden object ReversedCursor<T> does Cursor<T> {
     }
 }
 
+// Every step-th item of origin from start up to, not including, stop.
 object Sliced<T> does Iterating<T> {
     has origin is Iterating<T>;
     has start is int;
     has stop is int;
     has step is int;
 
+    // Items start, start + step, … before stop; step must be positive.
     Sliced(origin is Iterating<T>, start is int, stop is int, step is int) {
         confirm start >= 0 else throw InvalidArgument.because("slice start cannot be negative");
         confirm stop >= 0 else throw InvalidArgument.because("slice stop cannot be negative");
@@ -667,6 +710,7 @@ object Sliced<T> does Iterating<T> {
         self.step = step;
     }
 
+    // Walks the items.
     cursor() is Cursor<T> {
         SlicedCursor(
             origin: Dropped(origin: origin, count: start).cursor(),

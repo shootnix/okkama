@@ -27,6 +27,8 @@ import "size" take Sizing;
 // in O(n); along a linear chain of returned deques, end operations are
 // amortized O(1). Traversal preserves insertion order.
 
+// A double-ended queue that never changes: adding or removing at either end
+// gives a new one.
 object Deque<T> does Iterating<T>, Sizing {
     has values is Iterating<T>;
     has beginning is List<T>;
@@ -34,6 +36,7 @@ object Deque<T> does Iterating<T>, Sizing {
     has amount is int;
     has built is bool;
 
+    // A deque of values, in order.
     Deque(values is Iterating<T>) {
         self.values = values;
         let empty is List<T> = EmptyList();
@@ -54,15 +57,18 @@ object Deque<T> does Iterating<T>, Sizing {
         built = true;
     }
 
+    // Walks the items from the front.
     cursor() is Cursor<T> {
         let parts = self.parts();
         DequeItems(front: parts.front(), back: parts.back()).cursor();
     }
 
+    // How many items.
     size() is int {
         self.parts().size();
     }
 
+    // The item at index from the front.
     item(index is int) is T {
         let parts = self.parts();
         confirm index >= 0 && index < parts.size()
@@ -78,6 +84,7 @@ object Deque<T> does Iterating<T>, Sizing {
         }
     }
 
+    // The front item; EmptyDequeAccess when empty.
     first() is T {
         let parts = self.parts();
         confirm parts.size() > 0 else throw EmptyDequeAccess.operation("first");
@@ -89,6 +96,7 @@ object Deque<T> does Iterating<T>, Sizing {
         }
     }
 
+    // The back item; EmptyDequeAccess when empty.
     last() is T {
         let parts = self.parts();
         confirm parts.size() > 0 else throw EmptyDequeAccess.operation("last");
@@ -100,16 +108,19 @@ object Deque<T> does Iterating<T>, Sizing {
         }
     }
 
+    // This deque with value in front.
     prefix(value is T) is Deque<T> {
         let parts = self.parts();
         self.balanced(parts.front().prefix(value), parts.back(), parts.size() + 1);
     }
 
+    // This deque with value at the back.
     suffix(value is T) is Deque<T> {
         let parts = self.parts();
         self.balanced(parts.front(), parts.back().prefix(value), parts.size() + 1);
     }
 
+    // This deque without its front item.
     tail() is Deque<T> {
         let parts = self.parts();
         confirm parts.size() > 0 else throw EmptyDequeAccess.operation("tail");
@@ -121,6 +132,7 @@ object Deque<T> does Iterating<T>, Sizing {
         }
     }
 
+    // This deque without its back item.
     body() is Deque<T> {
         let parts = self.parts();
         confirm parts.size() > 0 else throw EmptyDequeAccess.operation("body");
@@ -366,6 +378,7 @@ hidden object NormalizedDeque<T> {
     }
 }
 
+// An empty deque has no front or back item; operation names the call.
 enum EmptyDequeAccess is Error = (operation(operation is string));
 
 test "a deque reads, adds and drops at both ends" {

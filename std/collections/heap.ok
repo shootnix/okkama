@@ -32,17 +32,21 @@ import "size" take Sizing;
 // O(1); addition() and remainder() are O(log n). top() and remainder() on an
 // empty heap throw EmptySequence.
 
+// A min-heap that never changes: the least item comes first, and adding or
+// removing gives a new heap.
 object Heap<T: Comparing<T>> does Sizing {
     has values is Iterating<T>;
     has origin is HeapRepresenting<T>;
     has built is bool;
 
+    // A heap of values.
     Heap(values is Iterating<T>) {
         self.values = values;
         origin = EmptyHeapTree();
         built = false;
     }
 
+    // A heap over a tree; Heap(values) and addition() make them.
     Heap(root is HeapRepresenting<T>, size is int) {
         let nothing is @T = [];
         values = nothing;
@@ -50,19 +54,23 @@ object Heap<T: Comparing<T>> does Sizing {
         built = true;
     }
 
+    // How many items.
     size() is int {
         self.tree().size();
     }
 
+    // The least item; EmptySequence when empty.
     top() is T {
         self.tree().top();
     }
 
+    // This heap without one least item.
     remainder() is Heap<T> {
         let following = self.tree().remainder();
         Heap(root: following, size: following.size());
     }
 
+    // This heap with value added.
     addition(value is T) is Heap<T> {
         let empty is HeapRepresenting<T> = EmptyHeapTree();
         let following = self.tree().combination(HeapTreeNode(
@@ -116,10 +124,15 @@ hidden object HeapBuilding<T: Comparing<T>> {
 // Internal tree variants share exactly the behavior needed by Heap. rank() is
 // the right-spine length used to maintain the leftist invariant.
 role HeapRepresenting<T> {
+    // How many items.
     size() is int;
+    // The leftist rank of the tree.
     rank() is int;
+    // The least item.
     top() is T;
+    // The tree without its least item.
     remainder() is HeapRepresenting<T>;
+    // This tree merged with other.
     combination(other is HeapRepresenting<T>) is HeapRepresenting<T>;
 }
 

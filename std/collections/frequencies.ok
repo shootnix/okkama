@@ -43,10 +43,12 @@ import "size" take Sizing;
 // O(n log d) and traverses in key order; the compiler checks that its T is a
 // key type (#242). Native opaque handles have no equality.
 
+// How many times one item occurred.
 object Frequency<T> {
     has origin is T;
     has quantity is int;
 
+    // item counted amount times.
     Frequency(item is T, amount is int) {
         confirm amount > 0
             else throw InvalidArgument.because("frequency amount must be positive");
@@ -54,30 +56,37 @@ object Frequency<T> {
         quantity = amount;
     }
 
+    // The item.
     item() is T {
         origin;
     }
 
+    // How many times it occurred, at least once.
     amount() is int {
         quantity;
     }
 }
 
+// How often each distinct item occurs, in the order items first appear.
 object Frequencies<T> does Iterating<Frequency<T>>, Sizing {
     has values is Iterating<T>;
 
+    // Counts values once, now.
     Frequencies(values is Iterating<T>) {
         self.values = values;
     }
 
+    // Walks the counts.
     cursor() is Cursor<Frequency<T>> {
         self.counted().cursor();
     }
 
+    // How many distinct items.
     size() is int {
         self.counted().size();
     }
 
+    // How many times value occurred; 0 when never.
     amount(value is T) is int {
         let cursor = self.counted().cursor();
         if !cursor.available() {
@@ -91,6 +100,7 @@ object Frequencies<T> does Iterating<Frequency<T>>, Sizing {
         }
     }
 
+    // How many items were counted.
     total() is int {
         once let quantity = FrequencyTally(values: values).total();
         quantity;
@@ -111,10 +121,12 @@ object Frequencies<T> does Iterating<Frequency<T>>, Sizing {
 object KeyedFrequencies<T> does Iterating<Frequency<T>>, Sizing {
     has values is Iterating<T>;
 
+    // Counts values once, now, by map key.
     KeyedFrequencies(values is Iterating<T>) {
         self.values = values;
     }
 
+    // Walks the counts.
     cursor() is Cursor<Frequency<T>> {
         let counts = self.counts();
         let frequencies = counts.keys().map() -> key {
@@ -123,14 +135,17 @@ object KeyedFrequencies<T> does Iterating<Frequency<T>>, Sizing {
         frequencies.cursor();
     }
 
+    // How many distinct items.
     size() is int {
         self.counts().size();
     }
 
+    // How many times value occurred; 0 when never.
     amount(value is T) is int {
         self.counts()[value] else 0;
     }
 
+    // How many items were counted.
     total() is int {
         once let quantity = values.map() -> value {
             value;
