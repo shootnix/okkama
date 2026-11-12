@@ -33,11 +33,13 @@ object ZstdCompressed {
     has origin is @byte;
     has level is int;
 
+    // Compresses origin whole as zstd, at level 1 to 22 (3 unless told).
     ZstdCompressed(origin is @byte, level is int = 3) {
         self.origin = origin;
         self.level = level;
     }
 
+    // The compressed bytes.
     bytes() is @byte {
         NativeCompressed(origin: origin, format: "zstd", level: level).bytes();
     }
@@ -50,11 +52,14 @@ object ZstdDecompressed {
     has origin is @byte;
     has limit is int;
 
+    // Decompresses origin whole, producing at most limit bytes.
     ZstdDecompressed(origin is @byte, limit is int) {
         self.origin = origin;
         self.limit = limit;
     }
 
+    // The decompressed bytes; more than limit is CompressionLimitExceeded,
+    // damaged data InvalidCompressedData.
     bytes() is @byte {
         NativeDecompressed(origin: origin, format: "zstd", limit: limit).bytes();
     }
@@ -64,30 +69,37 @@ object ZstdDecompressed {
 object ZstdCompressor does Compressing {
     has codec is NativeCompressor;
 
+    // A zstd stream compressor at level 1 to 22 (3 unless told).
     ZstdCompressor(level is int = 3) {
         codec = NativeCompressor(format: "zstd", level: level);
     }
 
+    // Feeds origin to the codec; output may come now or later.
     write(origin is @byte) is void {
         codec.write(origin);
     }
 
+    // The output ready so far, taken out of the codec.
     output() is Reading {
         codec.output();
     }
 
+    // Ends the input; the rest of the output becomes ready.
     finish() is void {
         codec.finish();
     }
 
+    // Whether finish() was called.
     finished() is bool {
         codec.finished();
     }
 
+    // Drops the codec and any output not taken.
     close() is void {
         codec.close();
     }
 
+    // Whether it is closed.
     closed() is bool {
         codec.closed();
     }
@@ -98,34 +110,42 @@ object ZstdCompressor does Compressing {
 object ZstdDecompressor does Decompressing {
     has codec is NativeDecompressor;
 
+    // A zstd stream decompressor producing at most limit bytes in all.
     ZstdDecompressor(limit is int) {
         codec = NativeDecompressor(format: "zstd", limit: limit);
     }
 
+    // Feeds origin to the codec; output may come now or later.
     write(origin is @byte) is void {
         codec.write(origin);
     }
 
+    // The output ready so far, taken out of the codec.
     output() is Reading {
         codec.output();
     }
 
+    // Ends the input; the rest of the output becomes ready.
     finish() is void {
         codec.finish();
     }
 
+    // Whether finish() was called.
     finished() is bool {
         codec.finished();
     }
 
+    // Drops the codec and any output not taken.
     close() is void {
         codec.close();
     }
 
+    // Whether it is closed.
     closed() is bool {
         codec.closed();
     }
 
+    // The bytes that came after the end of the compressed stream.
     remainder() is @byte {
         codec.remainder();
     }

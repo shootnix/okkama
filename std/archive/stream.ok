@@ -1,28 +1,32 @@
 module archive/stream v1.0.0;
 
-// Consuming archive resources, never cursors. entry() returns one independent
-// immutable member or throws EndOfArchive after observed normal completion.
-// finished() is passive: no input read, prefetch or implicit finalization.
-// Writers accept explicit write commands; finish writes the format terminator
-// and performs its documented flush before reporting successful completion.
-// Writes/repeated finish after completion are InvalidState.
+// Archives read or written one member at a time.
 //
-// Borrowed byte streams remain caller-owned on success and failure. close() is
-// idempotent, releases only private state and never means finish. After close
-// only close/closed are valid. Other processing Errors preserve their identity
-// and leave the adapter failed: only close/closed remain valid, with no retry.
-// Partial output is neither retried nor rolled back. Concrete owners destroy
-// their own state; retained entries outlive them. No concrete wire format here.
+//     let tar = TarReading(origin: file.binary(), limits: limits);
+//     defer tar.close();
+//     loop {
+//         last if tar.finished();
+//         let entry = tar.entry();
+//         …
+//     }
+//
+// ReadingArchive gives members until finished(); WritingArchive takes them and
+// then finish() writes the archive's end. Both are resources: close them.
 
 import "archive/entry" take ArchiveEntry;
 import "io/stream" take Closing;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidState;
 
+// An archive read member by member.
 role ReadingArchive {
+    // The next member; EndOfArchive after the last.
     entry() is ArchiveEntry;
+    // Whether every member has been read.
     finished() is bool;
+    // Closes it.
     close() is void;
+    // Whether it is closed.
     closed() is bool;
 
     // One empty file, then observed EOF. Test storage is per fake instance.
@@ -53,11 +57,17 @@ role ReadingArchive {
     }
 }
 
+// An archive written member by member.
 role WritingArchive {
+    // Writes one member.
     write(entry is ArchiveEntry) is void;
+    // Writes the end of the archive.
     finish() is void;
+    // Whether finish() was called.
     finished() is bool;
+    // Closes it.
     close() is void;
+    // Whether it is closed.
     closed() is bool;
 
     // Accepts values and records completion; it does not encode any format.
@@ -104,11 +114,13 @@ object ArchiveReading does ReadingArchive, Closing {
     has next_entry is () is ArchiveEntry;
     has status is ByteBuffer;
 
+    // A ReadingArchive over an action that gives the next member.
     ArchiveReading(next_entry is () is ArchiveEntry) {
         self.next_entry = next_entry;
         status = ByteBuffer();
     }
 
+    // The next member.
     entry() is ArchiveEntry {
         confirm !self.finished() else throw EndOfArchive.reached;
         try {
@@ -124,15 +136,18 @@ object ArchiveReading does ReadingArchive, Closing {
         }
     }
 
+    // Whether the action said the archive ended.
     finished() is bool {
         self.usable();
         status.content().size() > 0;
     }
 
+    // Closes it.
     close() is void {
         status.closing().close();
     }
 
+    // Whether it is closed.
     closed() is bool {
         status.closing().closed();
     }
@@ -160,12 +175,14 @@ object ArchiveWriting does WritingArchive, Closing {
     has finish_stream is () is void;
     has status is ByteBuffer;
 
+    // A WritingArchive over two actions: write a member, finish the stream.
     ArchiveWriting(write_entry is (ArchiveEntry) is void, finish_stream is () is void) {
         self.write_entry = write_entry;
         self.finish_stream = finish_stream;
         status = ByteBuffer();
     }
 
+    // Writes one member.
     write(entry is ArchiveEntry) is void {
         confirm !self.finished() else throw InvalidState.because("archive writing has finished");
         try {
@@ -177,6 +194,7 @@ object ArchiveWriting does WritingArchive, Closing {
         }
     }
 
+    // Finishes the stream.
     finish() is void {
         confirm !self.finished() else throw InvalidState.because("archive writing has finished");
         try {
@@ -189,15 +207,18 @@ object ArchiveWriting does WritingArchive, Closing {
         status.writing() <- [byte(1)];
     }
 
+    // Whether finish() was called.
     finished() is bool {
         self.usable();
         status.content().size() > 0;
     }
 
+    // Closes it.
     close() is void {
         status.closing().close();
     }
 
+    // Whether it is closed.
     closed() is bool {
         status.closing().closed();
     }
@@ -214,6 +235,7 @@ object ArchiveWriting does WritingArchive, Closing {
     }
 }
 
+// Every member has been read.
 enum EndOfArchive is Error = (reached);
 
 // Root inline test bodies cannot resolve imported ArchiveEntry identity in

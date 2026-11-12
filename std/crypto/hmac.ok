@@ -16,6 +16,7 @@ import "crypto/secret" take SecretBytes;
 import "crypto/constant_time" take ConstantTimeEqual;
 import "encoding/hex" take HexEncoded;
 
+// The hash HMAC is built on.
 enum HmacHash = (sha224, sha256, sha384, sha512, sha3_256, sha3_512);
 
 hidden object HmacAlgorithm {
@@ -49,13 +50,17 @@ hidden object HmacAlgorithm {
     }
 }
 
+// HMAC with an explicit hash: a tag that proves a message came from someone
+// holding the key.
 object Hmac does Digesting {
     has digest is HostDigest;
 
+    // An empty HMAC with key.
     Hmac(hash is HmacHash, key is SecretBytes) {
         digest = HostDigest(algorithm: HmacAlgorithm(hash).name(), key: key.export_bytes(), width: 0);
     }
 
+    // The HMAC of these bytes.
     Hmac(hash is HmacHash, key is SecretBytes, origin is @byte) {
         digest = HostDigest(algorithm: HmacAlgorithm(hash).name(), key: key.export_bytes(), width: 0).appended(origin);
     }
@@ -65,6 +70,7 @@ object Hmac does Digesting {
         digest = HostDigest(algorithm: HmacAlgorithm(hash).name(), key: key.export_bytes(), width: 0).appended(Utf8Encoded(text).bytes());
     }
 
+    // The tag.
     bytes() is @byte {
         digest.bytes();
     }
@@ -74,6 +80,7 @@ object Hmac does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The HMAC continued with origin.
     state(origin is @byte) is ^Hmac {
         let continued = digest.appended(origin);
         ^digest = continued;
@@ -85,6 +92,7 @@ object Hmac does Digesting {
         ^digest = continued;
     }
 
+    // Whether tag is this HMAC's tag, compared in constant time.
     matches(tag is @byte) is bool {
         ConstantTimeEqual(left: digest.bytes(), right: tag).matches();
     }

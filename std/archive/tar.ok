@@ -37,17 +37,21 @@ import "strings/parse" take Number;
 import "fs/stat" take Permissions, PermissionMode;
 import "error" take InvalidArgument, InvalidState, OutOfRange;
 
+// pax (the default, any name and size) or strict ustar.
 enum TarFormat = (pax, ustar);
 
+// Members written as one TAR archive in memory.
 object TarArchive {
     has origin is Iterating<ArchiveEntry>;
     has format is TarFormat;
 
+    // entries as a PAX archive.
     TarArchive(entries is Iterating<ArchiveEntry>) {
         origin = entries;
         format = TarFormat.pax;
     }
 
+    // entries in format.
     TarArchive(entries is Iterating<ArchiveEntry>, format is TarFormat) {
         origin = entries;
         self.format = format;
@@ -78,6 +82,7 @@ object TarWriting does WritingArchive, Closing {
     has lifecycle is ArchiveWriting;
     has names is ByteBuffer;
 
+    // Writes a PAX archive to origin.
     TarWriting(origin is Writing) {
         let paths = ByteBuffer();
         names = paths;
@@ -85,6 +90,7 @@ object TarWriting does WritingArchive, Closing {
         lifecycle = ArchiveWriting(write_entry: output.write, finish_stream: output.finish);
     }
 
+    // Writes an archive in format to origin.
     TarWriting(origin is Writing, format is TarFormat) {
         let paths = ByteBuffer();
         names = paths;
@@ -92,23 +98,28 @@ object TarWriting does WritingArchive, Closing {
         lifecycle = ArchiveWriting(write_entry: output.write, finish_stream: output.finish);
     }
 
+    // Writes one member.
     write(entry is ArchiveEntry) is void {
         lifecycle.write(entry);
     }
 
+    // Writes the two empty blocks that end a TAR archive.
     finish() is void {
         lifecycle.finish();
     }
 
+    // Whether finish() was called.
     finished() is bool {
         lifecycle.finished();
     }
 
+    // Closes it; origin stays open.
     close() is void {
         lifecycle.close();
         names.closing().close();
     }
 
+    // Whether it is closed.
     closed() is bool {
         lifecycle.closed();
     }
@@ -118,8 +129,10 @@ object TarWriting does WritingArchive, Closing {
     }
 }
 
+// Bytes that are not a TAR archive; reason says why.
 enum InvalidTar is Error = (because(reason is string));
 
+// Two members with the same name.
 enum DuplicateArchivePath is Error = (path(path is string));
 
 // Internal typed dispatch over archive variants. Owns no resources: its writer
@@ -747,6 +760,7 @@ object ParsedTar {
     has limits is ArchiveLimits;
     has maximum_metadata, maximum_extensions is int;
 
+    // Reads a TAR archive in memory within limits.
     ParsedTar(origin is @byte, limits is ArchiveLimits) {
         self.origin = origin;
         self.limits = limits;
@@ -754,6 +768,7 @@ object ParsedTar {
         maximum_extensions = 4096;
     }
 
+    // Within limits and these bounds on PAX metadata.
     ParsedTar(
         origin is @byte,
         limits is ArchiveLimits,
@@ -768,6 +783,7 @@ object ParsedTar {
         self.maximum_extensions = maximum_extensions;
     }
 
+    // Its members; InvalidTar when the bytes are not TAR.
     entries() is Sequencing<ArchiveEntry> {
         let progress = TarParseProgress(limits: limits, maximum_metadata: maximum_metadata, maximum_extensions: maximum_extensions);
         loop {
@@ -1609,11 +1625,13 @@ object TarReading does ReadingArchive, Closing {
     has input is TarStreamInput;
     has status is ByteBuffer;
 
+    // Reads a TAR archive from a stream, member by member.
     TarReading(origin is Reading, limits is ArchiveLimits) {
         input = TarStreamInput(origin: origin, limits: limits, maximum_metadata: 1048576, maximum_extensions: 4096);
         status = ByteBuffer();
     }
 
+    // Within limits and these bounds on PAX metadata.
     TarReading(
         origin is Reading,
         limits is ArchiveLimits,
@@ -1624,6 +1642,7 @@ object TarReading does ReadingArchive, Closing {
         status = ByteBuffer();
     }
 
+    // The next member; EndOfArchive after the last.
     entry() is ArchiveEntry {
         confirm !self.finished() else throw EndOfArchive.reached;
         // Empty internal result means validated EOF. Keeping it distinct from an
@@ -1642,6 +1661,7 @@ object TarReading does ReadingArchive, Closing {
         result[0];
     }
 
+    // Whether every member has been read.
     finished() is bool {
         confirm !self.closed() else throw InvalidState.because("TAR reading is closed");
         let phase = status.content().bytes();
@@ -1650,11 +1670,13 @@ object TarReading does ReadingArchive, Closing {
         phase.size() > 0;
     }
 
+    // Closes it; origin stays open.
     close() is void {
         input.close();
         status.closing().close();
     }
 
+    // Whether it is closed.
     closed() is bool {
         status.closing().closed();
     }

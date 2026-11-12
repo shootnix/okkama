@@ -1,16 +1,15 @@
 module crypto/key_format v1.0.0;
 
-// Key interchange formats: DER PKCS#8 ("PRIVATE KEY") and DER
-// SubjectPublicKeyInfo ("PUBLIC KEY") in strict PEM (encoding/pem).
+// Keys in PEM files: PKCS#8 `PRIVATE KEY` and SubjectPublicKeyInfo `PUBLIC
+// KEY`.
 //
-// PrivateKeyPem(pkcs8).string() and PublicKeyPem(key).string() encode.
-// ParsedPrivateKey(pem) and ParsedPublicKey(pem) decode one block with the
-// expected label and expose algorithm() and the DER (pkcs8() as fresh
-// SecretBytes, spki()); unknown algorithms are KeyAlgorithm.other.
-// signing_key()/verifying_key() build Ed25519 or ECDSA keys; RSA needs an
-// explicit scheme (crypto/rsa RsaPrivateKey/RsaPublicKey plus a signing
-// object), and asking for it here is InvalidCryptoInput. Encrypted PKCS#8,
-// PKCS#1 "RSA PRIVATE KEY" and SEC1 "EC PRIVATE KEY" are not accepted.
+//     let parsed = ParsedPrivateKey(pem_text);
+//     parsed.algorithm();                          // KeyAlgorithm.ed25519, …
+//     let key = parsed.signing_key();
+//     let pem = PublicKeyPem(ParsedPublicKey(public_pem).verifying_key()).string();
+//
+// Ed25519, ECDSA P-256 and P-384 and RSA keys are read; others are
+// KeyAlgorithm.other.
 
 import "crypto/key" take PublicKey, VerifyingKey, SigningKey;
 import "crypto/secret" take SecretBytes;
@@ -21,15 +20,19 @@ import "encoding/pem" take PemEncoded, PemBlock;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded;
 import "encoding/hex" take HexDecoded;
 
+// Which algorithm a key is for.
 enum KeyAlgorithm = (ed25519, ecdsa_p256, ecdsa_p384, rsa, other);
 
+// The algorithm of an object identifier.
 object KeyAlgorithmName {
     has origin is string;
 
+    // The algorithm with oid.
     KeyAlgorithmName(oid is string) {
         origin = oid;
     }
 
+    // The algorithm, other when unknown.
     algorithm() is KeyAlgorithm {
         if origin == "1.3.101.112" {
             return KeyAlgorithm.ed25519;
@@ -47,37 +50,46 @@ object KeyAlgorithmName {
     }
 }
 
+// A PKCS#8 key as PEM text.
 object PrivateKeyPem {
     has key is SecretBytes;
 
+    // pkcs8 as PEM.
     PrivateKeyPem(pkcs8 is SecretBytes) {
         key = pkcs8;
     }
 
+    // The `PRIVATE KEY` PEM text.
     string() is string {
         PemEncoded(kind: "PRIVATE KEY", data: key.export_bytes()).string();
     }
 }
 
+// A public key as PEM text.
 object PublicKeyPem {
     has key is PublicKey;
 
+    // key as PEM.
     PublicKeyPem(key is PublicKey) {
         self.key = key;
     }
 
+    // The `PUBLIC KEY` PEM text.
     string() is string {
         PemEncoded(kind: "PUBLIC KEY", data: key.bytes()).string();
     }
 }
 
+// A private key read from PEM.
 object ParsedPrivateKey {
     has origin is string;
 
+    // Reads pem.
     ParsedPrivateKey(pem is string) {
         origin = pem;
     }
 
+    // The DER PKCS#8 bytes.
     pkcs8() is SecretBytes {
         let block = PemBlock(origin);
         confirm block.kind() == "PRIVATE KEY"
@@ -85,12 +97,14 @@ object ParsedPrivateKey {
         SecretBytes(block.bytes());
     }
 
+    // Which algorithm it is for.
     algorithm() is KeyAlgorithm {
         KeyAlgorithmName(
             Utf8Decoded(HostOperation(operation: "pkcs8-algorithm", arguments: [self.pkcs8().export_bytes()]).bytes()).string()
         ).algorithm();
     }
 
+    // The key, ready to sign.
     signing_key() is SigningKey {
         let key = self.pkcs8();
         match self.algorithm() {
@@ -117,13 +131,16 @@ object ParsedPrivateKey {
     }
 }
 
+// A public key read from PEM.
 object ParsedPublicKey {
     has origin is string;
 
+    // Reads pem.
     ParsedPublicKey(pem is string) {
         origin = pem;
     }
 
+    // The DER SubjectPublicKeyInfo bytes.
     spki() is @byte {
         let block = PemBlock(origin);
         confirm block.kind() == "PUBLIC KEY"
@@ -131,12 +148,14 @@ object ParsedPublicKey {
         block.bytes();
     }
 
+    // Which algorithm it is for.
     algorithm() is KeyAlgorithm {
         KeyAlgorithmName(
             Utf8Decoded(HostOperation(operation: "spki-algorithm", arguments: [self.spki()]).bytes()).string()
         ).algorithm();
     }
 
+    // The key, ready to verify.
     verifying_key() is VerifyingKey {
         let spki = self.spki();
         match self.algorithm() {

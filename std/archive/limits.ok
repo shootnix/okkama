@@ -19,9 +19,12 @@ module archive/limits v1.0.0;
 import "archive/path" take ArchivePath;
 import "error" take InvalidArgument, InvalidState;
 
+// How much an archive may hold before reading stops: entries, entry size, total
+// size and path length.
 object ArchiveLimits {
     has count_limit, entry_limit, total_limit, path_limit is int;
 
+    // The limits, each positive.
     ArchiveLimits(entries is int, entry_size is int, total_size is int, path_length is int) {
         confirm entries > 0 else throw InvalidArchiveLimit.detailed("entries", entries);
         confirm entry_size > 0 else throw InvalidArchiveLimit.detailed("entry_size", entry_size);
@@ -52,12 +55,14 @@ object ArchiveLimits {
         }
     }
 
+    // origin as an ArchivePath, if it is no longer than the limit.
     path(origin is string) is ArchivePath {
         confirm origin.length() <= path_limit
             else throw ArchiveLimitExceeded.detailed("path_length", path_limit);
         ArchivePath(origin);
     }
 
+    // A fresh budget for one archive.
     budget() is ArchiveBudget {
         ArchiveBudget(self);
     }
@@ -80,6 +85,7 @@ object ArchiveBudget {
     has count_left, total_left, entry_left is int;
     has current is @ArchivePath;
 
+    // The whole of limits, unspent.
     ArchiveBudget(limits is ArchiveLimits) {
         policy = limits;
         count_left = limits::Limits::entries;
@@ -88,26 +94,31 @@ object ArchiveBudget {
         current = [];
     }
 
+    // How many more entries may come.
     entries_remaining() is int {
         count_left;
     }
 
+    // How many more bytes in all.
     total_remaining() is int {
         total_left;
     }
 
+    // How many more bytes in the current entry.
     entry_remaining() is int {
         confirm current.size() > 0
             else throw InvalidState.because("archive budget has no active entry");
         entry_left;
     }
 
+    // The current entry's path.
     path() is ArchivePath {
         confirm current.size() > 0
             else throw InvalidState.because("archive budget has no active entry");
         current[0];
     }
 
+    // The budget after starting an entry of declared_size bytes at origin.
     entered(origin is string, declared_size is int) is ^ArchiveBudget {
         confirm current.size() == 0
             else throw InvalidState.because("archive budget already has an active entry");
@@ -125,6 +136,7 @@ object ArchiveBudget {
         ^current = [member];
     }
 
+    // The budget after amount more bytes of the entry.
     expanded(amount is int) is ^ArchiveBudget {
         confirm current.size() > 0
             else throw InvalidState.because("archive budget has no active entry");
@@ -138,6 +150,7 @@ object ArchiveBudget {
         ^total_left = total_left - amount;
     }
 
+    // The budget after the entry ends.
     completed() is ^ArchiveBudget {
         confirm current.size() > 0
             else throw InvalidState.because("archive budget has no active entry");
@@ -150,6 +163,7 @@ object ArchiveBudget {
 // a changing remaining count. Limits use entries/entry_size/total_size/path_length.
 enum ArchiveLimitExceeded is Error = (detailed(limit is string, maximum is int));
 
+// A limit outside 1 to maximum.
 enum InvalidArchiveLimit is Error = (detailed(limit is string, maximum is int));
 
 test "archive limits validate positive coordinates and Unicode path length" {

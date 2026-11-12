@@ -1,21 +1,31 @@
 module crypto/aead v1.0.0;
 
-// Authenticated encryption with associated data. A Sealing is one algorithm
-// bound to one key. sealed(nonce, aad, plaintext) returns ciphertext || tag;
-// opened(nonce, aad, sealed) verifies the tag before releasing any plaintext
-// and throws crypto/error.AuthenticationFailed on any mismatch (key, nonce,
-// associated data or bytes). A nonce must never repeat for one key: use
-// crypto/nonce.CounterNonce for counters or RandomNonce where the nonce is
-// long enough (XChaCha20-Poly1305). Wrong nonce/key sizes are
-// InvalidCryptoInput. tag_size() and nonce_size() describe the algorithm.
+// The role of authenticated encryption with associated data, played by AES-GCM,
+// ChaCha20-Poly1305 and XChaCha20-Poly1305.
+//
+//     let cipher is Sealing = AesGcm(key);
+//     let nonce = RandomNonce(SystemEntropy(), cipher.nonce_size()).bytes();
+//     let sealed = cipher.sealed(nonce, aad, plaintext);
+//     let plain = cipher.opened(nonce, aad, sealed);    // AuthenticationFailed if changed
+//
+// Each nonce may be used once with a key; reusing one breaks both secrecy and
+// authentication. The associated data is authenticated, not encrypted.
 
+// Authenticated encryption: seal with a nonce and associated data, open or
+// fail.
 role Sealing {
+    // How many bytes a nonce has.
     nonce_size() is int;
+    // How many bytes the tag adds.
     tag_size() is int;
+    // plaintext encrypted and authenticated with aad, under nonce.
     sealed(nonce is @byte, aad is @byte, plaintext is @byte) is @byte;
+    // The plaintext of sealed; AuthenticationFailed when it or aad was changed.
     opened(nonce is @byte, aad is @byte, sealed is @byte) is @byte;
     // The same with text, as UTF-8.
     sealed(nonce is @byte, aad is string, text is string) is @byte;
+    // The same with aad as UTF-8 text.
     opened(nonce is @byte, aad is string, sealed is @byte) is @byte;
+    // The plaintext as UTF-8 text.
     opened_text(nonce is @byte, aad is string, sealed is @byte) is string;
 }

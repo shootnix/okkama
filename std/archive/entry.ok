@@ -24,12 +24,18 @@ import "archive/path" take ArchivePath;
 import "encoding/utf" take Utf8Encoded;
 import "archive/metadata" take ArchiveMetadata, ArchiveModificationFromEpoch;
 
+// What an archive member is.
 enum ArchiveEntryKind = (file, directory, symbolic_link, hard_link, fifo, character_device, block_device);
 
+// A member of an archive: a name, a kind, metadata and a visitor callback.
 role ArchiveEntry {
+    // Its name in the archive.
     path() is ArchivePath;
+    // What it is.
     kind() is ArchiveEntryKind;
+    // Its mode, time, owner and comment.
     metadata() is ArchiveMetadata;
+    // Calls the visitor's one callback for this kind.
     accept(to is ArchiveEntryVisitor) is void;
 
     fake {
@@ -55,19 +61,27 @@ role ArchiveEntry {
 // These actions receive concrete values, so no reflection/downcast is needed
 // to obtain file bytes, link targets or device numbers.
 role ArchiveEntryVisitor {
+    // A regular file.
     file(entry is ArchiveFile) is void;
+    // A directory.
     directory(entry is ArchiveDirectory) is void;
+    // A symbolic link.
     symbolic_link(entry is ArchiveSymbolicLink) is void;
+    // A hard link.
     hard_link(entry is ArchiveHardLink) is void;
+    // A named pipe.
     fifo(entry is ArchiveFifo) is void;
+    // A character or block device.
     device(entry is ArchiveDevice) is void;
 }
 
+// A regular file and its bytes.
 object ArchiveFile does ArchiveEntry {
     has origin is ArchivePath;
     has attributes is ArchiveMetadata;
     has content is @byte;
 
+    // path with metadata and data.
     ArchiveFile(path is ArchivePath, metadata is ArchiveMetadata, data is @byte) {
         origin = path;
         attributes = metadata;
@@ -81,136 +95,167 @@ object ArchiveFile does ArchiveEntry {
         content = Utf8Encoded(text).bytes();
     }
 
+    // Its name in the archive.
     path() is ArchivePath {
         origin;
     }
 
+    // What it is.
     kind() is ArchiveEntryKind {
         ArchiveEntryKind.file;
     }
 
+    // Its mode, time, owner and comment.
     metadata() is ArchiveMetadata {
         attributes;
     }
 
+    // Its bytes, the same each time.
     data() is @byte {
         content;
     }
 
+    // Calls the visitor's one callback for this kind.
     accept(to is ArchiveEntryVisitor) is void {
         to.file(self);
     }
 }
 
+// A directory.
 object ArchiveDirectory does ArchiveEntry {
     has origin is ArchivePath;
     has attributes is ArchiveMetadata;
 
+    // A directory at path.
     ArchiveDirectory(path is ArchivePath, metadata is ArchiveMetadata) {
         origin = path;
         attributes = metadata;
     }
 
+    // Its name in the archive.
     path() is ArchivePath {
         origin;
     }
 
+    // What it is.
     kind() is ArchiveEntryKind {
         ArchiveEntryKind.directory;
     }
 
+    // Its mode, time, owner and comment.
     metadata() is ArchiveMetadata {
         attributes;
     }
 
+    // Calls the visitor's one callback for this kind.
     accept(to is ArchiveEntryVisitor) is void {
         to.directory(self);
     }
 }
 
+// A symbolic link and its target.
 object ArchiveSymbolicLink does ArchiveEntry {
     has origin, destination is ArchivePath;
     has attributes is ArchiveMetadata;
 
+    // A link at path to target.
     ArchiveSymbolicLink(path is ArchivePath, metadata is ArchiveMetadata, target is ArchivePath) {
         origin = path;
         attributes = metadata;
         destination = target;
     }
 
+    // Its name in the archive.
     path() is ArchivePath {
         origin;
     }
 
+    // What it is.
     kind() is ArchiveEntryKind {
         ArchiveEntryKind.symbolic_link;
     }
 
+    // Its mode, time, owner and comment.
     metadata() is ArchiveMetadata {
         attributes;
     }
 
+    // Where it points, as stored.
     target() is ArchivePath {
         destination;
     }
 
+    // Calls the visitor's one callback for this kind.
     accept(to is ArchiveEntryVisitor) is void {
         to.symbolic_link(self);
     }
 }
 
+// A second name for an earlier member.
 object ArchiveHardLink does ArchiveEntry {
     has origin, destination is ArchivePath;
     has attributes is ArchiveMetadata;
 
+    // A link at path to target.
     ArchiveHardLink(path is ArchivePath, metadata is ArchiveMetadata, target is ArchivePath) {
         origin = path;
         attributes = metadata;
         destination = target;
     }
 
+    // Its name in the archive.
     path() is ArchivePath {
         origin;
     }
 
+    // What it is.
     kind() is ArchiveEntryKind {
         ArchiveEntryKind.hard_link;
     }
 
+    // Its mode, time, owner and comment.
     metadata() is ArchiveMetadata {
         attributes;
     }
 
+    // The member it names.
     target() is ArchivePath {
         destination;
     }
 
+    // Calls the visitor's one callback for this kind.
     accept(to is ArchiveEntryVisitor) is void {
         to.hard_link(self);
     }
 }
 
+// A named pipe.
 object ArchiveFifo does ArchiveEntry {
     has origin is ArchivePath;
     has attributes is ArchiveMetadata;
 
+    // A pipe at path.
     ArchiveFifo(path is ArchivePath, metadata is ArchiveMetadata) {
         origin = path;
         attributes = metadata;
     }
 
+    // Its name in the archive.
     path() is ArchivePath {
         origin;
     }
 
+    // What it is.
     kind() is ArchiveEntryKind {
         ArchiveEntryKind.fifo;
     }
 
+    // Its mode, time, owner and comment.
     metadata() is ArchiveMetadata {
         attributes;
     }
 
+    // Calls the visitor's one callback for this kind.
     accept(to is ArchiveEntryVisitor) is void {
         to.fifo(self);
     }
@@ -224,6 +269,8 @@ object ArchiveDevice does ArchiveEntry {
     has attributes is ArchiveMetadata;
     has major_number, minor_number is int;
 
+    // A character or block device with its major and minor numbers; another
+    // kind is InvalidArchiveDevice.
     ArchiveDevice(
         path is ArchivePath,
         kind is ArchiveEntryKind,
@@ -242,31 +289,38 @@ object ArchiveDevice does ArchiveEntry {
         minor_number = minor;
     }
 
+    // Its name in the archive.
     path() is ArchivePath {
         origin;
     }
 
+    // character_device or block_device.
     kind() is ArchiveEntryKind {
         entry_kind;
     }
 
+    // Its mode, time, owner and comment.
     metadata() is ArchiveMetadata {
         attributes;
     }
 
+    // The major device number.
     major() is int {
         major_number;
     }
 
+    // The minor device number.
     minor() is int {
         minor_number;
     }
 
+    // Calls the visitor's device callback.
     accept(to is ArchiveEntryVisitor) is void {
         to.device(self);
     }
 }
 
+// A device of a kind that is not a device, or numbers out of range.
 enum InvalidArchiveDevice is Error = (because(reason is string));
 
 test "archive entries preserve the role coordinates and file bytes" {

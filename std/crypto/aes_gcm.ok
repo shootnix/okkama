@@ -1,8 +1,15 @@
 module crypto/aes_gcm v1.0.0;
 
-// AES-GCM (NIST SP 800-38D) with a 128- or 256-bit key, 96-bit nonce and
-// 128-bit tag. The key is a SecretBytes capability; it is exported to the host
-// per operation. See crypto/aead for the sealing contract.
+// AES-GCM (NIST SP 800-38D): a 16- or 32-byte key, a 12-byte nonce and a
+// 16-byte tag.
+//
+//     let cipher = AesGcm(SecretBytes(SystemEntropy().bytes(32)));
+//     let nonce = RandomNonce(SystemEntropy(), 12).bytes();
+//     let sealed = cipher.sealed(nonce, aad, plaintext);
+//     let plain = cipher.opened(nonce, aad, sealed);
+//
+// Never reuse a nonce with a key. For random nonces over many messages,
+// XChaCha20-Poly1305 is safer.
 
 import "crypto/aead" take Sealing;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
@@ -10,23 +17,28 @@ import "crypto/secret" take SecretBytes;
 import "crypto/error" take HostOperation, InvalidCryptoInput, AuthenticationFailed;
 import "encoding/hex" take HexEncoded;
 
+// AES-GCM with a 128- or 256-bit key.
 object AesGcm does Sealing {
     has key is SecretBytes;
 
+    // A cipher with key, which must be 16 or 32 bytes.
     AesGcm(key is SecretBytes) {
         confirm key.size() == 16 || key.size() == 32
             else throw InvalidCryptoInput.because("AES-GCM key must be 16 or 32 bytes");
         self.key = key;
     }
 
+    // How many bytes a nonce has.
     nonce_size() is int {
         12;
     }
 
+    // How many bytes the tag adds.
     tag_size() is int {
         16;
     }
 
+    // "aes-128-gcm" or "aes-256-gcm".
     algorithm() is string {
         if key.size() == 16 {
             "aes-128-gcm";
@@ -36,10 +48,13 @@ object AesGcm does Sealing {
         }
     }
 
+    // plaintext encrypted and authenticated with aad, under nonce; never reuse
+    // a nonce with the same key.
     sealed(nonce is @byte, aad is @byte, plaintext is @byte) is @byte {
         HostOperation(operation: "aead-seal:" + self.algorithm(), arguments: [key.export_bytes(), nonce, aad, plaintext]).bytes();
     }
 
+    // The plaintext of sealed; AuthenticationFailed when it or aad was changed.
     opened(nonce is @byte, aad is @byte, sealed is @byte) is @byte {
         HostOperation(operation: "aead-open:" + self.algorithm(), arguments: [key.export_bytes(), nonce, aad, sealed]).bytes();
     }
@@ -49,6 +64,7 @@ object AesGcm does Sealing {
         self.sealed(nonce, Utf8Encoded(aad).bytes(), Utf8Encoded(text).bytes());
     }
 
+    // The same with aad as UTF-8 text.
     opened(nonce is @byte, aad is string, sealed is @byte) is @byte {
         self.opened(nonce, Utf8Encoded(aad).bytes(), sealed);
     }

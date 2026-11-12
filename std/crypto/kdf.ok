@@ -13,6 +13,7 @@ import "crypto/secret" take SecretBytes;
 import "crypto/error" take HostOperation, DecimalArgument, InvalidCryptoInput;
 import "encoding/hex" take HexEncoded;
 
+// The hash a derivation is built on.
 enum KdfHash = (sha256, sha384, sha512);
 
 hidden object KdfHashName {
@@ -37,6 +38,8 @@ hidden object KdfHashName {
     }
 }
 
+// HKDF (RFC 5869): keys derived from a secret that is already strong, such as a
+// shared secret.
 object HkdfSecret {
     has hash is KdfHash;
     has input is SecretBytes;
@@ -44,6 +47,7 @@ object HkdfSecret {
     has info is @byte;
     has length is int;
 
+    // length bytes from input, salt and info.
     HkdfSecret(hash is KdfHash, input is SecretBytes, salt is @byte, info is @byte, length is int) {
         confirm length >= 1
             else throw InvalidCryptoInput.because("HKDF output length must be positive");
@@ -54,6 +58,7 @@ object HkdfSecret {
         self.length = length;
     }
 
+    // The derived key.
     secret() is SecretBytes {
         SecretBytes(HostOperation(
             operation: "hkdf-" + KdfHashName(hash).string(),
@@ -62,6 +67,8 @@ object HkdfSecret {
     }
 }
 
+// PBKDF2 (RFC 8018): a key from a password; for storing passwords prefer
+// PasswordHash.
 object Pbkdf2Secret {
     has hash is KdfHash;
     has password is SecretBytes;
@@ -69,6 +76,7 @@ object Pbkdf2Secret {
     has iterations is int;
     has length is int;
 
+    // length bytes from password and salt with iterations rounds.
     Pbkdf2Secret(
         hash is KdfHash,
         password is SecretBytes,
@@ -87,6 +95,7 @@ object Pbkdf2Secret {
         self.length = length;
     }
 
+    // The derived key.
     secret() is SecretBytes {
         SecretBytes(HostOperation(
             operation: "pbkdf2-" + KdfHashName(hash).string(),

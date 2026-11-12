@@ -27,12 +27,19 @@ import "io/stream" take Reading, Closing, InvalidReadLimit;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument, InvalidState;
 
+// A stream compressor: write pieces, take output, finish.
 role Compressing {
+    // Feeds origin to the codec; output may come now or later.
     write(origin is @byte) is void;
+    // The output ready so far, taken out of the codec.
     output() is Reading;
+    // Ends the input; the rest of the output becomes ready.
     finish() is void;
+    // Whether finish() was called.
     finished() is bool;
+    // Drops the codec and any output not taken.
     close() is void;
+    // Whether it is closed.
     closed() is bool;
 
     fake {
@@ -96,13 +103,21 @@ role Compressing {
     }
 }
 
+// A stream decompressor: write pieces, take output, finish.
 role Decompressing {
+    // Feeds origin to the codec; output may come now or later.
     write(origin is @byte) is void;
+    // The output ready so far, taken out of the codec.
     output() is Reading;
+    // Ends the input; the rest of the output becomes ready.
     finish() is void;
+    // Whether finish() was called.
     finished() is bool;
+    // Drops the codec and any output not taken.
     close() is void;
+    // Whether it is closed.
     closed() is bool;
+    // The bytes that came after the end of the compressed stream.
     remainder() is @byte;
 
     fake {
@@ -183,20 +198,24 @@ role Decompressing {
 object CompressionOutput does Reading, Closing {
     has buffer is ByteBuffer;
 
+    // A batch of output bytes.
     CompressionOutput(origin is @byte) {
         buffer = ByteBuffer(origin);
     }
 
+    // At most limit of the batch, consumed; [] at its end.
     bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         confirm !self.closed() else throw InvalidState.because("compression output is closed");
         buffer.reading().bytes(limit);
     }
 
+    // Whether it is closed.
     closed() is bool {
         buffer.closing().closed();
     }
 
+    // Drops the batch.
     close() is void {
         buffer.closing().close();
     }
@@ -215,16 +234,19 @@ object DecompressionBudget {
     has maximum is int;
     has available is int;
 
+    // maximum bytes to produce; it must be positive.
     DecompressionBudget(maximum is int) {
         confirm maximum > 0 else throw InvalidCompressionLimit.maximum(maximum);
         self.maximum = maximum;
         available = maximum;
     }
 
+    // The bytes still allowed.
     remaining() is int {
         available;
     }
 
+    // The budget after amount more bytes; CompressionLimitExceeded past it.
     spent(amount is int) is ^DecompressionBudget {
         confirm amount >= 0
             else throw InvalidArgument.because("decompression output size must not be negative");
@@ -240,6 +262,7 @@ enum CompressionLimitExceeded is Error = (maximum(maximum is int));
 // checksum that does not match, or a stream cut short.
 enum InvalidCompressedData is Error = (because(reason is string));
 
+// A limit below one.
 enum InvalidCompressionLimit is Error = (maximum(maximum is int));
 
 // A format this engine has no codec for: zstd and Brotli on the JVM (#184).

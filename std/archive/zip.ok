@@ -46,6 +46,7 @@ import "async/atomic" take Atomic;
 import "io/buffer" take ByteBuffer;
 import "encoding/base64" take Base64Decoded;
 
+// How a ZIP member is compressed; std reads and writes stored and deflated.
 enum ZipMethod = (stored, deflated, bzip2, lzma, zstandard);
 
 // Immutable choice of ZIP method and effective compression level. Construction
@@ -66,6 +67,7 @@ object ZipCompression {
     has selected is ZipMethod;
     has effective is int;
 
+    // method at its default level.
     ZipCompression(method is ZipMethod) {
         selected = method;
         effective = if method == ZipMethod.deflated {
@@ -86,6 +88,7 @@ object ZipCompression {
         };
     }
 
+    // method at level.
     ZipCompression(method is ZipMethod, level is int) {
         confirm method != ZipMethod.stored && method != ZipMethod.lzma
             else throw InvalidArgument.because("this ZIP method has no configurable level");
@@ -111,10 +114,12 @@ object ZipCompression {
         };
     }
 
+    // The method.
     method() is ZipMethod {
         selected;
     }
 
+    // The level.
     level() is int {
         effective;
     }
@@ -136,15 +141,18 @@ object ZipArchiveEntry {
     has origin is ArchiveEntry;
     has choice is ZipCompression;
 
+    // entry to be written with compression.
     ZipArchiveEntry(entry is ArchiveEntry, compression is ZipCompression) {
         origin = entry;
         choice = compression;
     }
 
+    // The member.
     entry() is ArchiveEntry {
         origin;
     }
 
+    // How it is compressed.
     compression() is ZipCompression {
         choice;
     }
@@ -214,11 +222,13 @@ object ZipArchive {
     has origin is @byte;
     has limits is ArchiveLimits;
 
+    // Reads a ZIP archive in memory with the default limits.
     ZipArchive(origin is @byte) {
         self.origin = origin;
         limits = ArchiveLimits(65536, 1073741824, 4294967296, 4096);
     }
 
+    // Reads a ZIP archive within limits.
     ZipArchive(origin is @byte, limits is ArchiveLimits) {
         self.origin = origin;
         self.limits = limits;
@@ -238,6 +248,7 @@ object ZipEntry {
     has checksum is int;
     has packed, expanded, start is int;
 
+    // Made by ZipArchive.entries(); not constructed directly.
     ZipEntry(
         source is @byte,
         name is string,
@@ -261,10 +272,12 @@ object ZipEntry {
         label;
     }
 
+    // Whether it is a directory.
     directory() is bool {
         label.ends_with("/");
     }
 
+    // How it is compressed.
     method() is ZipMethod {
         kind;
     }
@@ -274,6 +287,7 @@ object ZipEntry {
         expanded;
     }
 
+    // Its size in the archive.
     compressed_size() is int {
         packed;
     }
@@ -570,6 +584,7 @@ object ZipWriting does Closing {
     has names is Atomic<%string:bool>;
     has finished is Atomic<bool>;
 
+    // Writes a ZIP archive to destination.
     ZipWriting(destination is Writing) {
         self.destination = destination;
         let none_yet is @byte = [];
@@ -581,6 +596,8 @@ object ZipWriting does Closing {
         finished = Atomic(false);
     }
 
+    // Adds a file called name holding bytes: deflated when that is smaller,
+    // stored otherwise.
     add(name is string, bytes is @byte) is void {
         let packed = DeflateCompressed(bytes).bytes();
         if !name.ends_with("/") && packed.size() < bytes.size() {
@@ -611,6 +628,7 @@ object ZipWriting does Closing {
         }
     }
 
+    // Whether it is closed.
     closed() is bool {
         finished.value();
     }
@@ -782,8 +800,10 @@ hidden object ZipClamped {
     }
 }
 
+// Bytes that are not a ZIP archive; reason says why.
 enum InvalidZip is Error = (because(reason is string));
 
+// A ZIP feature std does not read, such as encryption or another method.
 enum UnsupportedZip is Error = (because(reason is string));
 
 hidden const ZIP_MIXED = "UEsDBBQAAAAAAAAAIQCGphA2BQAAAAUAAAAFAAAAYS50eHRoZWxsb1BLAwQUAAAAAAAAACEAAAAAAAAAAAAAAAAABQAAAGRvY3MvUEsDBBQAAAAIAAAAIQCRa0zXCQAAAMgAAAAKAAAAZG9jcy9iLnR4dCtJTVQoGQYYAFBLAwQUAAAICAAAACEAFYvpuwgAAAAGAAAAEAAAANC40LrQvtC90LrQsC50eHS72H5hw4WdAFBLAQIUAxQAAAAAAAAAIQCGphA2BQAAAAUAAAAFAAAAAAAAAAAAAACAAQAAAABhLnR4dFBLAQIUAxQAAAAAAAAAIQAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAACAASgAAABkb2NzL1BLAQIUAxQAAAAIAAAAIQCRa0zXCQAAAMgAAAAKAAAAAAAAAAAAAACAAUsAAABkb2NzL2IudHh0UEsBAhQDFAAACAgAAAAhABWL6bsIAAAABgAAABAAAAAAAAAAAAAAAIABfAAAANC40LrQvtC90LrQsC50eHRQSwUGAAAAAAQABADcAAAAsgAAAAAA";

@@ -16,49 +16,60 @@ import "crypto/nonce" take Entropy;
 import "crypto/error" take HostOperation, InvalidCryptoInput;
 import "encoding/hex" take HexEncoded, HexDecoded;
 
+// An Ed25519 signing key.
 object Ed25519PrivateKey does SigningKey {
     has seed is SecretBytes;
 
+    // The key of a 32-byte seed.
     Ed25519PrivateKey(seed is SecretBytes) {
         confirm seed.size() == 32
             else throw InvalidCryptoInput.because("Ed25519 seed must be 32 bytes");
         self.seed = seed;
     }
 
+    // A new key from entropy.
     Ed25519PrivateKey(entropy is Entropy) {
         seed = SecretBytes(entropy.bytes(32));
     }
 
+    // The key as DER PKCS#8.
     pkcs8() is SecretBytes {
         SecretBytes(HostOperation(operation: "ed25519-pkcs8", arguments: [seed.export_bytes()]).bytes());
     }
 
+    // Its public key.
     public_key() is VerifyingKey {
         Ed25519PublicKey(HostOperation(operation: "ed25519-public", arguments: [seed.export_bytes()]).bytes());
     }
 
+    // The 64-byte signature of message.
     signature(message is @byte) is @byte {
         HostOperation(operation: "ed25519-sign", arguments: [seed.export_bytes(), message]).bytes();
     }
 }
 
+// An Ed25519 public key.
 object Ed25519PublicKey does PublicKey, VerifyingKey {
     has raw is @byte;
 
+    // The key of its 32 raw bytes.
     Ed25519PublicKey(raw is @byte) {
         confirm raw.size() == 32
             else throw InvalidCryptoInput.because("Ed25519 public key must be 32 bytes");
         self.raw = raw;
     }
 
+    // Its 32 raw bytes.
     raw() is @byte {
         raw;
     }
 
+    // The key as DER SubjectPublicKeyInfo.
     bytes() is @byte {
         HostOperation(operation: "ed25519-spki", arguments: [raw]).bytes();
     }
 
+    // Whether signature signs message with this key.
     verified(message is @byte, signature is @byte) is bool {
         signature.size() == 64 && HostOperation(operation: "ed25519-verify", arguments: [raw, message, signature]).truth();
     }

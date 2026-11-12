@@ -1,10 +1,16 @@
 module archive/metadata v1.0.0;
 
-// Immutable ownership coordinates at the archive-format boundary. Names remain
-// exact (including empty strings); numeric identities must be nonnegative and
-// retain arbitrary precision. Zero is a real ID, never a missing-value marker.
-// No account lookup, name/ID reconciliation, normalization or filesystem I/O.
-// Format-specific numeric widths and name encodings are checked by adapters.
+// What an archive records about a member besides its bytes: permissions, the
+// time it was changed, its owner and a comment.
+//
+//     let metadata = ArchiveMetadata(
+//         mode: PermissionMode(420),
+//         modified: ArchiveModificationFromEpoch(1762000000).local_date_time(),
+//         comment: "",
+//     );
+//
+// A member may lack a mode or an owner: reading one then throws
+// MissingArchiveMode or MissingArchiveOwnership.
 
 import "numbers/bigint" take BigInt;
 import "fs/stat" take PermissionMode;
@@ -13,10 +19,12 @@ import "time/date" take Date;
 import "time/day" take TimeOfDay;
 import "time/duration" take Duration, DurationUnit;
 
+// Who owns a member: user and group names and ids.
 object ArchiveOwnership {
     has user_name, group_name is string;
     has user_id, group_id is BigInt;
 
+    // The names and ids as given; ids must not be negative.
     ArchiveOwnership(
         user is string,
         group is string,
@@ -31,18 +39,22 @@ object ArchiveOwnership {
         group_id = group_identity;
     }
 
+    // The user name.
     user() is string {
         user_name;
     }
 
+    // The group name.
     group() is string {
         group_name;
     }
 
+    // The user id.
     user_identity() is BigInt {
         user_id;
     }
 
+    // The group id.
     group_identity() is BigInt {
         group_id;
     }
@@ -70,6 +82,7 @@ object ArchiveMetadata {
     has modified is LocalDateTime;
     has note is string;
 
+    // A time and a comment, without mode or owner.
     ArchiveMetadata(modified is LocalDateTime, comment is string) {
         permission = [];
         owners = [];
@@ -77,6 +90,7 @@ object ArchiveMetadata {
         note = comment;
     }
 
+    // A mode, a time and a comment.
     ArchiveMetadata(mode is PermissionMode, modified is LocalDateTime, comment is string) {
         permission = [mode];
         owners = [];
@@ -84,6 +98,7 @@ object ArchiveMetadata {
         note = comment;
     }
 
+    // A mode, a time, an owner and a comment.
     ArchiveMetadata(
         mode is PermissionMode,
         modified is LocalDateTime,
@@ -96,20 +111,24 @@ object ArchiveMetadata {
         note = comment;
     }
 
+    // The permission bits; MissingArchiveMode when there are none.
     mode() is PermissionMode {
         confirm permission.size() > 0 else throw MissingArchiveMode.missing;
         permission[0];
     }
 
+    // The owner; MissingArchiveOwnership when there is none.
     ownership() is ArchiveOwnership {
         confirm owners.size() > 0 else throw MissingArchiveOwnership.missing;
         owners[0];
     }
 
+    // When the member was last changed.
     modification() is LocalDateTime {
         modified;
     }
 
+    // The comment, "" when none.
     comment() is string {
         note;
     }
@@ -122,20 +141,25 @@ object ArchiveMetadata {
 object ArchiveModificationFromEpoch {
     has seconds is rat;
 
+    // A time as seconds since 1970, as archives store it.
     ArchiveModificationFromEpoch(seconds is rat) {
         self.seconds = seconds;
     }
 
+    // The time as a LocalDateTime in UTC.
     local_date_time() is LocalDateTime {
         LocalDateTime(date: Date(1970, 1, 1), time: TimeOfDay(0, 0, 0, 0))
             .plus(Duration(value: seconds, unit: DurationUnit.second));
     }
 }
 
+// The member records no permission bits.
 enum MissingArchiveMode is Error = (missing);
 
+// The member records no owner.
 enum MissingArchiveOwnership is Error = (missing);
 
+// A negative id.
 enum InvalidArchiveOwnership is Error = (invalid);
 
 test "archive metadata retains calendar and comment with explicit absence" {
