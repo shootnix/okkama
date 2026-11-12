@@ -605,8 +605,8 @@ object StaticFiles does Handling {
                 );
                 pieces = pieces.following(
                     StaticPiece(
-                        start: Number(part.start().string()).int(),
-                        size: Number(part.size().string()).int()
+                        start: part.start().int(),
+                        size: part.size().int()
                     )
                 );
             }
@@ -629,8 +629,8 @@ object StaticFiles does Handling {
                     );
                     pieces = pieces.following(
                         StaticPiece(
-                            start: Number(part.start().string()).int(),
-                            size: Number(part.size().string()).int()
+                            start: part.start().int(),
+                            size: part.size().int()
                         )
                     );
                     pieces = pieces.following(StaticPiece("\r\n"));
@@ -1031,7 +1031,7 @@ hidden object StaticRanges {
                     origin: fields.item(0),
                     limits: ConditionalLimits(8192, maximum)
                 ).ranges(
-                    BigInt(size.string())
+                    BigInt(size)
                 );
                 accepted.replace(true);
                 (0..entries.size()).map() -> index {
@@ -1113,7 +1113,7 @@ hidden object StaticBody does BodyOpening {
     }
 
     length() is BigInt {
-        BigInt(size.string());
+        BigInt(size);
     }
 
     replayable() is bool {

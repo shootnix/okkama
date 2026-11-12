@@ -148,7 +148,7 @@ hidden object LogArchiveCatalog {
     }
 
     next(records is @LogArchive) is BigInt {
-        let latest = records.reduce(BigInt("0")) -> old, item {
+        let latest = records.reduce(BigInt(0)) -> old, item {
             if item.generation().order(old) == Order.greater {
                 item.generation();
             }
@@ -156,7 +156,7 @@ hidden object LogArchiveCatalog {
                 old;
             }
         };
-        (latest + BigInt("1"));
+        (latest + BigInt(1));
     }
 
     trim(records is @LogArchive, retained is int) is void {
@@ -266,11 +266,11 @@ object RotatingLogFile does Writing, Closing {
             let metadata = fs.lstat(fs.path_encode(path.string()));
             confirm metadata["kind"] == 1
                 else throw InvalidLogRotation.because("active log must be a regular file");
-            BigInt(metadata["size"].string());
+            BigInt(metadata["size"]);
         }
         catch failure is NativeFailure {
             if failure.code() == "not_found" {
-                BigInt("0");
+                BigInt(0);
             }
             else {
                 throw FileFailure(failure).error();
@@ -323,17 +323,17 @@ enum InvalidLogRotation is Error = (because(reason is string));
 test "size and interval rotation decide and name the archive" {
     let start = Instant(Duration(seconds: 1700000000));
     let later = Instant(Duration(seconds: 1700003600));
-    let size = SizeRotating(BigInt("10"));
-    test.is(size.needed(BigInt("9"), start, start), false);
-    test.is(size.needed(BigInt("10"), start, start), true);
+    let size = SizeRotating(BigInt(10));
+    test.is(size.needed(BigInt(9), start, start), false);
+    test.is(size.needed(BigInt(10), start, start), true);
     test.is(size.suffix(start, 3), "3");
     test.throws(InvalidLogRotation) {
-        SizeRotating(BigInt("0"));
+        SizeRotating(BigInt(0));
     };
     let utc = FixedZone(name: "UTC", offset: Duration(seconds: 0));
     let hourly = IntervalRotating(interval: Duration(seconds: 3600), zone: utc);
-    test.is(hourly.needed(BigInt("1"), start, Instant(Duration(seconds: 1700003599))), false);
-    test.is(hourly.needed(BigInt("1"), start, later), true);
+    test.is(hourly.needed(BigInt(1), start, Instant(Duration(seconds: 1700003599))), false);
+    test.is(hourly.needed(BigInt(1), start, later), true);
     test.is(hourly.suffix(start, 2), "2023-11-14T22-13-20Z-2");
     test.throws(InvalidLogRotation) {
         IntervalRotating(interval: Duration(seconds: 0), zone: utc);
@@ -355,7 +355,7 @@ test "a rotating file archives by generation and keeps the newest backups" {
     let logs = RotatingLogFile(
         path: path,
         options: options,
-        rotation: SizeRotating(BigInt("10")),
+        rotation: SizeRotating(BigInt(10)),
         backups: 2,
         clock: clock
     );
@@ -383,7 +383,7 @@ test "a rotating file archives by generation and keeps the newest backups" {
         RotatingLogFile(
             path: path,
             options: options,
-            rotation: SizeRotating(BigInt("10")),
+            rotation: SizeRotating(BigInt(10)),
             backups: -1,
             clock: clock
         );

@@ -2,56 +2,74 @@ module numbers/bigint v1.0.0;
 
 import "compare" take Comparing, Order;
 import "operators" take Adding, Subtracting, Multiplying, Dividing, Remaindering, Negating;
-import "runtime/bigint" take bigint_valid, bigint_canonical, bigint_sign, bigint_bits, bigint_order,
-    bigint_difference, bigint_sum, bigint_product, bigint_quotient, bigint_remainder, bigint_gcd,
-    bigint_lcm, bigint_power;
+import "runtime/bigint" take bigint_valid, bigint_bits;
+import "runtime/number_text" take int_parse;
+import "async/atomic" take Atomic;
 
-// Immutable arbitrary-precision integer foundation.
+// An immutable integer of any size, for the std APIs that hand one out.
 //
-//     let count = BigInt(origin: "18446744073709551616");
+//     let count = BigInt("18446744073709551616");
+//     let seven = BigInt(7);
 //     count.sign();                  // 1
 //     count.bits();                  // 65
 //     count.string();                // canonical decimal
+//     count.int();                   // the same number as an int
 //
-// Construction accepts an optional minus followed by decimal digits. It never
-// trims whitespace or accepts `+`; leading zeroes are normalized.
+// Okkama's int is already of any size, so a BigInt holds an int (#189):
+// arithmetic is the int's, and digits are written only when string() asks.
+// From text, construction accepts an optional minus followed by decimal
+// digits. It never trims whitespace or accepts `+`; leading zeroes are
+// normalized.
 //
-// Arithmetic is the operators (#215): `a + b`, `a - b`, `a * b`, `a / b`,
-// `a % b`, `-a`, and `<`, `<=`, `>`, `>=`. Division truncates toward zero
-// (unlike int, whose `/` gives a rat); the remainder has the dividend's sign;
-// both throw BigDivisionByZero. gcd/lcm are non-negative; gcd(0,0)=0 and
-// lcm(0,n)=0.
+// Arithmetic is the operators (#215) and the same names as methods (#190):
+// `a + b` or a.plus(b), `a - b` or a.minus(b), `a * b` or a.times(b), `a / b`
+// or a.divided(b), `a % b` or a.remainder(b), `-a`, and `<`, `<=`, `>`, `>=`.
+// Division truncates toward zero (unlike int, whose `/` gives a rat); the
+// remainder has the dividend's sign; both throw BigDivisionByZero. gcd/lcm are
+// non-negative; gcd(0,0)=0 and lcm(0,n)=0.
 //
-//     let quotient = count / BigInt("3");
-//     BigInt("2").power(100, 101);
+//     let quotient = count / BigInt(3);
+//     BigInt(2).power(100, 101);
 //
 // power() requires exponent >= 0 and a positive result bit budget (1048576
 // by default). 0^0 is 1. An oversized result throws BigPowerLimitExceeded;
 // impossible budgets are rejected before heavy exponentiation. This bounds
 // result bits, not all backend memory or wall-clock time.
 object BigInt does Comparing<BigInt>, Adding<BigInt, BigInt>, Subtracting<BigInt, BigInt>, Multiplying<BigInt, BigInt>, Dividing<BigInt, BigInt>, Remaindering<BigInt, BigInt>, Negating<BigInt> {
-    has origin is string;
+    has value is int;
 
     BigInt(origin is string) {
         confirm bigint_valid(origin) else throw InvalidBigInt.invalid;
-        self.origin = bigint_canonical(origin);
+        value = int_parse(origin, 10);
+    }
+
+    BigInt(value is int) {
+        self.value = value;
     }
 
     sign() is int {
-        bigint_sign(origin);
+        value.sign();
     }
 
+    // The bits of the magnitude: 0 for 0, 65 for 2^64.
     bits() is int {
-        bigint_bits(origin);
+        if value >= -9223372036854775807 && value <= 9223372036854775807 {
+            let magnitude = value.abs();
+            if magnitude == 0 {
+                return 0;
+            }
+            return 64 - magnitude.leading_zeros();
+        }
+        bigint_bits(value.string());
     }
 
     order(other is BigInt) is Order {
-        let result is int = bigint_order(origin, other.string());
-        if result < 0 {
+        let right = other.int();
+        if value < right {
             Order.less;
         }
         else {
-            if result > 0 {
+            if value > right {
                 Order.greater;
             }
             else {
@@ -61,56 +79,76 @@ object BigInt does Comparing<BigInt>, Adding<BigInt, BigInt>, Subtracting<BigInt
     }
 
     string() is string {
-        origin;
+        value.string();
     }
 
-    // The canonical decimal digits, already checked by the constructor.
+    // The same number as an int; every BigInt fits.
+    int() is int {
+        value;
+    }
+
+    // The canonical decimal digits.
     cap Digits {
         text is string {
-            origin;
+            value.string();
         }
     }
 
     // a + b
     plus(other is BigInt) is BigInt {
-        BigInt(bigint_sum(origin, other.string()));
+        BigInt(value + other.int());
     }
 
     // a - b
     minus(other is BigInt) is BigInt {
-        BigInt(bigint_difference(origin, other.string()));
+        BigInt(value - other.int());
     }
 
     // a * b
     times(other is BigInt) is BigInt {
-        BigInt(bigint_product(origin, other.string()));
+        BigInt(value * other.int());
     }
 
     // a / b: truncates toward zero, unlike int's `/`, which gives a rat.
     divided(other is BigInt) is BigInt {
-        confirm other.sign() != 0 else throw BigDivisionByZero.by_zero;
-        BigInt(bigint_quotient(origin, other.string()));
+        let divisor = other.int();
+        confirm divisor != 0 else throw BigDivisionByZero.by_zero;
+        BigInt(((value - value % divisor) / divisor).int());
     }
 
     // a % b: the sign of the dividend.
     remainder(other is BigInt) is BigInt {
-        confirm other.sign() != 0 else throw BigDivisionByZero.by_zero;
-        BigInt(bigint_remainder(origin, other.string()));
+        let divisor = other.int();
+        confirm divisor != 0 else throw BigDivisionByZero.by_zero;
+        BigInt(value % divisor);
     }
 
     // -a
     negated() is BigInt {
-        BigInt(bigint_difference("0", origin));
+        BigInt(-value);
     }
 
     // Non-negative; gcd(0, 0) = 0.
     gcd(other is BigInt) is BigInt {
-        BigInt(bigint_gcd(origin, other.string()));
+        let left = Atomic(value.abs());
+        let right = Atomic(other.int().abs());
+        loop {
+            last if right.value() == 0;
+            let rest = left.value() % right.value();
+            left.replace(right.value());
+            right.replace(rest);
+        }
+        BigInt(left.value());
     }
 
     // Non-negative; lcm(0, n) = 0.
     lcm(other is BigInt) is BigInt {
-        BigInt(bigint_lcm(origin, other.string()));
+        let right = other.int().abs();
+        if value == 0 || right == 0 {
+            return BigInt(0);
+        }
+        let common = self.gcd(other).int();
+        BigInt((value.abs() / common).int() * right);
     }
 
     // self^exponent with at most 1048576 result bits.
@@ -122,17 +160,21 @@ object BigInt does Comparing<BigInt>, Adding<BigInt, BigInt>, Subtracting<BigInt
     power(exponent is int, maximum_bits is int) is BigInt {
         confirm exponent >= 0 else throw InvalidBigExponent.exponent(exponent);
         confirm maximum_bits > 0 else throw InvalidBigPowerLimit.maximum_bits(maximum_bits);
-        try {
-            BigInt(bigint_power(origin, exponent, maximum_bits));
+        if exponent == 0 {
+            return BigInt(1);
         }
-        catch failure is NativeFailure {
-            if failure.code() == "resource_exhausted" {
-                throw BigPowerLimitExceeded.maximum_bits(maximum_bits);
-            }
-            else {
-                throw failure;
-            }
+        let magnitude = value.abs();
+        if magnitude <= 1 {
+            return BigInt(value.pow(exponent));
         }
+        // |self|^exponent has at least (bits - 1) * exponent + 1 bits: refuse
+        // before computing when even that is over the budget.
+        confirm (self.bits() - 1) * exponent + 1 <= maximum_bits
+            else throw BigPowerLimitExceeded.maximum_bits(maximum_bits);
+        let result = value.pow(exponent);
+        confirm result.abs() < 2.pow(maximum_bits)
+            else throw BigPowerLimitExceeded.maximum_bits(maximum_bits);
+        BigInt(result);
     }
 }
 
@@ -145,6 +187,33 @@ enum InvalidBigExponent is Error = (exponent(exponent is int));
 enum InvalidBigPowerLimit is Error = (maximum_bits(maximum_bits is int));
 
 enum BigPowerLimitExceeded is Error = (maximum_bits(maximum_bits is int));
+
+test "a BigInt holds an int and takes one" {
+    test.is(BigInt(7).string(), "7");
+    test.is(BigInt(-9223372036854775808).bits(), 64);
+    test.is(BigInt(9223372036854775807).bits(), 63);
+    test.is(BigInt(0).bits(), 0);
+    test.is(BigInt(1).bits(), 1);
+    test.is(BigInt("-170141183460469231731687303715884105728").bits(), 128);
+    test.is(BigInt("123456789012345678901234567890").int(), 123456789012345678901234567890);
+    test.is(BigInt(5).plus(BigInt(2)).int(), 7);
+    test.is(BigInt(5).minus(BigInt(7)).int(), -2);
+    test.is(BigInt(5).times(BigInt(-3)).int(), -15);
+    test.is(BigInt(-7).divided(BigInt(2)).int(), -3);
+    test.is(BigInt(7).divided(BigInt(-2)).int(), -3);
+    test.is(BigInt(-8).divided(BigInt(2)).int(), -4);
+    test.is(BigInt(-7).remainder(BigInt(2)).int(), -1);
+    test.ok(BigInt(7) == BigInt("7") && BigInt(-0) == BigInt("-0"));
+    let factorial = (1..=30).reduce(BigInt(1)) -> product, n {
+        product * BigInt(n);
+    };
+    test.is(factorial.string(), "265252859812191058636308480000000");
+    test.is(BigInt(6).lcm(BigInt(-4)).int(), 12);
+    test.is(BigInt(-2).power(3).int(), -8);
+    test.is(BigInt(-1).power(1000001).int(), -1);
+    test.is(BigInt(3).power(40).bits(), 64);
+    test.is(BigInt(2).power(100, 101).bits(), 101);
+}
 
 test "arbitrary precision arithmetic" {
     let big = BigInt("18446744073709551616");

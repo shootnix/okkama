@@ -70,14 +70,14 @@ object WebSocketLimits {
     has frame_bytes, queue is int;
 
     WebSocketLimits() {
-        message_bytes = BigInt("16777216");
+        message_bytes = BigInt(16777216);
         frame_bytes = 65536;
         queue = 16;
     }
 
     WebSocketLimits(message_bytes is BigInt, frame_bytes is int, queue is int) {
         confirm message_bytes.sign() > 0
-            && message_bytes.order(BigInt("1073741824")) != Order.greater
+            && message_bytes.order(BigInt(1073741824)) != Order.greater
             && frame_bytes > 0
             && frame_bytes <= 1048576
             && queue > 0

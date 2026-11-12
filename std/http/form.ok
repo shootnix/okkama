@@ -25,9 +25,9 @@ object FormLimits {
     FormLimits() {
         fields = 1000;
         files = 100;
-        field_bytes = BigInt("1048576");
-        file_bytes = BigInt("67108864");
-        total_bytes = BigInt("134217728");
+        field_bytes = BigInt(1048576);
+        file_bytes = BigInt(67108864);
+        total_bytes = BigInt(134217728);
     }
 
     FormLimits(
@@ -40,7 +40,7 @@ object FormLimits {
         confirm fields >= 0 && fields <= 65535 && files >= 0 && files <= 65535
             else throw InvalidFormLimits.invalid;
         for [field_bytes, file_bytes, total_bytes] -> limit {
-            confirm limit.sign() >= 0 && limit.order(BigInt("9007199254740991")) != Order.greater
+            confirm limit.sign() >= 0 && limit.order(BigInt(9007199254740991)) != Order.greater
                 else throw InvalidFormLimits.invalid;
         }
         self.fields = fields;
@@ -305,9 +305,9 @@ hidden object MultipartState {
         self.boundary = boundary;
         marker = "\r\n--" + boundary;
         self.limits = limits;
-        field_limit = Number(limits.field_bytes().string()).int();
-        file_limit = Number(limits.file_bytes().string()).int();
-        total_limit = Number(limits.total_bytes().string()).int();
+        field_limit = limits.field_bytes().int();
+        file_limit = limits.file_bytes().int();
+        total_limit = limits.total_bytes().int();
         tail = Atomic("");
         wire = Atomic(0);
         fields = Atomic(0);
@@ -1148,7 +1148,7 @@ object ParsedUrlEncodedForm {
 
     async read() is QueryParameters {
         defer origin.close();
-        let maximum = Number(limits.total_bytes().string()).int();
+        let maximum = limits.total_bytes().int();
         let cap = if maximum < 1048576 {
             maximum;
         }
@@ -1185,7 +1185,7 @@ object ParsedUrlEncodedForm {
             throw FormLimitExceeded.kind("fields");
         };
         let entries = parameters.entries();
-        let field_limit = Number(limits.field_bytes().string()).int();
+        let field_limit = limits.field_bytes().int();
         for (0..entries.size()) -> index {
             let entry = entries.item(index);
             confirm Utf8Encoded(entry.value()).bytes().size() <= field_limit

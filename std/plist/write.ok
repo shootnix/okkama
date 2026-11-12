@@ -612,16 +612,16 @@ hidden object PlistWireInteger {
 
     bytes() is @byte {
         let magnitude = if origin.sign() < 0 {
-            (origin + BigInt("256").power(size, 129));
+            (origin + BigInt(256).power(size, 129));
         }
         else {
             origin;
         };
         let result is @byte = (0..size).map() -> index {
-            let divisor = BigInt("256").power(size - index - 1, 129);
+            let divisor = BigInt(256).power(size - index - 1, 129);
             let quotient = (magnitude / divisor);
-            let remainder = (quotient % BigInt("256"));
-            Number(remainder.string()).int().byte();
+            let remainder = (quotient % BigInt(256));
+            remainder.int().byte();
         };
         result;
     }
@@ -641,7 +641,7 @@ hidden object PlistWireLength {
         }
         let output = ByteBuffer();
         defer output.closing().close();
-        let number = PlistWireInteger(value: BigInt(count.string()), uid: false);
+        let number = PlistWireInteger(value: BigInt(count), uid: false);
         output.writing() <- [byte(marker + 15), byte(16 + number.power())] <- number.bytes();
         output.content().bytes();
     }

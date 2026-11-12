@@ -483,7 +483,7 @@ hidden object ImapSessionState {
     has selection is @ImapSelectedState;
 
     ImapSessionState() {
-        serial = BigInt("0");
+        serial = BigInt(0);
         selection = [];
     }
 
@@ -511,7 +511,7 @@ hidden object ImapSessionState {
     }
 
     selected(name is ImapMailboxName, value is ImapMailboxState) is ^ImapSessionState {
-        let following = (serial + BigInt("1"));
+        let following = (serial + BigInt(1));
         let token = ImapSelectionToken(name: name, generation: following);
         ^serial = following;
         ^selection = [ImapSelectedState(token: token, value: value)];

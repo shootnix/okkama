@@ -161,9 +161,9 @@ hidden object Http1BodyInput does AsyncReading {
             plan.length();
         }
         else {
-            BigInt("0");
+            BigInt(0);
         };
-        confirm length.order(BigInt(limits::Limits::body_bytes.string())) != Order.greater
+        confirm length.order(BigInt(limits::Limits::body_bytes)) != Order.greater
             else throw Http1LimitExceeded.kind("body_bytes");
         self.origin = origin;
         self.kind = kind;
@@ -171,7 +171,7 @@ hidden object Http1BodyInput does AsyncReading {
         self.head = head;
         cache = ByteBuffer(prefix);
         phase = Atomic(0);
-        remaining = Atomic(Number(length.string()).int());
+        remaining = Atomic(length.int());
         used = Atomic(0);
         metadata = Atomic(0);
         trailers = Atomic(Headers());
@@ -244,7 +244,7 @@ hidden object Http1BodyInput does AsyncReading {
             if stage == 0 {
                 let line = await self.line(group);
                 let size = ParsedHttp1ChunkLine(origin: line, limits: limits).size();
-                let count = Number(size.string()).int();
+                let count = size.int();
                 confirm count <= limits::Limits::body_bytes - used.value()
                     else throw Http1LimitExceeded.kind("body_bytes");
                 remaining.replace(count);
@@ -420,7 +420,7 @@ async test "empty framing closes its explicit owner without a source read" {
     let reader = Http1BodyReading(
         origin: input.input(),
         owner: buffer.closing(),
-        plan: Http1BodyPlan(Http1BodyKind.empty, BigInt("0"), true),
+        plan: Http1BodyPlan(Http1BodyKind.empty, BigInt(0), true),
         prefix: [],
         head: Headers()
     );

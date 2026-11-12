@@ -98,8 +98,8 @@ hidden object LogQueueState {
         delivery = Atomic(futures);
         let errors is @Error = [];
         failures = Atomic(errors);
-        accepted = Atomic(BigInt("0"));
-        dropped = Atomic(BigInt("0"));
+        accepted = Atomic(BigInt(0));
+        dropped = Atomic(BigInt(0));
         finished = Atomic(false);
         started = Atomic(false);
         changed = Atomic(Event());
@@ -119,7 +119,7 @@ hidden object LogQueueState {
             }
             queued.replace(items.tail());
         }
-        let sequence = (accepted.value() + BigInt("1"));
+        let sequence = (accepted.value() + BigInt(1));
         accepted.replace(sequence);
         queued.replace(queued.value().suffix(QueuedLogRecord(record: record, sequence: sequence)));
         self.signal();
@@ -233,7 +233,7 @@ hidden object LogQueueState {
     }
 
     hidden loss(count is int) is void {
-        dropped.replace((dropped.value() + BigInt(count.string())));
+        dropped.replace((dropped.value() + BigInt(count)));
     }
 
     hidden completed() is void {

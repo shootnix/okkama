@@ -86,7 +86,7 @@ hidden object Http1BodyWriteOperation {
                 "upgraded bytes require a dedicated protocol writer"
             );
         if kind == Http1BodyKind.fixed {
-            confirm plan.length().order(BigInt(limits::Limits::body_bytes.string())) != Order.greater
+            confirm plan.length().order(BigInt(limits::Limits::body_bytes)) != Order.greater
                 else throw Http1LimitExceeded.kind("body_bytes");
         }
         self.body = body;
@@ -118,7 +118,7 @@ hidden object Http1BodyWriteOperation {
         if known.size() > 0 {
             confirm known[0].sign() >= 0
                 else throw InvalidHttpMessage.because("negative body source length");
-            confirm known[0].order(BigInt(limits::Limits::body_bytes.string())) != Order.greater
+            confirm known[0].order(BigInt(limits::Limits::body_bytes)) != Order.greater
                 else throw Http1LimitExceeded.kind("body_bytes");
             if kind == Http1BodyKind.fixed {
                 confirm known[0].order(plan.length()) == Order.equal
@@ -130,7 +130,7 @@ hidden object Http1BodyWriteOperation {
         let used = Atomic(0);
         let metadata = Atomic(0);
         let required = if kind == Http1BodyKind.fixed {
-            Number(plan.length().string()).int();
+            plan.length().int();
         }
         else {
             limits::Limits::body_bytes;

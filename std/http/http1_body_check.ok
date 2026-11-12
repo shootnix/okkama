@@ -46,7 +46,7 @@ object Http1BodyCheck {
             if known.size() > 0 {
                 confirm known[0].sign() >= 0
                     else throw InvalidHttpMessage.because("negative body source length");
-                confirm known[0].order(BigInt(limits::Limits::body_bytes.string())) != Order.greater
+                confirm known[0].order(BigInt(limits::Limits::body_bytes)) != Order.greater
                     else throw Http1LimitExceeded.kind("body_bytes");
                 if plan::Plan::kind == Http1BodyKind.fixed {
                     confirm known[0].order(plan.length()) == Order.equal
@@ -63,7 +63,7 @@ object Http1BodyCheck {
 test "body contradiction is rejected by shared pre-head validation" {
     let check = Http1BodyCheck(
         body: ByteBody([1.byte()]),
-        plan: Http1BodyPlan(Http1BodyKind.fixed, BigInt("2"), true),
+        plan: Http1BodyPlan(Http1BodyKind.fixed, BigInt(2), true),
         limits: Http1Limits(),
         request: true
     );

@@ -70,7 +70,7 @@ object Http2BodyBuffer does BodyReading {
                     "negative incoming length"
                 );
             if !empty {
-                confirm length.order(BigInt(maximum.string())) != Order.greater
+                confirm length.order(BigInt(maximum)) != Order.greater
                     else throw Http2Fault.detailed(
                         Http2FaultScope.stream,
                         11,
@@ -120,7 +120,7 @@ object Http2BodyBuffer does BodyReading {
                     "negative incoming length"
                 );
             if !empty {
-                confirm length.order(BigInt(maximum.string())) != Order.greater
+                confirm length.order(BigInt(maximum)) != Order.greater
                     else throw Http2Fault.detailed(
                         Http2FaultScope.stream,
                         11,
@@ -174,7 +174,7 @@ object Http2BodyBuffer does BodyReading {
     exact(total is int) is void {
         if !empty.value() {
             for expected.value() -> length {
-                confirm BigInt(total.string()).order(length) == Order.equal
+                confirm BigInt(total).order(length) == Order.equal
                     else throw Http2Fault.detailed(
                         Http2FaultScope.stream,
                         1,
@@ -230,7 +230,7 @@ object Http2BodyBuffer does BodyReading {
             );
         if !empty.value() {
             for expected.value() -> length {
-                confirm BigInt(total.string()).order(length) != Order.greater
+                confirm BigInt(total).order(length) != Order.greater
                     else throw Http2Fault.detailed(
                         Http2FaultScope.stream,
                         1,

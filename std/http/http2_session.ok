@@ -198,7 +198,7 @@ hidden object Http2SessionState does Http2ReceivingEvents, Http2BodyEvents {
     }
 
     body_limit() is int {
-        Number(limits.body_bytes().string()).int();
+        limits.body_bytes().int();
     }
 
     local_window() is int {
@@ -978,7 +978,7 @@ hidden object Http2StreamEntry does Closing {
             || status == Status.not_modified;
         body.configure(known, empty);
         lengths.replace(if empty || block.end_stream() {
-            [BigInt("0")];
+            [BigInt(0)];
         }
         else {
             known;
@@ -1134,20 +1134,20 @@ hidden object Http2RequestBodySending {
             confirm total <= maximum
                 else throw InvalidHttpMessage.because("outgoing body byte limit");
             for declared -> length {
-                confirm BigInt(total.string()).order(length) != Order.greater
+                confirm BigInt(total).order(length) != Order.greater
                     else throw InvalidHttpMessage.because("outgoing Content-Length overflow");
             }
             for known -> length {
-                confirm BigInt(total.string()).order(length) != Order.greater
+                confirm BigInt(total).order(length) != Order.greater
                     else throw InvalidHttpMessage.because("outgoing body exceeds source length");
             }
             if bytes.size() == 0 {
                 for declared -> length {
-                    confirm BigInt(total.string()).order(length) == Order.equal
+                    confirm BigInt(total).order(length) == Order.equal
                         else throw InvalidHttpMessage.because("outgoing Content-Length underflow");
                 }
                 for known -> length {
-                    confirm BigInt(total.string()).order(length) == Order.equal
+                    confirm BigInt(total).order(length) == Order.equal
                         else throw InvalidHttpMessage.because("outgoing source length underflow");
                 }
             }

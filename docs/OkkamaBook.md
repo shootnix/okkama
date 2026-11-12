@@ -2966,7 +2966,8 @@ total > Money(cents: 300);                           // order() == Order.greater
   `later - start` a `Duration`.
 - `<`, `<=`, `>`, `>=` go through `compare.Comparing<T>`: `a < b` is
   `a.order(b) == Order.less`. `==` stays structural.
-- In std: `BigInt` (`+ - * / %`, `-a`, ordering; `/` truncates toward zero),
+- In std: `BigInt` (`+ - * / %`, `-a`, ordering; `/` truncates toward zero;
+  `BigInt(7)` and `.int()`, since a BigInt holds an `int`, #189),
   `Duration` (`+ -`, `-a`, ordering), `Instant` and `MonotonicInstant`
   (`+ Duration`, `- Duration`, `- Instant`, ordering), `Decimal` (ordering).
 
@@ -3905,7 +3906,7 @@ that depth, and `DisplayWidth(text).columns()` measures text.
 
 `db` talks to SQLite and PostgreSQL through one set of roles. `await
 SqliteMemory().connection()` opens a database. `await db.execution(sql,
-[Param(…)])` runs SQL with bound values, and `db.query(sql, values)` answers
+[DbInteger(7), DbText("Ada")])` runs SQL with bound values, and `db.query(sql, values)` answers
 `one()`, `maybe()` or `all(limit)`; transactions do the same.
 `row.int("id")` and `row.maybe("body").text()` read by column name, and
 `Query(origin:, statement:).rows()` streams. `prepared()`, `transaction()`
@@ -5432,11 +5433,13 @@ are separate capabilities available on concrete acquisitions.
 
 ```okkama
 let transaction=await connection.transaction(TransactionOptions());
-await transaction.execution("INSERT INTO customers VALUES(?,?)",[Param(7),Param("Ada")]);
+await transaction.execution("INSERT INTO customers VALUES(?,?)",[DbInteger(7),DbText("Ada")]);
 await transaction.commit();
 ```
 
-Use `Param` from `db/param` for scalars and `Maybe<T>` parameters. `Query` from
+Bind values with the typed objects from `db/value` (#188): `DbInteger(7)`,
+`DbText("Ada")`, `DbBoolean`, `DbFloating`, `DbDecimal`, `DbBytes` and
+`DbNull()`; each also takes a `Maybe`, whose `none` binds NULL. `Query` from
 `db/query` accepts either `(origin: connection, statement: Statement(...))` or `(prepared:, values:)`;
 `one()`, `maybe()`, `all(limit)` and `rows()` share the same result contract.
 Read columns directly with `row.text(name)` or `row.maybe(name).text() else fallback`.

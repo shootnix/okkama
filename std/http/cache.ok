@@ -579,7 +579,7 @@ async test "a fresh response is served from memory without reaching the origin" 
     ).started();
     let base = "http://127.0.0.1:" + server::Local::port.string();
     let client = HttpClient(endpoints: LoopbackEndpoints());
-    let memory = MemoryHttpCache(clock: clock, maximum: BigInt("1048576"));
+    let memory = MemoryHttpCache(clock: clock, maximum: BigInt(1048576));
     let cached = Caching(origin: client, cache: memory, clock: clock);
     test.is(await (await cached.response(Request(url: base + "/page"))).text(), "copy 1");
     test.is(await (await cached.response(Request(url: base + "/page"))).text(), "copy 1");

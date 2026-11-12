@@ -158,11 +158,11 @@ hidden object EventRetry {
             0;
         }
         else {
-            if amount.order(BigInt("2147483647")) == Order.greater {
+            if amount.order(BigInt(2147483647)) == Order.greater {
                 2147483647;
             }
             else {
-                Number(amount.string()).int();
+                amount.int();
             }
         };
     }
@@ -434,11 +434,11 @@ object ServerEvents {
                 };
                 if digits {
                     let amount = BigInt(value);
-                    let bounded = if amount.order(BigInt("2147483647")) == Order.greater {
+                    let bounded = if amount.order(BigInt(2147483647)) == Order.greater {
                         2147483647;
                     }
                     else {
-                        Number(amount.string()).int();
+                        amount.int();
                     };
                     retry.replace([bounded]);
                 }

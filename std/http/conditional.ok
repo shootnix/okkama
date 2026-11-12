@@ -357,7 +357,7 @@ object ByteRange {
     }
 
     size() is BigInt {
-        ((end - start) + BigInt("1"));
+        ((end - start) + BigInt(1));
     }
 
     string() is string {
@@ -475,13 +475,13 @@ hidden object ByteRangeSpec {
             let empty is @ByteRange = [];
             return empty;
         }
-        let end = (size - BigInt("1"));
+        let end = (size - BigInt(1));
         if lower.size() == 0 {
             let start = if upper[0].order(size) == Order.less {
                 (size - upper[0]);
             }
             else {
-                BigInt("0");
+                BigInt(0);
             };
             return [ByteRange(start: start, end: end)];
         }
@@ -605,7 +605,7 @@ hidden object CoalescedByteRanges {
             let previous = reversed.first();
             confirm range.start().order(previous.start()) != Order.less
                 else throw InvalidRange.because("coalescing requires sorted intervals");
-            let after = (previous.end() + BigInt("1"));
+            let after = (previous.end() + BigInt(1));
             if range.start().order(after) != Order.greater {
                 let end = if range.end().order(previous.end()) == Order.greater {
                     range.end();
@@ -653,10 +653,10 @@ test "entity tag list wildcard and empty list differ" {
 }
 
 test "byte range plans normalize exact inclusive intervals" {
-    let ranges = ByteRanges("bytes=9-, 0-4, 3-8").ranges(BigInt("10"));
+    let ranges = ByteRanges("bytes=9-, 0-4, 3-8").ranges(BigInt(10));
     test.is(ranges.size(), 1);
     test.is(ranges.first().size().string(), "10");
-    test.is(ByteRanges("bytes=-1").satisfiable(BigInt("0")), true);
+    test.is(ByteRanges("bytes=-1").satisfiable(BigInt(0)), true);
 }
 
 test "an entity tag list reads weak tags, spaces and empty members" {

@@ -92,7 +92,7 @@ object Request {
             let unknown is @BigInt = [];
             unknown;
         };
-        confirm declared.size() == 0 || declared[0].order(BigInt(limit.string())) != Order.greater
+        confirm declared.size() == 0 || declared[0].order(BigInt(limit)) != Order.greater
             else throw BodyLimitExceeded.limit(limit);
         match body.contained() {
             case Maybe.some(whole) {
@@ -289,7 +289,7 @@ hidden object DeclaredBody does BodyOpening {
     DeclaredBody();
 
     length() is BigInt {
-        BigInt("1000000");
+        BigInt(1000000);
     }
 
     replayable() is bool {

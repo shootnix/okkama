@@ -252,7 +252,7 @@ hidden object TarMemberHeader {
             metadata.ownership();
         }
         catch absent is MissingArchiveOwnership {
-            ArchiveOwnership(user: "", group: "", user_identity: BigInt("0"), group_identity: BigInt("0"));
+            ArchiveOwnership(user: "", group: "", user_identity: BigInt(0), group_identity: BigInt(0));
         };
         let seconds = metadata.modification().minus(ArchiveModificationFromEpoch(0.rat()).local_date_time())::Span::seconds;
         let ordinary_time = seconds >= 0.rat()
@@ -356,13 +356,13 @@ hidden object TarMemberHeader {
             "";
         };
         let uid = if ordinary_uid {
-            Number(owner.user_identity().string()).int();
+            owner.user_identity().int();
         }
         else {
             0;
         };
         let gid = if ordinary_gid {
-            Number(owner.group_identity().string()).int();
+            owner.group_identity().int();
         }
         else {
             0;
@@ -858,9 +858,9 @@ hidden object TarParseProgress {
                     else throw ArchiveLimitExceeded.detailed("tar_extensions", maximum_extensions);
                 let length = header.number(124, 12);
                 confirm length.sign() >= 0 else throw InvalidTar.because("negative extension size");
-                confirm length.order(BigInt(metadata_left.string())) != Order.greater
+                confirm length.order(BigInt(metadata_left)) != Order.greater
                     else throw ArchiveLimitExceeded.detailed("tar_metadata", maximum_metadata);
-                let size = Number(length.string()).int();
+                let size = length.int();
                 let end = TarBodySpan(origin: origin, start: at + 512, size: size).end();
                 let payload = origin.slice(at + 512, at + 512 + size);
                 if flag == "g" {
@@ -1035,10 +1035,10 @@ hidden object TarNumericField {
         confirm origin.size() > 0 else throw InvalidTar.because("empty numeric field");
         if (origin[0].int() & 128) != 0 {
             let result = (1..origin.size()).reduce(BigInt((origin[0].int() & 127).string())) -> value, i {
-                ((value * BigInt("256")) + BigInt(origin[i].int().string()));
+                ((value * BigInt(256)) + BigInt(origin[i].int().string()));
             };
             if (origin[0].int() & 64) != 0 {
-                (result - BigInt("2").power(origin.size() * 8 - 1));
+                (result - BigInt(2).power(origin.size() * 8 - 1));
             }
             else {
                 result;
@@ -1049,14 +1049,14 @@ hidden object TarNumericField {
                 origin[i] != byte(0) && origin[i] != byte(32);
             };
             if digits.size() == 0 {
-                BigInt("0");
+                BigInt(0);
             }
             else {
-                (digits[0]..digits[digits.size() - 1] + 1).reduce(BigInt("0")) -> value, i {
+                (digits[0]..digits[digits.size() - 1] + 1).reduce(BigInt(0)) -> value, i {
                     let code = origin[i].int();
                     confirm code >= 48 && code <= 55
                         else throw InvalidTar.because("invalid octal field");
-                    ((value * BigInt("8")) + BigInt((code - 48).string()));
+                    ((value * BigInt(8)) + BigInt((code - 48).string()));
                 };
             }
         }
@@ -1286,9 +1286,9 @@ hidden object TarInputMember {
             TarDecimalNumber(size_text).integer();
         };
         confirm length.sign() >= 0 else throw InvalidTar.because("negative member size");
-        confirm length.order(BigInt(limits::Limits::entry_size.string())) != Order.greater
+        confirm length.order(BigInt(limits::Limits::entry_size)) != Order.greater
             else throw ArchiveLimitExceeded.detailed("entry_size", limits::Limits::entry_size);
-        let amount = Number(length.string()).int();
+        let amount = length.int();
         confirm kind == "0" || amount == 0
             else throw InvalidTar.because("non-file member has data");
         size = amount;
@@ -1428,9 +1428,9 @@ hidden object TarCheckedInt {
     }
 
     int() is int {
-        confirm origin.sign() >= 0 && origin.order(BigInt(maximum.string())) != Order.greater
+        confirm origin.sign() >= 0 && origin.order(BigInt(maximum)) != Order.greater
             else throw InvalidTar.because("numeric field out of range");
-        Number(origin.string()).int();
+        origin.int();
     }
 }
 
@@ -1902,9 +1902,9 @@ hidden object TarStreamCounts {
         confirm extensions_left > 0
             else throw ArchiveLimitExceeded.detailed("tar_extensions", maximum_extensions);
         confirm length.sign() >= 0 else throw InvalidTar.because("negative extension size");
-        confirm length.order(BigInt(metadata_left.string())) != Order.greater
+        confirm length.order(BigInt(metadata_left)) != Order.greater
             else throw ArchiveLimitExceeded.detailed("tar_metadata", maximum_metadata);
-        Number(length.string()).int();
+        length.int();
     }
 
     extended(size is int) is ^TarStreamCounts {

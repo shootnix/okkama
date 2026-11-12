@@ -1045,11 +1045,11 @@ hidden object PlistBinaryDocument {
     }
 
     hidden integer(payload is @byte, signed is bool) is BigInt {
-        let value = payload.reduce(BigInt("0")) -> number, part {
-            ((number * BigInt("256")) + BigInt(part.int().string()));
+        let value = payload.reduce(BigInt(0)) -> number, part {
+            ((number * BigInt(256)) + BigInt(part.int().string()));
         };
         if signed && payload[0].int() >= 128 {
-            (value - BigInt("256").power(payload.size(), 129));
+            (value - BigInt(256).power(payload.size(), 129));
         }
         else {
             value;

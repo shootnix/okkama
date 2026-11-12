@@ -531,7 +531,7 @@ hidden object ReadTestRow does RowValues {
 
     value(name is string) is DbValue {
         if name == "n" {
-            DbInteger(BigInt("42"));
+            DbInteger(42);
         }
         else if name == "price" {
             DbDecimal(Decimal("9.50"));
@@ -540,7 +540,7 @@ hidden object ReadTestRow does RowValues {
             DbFloating(0.25);
         }
         else if name == "flag" {
-            DbInteger(BigInt("1"));
+            DbInteger(1);
         }
         else {
             DbText(name);
@@ -569,5 +569,5 @@ test "a column reader converts one cell strictly and names the column on failure
         }
     };
     test.is(column, "hello:int");
-    test.is(DbColumnReader(name: "n", origin: DbInteger(BigInt("5"))).cell().kind() == DbValueKind.integer, true);
+    test.is(DbColumnReader(name: "n", origin: DbInteger(5)).cell().kind() == DbValueKind.integer, true);
 }

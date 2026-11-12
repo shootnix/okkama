@@ -77,7 +77,7 @@ object DbPreparedTransaction does Transaction, DbPreparing {
         await origin.execution(sql, values);
     }
 
-    // The values one by one: db.execution("… = ?", Param(7)).
+    // The values one by one: db.execution("… = ?", DbInteger(7)).
     async execution(sql is string, values is ...DbValue) is Execution {
         let listed is @DbValue = values...;
         await self.execution(sql, listed);
@@ -87,7 +87,7 @@ object DbPreparedTransaction does Transaction, DbPreparing {
         origin.query(sql, values);
     }
 
-    // The values one by one: db.query("… = ?", Param(7)).
+    // The values one by one: db.query("… = ?", DbInteger(7)).
     query(sql is string, values is ...DbValue) is DbQuery {
         let listed is @DbValue = values...;
         self.query(sql, listed);

@@ -441,7 +441,7 @@ object DecimalNumberMagnitude {
     DecimalNumberMagnitude(origin is Decimal, shift is int, negative_zero is bool) {
         let coefficient = origin.coefficient();
         let absolute = if coefficient.sign() < 0 {
-            (BigInt("0") - coefficient);
+            (BigInt(0) - coefficient);
         }
         else {
             coefficient;
@@ -469,14 +469,14 @@ object NumberQuantized {
         let absolute = origin.coefficient();
         let shift = origin.exponent() + precision::Digits::maximum_fraction.rat();
         let coefficient = if absolute.sign() == 0 {
-            BigInt("0");
+            BigInt(0);
         }
         else {
             if shift >= 0.rat() {
                 confirm shift <= 2048.rat()
                     && absolute.string().length().rat() + shift <= 2048.rat()
                     else throw InvalidLocalizedNumber.because("integer/output digit budget");
-                (absolute * BigInt("10").power(shift.int(), 8192));
+                (absolute * BigInt(10).power(shift.int(), 8192));
             }
             else {
                 if shift < (-1025).rat() {
@@ -485,14 +485,14 @@ object NumberQuantized {
                         || (direction == Rounding.floor && origin.negative())
                         || (direction == Rounding.ceiling && !origin.negative());
                     if up {
-                        BigInt("1");
+                        BigInt(1);
                     }
                     else {
-                        BigInt("0");
+                        BigInt(0);
                     }
                 }
                 else {
-                    let divisor = BigInt("10").power((-shift).int(), 8192);
+                    let divisor = BigInt(10).power((-shift).int(), 8192);
                     let quotient = (absolute / divisor);
                     let remainder = (absolute % divisor);
                     let increment = NumberRounding(
@@ -503,7 +503,7 @@ object NumberQuantized {
                         direction: precision::Digits::rounding
                     ).increment();
                     if increment {
-                        (quotient + BigInt("1"));
+                        (quotient + BigInt(1));
                     }
                     else {
                         quotient;
@@ -633,7 +633,7 @@ hidden object NumberRounding {
                 !negative;
             }
             else {
-                let twice = (remainder * BigInt("2")).order(divisor);
+                let twice = (remainder * BigInt(2)).order(divisor);
                 if twice == Order.greater {
                     true;
                 }
@@ -650,7 +650,7 @@ hidden object NumberRounding {
                                 false;
                             }
                             else {
-                                (quotient % BigInt("2")).sign() != 0;
+                                (quotient % BigInt(2)).sign() != 0;
                             }
                         }
                     }
@@ -919,7 +919,7 @@ object NumberPrinting {
     hidden exponential(engineering is bool) is NumberRendered {
         let magnitude = origin.magnitude();
         let remainder = if engineering {
-            let rest = Number((BigInt(magnitude.numerator()) % BigInt("3")).string()).int();
+            let rest = Number((BigInt(magnitude.numerator()) % BigInt(3)).string()).int();
             if rest < 0 {
                 rest + 3;
             }
@@ -1517,7 +1517,7 @@ hidden object NumberReading {
                 "";
             }) + digits);
             if notation == NumberNotation.engineering {
-                confirm (exponent % BigInt("3")).sign() == 0
+                confirm (exponent % BigInt(3)).sign() == 0
                     else throw InvalidLocalizedNumber.because(
                         "engineering exponent must be a multiple of three"
                     );
@@ -1587,7 +1587,7 @@ object LocalizedIntegerFromString {
             )
         );
         let value = NumberReading(origin: origin, locale: locale, format: format).decimal();
-        (value.coefficient() * BigInt("10").power(value.exponent(), 8192));
+        (value.coefficient() * BigInt(10).power(value.exponent(), 8192));
     }
 }
 

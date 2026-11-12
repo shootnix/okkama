@@ -1,12 +1,12 @@
 {
   "schema": "ocs-case/1",
   "id": "L11.sqlite.param-binding",
-  "title": "Param binds scalars and Maybe as SQL data",
+  "title": "typed DB values bind scalars and Maybe as SQL data",
   "purpose": "Exercise the SQLite persistence boundary with an owned in-memory database.",
   "level": "L11",
   "contracts": [
     {
-      "contract": "STD.DB.PARAM",
+      "contract": "STD.DB.VALUE",
       "aspects": [
         "normal",
         "boundary",
@@ -39,7 +39,7 @@
     }
   },
   "spec_refs": [
-    "std/db/param.ok",
+    "std/db/value.ok",
     "docs/std/db-values.md"
   ],
   "budget": {
@@ -47,7 +47,7 @@
   },
   "provenance": {
     "origin": "authored for OCS 0.1.0 from the cited contract text",
-    "expected_basis": "Param preserves the exact scalar category; Maybe.none binds SQL NULL. SQL-looking strings stay data, and the same DbValue protocol is accepted by Statement and prepared statements."
+    "expected_basis": "DbInteger, DbText, DbBoolean, DbFloating, DbDecimal and DbBytes (#188, in place of Param) preserve the exact scalar category; their Maybe.none binds SQL NULL. SQL-looking strings stay data, and the same DbValue protocol is accepted by Statement and prepared statements."
   },
   "status": "mandatory",
   "harness": true
