@@ -372,15 +372,20 @@ object NumberLocaleData does NumberRenderingData {
         ).replace("{permille}", symbols[5]);
     }
 
+    // ASCII digits in this locale's numbering system, other characters as
+    // they are; Latin digits leave the text unchanged (#176).
     localized(origin is string) is string {
-        let fragments is @string = (0..origin.length()).map() -> index {
-            let char = origin.slice(index, index + 1);
-            let found = "0123456789".split(char);
-            if found.size() == 2 {
-                digits.slice(found[0].length(), found[0].length() + 1);
+        if digits == "0123456789" {
+            return origin;
+        }
+        let local = digits.characters();
+        let fragments is @string = origin.characters().map() -> character {
+            let code = character.code();
+            if code >= 48 && code <= 57 {
+                local[code - 48].string();
             }
             else {
-                char;
+                character.string();
             }
         };
         fragments.join("");
@@ -543,8 +548,9 @@ object NumberQuantized {
         else {
             text.slice(text.length() - scale, text.length());
         };
-        let end = (minimum..fraction.length()).reduce(minimum) -> position, index {
-            if fraction.slice(index, index + 1) != "0" {
+        let figures = fraction.characters();
+        let end = (minimum..figures.size()).reduce(minimum) -> position, index {
+            if figures[index].code() != 48 {
                 index + 1;
             }
             else {
@@ -565,7 +571,11 @@ object NumberQuantized {
     }
 
     magnitude() is NumberMagnitude {
-        DecimalNumberMagnitude(origin: Decimal(coefficient.string() + "e" + (-scale).string()), shift: 0, negative_zero: negative).magnitude();
+        DecimalNumberMagnitude(
+            origin: Decimal(coefficient.string() + "e" + (-scale).string()),
+            shift: 0,
+            negative_zero: negative
+        ).magnitude();
     }
 }
 
@@ -699,17 +709,20 @@ hidden object NumberMantissa {
             && primary > 0
             && secondary > 0
             && whole.length() - primary >= threshold;
-        let parts is @string = (0..whole.length()).map() -> index {
-            let right = whole.length() - index;
+        // The grouped ASCII digits are localized once: a group separator is
+        // never an ASCII digit (#176).
+        let figures = whole.characters();
+        let parts is @string = (0..figures.size()).map() -> index {
+            let right = figures.size() - index;
             (if active && index > 0 && right >= primary && (right - primary) % secondary == 0 {
                 data.symbol(1);
             }
             else {
                 "";
-            }) + data.localized(whole.slice(index, index + 1));
+            }) + figures[index].string();
         };
         let fraction = origin.fraction(format.precision()::Digits::minimum_fraction);
-        parts.join("") + (if fraction == "" {
+        data.localized(parts.join("")) + (if fraction == "" {
             "";
         }
         else {
@@ -891,7 +904,16 @@ object NumberPrinting {
 
     hidden standard(value is NumberMagnitude, pattern is NumberPattern) is NumberRendered {
         let rounded = NumberQuantized(origin: value, precision: format.precision());
-        NumberRendered(text: NumberMantissa(origin: rounded, data: data, format: format, pattern: pattern, grouped: true).string(), number: rounded);
+        NumberRendered(
+            text: NumberMantissa(
+                origin: rounded,
+                data: data,
+                format: format,
+                pattern: pattern,
+                grouped: true
+            ).string(),
+            number: rounded
+        );
     }
 
     hidden exponential(engineering is bool) is NumberRendered {
@@ -936,7 +958,13 @@ object NumberPrinting {
         else {
             1;
         };
-        let body = NumberMantissa(origin: number, data: data, format: format, pattern: pattern, grouped: false).string() + NumberExponent(
+        let body = NumberMantissa(
+            origin: number,
+            data: data,
+            format: format,
+            pattern: pattern,
+            grouped: false
+        ).string() + NumberExponent(
             origin: exponent,
             data: data,
             minimum: minimum
@@ -982,7 +1010,10 @@ object NumberPrinting {
         }
         let pattern = NumberPattern(encoded.split("|"));
         let scale = selected - pattern.zeros() + 1;
-        let rounded = NumberQuantized(origin: origin.scaled(scale.rat()), precision: format.precision());
+        let rounded = NumberQuantized(
+            origin: origin.scaled(scale.rat()),
+            precision: format.precision()
+        );
         let raised = self.bucket(entries, rounded.magnitude().magnitude() + scale.rat());
         let bucket = if raised > selected {
             raised;
@@ -996,7 +1027,10 @@ object NumberPrinting {
         }
         let base = NumberPattern(base_text.split("|"));
         let power = bucket - base.zeros() + 1;
-        let number = NumberQuantized(origin: origin.scaled(power.rat()), precision: format.precision());
+        let number = NumberQuantized(
+            origin: origin.scaled(power.rat()),
+            precision: format.precision()
+        );
         let spelling = number.ascii(format.precision()::Digits::minimum_fraction);
         confirm spelling.length() <= 1024
             else throw InvalidLocalizedNumber.because("compact plural operand exceeds 1024 scalars");
@@ -1007,7 +1041,11 @@ object NumberPrinting {
                 "1";
             }
             else {
-                match PluralCategoryOf(origin: PluralNumber(spelling), locale: locale, kind: PluralKind.cardinal).category() {
+                match PluralCategoryOf(
+                    origin: PluralNumber(spelling),
+                    locale: locale,
+                    kind: PluralKind.cardinal
+                ).category() {
                     case PluralCategory.zero {
                         "zero";
                     }
@@ -1043,7 +1081,13 @@ object NumberPrinting {
             "";
         }
         else {
-            NumberMantissa(origin: number, data: data, format: format, pattern: data.pattern(0), grouped: true).string();
+            NumberMantissa(
+                origin: number,
+                data: data,
+                format: format,
+                pattern: data.pattern(0),
+                grouped: true
+            ).string();
         };
         if percent {
             NumberRendered(
@@ -1144,7 +1188,11 @@ object LocalizedFloat {
     string() is string {
         let source = ShortestFloat(origin);
         NumberPrinting(
-            origin: DecimalNumberMagnitude(origin: source.decimal(), shift: 0, negative_zero: source.negative() && origin == 0.0).magnitude(),
+            origin: DecimalNumberMagnitude(
+                origin: source.decimal(),
+                shift: 0,
+                negative_zero: source.negative() && origin == 0.0
+            ).magnitude(),
             locale: locale,
             format: format,
             percent: false,
@@ -1313,13 +1361,20 @@ hidden object NumberDigitReading {
     string() is string {
         confirm origin.length() > 0 && origin.length() <= 1024
             else throw InvalidLocalizedNumber.because("digit sequence must be 1..1024 scalars");
-        let digits = data.digits();
-        let pieces is @string = (0..origin.length()).map() -> index {
-            let character = origin.slice(index, index + 1);
-            let found = digits.split(character);
-            confirm found.size() == 2
+        let local = data.digits().characters();
+        let pieces is @string = origin.characters().map() -> character {
+            let code = character.code();
+            let position = (0..local.size()).reduce(-1) -> found, at {
+                if found < 0 && local[at].code() == code {
+                    at;
+                }
+                else {
+                    found;
+                }
+            };
+            confirm position >= 0
                 else throw InvalidLocalizedNumber.because("mixed or invalid digit system");
-            "0123456789".slice(found[0].length(), found[0].length() + 1);
+            position.string();
         };
         pieces.join("");
     }
@@ -1426,12 +1481,16 @@ hidden object NumberReading {
         let decimal_parts = exponent_parts[0].split(data.symbol(0));
         confirm decimal_parts.size() <= 2
             else throw InvalidLocalizedNumber.because("duplicate decimal separator");
-        let whole = NumberIntegerReading(origin: decimal_parts[0], data: data, grouping: if scientific {
-            NumberGrouping.never;
-        }
-        else {
-            format::Style::grouping;
-        }).string();
+        let whole = NumberIntegerReading(
+            origin: decimal_parts[0],
+            data: data,
+            grouping: if scientific {
+                NumberGrouping.never;
+            }
+            else {
+                format::Style::grouping;
+            }
+        ).string();
         let fraction = if decimal_parts.size() == 2 {
             NumberDigitReading(origin: decimal_parts[1], data: data).string();
         }
@@ -1520,7 +1579,12 @@ object LocalizedIntegerFromString {
             notation: NumberNotation.standard,
             grouping: grouping,
             sign: NumberSign.automatic,
-            precision: NumberPrecision(minimum_integer: 1, minimum_fraction: 0, maximum_fraction: 0, rounding: Rounding.toward_zero)
+            precision: NumberPrecision(
+                minimum_integer: 1,
+                minimum_fraction: 0,
+                maximum_fraction: 0,
+                rounding: Rounding.toward_zero
+            )
         );
         let value = NumberReading(origin: origin, locale: locale, format: format).decimal();
         (value.coefficient() * BigInt("10").power(value.exponent(), 8192));
@@ -1540,5 +1604,44 @@ test "exact decimal number rounds before its text is localized" {
             )
         ).string(),
         "1,234.57"
+    );
+}
+
+test "digits follow the locale's numbering system both ways" {
+    let format = NumberFormat(
+        notation: NumberNotation.standard,
+        grouping: NumberGrouping.automatic,
+        sign: NumberSign.automatic,
+        precision: NumberPrecision(1, 2, 2, Rounding.half_even)
+    );
+    let arabic = LocalizedDecimal(
+        origin: Decimal("1234567.5"),
+        locale: Locale("ar-EG"),
+        format: format
+    ).string();
+    let devanagari = LocalizedDecimal(
+        origin: Decimal("1234567.5"),
+        locale: Locale("hi-IN-u-nu-deva"),
+        format: format
+    ).string();
+    let german = LocalizedDecimal(
+        origin: Decimal("1234567.5"),
+        locale: Locale("de"),
+        format: format
+    ).string();
+    test.is(german, "1.234.567,50");
+    test.is(arabic, "١٬٢٣٤٬٥٦٧٫٥٠");
+    test.is(devanagari, "१२,३४,५६७.५०");
+    test.is(
+        LocalizedDecimalFromString(origin: arabic, locale: Locale("ar-EG"), format: format).decimal().string(),
+        "1.2345675e6"
+    );
+    test.is(
+        LocalizedIntegerFromString(
+            origin: "١٢٣",
+            locale: Locale("ar-EG"),
+            grouping: NumberGrouping.automatic
+        ).integer().string(),
+        "123"
     );
 }
