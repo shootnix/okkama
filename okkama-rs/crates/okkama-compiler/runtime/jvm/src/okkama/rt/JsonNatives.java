@@ -434,6 +434,207 @@ public final class JsonNatives {
         state.column = column;
     }
 
+    /**
+     * JSON items cut from a stream (#136), as okkama-runtime-core/src/native/json_split.rs:
+     * the elements of one top-level array, or whitespace-separated values.
+     */
+    static final class Splitter {
+        static final int UNKNOWN = 0, ARRAY = 1, SEQUENCE = 2, DONE = 3;
+        byte[] pending = new byte[0];
+        int length;
+        long offset;
+        int cursor;
+        int mode = UNKNOWN;
+        boolean separator, required, finished;
+        boolean open, string, escaped, scalar;
+        int start, depth;
+        final long maximum;
+        byte[] item = new byte[0];
+        String error;
+        long errorOffset;
+
+        Splitter(long maximum) {
+            this.maximum = maximum;
+        }
+
+        void feed(byte[] bytes) {
+            if (length + bytes.length > pending.length) {
+                pending = java.util.Arrays.copyOf(pending, Math.max(pending.length * 2, length + bytes.length));
+            }
+            System.arraycopy(bytes, 0, pending, length, bytes.length);
+            length += bytes.length;
+        }
+
+        String fail(int at, String message) {
+            error = message;
+            errorOffset = offset + at;
+            return "error";
+        }
+
+        void consume(int upto) {
+            System.arraycopy(pending, upto, pending, 0, length - upto);
+            length -= upto;
+            offset += upto;
+            cursor -= upto;
+        }
+
+        static boolean space(byte b) {
+            return b == ' ' || b == '\t' || b == '\n' || b == '\r';
+        }
+
+        String next() {
+            if (error != null) {
+                return "error";
+            }
+            while (true) {
+                if (open) {
+                    return scan();
+                }
+                while (cursor < length && space(pending[cursor])) {
+                    cursor++;
+                }
+                consume(cursor);
+                if (cursor >= length) {
+                    if (!finished) {
+                        return "more";
+                    }
+                    return mode == ARRAY ? fail(cursor, "the array is not closed") : "end";
+                }
+                byte b = pending[cursor];
+                if (mode == UNKNOWN && b == '[') {
+                    mode = ARRAY;
+                    cursor++;
+                    consume(cursor);
+                } else if (mode == UNKNOWN) {
+                    mode = SEQUENCE;
+                } else if (mode == DONE) {
+                    return fail(cursor, "data after the array");
+                } else if (mode == ARRAY && separator) {
+                    if (b == ',') {
+                        separator = false;
+                        required = true;
+                    } else if (b == ']') {
+                        mode = DONE;
+                    } else {
+                        return fail(cursor, "expected , or ] between items");
+                    }
+                    cursor++;
+                    consume(cursor);
+                } else if (mode == ARRAY && b == ']') {
+                    if (required) {
+                        return fail(cursor, "a comma before ]");
+                    }
+                    mode = DONE;
+                    cursor++;
+                    consume(cursor);
+                } else {
+                    if (mode == ARRAY && b == ',') {
+                        return fail(cursor, "an empty item");
+                    }
+                    open = true;
+                    start = cursor;
+                    depth = (b == '{' || b == '[') ? 1 : 0;
+                    string = b == '"';
+                    escaped = false;
+                    scalar = !(b == '{' || b == '[' || b == '"');
+                    cursor++;
+                }
+            }
+        }
+
+        String scan() {
+            int end = -1;
+            while (cursor < length) {
+                byte b = pending[cursor];
+                if (scalar) {
+                    if (space(b) || b == ',' || b == ']' || b == '}' || b == '[' || b == '{' || b == '"') {
+                        end = cursor;
+                        break;
+                    }
+                } else if (string) {
+                    if (escaped) {
+                        escaped = false;
+                    } else if (b == '\\') {
+                        escaped = true;
+                    } else if (b == '"') {
+                        string = false;
+                        if (depth == 0) {
+                            cursor++;
+                            end = cursor;
+                            break;
+                        }
+                    }
+                } else if (b == '"') {
+                    string = true;
+                } else if (b == '{' || b == '[') {
+                    depth++;
+                } else if (b == '}' || b == ']') {
+                    depth--;
+                    if (depth == 0) {
+                        cursor++;
+                        end = cursor;
+                        break;
+                    }
+                }
+                cursor++;
+                if (cursor - start > maximum) {
+                    return fail(start, "an item longer than " + maximum + " bytes");
+                }
+            }
+            if (end < 0 && scalar && finished) {
+                end = cursor;
+            }
+            if (end < 0) {
+                return finished ? fail(start, "the stream ends inside an item") : "more";
+            }
+            if (end - start > maximum) {
+                return fail(start, "an item longer than " + maximum + " bytes");
+            }
+            item = java.util.Arrays.copyOfRange(pending, start, end);
+            open = false;
+            cursor = end;
+            consume(end);
+            if (mode == ARRAY) {
+                separator = true;
+                required = false;
+            }
+            return "item";
+        }
+    }
+
+    public static Object runtime_json__json_split_state(BigInteger maximum) {
+        return new Splitter(maximum.longValue());
+    }
+
+    public static boolean runtime_json__json_split_feed(Object handle, List<?> bytes) {
+        ((Splitter) handle).feed(Natives.toBytes(bytes));
+        return true;
+    }
+
+    public static boolean runtime_json__json_split_finish(Object handle) {
+        ((Splitter) handle).finished = true;
+        return true;
+    }
+
+    public static String runtime_json__json_split_next(Object handle) {
+        return ((Splitter) handle).next();
+    }
+
+    public static List<Object> runtime_json__json_split_item(Object handle) {
+        byte[] item = ((Splitter) handle).item;
+        return Natives.fromBytes(item, item.length);
+    }
+
+    public static String runtime_json__json_split_error(Object handle) {
+        String error = ((Splitter) handle).error;
+        return error == null ? "" : error;
+    }
+
+    public static BigInteger runtime_json__json_split_offset(Object handle) {
+        Splitter splitter = (Splitter) handle;
+        return BigInteger.valueOf(splitter.error == null ? 0 : splitter.errorOffset);
+    }
+
     public static Object runtime_json__json_parse_state(String source, BigInteger maximumDepth) {
         return new ParseState(source, maximumDepth);
     }

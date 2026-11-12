@@ -5,7 +5,11 @@ import "numbers/bigint" take BigInt, BigPowerLimitExceeded;
 import "compare" take Order;
 import "cell" take Cell;
 import "runtime/number_text" take int_parse_valid, int_parse;
-import "runtime/utf" take utf8_encode;
+import "runtime/utf" take utf8_encode, utf8_decode;
+import "runtime/json" take JsonSplitState, json_split_state, json_split_feed, json_split_finish,
+    json_split_next, json_split_item, json_split_error, json_split_offset;
+import "io/stream" take AsyncReading, AsyncWriting, ByteSource;
+import "async/atomic" take Atomic;
 import "runtime/json" take JsonParseState, JsonNodeState, json_parse_state, json_parse_bytes_state,
     json_parse_valid, json_parse_offset, json_parse_line, json_parse_column, json_parse_message,
     json_parse_duplicate, json_parse_has_duplicate, json_parse_root, json_node_kind,
@@ -529,6 +533,78 @@ object ParsedJson {
                 json_parse_message(state),
             );
         }
+    }
+}
+
+// JSON items read as a stream gives them (#136), one at a time with bounded
+// memory: the elements of one top-level array, or values one after another
+// (NDJSON, or any whitespace between them).
+//
+//     for await JsonItems(origin: upload) -> item {
+//         item.text("name");
+//     }
+//
+// A stream whose first significant byte is "[" is one array; its elements
+// are the items. Each item is parsed whole as ParsedJson parses bytes, so its
+// errors are JsonError.invalid with offsets inside the item; a broken stream
+// is JsonError.invalid at its byte offset in the stream, line and column 0.
+// An item may be 16 MiB and 128 levels deep unless told otherwise.
+object JsonItems {
+    has origin is AsyncReading;
+    has state is JsonSplitState;
+    has maximum_depth is int;
+
+    JsonItems(origin is AsyncReading) {
+        self.origin = origin;
+        state = json_split_state(16777216);
+        maximum_depth = 128;
+    }
+
+    JsonItems(origin is AsyncReading, maximum_item is int, maximum_depth is int) {
+        confirm maximum_item > 0 && maximum_depth > 0
+            else throw JsonError.invalid(0, 1, 1, "item limits must be positive");
+        self.origin = origin;
+        state = json_split_state(maximum_item);
+        self.maximum_depth = maximum_depth;
+    }
+
+    // The next item, or none after the last: for await walks it.
+    async next() is Maybe<Json> {
+        loop {
+            let status = json_split_next(state);
+            if status == "item" {
+                return Maybe.some(
+                    ParsedJson(origin: json_split_item(state), maximum_depth: maximum_depth).root()
+                );
+            }
+            if status == "end" {
+                return Maybe<Json>.none;
+            }
+            if status == "error" {
+                throw JsonError.invalid(json_split_offset(state), 0, 0, json_split_error(state));
+            }
+            let chunk = await origin.bytes(65536);
+            if chunk.size() == 0 {
+                json_split_finish(state);
+            }
+            else {
+                json_split_feed(state, chunk);
+            }
+        }
+    }
+}
+
+// JSON values written one per line, as NDJSON (#136):
+// await JsonLines(destination: output).write(item).
+object JsonLines {
+    has destination is AsyncWriting;
+
+    JsonLines(destination is AsyncWriting) {
+        self.destination = destination;
+    }
+
+    async write(item is Json) is void {
+        await destination.write(utf8_encode(item.string() + "\n"));
     }
 }
 
@@ -1450,4 +1526,115 @@ test "json parses from UTF-8 bytes as from text" {
     test.is(located(cut), "5:2:3 invalid UTF-8");
     let nothing is @byte = [];
     test.is(located(nothing), textual(""));
+}
+
+// An upload in pieces of at most five bytes.
+hidden object JsonTestUpload does AsyncReading {
+    has content is @byte;
+    has position is Atomic<int>;
+
+    JsonTestUpload(text is string) {
+        content = utf8_encode(text);
+        position = Atomic(0);
+    }
+
+    async bytes(limit is int) is @byte {
+        let at = position.value();
+        let wanted = if limit < 5 {
+            limit;
+        }
+        else {
+            5;
+        };
+        let end = if at + wanted < content.size() {
+            at + wanted;
+        }
+        else {
+            content.size();
+        };
+        position.replace(end);
+        content.slice(at, end);
+    }
+}
+
+// Bytes written, kept for a test.
+hidden object JsonTestOutput does AsyncWriting {
+    has written is Atomic<@byte>;
+
+    JsonTestOutput() {
+        let nothing is @byte = [];
+        written = Atomic(nothing);
+    }
+
+    async write(source is ByteSource) is AsyncWriting {
+        written.replace(written.value() + source.bytes());
+        self;
+    }
+
+    async write(bytes is @byte) is AsyncWriting {
+        written.replace(written.value() + bytes);
+        self;
+    }
+
+    text() is string {
+        utf8_decode(written.value());
+    }
+}
+
+async test "items stream from an array or from lines (#136)" {
+    let names = Atomic("");
+    for await JsonItems(
+        origin: JsonTestUpload(
+            "[{\"name\": \"Zoë\"}, {\"name\": \"a,]\\\"b\"}, {\"name\": \"чай\"}]"
+        )
+    ) -> item {
+        names.replace(names.value() + item.text("name") + ";");
+    }
+    test.is(names.value(), "Zoë;a,]\"b;чай;");
+    let total = Atomic(0);
+    for await JsonItems(origin: JsonTestUpload("{\"n\": 1}\n{\"n\": 20}\n\n{\"n\": 300}\n")) -> item {
+        total.replace(total.value() + item.int("n"));
+    }
+    test.is(total.value(), 321);
+    let counted = Atomic(0);
+    for await JsonItems(origin: JsonTestUpload(" [ ] ")) -> _item {
+        counted.replace(counted.value() + 1);
+    }
+    test.is(counted.value(), 0);
+    let broken = try {
+        for await JsonItems(origin: JsonTestUpload("[1, 2,]")) -> _item {}
+        "read";
+    }
+    catch JsonError.invalid(offset, _line, _column, message) {
+        offset.string() + " " + message;
+    };
+    test.is(broken, "6 a comma before ]");
+    let bad_item = try {
+        for await JsonItems(origin: JsonTestUpload("{\"a\": tru}\n")) -> _item {}
+        "read";
+    }
+    catch error is JsonError {
+        "invalid item";
+    };
+    test.is(bad_item, "invalid item");
+    let long = try {
+        for await JsonItems(
+            origin: JsonTestUpload("[\"abcdefgh\"]"),
+            maximum_item: 4,
+            maximum_depth: 8
+        ) -> _item {}
+        "read";
+    }
+    catch JsonError.invalid(_offset, _line, _column, message) {
+        message;
+    };
+    test.is(long, "an item longer than 4 bytes");
+}
+
+async test "values are written one per line (#136)" {
+    let output = JsonTestOutput();
+    let lines = JsonLines(destination: output);
+    await lines.write(ParsedJson("{\"a\": [1, 2]}").root());
+    await lines.write(ParsedJson("\"line\\nbreak\"").root());
+    test.is(output.text(), "{\"a\":[1,2]}\n\"line\\nbreak\"\n");
 }

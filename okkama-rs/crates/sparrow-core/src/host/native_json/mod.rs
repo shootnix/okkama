@@ -31,6 +31,10 @@ pub(crate) struct Names {
     index: OnceCell<Box<HashMap<Rc<str>, usize>>>,
 }
 impl Names {
+    /// Rust memory of the names, for the collector's accounting.
+    fn bytes(&self) -> usize {
+        self.list.iter().map(|name| name.len() + 16).sum()
+    }
     fn position(&self, sought: &str) -> Option<usize> {
         if self.list.len() < INDEXED_OBJECT {
             return self.list.iter().position(|name| &**name == sought);
@@ -173,7 +177,9 @@ fn bytes_state(bytes: &[u8], maximum_depth: BigInt) -> ParseState {
 }
 
 pub(crate) fn handles(native: Native) -> bool {
-    native.symbol().starts_with("runtime/json@1::")
+    // The stream splitter (#136) runs in okkama-runtime-core, through the
+    // origin bridge.
+    native.symbol().starts_with("runtime/json@1::") && !native.symbol().starts_with("runtime/json@1::json_split_")
 }
 fn failure(native: Native, code: &str, message: &str) -> ProviderError {
     ProviderError::Native(NativeFailure {
@@ -205,7 +211,24 @@ impl Heap {
     fn json_node(&self, value: Slot) -> Result<&Node, Error> {
         self.json_nodes.get(self.json_id(value)?)
     }
+    /// Rust memory of a JSON node, charged to the collector when it is made:
+    /// the arena is not the Okkama heap, so without the charge a loop that
+    /// parses keeps growing it while the heap sees only tiny handle cells.
+    fn json_charge(&mut self, node: &Node) {
+        let bytes = std::mem::size_of::<Node>()
+            + match node {
+                Node::Number(text) | Node::Text(text) => text.len(),
+                Node::Array(children) => children.len() * 8,
+                Node::Object(names, children) => names.bytes() + children.len() * 8,
+                Node::Null | Node::Boolean(_) => 0,
+            };
+        self.core_mut().charge_external(bytes);
+    }
     fn json_handle_new(&mut self, state: JsonHandle) -> Result<Slot, Error> {
+        if let JsonHandle::Parse(parse) = &state {
+            // The source, as characters, lives until the state is released.
+            self.core_mut().charge_external(parse.source.len() * 4);
+        }
         Ok(Slot {
             tag: HANDLE,
             bits: self.handles.allocate(Handle::Json(state))?,
@@ -216,6 +239,7 @@ impl Heap {
         self.json_handle_new(JsonHandle::Node(id))
     }
     fn json_new(&mut self, node: Node) -> Result<Slot, Error> {
+        self.json_charge(&node);
         let id = self.json_nodes.allocate(node)?;
         self.json_node_value(id)
     }
@@ -253,6 +277,7 @@ impl Heap {
                             *child = ids[*child as usize];
                         }
                     }
+                    self.json_charge(&node);
                     ids.push(self.json_nodes.allocate(node)?);
                 }
                 ParsedDocument {

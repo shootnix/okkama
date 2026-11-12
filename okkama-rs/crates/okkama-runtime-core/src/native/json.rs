@@ -2,6 +2,7 @@
 //! `JsonNatives` JVM. Смещения, строки и столбцы — в символах (code points),
 //! тексты отказов — как у Perl-provider.
 use super::Error;
+use super::json_split::{SplitState, Splitter, Step};
 use super::support::{failure, handle, int, int_value, items, new_handle, string, text};
 use crate::{IntValue, Value, abi::Native, heap::ArrayHeap};
 use std::cell::{OnceCell, RefCell};
@@ -699,6 +700,42 @@ pub fn execute(native: Native, args: &[Value], arrays: &ArrayHeap) -> Result<Val
             maximum_depth: int(&args[1])?.clone(),
             outcome: RefCell::new(None),
         })),
+        // Items cut from a stream (#136).
+        Native::JsonJsonSplitState => {
+            let maximum = int(&args[0])?.to_i64().filter(|n| *n >= 0).ok_or_else(|| invalid("maximum item size"))?;
+            Ok(new_handle(SplitState(RefCell::new(Splitter::new(maximum as usize)))))
+        }
+        Native::JsonJsonSplitFeed => {
+            let elements = arrays.elements(&args[1])?;
+            let bytes = elements.iter().map(Value::as_byte).collect::<Result<Vec<_>, _>>()?;
+            handle::<SplitState>(&args[0])?.0.borrow_mut().feed(&bytes);
+            Ok(Value::Bool(true))
+        }
+        Native::JsonJsonSplitFinish => {
+            handle::<SplitState>(&args[0])?.0.borrow_mut().finish();
+            Ok(Value::Bool(true))
+        }
+        Native::JsonJsonSplitNext => {
+            let step = handle::<SplitState>(&args[0])?.0.borrow_mut().advance();
+            Ok(text(match step {
+                Step::Item => "item",
+                Step::More => "more",
+                Step::End => "end",
+                Step::Error => "error",
+            }))
+        }
+        Native::JsonJsonSplitItem => {
+            let state = handle::<SplitState>(&args[0])?.0.borrow();
+            Ok(super::support::byte_array(state.item().iter().copied()))
+        }
+        Native::JsonJsonSplitError => {
+            let state = handle::<SplitState>(&args[0])?.0.borrow();
+            Ok(text(state.error().map(|(_, message)| message.clone()).unwrap_or_default()))
+        }
+        Native::JsonJsonSplitOffset => {
+            let state = handle::<SplitState>(&args[0])?.0.borrow();
+            Ok(int_value(state.error().map_or(0, |(offset, _)| *offset as i64)))
+        }
         Native::JsonJsonParseBytesState => {
             let elements = arrays.elements(&args[0])?;
             let bytes = elements.iter().map(Value::as_byte).collect::<Result<Vec<_>, _>>()?;

@@ -634,5 +634,12 @@ natives! {
     TextBufferAppend = 648, "runtime/buffer@1::text_buffer_append/2", "(TextBufferState, string) -> bool";
     TextBufferText = 649, "runtime/buffer@1::text_buffer_text/1", "(TextBufferState) -> string";
     JsonJsonParseBytesState = 650, "runtime/json@1::json_parse_bytes_state/2", "(@byte, int) -> JsonParseState";
+    JsonJsonSplitState = 651, "runtime/json@1::json_split_state/1", "(int) -> JsonSplitState";
+    JsonJsonSplitFeed = 652, "runtime/json@1::json_split_feed/2", "(JsonSplitState, @byte) -> bool";
+    JsonJsonSplitFinish = 653, "runtime/json@1::json_split_finish/1", "(JsonSplitState) -> bool";
+    JsonJsonSplitNext = 654, "runtime/json@1::json_split_next/1", "(JsonSplitState) -> string";
+    JsonJsonSplitItem = 655, "runtime/json@1::json_split_item/1", "(JsonSplitState) -> @byte";
+    JsonJsonSplitError = 656, "runtime/json@1::json_split_error/1", "(JsonSplitState) -> string";
+    JsonJsonSplitOffset = 657, "runtime/json@1::json_split_offset/1", "(JsonSplitState) -> int";
 }
 // retired: 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258
