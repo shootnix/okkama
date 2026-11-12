@@ -5,6 +5,7 @@ import "collections/list" take List, EmptyList;
 import "runtime/csv_state" take csv_state_create, csv_state_feed, csv_state_advance, csv_state_row,
     csv_state_offset, csv_state_request, csv_state_close;
 import "encoding/utf" take Utf8Encoded;
+import "strings/parse" take Number, Truth, InvalidInteger, InvalidBoolean;
 
 // In-memory Unicode CSV representations; defaults are comma / double quote / CRLF.
 //
@@ -150,10 +151,66 @@ hidden object CsvPrinted {
     }
 }
 
+// One CSV record: its fields, printed by string(). A record that CsvRecords
+// read also knows its header, so its fields read like json values by column
+// name (#202):
+//
+//     record.text("name");                 // "" for an empty field
+//     record.int("age");                   // MissingCsvValue when empty
+//     record.maybe("note").text() else ""; // an empty field reads as absent
+//
+// A failure names the row (the header is row 1) and the column.
 object CsvRecord {
     has fields is @string;
+    has header is %string:int = [:];
+    has row is int = 0;
 
     CsvRecord(:fields);
+
+    CsvRecord(fields is @string, header is %string:int, row is int) {
+        self.fields = fields;
+        self.header = header;
+        self.row = row;
+    }
+
+    text(column is string) is string {
+        self.maybe(column).text() else "";
+    }
+
+    int(column is string) is int {
+        match self.maybe(column).int() {
+            case Maybe.some(found) {
+                found;
+            }
+            else {
+                throw MissingCsvValue.at(row, column);
+            }
+        }
+    }
+
+    boolean(column is string) is bool {
+        match self.maybe(column).boolean() {
+            case Maybe.some(found) {
+                found;
+            }
+            else {
+                throw MissingCsvValue.at(row, column);
+            }
+        }
+    }
+
+    // The field under column, absent when it is empty or the row is short.
+    maybe(column is string) is CsvMaybeValue {
+        confirm header.has(column) else throw MissingCsvColumn.named(column);
+        let index = header[column];
+        let value = if index < fields.size() && fields[index] != "" {
+            Maybe.some(fields[index]);
+        }
+        else {
+            Maybe<string>.none;
+        };
+        CsvMaybeValue(row: row, column: column, value: value);
+    }
 
     string() is string {
         confirm fields.size() > 0 else throw EmptyCsvRecord.no_fields;
@@ -196,6 +253,136 @@ object CsvField {
 }
 
 enum EmptyCsvRecord is Error = (no_fields);
+
+// A field that may be absent: its readers answer Maybe. A value that is there
+// but malformed is still InvalidCsvValue.
+object CsvMaybeValue {
+    has row is int;
+    has column is string;
+    has value is Maybe<string>;
+
+    CsvMaybeValue(row is int, column is string, value is Maybe<string>) {
+        self.row = row;
+        self.column = column;
+        self.value = value;
+    }
+
+    text() is Maybe<string> {
+        value;
+    }
+
+    int() is Maybe<int> {
+        match value {
+            case Maybe.some(text) {
+                Maybe.some(try {
+                    Number(text).int();
+                }
+                catch failure is InvalidInteger {
+                    throw InvalidCsvValue.at(row, column, text, "an integer");
+                });
+            }
+            else {
+                Maybe<int>.none;
+            }
+        }
+    }
+
+    boolean() is Maybe<bool> {
+        match value {
+            case Maybe.some(text) {
+                Maybe.some(try {
+                    Truth(text).bool();
+                }
+                catch failure is InvalidBoolean {
+                    throw InvalidCsvValue.at(row, column, text, "true or false");
+                });
+            }
+            else {
+                Maybe<bool>.none;
+            }
+        }
+    }
+}
+
+// The records of a CSV text whose first row names the columns (#202):
+//
+//     for CsvRecords(text) -> record {
+//         record.text("name");
+//         record.int("age");
+//     }
+//
+// A column named twice reads its first field. The text is read and checked
+// whole, as CsvRows reads it.
+object CsvRecords does Iterating<CsvRecord> {
+    has rows is CsvRows;
+
+    CsvRecords(origin is string) {
+        rows = CsvRows(origin);
+    }
+
+    CsvRecords(origin is string, dialect is CsvDialect) {
+        rows = CsvRows(origin, dialect);
+    }
+
+    cursor() is Cursor<CsvRecord> {
+        let all = rows.cursor();
+        if all.available() {
+            let names = all.item();
+            let empty is %string:int = [:];
+            let header = (0..names.size()).reduce(empty) -> kept, index {
+                if kept.has(names[index]) {
+                    kept;
+                }
+                else {
+                    kept + [names[index]: index];
+                }
+            };
+            CsvRecordCursor(rows: all.successor(), header: header, row: 2);
+        }
+        else {
+            let empty is %string:int = [:];
+            CsvRecordCursor(rows: all, header: empty, row: 2);
+        }
+    }
+}
+
+hidden object CsvRecordCursor does Cursor<CsvRecord> {
+    has rows is Cursor<@string>;
+    has header is %string:int;
+    has row is int;
+
+    CsvRecordCursor(rows is Cursor<@string>, header is %string:int, row is int) {
+        self.rows = rows;
+        self.header = header;
+        self.row = row;
+    }
+
+    available() is bool {
+        rows.available();
+    }
+
+    item() is CsvRecord {
+        CsvRecord(fields: rows.item(), header: header, row: row);
+    }
+
+    successor() is Cursor<CsvRecord> {
+        CsvRecordCursor(rows: rows.successor(), header: header, row: row + 1);
+    }
+}
+
+// A column the header does not name.
+enum MissingCsvColumn is Error = (named(column is string));
+
+// An empty field read as a number or a truth value.
+enum MissingCsvValue is Error = (at(row is int, column is string));
+
+// A field whose value is not what its reader expects.
+enum InvalidCsvValue is Error = (at(
+    row is int,
+    column is string,
+    value is string,
+    expected is string
+));
 
 /*
 enum EmptyCsvRecord is Error = (empty);
@@ -1189,4 +1376,52 @@ test "dialect validation and bounded records" {
     catch CsvLimitExceeded.kind(kind) {
         test.is(kind, CsvLimit.output);
     }
+}
+
+test "records read their fields by column name" {
+    let text = "name,age,note,active\r\nAda,36,first,true\r\nBob,,,false\r\nCy\r\n";
+    let names is @string = CsvRecords(text).map() -> record {
+        record.text("name");
+    };
+    test.is(names, ["Ada", "Bob", "Cy"]);
+    let records is @CsvRecord = CsvRecords(text).map() -> record {
+        record;
+    };
+    test.is(records[0].int("age"), 36);
+    test.ok(records[0].boolean("active"));
+    test.is(records[1].text("note"), "");
+    test.is(records[1].maybe("age").int() else 0, 0);
+    test.is(records[2].maybe("note").text() else "none", "none");
+    test.ok(try {
+        records[1].int("age");
+        false;
+    }
+    catch MissingCsvValue.at(row, column) {
+        row == 3 && column == "age";
+    });
+    test.ok(try {
+        records[0].text("email");
+        false;
+    }
+    catch MissingCsvColumn.named(column) {
+        column == "email";
+    });
+    test.ok(try {
+        CsvRecords("n\r\nx\r\n").map() -> record {
+            record.int("n");
+        };
+        false;
+    }
+    catch InvalidCsvValue.at(row, column, value, expected) {
+        row == 2 && column == "n" && value == "x" && expected == "an integer";
+    });
+    let none_read is @string = CsvRecords("").map() -> record {
+        record.text("a");
+    };
+    test.is(none_read.size(), 0);
+    let first_of_twice is @string = CsvRecords("a,a\r\n1,2\r\n").map() -> record {
+        record.text("a");
+    };
+    test.is(first_of_twice, ["1"]);
+    test.is(records[0].string(), "Ada,36,first,true\r\n");
 }
