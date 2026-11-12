@@ -789,6 +789,11 @@ hidden object DigestBody does BodyOpening {
         origin.replayable();
     }
 
+    // The whole body when it is already in memory (#115).
+    contained() is Maybe<@byte> {
+        Maybe<@byte>.none;
+    }
+
     reading() is BodyReading {
         DigestReading(origin: origin.reading(), proof: proof);
     }

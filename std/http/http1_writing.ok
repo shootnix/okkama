@@ -1,17 +1,15 @@
 module http/http1_writing v1.0.0;
 
 import "http/status" take StatusCode;
-import "http/http1_head" take Http1RequestHead, Http1ResponseHead, Http1Limits, Http1LimitExceeded,
-    ParsedHttp1RequestHead, ParsedHttp1ResponseHead;
+import "http/http1_head" take Http1RequestHead, Http1ResponseHead, Http1Limits, Http1LimitExceeded;
 import "http/http1_framing" take Http1RequestFraming, Http1ResponseFraming;
 import "http/header" take Headers;
 import "http/method" take Method, MethodName;
 import "http/version" take Http1VersionText;
-import "io/stream" take AsyncWriting, ByteSource;
+import "io/stream" take AsyncWriting;
 import "io/buffer" take ByteBuffer;
 import "io/decorators" take ByteSnapshot;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
-import "async/scope" take FutureScope, Supervising;
 
 // Canonical head bytes are fully bounded/validated before a lazy single write.
 // Sink is borrowed. Started failure may emit a prefix: discard the session.
@@ -28,6 +26,38 @@ object Http1RequestHeadWriting {
 
     output() is Future<AsyncWriting> {
         pending;
+    }
+}
+
+// The bytes of a head, for a writer that sends the head and a body that is
+// already in memory in one write (#115).
+object Http1RequestHeadWire {
+    has head is Http1RequestHead;
+    has limits is Http1Limits;
+
+    Http1RequestHeadWire(head is Http1RequestHead, limits is Http1Limits) {
+        self.head = head;
+        self.limits = limits;
+    }
+
+    bytes() is @byte {
+        Http1HeadOutput().request_wire(head, limits);
+    }
+}
+
+object Http1ResponseHeadWire {
+    has head is Http1ResponseHead;
+    has method is Method;
+    has limits is Http1Limits;
+
+    Http1ResponseHeadWire(head is Http1ResponseHead, method is Method, limits is Http1Limits) {
+        self.head = head;
+        self.method = method;
+        self.limits = limits;
+    }
+
+    bytes() is @byte {
+        Http1HeadOutput().response_wire(head, method, limits);
     }
 }
 
@@ -56,13 +86,17 @@ hidden object Http1HeadOutput {
     Http1HeadOutput();
 
     request(origin is AsyncWriting, head is Http1RequestHead, limits is Http1Limits) is Future<AsyncWriting> {
+        self.writing(origin, self.request_wire(head, limits));
+    }
+
+    request_wire(head is Http1RequestHead, limits is Http1Limits) is @byte {
         Http1RequestFraming(head: head, limits: limits).plan();
         let start = MethodName(head::Head::method).string() + " " + head.target().string() + " " + Http1VersionText(
             head::Head::version
         ).string();
-        let wire = Http1HeadWire(start: start, fields: head.headers(), limits: limits).bytes();
-        ParsedHttp1RequestHead(origin: Latin1Decoded(wire).string(), limits: limits).head();
-        self.writing(origin, wire);
+        // The wire is built from checked parts within the limits; it is not
+        // parsed back (#113).
+        Http1HeadWire(start: start, fields: head.headers(), limits: limits).bytes();
     }
 
     response(
@@ -71,35 +105,19 @@ hidden object Http1HeadOutput {
         method is Method,
         limits is Http1Limits
     ) is Future<AsyncWriting> {
+        self.writing(origin, self.response_wire(head, method, limits));
+    }
+
+    response_wire(head is Http1ResponseHead, method is Method, limits is Http1Limits) is @byte {
         Http1ResponseFraming(head: head, method: method, limits: limits).plan();
         let start = Http1VersionText(head::Head::version).string() + " " + StatusCode(head::Head::status).number().string() + " " + StatusCode(
             head::Head::status
         ).phrase();
-        let wire = Http1HeadWire(start: start, fields: head.headers(), limits: limits).bytes();
-        ParsedHttp1ResponseHead(origin: Latin1Decoded(wire).string(), limits: limits).head();
-        self.writing(origin, wire);
+        Http1HeadWire(start: start, fields: head.headers(), limits: limits).bytes();
     }
 
     writing(origin is AsyncWriting, wire is @byte) is Future<AsyncWriting> {
-        let output = Http1HeadWriteOperation(origin: origin, source: ByteSnapshot(wire));
-        let scope is FutureScope<AsyncWriting, AsyncWriting> = FutureScope(action: output.write);
-        scope.outcome();
-    }
-}
-
-hidden object Http1HeadWriteOperation {
-    has origin is AsyncWriting;
-    has source is ByteSource;
-
-    Http1HeadWriteOperation(origin is AsyncWriting, source is ByteSource) {
-        self.origin = origin;
-        self.source = source;
-    }
-
-    async write(group is Supervising<AsyncWriting>) is AsyncWriting {
-        let pending = origin.write(source);
-        group.start(pending);
-        await pending;
+        origin.write(ByteSnapshot(wire));
     }
 }
 

@@ -2102,6 +2102,17 @@ impl Emitter<'_, '_> {
                 let text = self.helper(|h| h.int_text, &[ctx, value]).expect("result");
                 self.set(&dst.0, text);
             }
+            // A code point or a byte is always a small int: tag it inline
+            // (`character.code()` ran through the generic helper, #503).
+            I::Convert { dst, source }
+                if matches!(self.register_type(source), Some(Type::Char) | Some(Type::Byte))
+                    && matches!(self.register_type(&dst.0), Some(Type::Int)) =>
+            {
+                let value = self.get(source);
+                let doubled = self.builder.ins().ishl_imm_u(value, 1);
+                let tagged = self.builder.ins().bor_imm_u(doubled, 1);
+                self.set(&dst.0, tagged);
+            }
             I::StrLen { dst, text } => {
                 // ASCII strings know their length in characters: the byte length.
                 let string = self.get(text);

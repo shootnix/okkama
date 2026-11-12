@@ -1131,6 +1131,11 @@ hidden object HttpClientBody does BodyOpening {
         false;
     }
 
+    // The whole body when it is already in memory (#115).
+    contained() is Maybe<@byte> {
+        Maybe<@byte>.none;
+    }
+
     reading() is BodyReading {
         confirm !operation.closed() else throw BodyClosed.closed;
         confirm opened.compare_and_replace(false, true) else throw BodyAlreadyOpened.opened;
@@ -1888,6 +1893,11 @@ hidden object HttpSharedClientBody does BodyOpening {
 
     replayable() is bool {
         false;
+    }
+
+    // The whole body when it is already in memory (#115).
+    contained() is Maybe<@byte> {
+        Maybe<@byte>.none;
     }
 
     reading() is BodyReading {

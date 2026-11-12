@@ -1,12 +1,10 @@
 module http/header v1.0.0;
 
 import "http/token" take HttpToken, InvalidToken;
-import "encoding/single_byte" take Latin1Encoded, Latin1Decoded, UnrepresentableLatin1Character;
+import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
 import "collections/sequence" take Sequencing;
 import "compare" take Comparing, Order;
 import "error" take InvalidArgument;
-import "regex/pattern" take Regex;
-import "regex/search" take RegexMatches, PrefixRegexMatch;
 
 // HTTP names share the HTTP token grammar, not mail's broader field-name
 // grammar. Spelling is immutable; HTTP matching is explicit canonical ordering,
@@ -58,8 +56,11 @@ object Header {
     }
 }
 
-// Bounded regex windows preserve the Header contract beyond the regex input
-// limit. Validation checks every window before reporting a control error.
+// A field value is an octet string without controls other than HTAB, with
+// its leading and trailing spaces and tabs removed. One pass over the
+// characters (#110): the four regexes compiled per header were most of a
+// request's allocations. A value that is not an octet string is reported
+// before a control in it.
 hidden object HttpFieldValue {
     has name is HeaderName;
     has origin is string;
@@ -70,116 +71,54 @@ hidden object HttpFieldValue {
     }
 
     string() is string {
-        let non_octet = Regex("[^\\x{0}-\\x{ff}]");
-        let controls = Regex("[\\x{0}-\\x{8}\\x{a}-\\x{1f}\\x{7f}]");
-        let state = HttpFieldScan(position: 0, control: false);
-        loop {
-            let position = state.position();
-            last if position == origin.length();
-            let stop = if origin.length() - position > 65536 {
-                position + 65536;
+        let characters = origin.characters();
+        // 0: clean, 1: a control, 2: a character beyond one octet.
+        let verdict = characters.reduce(0) -> state, character {
+            let code = character.code();
+            if code > 255 {
+                2;
             }
             else {
-                origin.length();
-            };
-            let piece = origin.slice(position, stop);
-            confirm !RegexMatches(origin: piece, regex: non_octet).found()
-                else throw InvalidHeader.detailed(
-                    name.string(),
-                    "field value is not an octet string"
-                );
-            state = state.following(stop, state.control() || RegexMatches(origin: piece, regex: controls).found());
-        }
-        confirm !state.control()
+                if state == 0 && ((code < 32 && code != 9) || code == 127) {
+                    1;
+                }
+                else {
+                    state;
+                }
+            }
+        };
+        confirm verdict != 2
+            else throw InvalidHeader.detailed(name.string(), "field value is not an octet string");
+        confirm verdict != 1
             else throw InvalidHeader.detailed(name.string(), "control in field value");
-        self.trimmed();
-    }
-
-    hidden trimmed() is string {
-        let spaces = Regex("[ \\t]*");
-        let ending = Regex("[\\x{0}-\\x{ff}]*[^ \\t]");
-        let range = HttpFieldRange(start: 0, end: origin.length());
-        loop {
-            let start = range.start();
-            let end = range.end();
-            last if start == end;
-            let stop = if end - start > 65536 {
-                start + 65536;
+        let size = characters.size();
+        let first = (0..size).reduce(size) -> found, index {
+            if found == size && characters[index] != ' ' && characters[index] != '\t' {
+                index;
             }
             else {
-                end;
-            };
-            let piece = origin.slice(start, stop);
-            let removed = PrefixRegexMatch(origin: piece, regex: spaces).range()::Bounds::end;
-            range = range.following(start + removed, end);
-            last if removed < piece.length();
+                found;
+            }
+        };
+        let end = (0..size).reduce(-1) -> found, index {
+            if characters[index] != ' ' && characters[index] != '\t' {
+                index;
+            }
+            else {
+                found;
+            }
+        };
+        if end < first {
+            "";
         }
-        loop {
-            let start = range.start();
-            let end = range.end();
-            last if start == end;
-            let from = if end - start > 65536 {
-                end - 65536;
+        else {
+            if first == 0 && end == size - 1 {
+                origin;
             }
             else {
-                start;
-            };
-            let piece = origin.slice(from, end);
-            let removed = PrefixRegexMatch(origin: piece, regex: spaces).range()::Bounds::end;
-            if removed == piece.length() {
-                range = range.following(start, from);
-            }
-            else {
-                range = range.following(start, from + PrefixRegexMatch(origin: piece, regex: ending).range()::Bounds::end);
-                last;
+                origin.slice(first, end + 1);
             }
         }
-        origin.slice(range.start(), range.end());
-    }
-}
-
-hidden object HttpFieldScan {
-    has position is int;
-    has control is bool;
-
-    HttpFieldScan(position is int, control is bool) {
-        self.position = position;
-        self.control = control;
-    }
-
-    position() is int {
-        position;
-    }
-
-    control() is bool {
-        control;
-    }
-
-    following(position is int, control is bool) is ^HttpFieldScan {
-        ^position = position;
-        ^control = control;
-    }
-}
-
-hidden object HttpFieldRange {
-    has start, end is int;
-
-    HttpFieldRange(start is int, end is int) {
-        self.start = start;
-        self.end = end;
-    }
-
-    start() is int {
-        start;
-    }
-
-    end() is int {
-        end;
-    }
-
-    following(start is int, end is int) is ^HttpFieldRange {
-        ^start = start;
-        ^end = end;
     }
 }
 
@@ -420,3 +359,26 @@ test "HTTP fields retain duplicates and compare names without case" {
     test.is(fields.values(HeaderName("SET-COOKIE")).size(), 2);
     test.is(fields.first(HeaderName("set-cookie")), "a=1");
 }
+
+test "a field value is trimmed and checked in one pass" {
+    test.is(Header(name: HeaderName("X-A"), value: " \t padded value \t ").value(), "padded value");
+    test.is(Header(name: HeaderName("X-A"), value: "inner \t tab").value(), "inner \t tab");
+    test.is(Header(name: HeaderName("X-A"), value: "   ").value(), "");
+    test.is(Header(name: HeaderName("X-A"), value: "").value(), "");
+    test.is(Header(name: HeaderName("X-A"), value: "caf\u{e9}").value(), "caf\u{e9}");
+    let reason = (value is string) is string {
+        try {
+            Header(name: HeaderName("X-A"), value: value).value();
+            "accepted";
+        }
+        catch InvalidHeader.detailed(name, message) {
+            message;
+        }
+    };
+    test.is(reason("bad\nline"), "control in field value");
+    test.is(reason("bell\u{7}"), "control in field value");
+    test.is(reason("del\u{7f}"), "control in field value");
+    test.is(reason("snow \u{2603}"), "field value is not an octet string");
+    test.is(reason("\n then \u{2603}"), "field value is not an octet string");
+}
+

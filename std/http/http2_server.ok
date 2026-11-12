@@ -1034,6 +1034,11 @@ hidden object Http2ServerBody does BodyOpening {
         origin.replayable();
     }
 
+    // The whole body when it is already in memory (#115).
+    contained() is Maybe<@byte> {
+        Maybe<@byte>.none;
+    }
+
     reading() is BodyReading {
         Http2ServerBodyReading(entry: entry, origin: origin.reading(), timeout: timeout, clock: clock);
     }

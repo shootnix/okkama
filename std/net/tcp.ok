@@ -22,16 +22,18 @@ import "time/duration" take Duration, DurationUnit;
 import "net/endpoint" take HostEndpoint, HostName;
 import "net/dns" take Resolving, SystemResolution, FixedResolution, HostAddresses;
 
-// Immutable connection option request. Defaults keep keepalive off and do not
-// request disabling Nagle's algorithm. Construction applies no socket options;
-// the eventual connection operation owns application and unsupported failures.
+// Immutable connection option request. Defaults keep keepalive off and turn
+// Nagle's algorithm off (TCP_NODELAY), as Go and Node do: a request and its
+// answer leave at once instead of waiting up to 40 ms for an acknowledgement
+// (#116). Construction applies no socket options; the eventual connection
+// operation owns application and unsupported failures.
 object TcpOptions {
     has keep is bool;
     has immediate is bool;
 
     TcpOptions() {
         keep = false;
-        immediate = false;
+        immediate = true;
     }
 
     TcpOptions(keep_alive is bool, no_delay is bool) {
@@ -58,8 +60,10 @@ object TcpListeningOptions {
     has dual is bool;
     has queued is int;
 
+    // Address reuse is on by default (SO_REUSEADDR, as Go does on Unix), so a
+    // restarted server binds its port while old connections sit in TIME_WAIT.
     TcpListeningOptions() {
-        reuse = false;
+        reuse = true;
         dual = false;
         queued = 128;
     }
@@ -143,7 +147,7 @@ object TcpConnecting {
     }
 
     // TcpConnecting(address: IpAddress("127.0.0.1"), port: 8080, no_delay: true)
-    TcpConnecting(address is IpAddress, port is int, keep_alive is bool = false, no_delay is bool = false) {
+    TcpConnecting(address is IpAddress, port is int, keep_alive is bool = false, no_delay is bool = true) {
         confirm port > 0 && port <= 65535
             else throw InvalidArgument.because("TCP destination port must be 1..65535");
         remote = [IpEndpoint(address: address, port: port)];
@@ -159,7 +163,7 @@ object TcpConnecting {
         host is string,
         port is int,
         keep_alive is bool = false,
-        no_delay is bool = false,
+        no_delay is bool = true,
         resolver is Resolving = SystemResolution()
     ) {
         confirm host != "" else throw InvalidArgument.because("TCP destination host must not be empty");
@@ -241,10 +245,10 @@ object TcpListening {
         port is int,
         address is IpAddress = IpAddress("127.0.0.1"),
         backlog is int = 128,
-        address_reuse is bool = false,
+        address_reuse is bool = true,
         dual_stack is bool = false,
         keep_alive is bool = false,
-        no_delay is bool = false
+        no_delay is bool = true
     ) {
         local = IpEndpoint(address: address, port: port);
         options = TcpListeningOptions(address_reuse: address_reuse, dual_stack: dual_stack, backlog: backlog);
@@ -416,8 +420,8 @@ hidden object TcpListenerUnpublished {
 }
 
 test "TCP defaults agree with explicit settings" {
-    test.ok(TcpOptions() == TcpOptions(keep_alive: false, no_delay: false));
-    test.ok(TcpListeningOptions() == TcpListeningOptions(address_reuse: false, dual_stack: false, backlog: 128));
+    test.ok(TcpOptions() == TcpOptions(keep_alive: false, no_delay: true));
+    test.ok(TcpListeningOptions() == TcpListeningOptions(address_reuse: true, dual_stack: false, backlog: 128));
 }
 
 test "TCP options preserve independent choices" {

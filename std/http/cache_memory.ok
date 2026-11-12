@@ -481,6 +481,11 @@ hidden object CachedByteBody does BodyOpening {
         true;
     }
 
+    // The whole body when it is already in memory (#115).
+    contained() is Maybe<@byte> {
+        Maybe<@byte>.none;
+    }
+
     reading() is BodyReading {
         let input = ByteBodyInput(bytes);
         StreamBodyReading(input: input, owner: input, trailers: trailers);

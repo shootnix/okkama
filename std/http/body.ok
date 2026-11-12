@@ -17,6 +17,9 @@ role BodyOpening {
     length() is BigInt;
     replayable() is bool;
     reading() is BodyReading;
+    // The whole body when it is already in memory, for writing it with its
+    // head in one write (#115); a stream answers none.
+    contained() is Maybe<@byte>;
 }
 
 role BodyReading {
@@ -39,6 +42,11 @@ object ByteBody does BodyOpening {
 
     replayable() is bool {
         true;
+    }
+
+    // The whole body when it is already in memory (#115).
+    contained() is Maybe<@byte> {
+        Maybe.some(origin);
     }
 
     reading() is BodyReading {
@@ -120,6 +128,12 @@ object EmptyBody does BodyOpening {
         true;
     }
 
+    // The whole body when it is already in memory (#115).
+    contained() is Maybe<@byte> {
+        let empty is @byte = [];
+        Maybe.some(empty);
+    }
+
     reading() is BodyReading {
         ByteBody([]).reading();
     }
@@ -141,6 +155,11 @@ object OneShotBody does BodyOpening {
 
     replayable() is bool {
         false;
+    }
+
+    // The whole body when it is already in memory (#115).
+    contained() is Maybe<@byte> {
+        Maybe<@byte>.none;
     }
 
     reading() is BodyReading {
