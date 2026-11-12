@@ -6,9 +6,43 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
-0.5.4 starts the review of the standard library (#352), module by module and
-in place: nothing leaves std (the owner, 2026-11-11), every module is kept,
-simplified or rewritten to the principles of `docs/std-principles.md`.
+## [0.5.4] — 2026-11-12
+
+0.5.4 is the review of the standard library (#352).
+- **Method.** Every module of `std/` was read against
+  `docs/std-principles.md` and kept, simplified or rewritten in place.
+  Nothing left std (the owner, 2026-11-11). Three exemplars set the shape:
+  json, fs/file and the HTTP client. Six waves then applied it bottom-up:
+  core, formats, network, platform, web and mail.
+- **The surface.** Answers have nouns instead of `value()`. Records show
+  themselves through caps, machinery is `hidden`, and constructors take named
+  arguments with defaults.
+- **The examples pass.** A last reading of the 61 programs in `examples/`
+  with the owner made objects answer in the form people use:
+  - a capture answers text, a digest its hex, an instant its RFC 3339 form,
+    a server its port and a date its days;
+  - whole durations read `Duration(seconds: 5)`;
+  - parts of one kind are passed one by one.
+- **The language.** It gained `once let` (#491), `hidden` actions (#365),
+  `for` over `Batching<T>` sources (#465), and `...string` tails that turn
+  values into text: `out.writeln("count: ", 5)` and `Formatted("{} of {}",
+  done, total)`.
+- **Fixed.**
+  - http: the server drain (#496) and HTTP/2 targets (#497);
+  - JSON numbers in templates (#494), Windows roots (#492) and
+    `CounterNonce` (#493);
+  - the compiler: overloads with collection literals (#501) and nested
+    arrays as roles of roles (#488);
+  - the PGO training programs (#500).
+- **Tests.** Conformance has 1021 mandatory cases, and the t/ suite 50 646
+  checks per configuration.
+- **Speed.** The ladder report is
+  okkama-docs/benchmarks/reports/2026-11-12-v0.5.4. It is the first to
+  compare against Go, Java, Kotlin and Python (#363). Against v0.5.3, rebuilt
+  and measured the same morning:
+  - Tomato is 4.1% faster by geometric mean and faster on every program;
+    `11-ownership` is 16% faster (#473, #483, #484);
+  - the JVM backend is 2.0% faster.
 
 ### Added
 
@@ -4480,7 +4514,8 @@ First release of the Rust implementation: the compiler (lexer, parser, analysis,
 IR, Sparrow (VM with JIT) and JVM engines, the standard library, LSP, `fmt`, `lint`, the
 `blade` project manager, and packages for macOS and Linux.
 
-[Unreleased]: https://github.com/shootnix/okkama/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/shootnix/okkama/compare/v0.5.4...HEAD
+[0.5.4]: https://github.com/shootnix/okkama/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/shootnix/okkama/compare/v0.5.1...v0.5.3
 [0.5.1]: https://github.com/shootnix/okkama/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/shootnix/okkama/compare/v0.4.3...v0.5.0

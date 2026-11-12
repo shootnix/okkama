@@ -8,7 +8,7 @@ is enforced by the runtime — not by code review.**
 [![CI](https://github.com/shootnix/okkama/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/shootnix/okkama/actions/workflows/ci.yml)
 [![Packages](https://github.com/shootnix/okkama/actions/workflows/packages.yml/badge.svg?branch=develop)](https://github.com/shootnix/okkama/actions/workflows/packages.yml)
 [![Release](https://img.shields.io/github/v/release/shootnix/okkama?include_prereleases&label=release)](https://github.com/shootnix/okkama/releases)
-[![Conformance](https://img.shields.io/badge/conformance-992%2F992%20×%203%20engines-brightgreen)](conformance/)
+[![Conformance](https://img.shields.io/badge/conformance-1021%2F1021%20×%203%20engines-brightgreen)](conformance/)
 [![License](https://img.shields.io/github/license/shootnix/okkama)](LICENSE)
 
 [Install](#install) ·
@@ -504,31 +504,31 @@ okkama build hello.ok --target sparrow -o hello.spb && sparrow hello.spb
 
 | | IR interpreter | Sparrow (JIT) | JVM |
 |---|---|---|---|
-| Start-up (`hello`) | 12 ms | **10 ms** | 50 ms |
-| `fib(32)`, 7 M calls | 1.36 s | **29 ms** | 182 ms |
-| Mandelbrot (float) | 0.55 s | **28 ms** | 141 ms |
-| 1 M successor steps | 1.03 s | **24 ms** | 131 ms |
-| 6-module application | 1.64 s | **104 ms** | 395 ms |
-| Peak memory, application | 9 MB | 13 MB | 259 MB |
+| Start-up (`hello`) | 11 ms | **10 ms** | 49 ms |
+| `fib(32)`, 7 M calls | 1.36 s | **28 ms** | 177 ms |
+| Mandelbrot (float) | 0.52 s | **27 ms** | 135 ms |
+| 1 M successor steps | 1.02 s | **24 ms** | 126 ms |
+| 6-module application | 1.61 s | **103 ms** | 406 ms |
+| Peak memory, application | 9 MB | 13 MB | 257 MB |
 | Needs | nothing | nothing | JDK |
 
-Median of ten cold runs on an Apple M2 Max (0.5.3, release build, start-up
+Median of ten cold runs on an Apple M2 Max (0.5.4, release build, start-up
 included). Sparrow (its current version is called Tomato) compiles every function to
 machine code (Cranelift) before it runs; calls are direct, async frames are
 stackless and the collector is precise.
 
 The same ten programs were also written in Go, Java, Kotlin and Python. Each
 port prints exactly what the Okkama program prints. Geometric mean, Sparrow
-against each (0.5.3):
+against each (0.5.4):
 
 | | cold run, start-up included | warmed up |
 |---|---|---|
-| Go 1.26 | 2.2× slower | 2.5× slower |
-| Java 26 (HotSpot) | 1.5× faster | 2.6× slower |
-| Kotlin 2.4 (HotSpot) | 1.85× faster | 2.4× slower |
-| Python 3.9 | 6.3× faster | 9.2× faster |
+| Go 1.26 | 2.3× slower | 2.7× slower |
+| Java 26 (HotSpot) | 1.43× faster | 2.9× slower |
+| Kotlin 2.4 (HotSpot) | 1.72× faster | 2.7× slower |
+| Python 3.9 | 5.9× faster | 8.6× faster |
 
-Sparrow runs them in 7–24 MB, Go in 4–13 MB, Java in 44–210 MB and Kotlin in
+Sparrow runs them in 8–25 MB, Go in 4–13 MB, Java in 44–209 MB and Kotlin in
 47–433 MB.
 
 ## Documentation
@@ -541,7 +541,7 @@ Sparrow runs them in 7–24 MB, Go in 4–13 MB, Java in 44–210 MB and Kotlin 
 | 🐦 [Книга Sparrow (RU)](docs/SparrowBook/SparrowBook-RU.md) | The Sparrow book in Russian |
 | 🛡️ [Trust model](docs/security-model.md) | Which input is safe to compile, verify and run today, per boundary, with the open issues |
 | 🤖 [Guide for LLM agents](docs/LLM-GUIDE.md) | Working on this repository: layout, build, tests, benchmarks, architecture |
-| 🧪 [Conformance suite](conformance/README.md) | Executable specification: 992 cases with expected observations |
+| 🧪 [Conformance suite](conformance/README.md) | Executable specification: 1021 cases with expected observations |
 
 Where documents disagree, the source of truth is the conformance suite
 (`conformance/`) and the specification — in that order.
@@ -550,7 +550,7 @@ Where documents disagree, the source of truth is the conformance suite
 
 Okkama is **experimental**: the language and the standard library still
 evolve, and nothing is stable yet. The implementation runs the whole language
-and standard library: the conformance suite passes 992/992 cases on each
+and standard library: the conformance suite passes 1021/1021 cases on each
 engine, and every deterministic program in `std/` (in test mode)
 behaves identically on all three. See
 [Appendix B of the Book](docs/OkkamaBook.md#appendix-b-implementation-status)

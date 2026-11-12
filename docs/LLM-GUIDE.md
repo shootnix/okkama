@@ -235,15 +235,18 @@ Benchmarks live outside the repository in `../okkama-docs/benchmarks`
   lines; compare medians of several alternating rounds with checksums.
 - PGO workloads are copies of the ladder in `okkama-rs/tools/pgo/workloads`.
 
-Reference numbers (0.5.3, Apple M2 Max / Docker arm64; geometric mean over
-01–10, report `okkama-docs/benchmarks/reports/2026-11-11-v0.5.3`; compare
-releases with a back-to-back A/B, not against an older report):
-- Cold runs: Go is 2.2× faster than Sparrow. Sparrow is 1.5× faster than
-  Java, 1.85× faster than Kotlin, 6.3× faster than Python and 4.8× faster than
+Reference numbers (0.5.4, Apple M2 Max / Docker arm64; plain release build;
+geometric mean over 01–10, report
+`okkama-docs/benchmarks/reports/2026-11-12-v0.5.4`; compare releases with a
+back-to-back A/B, not against an older report, and never against a PGO build):
+- Cold runs: Go is 2.3× faster than Sparrow. Sparrow is 1.43× faster than
+  Java, 1.72× faster than Kotlin, 5.9× faster than Python and 4.5× faster than
   Okkama's JVM backend.
-- Warmed up (`--steady`): Go and HotSpot (Java, Kotlin) are 2.4–2.6× faster
-  than Sparrow, and Sparrow is 9.2× faster than Python.
-- Memory: Sparrow 7–24 MB, Go 4–13 MB, Java 44–210 MB.
+- Warmed up (`--steady`): Go and HotSpot (Java, Kotlin) are 2.7–2.9× faster
+  than Sparrow, and Sparrow is 8.6× faster than Python.
+- Memory: Sparrow 8–25 MB, Go 4–13 MB, Java 44–209 MB.
+- Against 0.5.3 (v0.5.3 rebuilt, same morning): Sparrow −4.1%, every program
+  faster; the JVM backend −2.0%.
 - The largest gap is 11-ownership (region tracking): Sparrow takes 139 ms
   against Go's 11, Java's 49 and Python's 66.
 
