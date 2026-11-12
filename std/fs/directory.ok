@@ -5,7 +5,7 @@ import "collections/list" take List, EmptyList;
 import "fs/error" take FileError, FileFailure;
 import "fs/path" take Path;
 import "fs/stat" take FileKind, FileStat, FileStatFromMap;
-import "runtime/fs" take path_encode, lstat, mkdir, rmdir, rename, directory_entries,
+import "runtime/fs" take path_encode, lstat, mkdir, mkdir_all, rmdir, rename, directory_entries,
     directory_remove_tree, path_decode, symlink, temporary_directory_create,
     temporary_directory_path, temporary_directory_close, temporary_file_create, temporary_file_path,
     file_state_close;
@@ -65,6 +65,21 @@ object Directory does DirectoryLocating {
     create() is void {
         try {
             mkdir(path_encode(origin.string()), 493);
+        }
+        catch failure is NativeFailure {
+            throw FileFailure(failure: failure, path: origin.string()).error();
+        }
+    }
+
+    // With parents: true, every missing directory on the way is made too, and
+    // a directory that is already there is no failure (as `mkdir -p`).
+    create(parents is bool) is void {
+        if !parents {
+            self.create();
+            return;
+        }
+        try {
+            mkdir_all(path_encode(origin.string()), 493);
         }
         catch failure is NativeFailure {
             throw FileFailure(failure: failure, path: origin.string()).error();
@@ -323,6 +338,36 @@ test "a directory is created, found, moved and removed one level at a time" {
     temporary_directory_close(scratch);
 }
 
+test "parents: true makes every missing directory and accepts an existing one" {
+    let scratch = temporary_directory_create(path_encode("."), "fs-directory-test-");
+    let root = Path(path_decode(temporary_directory_path(scratch)));
+    let deep = Directory(path: root.child("a").child("b").child("c"));
+    deep.create(parents: true);
+    test.ok(deep.existence());
+    test.ok(Directory(path: root.child("a").child("b")).existence());
+    deep.create(parents: true);
+    Directory(path: root.child("a")).create(parents: true);
+    test.ok(try {
+        Directory(path: root.child("x").child("y")).create(parents: false);
+        false;
+    }
+    catch FileError.not_found(failed) {
+        failed == root.child("x").child("y").string();
+    });
+    let file = temporary_file_create(path_encode(root.string()), "plain-");
+    let blocked = Path(path_decode(temporary_file_path(file)));
+    test.ok(try {
+        Directory(path: blocked.child("below")).create(parents: true);
+        false;
+    }
+    catch failure is FileError {
+        true;
+    });
+    file_state_close(file);
+    DirectoryTree(Directory(path: root.child("a"))).remove();
+    temporary_directory_close(scratch);
+}
+
 test "entries come sorted by name, one level only; a file is not a directory" {
     let scratch = temporary_directory_create(path_encode("."), "fs-directory-test-");
     let root = Path(path_decode(temporary_directory_path(scratch)));
@@ -335,7 +380,15 @@ test "entries come sorted by name, one level only; a file is not a directory" {
     let listed is @string = DirectoryEntries(origin: Directory(path: root)).map() -> entry {
         entry.path().string();
     };
-    test.is(listed, [root.child("a").string(), root.child("b").string(), root.child("c").string(), file_path.string()]);
+    test.is(
+        listed,
+        [
+            root.child("a").string(),
+            root.child("b").string(),
+            root.child("c").string(),
+            file_path.string()
+        ]
+    );
     let kinds is @FileKind = DirectoryEntries(origin: Directory(path: root)).map() -> entry {
         entry.kind();
     };

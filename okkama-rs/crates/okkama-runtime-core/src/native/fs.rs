@@ -1436,6 +1436,18 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
                 .map_err(|error| host_error(native, &error, "Cannot create directory"))?;
             ok
         }
+        "mkdir_all" => {
+            let path = path(native, &args[0])?;
+            let mode = valid_mode(int(&args[1])?).ok_or_else(|| fail(native, "invalid_input", "Invalid directory mode"))?;
+            use std::os::unix::fs::DirBuilderExt;
+            // Every missing parent too; an existing directory is no failure (#125).
+            std::fs::DirBuilder::new()
+                .recursive(true)
+                .mode(mode)
+                .create(host::path(&path))
+                .map_err(|error| host_error(native, &error, "Cannot create directory"))?;
+            ok
+        }
         "rmdir" => {
             let path = host::path(&path(native, &args[0])?);
             if !directory(&path) && exists(&path) {

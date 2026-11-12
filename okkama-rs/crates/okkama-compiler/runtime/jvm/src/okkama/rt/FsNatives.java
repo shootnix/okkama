@@ -803,6 +803,20 @@ public final class FsNatives {
         return true;
     }
 
+    /** Каталог и все недостающие родители; готовый каталог — не отказ (#125). */
+    public static boolean runtime_fs__mkdir_all(List<?> pathValue, BigInteger mode) {
+        String path = path(pathValue, "mkdir_all", 2);
+        if (!validMode(mode)) {
+            throw fail("invalid_input", "mkdir_all", 2, "Invalid directory mode");
+        }
+        try {
+            Files.createDirectories(Host.path(path), PosixFilePermissions.asFileAttribute(permissions(mode.intValue())));
+        } catch (IOException error) {
+            throw host(error, "mkdir_all", 2, "Cannot create directory");
+        }
+        return true;
+    }
+
     private static boolean directory(Path path) {
         return Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS);
     }

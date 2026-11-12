@@ -35,6 +35,7 @@ pub(crate) fn handles(n: Native) -> bool {
             | FsCwd
             | FsChdir
             | FsMkdir
+            | FsMkdirAll
             | FsRmdir
             | FsUnlink
             | FsRename
@@ -113,7 +114,7 @@ impl Heap {
                     .map_err(|e| host(n, e.into()))?;
                 okkama_runtime_core::host::set_cwd(real);
             }
-            FsMkdir | FsChmod => {
+            FsMkdir | FsMkdirAll | FsChmod => {
                 let mode = self
                     .integer(a[1])?
                     .to_i64()
@@ -122,8 +123,10 @@ impl Heap {
                     as u32;
                 #[cfg(unix)]
                 {
-                    if n == FsMkdir {
-                        fs::DirBuilder::new().mode(mode).create(path)
+                    if n == FsMkdir || n == FsMkdirAll {
+                        // mkdir_all makes every missing parent; an existing
+                        // directory is then no failure (#125).
+                        fs::DirBuilder::new().recursive(n == FsMkdirAll).mode(mode).create(path)
                     } else {
                         fs::set_permissions(path, fs::Permissions::from_mode(mode))
                     }

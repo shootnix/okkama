@@ -137,6 +137,10 @@ native lstat(path is @byte) is %string:int;
 
 native mkdir(path is @byte, mode is int) is bool;
 
+// mkdir with every missing parent; an existing directory is no failure, as
+// `mkdir -p` (#125).
+native mkdir_all(path is @byte, mode is int) is bool;
+
 native rmdir(path is @byte) is bool;
 
 native unlink(path is @byte) is bool;
