@@ -1,10 +1,11 @@
 module csv/stream v1.0.0;
 
-import "io/stream" take Reading, Closing;
+import "io/stream" take Reading, AsyncReading, Closing;
 import "io/decorators" take InvalidReading;
 import "encoding/utf" take InvalidUtf8, Utf8Encoded;
 import "io/buffer" take ByteBuffer;
-import "csv" take InvalidCsv, InvalidCsvLimits, CsvLimitExceeded, CsvLimit;
+import "async/atomic" take Atomic;
+import "csv" take InvalidCsv, InvalidCsvLimits, CsvLimitExceeded, CsvLimit, AsyncCsvOrigin;
 import "csv/input" take CsvByteLimitExceeded;
 import "runtime/csv_state" take CsvState, csv_state_create, csv_state_feed, csv_state_advance,
     csv_state_row, csv_state_offset, csv_state_request, csv_state_closed, csv_state_close;
@@ -15,19 +16,62 @@ import "runtime/csv_state" take CsvState, csv_state_create, csv_state_feed, csv_
 // be serialized by the caller. EOF, syntax/UTF8/limit failure are stable until
 // close; source failures propagate and the stream is closed (cannot resume).
 // Earlier rows can escape before later corruption; validate EOF before commit.
+//
+// An AsyncReading, an upload or a socket, is read with for await (#204):
+//
+//     for await CsvStream(origin: upload) -> row {
+//         row[0];
+//     }
+//
+// next() answers none at the end of the rows; row() on such a stream is
+// AsyncCsvOrigin.walked.
 object CsvStream does Closing {
     has origin is Reading;
+    has upstream is Maybe<AsyncReading>;
     has state is CsvState;
 
     CsvStream(origin is Reading) {
         self.origin = origin;
+        upstream = Maybe<AsyncReading>.none;
         state = csv_state_create(4194304, 1048576, 65536, 10000, 1024);
     }
 
     // Rows of CSV text, read one at a time: CsvStream(text: "id,total\r\n1,10\r\n").
     CsvStream(text is string) {
         origin = ByteBuffer(text).reading();
+        upstream = Maybe<AsyncReading>.none;
         state = csv_state_create(4194304, 1048576, 65536, 10000, 1024);
+    }
+
+    CsvStream(origin is AsyncReading) {
+        self.origin = ByteBuffer("").reading();
+        upstream = Maybe.some(origin);
+        state = csv_state_create(4194304, 1048576, 65536, 10000, 1024);
+    }
+
+    CsvStream(
+        origin is AsyncReading,
+        maximum_bytes is int,
+        maximum_input is int,
+        maximum_field is int,
+        maximum_rows is int,
+        maximum_columns is int
+    ) {
+        confirm maximum_bytes >= 0
+            && maximum_input >= 0
+            && maximum_field >= 0
+            && maximum_rows >= 0
+            && maximum_columns >= 0
+            else throw InvalidCsvLimits.invalid;
+        self.origin = ByteBuffer("").reading();
+        upstream = Maybe.some(origin);
+        state = csv_state_create(
+            maximum_bytes,
+            maximum_input,
+            maximum_field,
+            maximum_rows,
+            maximum_columns
+        );
     }
 
     CsvStream(
@@ -45,6 +89,7 @@ object CsvStream does Closing {
             && maximum_columns >= 0
             else throw InvalidCsvLimits.invalid;
         self.origin = origin;
+        upstream = Maybe<AsyncReading>.none;
         state = csv_state_create(
             maximum_bytes,
             maximum_input,
@@ -55,6 +100,7 @@ object CsvStream does Closing {
     }
 
     row() is @string {
+        confirm !self.asynchronous() else throw AsyncCsvOrigin.walked;
         loop {
             let status = csv_state_advance(state);
             if status == "row" {
@@ -63,30 +109,7 @@ object CsvStream does Closing {
             if status == "eof" {
                 throw EndOfCsv.reached;
             }
-            if status == "closed" {
-                throw ClosedCsvStream.closed;
-            }
-            if status == "syntax" {
-                throw InvalidCsv.at(csv_state_offset(state));
-            }
-            if status == "utf8" {
-                throw InvalidUtf8.at(csv_state_offset(state));
-            }
-            if status == "bytes" {
-                throw CsvByteLimitExceeded.exceeded;
-            }
-            if status == "input" {
-                throw CsvLimitExceeded.kind(CsvLimit.input);
-            }
-            if status == "field" {
-                throw CsvLimitExceeded.kind(CsvLimit.field);
-            }
-            if status == "rows" {
-                throw CsvLimitExceeded.kind(CsvLimit.rows);
-            }
-            if status == "columns" {
-                throw CsvLimitExceeded.kind(CsvLimit.columns);
-            }
+            self.check(status);
             let requested = csv_state_request(state);
             let chunk = try {
                 let bytes = origin.bytes(requested);
@@ -101,6 +124,85 @@ object CsvStream does Closing {
                 throw failure;
             };
             csv_state_feed(state, chunk);
+        }
+    }
+
+    // The next row, or none after the last; for await walks the stream with
+    // it, whether its origin is a Reading or an AsyncReading.
+    async next() is Maybe<@string> {
+        loop {
+            let status = csv_state_advance(state);
+            if status == "row" {
+                return Maybe.some(csv_state_row(state));
+            }
+            if status == "eof" {
+                return Maybe<@string>.none;
+            }
+            self.check(status);
+            let requested = csv_state_request(state);
+            let chunk = try {
+                let bytes = await self.fetched(requested);
+                confirm bytes.size() <= requested
+                    else throw InvalidReading.because(
+                        "CSV origin returned more bytes than requested"
+                    );
+                bytes;
+            }
+            catch failure is Error {
+                self.close();
+                throw failure;
+            };
+            csv_state_feed(state, chunk);
+        }
+    }
+
+    hidden asynchronous() is bool {
+        match upstream {
+            case Maybe.some(_source) {
+                true;
+            }
+            else {
+                false;
+            }
+        }
+    }
+
+    hidden async fetched(requested is int) is @byte {
+        match upstream {
+            case Maybe.some(source) {
+                await source.bytes(requested);
+            }
+            else {
+                origin.bytes(requested);
+            }
+        }
+    }
+
+    // A status that ends reading throws; one that asks for input returns.
+    hidden check(status is string) is void {
+        if status == "closed" {
+            throw ClosedCsvStream.closed;
+        }
+        if status == "syntax" {
+            throw InvalidCsv.at(csv_state_offset(state));
+        }
+        if status == "utf8" {
+            throw InvalidUtf8.at(csv_state_offset(state));
+        }
+        if status == "bytes" {
+            throw CsvByteLimitExceeded.exceeded;
+        }
+        if status == "input" {
+            throw CsvLimitExceeded.kind(CsvLimit.input);
+        }
+        if status == "field" {
+            throw CsvLimitExceeded.kind(CsvLimit.field);
+        }
+        if status == "rows" {
+            throw CsvLimitExceeded.kind(CsvLimit.rows);
+        }
+        if status == "columns" {
+            throw CsvLimitExceeded.kind(CsvLimit.columns);
         }
     }
 
@@ -188,4 +290,64 @@ test "a stream reads rows of text" {
     test.throws(EndOfCsv) {
         stream.row();
     };
+}
+
+// An upload in pieces of at most seven bytes, never more than asked for.
+hidden object CsvTestUpload does AsyncReading {
+    has content is @byte;
+    has position is Atomic<int>;
+
+    CsvTestUpload(text is string) {
+        content = Utf8Encoded(text).bytes();
+        position = Atomic(0);
+    }
+
+    async bytes(limit is int) is @byte {
+        let at = position.value();
+        let wanted = if limit < 7 {
+            limit;
+        }
+        else {
+            7;
+        };
+        let end = if at + wanted < content.size() {
+            at + wanted;
+        }
+        else {
+            content.size();
+        };
+        position.replace(end);
+        content.slice(at, end);
+    }
+}
+
+async test "rows stream from an upload with for await" {
+    let seen = Atomic("");
+    for await CsvStream(origin: CsvTestUpload("a,b\r\n\"x,y\",\"say \"\"hi\"\"\"\r\nя,😀\r\n")) -> row {
+        seen.replace(seen.value() + row.join("|") + ";");
+    }
+    test.is(seen.value(), "a|b;x,y|say \"hi\";я|😀;");
+    let refused = try {
+        CsvStream(origin: CsvTestUpload("a\r\n")).row();
+        "read";
+    }
+    catch error is AsyncCsvOrigin {
+        "refused";
+    };
+    test.is(refused, "refused");
+    let synchronous = Atomic(0);
+    for await CsvStream(text: "1\r\n2\r\n") -> row {
+        synchronous.replace(synchronous.value() + row.size());
+    }
+    test.is(synchronous.value(), 2);
+    let broken = try {
+        for await CsvStream(origin: CsvTestUpload("a,\"b\r\n")) -> row {
+            row.size();
+        }
+        "read";
+    }
+    catch InvalidCsv.at(_offset) {
+        "invalid";
+    };
+    test.is(broken, "invalid");
 }
