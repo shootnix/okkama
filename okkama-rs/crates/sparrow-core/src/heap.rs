@@ -88,6 +88,9 @@ pub const CLASSES: [usize; 18] = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 
 /// The words of a reclaimed cell under collector stress.
 const POISON: u64 = 0xdead_dead_dead_dead;
 /// Collections start once this much has been allocated, at least.
+/// The ephemeron pass of a collection (#503): given which objects are marked,
+/// it visits what marked keys keep alive.
+pub type Ephemerons<'a> = dyn FnMut(&dyn Fn(Word) -> bool, &mut dyn FnMut(Word, Repr)) + 'a;
 const COLLECTION_FLOOR: usize = 1 << 20;
 /// Spare builder payloads kept at most, each with a buffer of at most
 /// [`SPARE_CAPACITY`] words.
@@ -191,7 +194,9 @@ pub struct Heap {
     threshold: usize,
     /// Payloads of finished array builders, for the next builder (#503):
     /// a `map` or `filter` then allocates no Rust memory, releases nothing
-    /// in the sweep and brings no collection closer.
+    /// in the sweep and brings no collection closer. Kept double-boxed: the
+    /// outer box is the thin pointer a PAYLOAD cell holds, reused as it is.
+    #[allow(clippy::vec_box)]
     spare: Vec<Box<Box<dyn Payload>>>,
     live: usize,
     external_live: usize,
@@ -1197,7 +1202,7 @@ impl Heap {
     fn collect_inner(
         &mut self,
         roots: impl FnOnce(&mut dyn FnMut(Word, Repr)),
-        ephemerons: &mut dyn FnMut(&dyn Fn(Word) -> bool, &mut dyn FnMut(Word, Repr)),
+        ephemerons: &mut Ephemerons<'_>,
     ) {
         crate::maps::begin_pass();
         let marking = self.allocations.is_some().then(std::time::Instant::now);
