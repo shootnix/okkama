@@ -11,6 +11,8 @@ import "encoding/utf" take Utf8Decoded, Utf8Encoded, Utf16Decoded, Utf32Decoded,
 import "encoding/binary" take IntegerBytes, Binary, Signedness, FloatWidth;
 import "encoding/base64" take Base64Decoded, InvalidBase64;
 import "time/rfc3339" take Rfc3339;
+import "runtime/xml" take XmlEventsState, xml_events, xml_events_error, xml_events_offset,
+    xml_event_count, xml_event_kind, xml_event_name, xml_event_text, xml_event_offset;
 import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
 
@@ -78,8 +80,9 @@ object ParsedPlist {
         catch InvalidUtf8.at(offset) {
             throw InvalidPlist.located(base + offset, "invalid UTF-8");
         };
-        PlistXmlDocument(
-            source: PlistXmlSource(source, base),
+        PlistXmlEvents(
+            source: source,
+            base: base,
             maximum_nodes: maximum_nodes,
             maximum_depth: maximum_depth
         ).root();
@@ -529,89 +532,84 @@ object PlistXmlToken {
 // Internal XML grammar. Every element consumes one bounded subtree; dictionaries
 // read key/value pairs explicitly. Scalar text joins CDATA/comments without
 // accepting nested elements. No partial result escapes a failed parse.
-hidden object PlistXmlDocument {
-    has source is PlistXmlSource;
-    has maximum_nodes, maximum_depth is int;
+// The XML form, read through the tokenizer of xml/parse (#144): it checks
+// that the document is well formed, and this checks the plist structure.
+// Diagnostics are byte offsets, as for the binary form.
+hidden object PlistXmlEvents {
+    has source is string;
+    has base is int;
+    has state is XmlEventsState;
+    has count, maximum_nodes, maximum_depth is int;
 
-    PlistXmlDocument(source is PlistXmlSource, maximum_nodes is int, maximum_depth is int) {
+    PlistXmlEvents(source is string, base is int, maximum_nodes is int, maximum_depth is int) {
         self.source = source;
+        self.base = base;
         self.maximum_nodes = maximum_nodes;
         self.maximum_depth = maximum_depth;
+        let events = xml_events(source, maximum_depth + 2, (maximum_nodes + 2) * 8 + 16);
+        state = events;
+        count = xml_event_count(events);
     }
 
     root() is PlistValue {
-        source.checked(source.text(), 0);
-        let cursor = PlistParsePosition(0);
-        let first = source.token(0);
-        if first.kind() == "declaration" {
-            cursor = cursor.following(first.end(), 0);
+        let error = xml_events_error(state);
+        // The tokenizer's bounds are the plist's node and depth budgets.
+        let reason = if error.starts_with("elements nested deeper") || error.starts_with("more than") {
+            "node or depth budget exceeded";
         }
-        let prolog = source.significant(cursor.at());
-        if prolog.kind() == "doctype" {
-            cursor = cursor.following(prolog.end(), 0);
-        }
-        let root = source.significant(cursor.at());
-        confirm root.kind() == "open" && root.text() == "plist"
-            else throw source.failure(root.start(), "expected plist wrapper");
-        let value = self.element(root.end(), 1, maximum_nodes);
-        let close = source.significant(value.end());
-        confirm close.kind() == "close" && close.text() == "plist"
-            else throw source.failure(close.start(), "expected plist closing tag");
-        let end = source.significant(close.end());
-        confirm end.kind() == "eof" else throw source.failure(end.start(), "trailing XML content");
+        else {
+            error;
+        };
+        confirm error == "" else throw self.located(xml_events_offset(state), reason);
+        let wrapper = self.significant(0);
+        confirm wrapper < count
+            && xml_event_kind(state, wrapper) == 0
+            && xml_event_name(state, wrapper) == "plist"
+            else throw self.failure(wrapper, "expected plist wrapper");
+        let value = self.element(wrapper + 1, 1, maximum_nodes);
+        let close = self.significant(value.end());
+        confirm close < count && xml_event_kind(state, close) == 1
+            else throw self.failure(close, "expected plist closing tag");
         value.plist();
     }
 
     element(at is int, depth is int, remaining is int) is PlistParsedNode {
-        let token = source.significant(at);
+        let token = self.significant(at);
         confirm depth <= maximum_depth && remaining > 0
-            else throw source.failure(token.start(), "node or depth budget exceeded");
-        confirm token.kind() == "open" || token.kind() == "empty"
-            else throw source.failure(token.start(), "expected plist value");
-        let name = token.text();
+            else throw self.failure(token, "node or depth budget exceeded");
+        confirm token < count && xml_event_kind(state, token) == 0
+            else throw self.failure(token, "expected plist value");
+        let name = xml_event_name(state, token);
         if name == "array" || name == "dict" {
-            let cursor = PlistParsePosition(token.end());
+            let cursor = PlistParsePosition(token + 1);
             let values is PlistParsedItems<PlistValue> = PlistParsedItems();
             let members is PlistParsedItems<PlistMember> = PlistParsedItems();
-            if token.kind() != "empty" {
-                loop {
-                    let item = source.significant(cursor.at());
-                    if item.kind() == "close" {
-                        confirm item.text() == name
-                            else throw source.failure(item.start(), "mismatched closing tag");
-                        cursor = cursor.following(item.end(), 0);
-                        last;
+            loop {
+                let item = self.significant(cursor.at());
+                if item < count && xml_event_kind(state, item) == 1 {
+                    cursor = cursor.following(item + 1, 0);
+                    last;
+                }
+                if name == "dict" {
+                    confirm item < count
+                        && xml_event_kind(state, item) == 0
+                        && xml_event_name(state, item) == "key"
+                        else throw self.failure(item, "expected dictionary key");
+                    confirm remaining - cursor.used() > 1 && depth < maximum_depth
+                        else throw self.failure(item, "key budget exceeded");
+                    let key = self.content(item);
+                    for members.reversed() -> member {
+                        confirm member.name() != key.text()
+                            else throw self.failure(item, "duplicate dictionary key");
                     }
-                    if name == "dict" {
-                        confirm (item.kind() == "open" || item.kind() == "empty")
-                            && item.text() == "key"
-                            else throw source.failure(item.start(), "expected dictionary key");
-                        confirm remaining - cursor.used() > 1 && depth < maximum_depth
-                            else throw source.failure(item.start(), "key budget exceeded");
-                        let key = self.content(item);
-                        for members.reversed() -> member {
-                            confirm member.name() != key.text()
-                                else throw source.failure(item.start(), "duplicate dictionary key");
-                        }
-                        let child = self.element(
-                            key.end(),
-                            depth + 1,
-                            remaining - cursor.used() - 2
-                        );
-                        members = members.following(
-                            PlistMember(name: key.text(), value: child.plist())
-                        );
-                        cursor = cursor.following(child.end(), child.nodes() + 1);
-                    }
-                    else {
-                        let child = self.element(
-                            cursor.at(),
-                            depth + 1,
-                            remaining - cursor.used() - 1
-                        );
-                        values = values.following(child.plist());
-                        cursor = cursor.following(child.end(), child.nodes());
-                    }
+                    let child = self.element(key.end(), depth + 1, remaining - cursor.used() - 2);
+                    members = members.following(PlistMember(name: key.text(), value: child.plist()));
+                    cursor = cursor.following(child.end(), child.nodes() + 1);
+                }
+                else {
+                    let child = self.element(cursor.at(), depth + 1, remaining - cursor.used() - 1);
+                    values = values.following(child.plist());
+                    cursor = cursor.following(child.end(), child.nodes());
                 }
             }
             if name == "dict" {
@@ -643,7 +641,7 @@ hidden object PlistXmlDocument {
             || name == "date"
             || name == "true"
             || name == "false"
-            else throw source.failure(token.start(), "unknown plist element");
+            else throw self.failure(token, "unknown plist element");
         let content = self.content(token);
         let text = content.text();
         let scalar = PlistXmlText(text).stripped();
@@ -653,15 +651,14 @@ hidden object PlistXmlDocument {
                     PlistString(text);
                 }
                 case "true", "false" {
-                    confirm text == ""
-                        else throw source.failure(token.start(), "boolean must be empty");
+                    confirm text == "" else throw self.failure(token, "boolean must be empty");
                     PlistBoolean(name == "true");
                 }
                 case "integer" {
                     confirm scalar.length() <= 4096
-                        else throw source.failure(token.start(), "numeric spelling limit exceeded");
+                        else throw self.failure(token, "numeric spelling limit exceeded");
                     confirm scalar.length() < 2 || scalar.slice(0, 2) != "+-"
-                        else throw source.failure(token.start(), "invalid integer sign");
+                        else throw self.failure(token, "invalid integer sign");
                     PlistInteger(BigInt(if scalar.length() > 0 && scalar.slice(0, 1) == "+" {
                         scalar.slice(1, scalar.length());
                     }
@@ -685,60 +682,95 @@ hidden object PlistXmlDocument {
                 case "date" {
                     confirm scalar.length() >= 20
                         && scalar.slice(scalar.length() - 1, scalar.length()) == "Z"
-                        else throw source.failure(token.start(), "UTC date required");
+                        else throw self.failure(token, "UTC date required");
                     PlistDate(Rfc3339(scalar).instant());
                 }
                 else {
-                    throw source.failure(token.start(), "unknown plist scalar");
+                    throw self.failure(token, "unknown plist scalar");
                 }
             }
         }
+        catch InvalidPlist.located(_offset, reason) {
+            throw self.failure(token, reason);
+        }
         catch error is Error {
-            throw source.failure(token.start(), error.text());
+            throw self.failure(token, error.text());
         };
         PlistParsedNode(value: value, end: content.end(), nodes: 1);
     }
 
-    content(open is PlistXmlToken) is PlistXmlToken {
-        if open.kind() == "empty" {
-            return PlistXmlToken(kind: "text", text: "", start: open.end(), end: open.end());
-        }
-        let cursor = PlistParsePosition(open.end());
+    // The text inside a scalar element, and the event after its end.
+    content(open is int) is PlistXmlContent {
+        let cursor = PlistParsePosition(open + 1);
         let pieces is PlistParsedItems<string> = PlistParsedItems();
         loop {
-            let token = source.token(cursor.at());
-            if token.kind() == "close" {
-                confirm token.text() == open.text()
-                    else throw source.failure(token.start(), "mismatched scalar closing tag");
+            let at = cursor.at();
+            confirm at < count else throw self.failure(at, "unterminated scalar");
+            let kind = xml_event_kind(state, at);
+            if kind == 1 {
                 let reversed is @string = pieces.reversed();
                 let ordered is @string = (0..reversed.size()).map() -> index {
                     reversed[reversed.size() - index - 1];
                 };
-                return PlistXmlToken(
-                    kind: "text",
-                    text: ordered.join(""),
-                    start: open.end(),
-                    end: token.end()
-                );
+                return PlistXmlContent(text: ordered.join(""), end: at + 1);
             }
-            confirm token.kind() == "text" || token.kind() == "cdata" || token.kind() == "skip"
-                else throw source.failure(token.start(), "invalid scalar content");
-            if token.kind() != "skip" {
-                let normalized = token.text().replace("\r\n", "\n").replace("\r", "\n");
-                if token.kind() == "text" {
-                    confirm token.text().split("]]>").size() == 1
-                        else throw source.failure(token.start(), "unexpected CDATA close");
-                    // Decode before normalizing literal line endings so references keep CR.
-                    let decoded = source.decoded(token.text(), token.start());
-                    // Literal CR is normalized in decoded() independently of references.
-                    pieces = pieces.following(decoded);
-                }
-                else {
-                    pieces = pieces.following(normalized);
-                }
+            confirm kind != 0 else throw self.failure(at, "invalid scalar content");
+            if kind == 2 {
+                pieces = pieces.following(xml_event_text(state, at));
             }
-            cursor = cursor.following(token.end(), 0);
+            cursor = cursor.following(at + 1, 0);
         }
+    }
+
+    // The next event at or after index that is not a comment, an instruction
+    // or whitespace; count when there is none.
+    hidden significant(index is int) is int {
+        for (index..count) -> at {
+            let kind = xml_event_kind(state, at);
+            let ignorable = kind == 3
+                || kind == 4
+                || (kind == 2 && PlistXmlText(xml_event_text(state, at)).stripped() == "");
+            if !ignorable {
+                confirm kind != 2 else throw self.failure(at, "unexpected text");
+                return at;
+            }
+        }
+        count;
+    }
+
+    failure(index is int, reason is string) is InvalidPlist {
+        self.located(
+            if index < count {
+                xml_event_offset(state, index);
+            }
+            else {
+                source.length();
+            },
+            reason
+        );
+    }
+
+    // A character offset in the source as a byte offset in the input.
+    hidden located(at is int, reason is string) is InvalidPlist {
+        InvalidPlist.located(base + Utf8Encoded(source.slice(0, at)).bytes().size(), reason);
+    }
+}
+
+hidden object PlistXmlContent {
+    has text is string;
+    has end is int;
+
+    PlistXmlContent(text is string, end is int) {
+        self.text = text;
+        self.end = end;
+    }
+
+    text() is string {
+        text;
+    }
+
+    end() is int {
+        end;
     }
 }
 
