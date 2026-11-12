@@ -1,37 +1,53 @@
 module config/value v1.0.0;
 
+// One setting read from a SettingReading, with its source.
+//
+//     let port = ScalarSetting(origin: settings, key: SettingKey("server", "port")).text();
+//     let host = ScalarSettingOr(origin: settings, key: SettingKey("server", "host"), fallback: "localhost").text();
+//
+// A scalar setting has exactly one value; NonScalarSetting says how many it
+// had.
+
 import "collections/sequence" take Sequencing;
 import "config/key" take SettingKey;
 import "config/source" take SettingReading, SettingEntry, SettingSource, SettingSourceKind;
 import "config/source" take Settings;
 
+// All the values of one setting.
 object Setting {
     has origin is SettingReading;
     has key is SettingKey;
 
+    // The setting key of origin.
     Setting(origin is SettingReading, key is SettingKey) {
         self.origin = origin;
         self.key = key;
     }
 
+    // Its values; MissingSetting when absent.
     values() is Sequencing<string> {
         origin.entry(key).values();
     }
 
+    // Where it came from.
     source() is SettingSource {
         origin.entry(key).source();
     }
 }
 
+// A setting with exactly one value.
 object ScalarSetting {
     has origin is SettingReading;
     has key is SettingKey;
 
+    // The setting key of origin.
     ScalarSetting(origin is SettingReading, key is SettingKey) {
         self.origin = origin;
         self.key = key;
     }
 
+    // Its one value; MissingSetting when absent, NonScalarSetting for more than
+    // one.
     text() is string {
         let values = origin.entry(key).values();
         confirm values.size() == 1
@@ -39,22 +55,26 @@ object ScalarSetting {
         values.first();
     }
 
+    // Where it came from.
     source() is SettingSource {
         origin.entry(key).source();
     }
 }
 
+// A setting with one value, or a fallback when it is absent.
 object ScalarSettingOr {
     has origin is SettingReading;
     has key is SettingKey;
     has fallback is string;
 
+    // The setting key of origin, else fallback.
     ScalarSettingOr(origin is SettingReading, key is SettingKey, fallback is string) {
         self.origin = origin;
         self.key = key;
         self.fallback = fallback;
     }
 
+    // Its value, or fallback.
     text() is string {
         if origin.membership(key) {
             ScalarSetting(origin: origin, key: key).text();
@@ -64,6 +84,7 @@ object ScalarSettingOr {
         }
     }
 
+    // Where it came from; the defaults source for the fallback.
     source() is SettingSource {
         if origin.membership(key) {
             origin.entry(key).source();
@@ -74,6 +95,7 @@ object ScalarSettingOr {
     }
 }
 
+// A setting had count values where one was wanted.
 enum NonScalarSetting is Error = (detailed(key is string, count is int));
 
 test "settings read one value, a list or a fallback, with their source" {

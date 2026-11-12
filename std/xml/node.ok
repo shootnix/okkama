@@ -1,11 +1,21 @@
 module xml/node v1.0.0;
 
+// XML trees: elements, text, comments and processing instructions.
+//
+//     let feed = ParsedXml(text).document().root();
+//     feed.attribute("version");
+//     for feed.children("item") -> item { item.text("title"); }
+//     XmlDocument(XmlElement(XmlName("note"), [XmlText("hi")])).xml();
+
 import "xml/name" take XmlName, XmlNCName, InvalidXml;
 import "xml/write" take EscapedXml, XmlCharacters;
 import "collections/sequence" take Sequencing;
 
+// A node of an XML tree.
 role XmlNode {
+    // The node as XML text.
     xml() is string;
+    // How deep it goes: 1 for a leaf.
     depth() is int;
     // The node as an element, none for text, comments and instructions.
     element() is Maybe<XmlElement>;
@@ -14,39 +24,48 @@ role XmlNode {
     characters() is string;
 }
 
+// Character data.
 object XmlText does XmlNode {
     has origin is string;
 
+    // The text.
     XmlText(value is string) {
         XmlCharacters(value);
         origin = value;
     }
 
+    // The text.
     text() is string {
         origin;
     }
 
+    // The node as XML text.
     xml() is string {
         once let escaped = EscapedXml(origin: origin, attribute: false).string();
         escaped;
     }
 
+    // How deep the node goes: 1 for a leaf.
     depth() is int {
         0;
     }
 
+    // The node as an element, or none for any other node.
     element() is Maybe<XmlElement> {
         Maybe<XmlElement>.none;
     }
 
+    // The character data the node holds: its text, or "" for markup.
     characters() is string {
         origin;
     }
 }
 
+// A comment.
 object XmlComment does XmlNode {
     has origin is string;
 
+    // The comment's text, without `--`.
     XmlComment(value is string) {
         XmlCharacters(value);
         confirm value.length() <= 65536
@@ -56,30 +75,37 @@ object XmlComment does XmlNode {
         origin = value;
     }
 
+    // The comment's text.
     text() is string {
         origin;
     }
 
+    // The node as XML text.
     xml() is string {
         "<!--" + origin + "-->";
     }
 
+    // How deep the node goes: 1 for a leaf.
     depth() is int {
         0;
     }
 
+    // The node as an element, or none for any other node.
     element() is Maybe<XmlElement> {
         Maybe<XmlElement>.none;
     }
 
+    // The character data the node holds: its text, or "" for markup.
     characters() is string {
         "";
     }
 }
 
+// A processing instruction `<?target data?>`.
 object XmlProcessingInstruction does XmlNode {
     has target, data is string;
 
+    // target with data.
     XmlProcessingInstruction(target is string, data is string) {
         XmlNCName(target);
         XmlCharacters(data);
@@ -91,14 +117,17 @@ object XmlProcessingInstruction does XmlNode {
         self.data = data;
     }
 
+    // Its target.
     target() is string {
         target;
     }
 
+    // Its data.
     data() is string {
         data;
     }
 
+    // The node as XML text.
     xml() is string {
         "<?" + target + (if data == "" {
             "";
@@ -108,23 +137,28 @@ object XmlProcessingInstruction does XmlNode {
         }) + "?>";
     }
 
+    // How deep the node goes: 1 for a leaf.
     depth() is int {
         0;
     }
 
+    // The node as an element, or none for any other node.
     element() is Maybe<XmlElement> {
         Maybe<XmlElement>.none;
     }
 
+    // The character data the node holds: its text, or "" for markup.
     characters() is string {
         "";
     }
 }
 
+// An attribute: a name and a value.
 object XmlAttribute {
     has name is XmlName;
     has value is string;
 
+    // name with value.
     XmlAttribute(name is XmlName, value is string) {
         confirm (name.namespace() == "" || name.prefix() != "")
             && !(name.namespace() == "" && name.local_name() == "xmlns")
@@ -134,14 +168,17 @@ object XmlAttribute {
         self.value = value;
     }
 
+    // Its name.
     name() is XmlName {
         name;
     }
 
+    // Its value.
     value() is string {
         value;
     }
 
+    // `name="value"`, escaped.
     xml() is string {
         once let pair = name.lexical() + "=\"" + EscapedXml(origin: value, attribute: true).string() + "\"";
         pair;
@@ -156,12 +193,14 @@ object XmlElement does XmlNode {
     has attributes is @XmlAttribute;
     has children is @XmlNode;
 
+    // An element with children and no attributes.
     XmlElement(name is XmlName, children is Sequencing<XmlNode>) {
         self.name = name;
         self.attributes = [];
         self.children = XmlChildren(source: children).values();
     }
 
+    // An element with attributes and children.
     XmlElement(
         name is XmlName,
         attributes is Sequencing<XmlAttribute>,
@@ -172,32 +211,39 @@ object XmlElement does XmlNode {
         self.children = XmlChildren(source: children).values();
     }
 
+    // Its name.
     name() is XmlName {
         name;
     }
 
+    // Its attributes.
     attributes() is Sequencing<XmlAttribute> {
         attributes;
     }
 
+    // Its child nodes.
     children() is Sequencing<XmlNode> {
         children;
     }
 
+    // The element as XML text.
     xml() is string {
         once let text = XmlElementContent(name: name, attributes: attributes, children: children).xml();
         text;
     }
 
+    // How deep it goes.
     depth() is int {
         once let levels = XmlElementContent(name: name, attributes: attributes, children: children).depth();
         levels;
     }
 
+    // This element.
     element() is Maybe<XmlElement> {
         Maybe.some(self);
     }
 
+    // "": an element is markup.
     characters() is string {
         "";
     }
@@ -408,17 +454,21 @@ hidden object XmlElementContent {
     }
 }
 
+// An XML document: one root element.
 object XmlDocument {
     has root is XmlElement;
 
+    // The document of root.
     XmlDocument(root is XmlElement) {
         self.root = root;
     }
 
+    // The root element.
     root() is XmlElement {
         root;
     }
 
+    // The document as XML text.
     xml() is string {
         once let text = XmlDeclared(root: root).xml();
         text;

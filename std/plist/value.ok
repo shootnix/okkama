@@ -39,140 +39,185 @@ import "async/atomic" take Atomic;
 // Contract: docs/std/plist-value-guide.md.
 // Run: okkama run -t std/plist/value.ok
 
+// Which of the plist kinds a value is.
 enum PlistKind = (boolean_value, integer_value, real_value, string_value, data_value, date_value, array_value, dictionary_value, uid_value);
 
+// A property-list value.
 role PlistValue {
+    // Which kind it is.
     kind() is PlistKind;
+    // Calls the writer's one callback for its kind.
     print(to is PlistWriting) is void;
 }
 
+// Something that takes plist values one kind at a time: writers and readers
+// implement it.
 role PlistWriting {
+    // A boolean.
     boolean(value is bool) is void;
+    // An integer.
     integer(value is BigInt) is void;
+    // A real.
     real(value is float) is void;
+    // A string.
     text(value is string) is void;
+    // Data.
     data(value is @byte) is void;
+    // A date.
     date(value is Instant) is void;
+    // An array's values.
     elements(values is Sequencing<PlistValue>) is void;
+    // A dictionary's members.
     members(values is Sequencing<PlistMember>) is void;
+    // A UID (binary plists only).
     uid(value is BigInt) is void;
 }
 
+// A plist boolean.
 object PlistBoolean does PlistValue {
     has origin is bool;
 
+    // true or false.
     PlistBoolean(value is bool) {
         origin = value;
     }
 
+    // PlistKind.boolean_value.
     kind() is PlistKind {
         PlistKind.boolean_value;
     }
 
+    // The value.
     bool() is bool {
         origin;
     }
 
+    // Calls the writer's boolean callback.
     print(to is PlistWriting) is void {
         to.boolean(origin);
     }
 }
 
+// A plist integer.
 object PlistInteger does PlistValue {
     has origin is BigInt;
 
+    // An integer of any size.
     PlistInteger(value is BigInt) {
         origin = value;
     }
 
+    // PlistKind.integer_value.
     kind() is PlistKind {
         PlistKind.integer_value;
     }
 
+    // The value.
     integer() is BigInt {
         origin;
     }
 
+    // Calls the writer's integer callback.
     print(to is PlistWriting) is void {
         to.integer(origin);
     }
 }
 
+// A plist real.
 object PlistReal does PlistValue {
     has origin is float;
 
+    // A finite float.
     PlistReal(value is float) {
         origin = value;
     }
 
+    // PlistKind.real_value.
     kind() is PlistKind {
         PlistKind.real_value;
     }
 
+    // The value.
     float() is float {
         origin;
     }
 
+    // Calls the writer's real callback.
     print(to is PlistWriting) is void {
         to.real(origin);
     }
 }
 
+// A plist string.
 object PlistString does PlistValue {
     has origin is string;
 
+    // A string.
     PlistString(value is string) {
         origin = value;
     }
 
+    // PlistKind.string_value.
     kind() is PlistKind {
         PlistKind.string_value;
     }
 
+    // The value.
     string() is string {
         origin;
     }
 
+    // Calls the writer's string callback.
     print(to is PlistWriting) is void {
         to.text(origin);
     }
 }
 
+// A plist data.
 object PlistData does PlistValue {
     has origin is @byte;
 
+    // Bytes.
     PlistData(value is @byte) {
         origin = value;
     }
 
+    // PlistKind.data_value.
     kind() is PlistKind {
         PlistKind.data_value;
     }
 
+    // The bytes.
     bytes() is @byte {
         origin;
     }
 
+    // Calls the writer's data callback.
     print(to is PlistWriting) is void {
         to.data(origin);
     }
 }
 
+// A plist date.
 object PlistDate does PlistValue {
     has origin is Instant;
 
+    // An instant.
     PlistDate(value is Instant) {
         origin = value;
     }
 
+    // PlistKind.date_value.
     kind() is PlistKind {
         PlistKind.date_value;
     }
 
+    // The instant.
     instant() is Instant {
         origin;
     }
 
+    // Calls the writer's date callback.
     print(to is PlistWriting) is void {
         to.date(origin);
     }
@@ -183,45 +228,55 @@ object PlistDate does PlistValue {
 object PlistUid does PlistValue {
     has origin is BigInt;
 
+    // A UID; it must not be negative.
     PlistUid(value is BigInt) {
         confirm value.sign() >= 0 else throw InvalidPlistUid.invalid;
         origin = value;
     }
 
+    // PlistKind.uid_value.
     kind() is PlistKind {
         PlistKind.uid_value;
     }
 
+    // The UID.
     number() is BigInt {
         origin;
     }
 
+    // Calls the writer's uid callback.
     print(to is PlistWriting) is void {
         to.uid(origin);
     }
 }
 
+// A dictionary member: a name and a value.
 object PlistMember {
     has key is string;
     has origin is PlistValue;
 
+    // name holding value.
     PlistMember(name is string, value is PlistValue) {
         key = name;
         origin = value;
     }
 
+    // Its name.
     name() is string {
         key;
     }
 
+    // Its value.
     value() is PlistValue {
         origin;
     }
 }
 
+// An array of plist values.
 object PlistArray does PlistValue {
     has origin is @PlistValue;
 
+    // The values, at most 1024.
     PlistArray(values is Sequencing<PlistValue>) {
         origin = PlistArraySnapshot(source: values, maximum: 1024).items();
     }
@@ -232,18 +287,22 @@ object PlistArray does PlistValue {
         origin = PlistArraySnapshot(source: listed, maximum: 1024).items();
     }
 
+    // The values, at most maximum_items.
     PlistArray(values is Sequencing<PlistValue>, maximum_items is int) {
         origin = PlistArraySnapshot(source: values, maximum: maximum_items).items();
     }
 
+    // PlistKind.array_value.
     kind() is PlistKind {
         PlistKind.array_value;
     }
 
+    // Its values.
     values() is Sequencing<PlistValue> {
         origin;
     }
 
+    // Calls the writer's elements callback.
     print(to is PlistWriting) is void {
         to.elements(origin);
     }
@@ -266,6 +325,7 @@ object PlistDictionary does PlistValue {
     has origin is @PlistMember;
     has positions is %string:int;
 
+    // The members, at most 1024; a repeated name is DuplicatePlistMember.
     PlistDictionary(members is Sequencing<PlistMember>) {
         let snapshot = PlistDictionarySnapshot(source: members, maximum: 1024);
         origin = snapshot.items();
@@ -280,54 +340,66 @@ object PlistDictionary does PlistValue {
         positions = snapshot.positions();
     }
 
+    // The members, at most maximum_items.
     PlistDictionary(members is Sequencing<PlistMember>, maximum_items is int) {
         let snapshot = PlistDictionarySnapshot(source: members, maximum: maximum_items);
         origin = snapshot.items();
         positions = snapshot.positions();
     }
 
+    // PlistKind.dictionary_value.
     kind() is PlistKind {
         PlistKind.dictionary_value;
     }
 
+    // Its members, in order.
     members() is Sequencing<PlistMember> {
         origin;
     }
 
+    // Whether it has a member of that name.
     membership(name is string) is bool {
         positions.has(name);
     }
 
+    // The member's value; MissingPlistMember when there is none.
     value(name is string) is PlistValue {
         confirm positions.has(name) else throw MissingPlistMember.name(name);
         let index = positions[name];
         origin[index].value();
     }
 
+    // Calls the writer's members callback.
     print(to is PlistWriting) is void {
         to.members(origin);
     }
 
+    // The member as a string; PlistKindMismatch for another kind.
     text(name is string) is string {
         PlistRead(name: name, value: self.value(name)).text();
     }
 
+    // The member as an int.
     int(name is string) is int {
         PlistRead(name: name, value: self.value(name)).int();
     }
 
+    // The member as a float.
     float(name is string) is float {
         PlistRead(name: name, value: self.value(name)).float();
     }
 
+    // The member as true or false.
     boolean(name is string) is bool {
         PlistRead(name: name, value: self.value(name)).boolean();
     }
 
+    // The member as bytes.
     data(name is string) is @byte {
         PlistRead(name: name, value: self.value(name)).data();
     }
 
+    // The member as an Instant.
     date(name is string) is Instant {
         PlistRead(name: name, value: self.value(name)).date();
     }
@@ -342,10 +414,12 @@ object PlistDictionary does PlistValue {
         PlistRead(name: name, value: self.value(name)).dictionaries();
     }
 
+    // The member's strings.
     texts(name is string) is @string {
         PlistRead(name: name, value: self.value(name)).texts();
     }
 
+    // The member's ints.
     ints(name is string) is @int {
         PlistRead(name: name, value: self.value(name)).ints();
     }
@@ -363,11 +437,13 @@ object PlistMaybeReader {
     has dictionary is PlistDictionary;
     has name is string;
 
+    // Made by PlistDictionary.maybe(name); not constructed directly.
     PlistMaybeReader(dictionary is PlistDictionary, name is string) {
         self.dictionary = dictionary;
         self.name = name;
     }
 
+    // The member as a string, or none.
     text() is Maybe<string> {
         if dictionary.membership(name) {
             return Maybe.some(dictionary.text(name));
@@ -375,6 +451,7 @@ object PlistMaybeReader {
         Maybe<string>.none;
     }
 
+    // The member as an int, or none.
     int() is Maybe<int> {
         if dictionary.membership(name) {
             return Maybe.some(dictionary.int(name));
@@ -382,6 +459,7 @@ object PlistMaybeReader {
         Maybe<int>.none;
     }
 
+    // The member as a float, or none.
     float() is Maybe<float> {
         if dictionary.membership(name) {
             return Maybe.some(dictionary.float(name));
@@ -389,6 +467,7 @@ object PlistMaybeReader {
         Maybe<float>.none;
     }
 
+    // The member as true or false, or none.
     boolean() is Maybe<bool> {
         if dictionary.membership(name) {
             return Maybe.some(dictionary.boolean(name));
@@ -396,6 +475,7 @@ object PlistMaybeReader {
         Maybe<bool>.none;
     }
 
+    // The member as bytes, or none.
     data() is Maybe<@byte> {
         if dictionary.membership(name) {
             return Maybe.some(dictionary.data(name));
@@ -403,6 +483,7 @@ object PlistMaybeReader {
         Maybe<@byte>.none;
     }
 
+    // The member as an Instant, or none.
     date() is Maybe<Instant> {
         if dictionary.membership(name) {
             return Maybe.some(dictionary.date(name));
@@ -410,6 +491,7 @@ object PlistMaybeReader {
         Maybe<Instant>.none;
     }
 
+    // The member as a dictionary, or none.
     get() is Maybe<PlistDictionary> {
         if dictionary.membership(name) {
             return Maybe.some(dictionary.get(name));
@@ -417,6 +499,7 @@ object PlistMaybeReader {
         Maybe<PlistDictionary>.none;
     }
 
+    // The member's strings, or none.
     texts() is Maybe<@string> {
         if dictionary.membership(name) {
             return Maybe.some(dictionary.texts(name));
@@ -653,16 +736,22 @@ hidden object PlistDictionarySnapshot {
     }
 }
 
+// A negative UID.
 enum InvalidPlistUid is Error = (invalid);
 
+// No member has that name.
 enum MissingPlistMember is Error = (name(name is string));
 
+// Two members with one name.
 enum DuplicatePlistMember is Error = (name(name is string));
 
+// A negative limit.
 enum InvalidPlistContainerLimit is Error = (invalid);
 
+// A negative size.
 enum InvalidPlistContainerSize is Error = (invalid);
 
+// More items than the limit.
 enum PlistContainerLimitExceeded is Error = (exceeded);
 
 test "plist scalar payloads keep their own nominal kinds" {

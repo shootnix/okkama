@@ -1,8 +1,17 @@
 module mime/part v1.0.0;
 
-// Bodies expose decoded bytes. Parts apply transfer encoding only at rendering.
-// Metadata validation precedes body observation; custom bodies are borrowed.
-// Parsed bodies are immutable snapshots. See docs/std/mime-part.md.
+// MIME messages and parts (RFC 2045, RFC 2046): bodies, multipart bodies,
+// parsing and writing.
+//
+//     let part = ParsedMime(message_bytes).part();
+//     let content = MimeContent(part);
+//     content.type();                          // MediaType
+//     match part.body() { … }                  // a TextBody, BinaryBody or MultipartBody
+//
+//     let mixed = MultipartBody("mixed", boundary, [text_part, attachment]);
+//
+// Bodies hold decoded bytes; the Content-Transfer-Encoding is applied when the
+// part is written and undone when it is read.
 
 import "mime/media_type" take MediaType, MimeToken, MimePosition, MimeItems, InvalidMediaType;
 import "mime/disposition" take ContentDisposition, InvalidContentDisposition,
@@ -24,32 +33,41 @@ import "error" take InvalidArgument;
 import "random/source" take Randomizing;
 import "encoding/hex" take HexEncoded;
 
+// The body of a MIME part, decoded.
 role MimeBody {
+    // The decoded bytes.
     bytes() is @byte;
+    // Throws when the body does not fit type.
     validate(type is MediaType) is void;
 }
 
+// A body of bytes.
 object BinaryBody does MimeBody, ByteSource {
     has origin is @byte;
 
+    // The bytes.
     BinaryBody(origin is @byte) {
         self.origin = origin;
     }
 
+    // The bytes.
     bytes() is @byte {
         origin;
     }
 
+    // Refuses a multipart type.
     validate(type is MediaType) is void {
         confirm type::Type::type != "multipart"
             else throw InvalidMime.located(0, "multipart requires a multipart body");
     }
 }
 
+// A body of text in a charset.
 object TextBody does MimeBody, ByteSource {
     has text, encoding is string;
     has origin is @byte;
 
+    // origin in charset; UnsupportedMimeCharset for one std does not encode.
     TextBody(origin is string, charset is string) {
         let label = MimeCharsetName(charset).string();
         text = origin;
@@ -57,18 +75,22 @@ object TextBody does MimeBody, ByteSource {
         self.origin = MimeTextBytes(origin: origin, charset: label).bytes();
     }
 
+    // The text.
     string() is string {
         text;
     }
 
+    // The charset.
     charset() is string {
         encoding;
     }
 
+    // The text encoded in its charset.
     bytes() is @byte {
         origin;
     }
 
+    // Requires a text type.
     validate(type is MediaType) is void {
         confirm type::Type::type == "text"
             else throw InvalidMime.located(0, "text body requires a text media type");
@@ -85,8 +107,10 @@ object TextBody does MimeBody, ByteSource {
     }
 }
 
+// A charset std does not encode or decode.
 enum UnsupportedMimeCharset is Error = (charset(charset is string));
 
+// A MIME part: its headers and body.
 object MimePart does ByteSource {
     has fields is MessageHeaders;
     has payload is MimeBody;
@@ -94,6 +118,7 @@ object MimePart does ByteSource {
     has fallback is MediaType;
     has structured is @MultipartBody;
 
+    // A part with the default limits.
     MimePart(headers is MessageHeaders, body is MimeBody) {
         let metadata = MimeMetadata(headers);
         metadata.validate();
@@ -105,6 +130,7 @@ object MimePart does ByteSource {
         fallback = MediaType("text/plain; charset=US-ASCII");
     }
 
+    // A part within limits.
     MimePart(headers is MessageHeaders, body is MimeBody, limits is MimeLimits) {
         let metadata = MimeMetadata(headers);
         metadata.validate();
@@ -116,6 +142,7 @@ object MimePart does ByteSource {
         fallback = MediaType("text/plain; charset=US-ASCII");
     }
 
+    // A part whose type is default_type when its headers name none.
     MimePart(
         headers is MessageHeaders,
         body is MimeBody,
@@ -132,6 +159,7 @@ object MimePart does ByteSource {
         fallback = default_type;
     }
 
+    // This part with body as its multipart body.
     multipart(body is MultipartBody) is ^MimePart {
         let metadata = MimeMetadata(headers: fields, default_type: fallback);
         metadata.validate();
@@ -140,6 +168,7 @@ object MimePart does ByteSource {
         ^structured = [body];
     }
 
+    // This part with headers and bounds.
     headers(headers is MessageHeaders, bounds is MimeLimits) is MimePart {
         let part = MimePart(headers: headers, body: payload, limits: bounds, default_type: fallback);
         if structured.size() == 1 {
@@ -150,22 +179,27 @@ object MimePart does ByteSource {
         }
     }
 
+    // Its limits.
     limits() is MimeLimits {
         limits;
     }
 
+    // Its headers.
     headers() is MessageHeaders {
         fields;
     }
 
+    // Its body.
     body() is MimeBody {
         payload;
     }
 
+    // The type assumed when its headers name none.
     default_type() is MediaType {
         fallback;
     }
 
+    // The part written out, headers and encoded body.
     bytes() is @byte {
         MimeRendering(
             origin: self,
@@ -176,10 +210,12 @@ object MimePart does ByteSource {
         ).rendered().bytes();
     }
 
+    // Whether its body is multipart.
     structured_body() is bool {
         structured.size() == 1;
     }
 
+    // Writes the body within the remaining bounds; used inside mime.
     render_body(bounds is MimeLimits, depth is int, parts is int, bytes is int) is MimeRendered {
         if structured.size() == 1 && fields.membership(MessageHeaderName("Content-Type")) {
             MimeBodyRendering(
@@ -204,12 +240,14 @@ object MimePart does ByteSource {
     }
 }
 
+// A multipart body: parts between boundary lines.
 object MultipartBody does MimeBody, ByteSource {
     has kind, delimiter is string;
     has entries is @MimePart;
     has before, after is @byte;
     has limits is MimeLimits;
 
+    // `multipart/subtype` of parts with boundary.
     MultipartBody(subtype is string, boundary is string, parts is Sequencing<MimePart>) {
         kind = MimeMultipartKind(subtype).string();
         delimiter = MimeBoundary(boundary).string();
@@ -219,6 +257,7 @@ object MultipartBody does MimeBody, ByteSource {
         limits = MimeLimits();
     }
 
+    // `multipart/subtype` of parts with boundary, within limits.
     MultipartBody(
         subtype is string,
         boundary is string,
@@ -233,6 +272,7 @@ object MultipartBody does MimeBody, ByteSource {
         self.limits = limits;
     }
 
+    // The same with a preamble and an epilogue.
     MultipartBody(
         subtype is string,
         boundary is string,
@@ -252,28 +292,34 @@ object MultipartBody does MimeBody, ByteSource {
         self.limits = limits;
     }
 
+    // This body as a part with headers.
     part(headers is MessageHeaders) is MimePart {
         MimePart(headers: headers, body: self).multipart(self);
     }
 
+    // This body as a part with headers, within limits.
     part(headers is MessageHeaders, limits is MimeLimits) is MimePart {
         MimePart(headers: headers, body: self, limits: limits).multipart(self);
     }
 
+    // The same with a default type for its parts.
     part(headers is MessageHeaders, limits is MimeLimits, default_type is MediaType) is MimePart {
         MimePart(headers: headers, body: self, limits: limits, default_type: default_type).multipart(
             self
         );
     }
 
+    // Its parts.
     parts() is Sequencing<MimePart> {
         entries;
     }
 
+    // Walks its parts.
     cursor() is Cursor<MimePart> {
         entries.cursor();
     }
 
+    // Requires a multipart type with this boundary.
     validate(type is MediaType) is void {
         confirm type::Type::type == "multipart" && type::Type::subtype == kind
             else throw InvalidMime.located(0, "multipart subtype differs from content type");
@@ -282,6 +328,7 @@ object MultipartBody does MimeBody, ByteSource {
             else throw InvalidMime.located(0, "multipart boundary differs from content type");
     }
 
+    // The body written out.
     bytes() is @byte {
         confirm limits::Limits::parts > 0 else throw MimeLimitFailure.kind("parts");
         MimeBodyRendering(
@@ -292,6 +339,7 @@ object MultipartBody does MimeBody, ByteSource {
         ).render(self).bytes();
     }
 
+    // Its subtype, boundary, preamble and epilogue.
     cap Multipart {
         subtype is string {
             kind;
@@ -332,40 +380,49 @@ hidden object GeneratedBoundary {
     }
 }
 
+// What a part's headers say about its content.
 object MimeContent {
     has metadata is MimeMetadata;
 
+    // The content of origin.
     MimeContent(origin is MimePart) {
         metadata = MimeMetadata(headers: origin.headers(), default_type: origin.default_type());
     }
 
+    // Its media type; the part's default type when none is named.
     type() is MediaType {
         metadata.type();
     }
 
+    // Its disposition.
     disposition() is ContentDisposition {
         metadata.disposition();
     }
 
+    // Its transfer encoding.
     encoding() is TransferEncoding {
         metadata.encoding();
     }
 }
 
+// A MIME message read from bytes.
 object ParsedMime {
     has origin is @byte;
     has limits is MimeLimits;
 
+    // Reads origin with the default limits.
     ParsedMime(origin is @byte) {
         self.origin = origin;
         limits = MimeLimits();
     }
 
+    // Reads origin within limits.
     ParsedMime(origin is @byte, limits is MimeLimits) {
         self.origin = origin;
         self.limits = limits;
     }
 
+    // The parsed tree with its counts.
     node() is MimeParsedNode {
         confirm origin.size() <= limits::Limits::body_bytes
             else throw MimeLimitFailure.kind("body_bytes");
@@ -381,14 +438,18 @@ object ParsedMime {
         ).part();
     }
 
+    // The message as a part; InvalidMime says where it is wrong.
     part() is MimePart {
         self.node().part();
     }
 }
 
+// How large a MIME message may be: header bytes, line bytes, parts, depth and
+// body bytes.
 object MimeLimits {
     has header_bytes, line_bytes, parts, depth, body_bytes is int;
 
+    // The default limits.
     MimeLimits() {
         header_bytes = 65536;
         line_bytes = 998;
@@ -397,6 +458,7 @@ object MimeLimits {
         body_bytes = 16777216;
     }
 
+    // The limits as given; header lines are at most 998 bytes.
     MimeLimits(
         header_bytes is int,
         line_bytes is int,
@@ -420,6 +482,7 @@ object MimeLimits {
         self.body_bytes = body_bytes;
     }
 
+    // The limits.
     cap Limits {
         header_bytes is int {
             header_bytes;
@@ -443,15 +506,19 @@ object MimeLimits {
     }
 }
 
+// Bytes that are not MIME; offset says where.
 enum InvalidMime is Error = (located(offset is int, reason is string));
 
+// The message went over a limit; kind says which.
 enum MimeLimitFailure is Error = (kind(kind is string));
 
+// A part and what parsing it cost; used inside mime.
 object MimeParsedNode {
     has part is MimePart;
     has nodes, decoded is int;
     has children is @MimeParsedNode;
 
+    // A leaf.
     MimeParsedNode(part is MimePart, nodes is int, decoded is int) {
         self.part = part;
         self.nodes = nodes;
@@ -460,6 +527,7 @@ object MimeParsedNode {
         children = empty;
     }
 
+    // A part with children.
     MimeParsedNode(part is MimePart, nodes is int, decoded is int, children is @MimeParsedNode) {
         self.part = part;
         self.nodes = nodes;
@@ -467,18 +535,22 @@ object MimeParsedNode {
         self.children = children;
     }
 
+    // The part.
     part() is MimePart {
         part;
     }
 
+    // How many parts in all.
     nodes() is int {
         nodes;
     }
 
+    // How many bytes decoded in all.
     decoded() is int {
         decoded;
     }
 
+    // Its child nodes.
     children() is @MimeParsedNode {
         children;
     }
@@ -538,11 +610,13 @@ hidden object MimeParsedBody {
     }
 }
 
+// A parsed multipart body and its cost; used inside mime.
 object MimeParsedMultipart {
     has body is MultipartBody;
     has nodes, decoded is int;
     has children is @MimeParsedNode;
 
+    // A body with no children.
     MimeParsedMultipart(body is MultipartBody, nodes is int, decoded is int) {
         self.body = body;
         self.nodes = nodes;
@@ -551,6 +625,7 @@ object MimeParsedMultipart {
         children = empty;
     }
 
+    // A body with children.
     MimeParsedMultipart(
         body is MultipartBody,
         nodes is int,
@@ -563,18 +638,22 @@ object MimeParsedMultipart {
         self.children = children;
     }
 
+    // The body.
     body() is MultipartBody {
         body;
     }
 
+    // How many parts.
     nodes() is int {
         nodes;
     }
 
+    // How many bytes decoded.
     decoded() is int {
         decoded;
     }
 
+    // Its child nodes.
     children() is @MimeParsedNode {
         children;
     }
@@ -688,12 +767,14 @@ hidden object MimeParsing {
     }
 }
 
+// The parser of one multipart body; used inside mime.
 object MimeMultipartParsing {
     has origin is @byte;
     has start, stop, depth, remaining_parts, remaining_bytes is int;
     has type is MediaType;
     has limits is MimeLimits;
 
+    // Parses origin from start to stop within the remaining bounds.
     MimeMultipartParsing(
         origin is @byte,
         start is int,
@@ -714,6 +795,7 @@ object MimeMultipartParsing {
         self.remaining_bytes = remaining_bytes;
     }
 
+    // The parsed body.
     multipart() is MimeParsedMultipart {
         let boundaries = type.parameters().values("boundary");
         confirm boundaries.size() == 1
@@ -1152,24 +1234,29 @@ hidden object MimeDecodedText {
     }
 }
 
+// Written bytes and what writing them cost; used inside mime.
 object MimeRendered {
     has origin is @byte;
     has nodes, decoded is int;
 
+    // As given.
     MimeRendered(origin is @byte, nodes is int, decoded is int) {
         self.origin = origin;
         self.nodes = nodes;
         self.decoded = decoded;
     }
 
+    // The bytes.
     bytes() is @byte {
         origin;
     }
 
+    // How many parts.
     nodes() is int {
         nodes;
     }
 
+    // How many bytes.
     decoded() is int {
         decoded;
     }
@@ -1609,10 +1696,12 @@ hidden object BoundarySnapshots {
     }
 }
 
+// A part's type, disposition and encoding, read from its headers.
 object MimeMetadata {
     has headers is MessageHeaders;
     has fallback is MediaType;
 
+    // From headers.
     MimeMetadata(headers is MessageHeaders) {
         for ["Content-Type", "Content-Disposition", "Content-Transfer-Encoding"] -> name {
             confirm headers.values(MessageHeaderName(name)).size() <= 1
@@ -1622,6 +1711,7 @@ object MimeMetadata {
         fallback = MediaType("text/plain; charset=US-ASCII");
     }
 
+    // From headers, with default_type when none is named.
     MimeMetadata(headers is MessageHeaders, default_type is MediaType) {
         for ["Content-Type", "Content-Disposition", "Content-Transfer-Encoding"] -> name {
             confirm headers.values(MessageHeaderName(name)).size() <= 1
@@ -1631,6 +1721,7 @@ object MimeMetadata {
         fallback = default_type;
     }
 
+    // Checks the headers fit together.
     validate() is void {
         let type = self.type();
         let encoding = self.encoding();
@@ -1645,6 +1736,7 @@ object MimeMetadata {
             );
     }
 
+    // The media type.
     type() is MediaType {
         let name = MessageHeaderName("Content-Type");
         if !headers.membership(name) {
@@ -1658,6 +1750,7 @@ object MimeMetadata {
         }
     }
 
+    // The disposition.
     disposition() is ContentDisposition {
         let name = MessageHeaderName("Content-Disposition");
         confirm headers.membership(name) else throw MissingContentDisposition.missing;
@@ -1669,6 +1762,7 @@ object MimeMetadata {
         }
     }
 
+    // The transfer encoding.
     encoding() is TransferEncoding {
         let name = MessageHeaderName("Content-Transfer-Encoding");
         if !headers.membership(name) {

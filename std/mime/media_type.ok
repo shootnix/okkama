@@ -1,11 +1,14 @@
 module mime/media_type v1.0.0;
 
-// Immutable logical parameters and concrete media types. Parsing observes an
-// unfolded ASCII field body eagerly; RFC 2231 parts assemble as bytes before
-// UTF-8 decoding. Plain duplicates retain order; valid extensions supersede
-// fallbacks. Defaults cap input at 1 MiB and 256 wire/source parameters.
-// Serialization produces a logical field body; message/header owns folding.
-// See docs/std/mime-media-type.md for strict grammar and offset contracts.
+// Media types (RFC 2045, RFC 6838) and their parameters.
+//
+//     let type = MediaType("text/html; charset=utf-8");
+//     type::Type::type;                                 // "text"
+//     type::Type::subtype;                              // "html"
+//     type.parameters().first("charset");               // "utf-8"
+//     MediaType("text", "plain", MimeParameters([MimeParameter("charset", "utf-8")])).string();
+//
+// Type, subtype and parameter names are case-insensitive and kept lowercase.
 
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
@@ -15,9 +18,11 @@ import "strings/parse" take Number, InvalidInteger;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument;
 
+// One `name=value` parameter.
 object MimeParameter {
     has key, text is string;
 
+    // The parameter as given.
     MimeParameter(name is string, value is string) {
         confirm name.split("*").size() == 1
             else throw InvalidMediaType.located(0, "logical parameter name contains asterisk");
@@ -31,18 +36,22 @@ object MimeParameter {
         text = value;
     }
 
+    // Its name, lowercase.
     name() is string {
         key;
     }
 
+    // Its value.
     value() is string {
         text;
     }
 }
 
+// The parameters of a media type or disposition, in order.
 object MimeParameters {
     has origin is @MimeParameter;
 
+    // The parameters as given.
     MimeParameters(entries is Sequencing<MimeParameter>) {
         origin = MimeSnapshot(origin: entries, maximum: 256).entries();
     }
@@ -53,14 +62,17 @@ object MimeParameters {
         origin = MimeSnapshot(origin: listed, maximum: 256).entries();
     }
 
+    // At most maximum_parameters of them.
     MimeParameters(entries is Sequencing<MimeParameter>, maximum_parameters is int) {
         origin = MimeSnapshot(origin: entries, maximum: maximum_parameters).entries();
     }
 
+    // Every parameter.
     entries() is Sequencing<MimeParameter> {
         origin;
     }
 
+    // Whether one has that name.
     membership(name is string) is bool {
         let key = MimeToken(name).string();
         origin.reduce(false) -> found, entry {
@@ -68,6 +80,7 @@ object MimeParameters {
         };
     }
 
+    // The first value of name; MissingMimeParameter when there is none.
     first(name is string) is string {
         let key = MimeToken(name).string();
         for origin -> entry {
@@ -78,6 +91,7 @@ object MimeParameters {
         throw MissingMimeParameter.name(key);
     }
 
+    // Every value of name.
     values(name is string) is Sequencing<string> {
         let key = MimeToken(name).string();
         let matching is @MimeParameter = origin.filter() -> entry {
@@ -89,6 +103,7 @@ object MimeParameters {
         values;
     }
 
+    // `; name=value` for each, quoted when needed.
     string() is string {
         let parts is @string = origin.map() -> entry {
             let value = entry.value();
@@ -118,10 +133,12 @@ object MimeParameters {
     }
 }
 
+// A media type such as `text/html; charset=utf-8`.
 object MediaType {
     has major, minor is string;
     has entries is MimeParameters;
 
+    // Reads origin; InvalidMediaType says where it is wrong.
     MediaType(origin is string) {
         let parsed = MimeScanning(origin: origin, maximum_parameters: 256, maximum_bytes: 1048576).media_type();
         major = parsed.type();
@@ -129,6 +146,7 @@ object MediaType {
         entries = parsed.parameters();
     }
 
+    // Reads origin within limits.
     MediaType(origin is string, limits is MediaTypeLimits) {
         let parsed = MimeScanning(
             origin: origin,
@@ -140,6 +158,7 @@ object MediaType {
         entries = parsed.parameters();
     }
 
+    // type/subtype with parameters.
     MediaType(type is string, subtype is string, parameters is MimeParameters) {
         confirm type != "*" && subtype != "*"
             else throw InvalidMediaType.located(0, "wildcard is not a concrete media type");
@@ -148,10 +167,12 @@ object MediaType {
         entries = parameters;
     }
 
+    // Its parameters.
     parameters() is MimeParameters {
         entries;
     }
 
+    // The type as a header writes it.
     string() is string {
         major + "/" + minor + if entries.entries().size() == 0 {
             "";
@@ -161,6 +182,7 @@ object MediaType {
         };
     }
 
+    // The type and subtype.
     cap Type {
         type is string {
             major;
@@ -172,15 +194,20 @@ object MediaType {
     }
 }
 
+// Text that is not a media type; offset says where.
 enum InvalidMediaType is Error = (located(offset is int, reason is string));
 
+// No parameter has that name.
 enum MissingMimeParameter is Error = (name(name is string));
 
+// Too many parameters or bytes.
 enum MimeLimitExceeded is Error = (kind(kind is string));
 
+// How many parameters and bytes a media type may have.
 object MediaTypeLimits {
     has maximum_parameters, maximum_bytes is int;
 
+    // The limits.
     MediaTypeLimits(parameters is int, bytes is int) {
         confirm parameters >= 0 && bytes >= 0
             else throw InvalidArgument.because("MIME limits must be nonnegative");
@@ -188,6 +215,7 @@ object MediaTypeLimits {
         maximum_bytes = bytes;
     }
 
+    // The limits.
     cap Limits {
         parameters is int {
             maximum_parameters;
@@ -203,10 +231,12 @@ object MediaTypeLimits {
 object MimeCharacter {
     has origin is string;
 
+    // One character to classify.
     MimeCharacter(origin is string) {
         self.origin = origin;
     }
 
+    // Whether it may appear in a MIME token.
     token() is bool {
         let bytes = Utf8Encoded(origin).bytes();
         bytes.size() == 1 && MimeTokenCodes().token(bytes[0].int());
@@ -240,9 +270,11 @@ hidden object MimeTokenCodes {
     }
 }
 
+// A MIME token, checked.
 object MimeToken {
     has text is string;
 
+    // Checks origin.
     MimeToken(origin is string) {
         confirm origin != "" else throw InvalidMediaType.located(0, "empty token");
         let tokens = MimeTokenCodes();
@@ -263,6 +295,7 @@ object MimeToken {
         text = Utf8Decoded(bytes).string();
     }
 
+    // The token.
     string() is string {
         text;
     }
@@ -291,22 +324,27 @@ hidden object MimeSnapshot {
     }
 }
 
+// Items gathered one at a time while parsing; used inside mime.
 object MimeItems<T> {
     has reversed is List<T>;
 
+    // No items.
     MimeItems() {
         let empty is List<T> = EmptyList();
         reversed = empty;
     }
 
+    // How many.
     size() is int {
         reversed.size();
     }
 
+    // These items and one more.
     following(item is T) is ^MimeItems<T> {
         ^reversed = reversed.prefix(item);
     }
 
+    // The items.
     entries() is @T {
         let reverse is @T = reversed.map() -> item {
             item;
@@ -318,17 +356,21 @@ object MimeItems<T> {
     }
 }
 
+// A position while parsing; used inside mime.
 object MimePosition {
     has index is int;
 
+    // At index.
     MimePosition(index is int) {
         self.index = index;
     }
 
+    // The index.
     index() is int {
         index;
     }
 
+    // At index.
     following(index is int) is ^MimePosition {
         ^index = index;
     }
@@ -352,33 +394,40 @@ hidden object MimeScanned {
     }
 }
 
+// A parsed type or disposition and its parameters; used inside mime.
 object MimeParsed {
     has major, minor is string;
     has entries is MimeParameters;
 
+    // As given.
     MimeParsed(type is string, subtype is string, entries is MimeParameters) {
         major = type;
         minor = subtype;
         self.entries = entries;
     }
 
+    // The type.
     type() is string {
         major;
     }
 
+    // The subtype.
     subtype() is string {
         minor;
     }
 
+    // The parameters.
     parameters() is MimeParameters {
         entries;
     }
 }
 
+// The shared parser of media types and dispositions.
 object MimeScanning {
     has origin is string;
     has maximum_parameters, maximum_bytes is int;
 
+    // Scans origin within these limits.
     MimeScanning(origin is string, maximum_parameters is int, maximum_bytes is int) {
         confirm maximum_parameters >= 0 && maximum_bytes >= 0
             else throw InvalidArgument.because("MIME limits must be nonnegative");
@@ -387,6 +436,7 @@ object MimeScanning {
         self.maximum_bytes = maximum_bytes;
     }
 
+    // origin as a media type.
     media_type() is MimeParsed {
         self.validate();
         let major = self.token(self.space(0));
@@ -403,6 +453,7 @@ object MimeScanning {
         );
     }
 
+    // origin as a disposition.
     disposition() is MimeParsed {
         self.validate();
         let kind = self.token(self.space(0));

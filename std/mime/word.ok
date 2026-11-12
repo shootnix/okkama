@@ -1,9 +1,9 @@
 module mime/word v1.0.0;
 
-// Strict RFC 2047 words for explicitly unstructured, unfolded field bodies.
-// Do not apply to whole structured headers. Forbidden context preserves text.
-// UTF-8/US-ASCII only; B output, B/Q input, no charset guessing or I/O.
-// See docs/std/mime-word.md for limits, observation and error positions.
+// RFC 2047 encoded words, for non-ASCII text in mail header fields.
+//
+//     EncodedWord("Grüße").string();                    // "=?UTF-8?B?R3LDvMOfZQ==?="
+//     DecodedWords("=?utf-8?b?R3LDvMOfZQ==?=").string(); // "Grüße"
 
 import "mime/media_type" take MimeToken, InvalidMediaType, MimeItems, MimePosition;
 import "encoding/base64" take Base64Encoded, Base64Decoded, InvalidBase64;
@@ -12,12 +12,15 @@ import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument;
 
+// Where words are decoded: in unstructured text, or where they are not allowed.
 enum EncodedWordContext = (unstructured, forbidden);
 
+// Text as an RFC 2047 encoded word.
 object EncodedWord {
     has origin, charset is string;
     has maximum is int;
 
+    // origin encoded as UTF-8.
     EncodedWord(origin is string) {
         WordText(origin: origin, charset: "UTF-8", offset: 0).validate();
         self.origin = origin;
@@ -25,6 +28,7 @@ object EncodedWord {
         maximum = 1048576;
     }
 
+    // origin encoded in charset.
     EncodedWord(origin is string, charset is string) {
         let label = WordCharset(origin: charset, offset: 0).string();
         WordText(origin: origin, charset: label, offset: 0).validate();
@@ -33,6 +37,7 @@ object EncodedWord {
         maximum = 1048576;
     }
 
+    // The same, at most maximum_bytes.
     EncodedWord(origin is string, charset is string, maximum_bytes is int) {
         confirm maximum_bytes >= 0
             else throw InvalidArgument.because("encoded-word limit must be nonnegative");
@@ -43,6 +48,7 @@ object EncodedWord {
         maximum = maximum_bytes;
     }
 
+    // The encoded word, or several when it is long.
     string() is string {
         confirm Utf8Encoded(origin).bytes().size() <= maximum
             else throw EncodedWordLimitExceeded.kind("input");
@@ -85,23 +91,27 @@ object EncodedWord {
     }
 }
 
+// A field body with its encoded words decoded.
 object DecodedWords {
     has origin is string;
     has context is EncodedWordContext;
     has maximum is int;
 
+    // Decodes origin as unstructured text.
     DecodedWords(origin is string) {
         self.origin = origin;
         context = EncodedWordContext.unstructured;
         maximum = 1048576;
     }
 
+    // Decodes origin in context.
     DecodedWords(origin is string, context is EncodedWordContext) {
         self.origin = origin;
         self.context = context;
         maximum = 1048576;
     }
 
+    // The same, at most maximum_bytes.
     DecodedWords(origin is string, context is EncodedWordContext, maximum_bytes is int) {
         confirm maximum_bytes >= 0
             else throw InvalidArgument.because("encoded-word limit must be nonnegative");
@@ -110,6 +120,7 @@ object DecodedWords {
         maximum = maximum_bytes;
     }
 
+    // The decoded text.
     string() is string {
         confirm Utf8Encoded(origin).bytes().size() <= maximum
             else throw EncodedWordLimitExceeded.kind("input");
@@ -166,8 +177,10 @@ object DecodedWords {
     }
 }
 
+// Text that is not an encoded word; offset says where.
 enum InvalidEncodedWord is Error = (located(offset is int, reason is string));
 
+// The text went over the limit.
 enum EncodedWordLimitExceeded is Error = (kind(kind is string));
 
 hidden object WordPrevious {
@@ -233,15 +246,18 @@ hidden object WordText {
     }
 }
 
+// One encoded word read at an offset; used inside mime/word.
 object ParsedEncodedWord {
     has origin is string;
     has offset is int;
 
+    // Reads the word at offset of origin.
     ParsedEncodedWord(origin is string, offset is int) {
         self.origin = origin;
         self.offset = offset;
     }
 
+    // Its decoded text.
     string() is string {
         confirm origin.length() <= 75
             else throw InvalidEncodedWord.located(offset, "word exceeds 75 characters");

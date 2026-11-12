@@ -1,18 +1,13 @@
 module plist/parse v1.0.0;
 
-// Bounded, repeatable plist decoding, entirely in Okkama. Construction retains
-// immutable bytes; value() detects UTF-8 XML or bplist00 and validates anew.
-// Defaults: 1 MiB input, 4096 visited nodes (including keys/repeated references),
-// depth 64 with root at one. Negative budgets fail at construction; all input
-// failures are InvalidPlist with original byte offsets. No I/O or owned resource.
-// Returned values survive parser scope. Containers preserve declaration order.
-// XML is the explicit strict plist dialect in docs/std/plist-parse-guide.md;
-// standard DOCTYPE is recognized but never fetched, custom entities are rejected.
-// Binary offsets/spans/references are checked before reads; cycles on the active
-// path fail, acyclic sharing expands under the node budget. Unreachable payloads
-// are not decoded. Existing UTF/binary/number primitives are the only substrate.
-// Example: ParsedPlist(Utf8Encoded("<plist><true/></plist>").bytes()).value().
-// Run: okkama run -t std/plist/parse.ok
+// Property lists read from XML or binary bytes.
+//
+//     let info = ParsedPlist(bytes).dictionary();
+//     info.text("CFBundleIdentifier");
+//     let root = ParsedPlist(bytes).root();          // any PlistValue
+//
+// Both formats are detected. Input, node count and depth are bounded;
+// InvalidPlist gives the byte offset of a problem.
 
 import "plist/value" take PlistValue, PlistBoolean, PlistInteger, PlistReal, PlistString, PlistData,
     PlistDate, PlistUid, PlistArray, PlistDictionary, PlistMember, PlistKindMismatch, PlistKind,
@@ -31,10 +26,12 @@ import "runtime/xml" take XmlEventsState, xml_events, xml_events_error, xml_even
 import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
 
+// A property list read from bytes.
 object ParsedPlist {
     has origin is @byte;
     has maximum_input, maximum_nodes, maximum_depth is int;
 
+    // Reads origin within 1 MiB, 4096 nodes and depth 64.
     ParsedPlist(origin is @byte) {
         self.origin = origin;
         maximum_input = 1048576;
@@ -42,6 +39,7 @@ object ParsedPlist {
         maximum_depth = 64;
     }
 
+    // Reads origin within these limits.
     ParsedPlist(origin is @byte, maximum_input is int, maximum_nodes is int, maximum_depth is int) {
         confirm maximum_input >= 0 && maximum_nodes >= 0 && maximum_depth >= 0
             else throw InvalidPlistLimits.invalid;
@@ -58,6 +56,7 @@ object ParsedPlist {
         PlistDictionary(PlistMember("", self.root())).get("");
     }
 
+    // The root value; InvalidPlist says where the bytes are wrong.
     root() is PlistValue {
         confirm origin.size() <= maximum_input
             else throw InvalidPlist.located(0, "input budget exceeded");
@@ -98,8 +97,10 @@ object ParsedPlist {
     }
 }
 
+// Bytes that are not a plist; offset says where.
 enum InvalidPlist is Error = (located(offset is int, reason is string));
 
+// A negative limit.
 enum InvalidPlistLimits is Error = (invalid);
 
 // Internal parse result and immutable progress cursor. The result counts all
@@ -177,15 +178,18 @@ object PlistXmlSource {
     has origin is string;
     has base is int;
 
+    // XML plist text at base; the parser uses it.
     PlistXmlSource(source is string, base is int) {
         origin = source;
         self.base = base;
     }
 
+    // The text.
     text() is string {
         origin;
     }
 
+    // An InvalidPlist at an offset.
     failure(at is int, reason is string) is InvalidPlist {
         InvalidPlist.located(base + Utf8Encoded(origin.slice(0, at)).bytes().size(), reason);
     }
@@ -196,6 +200,7 @@ object PlistXmlSource {
         characters;
     }
 
+    // Where delimiter next occurs from start.
     until(start is int, delimiter is string) is int {
         let symbols = self.symbols();
         let wanted = delimiter.characters();
@@ -216,6 +221,7 @@ object PlistXmlSource {
         };
     }
 
+    // Where character data ends.
     text_end(start is int) is int {
         let symbols = self.symbols();
         for (start..symbols.size()) -> index {
@@ -226,6 +232,7 @@ object PlistXmlSource {
         symbols.size();
     }
 
+    // The token at at.
     token(at is int) is PlistXmlToken {
         if at == origin.length() {
             return PlistXmlToken(kind: "eof", text: "", start: at, end: at);
@@ -320,6 +327,7 @@ object PlistXmlSource {
         );
     }
 
+    // The next token that is not whitespace.
     significant(start is int) is PlistXmlToken {
         let cursor = PlistParsePosition(start);
         loop {
@@ -334,6 +342,7 @@ object PlistXmlSource {
         }
     }
 
+    // text checked as XML characters.
     checked(text is string, at is int) is string {
         let characters = text.characters();
         for (0..characters.size()) -> index {
@@ -343,6 +352,7 @@ object PlistXmlSource {
         text;
     }
 
+    // text with entities decoded.
     decoded(text is string, at is int) is string {
         // Text without references or carriage returns is its own value.
         if !text.contains("&") && !text.contains("\r") {
@@ -462,13 +472,16 @@ hidden object PlistXmlCharacter {
     }
 }
 
+// Character data of an XML plist.
 object PlistXmlText {
     has origin is string;
 
+    // The data.
     PlistXmlText(origin is string) {
         self.origin = origin;
     }
 
+    // Whether the character at index is XML whitespace.
     whitespace(index is int) is bool {
         let code = self.codes()[index];
         code == 32 || code == 9 || code == 10 || code == 13;
@@ -482,6 +495,7 @@ object PlistXmlText {
         found;
     }
 
+    // Without whitespace at the ends.
     stripped() is string {
         let start = (0..origin.length()).reduce(origin.length()) -> found, index {
             if found == origin.length() && !self.whitespace(index) {
@@ -502,6 +516,7 @@ object PlistXmlText {
         origin.slice(start, end);
     }
 
+    // Without any whitespace, as base64 data is read.
     compact() is string {
         let words = origin.replace("\r", " ").replace("\n", " ").replace("\t", " ").split(" ").filter() -> word {
             word != "";
@@ -510,10 +525,12 @@ object PlistXmlText {
     }
 }
 
+// One token of an XML plist.
 object PlistXmlToken {
     has category, origin is string;
     has start, end is int;
 
+    // A token as given.
     PlistXmlToken(kind is string, text is string, start is int, end is int) {
         category = kind;
         origin = text;
@@ -521,18 +538,22 @@ object PlistXmlToken {
         self.end = end;
     }
 
+    // Its kind.
     kind() is string {
         category;
     }
 
+    // Its text.
     text() is string {
         origin;
     }
 
+    // Where it starts.
     start() is int {
         start;
     }
 
+    // Where it ends.
     end() is int {
         end;
     }

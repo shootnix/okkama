@@ -39,13 +39,16 @@ import "runtime/toml" take TomlParseState, TomlNodeState, toml_parse_state, toml
 // Run tests as a root module, because dependency test blocks are not executed:
 // okkama run -t std/toml/parse.ok
 
+// TOML 1.0 text, read when root() is asked.
 object ParsedToml {
     has state is TomlParseState;
 
+    // Text within 1 Mi characters, depth 64 and 10000 nodes.
     ParsedToml(origin is string) {
         state = toml_parse_state(origin, 1048576, 64, 10000);
     }
 
+    // Text within these limits.
     ParsedToml(origin is string, maximum_input is int, maximum_depth is int, maximum_nodes is int) {
         confirm maximum_input >= 0
             && maximum_depth >= 1
@@ -55,6 +58,7 @@ object ParsedToml {
         state = toml_parse_state(origin, maximum_input, maximum_depth, maximum_nodes);
     }
 
+    // The document as a table; InvalidToml says where the text is wrong.
     root() is TomlTable {
         confirm toml_parse_valid(state)
             else throw InvalidToml.located(
@@ -163,6 +167,7 @@ hidden object TomlNode {
     }
 }
 
+// A limit out of range.
 enum InvalidTomlBudget is Error = (invalid);
 
 // Source coordinates identify the failed observation. No partial tree escapes.
