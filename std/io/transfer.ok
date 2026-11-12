@@ -1,0 +1,291 @@
+module io/transfer v1.0.0;
+
+import "io/stream" take ByteSource, Reading, Writing, AsyncReading, AsyncWriting, InvalidReadLimit;
+import "io/buffer" take ByteBuffer;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
+import "async/atomic" take Atomic;
+
+// A source read to its end, and bytes carried from a source to a destination
+// (#130), so that modules stop repeating the read loop:
+//
+//     let body = await ReadUntilEnd(origin: reader, limit: 1048576).bytes();
+//     let note = await ReadUntilEnd(origin: reader, limit: 65536).text();
+//     let count = await Copy(from: reader, to: writer).count();
+//
+// Both take a Reading or an AsyncReading, and Copy a Writing or an
+// AsyncWriting. ReadUntilEnd gives at most limit bytes: a source with more
+// throws ReadLimitExceeded once it has given limit + 1 of them, and is not read
+// further. Copy carries everything, 64 KiB at a time, and neither flushes nor
+// closes either side.
+
+object ReadUntilEnd {
+    has origin is AsyncReading;
+    has limit is int;
+
+    ReadUntilEnd(origin is AsyncReading, limit is int) {
+        confirm limit >= 0 else throw InvalidReadLimit.limit(limit);
+        self.origin = origin;
+        self.limit = limit;
+    }
+
+    ReadUntilEnd(origin is Reading, limit is int) {
+        confirm limit >= 0 else throw InvalidReadLimit.limit(limit);
+        self.origin = ReadingAsync(origin);
+        self.limit = limit;
+    }
+
+    // Every byte up to the end. A source that ends after its first piece hands
+    // that piece out as it is; longer ones are joined once.
+    async bytes() is @byte {
+        let first = await origin.bytes(self.piece(0));
+        confirm first.size() <= limit else throw ReadLimitExceeded.limit(limit);
+        if first.size() == 0 {
+            return first;
+        }
+        let second = await origin.bytes(self.piece(first.size()));
+        if second.size() == 0 {
+            return first;
+        }
+        let joined = ByteBuffer(first);
+        defer joined.closing().close();
+        let output = joined.writing();
+        let taken = Atomic(first.size());
+        let pending = Atomic(second);
+        loop {
+            let chunk = pending.value();
+            last if chunk.size() == 0;
+            taken.replace(taken.value() + chunk.size());
+            confirm taken.value() <= limit else throw ReadLimitExceeded.limit(limit);
+            output.write(chunk);
+            pending.replace(await origin.bytes(self.piece(taken.value())));
+        }
+        joined.content().bytes();
+    }
+
+    // Every byte up to the end as strict UTF-8 text.
+    async text() is string {
+        Utf8Decoded(await self.bytes()).string();
+    }
+
+    // The most to ask for after taken bytes: 64 KiB, or one past the limit.
+    hidden piece(taken is int) is int {
+        let room = limit - taken + 1;
+        if room < 65536 {
+            room;
+        }
+        else {
+            65536;
+        }
+    }
+}
+
+object Copy {
+    has source is AsyncReading;
+    has destination is AsyncWriting;
+
+    Copy(from is AsyncReading, to is AsyncWriting) {
+        source = from;
+        destination = to;
+    }
+
+    Copy(from is Reading, to is Writing) {
+        source = ReadingAsync(from);
+        destination = WritingAsync(to);
+    }
+
+    Copy(from is AsyncReading, to is Writing) {
+        source = from;
+        destination = WritingAsync(to);
+    }
+
+    Copy(from is Reading, to is AsyncWriting) {
+        source = ReadingAsync(from);
+        destination = to;
+    }
+
+    // Carries everything up to the end of the source; the bytes carried.
+    async count() is int {
+        let carried = Atomic(0);
+        loop {
+            let chunk = await source.bytes(65536);
+            last if chunk.size() == 0;
+            await destination.write(chunk);
+            carried.replace(carried.value() + chunk.size());
+        }
+        carried.value();
+    }
+}
+
+// A source gave more than ReadUntilEnd's limit.
+enum ReadLimitExceeded is Error = (limit(limit is int));
+
+// A Reading seen as an AsyncReading.
+hidden object ReadingAsync does AsyncReading {
+    has origin is Reading;
+
+    ReadingAsync(origin is Reading) {
+        self.origin = origin;
+    }
+
+    async bytes(limit is int) is @byte {
+        origin.bytes(limit);
+    }
+}
+
+// A Writing seen as an AsyncWriting.
+hidden object WritingAsync does AsyncWriting {
+    has origin is Writing;
+
+    WritingAsync(origin is Writing) {
+        self.origin = origin;
+    }
+
+    async write(source is ByteSource) is AsyncWriting {
+        origin.write(source);
+        self;
+    }
+
+    async write(bytes is @byte) is AsyncWriting {
+        origin.write(bytes);
+        self;
+    }
+}
+
+// Pieces handed out one per read, and how many reads came, for the tests below.
+hidden object TransferPieces does AsyncReading {
+    has pieces is @@byte;
+    has reads is Atomic<int>;
+    has asked is Atomic<@int>;
+
+    TransferPieces(pieces is @@byte) {
+        self.pieces = pieces;
+        reads = Atomic(0);
+        let none_asked is @int = [];
+        asked = Atomic(none_asked);
+    }
+
+    async bytes(limit is int) is @byte {
+        confirm limit > 0 else throw InvalidReadLimit.limit(limit);
+        let at = reads.value();
+        reads.replace(at + 1);
+        asked.replace(asked.value() + [limit]);
+        if at >= pieces.size() {
+            let empty is @byte = [];
+            return empty;
+        }
+        let piece = pieces[at];
+        confirm piece.size() <= limit else throw InvalidReadLimit.limit(limit);
+        piece;
+    }
+
+    count() is int {
+        reads.value();
+    }
+
+    limits() is @int {
+        asked.value();
+    }
+}
+
+// Writes kept in order, for the tests below.
+hidden object TransferSink does AsyncWriting {
+    has kept is Atomic<@byte>;
+
+    TransferSink() {
+        let empty is @byte = [];
+        kept = Atomic(empty);
+    }
+
+    async write(source is ByteSource) is AsyncWriting {
+        kept.replace(kept.value() + source.bytes());
+        self;
+    }
+
+    async write(bytes is @byte) is AsyncWriting {
+        kept.replace(kept.value() + bytes);
+        self;
+    }
+
+    bytes() is @byte {
+        kept.value();
+    }
+}
+
+async test "a source is read to its end in pieces" {
+    let source = TransferPieces(
+        [[byte(1), byte(2)], [byte(3)], [byte(4), byte(5), byte(6)]]
+    );
+    test.is(
+        await ReadUntilEnd(origin: source, limit: 6).bytes(),
+        [byte(1), byte(2), byte(3), byte(4), byte(5), byte(6)]
+    );
+    test.is(source.count(), 4);
+    let one = TransferPieces([[byte(7), byte(8)]]);
+    test.is(await ReadUntilEnd(origin: one, limit: 100).bytes(), [byte(7), byte(8)]);
+    let nothing = TransferPieces([]);
+    test.is((await ReadUntilEnd(origin: nothing, limit: 0).bytes()).size(), 0);
+    test.is(nothing.limits(), [1]);
+    let buffered = ByteBuffer("plain old reading");
+    test.is(await ReadUntilEnd(origin: buffered.reading(), limit: 17).text(), "plain old reading");
+}
+
+async test "text is decoded once, so a character may straddle pieces" {
+    let bytes = Utf8Encoded("чай").bytes();
+    let source = TransferPieces(
+        [bytes.slice(0, 1), bytes.slice(1, 3), bytes.slice(3, bytes.size())]
+    );
+    test.is(await ReadUntilEnd(origin: source, limit: 64).text(), "чай");
+    test.throws(InvalidUtf8) {
+        await ReadUntilEnd(origin: TransferPieces([[byte(255)]]), limit: 8).text();
+    };
+}
+
+async test "more than the limit is refused without reading further" {
+    let source = TransferPieces([[byte(1), byte(2), byte(3)], [byte(4)], [byte(5)]]);
+    test.throws(ReadLimitExceeded) {
+        await ReadUntilEnd(origin: source, limit: 3).bytes();
+    };
+    test.is(source.count(), 2);
+    test.is(source.limits(), [4, 1]);
+    let first = TransferPieces([[byte(1), byte(2)]]);
+    test.throws(ReadLimitExceeded) {
+        await ReadUntilEnd(origin: first, limit: 1).bytes();
+    };
+    test.is(first.count(), 1);
+    test.throws(ReadLimitExceeded) {
+        await ReadUntilEnd(origin: TransferPieces([[byte(1)]]), limit: 0).bytes();
+    };
+    test.throws(InvalidReadLimit) {
+        ReadUntilEnd(origin: TransferPieces([]), limit: -1);
+    };
+    let big = ByteBuffer(Utf8Encoded("x".repeat(200000)).bytes());
+    test.is((await ReadUntilEnd(origin: big.reading(), limit: 200000).bytes()).size(), 200000);
+    let bigger = ByteBuffer(Utf8Encoded("x".repeat(200001)).bytes());
+    test.throws(ReadLimitExceeded) {
+        await ReadUntilEnd(origin: bigger.reading(), limit: 200000).bytes();
+    };
+    test.is(bigger.content().bytes().size(), 0);
+}
+
+async test "copy carries every byte between sync and async sides" {
+    let text = "copy me ".repeat(20000);
+    let buffer = ByteBuffer();
+    test.is(await Copy(from: ByteBuffer(text).reading(), to: buffer.writing()).count(), 160000);
+    test.is(Utf8Decoded(buffer.content().bytes()).string(), text);
+    let sink = TransferSink();
+    test.is(
+        await Copy(from: TransferPieces([[byte(1)], [byte(2), byte(3)]]), to: sink).count(),
+        3
+    );
+    test.is(sink.bytes(), [byte(1), byte(2), byte(3)]);
+    let gathered = ByteBuffer();
+    test.is(
+        await Copy(from: TransferPieces([[byte(9)], [byte(8)]]), to: gathered.writing()).count(),
+        2
+    );
+    test.is(gathered.content().bytes(), [byte(9), byte(8)]);
+    let other = TransferSink();
+    test.is(await Copy(from: ByteBuffer("ab").reading(), to: other).count(), 2);
+    test.is(Utf8Decoded(other.bytes()).string(), "ab");
+    test.is(await Copy(from: TransferPieces([]), to: TransferSink()).count(), 0);
+}

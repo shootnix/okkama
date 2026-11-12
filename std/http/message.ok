@@ -8,7 +8,8 @@ import "http/version" take HttpVersion;
 import "http/target" take RequestTarget, RequestTargetSnapshot, RequestTargetMethod, AbsoluteTarget;
 import "url/value" take ParsedUrl;
 import "encoding/utf" take Utf8Decoded;
-import "async/atomic" take Atomic;
+import "io/stream" take AsyncReading;
+import "io/transfer" take ReadUntilEnd, ReadLimitExceeded;
 import "numbers/bigint" take BigInt;
 import "compare" take Order;
 
@@ -106,29 +107,30 @@ object Request {
 
     hidden async streamed(input is BodyReading, limit is int) is @byte {
         defer input.close();
-        let empty is @@byte = [];
-        let chunks = Atomic(empty);
-        let taken = Atomic(0);
-        loop {
-            let chunk = await input.bytes(65536);
-            last if chunk.size() == 0;
-            taken.replace(taken.value() + chunk.size());
-            confirm taken.value() <= limit else throw BodyLimitExceeded.limit(limit);
-            chunks.replace(chunks.value() + [chunk]);
+        try {
+            await ReadUntilEnd(origin: MessageBodyBytes(input), limit: limit).bytes();
         }
-        let parts = chunks.value();
-        if parts.size() == 1 {
-            return parts[0];
-        }
-        let start is @byte = [];
-        parts.reduce(start) -> all, part {
-            all + part;
+        catch failure is ReadLimitExceeded {
+            throw BodyLimitExceeded.limit(limit);
         };
     }
 
     // The whole body as UTF-8 text, at most limit bytes.
     async text(limit is int) is string {
         Utf8Decoded(await self.bytes(limit)).string();
+    }
+}
+
+// A body reading seen as an AsyncReading, for io/transfer.
+hidden object MessageBodyBytes does AsyncReading {
+    has input is BodyReading;
+
+    MessageBodyBytes(input is BodyReading) {
+        self.input = input;
+    }
+
+    async bytes(limit is int) is @byte {
+        await input.bytes(limit);
     }
 }
 

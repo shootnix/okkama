@@ -6,6 +6,7 @@ import "io/input" take ByteInput;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded;
 import "fs/path" take Path;
 import "io/buffer" take ByteBuffer;
+import "io/transfer" take ReadUntilEnd, ReadLimitExceeded;
 import "async/atomic" take Atomic;
 import "time/clock" take SystemClock;
 import "time/duration" take Duration;
@@ -466,19 +467,12 @@ object ProcessStreamOutput does AsyncReading {
     // Everything up to the end as UTF-8 text, at most limit bytes; more is
     // OutputLimitExceeded.
     async text(limit is int) is string {
-        confirm limit >= 0 else throw InvalidReadLimit.limit(limit);
-        let joined = ByteBuffer();
-        defer joined.closing().close();
-        let output = joined.writing();
-        let taken = Atomic(0);
-        loop {
-            let chunk = await self.bytes(65536);
-            last if chunk.size() == 0;
-            taken.replace(taken.value() + chunk.size());
-            confirm taken.value() <= limit else throw OutputLimitExceeded.limit(limit);
-            output.write(chunk);
+        try {
+            await ReadUntilEnd(origin: self, limit: limit).text();
         }
-        Utf8Decoded(joined.content().bytes()).string();
+        catch failure is ReadLimitExceeded {
+            throw OutputLimitExceeded.limit(limit);
+        };
     }
 }
 
