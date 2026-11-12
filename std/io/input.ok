@@ -28,12 +28,15 @@ import "runtime/bytes" take bytes_join;
 // A line(terminator, limit) found no terminator within limit bytes.
 enum LineTooLong is Error = (after(limit is int));
 
+// A buffer over an AsyncReading for parsers: make sure bytes are there, look at
+// them, then consume them.
 object ByteInput {
     has source is AsyncReading;
     has buffer is Atomic<@byte>;
     has position is Atomic<int>;
     has finished is Atomic<bool>;
 
+    // Buffers source; the input belongs to one reader.
     ByteInput(source is AsyncReading) {
         self.source = source;
         buffer = Atomic([]);

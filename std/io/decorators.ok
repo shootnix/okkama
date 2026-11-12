@@ -1,5 +1,27 @@
 module io/decorators v1.0.0;
 
+// Readers and writers that wrap others: read ahead, stop at a limit, read one
+// source after another, write to several outputs, or write nowhere.
+//
+//     let buffered = BufferedReading(origin: socket, capacity: 8192);
+//     let header = buffered.bytes(32);
+//     let prefix = LimitedReading(origin: file, limit: 1024);
+//     let combined = ChainedReading(origins: parts);
+//     TeeWriting(destinations: outputs).write(packet);
+//     Discarding().write(packet);
+//
+// None of them owns or closes what it wraps.
+//
+// - BufferedReading reads ahead only when its cache is empty: it asks for the
+//   larger of the size asked and its capacity, hands out what was asked and
+//   keeps the rest. close() clears only its cache.
+// - LimitedReading gives at most limit bytes over all its reads.
+// - ChainedReading moves to the next origin when the current one ends with [].
+// - TeeWriting takes one snapshot of the source and writes it to each
+//   destination in order; the first failure stops the rest, and outputs already
+//   written are not undone.
+// - Discarding reads source.bytes() once and keeps nothing.
+
 import "io/stream" take ByteSource, Reading, Writing, Closing, InvalidReadLimit;
 import "collections/sequence" take Sequencing;
 import "error" take InvalidArgument;
@@ -10,43 +32,21 @@ import "runtime/io_decorators" take LimitedReadingState, ChainedReadingState,
     limited_reading_state_create, limited_reading_state_remaining, limited_reading_state_consume,
     chained_reading_state_create, chained_reading_state_position, chained_reading_state_advance;
 
-// Focused decorators over the io/stream capability roles.
-//
-//     let buffered = BufferedReading(origin: socket, capacity: 8192);
-//     let header = buffered.bytes(32);
-//
-//     let prefix = LimitedReading(origin: file, limit: 1024);
-//     let combined = ChainedReading(origins: parts);
-//
-//     TeeWriting(destinations: outputs).write(packet);
-//     Discarding().write(packet);
-//
-// BufferedReading reads ahead only when its private cache is empty. It asks
-// origin for max(requested size, capacity), returns at most the requested size
-// and retains the excess. close() clears only this owned cache; origin is
-// non-owned and remains open.
-//
-// LimitedReading shares one remaining budget across calls and subtracts only
-// bytes actually returned. ChainedReading advances to the next origin only
-// after the current one reports EOF as []; long runs of empty origins are
-// skipped iteratively. Neither decorator owns or closes its origins.
-//
-// TeeWriting materializes one ByteSnapshot, then writes it to destinations in
-// sequence order. The first failure stops later writes/flushes; completed
-// destinations are not rolled back. Duplicate destinations receive duplicate
-// writes. Discarding consumes source.bytes() exactly once and retains nothing.
-
+// Reads ahead from origin in pieces of at least capacity bytes, 8192 unless
+// told.
 object BufferedReading does Reading, Closing {
     has origin is Reading;
     has capacity is int;
     has cache is BufferState;
 
+    // Reads ahead 8192 bytes at a time.
     BufferedReading(origin is Reading) {
         self.origin = origin;
         capacity = 8192;
         cache = buffer_state_create([]);
     }
 
+    // Reads ahead at least capacity bytes at a time; capacity must be positive.
     BufferedReading(origin is Reading, capacity is int) {
         confirm capacity > 0
             else throw InvalidArgument.because("buffer capacity must be positive");
@@ -55,6 +55,7 @@ object BufferedReading does Reading, Closing {
         cache = buffer_state_create([]);
     }
 
+    // At most limit bytes, from the cache first; [] at the end.
     bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         confirm !self.closed() else throw ClosedReading.closed;
@@ -85,19 +86,23 @@ object BufferedReading does Reading, Closing {
         }
     }
 
+    // Whether the cache is closed.
     closed() is bool {
         buffer_state_closed(cache);
     }
 
+    // Drops the cache; origin stays open.
     close() is void {
         buffer_state_close(cache);
     }
 }
 
+// At most limit bytes of origin, over all reads together.
 object LimitedReading does Reading {
     has origin is Reading;
     has state is LimitedReadingState;
 
+    // Reads at most limit bytes of origin; limit must not be negative.
     LimitedReading(origin is Reading, limit is int) {
         confirm limit >= 0
             else throw InvalidArgument.because("reading limit cannot be negative");
@@ -105,6 +110,8 @@ object LimitedReading does Reading {
         state = limited_reading_state_create(limit);
     }
 
+    // At most size bytes and no more than are left of the limit; [] once it is
+    // used up.
     bytes(size is int) is @byte {
         confirm size > 0 else throw InvalidReadLimit.limit(size);
         let remaining is int = limited_reading_state_remaining(state);
@@ -127,15 +134,18 @@ object LimitedReading does Reading {
     }
 }
 
+// The origins read one after another, as one input.
 object ChainedReading does Reading {
     has origins is Sequencing<Reading>;
     has state is ChainedReadingState;
 
+    // Reads each origin to its end, in order.
     ChainedReading(origins is Sequencing<Reading>) {
         self.origins = origins;
         state = chained_reading_state_create();
     }
 
+    // At most size bytes of the current origin; [] after the last one ends.
     bytes(size is int) is @byte {
         confirm size > 0 else throw InvalidReadLimit.limit(size);
         loop {
@@ -152,35 +162,44 @@ object ChainedReading does Reading {
     }
 }
 
+// Bytes as a ByteSource, for writing them with `<-` or Writing.write.
 object ByteSnapshot does ByteSource {
     has value is @byte;
 
+    // A source of exactly these bytes.
     ByteSnapshot(origin is @byte) {
         value = origin;
     }
 
+    // The bytes.
     bytes() is @byte {
         value;
     }
 }
 
+// One write sent to several outputs in order.
 object TeeWriting does Writing {
     has destinations is Sequencing<Writing>;
 
+    // Writes to every destination, in sequence order.
     TeeWriting(destinations is Sequencing<Writing>) {
         self.destinations = destinations;
     }
 
+    // Writes one snapshot of source to each destination; the first failure
+    // stops the rest.
     write(source is ByteSource) is void {
         self.write(source.bytes());
     }
 
+    // Writes the bytes to each destination; the first failure stops the rest.
     write(bytes is @byte) is void {
         for (0..destinations.size()) -> index {
             destinations.item(index).write(bytes);
         }
     }
 
+    // Flushes each destination in order.
     flush() is void {
         for (0..destinations.size()) -> index {
             destinations.item(index).flush();
@@ -188,22 +207,29 @@ object TeeWriting does Writing {
     }
 }
 
+// An output that throws everything away, for tests and measurements.
 object Discarding does Writing {
+    // An output that keeps nothing.
     Discarding();
 
+    // Reads source.bytes() once and drops them.
     write(source is ByteSource) is void {
         source.bytes();
     }
 
+    // Drops the bytes.
     write(bytes is @byte) is void {
         return;
     }
 
+    // Nothing to do.
     flush() is void {}
 }
 
+// The reading was closed.
 enum ClosedReading is Error = (closed);
 
+// A decorator was given something it cannot use; message says what.
 enum InvalidReading is Error = (because(message is string));
 
 test "buffered and limited readings" {
