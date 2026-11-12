@@ -6,12 +6,8 @@ import "http/version" take HttpVersion;
 import "http/header" take Headers, Header, HeaderName, HeaderLimits, InvalidHeader;
 import "http/message" take InvalidHttpMessage;
 import "http/internal/trailers" take HttpTrailerRules;
-import "regex/pattern" take Regex;
-import "regex/search" take RegexMatches, EntireRegexMatch;
 import "numbers/bigint" take BigInt;
-import "encoding/single_byte" take Latin1Encoded;
 import "runtime/single_byte" take latin1_representable_prefix;
-import "compare" take Order;
 
 // Chunk extensions are bounded wire grammar, not application metadata. Unknown
 // syntactically safe extensions are ignored; their values never escape here.
@@ -29,37 +25,169 @@ object ParsedHttp1ChunkLine {
         self.limits = limits;
     }
 
+    // chunk-line = 1*HEXDIG *( BWS ";" BWS token [ BWS "=" BWS ( token /
+    // quoted-string ) ] ), scanned once by character codes instead of a regex
+    // compiled for every chunk (#114).
     size() is BigInt {
         confirm origin.length() <= limits::Limits::line_bytes
             else throw Http1LimitExceeded.kind("line_bytes");
         confirm latin1_representable_prefix(origin) == origin.length()
             else throw InvalidHttpMessage.because("chunk line requires octets");
-        let token = "[!#$%&'*+.^_`|~0-9A-Za-z-]+";
-        let quoted = "\"(?:[\\x{09}\\x{20}\\x{21}\\x{23}-\\x{5b}\\x{5d}-\\x{7e}\\x{80}-\\x{ff}]|\\\\[\\x{09}\\x{20}-\\x{7e}\\x{80}-\\x{ff}])*\"";
-        let extensions = "(?:[ \\t]*;[ \\t]*" + token + "(?:[ \\t]*=[ \\t]*(?:" + token + "|" + quoted + "))?)*";
-        let pattern = Regex("^([0-9A-Fa-f]+)" + extensions + "$");
-        confirm RegexMatches(origin: origin, regex: pattern).found()
+        let state = origin.characters().reduce(0) -> state, character {
+            self.next(state, character.code());
+        };
+        confirm state == 1 || state == 4 || state == 7 || state == 10
             else throw InvalidHttpMessage.because("invalid chunk size or extension syntax");
-        let hex = EntireRegexMatch(origin: origin, regex: pattern).capture(1).text();
-        confirm hex.length() <= 16 else throw Http1LimitExceeded.kind("chunk_digits");
-        let value = Latin1Encoded(hex).bytes().reduce(BigInt("0")) -> size, octet {
-            let code = octet.int();
-            let digit = if code <= 57 {
-                code - 48;
+        let end = [origin.find(";"), origin.find(" "), origin.find("\t")].reduce(origin.length()) -> first, found {
+            let at = found else origin.length();
+            if at < first {
+                at;
             }
             else {
-                if code <= 70 {
-                    code - 55;
-                }
-                else {
-                    code - 87;
-                }
-            };
-            ((size * BigInt("16")) + BigInt(digit.string()));
+                first;
+            }
         };
-        confirm value.order(BigInt(limits::Limits::body_bytes.string())) != Order.greater
-            else throw Http1LimitExceeded.kind("body_bytes");
-        value;
+        let hex = origin.slice(0, end);
+        confirm hex.length() <= 16 else throw Http1LimitExceeded.kind("chunk_digits");
+        // The size stops growing past the limit, so it never overflows.
+        let cap = limits::Limits::body_bytes + 1;
+        let value = hex.characters().reduce(0) -> size, character {
+            let grown = size * 16 + self.hex(character.code());
+            if grown > cap {
+                cap;
+            }
+            else {
+                grown;
+            }
+        };
+        confirm value <= limits::Limits::body_bytes else throw Http1LimitExceeded.kind("body_bytes");
+        BigInt(value.string());
+    }
+
+    // States: 0 before the size, 1 in the size, 2 blanks before ';', 3 after
+    // ';', 4 in a name, 5 blanks after a name, 6 after '=', 7 in a token
+    // value, 8 in a quoted value, 9 after a backslash there, 10 after the
+    // closing quote; -1 is invalid. A line may end in 1, 4, 7 or 10.
+    hidden next(state is int, code is int) is int {
+        let blank = code == 32 || code == 9;
+        if state == 0 || state == 1 {
+            if self.hex(code) >= 0 {
+                return 1;
+            }
+            if state == 1 && blank {
+                return 2;
+            }
+            if state == 1 && code == 59 {
+                return 3;
+            }
+            return -1;
+        }
+        if state == 2 || state == 10 {
+            if blank {
+                return 2;
+            }
+            if code == 59 {
+                return 3;
+            }
+            return -1;
+        }
+        if state == 3 {
+            if blank {
+                return 3;
+            }
+            if self.tchar(code) {
+                return 4;
+            }
+            return -1;
+        }
+        if state == 4 || state == 5 {
+            if state == 4 && self.tchar(code) {
+                return 4;
+            }
+            if blank {
+                return 5;
+            }
+            if code == 61 {
+                return 6;
+            }
+            if code == 59 {
+                return 3;
+            }
+            return -1;
+        }
+        if state == 6 {
+            if blank {
+                return 6;
+            }
+            if self.tchar(code) {
+                return 7;
+            }
+            if code == 34 {
+                return 8;
+            }
+            return -1;
+        }
+        if state == 7 {
+            if self.tchar(code) {
+                return 7;
+            }
+            if blank {
+                return 2;
+            }
+            if code == 59 {
+                return 3;
+            }
+            return -1;
+        }
+        if state == 8 {
+            if code == 34 {
+                return 10;
+            }
+            if code == 92 {
+                return 9;
+            }
+            if code == 9 || code == 32 || code == 33 || (code >= 35 && code <= 91) || (code >= 93 && code <= 126) || code >= 128 {
+                return 8;
+            }
+            return -1;
+        }
+        if state == 9 {
+            if code == 9 || (code >= 32 && code <= 126) || code >= 128 {
+                return 8;
+            }
+            return -1;
+        }
+        -1;
+    }
+
+    hidden hex(code is int) is int {
+        if code >= 48 && code <= 57 {
+            return code - 48;
+        }
+        if code >= 65 && code <= 70 {
+            return code - 55;
+        }
+        if code >= 97 && code <= 102 {
+            return code - 87;
+        }
+        -1;
+    }
+
+    hidden tchar(code is int) is bool {
+        (code >= 48 && code <= 57)
+            || (code >= 65 && code <= 90)
+            || (code >= 97 && code <= 122)
+            || code == 33
+            || (code >= 35 && code <= 39)
+            || code == 42
+            || code == 43
+            || code == 45
+            || code == 46
+            || code == 94
+            || code == 95
+            || code == 96
+            || code == 124
+            || code == 126;
     }
 }
 
@@ -127,3 +255,26 @@ test "zero chunk and empty trailers have explicit boundaries" {
     test.is(ParsedHttp1ChunkLine("0; ignored=\"safe;value\"").size().string(), "0");
     test.is(ParsedHttp1Trailers(origin: "\r\n", head: Headers()).trailers().entries().size(), 0);
 }
+
+test "chunk lines are read without a regex" {
+    test.is(ParsedHttp1ChunkLine("1a").size().string(), "26");
+    test.is(ParsedHttp1ChunkLine("FF ; name ; other = token ;q=\"a\\\"b\"").size().string(), "255");
+    test.is(ParsedHttp1ChunkLine("0000000000000010").size().string(), "16");
+    for ["", "x", "1 ", "1;", "1;a b", "1;a=", "1;a=\"open", "1 2", ";a"] -> bad {
+        test.throws(InvalidHttpMessage) {
+            ParsedHttp1ChunkLine(bad).size();
+        };
+    }
+    test.throws(Http1LimitExceeded) {
+        ParsedHttp1ChunkLine("10000000000000000").size();
+    };
+    test.throws(Http1LimitExceeded) {
+        ParsedHttp1ChunkLine("FFFFFFFFFFFFFFFF").size();
+    };
+    let small = Http1Limits(head_bytes: 1024, line_bytes: 64, fields: 8, body_bytes: 255);
+    test.is(ParsedHttp1ChunkLine(origin: "ff", limits: small).size().string(), "255");
+    test.throws(Http1LimitExceeded) {
+        ParsedHttp1ChunkLine(origin: "100", limits: small).size();
+    };
+}
+
