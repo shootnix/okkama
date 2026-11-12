@@ -5,12 +5,12 @@ import "fs/root" take FileRoot, RootedEntry;
 import "fs/stat" take FileStat, FileKind;
 import "fs/error" take FileError;
 import "fs/path" take Path;
-import "mime/types" take MediaIdentifying, UnknownMediaType;
+import "mime/types" take MediaIdentifying, UnknownMediaType, StandardMediaTypes;
 import "http/handler" take Handling, HandlingResult, ResponseHandling;
 import "http/request_context" take HttpRequestContext;
 import "http/message" take Request, Response;
 import "http/status" take Status, StatusCode;
-import "http/target" take RequestTargetKind;
+import "http/target" take RequestTargetKind, OriginTarget;
 import "http/header" take Headers, Header, HeaderName, ReplacedHeader;
 import "http/body" take BodyOpening, BodyReading, ByteBody, BodyClosed, BodyAlreadyOpened,
     TrailersUnavailable;
@@ -20,7 +20,7 @@ import "http/date" take HttpDate, ParsedHttpDate, InvalidHttpDate, HttpDateRefer
 import "http/negotiation" take AcceptedContentCodings, NoAcceptableValue, InvalidNegotiation;
 import "http/content_coding" take ContentCoding;
 import "url/percent" take PercentDecoded, PercentEncoded, UrlComponent, InvalidPercentEncoding;
-import "encoding/utf" take Utf8Encoded, InvalidUtf8;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
 import "html/entities" take EscapedHtml;
 import "collections/sequence" take Sequencing;
 import "numbers/bigint" take BigInt;
@@ -32,6 +32,18 @@ import "io/stream" take InvalidReadLimit;
 import "random/source" take Randomizing, SecureRandom;
 import "encoding/hex" take HexEncoded;
 import "time/clock" take Timing, SystemClock, Instant;
+import "http/routing" take Routes, Route, RoutePattern;
+import "http/exchange" take ExchangeDetails;
+import "http/version" take HttpVersion;
+import "net/stream" take ConnectionEndpoints;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "async/cancellation" take Cancellation;
+import "fs/temp" take TemporaryDirectory;
+import "fs/directory" take Directory;
+import "fs/file" take File, FileMode;
+import "digest/sha2" take Sha256;
+import "digest/state" take Digesting;
 
 // Policy is immutable; the supplied root is borrowed. Every selected response
 // owns an independent descriptor. No joined request path or stat/open pair.
@@ -39,6 +51,8 @@ object StaticPolicy {
     has indexes is @string;
     has listing, precompressed is bool;
     has ranges, names is int;
+    has cache is string;
+    has tags is FileTags;
 
     StaticPolicy() {
         indexes = ["index.html"];
@@ -46,6 +60,8 @@ object StaticPolicy {
         precompressed = false;
         ranges = 16;
         names = 1024;
+        cache = "";
+        tags = FileTags.metadata;
     }
 
     StaticPolicy(indexes is Sequencing<string>, listing is bool, precompressed is bool) {
@@ -55,14 +71,20 @@ object StaticPolicy {
         self.precompressed = precompressed;
         ranges = 16;
         names = 1024;
+        cache = "";
+        tags = FileTags.metadata;
     }
 
+    // cache: the Cache-Control of every file served, "" for none (#109);
+    // tags: how ETags are made, from metadata (the default) or from content.
     StaticPolicy(
         indexes is Sequencing<string>,
         listing is bool,
         precompressed is bool,
         ranges is int,
-        names is int
+        names is int,
+        cache is string = "",
+        tags is FileTags = FileTags.metadata
     ) {
         confirm ranges >= 0 && ranges <= 128 && names >= 0 && names <= 4096
             else throw InvalidStaticPolicy.because("range/listing budget");
@@ -71,6 +93,11 @@ object StaticPolicy {
         self.precompressed = precompressed;
         self.ranges = ranges;
         self.names = names;
+        if cache != "" {
+            Header(name: HeaderName("Cache-Control"), value: cache);
+        }
+        self.cache = cache;
+        self.tags = tags;
     }
 
     indexes() is Sequencing<string> {
@@ -92,6 +119,14 @@ object StaticPolicy {
 
         names is int {
             names;
+        }
+
+        cache is string {
+            cache;
+        }
+
+        tags is FileTags {
+            tags;
         }
     }
 }
@@ -140,7 +175,9 @@ hidden object StaticPath {
     has wire, query is string;
     has slash is bool;
 
-    StaticPath(request is Request) {
+    // relative: the file's path below the root when a route parameter holds
+    // it, already decoded; none takes the request path.
+    StaticPath(request is Request, relative is Maybe<string>) {
         let target = request::Head::target;
         let path = if target.kind() == RequestTargetKind.origin {
             target.path();
@@ -161,7 +198,8 @@ hidden object StaticPath {
             path;
         };
         confirm raw.length() <= 8192 && raw.slice(0, 1) == "/" else throw InvalidStaticPath.invalid;
-        slash = raw.slice(raw.length() - 1, raw.length()) == "/";
+        let trailing = raw.slice(raw.length() - 1, raw.length()) == "/";
+        slash = trailing;
         wire = raw;
         let q is Maybe<string> = if target.kind() == RequestTargetKind.origin {
             target.query();
@@ -176,23 +214,54 @@ hidden object StaticPath {
         else {
             "";
         };
-        let parts = raw.split("/");
+        // The coordinates come from the raw path, decoded here, or from the
+        // route parameter, decoded already; the final slash is the request's.
+        let decoded = relative != Maybe<string>.none;
+        let given = relative else "";
+        let inner = if given.ends_with("/") {
+            given.slice(0, given.length() - 1);
+        }
+        else {
+            given;
+        };
+        let named is @string = if !decoded {
+            raw.split("/");
+        }
+        else {
+            if inner == "" {
+                [""];
+            }
+            else {
+                ("/" + inner).split("/");
+            }
+        };
+        let parts is @string = if decoded && trailing {
+            named + [""];
+        }
+        else {
+            named;
+        };
         confirm parts.size() <= 258 else throw InvalidStaticPath.invalid;
-        let end = parts.size() - if self.slash {
+        let end = parts.size() - if trailing {
             1;
         }
         else {
             0;
         };
         let coordinates is @string = (1..end).map() -> index {
-            let name = try {
-                PercentDecoded(parts[index]).string();
+            let name = if decoded {
+                parts[index];
             }
-            catch e is InvalidPercentEncoding {
-                throw InvalidStaticPath.invalid;
-            }
-            catch e is InvalidUtf8 {
-                throw InvalidStaticPath.invalid;
+            else {
+                try {
+                    PercentDecoded(parts[index]).string();
+                }
+                catch e is InvalidPercentEncoding {
+                    throw InvalidStaticPath.invalid;
+                }
+                catch e is InvalidUtf8 {
+                    throw InvalidStaticPath.invalid;
+                };
             };
             StaticCoordinate(name);
             name;
@@ -213,12 +282,20 @@ hidden object StaticPath {
     }
 }
 
+// Files below root, answered with validators, ranges and optional precompressed
+// companions. The request path names the file, or, with parameter:, the route
+// parameter of that name does (a final wildcard, #107):
+//
+//     Route(method: Method.get, pattern: RoutePattern("/assets/*file"),
+//         handling: StaticFiles(root:, media:, policy:, random:, clock:, parameter: "file"))
 object StaticFiles does Handling {
     has root is FileRoot;
     has media is MediaIdentifying;
     has policy is StaticPolicy;
     has random is Randomizing;
     has clock is Timing;
+    has parameter is string;
+    has tagged is Atomic<%string:string>;
 
     StaticFiles(root is FileRoot, media is MediaIdentifying, policy is StaticPolicy) {
         self.root = root;
@@ -226,6 +303,8 @@ object StaticFiles does Handling {
         self.policy = policy;
         random = SecureRandom();
         clock = SystemClock();
+        parameter = "";
+        tagged = Atomic([:]);
     }
 
     StaticFiles(
@@ -239,6 +318,8 @@ object StaticFiles does Handling {
         self.policy = policy;
         self.random = random;
         clock = SystemClock();
+        parameter = "";
+        tagged = Atomic([:]);
     }
 
     StaticFiles(
@@ -246,13 +327,16 @@ object StaticFiles does Handling {
         media is MediaIdentifying,
         policy is StaticPolicy,
         random is Randomizing,
-        clock is Timing
+        clock is Timing,
+        parameter is string = ""
     ) {
         self.root = root;
         self.media = media;
         self.policy = policy;
         self.random = random;
         self.clock = clock;
+        self.parameter = parameter;
+        tagged = Atomic([:]);
     }
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
@@ -270,8 +354,29 @@ object StaticFiles does Handling {
                 )
             );
         }
+        let relative = if parameter == "" {
+            Maybe<string>.none;
+        }
+        else {
+            Maybe.some(context.parameters()[parameter] else "");
+        };
+        ResponseHandling(self.answered(request, now, relative));
+    }
+
+    // The response for the file at path below root, as a GET of request asks
+    // for it (validators and ranges), with the Date of now: web/reply's
+    // FileReply (#82). A missing file is 404, a bad path 400.
+    file_response(request is Request, path is string) is Response {
+        self.answered(request, clock.instant(), Maybe.some(path));
+    }
+
+    response(request is Request, now is Instant) is Response {
+        self.served(request, now, Maybe<string>.none);
+    }
+
+    hidden answered(request is Request, now is Instant, relative is Maybe<string>) is Response {
         let response = try {
-            self.response(request, now);
+            self.served(request, now, relative);
         }
         catch e is InvalidStaticPath {
             Response(status: Status.bad_request);
@@ -300,18 +405,16 @@ object StaticFiles does Handling {
             origin: response::Head::headers,
             entry: Header(name: HeaderName("Date"), value: HttpDate(now).string())
         ).headers();
-        ResponseHandling(
-            Response(
-                status: response::Head::status,
-                headers: headers,
-                body: response.body(),
-                version: response::Head::version
-            )
+        Response(
+            status: response::Head::status,
+            headers: headers,
+            body: response.body(),
+            version: response::Head::version
         );
     }
 
-    response(request is Request, now is Instant) is Response {
-        let path = StaticPath(request);
+    hidden served(request is Request, now is Instant, relative is Maybe<string>) is Response {
+        let path = StaticPath(request: request, relative: relative);
         let coordinates = path.segments();
         let opened = root.entry(coordinates);
         let owned = StaticSelection(entry: opened, coding: "");
@@ -406,7 +509,12 @@ object StaticFiles does Handling {
         confirm facts::Shape::size >= 0 && facts::Shape::size <= 9007199254740991
             else throw InvalidStaticPolicy.because("file size exceeds exact offsets");
         let size = facts::Shape::size;
-        let tag = StaticValidator(facts: facts, coding: owned.coding()).tag();
+        let tag = if policy::Settings::tags == FileTags.content {
+            self.content_tag(file, facts, owned.coding());
+        }
+        else {
+            StaticValidator(facts: facts, coding: owned.coding()).tag();
+        };
         let modified = facts.times().modification();
         let date = HttpDate(if modified.order(now) == Order.greater {
             now;
@@ -423,9 +531,19 @@ object StaticFiles does Handling {
                 Header(name: HeaderName("Accept-Ranges"), value: "bytes")
             )
         );
+        if policy::Settings::cache != "" {
+            headers.replace(
+                headers.value().addition(
+                    Header(name: HeaderName("Cache-Control"), value: policy::Settings::cache)
+                )
+            );
+        }
         if policy::Settings::precompressed {
             headers.replace(
-                ReplacedHeader(origin: headers.value(), entry: Header(name: HeaderName("Vary"), value: "Accept-Encoding")).headers()
+                ReplacedHeader(
+                    origin: headers.value(),
+                    entry: Header(name: HeaderName("Vary"), value: "Accept-Encoding")
+                ).headers()
             );
         }
         if owned.coding() != "" {
@@ -436,7 +554,12 @@ object StaticFiles does Handling {
                 ).headers()
             );
         }
-        let decision = StaticPreconditions(head: request::Head::headers, tag: tag, date: date, reference: now).status();
+        let decision = StaticPreconditions(
+            head: request::Head::headers,
+            tag: tag,
+            date: date,
+            reference: now
+        ).status();
         if decision == 304 {
             return Response(status: Status.not_modified, headers: headers.value());
         }
@@ -449,9 +572,14 @@ object StaticFiles does Handling {
         if request::Head::method == Method.head {
             return Response(status: Status.ok, headers: headers.value());
         }
-        let range = StaticRanges(head: request::Head::headers, size: size, maximum: policy::Settings::ranges);
+        let range = StaticRanges(
+            head: request::Head::headers,
+            size: size,
+            maximum: policy::Settings::ranges
+        );
         let ranges = range.values();
-        let apply = range.present() && StaticIfRange(head: request::Head::headers, tag: tag, date: date).allowed();
+        let apply = range.present()
+            && StaticIfRange(head: request::Head::headers, tag: tag, date: date).allowed();
         if apply && ranges.size() == 0 {
             return Response(
                 status: Status.range_not_satisfiable,
@@ -527,6 +655,32 @@ object StaticFiles does Handling {
         );
         owned.claim();
         Response(status: StatusCode(status).status(), headers: headers.value(), body: body);
+    }
+
+    // A strong ETag from the bytes of the file, the same on every replica
+    // (#109). It is computed once per version of a file (its identity, size and
+    // times) and kept for at most 4096 versions.
+    hidden content_tag(file is RootedEntry, facts is FileStat, coding is string) is EntityTag {
+        let version = StaticValidator(facts: facts, coding: coding).tag().string();
+        let known = tagged.value();
+        if known.has(version) {
+            return EntityTag(value: known[version], weak: false);
+        }
+        let digest = StaticDigest(entry: file, size: facts::Shape::size).hex().slice(0, 32);
+        let value = if coding == "" {
+            digest;
+        }
+        else {
+            digest + "-" + coding;
+        };
+        let kept is %string:string = if known.size() >= 4096 {
+            [:];
+        }
+        else {
+            known;
+        };
+        tagged.replace(kept + [version: value]);
+        EntityTag(value: value, weak: false);
     }
 
     index(coordinates is @string, directory is bool) is @StaticIndexFile {
@@ -822,7 +976,11 @@ hidden object StaticPreconditions {
             let fields = head.values(HeaderName("If-Unmodified-Since"));
             if fields.size() == 1 {
                 let valid is @HttpDate = try {
-                    [HttpDate(ParsedHttpDate(origin: fields.item(0), reference: reference).instant())];
+                    [
+                        HttpDate(
+                            ParsedHttpDate(origin: fields.item(0), reference: reference).instant()
+                        )
+                    ];
                 }
                 catch e is InvalidHttpDate {
                     [];
@@ -845,7 +1003,11 @@ hidden object StaticPreconditions {
             let fields = head.values(HeaderName("If-Modified-Since"));
             if fields.size() == 1 {
                 let valid is @HttpDate = try {
-                    [HttpDate(ParsedHttpDate(origin: fields.item(0), reference: reference).instant())];
+                    [
+                        HttpDate(
+                            ParsedHttpDate(origin: fields.item(0), reference: reference).instant()
+                        )
+                    ];
                 }
                 catch e is InvalidHttpDate {
                     [];
@@ -884,7 +1046,10 @@ hidden object StaticRanges {
         let accepted = Atomic(false);
         if fields.size() == 1 && maximum > 0 {
             let parsed is @ByteRange = try {
-                let entries = ByteRanges(origin: fields.item(0), limits: ConditionalLimits(8192, maximum)).ranges(
+                let entries = ByteRanges(
+                    origin: fields.item(0),
+                    limits: ConditionalLimits(8192, maximum)
+                ).ranges(
                     BigInt(size.string())
                 );
                 accepted.replace(true);
@@ -1091,6 +1256,32 @@ hidden object StaticReadCleanup {
     }
 }
 
+// How a file's ETag is made (#109): metadata from its identity, size and times
+// (the default, cheap, different on each replica), content from its bytes
+// (read once per version of the file, the same on every replica).
+enum FileTags = (metadata, content);
+
+// The SHA-256 of a file's bytes, read in 64 KiB pieces.
+hidden object StaticDigest {
+    has entry is RootedEntry;
+    has size is int;
+
+    StaticDigest(entry is RootedEntry, size is int) {
+        self.entry = entry;
+        self.size = size;
+    }
+
+    hex() is string {
+        let count = ((size + 65535) / 65536).int();
+        let start is Digesting = Sha256();
+        let digest is Digesting = (0..count).reduce(start) -> state, index {
+            let following is Digesting = state.state(entry.bytes_at(index * 65536, 65536));
+            following;
+        };
+        digest.hex();
+    }
+}
+
 enum InvalidStaticPath is Error = (invalid);
 
 enum InvalidStaticPolicy is Error = (because(reason is string));
@@ -1109,4 +1300,117 @@ test "static policy defaults bound ranges and disable optional file modes" {
     catch e is InvalidStaticPolicy {
         true;
     });
+}
+
+// What a table answers to a GET of path with headers: the response and its body.
+hidden object StaticDispatch {
+    has routes is Routes;
+
+    StaticDispatch(routes is Routes) {
+        self.routes = routes;
+    }
+
+    async get(path is string, headers is Headers) is Response {
+        let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(
+            local: IpEndpoint(address: IpAddress("127.0.0.1"), port: 80),
+            remote: IpEndpoint(address: IpAddress("127.0.0.1"), port: 50000)
+        );
+        let context = HttpRequestContext(
+            details: ExchangeDetails(endpoints: ends, version: HttpVersion.http_1_1),
+            cancellation: Cancellation().cancelling()
+        );
+        let request = Request(
+            target: OriginTarget(path: path, query: Maybe<string>.none),
+            headers: headers
+        );
+        (await routes.handling(request, context)).response();
+    }
+}
+
+hidden object StaticText {
+    has response is Response;
+
+    StaticText(response is Response) {
+        self.response = response;
+    }
+
+    async text() is string {
+        let input = response.body().reading();
+        defer input.close();
+        let pieces = Atomic("");
+        loop {
+            let chunk = await input.bytes(65536);
+            if chunk.size() == 0 {
+                last;
+            }
+            pieces.replace(pieces.value() + Utf8Decoded(chunk).string());
+        }
+        pieces.value();
+    }
+}
+
+async test "files are served below a route parameter with a cache rule and content tags" {
+    let scratch = TemporaryDirectory(
+        parent: Directory(path: Path(".")),
+        prefix: "http-static-test-"
+    );
+    let base = scratch.path();
+    Directory(path: base.child("css")).create();
+    let style = File(path: base.child("css").child("site.css"), mode: FileMode.writing);
+    style.text().write("body{}");
+    style.close();
+    let index = File(path: base.child("index.html"), mode: FileMode.writing);
+    index.text().write("<h1>hi</h1>");
+    index.close();
+    let root = FileRoot(directory: Directory(path: base));
+    let policy = StaticPolicy(
+        indexes: ["index.html"],
+        listing: false,
+        precompressed: false,
+        ranges: 16,
+        names: 1024,
+        cache: "public, max-age=60",
+        tags: FileTags.content
+    );
+    let files = StaticFiles(
+        root: root,
+        media: StandardMediaTypes(),
+        policy: policy,
+        random: SecureRandom(),
+        clock: SystemClock(),
+        parameter: "file"
+    );
+    let table = StaticDispatch(
+        Routes(
+            routes: [
+                Route(method: Method.get, pattern: RoutePattern("/assets/*file"), handling: files)
+            ],
+            fallback: files
+        )
+    );
+    let page = await table.get("/assets/css/site.css", Headers());
+    test.is(page::Head::status, Status.ok);
+    test.is(page::Head::headers.text("Cache-Control"), "public, max-age=60");
+    let tag = page::Head::headers.text("ETag");
+    test.is(tag, "\"" + Sha256("body{}").hex().slice(0, 32) + "\"");
+    test.is(await StaticText(page).text(), "body{}");
+    test.is((await table.get("/assets/css/site.css", Headers()))::Head::headers.text("ETag"), tag);
+    let unchanged = await table.get(
+        "/assets/css/site.css",
+        Headers(Header(name: "If-None-Match", value: tag))
+    );
+    test.is(unchanged::Head::status, Status.not_modified);
+    test.is(unchanged::Head::headers.text("Cache-Control"), "public, max-age=60");
+    let directory = await table.get("/assets", Headers());
+    test.is(directory::Head::status, Status.permanent_redirect);
+    test.is(directory::Head::headers.text("Location"), "/assets/");
+    test.is(await StaticText(await table.get("/assets/", Headers())).text(), "<h1>hi</h1>");
+    test.is((await table.get("/assets/missing.txt", Headers()))::Head::status, Status.not_found);
+    let request = Request(target: OriginTarget(path: "/download", query: Maybe<string>.none));
+    let one = files.file_response(request, "css/site.css");
+    test.is(one::Head::status, Status.ok);
+    test.is(await StaticText(one).text(), "body{}");
+    test.is(files.file_response(request, "../secret")::Head::status, Status.bad_request);
+    root.close();
+    scratch.close();
 }

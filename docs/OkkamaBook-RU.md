@@ -4128,7 +4128,9 @@ endpoint: notes.one), Post(…)), Fallback(notes.missing))`. Без `Fallback` �
 Заголовки — поля поштучно: `Headers(Header(name: "Cache-Control", value:
 "no-store"), SetCookie(name: "sid", value: token), ExpiredCookie("old"))`, где
 у `SetCookie` по умолчанию Path=/, Secure, HttpOnly и SameSite=Lax.
-`WebSocket(path:, application:)` — маршрут для WebSocket; приложение проходит
+`Files(path: "/assets", root:, cache:, tags:)` отдаёт файлы под путём, а
+`FileReply(request:, root:, path:)` — один файл из endpoint; оба с диапазонами и
+валидаторами. `WebSocket(path:, application:)` — маршрут для WebSocket; приложение проходит
 соединение через `for await connection -> message` и отвечает `send_text`,
 `send_bytes` или `send_json`.
 `Resource("/notes", Get(notes.list), Post(notes.add))` пишет путь один раз для

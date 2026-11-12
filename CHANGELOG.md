@@ -233,6 +233,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   | `request.header("X-Id")` | `request.header().text("X-Id")` |
   | `request.header("X-Id", "")` | `request.header().maybe("X-Id").text() else ""` |
 
+- **Files under a path, cache rules, content ETags, a file reply (#107,
+  #109, #82).**
+  - `Files(path: "/assets", root: assets, cache: "public, max-age=31536000,
+    immutable", tags: FileTags.content)` serves `root/<name>` for
+    `/assets/<name>` in a `WebRoutes` table, through its arounds.
+  - `cache:` is the Cache-Control of every file. `FileTags.content` makes a
+    strong ETag from the file's SHA-256, the same on every replica and
+    computed once per version of a file; `FileTags.metadata` stays the default.
+  - `FileReply(request: request, root: reports, path: "2026/q3.pdf")` answers
+    one file from an endpoint, with ranges and validators.
+  - Underneath, `http/static` has `StaticPolicy(…, cache:, tags:)`,
+    `StaticFiles(…, parameter: "file")` taking the file from a wildcard route
+    parameter, and `files.file_response(request, path)`.
+
 - **The server answers HTTP/1.0 (#102).** `ab` works: no Host is required,
   responses are not chunked, and keep-alive applies only when asked for.
 - **RequestJson readers share one translation of reading failures (#84).**

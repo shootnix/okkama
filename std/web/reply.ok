@@ -1,13 +1,29 @@
 module web/reply v1.0.0;
 
 import "http/status" take Status, StatusCode;
-import "http/message" take Response, Responding;
+import "http/message" take Request, Response, Responding;
 import "http/header" take Headers, Header, HeaderName;
 import "json" take Json, JsonField;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "http/body" take BodyOpening, ByteBody;
 import "http/sse" take ServerEvent, EventBody, EventStreamHeaders;
 import "async/channel" take Channel, Receiving;
+import "http/static" take StaticFiles, StaticPolicy;
+import "fs/root" take FileRoot;
+import "mime/types" take StandardMediaTypes;
+import "web/request" take WebRequest;
+import "http/target" take OriginTarget;
+import "http/request_context" take HttpRequestContext;
+import "http/exchange" take ExchangeDetails;
+import "http/version" take HttpVersion;
+import "net/stream" take ConnectionEndpoints;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "async/cancellation" take Cancellation;
+import "fs/temp" take TemporaryDirectory;
+import "fs/directory" take Directory;
+import "fs/file" take File, FileMode;
+import "fs/path" take Path;
 import "web/internal/reply" take ReplyResponse, EmptyReplyResponse, OpenedReplyResponse,
     OpenedReplyFields, ReplyMediaType, BodyStatus, InvalidReply;
 
@@ -243,6 +259,56 @@ object EventsReply does Responding {
     }
 }
 
+// One file from an endpoint, with validators, ranges and the Content-Type of
+// its name (#82):
+//
+//     FileReply(request: request, root: reports, path: "2026/q3.pdf")
+//
+// path is below root and "/"-separated. A missing file is 404, a path that
+// would leave the root 400, and a conditional or range request is answered as
+// http/static answers it.
+object FileReply does Responding {
+    has request is WebRequest;
+    has root is FileRoot;
+    has path is string;
+    has given is Headers;
+
+    FileReply(
+        request is WebRequest,
+        root is FileRoot,
+        path is string,
+        headers is Headers = Headers()
+    ) {
+        self.request = request;
+        self.root = root;
+        self.path = path;
+        given = headers;
+    }
+
+    response() is Response {
+        let files = StaticFiles(root: root, media: StandardMediaTypes(), policy: StaticPolicy());
+        let answer = files.file_response(request.request(), path);
+        let extra = given.entries();
+        let fields = (0..extra.size()).reduce(answer::Head::headers) -> kept, index {
+            let field = extra.item(index);
+            let lowered = field.name().lowercase();
+            confirm lowered != "content-type"
+                && lowered != "content-length"
+                && lowered != "transfer-encoding"
+                else throw InvalidReply.because(
+                    field.name().string() + " is owned by the reply itself"
+                );
+            kept.addition(field);
+        };
+        Response(
+            status: answer::Head::status,
+            headers: fields,
+            body: answer.body(),
+            version: answer::Head::version
+        );
+    }
+}
+
 test "a text reply declares its representation and keeps the given fields" {
     let response = TextReply(text: "Привет", headers: Headers(Header(name: "X-Trace", value: "t1"))).response();
     test.is(response::Head::status, Status.ok);
@@ -314,4 +380,48 @@ async test "an events reply streams its channel as text/event-stream" {
     let input = response.body().reading();
     defer input.close();
     test.is(Utf8Decoded(await input.bytes(1024)).string(), "data: hello\n\n");
+}
+
+test "a file reply answers with the file and keeps the given fields" {
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "web-file-reply-");
+    let base = scratch.path();
+    let report = File(path: base.child("q3.txt"), mode: FileMode.writing);
+    report.text().write("profit");
+    report.close();
+    let root = FileRoot(directory: Directory(path: base));
+    let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(
+        local: IpEndpoint(address: IpAddress("127.0.0.1"), port: 80),
+        remote: IpEndpoint(address: IpAddress("127.0.0.1"), port: 50000)
+    );
+    let request = WebRequest(
+        request: Request(target: OriginTarget(path: "/report", query: Maybe<string>.none)),
+        context: HttpRequestContext(
+            details: ExchangeDetails(endpoints: ends, version: HttpVersion.http_1_1),
+            cancellation: Cancellation().cancelling()
+        )
+    );
+    let answer = FileReply(
+        request: request,
+        root: root,
+        path: "q3.txt",
+        headers: Headers(Header(name: "Content-Disposition", value: "attachment"))
+    ).response();
+    test.is(answer::Head::status, Status.ok);
+    test.is(answer::Head::headers.text("Content-Disposition"), "attachment");
+    test.is(answer::Head::headers.int("Content-Length"), 6);
+    test.is(answer::Head::headers.text("Content-Type"), "text/plain");
+    test.is(
+        FileReply(request: request, root: root, path: "missing.txt").response()::Head::status,
+        Status.not_found
+    );
+    test.throws(InvalidReply) {
+        FileReply(
+            request: request,
+            root: root,
+            path: "q3.txt",
+            headers: Headers(Header(name: "Content-Type", value: "text/html"))
+        ).response();
+    };
+    root.close();
+    scratch.close();
 }

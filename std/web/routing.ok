@@ -21,6 +21,15 @@ import "net/stream" take ConnectionEndpoints;
 import "net/endpoint" take IpEndpoint;
 import "net/ip" take IpAddress;
 import "web/request" take WebRequest, WebLinks, RouteParameter;
+import "http/static" take StaticFiles, StaticPolicy, FileTags;
+import "fs/root" take FileRoot;
+import "fs/temp" take TemporaryDirectory;
+import "fs/directory" take Directory;
+import "fs/file" take File, FileMode;
+import "fs/path" take Path;
+import "mime/types" take StandardMediaTypes;
+import "random/source" take SecureRandom;
+import "time/clock" take SystemClock;
 import "web/exception" take Exception, ProblemReply;
 
 // Route tables built from controller actions. An endpoint is any bound action
@@ -467,6 +476,87 @@ object Slashes does WebRouting {
 
     slashes() is Maybe<http_routing.SlashPolicy> {
         Maybe.some(policy);
+    }
+}
+
+// Files below root at path (#107), with validators, ranges and the Content-Type
+// of each name:
+//
+//     WebRoutes(
+//         Files(path: "/assets", root: assets, cache: "public, max-age=31536000, immutable", tags: FileTags.content),
+//         Files(path: "", root: site, cache: "no-cache"),
+//     )
+//
+// GET and HEAD of path/<name> read root/<name>; a directory answers with its
+// index.html. cache: is the Cache-Control of every file, "" for none; tags:
+// makes ETags from metadata (the default) or from content, the same on every
+// replica (#109). The Arounds of the table pass over files too, and a more
+// specific route below path still wins.
+object Files does WebRouting {
+    has path is string;
+    has files is StaticFiles;
+
+    Files(
+        path is string,
+        root is FileRoot,
+        cache is string = "",
+        tags is FileTags = FileTags.metadata
+    ) {
+        confirm path == "" || (path.starts_with("/") && !path.ends_with("/"))
+            else throw InvalidWebRoute.because(
+                "a files path must be empty or start with / and not end with it: " + path
+            );
+        self.path = path;
+        files = StaticFiles(
+            root: root,
+            media: StandardMediaTypes(),
+            policy: StaticPolicy(
+                indexes: ["index.html"],
+                listing: false,
+                precompressed: false,
+                ranges: 16,
+                names: 1024,
+                cache: cache,
+                tags: tags
+            ),
+            random: SecureRandom(),
+            clock: SystemClock(),
+            parameter: "file"
+        );
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
+        [
+            http_routing.Route(
+                method: Method.get,
+                pattern: http_routing.RoutePattern(prefix + path + "/*file"),
+                handling: WebEndpoint(FilesEndpoint(files).answer, scopes)
+            ),
+        ];
+    }
+
+    fallback() is Maybe<Fallback> {
+        Maybe<Fallback>.none;
+    }
+
+    around() is Maybe<Surrounding> {
+        Maybe<Surrounding>.none;
+    }
+
+    slashes() is Maybe<http_routing.SlashPolicy> {
+        Maybe<http_routing.SlashPolicy>.none;
+    }
+}
+
+hidden object FilesEndpoint {
+    has files is StaticFiles;
+
+    FilesEndpoint(files is StaticFiles) {
+        self.files = files;
+    }
+
+    async answer(request is WebRequest) is Responding {
+        (await files.handling(request.request(), request.context())).response();
     }
 }
 
@@ -1372,4 +1462,46 @@ async test "named routes give links to endpoints" {
             Post(path: "/b", endpoint: seven.answer, name: "x")
         );
     };
+}
+
+async test "files are served below a path, passing the arounds" {
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "web-files-test-");
+    let base = scratch.path();
+    let note = File(path: base.child("note.txt"), mode: FileMode.writing);
+    note.text().write("tea");
+    note.close();
+    let root = FileRoot(directory: Directory(path: base));
+    let empty is @string = [];
+    let trace = Atomic(empty);
+    defer trace.close();
+    let probe = RoutingProbe("own");
+    let table = WebRoutes(
+        Around(TraceAround(name: "log", trace: trace)),
+        Files(path: "/assets", root: root, cache: "no-cache"),
+        Get(path: "/assets/own", endpoint: probe.answer),
+    );
+    let dispatch = RoutingDispatch(table);
+    test.is(await dispatch.answer(Method.get, "/assets/own"), "own");
+    test.is(await dispatch.answer(Method.get, "/assets/missing.txt"), "404");
+    let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(
+        local: IpEndpoint(address: IpAddress("127.0.0.1"), port: 80),
+        remote: IpEndpoint(address: IpAddress("127.0.0.1"), port: 50000)
+    );
+    let context = HttpRequestContext(
+        details: ExchangeDetails(endpoints: ends, version: HttpVersion.http_1_1),
+        cancellation: Cancellation().cancelling()
+    );
+    let served = (await table.handling(
+        Request(target: OriginTarget(path: "/assets/note.txt", query: Maybe<string>.none)),
+        context
+    )).response();
+    test.is(served::Head::status, Status.ok);
+    test.is(served::Head::headers.text("Cache-Control"), "no-cache");
+    test.is(served::Head::headers.text("Content-Type"), "text/plain");
+    test.ok(trace.value().contains("<log 200"));
+    test.throws(InvalidWebRoute) {
+        Files(path: "/assets/", root: root);
+    };
+    root.close();
+    scratch.close();
 }
