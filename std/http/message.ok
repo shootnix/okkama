@@ -46,7 +46,10 @@ object Request {
         body is BodyOpening = EmptyBody(),
         version is HttpVersion = HttpVersion.http_1_1
     ) {
-        self.target = RequestCoordinates(method: method, target: AbsoluteTarget(ParsedUrl(url).parts())).target();
+        self.target = RequestCoordinates(
+            method: method,
+            target: AbsoluteTarget(ParsedUrl(url).parts())
+        ).target();
         self.method = method;
         self.headers = headers;
         self.body = body;
@@ -247,7 +250,10 @@ test "a request to a URL is a GET with no fields unless told" {
 
 test "a response takes content and its media type" {
     let response = Response(status: Status.ok, content: TextBody(text: "hi"));
-    test.is(response::Head::headers.values(HeaderName("Content-Type")).item(0), "text/plain; charset=utf-8");
+    test.is(
+        response::Head::headers.values(HeaderName("Content-Type")).item(0),
+        "text/plain; charset=utf-8"
+    );
     test.is(response.body().length().string(), "2");
     let typed = Response(
         status: Status.created,
@@ -259,9 +265,17 @@ test "a response takes content and its media type" {
 }
 
 async test "a request reads its whole body within a limit" {
-    let request = Request(url: "http://example.test/notes", method: Method.post, body: TextBody(text: "héllo").opening());
+    let request = Request(
+        url: "http://example.test/notes",
+        method: Method.post,
+        body: TextBody(text: "héllo").opening()
+    );
     test.is(await request.text(limit: 64), "héllo");
-    let again = Request(url: "http://example.test/notes", method: Method.post, body: TextBody(text: "héllo").opening());
+    let again = Request(
+        url: "http://example.test/notes",
+        method: Method.post,
+        body: TextBody(text: "héllo").opening()
+    );
     test.throws(BodyLimitExceeded) {
         await again.bytes(limit: 3);
     };
@@ -290,7 +304,11 @@ hidden object DeclaredBody does BodyOpening {
 }
 
 async test "a declared length over the limit is refused before reading" {
-    let declared = Request(url: "http://example.test/upload", method: Method.post, body: DeclaredBody());
+    let declared = Request(
+        url: "http://example.test/upload",
+        method: Method.post,
+        body: DeclaredBody()
+    );
     let refusal = try {
         await declared.bytes(limit: 1024);
         "read";
@@ -302,7 +320,10 @@ async test "a declared length over the limit is refused before reading" {
         "read";
     };
     test.is(refusal, "refused at 1024");
-    let streamed = Request(url: "http://example.test/notes", method: Method.post, body: TextBody(text: "two words").opening());
+    let streamed = Request(
+        url: "http://example.test/notes",
+        method: Method.post,
+        body: TextBody(text: "two words").opening()
+    );
     test.is(await streamed.text(limit: 9), "two words");
 }
-
