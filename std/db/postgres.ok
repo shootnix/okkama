@@ -16,12 +16,17 @@ import "db/value" take DbValue, DbValueKind, ObservedDbValue, DbNull, DbBoolean,
     DbFloating, DbDecimal, DbText, DbBytes;
 import "db/error" take DbFailure, DbFailureKind, DbOperation, DbClosed, DbBusy, TransactionEnded,
     IndeterminateCommit;
-import "net/tcp" take TcpConnecting, TcpOptions;
+import "net/tcp" take TcpConnecting, TcpConnection, TcpOptions;
 import "net/tls" take TlsClientHandshake, TlsClientPolicy;
-import "net/endpoint" take IpEndpoint;
-import "crypto/x509/trust" take CertificateIdentity;
+import "net/endpoint" take IpEndpoint, HostName;
+import "net/ip" take IpAddress;
+import "crypto/x509/trust" take CertificateIdentity, DnsCertificateIdentity, IpCertificateIdentity,
+    SystemTrustStore;
 import "crypto/secret" take SecretBytes;
-import "crypto/nonce" take Entropy, RandomNonce;
+import "crypto/nonce" take Entropy, RandomNonce, SystemEntropy;
+import "url/value" take ParsedUrl, UrlParts, UrlHostKind, InvalidUrl;
+import "url/percent" take PercentDecoded;
+import "url/query" take ParsedQuery;
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
@@ -307,6 +312,31 @@ object PostgresTls does PostgresTransporting {
 
     async transport() is PgTransport {
         let tcp = await TcpConnecting(remote: endpoint, options: TcpOptions(true, true)).connection();
+        await PgTlsStart(tcp: tcp, server: server, policy: policy, cancel: endpoint).transport();
+    }
+}
+
+// SSLRequest over an open connection, then a verified TLS handshake; the
+// connection is closed when either fails.
+hidden object PgTlsStart {
+    has tcp is TcpConnection;
+    has server is CertificateIdentity;
+    has policy is TlsClientPolicy;
+    has cancel is IpEndpoint;
+
+    PgTlsStart(
+        tcp is TcpConnection,
+        server is CertificateIdentity,
+        policy is TlsClientPolicy,
+        cancel is IpEndpoint
+    ) {
+        self.tcp = tcp;
+        self.server = server;
+        self.policy = policy;
+        self.cancel = cancel;
+    }
+
+    async transport() is PgTransport {
         let published = Event();
         let anchor = PgTransportUnpublished(origin: tcp, published: published);
         defer anchor.close();
@@ -325,8 +355,208 @@ object PostgresTls does PostgresTransporting {
             input: tls.input(),
             output: tls.output(),
             origin: tls,
-            cancel: PgCancelTcp(endpoint)
+            cancel: PgCancelTcp(cancel)
         );
+    }
+}
+
+// A server by host name (#218): the system's DNS, the addresses raced as
+// RFC 8305 asks, then plaintext or TLS checked against the system's trust
+// store and the host.
+hidden object PgHostTransport does PostgresTransporting {
+    has host is string;
+    has address is Maybe<IpAddress>;
+    has port is int;
+    has secure is bool;
+
+    PgHostTransport(host is string, address is Maybe<IpAddress>, port is int, secure is bool) {
+        self.host = host;
+        self.address = address;
+        self.port = port;
+        self.secure = secure;
+    }
+
+    async transport() is PgTransport {
+        let tcp = match address {
+            case Maybe.some(literal) {
+                await TcpConnecting(address: literal, port: port, keep_alive: true, no_delay: true).connection();
+            }
+            else {
+                await TcpConnecting(host: host, port: port, keep_alive: true, no_delay: true).connection();
+            }
+        };
+        let remote = tcp.endpoints().remote_endpoint();
+        if secure {
+            let server is CertificateIdentity = match address {
+                case Maybe.some(literal) {
+                    IpCertificateIdentity(literal);
+                }
+                else {
+                    DnsCertificateIdentity(HostName(host));
+                }
+            };
+            return await PgTlsStart(
+                tcp: tcp,
+                server: server,
+                policy: TlsClientPolicy(SystemTrustStore()),
+                cancel: remote
+            ).transport();
+        }
+        PgTransport(
+            input: tcp.input(),
+            output: tcp.output(),
+            origin: tcp,
+            cancel: PgCancelTcp(remote)
+        );
+    }
+}
+
+// A connection URL: postgres://user:password@host:port/database?sslmode=…
+hidden object PgUrl {
+    has parts is UrlParts;
+
+    PgUrl(url is string) {
+        let parsed = try {
+            ParsedUrl(url).parts();
+        }
+        catch failure is InvalidUrl {
+            throw InvalidPostgresOptions.because("invalid PostgreSQL URL");
+        };
+        let scheme = parsed::Parts::scheme;
+        confirm scheme == "postgres" || scheme == "postgresql"
+            else throw InvalidPostgresOptions.because(
+                "a PostgreSQL URL starts with postgres:// or postgresql://"
+            );
+        let named = match parsed::Parts::host {
+            case Maybe.some(host) {
+                host != "";
+            }
+            else {
+                false;
+            }
+        };
+        confirm named else throw InvalidPostgresOptions.because("a PostgreSQL URL names its host");
+        parts = parsed;
+    }
+
+    user() is string {
+        let user = self.decoded(self.userinfo().split(":")[0]);
+        confirm user != ""
+            else throw InvalidPostgresOptions.because("a PostgreSQL URL names its user");
+        user;
+    }
+
+    credentials() is PostgresCredentials {
+        let info = self.userinfo();
+        let name = info.split(":")[0];
+        if name.length() == info.length() {
+            return PostgresCredentials(self.user());
+        }
+        let secret = PercentDecoded(info.slice(name.length() + 1, info.length())).bytes();
+        PostgresCredentials(user: self.user(), password: SecretBytes(secret));
+    }
+
+    options() is PostgresOptions {
+        let path = parts::Parts::path;
+        let named = if path.starts_with("/") {
+            self.decoded(path.slice(1, path.length()));
+        }
+        else {
+            self.decoded(path);
+        };
+        let database = if named == "" {
+            self.user();
+        }
+        else {
+            named;
+        };
+        PostgresOptions(
+            database: database,
+            application: self.application(),
+            md5: false,
+            cleartext: false,
+            batch: 256
+        );
+    }
+
+    transport() is PostgresTransporting {
+        let port = match parts::Parts::port {
+            case Maybe.some(number) {
+                number;
+            }
+            else {
+                5432;
+            }
+        };
+        let host = match parts::Parts::host {
+            case Maybe.some(text) {
+                text;
+            }
+            else {
+                "";
+            }
+        };
+        let address is Maybe<IpAddress> = if parts.host_kind() == UrlHostKind.address {
+            Maybe.some(parts.host_address());
+        }
+        else {
+            Maybe<IpAddress>.none;
+        };
+        let secure = self.mode() != "disable";
+        PgHostTransport(host: self.decoded(host), address: address, port: port, secure: secure);
+    }
+
+    // sslmode: disable (the default) is plaintext; require, verify-ca and
+    // verify-full all verify the certificate and the host. prefer and allow
+    // would fall back to plaintext without a word, so they are refused.
+    hidden mode() is string {
+        let mode = self.parameter("sslmode", "disable");
+        confirm mode == "disable"
+            || mode == "require"
+            || mode == "verify-ca"
+            || mode == "verify-full"
+            else throw InvalidPostgresOptions.because(
+                "sslmode " + mode + " is not supported: use disable, require, verify-ca or verify-full"
+            );
+        mode;
+    }
+
+    hidden application() is string {
+        self.parameter("application_name", "okkama");
+    }
+
+    // Every parameter is understood or refused, never ignored.
+    hidden parameter(name is string, fallback is string) is string {
+        match parts::Parts::query {
+            case Maybe.some(query) {
+                for query.split("&") -> pair {
+                    let key = pair.split("=")[0];
+                    confirm key == "" || key == "sslmode" || key == "application_name"
+                        else throw InvalidPostgresOptions.because(
+                            "unsupported URL parameter " + key
+                        );
+                }
+                ParsedQuery(query).parameters().maybe(name).text() else fallback;
+            }
+            else {
+                fallback;
+            }
+        }
+    }
+
+    hidden userinfo() is string {
+        match parts::Parts::userinfo {
+            case Maybe.some(info) {
+                info;
+            }
+            else {
+                throw InvalidPostgresOptions.because("a PostgreSQL URL names its user");
+            }
+        }
+    }
+
+    hidden decoded(text is string) is string {
+        Utf8Decoded(PercentDecoded(text).bytes()).string();
     }
 }
 
@@ -362,6 +592,30 @@ object PostgresDatabase {
         self.credentials = credentials;
         self.options = options;
         self.entropy = entropy;
+    }
+
+    // A server named by a URL (#218):
+    // PostgresDatabase("postgres://app:secret@db:5432/shop?sslmode=require").
+    // The host is looked up by DNS. sslmode=disable, the default, talks
+    // plaintext; require, verify-ca and verify-full talk TLS checked against
+    // the system's trust store and the host name; prefer and allow are
+    // refused. The database is the user's name when the path is empty.
+    PostgresDatabase(url is string) {
+        let parsed = PgUrl(url);
+        transport = parsed.transport();
+        credentials = parsed.credentials();
+        options = parsed.options();
+        entropy = SystemEntropy();
+    }
+
+    // The password kept apart from the URL:
+    // PostgresDatabase(url: Environment().text("DATABASE_URL"), password: secret).
+    PostgresDatabase(url is string, password is SecretBytes) {
+        let parsed = PgUrl(url);
+        transport = parsed.transport();
+        credentials = PostgresCredentials(user: parsed.user(), password: password);
+        options = parsed.options();
+        entropy = SystemEntropy();
     }
 
     options() is PostgresOptions {
@@ -2455,4 +2709,42 @@ test "transaction options become one BEGIN" {
         ).sql(),
         "BEGIN ISOLATION LEVEL SERIALIZABLE READ ONLY DEFERRABLE"
     );
+}
+
+test "a URL names the server, the user, the database and TLS" {
+    let shop = PostgresDatabase(
+        "postgres://app:s%40cret@db.internal:6543/shop?sslmode=require&application_name=web"
+    );
+    test.is(shop.options()::Settings::database, "shop");
+    test.is(shop.options()::Settings::application, "web");
+    let plain = PostgresDatabase("postgresql://app@127.0.0.1");
+    test.is(plain.options()::Settings::database, "app");
+    test.is(plain.options()::Settings::application, "okkama");
+    let kept = PostgresDatabase(
+        url: "postgres://app@db/shop",
+        password: SecretBytes(Utf8Encoded("secret").bytes())
+    );
+    test.is(kept.options()::Settings::database, "shop");
+    let refused = (url is string) is string {
+        try {
+            PostgresDatabase(url).options()::Settings::database;
+        }
+        catch InvalidPostgresOptions.because(reason) {
+            reason;
+        }
+    };
+    test.is(
+        refused("mysql://app@db/shop"),
+        "a PostgreSQL URL starts with postgres:// or postgresql://"
+    );
+    test.is(refused("postgres://db/shop"), "a PostgreSQL URL names its user");
+    test.is(
+        refused("postgres://app@db/shop?sslmode=prefer"),
+        "sslmode prefer is not supported: use disable, require, verify-ca or verify-full"
+    );
+    test.is(
+        refused("postgres://app@db/shop?sslrootcert=/x"),
+        "unsupported URL parameter sslrootcert"
+    );
+    test.is(refused("postgres:///shop"), "a PostgreSQL URL names its host");
 }
