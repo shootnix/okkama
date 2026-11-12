@@ -96,7 +96,10 @@ test "a setting key is its segments; the string form is for diagnostics" {
     let key = SettingKeyFromString(origin: "db.pool.size", separator: ".").key();
     test.is(key.segments().size(), 3);
     test.is(key.string(), "db.pool.size");
-    test.is(SettingKeyFromString(origin: "DB__POOL", separator: "__").key().segments().last(), "POOL");
+    test.is(
+        SettingKeyFromString(origin: "DB__POOL", separator: "__").key().segments().last(),
+        "POOL"
+    );
     test.is(SettingKey("a.b").order(SettingKey("a", "b")) == Order.equal, false);
     test.is(SettingKey("a").order(SettingKey("a", "b")), Order.less);
     test.is(SettingKey("b").order(SettingKey("a", "z")), Order.greater);

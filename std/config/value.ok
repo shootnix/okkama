@@ -89,7 +89,10 @@ test "settings read one value, a list or a fallback, with their source" {
     test.is(ScalarSetting(origin: settings, key: host).source()::Source::name, "app.toml");
     test.is(Setting(origin: settings, key: hosts).values().size(), 2);
     test.is(ScalarSettingOr(origin: settings, key: port, fallback: "5432").text(), "5432");
-    test.is(ScalarSettingOr(origin: settings, key: port, fallback: "5432").source()::Source::kind == SettingSourceKind.defaults, true);
+    test.is(
+        ScalarSettingOr(origin: settings, key: port, fallback: "5432").source()::Source::kind == SettingSourceKind.defaults,
+        true
+    );
     test.is(ScalarSettingOr(origin: settings, key: host, fallback: "x").text(), "localhost");
     test.throws(NonScalarSetting) {
         ScalarSetting(origin: settings, key: hosts).text();

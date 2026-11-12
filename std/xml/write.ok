@@ -46,8 +46,14 @@ object EscapedXml {
 }
 
 test "text and attribute escaping differ only in quotes and whitespace" {
-    test.is(EscapedXml(origin: "a<b & c>\"d\"", attribute: false).string(), "a&lt;b &amp; c&gt;\"d\"");
-    test.is(EscapedXml(origin: "a<b & c>\"d\"", attribute: true).string(), "a&lt;b &amp; c&gt;&quot;d&quot;");
+    test.is(
+        EscapedXml(origin: "a<b & c>\"d\"", attribute: false).string(),
+        "a&lt;b &amp; c&gt;\"d\""
+    );
+    test.is(
+        EscapedXml(origin: "a<b & c>\"d\"", attribute: true).string(),
+        "a&lt;b &amp; c&gt;&quot;d&quot;"
+    );
     test.is(EscapedXml(origin: "x\ty\nz\r", attribute: true).string(), "x&#9;y&#10;z&#13;");
     test.is(EscapedXml(origin: "x\ty\nz\r", attribute: false).string(), "x\ty\nz&#13;");
     test.is(EscapedXml(origin: "", attribute: false).string(), "");

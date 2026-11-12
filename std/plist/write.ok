@@ -69,7 +69,12 @@ object EncodedPlist {
     }
 
     bytes() is @byte {
-        let session = PlistWireSession(format: format, maximum_bytes: maximum_bytes, maximum_nodes: maximum_nodes, maximum_depth: maximum_depth);
+        let session = PlistWireSession(
+            format: format,
+            maximum_bytes: maximum_bytes,
+            maximum_nodes: maximum_nodes,
+            maximum_depth: maximum_depth
+        );
         let root = session.node(origin, 1);
         session.finished(root);
     }
@@ -281,12 +286,22 @@ hidden object PlistWireSession {
                 byte(0),
                 byte(8),
                 byte(8)
-            ] <- IntegerBytes(value: count, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes() <- IntegerBytes(
+            ] <- IntegerBytes(
+                value: count,
+                size: 8,
+                signedness: Signedness.unsigned,
+                order: ByteOrder.big
+            ).bytes() <- IntegerBytes(
                 value: root,
                 size: 8,
                 signedness: Signedness.unsigned,
                 order: ByteOrder.big
-            ).bytes() <- IntegerBytes(value: table, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+            ).bytes() <- IntegerBytes(
+                value: table,
+                size: 8,
+                signedness: Signedness.unsigned,
+                order: ByteOrder.big
+            ).bytes();
         }
         confirm output.content().size() <= maximum_bytes
             else throw PlistWriteLimitExceeded.kind("bytes");
@@ -400,7 +415,9 @@ hidden object PlistWireValue does PlistWriting {
         }
         else {
             session.capacity(value.size() + 9);
-            self.end(session.record(PlistWireLength(marker: 64, count: value.size()).bytes(), value));
+            self.end(
+                session.record(PlistWireLength(marker: 64, count: value.size()).bytes(), value)
+            );
         }
     }
 
@@ -411,7 +428,9 @@ hidden object PlistWireValue does PlistWriting {
             else throw UnsupportedPlistValue.because("date outside UTC years 0001..9999");
         if session.xml() {
             session.text("<date>");
-            session.text(Rfc3339(origin: value, offset: Duration(0.rat(), DurationUnit.second)).string());
+            session.text(
+                Rfc3339(origin: value, offset: Duration(0.rat(), DurationUnit.second)).string()
+            );
             session.text("</date>");
             self.end(0);
         }
@@ -448,7 +467,12 @@ hidden object PlistWireValue does PlistWriting {
         for (0..size) -> index {
             let id = session.node(values.item(index), depth + 1);
             if !session.xml() {
-                refs.writing() <- IntegerBytes(value: id, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+                refs.writing() <- IntegerBytes(
+                    value: id,
+                    size: 8,
+                    signedness: Signedness.unsigned,
+                    order: ByteOrder.big
+                ).bytes();
             }
         }
         if session.xml() {
@@ -456,7 +480,12 @@ hidden object PlistWireValue does PlistWriting {
             self.end(0);
         }
         else {
-            self.end(session.record(PlistWireLength(marker: 160, count: size).bytes(), refs.content().bytes()));
+            self.end(
+                session.record(
+                    PlistWireLength(marker: 160, count: size).bytes(),
+                    refs.content().bytes()
+                )
+            );
         }
     }
 
@@ -479,8 +508,18 @@ hidden object PlistWireValue does PlistWriting {
             let key = session.key(name, depth + 1);
             let value = session.node(member.value(), depth + 1);
             if !session.xml() {
-                keys.writing() <- IntegerBytes(value: key, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
-                refs.writing() <- IntegerBytes(value: value, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+                keys.writing() <- IntegerBytes(
+                    value: key,
+                    size: 8,
+                    signedness: Signedness.unsigned,
+                    order: ByteOrder.big
+                ).bytes();
+                refs.writing() <- IntegerBytes(
+                    value: value,
+                    size: 8,
+                    signedness: Signedness.unsigned,
+                    order: ByteOrder.big
+                ).bytes();
             }
         }
         if session.xml() {
@@ -489,7 +528,12 @@ hidden object PlistWireValue does PlistWriting {
         }
         else {
             keys.writing() <- refs.content().bytes();
-            self.end(session.record(PlistWireLength(marker: 208, count: size).bytes(), keys.content().bytes()));
+            self.end(
+                session.record(
+                    PlistWireLength(marker: 208, count: size).bytes(),
+                    keys.content().bytes()
+                )
+            );
         }
     }
 
@@ -504,7 +548,12 @@ hidden object PlistWireValue does PlistWriting {
     }
 
     hidden end(index is int) is void {
-        identity.writing() <- IntegerBytes(value: index, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+        identity.writing() <- IntegerBytes(
+            value: index,
+            size: 8,
+            signedness: Signedness.unsigned,
+            order: ByteOrder.big
+        ).bytes();
     }
 }
 
@@ -668,12 +717,22 @@ test "plist exact duplicate names remain distinct from case variants" {
 }
 
 test "plist binary envelope and reserved suffix fit an exact byte budget" {
-    let session = PlistWireSession(format: PlistFormat.binary, maximum_bytes: 49, maximum_nodes: 1, maximum_depth: 1);
+    let session = PlistWireSession(
+        format: PlistFormat.binary,
+        maximum_bytes: 49,
+        maximum_nodes: 1,
+        maximum_depth: 1
+    );
     let root = session.record([byte(9)], []);
     test.is(session.finished(root).size(), 49);
     test.is(
         try {
-            PlistWireSession(format: PlistFormat.binary, maximum_bytes: 39, maximum_nodes: 1, maximum_depth: 1);
+            PlistWireSession(
+                format: PlistFormat.binary,
+                maximum_bytes: 39,
+                maximum_nodes: 1,
+                maximum_depth: 1
+            );
             "bad";
         }
         catch PlistWriteLimitExceeded.kind(kind) {

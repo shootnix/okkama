@@ -34,7 +34,11 @@ object ContentDisposition {
 
     ContentDisposition(origin is string, maximum_parameters is int, maximum_bytes is int) {
         let parsed = try {
-            MimeScanning(origin: origin, maximum_parameters: maximum_parameters, maximum_bytes: maximum_bytes).disposition();
+            MimeScanning(
+                origin: origin,
+                maximum_parameters: maximum_parameters,
+                maximum_bytes: maximum_bytes
+            ).disposition();
         }
         catch InvalidMediaType.located(offset, reason) {
             throw InvalidContentDisposition.located(offset, reason);

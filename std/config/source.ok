@@ -343,7 +343,10 @@ object SettingOverlay does SettingReading {
         let slot = SettingOverlaySlot(entry: entry, identity: key, position: count);
         let update = if root.size() == 0 {
             confirm count < 4096 else throw SettingLimitExceeded.exceeded;
-            SettingOverlayUpdate(root: SettingOverlayNode(slot: slot, left: [], right: []), inserted: true);
+            SettingOverlayUpdate(
+                root: SettingOverlayNode(slot: slot, left: [], right: []),
+                inserted: true
+            );
         }
         else {
             root[0].updated(slot, count < 4096);
@@ -498,13 +501,23 @@ hidden object SettingOverlayNode {
     updated(value is SettingOverlaySlot, can_add is bool) is SettingOverlayUpdate {
         let order = value.identity().order(slot.identity());
         if order == Order.equal {
-            let retained = SettingOverlaySlot(entry: value.entry(), identity: value.identity(), position: slot.position());
-            return SettingOverlayUpdate(root: SettingOverlayNode(slot: retained, left: left, right: right), inserted: false);
+            let retained = SettingOverlaySlot(
+                entry: value.entry(),
+                identity: value.identity(),
+                position: slot.position()
+            );
+            return SettingOverlayUpdate(
+                root: SettingOverlayNode(slot: retained, left: left, right: right),
+                inserted: false
+            );
         }
         if order == Order.less {
             let update = if left.size() == 0 {
                 confirm can_add else throw SettingLimitExceeded.exceeded;
-                SettingOverlayUpdate(root: SettingOverlayNode(slot: value, left: [], right: []), inserted: true);
+                SettingOverlayUpdate(
+                    root: SettingOverlayNode(slot: value, left: [], right: []),
+                    inserted: true
+                );
             }
             else {
                 left[0].updated(value, can_add);
@@ -517,7 +530,10 @@ hidden object SettingOverlayNode {
         else {
             let update = if right.size() == 0 {
                 confirm can_add else throw SettingLimitExceeded.exceeded;
-                SettingOverlayUpdate(root: SettingOverlayNode(slot: value, left: [], right: []), inserted: true);
+                SettingOverlayUpdate(
+                    root: SettingOverlayNode(slot: value, left: [], right: []),
+                    inserted: true
+                );
             }
             else {
                 right[0].updated(value, can_add);
@@ -605,7 +621,9 @@ hidden object SettingOverlayBalance {
             let middle = pivot.right()[0];
             SettingOverlayNode(
                 slot: middle.slot(),
-                left: [SettingOverlayNode(slot: pivot.slot(), left: pivot.left(), right: middle.left())],
+                left: [
+                    SettingOverlayNode(slot: pivot.slot(), left: pivot.left(), right: middle.left())
+                ],
                 right: [SettingOverlayNode(slot: slot, left: middle.right(), right: right)]
             );
         }
@@ -623,7 +641,13 @@ hidden object SettingOverlayBalance {
                 SettingOverlayNode(
                     slot: middle.slot(),
                     left: [SettingOverlayNode(slot: slot, left: left, right: middle.left())],
-                    right: [SettingOverlayNode(slot: pivot.slot(), left: middle.right(), right: pivot.right())]
+                    right: [
+                        SettingOverlayNode(
+                            slot: pivot.slot(),
+                            left: middle.right(),
+                            right: pivot.right()
+                        )
+                    ]
                 );
             }
             else {
@@ -675,7 +699,11 @@ hidden object SettingByName {
         }
         let values = origin.entry(key).values();
         confirm values.size() == 1
-            else throw MalformedSetting.detailed(key.string(), "one value", values.size().string() + " values");
+            else throw MalformedSetting.detailed(
+                key.string(),
+                "one value",
+                values.size().string() + " values"
+            );
         Maybe<string>.some(values.first());
     }
 

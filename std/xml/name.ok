@@ -99,5 +99,8 @@ test "bad names and reserved bindings are refused" {
     test.throws(InvalidXml) {
         XmlName(namespace: "urn:x", local: "x", prefix: "xml");
     };
-    test.is(XmlName(namespace: "http://www.w3.org/XML/1998/namespace", local: "lang", prefix: "xml").lexical(), "xml:lang");
+    test.is(
+        XmlName(namespace: "http://www.w3.org/XML/1998/namespace", local: "lang", prefix: "xml").lexical(),
+        "xml:lang"
+    );
 }
