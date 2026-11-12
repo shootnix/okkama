@@ -919,9 +919,27 @@ struct State {
     prepared: RefCell<Option<std::rc::Rc<Prepared>>>,
 }
 
+/// Patterns kept compiled (#138): at most this many, then the table starts
+/// afresh.
+const PREPARED_PATTERNS: usize = 256;
+
+/// Compiled patterns by expression and flags.
+type PreparedTable = std::collections::HashMap<(String, [bool; 5]), std::rc::Rc<Prepared>>;
+
+thread_local! {
+    /// Compiled patterns by expression and flags, so a `Regex` built again
+    /// (inside a method, per header or per line) compiles once (#138).
+    static PREPARED: RefCell<PreparedTable> = RefCell::new(PreparedTable::new());
+}
+
 impl State {
     fn prepare(&self) -> std::rc::Rc<Prepared> {
         if let Some(prepared) = self.prepared.borrow().clone() {
+            return prepared;
+        }
+        let key = (self.expression.clone(), self.flags);
+        if let Some(prepared) = PREPARED.with(|table| table.borrow().get(&key).cloned()) {
+            *self.prepared.borrow_mut() = Some(prepared.clone());
             return prepared;
         }
         let prepared = std::rc::Rc::new(match compile_pattern(&self.expression, &self.flags) {
@@ -946,6 +964,13 @@ impl State {
                 kind,
                 limit,
             },
+        });
+        PREPARED.with(|table| {
+            let mut table = table.borrow_mut();
+            if table.len() >= PREPARED_PATTERNS {
+                table.clear();
+            }
+            table.insert(key, prepared.clone());
         });
         *self.prepared.borrow_mut() = Some(prepared.clone());
         prepared

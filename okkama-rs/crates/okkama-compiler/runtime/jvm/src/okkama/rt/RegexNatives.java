@@ -989,10 +989,45 @@ public final class RegexNatives {
         BigInteger amount;
     }
 
+    /** Patterns kept compiled (#138), at most 256, the least recently used out first. */
+    private static final Map<String, State> PREPARED = new java.util.LinkedHashMap<String, State>(16, 0.75f, true) {
+        private static final long serialVersionUID = 1L;
+
+        protected boolean removeEldestEntry(Map.Entry<String, State> eldest) {
+            return size() > 256;
+        }
+    };
+
+    /** Compiles once per expression and flags: a Regex built again reuses the program. */
     private static void prepare(State state) {
         if (state.attempted) {
             return;
         }
+        StringBuilder key = new StringBuilder();
+        for (boolean flag : state.flags) {
+            key.append(flag ? '1' : '0');
+        }
+        String name = key.append(state.expression).toString();
+        State known;
+        synchronized (PREPARED) {
+            known = PREPARED.get(name);
+        }
+        if (known != null) {
+            state.attempted = true;
+            state.program = known.program;
+            state.status = known.status;
+            state.offset = known.offset;
+            state.kind = known.kind;
+            state.limit = known.limit;
+            return;
+        }
+        compile(state);
+        synchronized (PREPARED) {
+            PREPARED.put(name, state);
+        }
+    }
+
+    private static void compile(State state) {
         state.attempted = true;
         try {
             state.program = compilePattern(state.expression, state.flags);
