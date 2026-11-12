@@ -394,6 +394,23 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     throughput is unchanged (18 200 requests/s on Sparrow).
   - 17 module comments told readers to run the removed Perl tool; they say
     `okkama run -t` now (#179).
+- **Compiled patterns and logger thresholds are kept (#138, #182); more
+  parsers compare codes (#166, #167, #168, #172).** Release builds,
+  nanoseconds per operation:
+
+  | operation | Sparrow before → after | IR before → after |
+  |---|---|---|
+  | `Regex(…)` built afresh and searched, as inside a method | 3 710 → 2 336 | 8 343 → 6 994 |
+  | `LevelThresholds.allowed()` with 100 overrides | 4 080 → 165 | 221 712 → 2 044 |
+
+  - The regex providers keep compiled patterns by expression and flags:
+    256 in the IR engine and Sparrow, a 256-entry LRU on the JVM.
+  - `LevelThresholds` resolves a logger name's threshold once and keeps
+    up to 4096 names.
+  - `http/sse` decodes a line from its bytes in place; `http/conditional`
+    scans entity tag lists by octet; `http/form` and `logging/line` walk
+    code points instead of slicing a string per character. Each has a
+    characterization test that passes before and after.
 
 ## [0.5.4] — 2026-11-12
 
