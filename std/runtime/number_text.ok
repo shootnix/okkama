@@ -8,9 +8,28 @@ native int_parse_valid(text is string, radix is int) is bool;
 
 native int_parse(text is string, radix is int) is int;
 
+// Decimal float spellings of strings/parse::Number.float (#170): an optional
+// '-', at least one digit, then '.' and at least one digit; no exponent and no
+// '+'. float_parse rounds to the nearest float and fails with invalid_input
+// where float_parse_valid is false.
+native float_parse_valid(text is string) is bool;
+
+native float_parse(text is string) is float;
+
 test "integer spellings" {
     test.is(int_parse("-0X2A", 0), -42);
     test.is(int_parse("ff", 16), 255);
     test.is(int_parse_valid("12x", 10), false);
     test.is(int_parse_valid("+1", 10), false);
+}
+
+test "float spellings" {
+    test.is(float_parse("-42.5"), -42.5);
+    test.is(float_parse("0.1"), 0.1);
+    test.is(float_parse("3.14159265358979323846"), 3.141592653589793);
+    test.is(float_parse_valid("1."), false);
+    test.is(float_parse_valid(".5"), false);
+    test.is(float_parse_valid("1.5e3"), false);
+    test.is(float_parse_valid("+1.5"), false);
+    test.is(float_parse_valid("1.2.3"), false);
 }

@@ -378,6 +378,10 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
         "int_parse" => int_parse(string(&args[0])?, int(&args[1])?)
             .map(Value::Int)
             .ok_or_else(|| failed(native)),
+        "float_parse_valid" => Ok(Value::Bool(float_parse(string(&args[0])?).is_some())),
+        "float_parse" => float_parse(string(&args[0])?)
+            .map(Value::Float)
+            .ok_or_else(|| failed(native)),
         _ => Err(Error::Unsupported(format!(
             "native provider is not implemented: {}",
             native.symbol()
@@ -386,6 +390,18 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
 }
 
 // ---- runtime/number_text ----
+
+/// Дробное в записи `strings/parse::Number.float` (#170): необязательный `-`,
+/// цифры, `.` и цифры; без экспоненты и `+`. Ближайшее `f64`.
+fn float_parse(text: &str) -> Option<f64> {
+    let unsigned = text.strip_prefix('-').unwrap_or(text);
+    let (whole, fraction) = unsigned.split_once('.')?;
+    let digits = |part: &str| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit());
+    if !digits(whole) || !digits(fraction) {
+        return None;
+    }
+    text.parse::<f64>().ok()
+}
 
 /// Целое в записи `strings/parse::Number.int`: необязательный `-`, при
 /// `radix == 0` — префикс `0b`/`0o`/`0x` (иначе основание 10), затем хотя бы
