@@ -161,11 +161,13 @@ object WebRequest {
 
     // Requires application/json or a +json media type. The document is parsed
     // eagerly, so syntax errors are a 400 here and never escape later as JsonError.invalid;
-    // reading errors of the returned RequestJson are 422.
+    // reading errors of the returned RequestJson are 422. The bytes go to the
+    // parser as they are (#135): bytes that are not UTF-8 are a 400 that names
+    // where they start.
     async json(limit is int) is RequestJson {
         self.media("json");
         let document = try {
-            ParsedJson(await self.text(limit)).root();
+            ParsedJson(await self.bytes(limit)).root();
         }
         catch failure is JsonError {
             throw Exception.status(400, "invalid JSON body: " + failure.text());

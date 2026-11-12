@@ -218,9 +218,15 @@ object ClientResponse {
         }
     }
 
-    // The whole body parsed as JSON.
+    // The whole body parsed as JSON. A UTF-8 body goes to the parser as bytes
+    // (#135); a body in another charset is decoded first.
     async json() is Json {
-        ParsedJson(await self.text()).root();
+        if BodyCharset(response::Head::headers).name() == "utf-8" {
+            ParsedJson(await self.bytes()).root();
+        }
+        else {
+            ParsedJson(await self.text()).root();
+        }
     }
 }
 
@@ -305,6 +311,32 @@ async test "text follows the charset, json parses, an unknown charset is refused
         details: details
     );
     test.is((await data.json()).int("id"), 7);
+    // UTF-8 JSON is parsed from the bytes; another charset is decoded first.
+    let accented = ClientResponse(
+        request: request,
+        response: Response(
+            status: Status.ok,
+            headers: Headers(Header(name: HeaderName("Content-Type"), value: "application/json")),
+            body: ByteBody(Utf8Encoded("{\"name\": \"Zoë\"}").bytes())
+        ),
+        details: details
+    );
+    test.is((await accented.json()).text("name"), "Zoë");
+    let latin_json = ClientResponse(
+        request: request,
+        response: Response(
+            status: Status.ok,
+            headers: Headers(
+                Header(
+                    name: HeaderName("Content-Type"),
+                    value: "application/json; charset=ISO-8859-1"
+                )
+            ),
+            body: ByteBody([91.byte(), 34.byte(), 233.byte(), 34.byte(), 93.byte()])
+        ),
+        details: details
+    );
+    test.is((await latin_json.json()).at(0).text(), "é");
     let odd = ClientResponse(
         request: request,
         response: Response(
