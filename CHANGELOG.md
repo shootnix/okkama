@@ -427,6 +427,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     is already in memory, and a 2 MB file no longer fails by default.
   - `cell` and the `async/*` modules document themselves in `//` comments
     like the rest of std; no POD is left.
+- **Templates, localized digits and encoded words compare codes (#169,
+  #176, #162).** Compiling and rendering a 4 KB text template with 42 tags:
+  Sparrow 307 → 105 µs, IR 3.37 → 2.48 ms (release builds).
+  - `template/compile` finds `{{` and `}}`, spaces and indentation by
+    character code over one array of the source's characters.
+  - `locale/number` maps digits by code and localizes a grouped number
+    once; Latin digits leave the text unchanged; reading localized digits
+    back compares codes.
+  - `mime/word` sizes, splits, validates and Q-decodes encoded words by
+    code.
+  - Each change has a characterization test that passes before and after.
 
 ## [0.5.4] — 2026-11-12
 
