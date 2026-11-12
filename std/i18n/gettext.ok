@@ -444,7 +444,10 @@ hidden object GettextTokens {
         let position = Atomic(0);
         defer items.close();
         defer position.close();
-        for RegexMatches(origin: origin, regex: Regex("[0-9]+|n|==|!=|<=|>=|&&|\\|\\||[!?:()+*/%<>-]")) -> token {
+        for RegexMatches(
+            origin: origin,
+            regex: Regex("[0-9]+|n|==|!=|<=|>=|&&|\\|\\||[!?:()+*/%<>-]")
+        ) -> token {
             let at = token.range()::Bounds::start;
             for (position.value()..at) -> index {
                 confirm GettextSpace(origin.slice(index, index + 1)).matches()
@@ -459,7 +462,9 @@ hidden object GettextTokens {
             confirm GettextSpace(origin.slice(index, index + 1)).matches()
                 else throw InvalidCatalog.located(index, "invalid plural token");
         }
-        values = GettextListArray(items.value().prefix(GettextToken(text: "", offset: origin.length()))).values();
+        values = GettextListArray(
+            items.value().prefix(GettextToken(text: "", offset: origin.length()))
+        ).values();
     }
 
     values() is @GettextToken {
@@ -528,7 +533,9 @@ hidden object GettextExpressionParsing {
                     let operation = operators.value().first();
                     if operation.text() == "?" {
                         operators.replace(
-                            operators.value().tail().prefix(GettextToken(text: "?:", offset: operation.offset()))
+                            operators.value().tail().prefix(
+                                GettextToken(text: "?:", offset: operation.offset())
+                            )
                         );
                         last;
                     }
@@ -645,7 +652,12 @@ hidden object GettextExpressionParsing {
             else {
                 let right = self.pop();
                 let left = self.pop();
-                GettextBinary(left: left, operation: operation, right: right, offset: token.offset());
+                GettextBinary(
+                    left: left,
+                    operation: operation,
+                    right: right,
+                    offset: token.offset()
+                );
             }
         };
         values.replace(values.value().prefix(result));
@@ -770,7 +782,9 @@ object PoComments {
             confirm size >= 0 && items.value().size() + size <= 4096
                 else throw InvalidCatalog.located(0, "comment count");
             for (0..size) -> index {
-                items.replace(items.value().prefix(PoComment(kind: kinds[group], text: source.item(index))));
+                items.replace(
+                    items.value().prefix(PoComment(kind: kinds[group], text: source.item(index)))
+                );
             }
         }
         records = GettextListArray(items.value()).values();
@@ -827,7 +841,14 @@ object PoEntry {
         translations is Sequencing<string>,
         comments is PoComments
     ) {
-        let value = PoEntry(context: context, identity: identity, plural: plural, translations: translations, comments: comments, has_context: context != "");
+        let value = PoEntry(
+            context: context,
+            identity: identity,
+            plural: plural,
+            translations: translations,
+            comments: comments,
+            has_context: context != ""
+        );
         self.context = value::Entry::context;
         self.identity = value::Entry::identity;
         self.plural = value::Entry::plural;
@@ -853,7 +874,8 @@ object PoEntry {
         let nul = GettextControl(0).string();
         let separator = GettextControl(4).string();
         for [context, identity, plural] -> text {
-            confirm !GettextContains(origin: text, part: nul).found() && !GettextContains(origin: text, part: separator).found()
+            confirm !GettextContains(origin: text, part: nul).found()
+                && !GettextContains(origin: text, part: separator).found()
                 else throw InvalidCatalog.located(0, "reserved separator in PO identity");
         }
         let size = translations.size();
@@ -1155,7 +1177,11 @@ hidden object PoQuoted {
                     }
                     else {
                         if escape.slice(0, 1) == "x" {
-                            PoNumericEscape(origin: escape.slice(1, escape.length()), base: 16, offset: offset + 1 + at).code();
+                            PoNumericEscape(
+                                origin: escape.slice(1, escape.length()),
+                                base: 16,
+                                offset: offset + 1 + at
+                            ).code();
                         }
                         else {
                             PoNumericEscape(origin: escape, base: 8, offset: offset + 1 + at).code();
@@ -1409,7 +1435,11 @@ hidden object PoLineStrings {
             pieces.replace(
                 pieces.value().prefix(
                     Latin1Decoded(
-                        PoQuoted(origin: part.text(), offset: offset + part.range()::Bounds::start, charset: charset).bytes()
+                        PoQuoted(
+                            origin: part.text(),
+                            offset: offset + part.range()::Bounds::start,
+                            charset: charset
+                        ).bytes()
                     ).string()
                 )
             );
@@ -1459,7 +1489,13 @@ hidden object PoField {
     following(octets is string) is PoField {
         confirm amount + octets.length() <= 262144 && pieces.size() < 8192
             else throw InvalidCatalog.located(offset, "PO field byte/fragment budget");
-        PoField(name: name, index: index, offset: offset, pieces: pieces.prefix(octets), amount: amount + octets.length());
+        PoField(
+            name: name,
+            index: index,
+            offset: offset,
+            pieces: pieces.prefix(octets),
+            amount: amount + octets.length()
+        );
     }
 
     string(charset is GettextCharset) is string {
@@ -1522,7 +1558,14 @@ hidden object PoEntryFields {
                 );
             field.string(charset);
         };
-        PoEntry(context: context, identity: identity, plural: plural, translations: values, comments: comments, has_context: self.seen("msgctxt"));
+        PoEntry(
+            context: context,
+            identity: identity,
+            plural: plural,
+            translations: values,
+            comments: comments,
+            has_context: self.seen("msgctxt")
+        );
     }
 
     hidden seen(name is string) is bool {
@@ -1733,7 +1776,9 @@ hidden object PoParsing {
             let current = fields.value();
             fields.replace(
                 current.tail().prefix(
-                    current.first().following(PoLineStrings(origin: text, offset: at, charset: charset).octets())
+                    current.first().following(
+                        PoLineStrings(origin: text, offset: at, charset: charset).octets()
+                    )
                 )
             );
             return;
@@ -1981,7 +2026,14 @@ object ParsedMo {
                     pair.original().offset(),
                     "empty MO plural identity"
                 );
-            PoEntry(context: context, identity: identity, plural: plural, translations: translated.split(nul), comments: comments, has_context: present);
+            PoEntry(
+                context: context,
+                identity: identity,
+                plural: plural,
+                translations: translated.split(nul),
+                comments: comments,
+                has_context: present
+            );
         };
         result = PoDocument(entries);
     }
