@@ -59,6 +59,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   A failure is no longer its own or a repeated secondary, and the walks
   remember what they have seen, as Sparrow's did.
 
+- **`PcgRandom.integer` returns for ranges wider than 2^64 (#507).** Before,
+  it looped forever on every engine, because no 64-bit sample could pass
+  the rejection threshold.
+  - A sample takes one pair of outputs per 64-bit word that
+    `stop - start - 1` needs, the first pair most significant.
+  - A range up to 2^64 still takes one pair, so every sequence that worked
+    before is unchanged; a test pins this on all three engines.
+  - Ranges below 2^63 are sampled in 64-bit arithmetic: `integer(0, 1000000)`
+    takes Sparrow 353 → 140 ns and IR 850 → 602 ns (release builds).
+
 ### Changed
 
 - **The HTTP server is faster than Python's `http.server` (#75, #76, #81,
@@ -482,15 +492,31 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     kind. The runtime keeps no generator state of its own.
   - `SecureRandom.integer` accepts ranges wider than 2^64; before, it
     never returned for them (#507).
-- **`PcgRandom.integer` returns for ranges wider than 2^64 (#507).** Before,
-  it looped forever on every engine, because no 64-bit sample could pass
-  the rejection threshold.
-  - A sample takes one pair of outputs per 64-bit word that
-    `stop - start - 1` needs, the first pair most significant.
-  - A range up to 2^64 still takes one pair, so every sequence that worked
-    before is unchanged; a test pins this on all three engines.
-  - Ranges below 2^63 are sampled in 64-bit arithmetic: `integer(0, 1000000)`
-    takes Sparrow 353 → 140 ns and IR 850 → 602 ns (release builds).
+- **CLDR tables are runtime data (#223, #222).** `std/locale/internal` was
+  4.8 MB of generated Okkama. Every program that formatted a number compiled
+  it, and every formatted value split thousands of cells of string literals
+  again. The generators now write the tables to `cldr-*.dat` files, 944 KB
+  of gzip in all, next to the other runtime data. A runtime reads a file the
+  first time one of its tables is asked for, and the generated modules look
+  records up through the new native `runtime/cldr::cldr_fields`.
+
+  Release builds, before → after:
+
+  | operation | Sparrow | IR |
+  |---|---|---|
+  | decimal number | 175 → 35 µs | 303 → 116 µs |
+  | long date | 266 → 67 µs | 442 → 158 µs |
+  | currency with its name | 548 → 114 µs | 808 → 261 µs |
+  | full date and time with the zone name | 644 → 84 µs | 798 → 260 µs |
+
+  - Start of a program that formats one full date and time (compile, start,
+    one value): Sparrow 345 → 140 ms, IR 78 → 49 ms, JVM 292 → 166 ms.
+  - The 57 shard modules of zone and currency names are gone; the objects of
+    `locale/internal` keep their actions.
+  - All 725 CLDR locales format numbers, currencies, dates with zone names,
+    lists and likely subtags exactly as before on all three engines.
+  - The std inventory and coverage matrix of the conformance suite are
+    rewritten for 0.5.5.
 
 ## [0.5.4] — 2026-11-12
 
