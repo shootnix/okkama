@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L10.stdin.for-lines",
+  "title": "standard input lines through for, strict and lenient",
+  "purpose": "Read the case's stdin fixture.",
+  "level": "L10",
+  "contracts": [
+    {
+      "contract": "STD.IO.STDIN",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "support": [
+    "input.txt"
+  ],
+  "stdin": "input.txt",
+  "requires": {
+    "environment": [
+      "stdout",
+      "stdin"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "first=first line\n[]\n[bad � byte]\n[tail without newline]\nEOF\n"
+    }
+  },
+  "spec_refs": [
+    "std/io/stdin.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "io/stdin (#221): a line loses its LF and one CR before it; a last line without LF counts; lenient decoding puts U+FFFD for an ill-formed sequence; for stops at the end and line() then throws EndOfInput; every Stdin value shares the process input."
+  },
+  "status": "mandatory"
+}
