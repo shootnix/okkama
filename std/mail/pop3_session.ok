@@ -1,5 +1,10 @@
 module mail/pop3_session v1.0.0;
 
+// Transaction-state infrastructure. The caller has already authenticated and
+// transfers exclusive transport ownership. No constructor sends credentials.
+// Whole operations (including LIST + UIDL) serialize under one lock. A live
+// mailbox retains this owner; dropping an unrelated observation does not close it.
+
 import "mail/pop3" take PopCapabilities, PopFeature, PopNumber, PopMessage, PopListingLimits,
     PopListing, PopMailboxState;
 import "mail/pop3_reply" take PopReply, PopReplyMode, PopReplyLimits;
@@ -13,10 +18,6 @@ import "async/lock" take Lock;
 import "async/event" take Event;
 import "error" take InvalidArgument, UnsupportedOperation;
 
-// Transaction-state infrastructure. The caller has already authenticated and
-// transfers exclusive transport ownership. No constructor sends credentials.
-// Whole operations (including LIST + UIDL) serialize under one lock. A live
-// mailbox retains this owner; dropping an unrelated observation does not close it.
 object PopSession does Closing {
     has wire is PopWire;
     has capabilities is PopCapabilities;

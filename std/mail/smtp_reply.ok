@@ -1,14 +1,5 @@
 module mail/smtp_reply v1.0.0;
 
-import "collections/sequence" take Sequencing;
-import "mime/media_type" take MimeItems, MimePosition;
-import "encoding/utf" take Utf8Encoded, Utf8Decoded;
-import "encoding/single_byte" take AsciiDecoded;
-import "strings/join" take Joined;
-import "io/stream" take ByteSource;
-import "io/buffer" take ByteBuffer;
-import "error" take InvalidArgument, InvalidState;
-
 // Bounded ASCII SMTP reply values and incremental framing (RFC 5321).
 // No network effects. Defaults: 512 octets per CRLF line, 100 lines, 64 KiB.
 // SmtpReply eagerly snapshots its source once; bytes() uses canonical framing.
@@ -18,6 +9,16 @@ import "error" take InvalidArgument, InvalidState;
 // Empty chunks do not mean EOF: finish() diagnoses truncation. Completed
 // decoders reject further feed; old versions remain independent. All scratch
 // buffers are owned/closed; replies and decoders own no external resources.
+
+import "collections/sequence" take Sequencing;
+import "mime/media_type" take MimeItems, MimePosition;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "encoding/single_byte" take AsciiDecoded;
+import "strings/join" take Joined;
+import "io/stream" take ByteSource;
+import "io/buffer" take ByteBuffer;
+import "error" take InvalidArgument, InvalidState;
+
 object SmtpReplyLimits {
     has line_bytes, lines, wire_bytes is int;
 

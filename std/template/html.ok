@@ -1,16 +1,5 @@
 module template/html v1.0.0;
 
-import "template/compile" take TemplateProgram, TemplateInstruction, InvalidTemplateLimits;
-import "template/json" take JsonTemplateStrings;
-import "template/sections" take TemplateSectionOutput;
-import "json" take Json;
-import "html/entities" take EscapedHtml;
-import "io/stream" take WritingText;
-import "io/buffer" take ByteBuffer;
-import "io/text" take Utf8Output;
-import "encoding/utf" take Utf8Decoded;
-import "collections/list" take List, EmptyList;
-
 // Contextual HTML fragment template. Constructors bind only; each observation
 // validates the entire source before JSON lookup or output. Text and an explicit
 // whitelist of quoted ordinary attributes are the only interpolation contexts.
@@ -26,6 +15,18 @@ import "collections/list" take List, EmptyList;
 // Flat JSON variables/current item, comments and delimiter escapes only in this
 // slice. Sections and partials fail explicitly. No native parser/provider changes.
 // Contract: docs/std/template-html-guide.md. Run: okkama run -t std/template/html.ok
+
+import "template/compile" take TemplateProgram, TemplateInstruction, InvalidTemplateLimits;
+import "template/json" take JsonTemplateStrings;
+import "template/sections" take TemplateSectionOutput;
+import "json" take Json;
+import "html/entities" take EscapedHtml;
+import "io/stream" take WritingText;
+import "io/buffer" take ByteBuffer;
+import "io/text" take Utf8Output;
+import "encoding/utf" take Utf8Decoded;
+import "collections/list" take List, EmptyList;
+
 object HtmlTemplate {
     has origin is string;
     has maximum_input, maximum_nodes, maximum_output is int;

@@ -1,5 +1,9 @@
 module numbers/float v1.0.0;
 
+// A finite binary64 value's shortest significant decimal candidate is accepted
+// only within its exact nearest-even rounding interval. No float comparison or
+// Perl stringification decides that boundary. Zero's sign is a separate identity.
+
 import "encoding/binary" take FloatBytes, Binary, FloatWidth, Signedness;
 import "encoding/utf" take ByteOrder;
 import "runtime/format" take sprintf_values;
@@ -8,9 +12,6 @@ import "numbers/bigrational" take BigRational;
 import "math/decimal" take Decimal;
 import "compare" take Order;
 
-// A finite binary64 value's shortest significant decimal candidate is accepted
-// only within its exact nearest-even rounding interval. No float comparison or
-// Perl stringification decides that boundary. Zero's sign is a separate identity.
 object ShortestFloat {
     has origin is float;
 

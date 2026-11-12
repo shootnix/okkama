@@ -1,7 +1,5 @@
 module html/entities v1.0.0;
 
-import "runtime/html" take html_events, html_event_value;
-
 // HTML character-escaped representation of immutable source text.
 // Constructors only bind source and quotation policy; string() computes afresh.
 // Default/false escapes &, < and >; true also escapes double and single quotes
@@ -13,6 +11,9 @@ import "runtime/html" take html_events, html_event_value;
 // ownership or destroy. This is not HTML context validation or sanitization.
 // Example: EscapedHtml("<Ada & Bob>").string() == "&lt;Ada &amp; Bob&gt;".
 // Run: okkama run -t std/html/entities.ok
+
+import "runtime/html" take html_events, html_event_value;
+
 object EscapedHtml {
     has origin is string;
     has quotes is bool;

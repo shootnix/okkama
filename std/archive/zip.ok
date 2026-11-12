@@ -1,21 +1,5 @@
 module archive/zip v1.0.0;
 
-import "error" take InvalidArgument;
-import "archive/entry" take ArchiveEntry;
-import "archive/limits" take ArchiveLimits, ArchiveLimitExceeded;
-import "archive/path" take ArchivePath;
-import "archive/tar" take DuplicateArchivePath;
-import "encoding/bytes" take ByteRange, ByteSearch;
-import "encoding/binary" take Signedness, IntegerBytes;
-import "encoding/utf" take ByteOrder, Utf8Encoded, Utf8Decoded, InvalidUtf8;
-import "checksum/crc" take Crc32;
-import "compression/deflate" take DeflateCompressed, DeflateDecompressed;
-import "compression/state" take CompressionLimitExceeded, InvalidCompressedData;
-import "io/stream" take Writing, Closing;
-import "async/atomic" take Atomic;
-import "io/buffer" take ByteBuffer;
-import "encoding/base64" take Base64Decoded;
-
 // ZIP archives (#185): ZipArchive reads one from bytes, ZipWriting writes one
 // to a Writing; members are stored or deflated, and ZIP64 is read and written.
 //
@@ -45,6 +29,23 @@ import "encoding/base64" take Base64Decoded;
 // A ZIP method name, not a wire identifier or a promise of an installed codec.
 // Reading and writing support stored and deflated; the other names are
 // writing choices for which no codec is installed.
+
+import "error" take InvalidArgument;
+import "archive/entry" take ArchiveEntry;
+import "archive/limits" take ArchiveLimits, ArchiveLimitExceeded;
+import "archive/path" take ArchivePath;
+import "archive/tar" take DuplicateArchivePath;
+import "encoding/bytes" take ByteRange, ByteSearch;
+import "encoding/binary" take Signedness, IntegerBytes;
+import "encoding/utf" take ByteOrder, Utf8Encoded, Utf8Decoded, InvalidUtf8;
+import "checksum/crc" take Crc32;
+import "compression/deflate" take DeflateCompressed, DeflateDecompressed;
+import "compression/state" take CompressionLimitExceeded, InvalidCompressedData;
+import "io/stream" take Writing, Closing;
+import "async/atomic" take Atomic;
+import "io/buffer" take ByteBuffer;
+import "encoding/base64" take Base64Decoded;
+
 enum ZipMethod = (stored, deflated, bzip2, lzma, zstandard);
 
 // Immutable choice of ZIP method and effective compression level. Construction

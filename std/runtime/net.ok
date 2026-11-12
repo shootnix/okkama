@@ -4,6 +4,7 @@ module runtime/net v1.0.0;
 // These two declarations do not resolve hostnames or allocate sockets. Their
 // versioned endpoint envelope is consumed and validated only inside net/ip;
 // application code uses IpAddress and receives plain packed address bytes.
+
 native ip_parse(family is int, text is string, port is int) is @byte;
 
 native ip_format(origin is @byte) is string;

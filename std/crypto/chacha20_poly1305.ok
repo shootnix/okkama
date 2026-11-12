@@ -1,14 +1,15 @@
 module crypto/chacha20_poly1305 v1.0.0;
 
+// ChaCha20-Poly1305 (RFC 8439, 96-bit nonce) and XChaCha20-Poly1305
+// (192-bit nonce, safe for random nonces). 256-bit SecretBytes key, 128-bit
+// tag; see crypto/aead for the sealing contract.
+
 import "crypto/aead" take Sealing;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "crypto/secret" take SecretBytes;
 import "crypto/error" take HostOperation, InvalidCryptoInput, AuthenticationFailed;
 import "encoding/hex" take HexEncoded, HexDecoded;
 
-// ChaCha20-Poly1305 (RFC 8439, 96-bit nonce) and XChaCha20-Poly1305
-// (192-bit nonce, safe for random nonces). 256-bit SecretBytes key, 128-bit
-// tag; see crypto/aead for the sealing contract.
 object ChaCha20Poly1305 does Sealing {
     has key is SecretBytes;
 

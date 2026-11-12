@@ -1,11 +1,12 @@
 module mime/disposition v1.0.0;
 
-import "mime/media_type" take MimeParameters, MimeToken, MimeScanning, InvalidMediaType;
-
 // Eager immutable disposition value using the shared bounded MIME grammar.
 // Extension kinds are retained, case-normalized. Filenames remain decoded
 // strings: no path conversion, sanitization or filesystem effects.
 // string() is a logical field body; see docs/std/mime-disposition.md.
+
+import "mime/media_type" take MimeParameters, MimeToken, MimeScanning, InvalidMediaType;
+
 object ContentDisposition {
     has token is string;
     has entries is MimeParameters;

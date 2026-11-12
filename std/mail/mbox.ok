@@ -1,14 +1,5 @@
 module mail/mbox v1.0.0;
 
-import "mail/message" take MailMessage, ParsedMail;
-import "mime/part" take MimePart, MimeLimits, MimeLimitFailure;
-import "mime/media_type" take MimeItems, MimePosition;
-import "collections/sequence" take Sequencing;
-import "encoding/utf" take Utf8Encoded, Utf8Decoded;
-import "io/stream" take ByteSource;
-import "io/buffer" take ByteBuffer;
-import "error" take InvalidArgument;
-
 // Explicit mboxrd content: LF archive framing, CRLF MIME, reversible From
 // quoting. No filesystem/session effects or implicit envelope/date inference.
 //
@@ -25,6 +16,16 @@ import "error" take InvalidArgument;
 // offsets refer to archive input (message-relative while rendering). Aggregate
 // limits throw MboxLimitExceeded; MIME failures retain their existing types.
 // Scratch buffers are owned and closed. See docs/std/mbox.md for the profile.
+
+import "mail/message" take MailMessage, ParsedMail;
+import "mime/part" take MimePart, MimeLimits, MimeLimitFailure;
+import "mime/media_type" take MimeItems, MimePosition;
+import "collections/sequence" take Sequencing;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "io/stream" take ByteSource;
+import "io/buffer" take ByteBuffer;
+import "error" take InvalidArgument;
+
 object MboxSeparator {
     has origin is string;
 

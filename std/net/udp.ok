@@ -1,17 +1,5 @@
 module net/udp v1.0.0;
 
-import "net/endpoint" take IpEndpoint;
-import "net/ip" take IpAddress, IpVersion;
-import "net/interface" take NetworkInterface;
-import "io/stream" take ByteSource;
-import "io/decorators" take ByteSnapshot;
-import "runtime/network";
-import "runtime/net" take ip_parse;
-import "strings/parse" take Number;
-import "net/failure" take NetworkError, NetworkOperation, NetworkClosed;
-import "net/stream" take ConnectionEndpoints;
-import "error" take InvalidArgument;
-
 // Immutable observation of one received packet: sender, retained payload and
 // explicit truncation flag. No socket I/O, decoding or inferred truncation.
 // Empty payloads are packets, not EOF; even an empty retained prefix may be
@@ -25,6 +13,19 @@ import "error" take InvalidArgument;
 // ByteSource exposes only this finite payload for explicit forwarding. It does
 // not make a Datagram a byte stream or transfer sender metadata to a new send.
 // Repeated observations preserve the snapshot; equality includes all metadata.
+
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress, IpVersion;
+import "net/interface" take NetworkInterface;
+import "io/stream" take ByteSource;
+import "io/decorators" take ByteSnapshot;
+import "runtime/network";
+import "runtime/net" take ip_parse;
+import "strings/parse" take Number;
+import "net/failure" take NetworkError, NetworkOperation, NetworkClosed;
+import "net/stream" take ConnectionEndpoints;
+import "error" take InvalidArgument;
+
 object Datagram does ByteSource {
     has peer is IpEndpoint;
     has payload is @byte;

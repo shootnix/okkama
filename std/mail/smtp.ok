@@ -1,12 +1,5 @@
 module mail/smtp v1.0.0;
 
-import "mail/smtp_reply" take SmtpReply;
-import "collections/sequence" take Sequencing;
-import "collections/set" take Set, OrderedSet;
-import "mime/media_type" take MimeItems;
-import "encoding/utf" take Utf8Encoded, Utf8Decoded;
-import "numbers/bigint" take BigInt;
-
 // Immutable EHLO observations; no connection, TLS or authentication effects.
 // Construct from a successful 250 reply. Its first line is greeting metadata,
 // never an extension. Keyword matching is ASCII-insensitive; original extension
@@ -15,6 +8,14 @@ import "numbers/bigint" take BigInt;
 // SASL names use their uppercase 1..20-character grammar; duplicates collapse.
 // A capability advertises server behavior, not verified TLS or permission to
 // send credentials. New post-STARTTLS EHLO replies require fresh snapshots.
+
+import "mail/smtp_reply" take SmtpReply;
+import "collections/sequence" take Sequencing;
+import "collections/set" take Set, OrderedSet;
+import "mime/media_type" take MimeItems;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "numbers/bigint" take BigInt;
+
 enum SmtpFeature = (size, eight_bit_mime, smtp_utf8, pipelining, start_tls, authentication, dsn, enhanced_status_codes, chunking, binary_mime);
 
 object SmtpExtension {

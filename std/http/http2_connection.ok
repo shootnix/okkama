@@ -1,5 +1,9 @@
 module http/http2_connection v1.0.0;
 
+// Explicit HTTP2 prior knowledge for HTTP; verified exact h2 ALPN for HTTPS. Every TCP attempt uses
+// the exact previously checked numeric endpoint; no second lookup occurs.
+// Bounded staggered TCP racing closes every losing attempt before publication.
+
 import "http/endpoint" take HttpEndpointSelection;
 import "http/http2_settings" take Http2Settings;
 import "http/internal/http2_preface" take Http2ClientPreface;
@@ -27,9 +31,6 @@ import "net/tls" take TlsVersion;
 import "crypto/x509/trust" take TrustedCertificates;
 import "collections/set" take Set, OrderedSet;
 
-// Explicit HTTP2 prior knowledge for HTTP; verified exact h2 ALPN for HTTPS. Every TCP attempt uses
-// the exact previously checked numeric endpoint; no second lookup occurs.
-// Bounded staggered TCP racing closes every losing attempt before publication.
 object Http2Connecting {
     has route is HttpEndpointSelection;
     has policy is TlsClientPolicy;

@@ -1,11 +1,5 @@
 module mail/pop3_reading v1.0.0;
 
-import "io/stream" take AsyncReading;
-import "mail/pop3_reply" take PopReply, PopReplyMode, PopReplyDecoder, PopReplyLimits,
-    PopReplyLimitExceeded;
-import "io/decorators" take InvalidReading;
-import "error" take InvalidArgument;
-
 // One lazy read of one POP3 reply from a borrowed asynchronous byte stream.
 // result() always returns the same Future, including after failure/cancellation.
 // Pass remainder() explicitly to the next operation, using the same stream.
@@ -16,6 +10,13 @@ import "error" take InvalidArgument;
 // the caller must discard that protocol session, not retry this read or replay
 // an POP3 command. Within/Before compose around result() and drain cancellation
 // cleanup through the awaited source future. No implicit timeout or retry.
+
+import "io/stream" take AsyncReading;
+import "mail/pop3_reply" take PopReply, PopReplyMode, PopReplyDecoder, PopReplyLimits,
+    PopReplyLimitExceeded;
+import "io/decorators" take InvalidReading;
+import "error" take InvalidArgument;
+
 object PopReplyReading {
     has pending is Future<PopReplyRead>;
 

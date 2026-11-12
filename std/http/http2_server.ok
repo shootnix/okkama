@@ -1,5 +1,9 @@
 module http/http2_server v1.0.0;
 
+// Adopts one explicitly selected H2 transport, never guesses ALPN/prior
+// knowledge and never exposes raw transport to Handling. Local receive limits
+// cap active streams at 100 and window storage at 65535 per stream.
+
 import "http/method" take Method;
 import "http/handler" take Handling, HandlingResult, HandlingKind, ResponseHandling;
 import "http/request_context" take HttpRequestContext;
@@ -46,9 +50,6 @@ import "error" take InvalidState;
 import "encoding/binary" take Binary, Signedness;
 import "encoding/utf" take ByteOrder;
 
-// Adopts one explicitly selected H2 transport, never guesses ALPN/prior
-// knowledge and never exposes raw transport to Handling. Local receive limits
-// cap active streams at 100 and window storage at 65535 per stream.
 object Http2ServerSession does Closing {
     has state is Http2ServerState;
 

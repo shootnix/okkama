@@ -1,8 +1,5 @@
 module archive/limits v1.0.0;
 
-import "archive/path" take ArchivePath;
-import "error" take InvalidArgument, InvalidState;
-
 // Immutable archive admission policy. All four bounds are positive, independent
 // int values; validation order is entries, entry_size, total_size, path_length.
 // Sizes count expanded payload bytes. Path length counts Unicode code points,
@@ -18,6 +15,10 @@ import "error" take InvalidArgument, InvalidState;
 // reusing an earlier value deliberately forks an independent budget. Format
 // readers still must enforce this policy at admission/allocation boundaries.
 // Raw input, metadata decoding and temporary codec memory need separate bounds.
+
+import "archive/path" take ArchivePath;
+import "error" take InvalidArgument, InvalidState;
+
 object ArchiveLimits {
     has count_limit, entry_limit, total_limit, path_limit is int;
 

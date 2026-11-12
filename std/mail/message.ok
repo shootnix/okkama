@@ -1,5 +1,9 @@
 module mail/message v1.0.0;
 
+// Content and delivery preparation do not infer an SMTP envelope.
+// Bodies are borrowed; rendering uses MIME bounds and observes bytes once.
+// Address/origination policy remains with future addressed-message consumers.
+
 import "mime/part" take MimeBody, MimePart, MimeLimits, ParsedMime, InvalidMime, BinaryBody,
     TextBody;
 import "mime/word" take EncodedWord;
@@ -20,9 +24,6 @@ import "time/duration" take Duration, DurationUnit;
 import "mime/media_type" take MimeItems, MimePosition;
 import "error" take InvalidArgument;
 
-// Content and delivery preparation do not infer an SMTP envelope.
-// Bodies are borrowed; rendering uses MIME bounds and observes bytes once.
-// Address/origination policy remains with future addressed-message consumers.
 object MailMessage does ByteSource {
     has content is MimePart;
     has bounds is MimeLimits;

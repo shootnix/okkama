@@ -1,10 +1,5 @@
 module digest/read v1.0.0;
 
-import "digest/state" take Digesting;
-import "io/stream" take AsyncReading, Reading;
-import "error" take InvalidArgument;
-import "io/buffer" take ByteBuffer;
-
 // Digests of byte streams. ReadDigest consumes a borrowed synchronous Reading
 // until its empty end-of-stream chunk and returns the successor of the given
 // digest over everything read; AsyncReadDigest does the same over AsyncReading.
@@ -14,6 +9,12 @@ import "io/buffer" take ByteBuffer;
 // is. Neither object closes the source. Source errors propagate unchanged.
 //
 //     let digest = ReadDigest(file.reading(), Sha256()).result();
+
+import "digest/state" take Digesting;
+import "io/stream" take AsyncReading, Reading;
+import "error" take InvalidArgument;
+import "io/buffer" take ByteBuffer;
+
 object ReadDigest {
     has origin is Reading;
     has digest is Digesting;

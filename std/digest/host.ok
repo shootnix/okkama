@@ -1,13 +1,14 @@
 module digest/host v1.0.0;
 
-import "runtime/host_crypto" take DigestState, digest_create, digest_update, digest_bytes;
-import "crypto/error" take InvalidCryptoInput, CryptoUnavailable;
-
 // Internal immutable host digest state shared by digest/sha2, digest/sha3,
 // digest/shake, digest/blake2 and crypto/hmac. appended() returns a new state
 // over a host clone; the receiver, its earlier bytes() and other branches are
 // unchanged. bytes() finalizes a clone, so observation never prevents append.
 // width is the XOF output length (0 for fixed-width algorithms).
+
+import "runtime/host_crypto" take DigestState, digest_create, digest_update, digest_bytes;
+import "crypto/error" take InvalidCryptoInput, CryptoUnavailable;
+
 object HostDigest {
     has handle is DigestState;
     has width is int;

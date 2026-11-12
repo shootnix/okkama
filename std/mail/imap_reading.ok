@@ -1,11 +1,5 @@
 module mail/imap_reading v1.0.0;
 
-import "io/stream" take AsyncReading;
-import "mail/imap_response" take ImapResponse, ImapResponseDecoder, ImapResponseLimits,
-    ImapResponseLimitExceeded;
-import "io/decorators" take InvalidReading;
-import "error" take InvalidArgument;
-
 // One lazy read of one bounded IMAP response from a borrowed byte stream.
 // result() returns the same Future, including after failure or cancellation.
 // Literal framing and syntax follow the ASCII mail/imap_response profile.
@@ -18,6 +12,13 @@ import "error" take InvalidArgument;
 // discard that session rather than retry a read or replay an IMAP command.
 // Within/Before compose around result() and await source cancellation cleanup.
 // No implicit timeout, retry, command queue or aggregate command-output budget.
+
+import "io/stream" take AsyncReading;
+import "mail/imap_response" take ImapResponse, ImapResponseDecoder, ImapResponseLimits,
+    ImapResponseLimitExceeded;
+import "io/decorators" take InvalidReading;
+import "error" take InvalidArgument;
+
 object ImapResponseReading {
     has pending is Future<ImapResponseRead>;
 

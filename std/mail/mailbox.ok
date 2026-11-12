@@ -1,5 +1,14 @@
 module mail/mailbox v1.0.0;
 
+// Protocol flag values, stored snapshots and trusted-local Maildir operations.
+// Constructors are pure except explicit snapshots. Maildir filesystem effects
+// occur only in messages/add/remove/deliver and ChangedMaildirFlags.result().
+// Operations acquire the permanent .okkama-maildir.lock immediately (shared
+// reads, exclusive mutations); callers must control the local path namespace.
+// ChangedMaildirFlags snapshots supported DFRST flags before I/O and preserves
+// message bytes/inode/mtime on rename. Recent is a legacy observation, not a
+// stored Maildir flag. See docs/std/maildir.md for limits and commit failures.
+
 import "compare" take Comparing, Order;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "collections/set" take Set;
@@ -22,14 +31,6 @@ import "encoding/hex" take HexEncoded;
 import "fs/stat" take FileKind;
 import "io/buffer" take ByteBuffer;
 
-// Protocol flag values, stored snapshots and trusted-local Maildir operations.
-// Constructors are pure except explicit snapshots. Maildir filesystem effects
-// occur only in messages/add/remove/deliver and ChangedMaildirFlags.result().
-// Operations acquire the permanent .okkama-maildir.lock immediately (shared
-// reads, exclusive mutations); callers must control the local path namespace.
-// ChangedMaildirFlags snapshots supported DFRST flags before I/O and preserves
-// message bytes/inode/mtime on rename. Recent is a legacy observation, not a
-// stored Maildir flag. See docs/std/maildir.md for limits and commit failures.
 enum MailFlagKind = (system, keyword);
 
 enum SystemMailFlag = (answered, flagged, deleted, seen, draft, recent);

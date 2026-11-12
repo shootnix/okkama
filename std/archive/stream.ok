@@ -1,10 +1,5 @@
 module archive/stream v1.0.0;
 
-import "archive/entry" take ArchiveEntry;
-import "io/stream" take Closing;
-import "io/buffer" take ByteBuffer;
-import "error" take InvalidState;
-
 // Consuming archive resources, never cursors. entry() returns one independent
 // immutable member or throws EndOfArchive after observed normal completion.
 // finished() is passive: no input read, prefetch or implicit finalization.
@@ -18,6 +13,12 @@ import "error" take InvalidState;
 // and leave the adapter failed: only close/closed remain valid, with no retry.
 // Partial output is neither retried nor rolled back. Concrete owners destroy
 // their own state; retained entries outlive them. No concrete wire format here.
+
+import "archive/entry" take ArchiveEntry;
+import "io/stream" take Closing;
+import "io/buffer" take ByteBuffer;
+import "error" take InvalidState;
+
 role ReadingArchive {
     entry() is ArchiveEntry;
     finished() is bool;

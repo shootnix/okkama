@@ -1,14 +1,15 @@
 module crypto/aes_gcm v1.0.0;
 
+// AES-GCM (NIST SP 800-38D) with a 128- or 256-bit key, 96-bit nonce and
+// 128-bit tag. The key is a SecretBytes capability; it is exported to the host
+// per operation. See crypto/aead for the sealing contract.
+
 import "crypto/aead" take Sealing;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "crypto/secret" take SecretBytes;
 import "crypto/error" take HostOperation, InvalidCryptoInput, AuthenticationFailed;
 import "encoding/hex" take HexEncoded;
 
-// AES-GCM (NIST SP 800-38D) with a 128- or 256-bit key, 96-bit nonce and
-// 128-bit tag. The key is a SecretBytes capability; it is exported to the host
-// per operation. See crypto/aead for the sealing contract.
 object AesGcm does Sealing {
     has key is SecretBytes;
 

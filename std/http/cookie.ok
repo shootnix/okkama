@@ -1,5 +1,9 @@
 module http/cookie v1.0.0;
 
+// Absolute expiry is explicit. A session cookie has no instant, including no
+// epoch sentinel. Construction neither queries a clock nor rounds a timestamp.
+// Max-Age/Expires interpretation and cookie storage policy are separate consumers.
+
 import "time/clock" take Instant;
 import "encoding/utf" take Utf8Encoded;
 import "net/endpoint" take HostName, InvalidHostName;
@@ -14,9 +18,6 @@ import "collections/set" take Set, OrderedSet;
 import "collections/iteration" take Cursor;
 import "collections/sequence" take Sequencing;
 
-// Absolute expiry is explicit. A session cookie has no instant, including no
-// epoch sentinel. Construction neither queries a clock nor rounds a timestamp.
-// Max-Age/Expires interpretation and cookie storage policy are separate consumers.
 object CookieExpiry {
     has origin is @Instant;
 

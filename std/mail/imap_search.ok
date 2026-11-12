@@ -1,14 +1,15 @@
 module mail/imap_search v1.0.0;
 
+// A matching supplies a validated nominal key, never an arbitrary wire string.
+// Keys snapshot their children once. Limits apply before concatenating output.
+// SINCE uses INTERNALDATE's calendar day, inclusive, without time/zone conversion.
+
 import "collections/sequence" take Sequencing;
 import "time/date" take Date;
 import "encoding/utf" take Utf8Encoded;
 import "io/stream" take ByteSource;
 import "error" take InvalidArgument;
 
-// A matching supplies a validated nominal key, never an arbitrary wire string.
-// Keys snapshot their children once. Limits apply before concatenating output.
-// SINCE uses INTERNALDATE's calendar day, inclusive, without time/zone conversion.
 role MailMatching {
     key() is ImapSearchKey;
 }

@@ -1,5 +1,11 @@
 module mail/imap_exchange v1.0.0;
 
+// Owns a connected protocol transport, not authentication or TLS negotiation.
+// The application-facing session will own this channel. Serialized operations
+// assign tags only after acquiring the lock and carry unread bytes forward.
+// A started transport/protocol failure poisons and closes the connection.
+// Tagged NO/BAD keep alignment and are returned for operation-specific handling.
+
 import "mail/imap_command" take ImapCommand, ImapSimpleCommand;
 import "mail/imap_command_reading" take ImapTag, ImapCommandLimits, ImapCommandRead,
     ImapCommandInput, ImapReplyMode, ImapContinuationWriting, ImapNoContinuation,
@@ -13,11 +19,6 @@ import "numbers/bigint" take BigInt;
 import "encoding/utf" take Utf8Encoded;
 import "error" take InvalidState;
 
-// Owns a connected protocol transport, not authentication or TLS negotiation.
-// The application-facing session will own this channel. Serialized operations
-// assign tags only after acquiring the lock and carry unread bytes forward.
-// A started transport/protocol failure poisons and closes the connection.
-// Tagged NO/BAD keep alignment and are returned for operation-specific handling.
 object ImapCommandChannel does Closing {
     has input is AsyncReading;
     has output is AsyncWriting;

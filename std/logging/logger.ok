@@ -1,15 +1,5 @@
 module logging/logger v1.0.0;
 
-import "logging/level" take LogLevel;
-import "logging/name" take LogName, ChildLogName;
-import "logging/field" take LogFields;
-import "logging/named" take Logging, NamedLogging;
-import "logging/write" take LogWriting, CollectedLogs;
-import "logging/filter" take AllowedLogs;
-import "logging/stream" take TextStreamLogs;
-import "io/stdout" take Stderr;
-import "json" take JsonField;
-
 // A logger for an application (#181): text lines to standard error, info and
 // above, unless told otherwise.
 //
@@ -23,6 +13,17 @@ import "json" take JsonField;
 //     Logger(name: "shop", destination: JsonStreamLogs(Stdout()), level: LogLevel.debug)
 //
 // NamedLogging stays for a clock, fixed fields or a process of one's own.
+
+import "logging/level" take LogLevel;
+import "logging/name" take LogName, ChildLogName;
+import "logging/field" take LogFields;
+import "logging/named" take Logging, NamedLogging;
+import "logging/write" take LogWriting, CollectedLogs;
+import "logging/filter" take AllowedLogs;
+import "logging/stream" take TextStreamLogs;
+import "io/stdout" take Stderr;
+import "json" take JsonField;
+
 object Logger does Logging {
     has name is LogName;
     has level is LogLevel;

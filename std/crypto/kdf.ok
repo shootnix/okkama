@@ -1,9 +1,5 @@
 module crypto/kdf v1.0.0;
 
-import "crypto/secret" take SecretBytes;
-import "crypto/error" take HostOperation, DecimalArgument, InvalidCryptoInput;
-import "encoding/hex" take HexEncoded;
-
 // Key derivation. HkdfSecret is HKDF (RFC 5869) extract-and-expand from input
 // keying material: salt and info are public context, the output length is
 // 1..255 hash lengths. Pbkdf2Secret is PBKDF2-HMAC (RFC 8018) for password
@@ -12,6 +8,11 @@ import "encoding/hex" take HexEncoded;
 // are exported from their SecretBytes at that moment.
 //
 //     let key = HkdfSecret(KdfHash.sha256, shared, salt, info, 32).secret();
+
+import "crypto/secret" take SecretBytes;
+import "crypto/error" take HostOperation, DecimalArgument, InvalidCryptoInput;
+import "encoding/hex" take HexEncoded;
+
 enum KdfHash = (sha256, sha384, sha512);
 
 hidden object KdfHashName {

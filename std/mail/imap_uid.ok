@@ -1,5 +1,9 @@
 module mail/imap_uid v1.0.0;
 
+// Protocol sequence numbers and UIDs are deliberately different nominal types.
+// UIDs and UIDVALIDITY are nonzero unsigned 32-bit protocol values, represented
+// by BigInt independently of the host integer width. No wildcard or range input.
+
 import "numbers/bigint" take BigInt;
 import "collections/sequence" take Sequencing;
 import "collections/set" take Set, OrderedSet;
@@ -8,9 +12,6 @@ import "mime/media_type" take MimeItems, MimePosition;
 import "mail/imap_name" take ImapMailboxName;
 import "error" take InvalidArgument;
 
-// Protocol sequence numbers and UIDs are deliberately different nominal types.
-// UIDs and UIDVALIDITY are nonzero unsigned 32-bit protocol values, represented
-// by BigInt independently of the host integer width. No wildcard or range input.
 object ImapUid does Comparing<ImapUid> {
     has value is BigInt;
 

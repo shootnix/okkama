@@ -1,11 +1,5 @@
 module digest/blake2 v1.0.0;
 
-import "digest/state" take Digesting;
-import "encoding/utf" take Utf8Encoded;
-import "digest/host" take HostDigest;
-import "crypto/secret" take SecretBytes;
-import "encoding/hex" take HexEncoded;
-
 // BLAKE2 (RFC 7693) over the host provider. Blake2b and Blake2s take the
 // output length, which is a BLAKE2 parameter (not a truncation): Blake2b
 // accepts 16, 20, 28, 32, 48 or 64 bytes, Blake2s 16, 20, 28 or 32; other
@@ -13,6 +7,13 @@ import "encoding/hex" take HexEncoded;
 // with full-width output (64/32 bytes); the key is a SecretBytes capability
 // of 1..64 / 1..32 bytes, exported once to the host at construction.
 // Successors and observation follow digest/state.
+
+import "digest/state" take Digesting;
+import "encoding/utf" take Utf8Encoded;
+import "digest/host" take HostDigest;
+import "crypto/secret" take SecretBytes;
+import "encoding/hex" take HexEncoded;
+
 object Blake2b does Digesting {
     has digest is HostDigest;
 

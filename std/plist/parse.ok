@@ -1,5 +1,19 @@
 module plist/parse v1.0.0;
 
+// Bounded, repeatable plist decoding, entirely in Okkama. Construction retains
+// immutable bytes; value() detects UTF-8 XML or bplist00 and validates anew.
+// Defaults: 1 MiB input, 4096 visited nodes (including keys/repeated references),
+// depth 64 with root at one. Negative budgets fail at construction; all input
+// failures are InvalidPlist with original byte offsets. No I/O or owned resource.
+// Returned values survive parser scope. Containers preserve declaration order.
+// XML is the explicit strict plist dialect in docs/std/plist-parse-guide.md;
+// standard DOCTYPE is recognized but never fetched, custom entities are rejected.
+// Binary offsets/spans/references are checked before reads; cycles on the active
+// path fail, acyclic sharing expands under the node budget. Unreachable payloads
+// are not decoded. Existing UTF/binary/number primitives are the only substrate.
+// Example: ParsedPlist(Utf8Encoded("<plist><true/></plist>").bytes()).value().
+// Run: okkama run -t std/plist/parse.ok
+
 import "plist/value" take PlistValue, PlistBoolean, PlistInteger, PlistReal, PlistString, PlistData,
     PlistDate, PlistUid, PlistArray, PlistDictionary, PlistMember, PlistKindMismatch, PlistKind,
     MissingPlistMember;
@@ -17,19 +31,6 @@ import "runtime/xml" take XmlEventsState, xml_events, xml_events_error, xml_even
 import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
 
-// Bounded, repeatable plist decoding, entirely in Okkama. Construction retains
-// immutable bytes; value() detects UTF-8 XML or bplist00 and validates anew.
-// Defaults: 1 MiB input, 4096 visited nodes (including keys/repeated references),
-// depth 64 with root at one. Negative budgets fail at construction; all input
-// failures are InvalidPlist with original byte offsets. No I/O or owned resource.
-// Returned values survive parser scope. Containers preserve declaration order.
-// XML is the explicit strict plist dialect in docs/std/plist-parse-guide.md;
-// standard DOCTYPE is recognized but never fetched, custom entities are rejected.
-// Binary offsets/spans/references are checked before reads; cycles on the active
-// path fail, acyclic sharing expands under the node budget. Unreachable payloads
-// are not decoded. Existing UTF/binary/number primitives are the only substrate.
-// Example: ParsedPlist(Utf8Encoded("<plist><true/></plist>").bytes()).value().
-// Run: okkama run -t std/plist/parse.ok
 object ParsedPlist {
     has origin is @byte;
     has maximum_input, maximum_nodes, maximum_depth is int;

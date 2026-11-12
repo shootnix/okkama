@@ -10,6 +10,7 @@ module runtime/postgres v1.0.0;
 // and texts share `pg_page_texts`). A malformed portion gives a page whose
 // failure is one of "message", "truncated", "width", "utf8", "integer",
 // "floating", "nonfinite", "bytea"; a whole page has an empty failure.
+
 native object PgPageState;
 
 native pg_page(rows is @byte, width is int, types is @int) is PgPageState;

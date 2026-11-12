@@ -1,14 +1,5 @@
 module xml/parse v1.0.0;
 
-import "xml/name" take XmlName, InvalidXml;
-import "xml/node" take XmlNode, XmlElement, XmlText, XmlComment, XmlProcessingInstruction,
-    XmlAttribute, XmlDocument, MissingXmlAttribute, MissingXmlElement;
-import "collections/list" take List, EmptyList;
-import "async/atomic" take Atomic;
-import "runtime/xml" take XmlEventsState, xml_events, xml_events_error, xml_events_offset,
-    xml_event_count, xml_event_kind, xml_event_name, xml_event_text, xml_attribute_count,
-    xml_attribute_name, xml_attribute_value;
-
 // XML text read into a tree (#144):
 //
 //     let feed = ParsedXml(text).document();
@@ -26,6 +17,16 @@ import "runtime/xml" take XmlEventsState, xml_events, xml_events_error, xml_even
 // bindings rather than attributes, so what the tree writes reads back the
 // same. A document that is not well formed is InvalidXml at its character
 // offset.
+
+import "xml/name" take XmlName, InvalidXml;
+import "xml/node" take XmlNode, XmlElement, XmlText, XmlComment, XmlProcessingInstruction,
+    XmlAttribute, XmlDocument, MissingXmlAttribute, MissingXmlElement;
+import "collections/list" take List, EmptyList;
+import "async/atomic" take Atomic;
+import "runtime/xml" take XmlEventsState, xml_events, xml_events_error, xml_events_offset,
+    xml_event_count, xml_event_kind, xml_event_name, xml_event_text, xml_attribute_count,
+    xml_attribute_name, xml_attribute_value;
+
 object ParsedXml {
     has origin is string;
     has maximum_depth, maximum_events is int;

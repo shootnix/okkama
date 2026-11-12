@@ -1,13 +1,14 @@
 module http/websocket_origin v1.0.0;
 
+// Trusted destination is supplied by the server's routing configuration, not
+// reconstructed from an untrusted Host field. Non-browser clients must supply
+// an explicit alternative policy if they omit Origin.
+
 import "http/message" take Request;
 import "http/header" take HeaderName;
 import "url/value" take UrlParts, ParsedUrl, InvalidUrl, MissingUrlPort, UrlHostKind;
 import "http/header" take Header, Headers;
 
-// Trusted destination is supplied by the server's routing configuration, not
-// reconstructed from an untrusted Host field. Non-browser clients must supply
-// an explicit alternative policy if they omit Origin.
 role WebSocketAllowing {
     allowed(request is Request, destination is UrlParts) is bool;
 }

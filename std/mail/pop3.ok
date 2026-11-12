@@ -1,5 +1,9 @@
 module mail/pop3 v1.0.0;
 
+// Immutable bounded protocol observations, independent of transport/auth.
+// Number is a transaction position. UIDL is a maildrop-scoped opaque identity;
+// neither its spelling nor a message number is an RFC Message-ID.
+
 import "mail/pop3_reply" take PopReply;
 import "collections/sequence" take Sequencing;
 import "collections/set" take Set, OrderedSet;
@@ -9,9 +13,6 @@ import "encoding/single_byte" take Latin1Decoded;
 import "mime/media_type" take MimeItems;
 import "error" take InvalidArgument;
 
-// Immutable bounded protocol observations, independent of transport/auth.
-// Number is a transaction position. UIDL is a maildrop-scoped opaque identity;
-// neither its spelling nor a message number is an RFC Message-ID.
 enum PopFeature = (uidl, top);
 
 object PopNumber {

@@ -1,13 +1,14 @@
 module numbers/bigrational v1.0.0;
 
-import "compare" take Comparing, Order;
-import "numbers/bigint" take BigInt;
-
 // Canonical exact ratio: positive denominator, gcd=1, unique zero 0/1.
 //
 //     let third = BigRational(numerator: BigInt(1), denominator: BigInt(3));
 //     third.plus(third).string();    // "2/3"
 //     third.divided(third).string(); // "1/1"
+
+import "compare" take Comparing, Order;
+import "numbers/bigint" take BigInt;
+
 object BigRational does Comparing<BigRational> {
     has upper, lower is BigInt;
 

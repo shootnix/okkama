@@ -1,7 +1,5 @@
 module crypto/key v1.0.0;
 
-import "crypto/secret" take SecretBytes;
-
 // Key roles shared by crypto/ed25519, crypto/ecdsa, crypto/rsa,
 // crypto/key_format and crypto/x509.
 //
@@ -11,6 +9,9 @@ import "crypto/secret" take SecretBytes;
 // malformed or non-matching signature and never throws for them. SigningKey
 // produces such signatures; pkcs8() exports the private key as DER PKCS#8 in a
 // fresh SecretBytes and public_key() is the matching VerifyingKey.
+
+import "crypto/secret" take SecretBytes;
+
 role PublicKey {
     bytes() is @byte;
 }

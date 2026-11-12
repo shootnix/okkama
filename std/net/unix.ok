@@ -1,5 +1,14 @@
 module net/unix v1.0.0;
 
+// Exact filesystem address for the current host. UTF-8 byte length (including
+// room for a terminating NUL) is checked before sockaddr packing. No socket or
+// filesystem I/O, normalization, existence check or absolute conversion occurs.
+// Relative paths remain relative; PathStyle never translates their text here.
+// Named filesystem addresses only: abstract and unnamed addresses are separate.
+//
+//     let address=UnixAddress(Path("run/service.sock"));
+//     address.string(); // "run/service.sock"
+
 import "fs/path" take Path;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "io/stream" take AsyncReading, AsyncWriting, ByteSource, InvalidReadLimit;
@@ -9,14 +18,6 @@ import "error" take InvalidArgument;
 import "runtime/network";
 import "io/decorators" take ByteSnapshot;
 
-// Exact filesystem address for the current host. UTF-8 byte length (including
-// room for a terminating NUL) is checked before sockaddr packing. No socket or
-// filesystem I/O, normalization, existence check or absolute conversion occurs.
-// Relative paths remain relative; PathStyle never translates their text here.
-// Named filesystem addresses only: abstract and unnamed addresses are separate.
-//
-//     let address=UnixAddress(Path("run/service.sock"));
-//     address.string(); // "run/service.sock"
 object UnixAddress {
     has origin is Path;
 

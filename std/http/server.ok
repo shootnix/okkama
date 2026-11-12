@@ -1,5 +1,9 @@
 module http/server v1.0.0;
 
+// Owned listener. In cleartext a single explicit protocol selects HTTP/1.1 or
+// prior-knowledge H2; with tls: (#209) the server speaks HTTPS and offers the
+// protocols of its policy by ALPN, h2 first.
+
 import "http/http2_server" take Http2ServerSession;
 import "http/server_policy" take ServerPolicy, ServerTimeouts;
 import "http/handler" take Handling, HandlingResult, HandlingKind, ResponseHandling;
@@ -45,9 +49,6 @@ import "collections/set" take Set, OrderedSet;
 import "collections/list" take List, EmptyList;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded;
 
-// Owned listener. In cleartext a single explicit protocol selects HTTP/1.1 or
-// prior-knowledge H2; with tls: (#209) the server speaks HTTPS and offers the
-// protocols of its policy by ALPN, h2 first.
 object HttpServer does Closing {
     has state is HttpServerState;
     has background is FutureGroup<HttpServer>;

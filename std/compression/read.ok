@@ -1,10 +1,5 @@
 module compression/read v1.0.0;
 
-import "compression/state" take Compressing, Decompressing, CompressionOutput;
-import "io/stream" take Reading, Closing, InvalidReadLimit;
-import "io/buffer" take ByteBuffer;
-import "error" take InvalidArgument, InvalidState;
-
 // Consuming byte streams over caller-owned input and codecs. Constructors bind
 // dependencies without reading/writing/finishing them; optional chunk_size is
 // positive (InvalidArgument otherwise), default 8192. bytes(limit) requires a
@@ -28,6 +23,12 @@ import "error" take InvalidArgument, InvalidState;
 // Invalid read limits do not poison the adapter. close is idempotent; destroy
 // releases owned buffers through the retained internal stream. No borrowed source
 // or codec is closed. These streams do not implement iteration/cursors.
+
+import "compression/state" take Compressing, Decompressing, CompressionOutput;
+import "io/stream" take Reading, Closing, InvalidReadLimit;
+import "io/buffer" take ByteBuffer;
+import "error" take InvalidArgument, InvalidState;
+
 object CompressedReading does Reading, Closing {
     has stream is CompressionReading;
 

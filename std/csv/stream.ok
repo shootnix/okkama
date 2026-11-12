@@ -1,15 +1,5 @@
 module csv/stream v1.0.0;
 
-import "io/stream" take Reading, AsyncReading, Closing;
-import "io/decorators" take InvalidReading;
-import "encoding/utf" take InvalidUtf8, Utf8Encoded;
-import "io/buffer" take ByteBuffer;
-import "async/atomic" take Atomic;
-import "csv" take InvalidCsv, InvalidCsvLimits, CsvLimitExceeded, CsvLimit, AsyncCsvOrigin;
-import "csv/input" take CsvByteLimitExceeded;
-import "runtime/csv_state" take CsvState, csv_state_create, csv_state_feed, csv_state_advance,
-    csv_state_row, csv_state_offset, csv_state_request, csv_state_closed, csv_state_close;
-
 // Explicit synchronous record consumption, default comma/quote/CRLF grammar.
 // One current row + at most 4099 undecoded bytes; no retained earlier rows.
 // Borrowed Reading; close clears parser state, never closes origin. Calls must
@@ -25,6 +15,17 @@ import "runtime/csv_state" take CsvState, csv_state_create, csv_state_feed, csv_
 //
 // next() answers none at the end of the rows; row() on such a stream is
 // AsyncCsvOrigin.walked.
+
+import "io/stream" take Reading, AsyncReading, Closing;
+import "io/decorators" take InvalidReading;
+import "encoding/utf" take InvalidUtf8, Utf8Encoded;
+import "io/buffer" take ByteBuffer;
+import "async/atomic" take Atomic;
+import "csv" take InvalidCsv, InvalidCsvLimits, CsvLimitExceeded, CsvLimit, AsyncCsvOrigin;
+import "csv/input" take CsvByteLimitExceeded;
+import "runtime/csv_state" take CsvState, csv_state_create, csv_state_feed, csv_state_advance,
+    csv_state_row, csv_state_offset, csv_state_request, csv_state_closed, csv_state_close;
+
 object CsvStream does Closing {
     has origin is Reading;
     has upstream is Maybe<AsyncReading>;

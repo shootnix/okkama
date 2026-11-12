@@ -1,9 +1,5 @@
 module template/path v1.0.0;
 
-import "collections/sequence" take Sequencing;
-import "collections/list" take List, EmptyList;
-import "compare" take Comparing, Order;
-
 // Immutable named template path: nonempty sequence of nonempty exact strings.
 // TemplatePath("user","name").string() -> "user.name".
 // Default budgets: 64 segments, 4096 Unicode scalars including separator dots;
@@ -24,6 +20,11 @@ import "compare" take Comparing, Order;
 // Empty source/segments and "." are invalid; template syntax reserves "." for
 // the current item. Parsing does not change the directly supplied segment API.
 // Run: okkama run -t std/template/path.ok
+
+import "collections/sequence" take Sequencing;
+import "collections/list" take List, EmptyList;
+import "compare" take Comparing, Order;
+
 object TemplatePath does Comparing<TemplatePath> {
     has origin is @string;
 

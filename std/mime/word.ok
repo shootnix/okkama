@@ -1,5 +1,10 @@
 module mime/word v1.0.0;
 
+// Strict RFC 2047 words for explicitly unstructured, unfolded field bodies.
+// Do not apply to whole structured headers. Forbidden context preserves text.
+// UTF-8/US-ASCII only; B output, B/Q input, no charset guessing or I/O.
+// See docs/std/mime-word.md for limits, observation and error positions.
+
 import "mime/media_type" take MimeToken, InvalidMediaType, MimeItems, MimePosition;
 import "encoding/base64" take Base64Encoded, Base64Decoded, InvalidBase64;
 import "encoding/hex" take HexDecoded, InvalidHex;
@@ -7,10 +12,6 @@ import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument;
 
-// Strict RFC 2047 words for explicitly unstructured, unfolded field bodies.
-// Do not apply to whole structured headers. Forbidden context preserves text.
-// UTF-8/US-ASCII only; B output, B/Q input, no charset guessing or I/O.
-// See docs/std/mime-word.md for limits, observation and error positions.
 enum EncodedWordContext = (unstructured, forbidden);
 
 object EncodedWord {

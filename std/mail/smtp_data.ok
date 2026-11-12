@@ -1,5 +1,17 @@
 module mail/smtp_data v1.0.0;
 
+// Eager DATA content snapshot, not a network command or an SMTP envelope.
+// Construction calls the borrowed body's bytes() once, removes Bcc/Resent-Bcc through
+// DeliveredMail, validates MIME/CRLF/line/size limits and advertised 8BITMIME,
+// dot-stuffs each leading dot and appends ".\r\n". Terminal content CRLF is
+// required for literal content. For Base64 only, an absent final CRLF is added
+// as ignored encoding whitespace. bytes()/message_size()/body_mode() are pure.
+// message_size excludes transparency dots and the terminator (RFC 1870 SIZE).
+// BODY mode remains a coordinate for the future MAIL command; this object does
+// not negotiate SMTPUTF8, authenticate, send DATA or infer a successful reply.
+// Binary CTE requires a separate BDAT implementation, even if advertised.
+// No automatic seven-bit recoding. All scratch resources are owned/closed.
+
 import "mail/message" take MailMessage, DeliveredMail, ParsedMail;
 import "mail/smtp" take SmtpCapabilities, SmtpFeature;
 import "mail/smtp_reply" take SmtpLimitExceeded, SmtpReply;
@@ -14,17 +26,6 @@ import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 
-// Eager DATA content snapshot, not a network command or an SMTP envelope.
-// Construction calls the borrowed body's bytes() once, removes Bcc/Resent-Bcc through
-// DeliveredMail, validates MIME/CRLF/line/size limits and advertised 8BITMIME,
-// dot-stuffs each leading dot and appends ".\r\n". Terminal content CRLF is
-// required for literal content. For Base64 only, an absent final CRLF is added
-// as ignored encoding whitespace. bytes()/message_size()/body_mode() are pure.
-// message_size excludes transparency dots and the terminator (RFC 1870 SIZE).
-// BODY mode remains a coordinate for the future MAIL command; this object does
-// not negotiate SMTPUTF8, authenticate, send DATA or infer a successful reply.
-// Binary CTE requires a separate BDAT implementation, even if advertised.
-// No automatic seven-bit recoding. All scratch resources are owned/closed.
 enum SmtpBodyMode = (seven_bit, eight_bit_mime);
 
 object SmtpDataLimits {

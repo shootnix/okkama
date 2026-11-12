@@ -1,12 +1,13 @@
 module template/html_library v1.0.0;
 
-import "collections/sequence" take Sequencing;
-import "template/html" take HtmlTemplate;
-
 // Exact association between a nonempty Unicode name and a HTML template.
 // Names are not paths: no trimming, case folding, normalization or I/O.
 // Declaration/lookup never compiles or renders the retained template.
 // Example: NamedHtmlTemplate("header", HtmlTemplate("Hello {{name}}"));
+
+import "collections/sequence" take Sequencing;
+import "template/html" take HtmlTemplate;
+
 object NamedHtmlTemplate {
     has key is string;
     has origin is HtmlTemplate;

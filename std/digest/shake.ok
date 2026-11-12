@@ -1,16 +1,17 @@
 module digest/shake v1.0.0;
 
-import "digest/state" take Digesting;
-import "encoding/utf" take Utf8Encoded;
-import "digest/host" take HostDigest;
-import "encoding/hex" take HexEncoded;
-
 // SHAKE128 and SHAKE256 extendable-output functions (FIPS 202) over the host
 // provider. The output length is part of the object: bytes() returns exactly
 // `length` bytes (1..1048576, InvalidShakeLength otherwise), and successors
 // keep it. A longer output of the same history starts with the shorter one.
 //
 //     Shake128(32, message).bytes(); // 32 raw bytes
+
+import "digest/state" take Digesting;
+import "encoding/utf" take Utf8Encoded;
+import "digest/host" take HostDigest;
+import "encoding/hex" take HexEncoded;
+
 object Shake128 does Digesting {
     has digest is HostDigest;
 

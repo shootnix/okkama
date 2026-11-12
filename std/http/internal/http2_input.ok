@@ -1,5 +1,9 @@
 module http/internal/http2_input v1.0.0;
 
+// Synchronous event publication keeps the sole wire reader independent of
+// outbound socket completion and slow application body consumption. The owner
+// provides bounded queues, state/flow checks and physical transport lifetime.
+
 import "http/internal/http2_frame" take Http2Frame, Http2FrameHeader, Http2Fault, Http2FaultScope,
     Http2FaultView;
 import "http/internal/http2_reading" take Http2FrameReading, EndOfHttp2Frames;
@@ -17,9 +21,6 @@ import "async/atomic" take Atomic;
 import "async/event" take Event;
 import "error" take InvalidState;
 
-// Synchronous event publication keeps the sole wire reader independent of
-// outbound socket completion and slow application body consumption. The owner
-// provides bounded queues, state/flow checks and physical transport lifetime.
 role Http2ReceivingEvents {
     headers(block is Http2HeaderBlock) is void;
     data(data is Http2DataPayload) is void;

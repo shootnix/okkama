@@ -1,5 +1,22 @@
 module archive/tar v1.0.0;
 
+// Complete uncompressed TAR writing: default PAX, or explicitly strict USTAR.
+// All seven entry kinds are values; no extraction or filesystem/account lookup.
+// Default absent mode is 0755 for directories, 0644 otherwise; absent ownership
+// is 0/0 with empty names. Explicit values, including zero, are preserved.
+// UTC calendar metadata converts exactly to epoch seconds/nanoseconds.
+//
+//     let archive = TarArchive(entries); // binds traversal, no encoding yet
+//     let bytes = archive.bytes();       // complete independent in-memory value
+//     let output = TarWriting(sink);     // borrowed Writing, no output yet
+//     output.write(member); output.finish(); output.close();
+//
+// PAX retains UTF-8/long names, large IDs, negative/fractional times and comments
+// using local length-framed records. Strict USTAR rejects unrepresentable values
+// rather than truncating. Device numbers fit seven octal digits in both formats.
+// Every written header has an unsigned checksum; padding and two EOF blocks are
+// zero. GNU and base-256 are never written; ParsedTar can read both.
+
 import "archive/entry" take ArchiveEntry, ArchiveEntryVisitor, ArchiveEntryKind, ArchiveFile,
     ArchiveDirectory, ArchiveSymbolicLink, ArchiveHardLink, ArchiveFifo, ArchiveDevice;
 import "archive/path" take ArchivePath;
@@ -20,22 +37,6 @@ import "strings/parse" take Number;
 import "fs/stat" take Permissions, PermissionMode;
 import "error" take InvalidArgument, InvalidState, OutOfRange;
 
-// Complete uncompressed TAR writing: default PAX, or explicitly strict USTAR.
-// All seven entry kinds are values; no extraction or filesystem/account lookup.
-// Default absent mode is 0755 for directories, 0644 otherwise; absent ownership
-// is 0/0 with empty names. Explicit values, including zero, are preserved.
-// UTC calendar metadata converts exactly to epoch seconds/nanoseconds.
-//
-//     let archive = TarArchive(entries); // binds traversal, no encoding yet
-//     let bytes = archive.bytes();       // complete independent in-memory value
-//     let output = TarWriting(sink);     // borrowed Writing, no output yet
-//     output.write(member); output.finish(); output.close();
-//
-// PAX retains UTF-8/long names, large IDs, negative/fractional times and comments
-// using local length-framed records. Strict USTAR rejects unrepresentable values
-// rather than truncating. Device numbers fit seven octal digits in both formats.
-// Every written header has an unsigned checksum; padding and two EOF blocks are
-// zero. GNU and base-256 are never written; ParsedTar can read both.
 enum TarFormat = (pax, ustar);
 
 object TarArchive {

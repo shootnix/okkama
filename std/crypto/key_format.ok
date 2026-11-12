@@ -1,14 +1,5 @@
 module crypto/key_format v1.0.0;
 
-import "crypto/key" take PublicKey, VerifyingKey, SigningKey;
-import "crypto/secret" take SecretBytes;
-import "crypto/ed25519" take Ed25519PrivateKey, Ed25519PublicKey;
-import "crypto/ecdsa" take EcdsaCurve, EcdsaPrivateKey, EcdsaPublicKey;
-import "crypto/error" take HostOperation, InvalidCryptoInput;
-import "encoding/pem" take PemEncoded, PemBlock;
-import "encoding/utf" take Utf8Decoded, Utf8Encoded;
-import "encoding/hex" take HexDecoded;
-
 // Key interchange formats: DER PKCS#8 ("PRIVATE KEY") and DER
 // SubjectPublicKeyInfo ("PUBLIC KEY") in strict PEM (encoding/pem).
 //
@@ -20,6 +11,16 @@ import "encoding/hex" take HexDecoded;
 // explicit scheme (crypto/rsa RsaPrivateKey/RsaPublicKey plus a signing
 // object), and asking for it here is InvalidCryptoInput. Encrypted PKCS#8,
 // PKCS#1 "RSA PRIVATE KEY" and SEC1 "EC PRIVATE KEY" are not accepted.
+
+import "crypto/key" take PublicKey, VerifyingKey, SigningKey;
+import "crypto/secret" take SecretBytes;
+import "crypto/ed25519" take Ed25519PrivateKey, Ed25519PublicKey;
+import "crypto/ecdsa" take EcdsaCurve, EcdsaPrivateKey, EcdsaPublicKey;
+import "crypto/error" take HostOperation, InvalidCryptoInput;
+import "encoding/pem" take PemEncoded, PemBlock;
+import "encoding/utf" take Utf8Decoded, Utf8Encoded;
+import "encoding/hex" take HexDecoded;
+
 enum KeyAlgorithm = (ed25519, ecdsa_p256, ecdsa_p384, rsa, other);
 
 object KeyAlgorithmName {

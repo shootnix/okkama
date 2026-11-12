@@ -1,8 +1,5 @@
 module archive/path v1.0.0;
 
-import "collections/sequence" take Sequencing;
-import "encoding/utf" take Utf8Decoded;
-
 // Immutable relative archive member name, independent of fs/Path and the host.
 // The constructor rejects empty/absolute paths, any backslash or NUL, leading
 // ASCII drive prefixes (including C:relative), and empty, . or .. segments.
@@ -21,6 +18,10 @@ import "encoding/utf" take Utf8Decoded;
 // a synthetic empty/root path. All observations are pure; no owned resources.
 // This is lexical validation only: link traversal, host-specific restrictions
 // and destination containment/races belong to the later extraction capability.
+
+import "collections/sequence" take Sequencing;
+import "encoding/utf" take Utf8Decoded;
+
 object ArchivePath {
     has parts is @string;
 

@@ -1,5 +1,19 @@
 module web/testing v1.0.0;
 
+// Calls a route table the way HttpClient calls a server, without a network
+// (#85). A request goes through the routes, their arounds and exception
+// scopes, and comes back as the ClientResponse a real client gets, so a test
+// reads it the same way:
+//
+//     let client = WebTestClient(routes);
+//     let page = await client.get("/notes/7");
+//     test.is(page::Head::code, 200);
+//     test.is((await page.json()).text("title"), "Tea");
+//
+// A target is a path with an optional query, "/notes?limit=5". The request
+// comes from 127.0.0.1 over HTTP/1.1. A HEAD response has no body, as on the
+// wire, and an accepted WebSocket upgrade is 101 Switching Protocols.
+
 import "http/handler" take Handling, HandlingKind;
 import "http/request_context" take HttpRequestContext;
 import "http/message" take Request, Response, Responding;
@@ -20,19 +34,6 @@ import "web/request" take WebRequest;
 import "web/reply" take TextReply, JsonReply, CreatedReply;
 import "json" take Json, JsonField;
 
-// Calls a route table the way HttpClient calls a server, without a network
-// (#85). A request goes through the routes, their arounds and exception
-// scopes, and comes back as the ClientResponse a real client gets, so a test
-// reads it the same way:
-//
-//     let client = WebTestClient(routes);
-//     let page = await client.get("/notes/7");
-//     test.is(page::Head::code, 200);
-//     test.is((await page.json()).text("title"), "Tea");
-//
-// A target is a path with an optional query, "/notes?limit=5". The request
-// comes from 127.0.0.1 over HTTP/1.1. A HEAD response has no body, as on the
-// wire, and an accepted WebSocket upgrade is 101 Switching Protocols.
 object WebTestClient {
     has routes is Handling;
 

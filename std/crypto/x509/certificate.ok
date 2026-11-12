@@ -1,5 +1,14 @@
 module crypto/x509/certificate v1.0.0;
 
+// ParsedCertificate(bytes).value() validates a bounded DER envelope and asks
+// OpenSSL to decode its certificate/public key. It neither verifies a signature
+// nor asks a clock, resolver, filesystem trust store, or peer hostname.
+// Exact DER plus a deterministic private facts snapshot define identity;
+// repeated getters acquire no persistent host pointers. Names preserve RDN
+// groups and DER member order. Unsupported text encodings fail on observation.
+// Limits: 1 MiB input, 8192 envelope nodes, nesting 32, 128 extensions/groups,
+// 32 attributes per RDN, 4096 scalars per decoded value, 65536 per decoded name.
+
 import "runtime/x509" as x509;
 import "crypto/x509/value" take CertificateValidity, CertificateConstraints, InvalidCertificate;
 import "crypto/x509/name" take DistinguishedName, RelativeDistinguishedName, NameAttribute,
@@ -13,14 +22,6 @@ import "net/ip" take IpAddress;
 import "collections/set" take Set, OrderedSet;
 import "encoding/hex" take HexDecoded;
 
-// ParsedCertificate(bytes).value() validates a bounded DER envelope and asks
-// OpenSSL to decode its certificate/public key. It neither verifies a signature
-// nor asks a clock, resolver, filesystem trust store, or peer hostname.
-// Exact DER plus a deterministic private facts snapshot define identity;
-// repeated getters acquire no persistent host pointers. Names preserve RDN
-// groups and DER member order. Unsupported text encodings fail on observation.
-// Limits: 1 MiB input, 8192 envelope nodes, nesting 32, 128 extensions/groups,
-// 32 attributes per RDN, 4096 scalars per decoded value, 65536 per decoded name.
 object ParsedCertificate {
     has origin is @byte;
 

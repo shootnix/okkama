@@ -1,5 +1,12 @@
 module net/stream v1.0.0;
 
+// Immutable observations of the two ends of a connection. No resolution or
+// connection occurs; exact values and direction are preserved for any common T.
+//
+//     let ends is ConnectionEndpoints<string>=ConnectionEndpoints("here","there");
+//     ends.local_endpoint();  // "here"
+//     ends.remote_endpoint(); // "there"
+
 import "io/stream" take AsyncReading, AsyncWriting, ByteSource, Closing, InvalidReadLimit;
 import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Encoded;
@@ -16,12 +23,6 @@ import "async/scope" take FutureGroup;
 import "error" take InvalidState, InvalidArgument;
 import "runtime/tls_transport" as tls;
 
-// Immutable observations of the two ends of a connection. No resolution or
-// connection occurs; exact values and direction are preserved for any common T.
-//
-//     let ends is ConnectionEndpoints<string>=ConnectionEndpoints("here","there");
-//     ends.local_endpoint();  // "here"
-//     ends.remote_endpoint(); // "there"
 object ConnectionEndpoints<T> {
     has local is T;
     has remote is T;

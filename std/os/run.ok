@@ -1,10 +1,5 @@
 module os/run v1.0.0;
 
-import "fs/path" take Path;
-import "os/command" take InheritedCommand;
-import "os/command_capture" take CommandCapture, CompletedCommand, CaptureLimitExceeded;
-import "os/process" take ExitKind, ProcessFailure;
-
 // Run a tool and read what it printed (#197):
 //
 //     let status = await Run("git", ["status", "--short"]).text();
@@ -17,6 +12,12 @@ import "os/process" take ExitKind, ProcessFailure;
 // end is CommandFailed with what the program wrote to standard error.
 // CommandCapture over a Command sets another environment, directory, input
 // or limit.
+
+import "fs/path" take Path;
+import "os/command" take InheritedCommand;
+import "os/command_capture" take CommandCapture, CompletedCommand, CaptureLimitExceeded;
+import "os/process" take ExitKind, ProcessFailure;
+
 object Run {
     has capture is CommandCapture;
 

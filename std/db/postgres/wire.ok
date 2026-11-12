@@ -1,14 +1,5 @@
 module db/postgres/wire v1.0.0;
 
-import "io/stream" take AsyncReading, AsyncWriting;
-import "io/buffer" take ByteBuffer;
-import "io/input" take ByteInput;
-import "encoding/utf" take Utf8Encoded, Utf8Decoded, ByteOrder;
-import "encoding/binary" take Signedness;
-import "encoding/bytes" take ByteRange, ByteSearch;
-import "async/atomic" take Atomic;
-import "cell" take Cell;
-
 // PostgreSQL frontend/backend protocol 3.0 framing, written in Okkama.
 //
 // Frontend messages are a type byte, a big-endian Int32 length that counts
@@ -19,6 +10,16 @@ import "cell" take Cell;
 // semantics: db/postgres owns the conversation. Integers and strings are read
 // in place (encoding/bytes); DataRow messages can be taken raw, many at once,
 // for a result page.
+
+import "io/stream" take AsyncReading, AsyncWriting;
+import "io/buffer" take ByteBuffer;
+import "io/input" take ByteInput;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded, ByteOrder;
+import "encoding/binary" take Signedness;
+import "encoding/bytes" take ByteRange, ByteSearch;
+import "async/atomic" take Atomic;
+import "cell" take Cell;
+
 object PgInt32 {
     has value is int;
 

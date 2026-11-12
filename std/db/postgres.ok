@@ -1,5 +1,45 @@
 module db/postgres v1.0.0;
 
+// PostgreSQL driver over the frontend/backend protocol 3.0, written in
+// Okkama: framing (db/postgres/wire), SCRAM-SHA-256 and MD5 (db/postgres/auth)
+// and the conversation below. The host supplies only TCP, TLS and crypto.
+//
+//     let database = PostgresDatabase(
+//         PostgresTcp(IpEndpoint(IpAddress("127.0.0.1"), 5432)),
+//         PostgresCredentials("app", SecretBytes(Utf8Encoded("secret").bytes())),
+//         PostgresOptions("app"),
+//         SystemEntropy());
+//     let connection = await database.connection();
+//     let rows = await connection.rows(Statement("SELECT id, name FROM users WHERE id = $1", [DbInteger(7)]));
+//
+// Every statement goes through the extended query protocol, so parameters
+// never become SQL text and one Statement is one SQL command. Placeholders are
+// PostgreSQL's own $1..$n. Parameters are sent untyped (OID 0): the server
+// infers each type from its context, and a context-free parameter needs an
+// explicit cast ($1::int8). Text, integer, floating and decimal values travel
+// as text literals, booleans as true/false, bytes in binary format.
+//
+// Results come back in text format and decode by column type: bool as
+// DbBoolean, int2/int4/int8/oid as DbInteger, float4/float8 as DbFloating,
+// numeric as DbDecimal, bytea as DbBytes; NaN and infinities are a data
+// failure, every other type (dates, json, uuid, arrays...) is DbText.
+// Column.declaration() is the type name (int4, text...) or "oid:<n>".
+//
+// A query is one round trip: Bind, Execute without a row limit and Sync go
+// out together, and the server streams the whole answer through
+// ReadyForQuery. The reader decodes it `batch` rows at a time as it is read
+// from the socket, so TCP flow control bounds what is buffered. While a row
+// reader is open the connection is busy; closing it early discards the rest
+// of the answer on the next operation (the server has computed it anyway).
+// Only one operation runs at a time per connection.
+//
+// Authentication accepts trust and SCRAM-SHA-256 (no channel binding); MD5
+// and cleartext passwords are refused unless PostgresOptions enables them.
+// SCRAM requires the server's final signature before AuthenticationOk.
+// PostgresTls sends SSLRequest and verifies the server certificate; PostgresTcp
+// is plaintext. Server diagnostics surface as DbFailure with the SQLSTATE as
+// code and a driver-written message (server text may echo bindings).
+
 import "db/statement" take DbLimits;
 
 import "db/postgres/wire" take PgInt32, PgInt16, PgCString, PgFrame, PgUntypedFrame, PgMessage,
@@ -42,45 +82,6 @@ import "runtime/postgres" as native_pg;
 import "db/read" take DbPage;
 import "cell" take Cell;
 
-// PostgreSQL driver over the frontend/backend protocol 3.0, written in
-// Okkama: framing (db/postgres/wire), SCRAM-SHA-256 and MD5 (db/postgres/auth)
-// and the conversation below. The host supplies only TCP, TLS and crypto.
-//
-//     let database = PostgresDatabase(
-//         PostgresTcp(IpEndpoint(IpAddress("127.0.0.1"), 5432)),
-//         PostgresCredentials("app", SecretBytes(Utf8Encoded("secret").bytes())),
-//         PostgresOptions("app"),
-//         SystemEntropy());
-//     let connection = await database.connection();
-//     let rows = await connection.rows(Statement("SELECT id, name FROM users WHERE id = $1", [DbInteger(7)]));
-//
-// Every statement goes through the extended query protocol, so parameters
-// never become SQL text and one Statement is one SQL command. Placeholders are
-// PostgreSQL's own $1..$n. Parameters are sent untyped (OID 0): the server
-// infers each type from its context, and a context-free parameter needs an
-// explicit cast ($1::int8). Text, integer, floating and decimal values travel
-// as text literals, booleans as true/false, bytes in binary format.
-//
-// Results come back in text format and decode by column type: bool as
-// DbBoolean, int2/int4/int8/oid as DbInteger, float4/float8 as DbFloating,
-// numeric as DbDecimal, bytea as DbBytes; NaN and infinities are a data
-// failure, every other type (dates, json, uuid, arrays...) is DbText.
-// Column.declaration() is the type name (int4, text...) or "oid:<n>".
-//
-// A query is one round trip: Bind, Execute without a row limit and Sync go
-// out together, and the server streams the whole answer through
-// ReadyForQuery. The reader decodes it `batch` rows at a time as it is read
-// from the socket, so TCP flow control bounds what is buffered. While a row
-// reader is open the connection is busy; closing it early discards the rest
-// of the answer on the next operation (the server has computed it anyway).
-// Only one operation runs at a time per connection.
-//
-// Authentication accepts trust and SCRAM-SHA-256 (no channel binding); MD5
-// and cleartext passwords are refused unless PostgresOptions enables them.
-// SCRAM requires the server's final signature before AuthenticationOk.
-// PostgresTls sends SSLRequest and verifies the server certificate; PostgresTcp
-// is plaintext. Server diagnostics surface as DbFailure with the SQLSTATE as
-// code and a driver-written message (server text may echo bindings).
 object PostgresCredentials {
     has user is string;
     has password is @SecretBytes;

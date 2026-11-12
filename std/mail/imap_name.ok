@@ -1,5 +1,12 @@
 module mail/imap_name v1.0.0;
 
+// Bounded, eager IMAP4rev1 mailbox-name values. No connection or negotiation.
+// Modified UTF-7 uses UTF-16BE, comma instead of slash, no Base64 padding,
+// &- for ampersand and maximal runs of non-printable/non-ASCII scalars.
+// Decoding accepts only this canonical form. Codecs preserve all Unicode
+// scalars without normalization; ImapMailboxName rejects ASCII controls.
+// Quoting protects syntax, not LIST wildcard interpretation or authorization.
+
 import "encoding/utf" take Utf8Encoded, Utf8Decoded, Utf16Encoded, Utf16Decoded, ByteOrder,
     InvalidUtf16;
 import "encoding/base64" take Base64Encoded, Base64Decoded, InvalidBase64;
@@ -7,12 +14,6 @@ import "mime/media_type" take MimePosition;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument;
 
-// Bounded, eager IMAP4rev1 mailbox-name values. No connection or negotiation.
-// Modified UTF-7 uses UTF-16BE, comma instead of slash, no Base64 padding,
-// &- for ampersand and maximal runs of non-printable/non-ASCII scalars.
-// Decoding accepts only this canonical form. Codecs preserve all Unicode
-// scalars without normalization; ImapMailboxName rejects ASCII controls.
-// Quoting protects syntax, not LIST wildcard interpretation or authorization.
 object ImapNameLimits {
     has scalars, wire_bytes is int;
 

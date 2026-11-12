@@ -1,12 +1,5 @@
 module template/json v1.0.0;
 
-import "template/model" take TemplateStrings, MissingTemplateValue;
-import "template/path" take TemplatePath, TemplatePathFromString;
-import "template/compile" take TemplateOutputLimitExceeded;
-import "json" take Json, JsonField, JsonKind, ParsedJson;
-import "math/decimal" take Decimal;
-import "runtime/template" take template_output_size;
-
 // Explicit JSON-to-template adapter: exact dotted member paths of a Json.
 // String/null/bool/number leaves become literal text/empty/true|false/the JSON number text
 // text. Arrays/objects at the leaf throw NonScalarTemplateValue; nonobjects on
@@ -20,6 +13,14 @@ import "runtime/template" take template_output_size;
 // optional limits must be nonnegative. Zero permits empty objects/text. Maximum
 // path depth is 64. No reflection, trimming or implicit escaping.
 // Example: TextTemplate("{{name}}").string(JsonTemplateStrings(document)).
+
+import "template/model" take TemplateStrings, MissingTemplateValue;
+import "template/path" take TemplatePath, TemplatePathFromString;
+import "template/compile" take TemplateOutputLimitExceeded;
+import "json" take Json, JsonField, JsonKind, ParsedJson;
+import "math/decimal" take Decimal;
+import "runtime/template" take template_output_size;
+
 object JsonTemplateStrings does TemplateStrings {
     has origin is Json;
     has maximum_members, maximum_output is int;

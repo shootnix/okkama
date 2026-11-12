@@ -1,5 +1,12 @@
 module http/client v1.0.0;
 
+// An HTTP client. `HttpClient()` resolves names with the system's DNS, trusts
+// the system's roots, reaches public endpoints only and speaks HTTP/1.1 with
+// the default limits and timeouts over at most 8 connections; it follows no
+// redirects and keeps no cookies. Each part is replaced by name:
+// `HttpClient(endpoints: AllEndpoints(), redirects: Redirects(limit: 5))`,
+// `HttpClient(cookies: MemoryCookieJar())`.
+
 import "strings/parse" take Number;
 import "json" take Json, JsonField;
 import "http/status" take Status, StatusClass;
@@ -53,12 +60,6 @@ import "http/target" take AbsoluteTarget, RequestTargetKind;
 import "http/method" take Method;
 import "url/value" take ParsedUrl;
 
-// An HTTP client. `HttpClient()` resolves names with the system's DNS, trusts
-// the system's roots, reaches public endpoints only and speaks HTTP/1.1 with
-// the default limits and timeouts over at most 8 connections; it follows no
-// redirects and keeps no cookies. Each part is replaced by name:
-// `HttpClient(endpoints: AllEndpoints(), redirects: Redirects(limit: 5))`,
-// `HttpClient(cookies: MemoryCookieJar())`.
 object HttpClient does Exchanging, Closing {
     has transport is HttpTransport;
     has chain is Exchanging;

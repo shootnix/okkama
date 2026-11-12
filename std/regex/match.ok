@@ -1,10 +1,5 @@
 module regex/match v1.0.0;
 
-import "regex/range" take RegexRange;
-import "strings/parse" take Number, InvalidInteger;
-import "runtime/regex" take RegexMatchState, regex_match_capture_count, regex_match_capture_name,
-    regex_match_capture_index, regex_match_capture_span;
-
 // RegexMatching is the observable surface shared by mandatory search results
 // and matches yielded by RegexMatches. Implementations are immutable:
 //
@@ -24,6 +19,12 @@ import "runtime/regex" take RegexMatchState, regex_match_capture_count, regex_ma
 //     date.int("year");                     // 2026
 //     date.text("month");                   // "11"
 //     date.maybe("day").text() else "";     // "": the group took no part
+
+import "regex/range" take RegexRange;
+import "strings/parse" take Number, InvalidInteger;
+import "runtime/regex" take RegexMatchState, regex_match_capture_count, regex_match_capture_name,
+    regex_match_capture_index, regex_match_capture_span;
+
 role RegexMatching {
     text() is string;
     range() is RegexRange;

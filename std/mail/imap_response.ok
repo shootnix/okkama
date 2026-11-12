@@ -1,5 +1,13 @@
 module mail/imap_response v1.0.0;
 
+// Bounded ASCII server-response framing, not a complete IMAP semantic parser.
+// Tagged/status/continuation text never introduces literals. Known structured
+// responses recognize quoted strings, {n} and ~{n}; unknown response names fail
+// because their extension grammar might use different framing. Literal bytes
+// are opaque except that ordinary literals exclude NUL. No negotiation or I/O.
+// Successor decoders keep independent state, stop at one complete response and
+// preserve exact remainder. Empty feed is not EOF; finish() detects truncation.
+
 import "collections/sequence" take Sequencing;
 import "mime/media_type" take MimeItems, MimePosition;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
@@ -9,13 +17,6 @@ import "io/buffer" take ByteBuffer;
 import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument, InvalidState;
 
-// Bounded ASCII server-response framing, not a complete IMAP semantic parser.
-// Tagged/status/continuation text never introduces literals. Known structured
-// responses recognize quoted strings, {n} and ~{n}; unknown response names fail
-// because their extension grammar might use different framing. Literal bytes
-// are opaque except that ordinary literals exclude NUL. No negotiation or I/O.
-// Successor decoders keep independent state, stop at one complete response and
-// preserve exact remainder. Empty feed is not EOF; finish() detects truncation.
 enum ImapResponseKind = (tagged, untagged, continuation);
 
 enum ImapResponsePartKind = (text, literal, literal8);

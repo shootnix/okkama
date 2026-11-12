@@ -1,7 +1,5 @@
 module crypto/constant_time v1.0.0;
 
-import "crypto/error" take HostOperation;
-
 // Equality of two byte strings whose running time does not depend on where
 // they differ (host `subtle`). Different lengths are unequal; the length
 // itself is not secret. Use it for MAC tags, tokens and password digests.
@@ -9,6 +7,9 @@ import "crypto/error" take HostOperation;
 //     ConstantTimeEqual(left: expected, right: supplied).matches();
 //
 // A key or token kept as SecretBytes compares itself: `stored.matches(supplied)`.
+
+import "crypto/error" take HostOperation;
+
 object ConstantTimeEqual {
     has left is @byte;
     has right is @byte;

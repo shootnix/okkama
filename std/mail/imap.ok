@@ -1,5 +1,13 @@
 module mail/imap v1.0.0;
 
+// Eager CAPABILITY advertisement snapshots, not negotiated session state.
+// Unknown atom tokens and duplicates retain source order/spelling. names() and
+// features() deduplicate; AUTH mechanisms retain first advertisement order.
+// Require IMAP4rev1 or IMAP4rev2, without inferring either revision's implicit
+// features. Replace the snapshot after TLS/authentication; never merge it.
+// ParsedImapCapabilities accepts one complete untagged line, not a greeting,
+// response code, ENABLED response or tagged command completion.
+
 import "collections/sequence" take Sequencing;
 import "collections/set" take Set, OrderedSet;
 import "mime/media_type" take MimeItems;
@@ -8,13 +16,6 @@ import "io/stream" take ByteSource;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument;
 
-// Eager CAPABILITY advertisement snapshots, not negotiated session state.
-// Unknown atom tokens and duplicates retain source order/spelling. names() and
-// features() deduplicate; AUTH mechanisms retain first advertisement order.
-// Require IMAP4rev1 or IMAP4rev2, without inferring either revision's implicit
-// features. Replace the snapshot after TLS/authentication; never merge it.
-// ParsedImapCapabilities accepts one complete untagged line, not a greeting,
-// response code, ENABLED response or tagged command completion.
 enum ImapFeature = (imap4rev1, imap4rev2, start_tls, login_disabled, idle, uid_plus, move, enable, utf8_accept, utf8_only, literal_plus, literal_minus, sasl_ir, condstore, qresync, namespace, unselect, binary);
 
 object ImapCapabilityLimits {

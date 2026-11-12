@@ -1,5 +1,9 @@
 module http/request_context v1.0.0;
 
+// Infrastructure creates one context per request; handlers observe transport
+// facts and cancellation, but receive no socket mutation or cancellation owner.
+// Routing changes only the immutable parameter snapshot in a successor.
+
 import "http/exchange" take ExchangeDetails;
 import "net/stream" take ConnectionEndpoints;
 import "net/endpoint" take IpEndpoint;
@@ -7,9 +11,6 @@ import "net/tls" take TlsDetails;
 import "async/cancellation" take Cancelling;
 import "error" take InvalidArgument;
 
-// Infrastructure creates one context per request; handlers observe transport
-// facts and cancellation, but receive no socket mutation or cancellation owner.
-// Routing changes only the immutable parameter snapshot in a successor.
 object HttpRequestContext {
     has details is ExchangeDetails;
     has cancellation is Cancelling;

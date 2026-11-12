@@ -1,10 +1,5 @@
 module mail/pop3_reply v1.0.0;
 
-import "encoding/single_byte" take Latin1Decoded, Latin1Encoded;
-import "encoding/utf" take Utf8Encoded;
-import "mime/media_type" take MimePosition;
-import "error" take InvalidArgument, InvalidState;
-
 // One reply in a caller-selected command response mode. Negative replies never
 // have a multiline body. Status grammar is ASCII; data is opaque octets framed
 // by strict CRLF. The terminator is omitted and exactly one leading dot is
@@ -12,6 +7,12 @@ import "error" take InvalidArgument, InvalidState;
 // Successors contain immutable strings, not shared mutable buffers. Limits
 // bound pending lines, retained body, consumed wire, data lines and feed chunks.
 // Empty feed is not EOF. finish() reports truncation; ParsedPopReply is exact.
+
+import "encoding/single_byte" take Latin1Decoded, Latin1Encoded;
+import "encoding/utf" take Utf8Encoded;
+import "mime/media_type" take MimePosition;
+import "error" take InvalidArgument, InvalidState;
+
 enum PopReplyMode = (single, multiline);
 
 object PopReplyLimits {

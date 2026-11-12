@@ -1,5 +1,10 @@
 module http/selected_connection v1.0.0;
 
+// Select an enabled conversation from actual ALPN, or explicit cleartext policy.
+// Every TCP attempt uses
+// the exact previously checked numeric endpoint; no second lookup occurs.
+// Bounded staggered TCP racing closes every losing attempt before publication.
+
 import "http/endpoint" take HttpEndpointSelection;
 import "http/transport_observation" take HttpResponseObservation;
 import "http/http2_settings" take Http2Settings;
@@ -32,10 +37,6 @@ import "net/tls" take TlsVersion;
 import "crypto/x509/trust" take TrustedCertificates;
 import "collections/set" take Set, OrderedSet;
 
-// Select an enabled conversation from actual ALPN, or explicit cleartext policy.
-// Every TCP attempt uses
-// the exact previously checked numeric endpoint; no second lookup occurs.
-// Bounded staggered TCP racing closes every losing attempt before publication.
 object HttpSelectedConnecting does HttpConversationConnecting {
     has route is HttpEndpointSelection;
     has policy is TlsClientPolicy;

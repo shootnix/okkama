@@ -1,10 +1,5 @@
 module crypto/x25519 v1.0.0;
 
-import "crypto/secret" take SecretBytes;
-import "crypto/nonce" take Entropy;
-import "crypto/error" take HostOperation, InvalidCryptoInput, AuthenticationFailed;
-import "encoding/hex" take HexEncoded, HexDecoded;
-
 // X25519 Diffie-Hellman (RFC 7748). The private key is 32 SecretBytes
 // (clamped by the function), X25519PrivateKey(secret: ...);
 // X25519PrivateKey(entropy: ...) draws one (named arguments select them).
@@ -12,6 +7,12 @@ import "encoding/hex" take HexEncoded, HexDecoded;
 // derive keys from it with crypto/kdf.HkdfSecret, never use it directly. A
 // non-contributory peer key (small order, all-zero result) is
 // AuthenticationFailed.
+
+import "crypto/secret" take SecretBytes;
+import "crypto/nonce" take Entropy;
+import "crypto/error" take HostOperation, InvalidCryptoInput, AuthenticationFailed;
+import "encoding/hex" take HexEncoded, HexDecoded;
+
 object X25519PrivateKey {
     has secret is SecretBytes;
 

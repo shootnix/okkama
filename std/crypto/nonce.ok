@@ -1,7 +1,5 @@
 module crypto/nonce v1.0.0;
 
-import "crypto/error" take HostOperation, DecimalArgument, InvalidCryptoInput;
-
 // Entropy is the explicit randomness capability of crypto/*: keys, salts,
 // nonces and randomized signatures draw from the Entropy they are given and
 // never from ambient state. SystemEntropy is the host CSPRNG (getrandom).
@@ -14,6 +12,9 @@ import "crypto/error" take HostOperation, DecimalArgument, InvalidCryptoInput;
 // CounterNonce is the deterministic AEAD nonce prefix || big-endian counter,
 // exactly `size` bytes; the counter must fit the remaining width. The caller
 // owns counter uniqueness per key: a repeated (key, nonce) pair breaks AEAD.
+
+import "crypto/error" take HostOperation, DecimalArgument, InvalidCryptoInput;
+
 role Entropy {
     bytes(size is int) is @byte;
 

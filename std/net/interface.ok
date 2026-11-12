@@ -1,10 +1,5 @@
 module net/interface v1.0.0;
 
-import "net/ip" take IpInterface;
-import "collections/sequence" take Sequencing;
-import "encoding/utf" take Utf8Decoded;
-import "error" take InvalidArgument;
-
 // Immutable observation of one interface, supplied by a provider or a fixture.
 // Construction performs no device enumeration, existence check or configuration.
 // Name is exact nonempty text without NUL; index is a positive system identity.
@@ -17,6 +12,12 @@ import "error" take InvalidArgument;
 //     interface.addresses().first().string(); // "192.0.2.7/24"
 //
 // SystemInterfaces is a separate, still-unimplemented enumeration capability.
+
+import "net/ip" take IpInterface;
+import "collections/sequence" take Sequencing;
+import "encoding/utf" take Utf8Decoded;
+import "error" take InvalidArgument;
+
 object NetworkInterface {
     has label is string;
     has identity is int;

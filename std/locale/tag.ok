@@ -1,13 +1,14 @@
 module locale/tag v1.0.0;
 
+// Immutable bounded BCP 47 tags with pinned IANA preferred values. Coordinate
+// constructors preserve their arities; the one-argument form also accepts a
+// complete tag. LocaleFromLanguageTag remains a lazy binding.
+
 import "compare" take Comparing, Order;
 import "collections/sequence" take Sequencing;
 import "collections/ordering" take SortedBy;
 import "locale/internal/iana" take IanaLanguages;
 
-// Immutable bounded BCP 47 tags with pinned IANA preferred values. Coordinate
-// constructors preserve their arities; the one-argument form also accepts a
-// complete tag. LocaleFromLanguageTag remains a lazy binding.
 object Locale does Comparing<Locale> {
     has tag is LanguageTagValue;
 

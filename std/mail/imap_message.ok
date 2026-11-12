@@ -1,5 +1,9 @@
 module mail/imap_message v1.0.0;
 
+// FETCH can be unsolicited and omit UID or requested content. Presence stays
+// explicit; NIL content is unavailable, never fabricated as empty bytes.
+// Body/header/message bytes are exact fetched wire bytes, not MIME-decoded data.
+
 import "mail/imap_response" take ParsedImapResponse;
 import "encoding/utf" take Utf8Encoded;
 
@@ -15,9 +19,6 @@ import "collections/sequence" take Sequencing;
 import "mime/media_type" take MimeItems;
 import "numbers/bigint" take BigInt;
 
-// FETCH can be unsolicited and omit UID or requested content. Presence stays
-// explicit; NIL content is unavailable, never fabricated as empty bytes.
-// Body/header/message bytes are exact fetched wire bytes, not MIME-decoded data.
 object ImapFetchAttribute {
     has name is string;
     has value is ImapValue;

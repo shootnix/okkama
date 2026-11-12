@@ -1,5 +1,9 @@
 module http/connection v1.0.0;
 
+// A supplied HTTP route opens an HTTP1 conversation. Every TCP attempt uses
+// the exact previously checked numeric endpoint; no second lookup occurs.
+// Bounded staggered TCP racing closes every losing attempt before publication.
+
 import "http/endpoint" take HttpEndpointSelection;
 import "http/transport_observation" take HttpResponseObservation;
 import "http/http1_session" take Http1Session;
@@ -24,9 +28,6 @@ import "net/tls" take TlsVersion;
 import "crypto/x509/trust" take TrustedCertificates;
 import "collections/set" take Set, OrderedSet;
 
-// A supplied HTTP route opens an HTTP1 conversation. Every TCP attempt uses
-// the exact previously checked numeric endpoint; no second lookup occurs.
-// Bounded staggered TCP racing closes every losing attempt before publication.
 object Http1Connecting {
     has route is HttpEndpointSelection;
     has policy is TlsClientPolicy;

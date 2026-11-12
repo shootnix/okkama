@@ -1,18 +1,5 @@
 module template/sections v1.0.0;
 
-import "template/library" take TemplateLibrary;
-import "template/tree" take TemplateTree, TemplateTreeNode, TemplateTreeKind;
-import "template/compile" take InvalidTemplateLimits, TemplateOutputLimitExceeded;
-import "template/path" take TemplatePathFromString;
-import "template/json" take JsonTemplateStrings, TemplateJsonLimitExceeded;
-import "json" take Json, JsonKind;
-import "io/buffer" take ByteBuffer;
-import "encoding/utf" take Utf8Decoded, ByteOrder;
-import "encoding/binary" take IntegerBytes, Binary, Signedness;
-import "io/stream" take WritingText;
-import "io/text" take Utf8Output;
-import "runtime/template" take template_output_size;
-
 // Bounded JSON section template, entirely in Okkama. Construction binds source
 // and nonnegative budgets; string(data) compiles the complete tree before JSON
 // observation, then returns text only on success. No escaping or parent fallback.
@@ -38,6 +25,20 @@ import "runtime/template" take template_output_size;
 // additionally owns its result buffer. Repeated rendering uses fresh budgets.
 // Contract: docs/std/template-sections-guide.md. Example: SectionTemplate("{{#.}}{{.}}{{/.}}").string(items).
 // Run: okkama run -t std/template/sections.ok
+
+import "template/library" take TemplateLibrary;
+import "template/tree" take TemplateTree, TemplateTreeNode, TemplateTreeKind;
+import "template/compile" take InvalidTemplateLimits, TemplateOutputLimitExceeded;
+import "template/path" take TemplatePathFromString;
+import "template/json" take JsonTemplateStrings, TemplateJsonLimitExceeded;
+import "json" take Json, JsonKind;
+import "io/buffer" take ByteBuffer;
+import "encoding/utf" take Utf8Decoded, ByteOrder;
+import "encoding/binary" take IntegerBytes, Binary, Signedness;
+import "io/stream" take WritingText;
+import "io/text" take Utf8Output;
+import "runtime/template" take template_output_size;
+
 object SectionTemplate {
     has program is TemplateTree;
     has maximum_iterations, maximum_output, maximum_members is int;

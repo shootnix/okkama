@@ -1,9 +1,5 @@
 module archive/entry v1.0.0;
 
-import "archive/path" take ArchivePath;
-import "encoding/utf" take Utf8Encoded;
-import "archive/metadata" take ArchiveMetadata, ArchiveModificationFromEpoch;
-
 // Immutable archive member values, with already-bound paths and metadata.
 // No filesystem reads, extraction, link resolution, permission changes or
 // device creation. File data is an immutable byte snapshot already in memory;
@@ -23,6 +19,11 @@ import "archive/metadata" take ArchiveMetadata, ArchiveModificationFromEpoch;
 // The visitor controls effects, may retain entries, and its errors propagate.
 // Repeated accepts repeat the event without consuming data or traversing links.
 // The role fake emits an empty file named entry with UTC epoch metadata.
+
+import "archive/path" take ArchivePath;
+import "encoding/utf" take Utf8Encoded;
+import "archive/metadata" take ArchiveMetadata, ArchiveModificationFromEpoch;
+
 enum ArchiveEntryKind = (file, directory, symbolic_link, hard_link, fifo, character_device, block_device);
 
 role ArchiveEntry {

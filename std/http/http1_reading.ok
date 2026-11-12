@@ -1,5 +1,9 @@
 module http/http1_reading v1.0.0;
 
+// Lazy one-head operations borrow the source and preserve an exact byte tail.
+// Their Future is memoized, including cancellation/failure. A started failure
+// can consume input: discard the enclosing session; no retry/timeout is hidden.
+
 import "http/http1_head" take Http1Limits, Http1LimitExceeded, Http1RequestHead, Http1ResponseHead,
     ParsedHttp1RequestHead, ParsedHttp1ResponseHead;
 import "http/message" take InvalidHttpMessage;
@@ -9,9 +13,6 @@ import "async/atomic" take Atomic;
 import "encoding/single_byte" take Latin1Decoded;
 import "async/scope" take FutureScope, Supervising;
 
-// Lazy one-head operations borrow the source and preserve an exact byte tail.
-// Their Future is memoized, including cancellation/failure. A started failure
-// can consume input: discard the enclosing session; no retry/timeout is hidden.
 object Http1RequestHeadReading {
     has pending is Future<Http1HeadRead<Http1RequestHead>>;
 

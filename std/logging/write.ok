@@ -1,5 +1,10 @@
 module logging/write v1.0.0;
 
+// A destination of log records. enabled() answers whether a record of that
+// logger name and level would be written at all: NamedLogging asks it before
+// it reads the clock or builds the record, so a disabled level costs almost
+// nothing (#180). A writer that cannot tell answers true.
+
 import "logging/record" take LogRecord, LogContext;
 import "collections/sequence" take Sequencing;
 import "async/atomic" take Atomic;
@@ -10,10 +15,6 @@ import "logging/field" take LogFields;
 import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
 
-// A destination of log records. enabled() answers whether a record of that
-// logger name and level would be written at all: NamedLogging asks it before
-// it reads the clock or builds the record, so a disabled level costs almost
-// nothing (#180). A writer that cannot tell answers true.
 role LogWriting {
     write(origin is LogRecord) is void;
     enabled(name is LogName, level is LogLevel) is bool;

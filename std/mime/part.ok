@@ -1,5 +1,9 @@
 module mime/part v1.0.0;
 
+// Bodies expose decoded bytes. Parts apply transfer encoding only at rendering.
+// Metadata validation precedes body observation; custom bodies are borrowed.
+// Parsed bodies are immutable snapshots. See docs/std/mime-part.md.
+
 import "mime/media_type" take MediaType, MimeToken, MimePosition, MimeItems, InvalidMediaType;
 import "mime/disposition" take ContentDisposition, InvalidContentDisposition,
     MissingContentDisposition;
@@ -20,9 +24,6 @@ import "error" take InvalidArgument;
 import "random/source" take Randomizing;
 import "encoding/hex" take HexEncoded;
 
-// Bodies expose decoded bytes. Parts apply transfer encoding only at rendering.
-// Metadata validation precedes body observation; custom bodies are borrowed.
-// Parsed bodies are immutable snapshots. See docs/std/mime-part.md.
 role MimeBody {
     bytes() is @byte;
     validate(type is MediaType) is void;

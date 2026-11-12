@@ -1,13 +1,5 @@
 module net/multicast v1.0.0;
 
-import "error" take InvalidArgument;
-import "net/udp" take UdpSocket, UdpMembership;
-import "net/ip" take IpAddress, IpVersion, IpProperty;
-import "net/interface" take NetworkInterface;
-import "net/failure" take NetworkClosed, NetworkError, NetworkOperation;
-import "runtime/network";
-import "runtime/net" take ip_parse;
-
 // Immutable multicast send-option request. Defaults request one hop and local
 // delivery; loopback does not select a loopback network interface. Values are
 // independent, and hop limits include both 0 and 255. There is no host-default
@@ -17,6 +9,15 @@ import "runtime/net" take ip_parse;
 //
 //     let options=MulticastOptions(hop_limit:1,loopback:false);
 //     options.hop_limit(); // 1
+
+import "error" take InvalidArgument;
+import "net/udp" take UdpSocket, UdpMembership;
+import "net/ip" take IpAddress, IpVersion, IpProperty;
+import "net/interface" take NetworkInterface;
+import "net/failure" take NetworkClosed, NetworkError, NetworkOperation;
+import "runtime/network";
+import "runtime/net" take ip_parse;
+
 object MulticastOptions {
     has hops is int;
     has local_delivery is bool;

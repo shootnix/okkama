@@ -1,5 +1,10 @@
 module mail/imap_session v1.0.0;
 
+// Session state above an already authenticated owned command channel.
+// This constructor is protocol infrastructure; it performs no authentication
+// and does not assert that the supplied transport has verified TLS.
+// Selection and observation updates share one lock with each whole operation.
+
 import "mail/imap" take ImapCapabilities, ImapFeature;
 import "mail/imap_exchange" take ImapCommandChannel, ImapChannelClosed;
 import "mail/imap_command" take ImapCommand, ImapMailboxCommand, ImapDatum, FlagChange;
@@ -26,10 +31,6 @@ import "io/stream" take Closing;
 import "error" take InvalidState, InvalidArgument, UnsupportedOperation;
 import "mail/message" take MailMessage;
 
-// Session state above an already authenticated owned command channel.
-// This constructor is protocol infrastructure; it performs no authentication
-// and does not assert that the supplied transport has verified TLS.
-// Selection and observation updates share one lock with each whole operation.
 object ImapSession does Closing {
     has origin is ImapCommandChannel;
     has capabilities is ImapCapabilities;

@@ -1,5 +1,11 @@
 module net/tcp v1.0.0;
 
+// Immutable connection option request. Defaults keep keepalive off and turn
+// Nagle's algorithm off (TCP_NODELAY), as Go and Node do: a request and its
+// answer leave at once instead of waiting up to 40 ms for an acknowledgement
+// (#116). Construction applies no socket options; the eventual connection
+// operation owns application and unsupported failures.
+
 import "error" take InvalidArgument;
 import "runtime/network" as network;
 import "runtime/net" as net;
@@ -21,11 +27,6 @@ import "time/duration" take Duration, DurationUnit;
 import "net/endpoint" take HostEndpoint, HostName;
 import "net/dns" take Resolving, SystemResolution, FixedResolution, HostAddresses;
 
-// Immutable connection option request. Defaults keep keepalive off and turn
-// Nagle's algorithm off (TCP_NODELAY), as Go and Node do: a request and its
-// answer leave at once instead of waiting up to 40 ms for an acknowledgement
-// (#116). Construction applies no socket options; the eventual connection
-// operation owns application and unsupported failures.
 object TcpOptions {
     has keep is bool;
     has immediate is bool;

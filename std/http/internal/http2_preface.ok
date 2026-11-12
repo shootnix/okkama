@@ -1,5 +1,10 @@
 module http/internal/http2_preface v1.0.0;
 
+// Borrowed stream collaborator. Caller must already select H2 (ALPN h2 for TLS)
+// and owns transport disposal after any fault, partial write or cancellation.
+// Reads only the server's first SETTINGS, applies it, then emits ACK. The later
+// ACK of our own settings belongs to the connection loop, not this preface.
+
 import "http/http2_settings" take Http2Settings, Http2SettingsWire;
 import "http/internal/http2_settings" take Http2PeerSettings, ReceivedHttp2Settings;
 import "http/internal/http2_frame" take Http2Frame, Http2FrameHeader, Http2Fault, Http2FaultScope;
@@ -12,10 +17,6 @@ import "http/internal/wire_bytes" take HttpWireBytes;
 import "async/atomic" take Atomic;
 import "io/decorators" take InvalidReading;
 
-// Borrowed stream collaborator. Caller must already select H2 (ALPN h2 for TLS)
-// and owns transport disposal after any fault, partial write or cancellation.
-// Reads only the server's first SETTINGS, applies it, then emits ACK. The later
-// ACK of our own settings belongs to the connection loop, not this preface.
 object Http2ClientPreface {
     has waiting is Future<Http2PeerSettings>;
 

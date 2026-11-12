@@ -1,5 +1,11 @@
 module http/message v1.0.0;
 
+// Immutable message metadata retains the body opening's declared capability.
+// It never opens, measures, closes or queries replayability during construction.
+// Connection/framing consumers own body consumption and transport validation.
+// A request shows its head through the cap `Head`; `body()` is the opening to
+// read. Unless told, it is a GET with no fields, an empty body and HTTP/1.1.
+
 import "http/method" take Method, MethodName;
 import "http/status" take Status, StatusCode, StatusClass;
 import "http/header" take Headers, Header, HeaderName;
@@ -13,11 +19,6 @@ import "io/transfer" take ReadUntilEnd, ReadLimitExceeded;
 import "numbers/bigint" take BigInt;
 import "compare" take Order;
 
-// Immutable message metadata retains the body opening's declared capability.
-// It never opens, measures, closes or queries replayability during construction.
-// Connection/framing consumers own body consumption and transport validation.
-// A request shows its head through the cap `Head`; `body()` is the opening to
-// read. Unless told, it is a GET with no fields, an empty body and HTTP/1.1.
 object Request {
     has method is Method;
     has target is RequestTarget;

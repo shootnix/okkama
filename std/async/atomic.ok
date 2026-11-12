@@ -1,7 +1,5 @@
 module async/atomic v1.0.0;
 
-import "io/stream" take Closing;
-
 // Shared single-value effect capability.
 //
 // Atomic(value: initial) creates an initialized cell. value() observes its current
@@ -27,6 +25,9 @@ import "io/stream" take Closing;
 // All subsequent reads and writes throw AtomicClosed.closed. Dropping an alias does not
 // close the cell; no OS resource or waiter requires implicit destroy. No null/empty
 // sentinel can be read. The cell's identity is stable; object fields remain immutable.
+
+import "io/stream" take Closing;
+
 object Atomic<T> does Closing {
     Atomic(value is T) {}
 

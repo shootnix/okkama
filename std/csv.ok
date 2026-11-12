@@ -1,15 +1,5 @@
 module csv v1.0.0;
 
-import "collections/iteration" take Iterating, Cursor;
-import "collections/list" take List, EmptyList;
-import "runtime/csv_state" take CsvState, csv_state_create, csv_state_feed, csv_state_advance,
-    csv_state_row, csv_state_offset, csv_state_request, csv_state_close;
-import "encoding/utf" take Utf8Encoded, InvalidUtf8;
-import "io/stream" take AsyncReading;
-import "io/decorators" take InvalidReading;
-import "async/atomic" take Atomic;
-import "strings/parse" take Number, Truth, InvalidInteger, InvalidBoolean;
-
 // In-memory Unicode CSV representations; defaults are comma / double quote / CRLF.
 //
 //     let dialect = CsvDialect(";", "'", "\n");
@@ -49,6 +39,17 @@ import "strings/parse" take Number, Truth, InvalidInteger, InvalidBoolean;
 // completed field once; applications use CsvRows/CsvString.
 // Each record includes its terminator; an empty document has no records.
 // No header guessing, implicit byte encoding or spreadsheet-specific rewriting.
+
+import "collections/iteration" take Iterating, Cursor;
+import "collections/list" take List, EmptyList;
+import "runtime/csv_state" take CsvState, csv_state_create, csv_state_feed, csv_state_advance,
+    csv_state_row, csv_state_offset, csv_state_request, csv_state_close;
+import "encoding/utf" take Utf8Encoded, InvalidUtf8;
+import "io/stream" take AsyncReading;
+import "io/decorators" take InvalidReading;
+import "async/atomic" take Atomic;
+import "strings/parse" take Number, Truth, InvalidInteger, InvalidBoolean;
+
 object CsvString {
     has dialect is CsvDialect;
     has rows is Iterating<@string>;

@@ -1,22 +1,5 @@
 module mail/mbox_store v1.0.0;
 
-import "mail/mbox" take MboxRecord, MboxArchive, ParsedMbox, MboxLimits, MboxLimitExceeded;
-import "mail/mailbox" take StoredMail, MailFlag, MailFlags, MissingStoredMail, InvalidMailbox;
-import "collections/sequence" take Sequencing;
-import "fs/path" take Path;
-import "fs/file" take File, FileMode;
-import "fs/entry" take FileEntry;
-import "fs/error" take FileError;
-import "fs/directory" take Directory, DirectoryEntry;
-import "fs/stat" take FileKind;
-import "fs/lock" take FileLock, FileLockMode;
-import "fs/temp" take TemporaryFile;
-import "io/buffer" take ByteBuffer;
-import "io/stream" take Closing;
-import "random/source" take SecureRandom;
-import "encoding/hex" take HexEncoded;
-import "error" take InvalidArgument, InvalidState;
-
 // Trusted local mboxrd archives. Mbox is a pure coordinate for an EXISTING
 // regular file; session() exclusively locks path + ".okkama-mbox.lock" before
 // reading. Contention fails immediately; the permanent lock inode is retained.
@@ -35,6 +18,24 @@ import "error" take InvalidArgument, InvalidState;
 // UID/flag-header inference, metadata preservation or fsync durability claim.
 // Replacement is owner-only (0600); trusted path ownership is required.
 // See docs/std/mbox-session.md for failure and ownership details.
+
+import "mail/mbox" take MboxRecord, MboxArchive, ParsedMbox, MboxLimits, MboxLimitExceeded;
+import "mail/mailbox" take StoredMail, MailFlag, MailFlags, MissingStoredMail, InvalidMailbox;
+import "collections/sequence" take Sequencing;
+import "fs/path" take Path;
+import "fs/file" take File, FileMode;
+import "fs/entry" take FileEntry;
+import "fs/error" take FileError;
+import "fs/directory" take Directory, DirectoryEntry;
+import "fs/stat" take FileKind;
+import "fs/lock" take FileLock, FileLockMode;
+import "fs/temp" take TemporaryFile;
+import "io/buffer" take ByteBuffer;
+import "io/stream" take Closing;
+import "random/source" take SecureRandom;
+import "encoding/hex" take HexEncoded;
+import "error" take InvalidArgument, InvalidState;
+
 object Mbox {
     has origin is Path;
     has bounds is MboxLimits;

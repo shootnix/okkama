@@ -1,7 +1,5 @@
 module cell v1.0.0;
 
-import "async/atomic" take Atomic;
-
 // A mutable value for synchronous code.
 //
 // Cell(value: initial) holds one value; value() reads it and replace(value) puts a
@@ -20,6 +18,9 @@ import "async/atomic" take Atomic;
 // A Cell is a value container, not a resource: it needs no close() and holds no
 // OS resource. Values read from it are ordinary immutable Okkama values; cells
 // compare by identity.
+
+import "async/atomic" take Atomic;
+
 object Cell<T> {
     has state is Atomic<T>;
 

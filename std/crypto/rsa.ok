@@ -1,14 +1,5 @@
 module crypto/rsa v1.0.0;
 
-import "crypto/key" take PublicKey, VerifyingKey, SigningKey;
-import "crypto/secret" take SecretBytes;
-import "crypto/nonce" take Entropy;
-import "crypto/error" take HostOperation, DecimalArgument, InvalidCryptoInput;
-import "encoding/utf" take Utf8Decoded;
-import "strings/parse" take Number;
-import "encoding/pem" take PemBlock;
-import "encoding/hex" take HexDecoded;
-
 // RSA (RFC 8017) over the host provider (aws-lc: constant-time, blinded
 // private operations). Generated keys are 2048, 3072 or 4096 bits; imported
 // PKCS#8 keys 2048 to 8192. The entropy arguments are kept for the API: key
@@ -25,6 +16,16 @@ import "encoding/hex" take HexDecoded;
 //
 // Verifying keys answer false for invalid signatures; failed OAEP decryption
 // is AuthenticationFailed without distinguishing padding errors.
+
+import "crypto/key" take PublicKey, VerifyingKey, SigningKey;
+import "crypto/secret" take SecretBytes;
+import "crypto/nonce" take Entropy;
+import "crypto/error" take HostOperation, DecimalArgument, InvalidCryptoInput;
+import "encoding/utf" take Utf8Decoded;
+import "strings/parse" take Number;
+import "encoding/pem" take PemBlock;
+import "encoding/hex" take HexDecoded;
+
 enum RsaHash = (sha256, sha384, sha512);
 
 hidden object RsaHashName {

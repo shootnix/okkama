@@ -1,11 +1,5 @@
 module crypto/ed25519 v1.0.0;
 
-import "crypto/key" take PublicKey, VerifyingKey, SigningKey;
-import "crypto/secret" take SecretBytes;
-import "crypto/nonce" take Entropy;
-import "crypto/error" take HostOperation, InvalidCryptoInput;
-import "encoding/hex" take HexEncoded, HexDecoded;
-
 // Ed25519 signatures (RFC 8032, pure, deterministic). A private key is its
 // 32-byte seed held as SecretBytes (Ed25519PrivateKey(seed: ...));
 // Ed25519PrivateKey(entropy: ...) draws a fresh seed. The two constructors
@@ -15,6 +9,13 @@ import "encoding/hex" take HexEncoded, HexDecoded;
 //
 //     let key = Ed25519PrivateKey(entropy: SystemEntropy());
 //     key.public_key().verified(message, key.signature(message)); // true
+
+import "crypto/key" take PublicKey, VerifyingKey, SigningKey;
+import "crypto/secret" take SecretBytes;
+import "crypto/nonce" take Entropy;
+import "crypto/error" take HostOperation, InvalidCryptoInput;
+import "encoding/hex" take HexEncoded, HexDecoded;
+
 object Ed25519PrivateKey does SigningKey {
     has seed is SecretBytes;
 

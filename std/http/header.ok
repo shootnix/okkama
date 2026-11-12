@@ -1,5 +1,9 @@
 module http/header v1.0.0;
 
+// HTTP names share the HTTP token grammar, not mail's broader field-name
+// grammar. Spelling is immutable; HTTP matching is explicit canonical ordering,
+// because language structural equality also observes the preserved spelling.
+
 import "http/token" take HttpToken, InvalidToken;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
 import "collections/sequence" take Sequencing;
@@ -7,9 +11,6 @@ import "compare" take Comparing, Order;
 import "error" take InvalidArgument;
 import "strings/parse" take Number, InvalidInteger;
 
-// HTTP names share the HTTP token grammar, not mail's broader field-name
-// grammar. Spelling is immutable; HTTP matching is explicit canonical ordering,
-// because language structural equality also observes the preserved spelling.
 object HeaderName does Comparing<HeaderName> {
     has spelling, canonical is string;
 

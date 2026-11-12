@@ -1,9 +1,5 @@
 module compression/state v1.0.0;
 
-import "io/stream" take Reading, Closing, InvalidReadLimit;
-import "io/buffer" take ByteBuffer;
-import "error" take InvalidArgument, InvalidState;
-
 // Stateful streaming codecs: writes may produce no output until a later write
 // or finish(). finish() flushes pending output and marks successful completion.
 // Writing (including empty input) or finishing after completion is InvalidState.
@@ -26,6 +22,11 @@ import "error" take InvalidArgument, InvalidState;
 // The role fakes echo bytes; they are not codecs. The compressor delays output
 // until finish. The decompressor emits immediately with an eight-byte cumulative
 // limit and empty remainder after finish. Each fake has isolated test storage.
+
+import "io/stream" take Reading, Closing, InvalidReadLimit;
+import "io/buffer" take ByteBuffer;
+import "error" take InvalidArgument, InvalidState;
+
 role Compressing {
     write(origin is @byte) is void;
     output() is Reading;

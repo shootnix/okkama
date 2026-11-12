@@ -1,8 +1,5 @@
 module checksum/crc v1.0.0;
 
-import "checksum/state" take Checksumming, InvalidChecksumInitial;
-import "runtime/checksum" take checksum_crc32, checksum_crc16;
-
 // Immutable CRC values over byte chunks. Both objects compute lazily in checksum()
 // without mutation or memoization. state(bytes) computes the receiver's value,
 // then returns a successor retaining only the new chunk and resulting seed.
@@ -20,6 +17,10 @@ import "runtime/checksum" take checksum_crc32, checksum_crc16;
 // a finalized CRC (as in zlib), so it is XORed before and after calculation.
 // Crc32()/Crc32(bytes) default to public seed 0. Crc32(origin: bytes, initial: initial) requires
 // 0..4294967295 and throws InvalidChecksumInitial at construction otherwise.
+
+import "checksum/state" take Checksumming, InvalidChecksumInitial;
+import "runtime/checksum" take checksum_crc32, checksum_crc16;
+
 object Crc32 does Checksumming {
     has origin is @byte;
     has initial is int;

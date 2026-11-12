@@ -1,10 +1,5 @@
 module regex/split v1.0.0;
 
-import "collections/iteration" take Cursor, Iterating, IterationEnded;
-import "regex/match" take RegexMatching;
-import "regex/pattern" take Regex;
-import "regex/search" take RegexMatches;
-
 // RegexParts is the collection itself. It does not wrap an array behind
 // values(), and it does not materialize the complete split before traversal.
 //
@@ -15,6 +10,12 @@ import "regex/search" take RegexMatches;
 //
 // An explicit limit counts separators, so a limit of 1 yields at most two
 // fields. Empty leading, adjacent and trailing fields are retained.
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+import "regex/match" take RegexMatching;
+import "regex/pattern" take Regex;
+import "regex/search" take RegexMatches;
+
 object RegexParts does Iterating<string> {
     has source is string;
     has pattern is Regex;

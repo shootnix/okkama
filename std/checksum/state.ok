@@ -12,6 +12,7 @@ module checksum/state v1.0.0;
 // Inputs are immutable arrays, not consuming streams. No resources are owned
 // or closed. Encode text explicitly before supplying bytes. The test-only
 // fake counts bytes; it does not implement a production checksum algorithm.
+
 role Checksumming {
     state(origin is @byte) is ^Checksumming;
     checksum() is int;

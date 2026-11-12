@@ -1,16 +1,5 @@
 module db/postgres/auth v1.0.0;
 
-import "crypto/secret" take SecretBytes;
-import "crypto/kdf" take Pbkdf2Secret, KdfHash;
-import "crypto/hmac" take Hmac, HmacHash;
-import "crypto/constant_time" take ConstantTimeEqual;
-import "digest/sha2" take Sha256;
-import "digest/legacy" take Md5;
-import "encoding/base64" take Base64Encoded, Base64Decoded;
-import "encoding/hex" take HexEncoded;
-import "encoding/utf" take Utf8Encoded;
-import "strings/parse" take Number;
-
 // PostgreSQL password authentication, written in Okkama over crypto/*.
 //
 // ScramExchange is SCRAM-SHA-256 (RFC 5802, RFC 7677) without channel
@@ -24,6 +13,18 @@ import "strings/parse" take Number;
 // does not extend ours or an iteration count below 4096 is ScramFailure.
 //
 // Md5Password is the legacy "md5" response: md5(md5(password || user) || salt).
+
+import "crypto/secret" take SecretBytes;
+import "crypto/kdf" take Pbkdf2Secret, KdfHash;
+import "crypto/hmac" take Hmac, HmacHash;
+import "crypto/constant_time" take ConstantTimeEqual;
+import "digest/sha2" take Sha256;
+import "digest/legacy" take Md5;
+import "encoding/base64" take Base64Encoded, Base64Decoded;
+import "encoding/hex" take HexEncoded;
+import "encoding/utf" take Utf8Encoded;
+import "strings/parse" take Number;
+
 object ScramExchange {
     has user is string;
     has password is SecretBytes;

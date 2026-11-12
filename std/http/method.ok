@@ -1,10 +1,11 @@
 module http/method v1.0.0;
 
-import "http/token" take HttpToken, InvalidToken;
-
 // An HTTP method: the methods of RFC 9110 and PATCH (RFC 5789), and
 // `other(name)` for an extension token. Methods are case-sensitive: "get" is
 // an extension, not GET.
+
+import "http/token" take HttpToken, InvalidToken;
+
 enum Method = (get, head, post, put, patch, delete, options, trace, connect, other(name is string));
 
 // The token of a method on the wire, and the method of a token. Validation

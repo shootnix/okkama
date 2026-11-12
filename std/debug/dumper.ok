@@ -1,8 +1,5 @@
 module debug/dumper v1.0.0;
 
-import "runtime/debug" take data_kind, data_type, data_size, data_leaf, data_names, data_keys,
-    data_items;
-
 // Detailed dump of any value for debugging, after Perl's Data::Printer:
 // its type, size and everything inside — object fields (private ones too),
 // array elements, map pairs — indented by nesting.
@@ -31,6 +28,10 @@ import "runtime/debug" take data_kind, data_type, data_size, data_leaf, data_nam
 // Types are runtime types: an empty collection has element type `?`, a
 // collection of different types `(A | B)`. Actions, futures and native
 // objects are not looked into. The format is for people, not for parsing.
+
+import "runtime/debug" take data_kind, data_type, data_size, data_leaf, data_names, data_keys,
+    data_items;
+
 object Dumper {
     has value is any;
     // Deeper levels are shown as `{...}` / `[...]`.

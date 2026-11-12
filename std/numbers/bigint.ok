@@ -1,11 +1,5 @@
 module numbers/bigint v1.0.0;
 
-import "compare" take Comparing, Order;
-import "operators" take Adding, Subtracting, Multiplying, Dividing, Remaindering, Negating;
-import "runtime/bigint" take bigint_valid, bigint_bits;
-import "runtime/number_text" take int_parse;
-import "async/atomic" take Atomic;
-
 // An immutable integer of any size, for the std APIs that hand one out.
 //
 //     let count = BigInt("18446744073709551616");
@@ -35,6 +29,13 @@ import "async/atomic" take Atomic;
 // by default). 0^0 is 1. An oversized result throws BigPowerLimitExceeded;
 // impossible budgets are rejected before heavy exponentiation. This bounds
 // result bits, not all backend memory or wall-clock time.
+
+import "compare" take Comparing, Order;
+import "operators" take Adding, Subtracting, Multiplying, Dividing, Remaindering, Negating;
+import "runtime/bigint" take bigint_valid, bigint_bits;
+import "runtime/number_text" take int_parse;
+import "async/atomic" take Atomic;
+
 object BigInt does Comparing<BigInt>, Adding<BigInt, BigInt>, Subtracting<BigInt, BigInt>, Multiplying<BigInt, BigInt>, Dividing<BigInt, BigInt>, Remaindering<BigInt, BigInt>, Negating<BigInt> {
     has value is int;
 

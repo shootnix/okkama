@@ -1,5 +1,11 @@
 module archive/metadata v1.0.0;
 
+// Immutable ownership coordinates at the archive-format boundary. Names remain
+// exact (including empty strings); numeric identities must be nonnegative and
+// retain arbitrary precision. Zero is a real ID, never a missing-value marker.
+// No account lookup, name/ID reconciliation, normalization or filesystem I/O.
+// Format-specific numeric widths and name encodings are checked by adapters.
+
 import "numbers/bigint" take BigInt;
 import "fs/stat" take PermissionMode;
 import "time/local_datetime" take LocalDateTime;
@@ -7,11 +13,6 @@ import "time/date" take Date;
 import "time/day" take TimeOfDay;
 import "time/duration" take Duration, DurationUnit;
 
-// Immutable ownership coordinates at the archive-format boundary. Names remain
-// exact (including empty strings); numeric identities must be nonnegative and
-// retain arbitrary precision. Zero is a real ID, never a missing-value marker.
-// No account lookup, name/ID reconciliation, normalization or filesystem I/O.
-// Format-specific numeric widths and name encodings are checked by adapters.
 object ArchiveOwnership {
     has user_name, group_name is string;
     has user_id, group_id is BigInt;

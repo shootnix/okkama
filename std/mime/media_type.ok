@@ -1,5 +1,12 @@
 module mime/media_type v1.0.0;
 
+// Immutable logical parameters and concrete media types. Parsing observes an
+// unfolded ASCII field body eagerly; RFC 2231 parts assemble as bytes before
+// UTF-8 decoding. Plain duplicates retain order; valid extensions supersede
+// fallbacks. Defaults cap input at 1 MiB and 256 wire/source parameters.
+// Serialization produces a logical field body; message/header owns folding.
+// See docs/std/mime-media-type.md for strict grammar and offset contracts.
+
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
@@ -8,12 +15,6 @@ import "strings/parse" take Number, InvalidInteger;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument;
 
-// Immutable logical parameters and concrete media types. Parsing observes an
-// unfolded ASCII field body eagerly; RFC 2231 parts assemble as bytes before
-// UTF-8 decoding. Plain duplicates retain order; valid extensions supersede
-// fallbacks. Defaults cap input at 1 MiB and 256 wire/source parameters.
-// Serialization produces a logical field body; message/header owns folding.
-// See docs/std/mime-media-type.md for strict grammar and offset contracts.
 object MimeParameter {
     has key, text is string;
 

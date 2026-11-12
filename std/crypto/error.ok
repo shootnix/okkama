@@ -1,8 +1,5 @@
 module crypto/error v1.0.0;
 
-import "runtime/host_crypto" as host;
-import "encoding/utf" take Utf8Encoded;
-
 // Typed failures of digest/* and crypto/*, and the internal host boundary.
 //
 // Host cryptography comes from reviewed providers in okkama-native, RustCrypto
@@ -13,6 +10,10 @@ import "encoding/utf" take Utf8Encoded;
 // (AEAD tag, RSA-OAEP padding, non-contributory X25519 key) and any other
 // host failure CryptoUnavailable. Messages never contain key or plaintext
 // bytes.
+
+import "runtime/host_crypto" as host;
+import "encoding/utf" take Utf8Encoded;
+
 enum InvalidCryptoInput is Error = (because(reason is string));
 
 enum AuthenticationFailed is Error = (failed);

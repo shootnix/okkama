@@ -1,5 +1,9 @@
 module mail/imap_state v1.0.0;
 
+// SELECT's UNSEEN response code is a first sequence number, not an unseen count.
+// Optional observations remain explicit. EXPUNGE invalidates a nonzero RECENT
+// observation and adjusts/invalidates the first-unseen sequence conservatively.
+
 import "mail/imap_response" take ParsedImapResponse;
 import "encoding/utf" take Utf8Encoded;
 
@@ -12,9 +16,6 @@ import "mail/mailbox" take MailFlags;
 import "numbers/bigint" take BigInt;
 import "error" take InvalidState;
 
-// SELECT's UNSEEN response code is a first sequence number, not an unseen count.
-// Optional observations remain explicit. EXPUNGE invalidates a nonzero RECENT
-// observation and adjusts/invalidates the first-unseen sequence conservatively.
 object ImapMailboxState {
     has value is ImapSelectionProgress;
 

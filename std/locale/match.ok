@@ -1,14 +1,15 @@
 module locale/match v1.0.0;
 
+// RFC 4647 basic ranges are syntactic preferences, not registered locales.
+// This predicate consumes the existing ordinary Locale subset; no CLDR,
+// alias, likely-subtag or host locale expansion occurs during matching.
+
 import "locale/tag" take Locale, LocaleSubtag;
 import "encoding/utf" take Utf8Encoded;
 import "collections/sequence" take Sequencing;
 import "collections/iteration" take Cursor;
 import "collections/ordering" take SortedBy, Ranked, LowerBound;
 
-// RFC 4647 basic ranges are syntactic preferences, not registered locales.
-// This predicate consumes the existing ordinary Locale subset; no CLDR,
-// alias, likely-subtag or host locale expansion occurs during matching.
 object BasicLanguageRange {
     has origin is string;
     has specificity is int;

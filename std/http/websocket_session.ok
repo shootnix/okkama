@@ -1,5 +1,9 @@
 module http/websocket_session v1.0.0;
 
+// Dedicated upgraded transport owner. Constructors bind only; first started()
+// or public operation starts its supervised reader and writer. close() aborts;
+// role close(code,reason) performs a bounded graceful handshake.
+
 import "http/websocket" take WebSocketConnection, WebSocketMessage, WebSocketLimits, WebSocketClose,
     WebSocketClosed, WebSocketFailure, TextWebSocketMessage, BinaryWebSocketMessage;
 import "json" take Json;
@@ -21,9 +25,6 @@ import "async/timeout" take Within, TimedOut;
 import "time/clock" take Timing;
 import "time/duration" take Duration;
 
-// Dedicated upgraded transport owner. Constructors bind only; first started()
-// or public operation starts its supervised reader and writer. close() aborts;
-// role close(code,reason) performs a bounded graceful handshake.
 object WebSocketSession does WebSocketConnection, Closing {
     has state is WebSocketSessionState;
 
