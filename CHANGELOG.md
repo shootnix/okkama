@@ -40,6 +40,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   of 1 350. `sparrow --stats` prints a census of the objects alive after the
   last collection, by type.
 
+- **An HTTP/2 server's drain failed when the client had left first (#502).**
+  A draining HTTP/2 session sends GOAWAY and waits for it to go out. When the
+  client had already closed the connection, the output stopped first, and
+  the wait failed with `Http2OutputStopped` in a background task that nobody
+  awaited, so the run reported it at the end. Under CPU contention the
+  http/server tests failed this way in 91 runs of 240 (IR, 12 at once on 6
+  CPUs); the CI runner saw it once. A GOAWAY that cannot go out now ends the
+  drain quietly, and a session that closed before sending one no longer
+  indexes an empty list. 0 failures in 240 runs on IR, 120 on Sparrow and 48
+  on the JVM.
+
 - **A failure could become its own secondary failure (IR, JVM).** A cleanup
   that rethrew the failure in flight, as when a task group is awaited while
   unwinding, linked the failure to itself. Matching a `catch` then walked

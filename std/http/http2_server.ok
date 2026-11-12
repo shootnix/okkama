@@ -15,7 +15,7 @@ import "http/internal/http2_preface" take Http2ServerPreface;
 import "http/internal/http2_settings" take Http2PeerSettings;
 import "http/internal/http2_input" take Http2ConnectionInput, Http2ReceivingEvents,
     Http2ReceivingBarrier, Http2ReadBoundary;
-import "http/internal/http2_output" take Http2ConnectionOutput, Http2OutputTicket;
+import "http/internal/http2_output" take Http2ConnectionOutput, Http2OutputTicket, Http2OutputStopped;
 import "http/internal/http2_sending" take Http2DataScheduler;
 import "http/internal/http2_receiving" take Http2ReceiveFlow;
 import "http/internal/http2_body" take Http2BodyBuffer, Http2BodyEvents, Http2IncomingBody,
@@ -603,12 +603,21 @@ hidden object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier,
             await signal.wait();
         }
         await self.reap();
-        let pending = goodbye.value()[0].delivered();
-        let group is FutureGroup<bool> = FutureGroup();
-        let cleanup = Http2ServerSettlement(group);
-        defer await cleanup.close();
-        group.start(pending);
-        await pending;
+        // A session that closed first sent no GOAWAY; a client that left first
+        // stopped the output before it went out (#502). Neither leaves anything
+        // to drain.
+        let goodbyes = goodbye.value();
+        if goodbyes.size() > 0 {
+            let pending = goodbyes[0].delivered();
+            let group is FutureGroup<bool> = FutureGroup();
+            let cleanup = Http2ServerSettlement(group);
+            defer await cleanup.close();
+            group.start(pending);
+            try {
+                await pending;
+            }
+            catch e is Http2OutputStopped {}
+        }
         self.close();
         await finished.wait();
         true;
