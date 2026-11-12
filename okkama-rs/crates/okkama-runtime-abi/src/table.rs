@@ -622,5 +622,7 @@ natives! {
     ChecksumChecksumCrc32 = 636, "runtime/checksum@1::checksum_crc32/2", "(@byte, int) -> int";
     ChecksumChecksumCrc16 = 637, "runtime/checksum@1::checksum_crc16/2", "(@byte, int) -> int";
     ChecksumChecksumAdler32 = 638, "runtime/checksum@1::checksum_adler32/2", "(@byte, int) -> int";
+    SystemSecureInteger = 639, "runtime/system@1::secure_integer/2", "(int, int) -> int";
+    SystemSecureFloat = 640, "runtime/system@1::secure_float/0", "() -> float";
 }
 // retired: 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258

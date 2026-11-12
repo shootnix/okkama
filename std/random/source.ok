@@ -1,8 +1,7 @@
 module random/source v1.0.0;
 
-import "runtime/random" take PcgState, pcg_state, pcg_integer, pcg_float, pcg_bytes,
-    random_sample_accepted, random_integer_from_sample, random_float_from_sample;
-import "runtime/system" take secure_random;
+import "runtime/random" take PcgState, pcg_state, pcg_integer, pcg_float, pcg_bytes;
+import "runtime/system" take secure_random, secure_integer, secure_float;
 
 // Stateful random sources with one compact capability.
 //
@@ -26,7 +25,11 @@ import "runtime/system" take secure_random;
 // PcgRandom owns an opaque mutable stream. Copies of the object share that
 // stream, just as copies of a reading capability share their underlying input.
 // It is reproducible, not cryptographically secure. SecureRandom has no seed
-// constructor and reads fresh operating-system entropy for every operation.
+// constructor and draws from the operating system's cryptographic generator:
+// arc4random on Apple systems, getrandom elsewhere (served from the vDSO by
+// glibc 2.41 on Linux 6.11 and later, one system call on older systems), and
+// java.security.SecureRandom on the JVM. Its integers take as many 64-bit
+// samples as the range needs, so any non-empty range is accepted.
 // Integer ranges are always non-empty and half-open [start, stop). Random byte
 // requests are capped at 16 MiB per call.
 
@@ -64,29 +67,27 @@ object SecureRandom does Randomizing {
 
     integer(start is int, stop is int) is int {
         confirm start < stop else throw InvalidRandomRange.detailed(start, stop);
-        self.draw(start, stop);
+        try {
+            secure_integer(start, stop);
+        }
+        catch failure is NativeFailure {
+            throw UnavailableRandom.unavailable;
+        }
     }
 
     float() is float {
-        random_float_from_sample(SecureBytes(size: 7).bytes());
+        try {
+            secure_float();
+        }
+        catch failure is NativeFailure {
+            throw UnavailableRandom.unavailable;
+        }
     }
 
     bytes(size is int) is @byte {
         confirm size >= 0 && size <= 16777216
             else throw InvalidRandomSize.detailed(size, 16777216);
         SecureBytes(size: size).bytes();
-    }
-
-    // An unbiased integer in start..stop: a sample outside the accepted
-    // range is drawn again.
-    hidden draw(start is int, stop is int) is int {
-        let sample is @byte = SecureBytes(size: 8).bytes();
-        if random_sample_accepted(sample, start, stop) {
-            random_integer_from_sample(sample, start, stop);
-        }
-        else {
-            self.draw(start, stop);
-        }
     }
 }
 
@@ -124,7 +125,10 @@ enum UnavailableRandom is Error = (unavailable);
 test "a seeded source repeats the published PCG32 sequence" {
     // The first two pcg32 outputs for seed 42, little-endian; checked
     // against an independent implementation of the stated algorithm.
-    test.is(PcgRandom(42).bytes(8), [byte(214), byte(123), byte(245), byte(194), byte(169), byte(196), byte(7), byte(107)]);
+    test.is(
+        PcgRandom(42).bytes(8),
+        [byte(214), byte(123), byte(245), byte(194), byte(169), byte(196), byte(7), byte(107)]
+    );
     let random = PcgRandom(42);
     test.is(random.integer(0, 100), 5);
     test.is(random.integer(0, 100), 15);
@@ -164,7 +168,7 @@ test "ranges are half-open and never empty" {
         try {
             random.bytes(-1).size();
         }
-        catch InvalidRandomSize.detailed(requested, maximum) {
+        catch InvalidRandomSize.detailed(requested, _maximum) {
             requested;
         },
         -1
@@ -181,4 +185,18 @@ test "secure source answers within the same contract" {
         test.ok(fraction >= 0.0 && fraction < 1.0);
     }
     test.is(SecureBytes(size: 5).bytes().size(), 5);
+    // Ranges at and past one 64-bit sample (#507).
+    let wide = 1180591620717411303424;
+    let spans = [18446744073709551615, 18446744073709551616, 18446744073709551617, wide];
+    for spans -> span {
+        let value = secure.integer(-span, span);
+        test.ok(value >= -span && value < span);
+    }
+    let picks is @int = (0..64).map() -> index {
+        secure.integer(0, wide);
+    };
+    // 64 draws over 2^70 values: at least one lands above 2^64.
+    test.ok(picks.reduce(false) -> found, pick {
+        found || pick >= 18446744073709551616;
+    });
 }

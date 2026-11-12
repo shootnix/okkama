@@ -9,7 +9,8 @@ import java.util.List;
 
 /**
  * Natives часов, ожидания и случайности хоста: {@code runtime/time},
- * {@code runtime/system::secure_random} и выборки {@code runtime/random}.
+ * {@code runtime/system::secure_random}, {@code secure_integer},
+ * {@code secure_float} и выборки {@code runtime/random}.
  * Тексты отказов — как у Perl-provider.
  */
 public final class HostNatives {
@@ -100,12 +101,64 @@ public final class HostNatives {
             throw failure("core.system", "resource_exhausted", symbol,
                 "Secure random request exceeds 16 MiB");
         }
-        if (secure == null) {
-            secure = new SecureRandom();
-        }
         byte[] bytes = new byte[size.intValue()];
-        secure.nextBytes(bytes);
+        secure().nextBytes(bytes);
         return Natives.fromBytes(bytes, bytes.length);
+    }
+
+    /**
+     * Несмещённое целое в {@code start..stop} (#195, #507): выборка берёт
+     * столько 64-битных слов, сколько нужно числу {@code span - 1}, и тянется
+     * заново, пока она меньше {@code 2^(64·слов) mod span}. Диапазон до 2^64 —
+     * одно слово, как у random_sample_accepted и random_integer_from_sample.
+     */
+    public static BigInteger runtime_system__secure_integer(BigInteger start, BigInteger stop) {
+        if (start.compareTo(stop) >= 0) {
+            throw failure("core.random", "invalid_input", "runtime/system@1::secure_integer/2",
+                "Random range must be non-empty");
+        }
+        BigInteger span = stop.subtract(start);
+        SecureRandom random = secure();
+        if (span.bitLength() < 64) {
+            long small = span.longValue();
+            long threshold = Long.remainderUnsigned(-small, small);
+            while (true) {
+                long sample = random.nextLong();
+                if (Long.compareUnsigned(sample, threshold) >= 0) {
+                    return start.add(BigInteger.valueOf(Long.remainderUnsigned(sample, small)));
+                }
+            }
+        }
+        int words = Math.max(1, (span.subtract(BigInteger.ONE).bitLength() + 63) / 64);
+        BigInteger threshold = BigInteger.ONE.shiftLeft(64 * words).mod(span);
+        byte[] bytes = new byte[8 * words];
+        while (true) {
+            random.nextBytes(bytes);
+            BigInteger sample = new BigInteger(1, bytes);
+            if (sample.compareTo(threshold) >= 0) {
+                return start.add(sample.mod(span));
+            }
+        }
+    }
+
+    /** 53 старших бита из семи байт, как у random_float_from_sample. */
+    public static Double runtime_system__secure_float() {
+        byte[] bytes = new byte[7];
+        secure().nextBytes(bytes);
+        long value = 0;
+        for (byte octet : bytes) {
+            value = (value << 8) | (octet & 0xff);
+        }
+        return (value >>> 3) / 9007199254740992.0;
+    }
+
+    private static SecureRandom secure() {
+        SecureRandom random = secure;
+        if (random == null) {
+            random = new SecureRandom();
+            secure = random;
+        }
+        return random;
     }
 
     private static BigInteger unsigned(List<?> sample) {

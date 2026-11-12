@@ -311,8 +311,7 @@ pub fn call(op: &str, args: &[&[u8]]) -> Result<Vec<u8>> {
                 return Err(invalid("random size exceeds 16777216"));
             }
             let mut out = vec![0; size as usize];
-            getrandom::fill(&mut out)
-                .map_err(|_| Error::Failed("system entropy is unavailable".into()))?;
+            crate::secure::fill(&mut out)?;
             Ok(out)
         }
         "ct-equal" => {

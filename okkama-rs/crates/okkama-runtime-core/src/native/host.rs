@@ -1,6 +1,7 @@
 //! Natives часов, ожидания, случайности и сведений хоста — перенос
 //! `HostNatives` JVM: `runtime/time` (часы, сон), `runtime/system`
-//! (secure_random, платформа, хост, хранилище) и выборки `runtime/random`.
+//! (secure_random, secure_integer, secure_float, платформа, хост, хранилище)
+//! и выборки `runtime/random`.
 use super::support::{byte_array, bytes, failure, int, int_value, string, string_map, text};
 use super::Error;
 use crate::bignum::Big;
@@ -26,6 +27,53 @@ fn unsigned(sample: &[u8]) -> Big {
     sample
         .iter()
         .fold(Big::zero(), |number, octet| number.multiply(&base).add(&Big::from_u64(u64::from(*octet))))
+}
+
+/// Заполнить `out` криптостойкими байтами платформы (#195); отказ
+/// генератора — сбой native.
+fn secure_fill(native: Native, out: &mut [u8]) -> Result<(), Error> {
+    okkama_native::secure::fill(out)
+        .map_err(|error| failure("core.system", "unexpected", native, error.message()))
+}
+
+fn secure_bytes(native: Native, size: usize) -> Result<Vec<u8>, Error> {
+    let mut out = vec![0; size];
+    secure_fill(native, &mut out)?;
+    Ok(out)
+}
+
+/// Несмещённое смещение в `0..span` (span > 0) из криптостойких выборок
+/// (#195, #507). Выборка берёт столько 64-битных слов, сколько нужно числу
+/// `span - 1`, и тянется заново, пока она меньше `2^(64·слов) mod span`. Для
+/// `span` до 2^64 это одно слово в big-endian, как у random_sample_accepted и
+/// random_integer_from_sample.
+fn secure_offset(native: Native, span: &IntValue) -> Result<IntValue, Error> {
+    if let Some(small) = span.to_i64() {
+        let small = small.unsigned_abs();
+        let threshold = small.wrapping_neg() % small;
+        loop {
+            let mut sample = [0u8; 8];
+            secure_fill(native, &mut sample)?;
+            let sample = u64::from_be_bytes(sample);
+            if sample >= threshold {
+                return Ok(IntValue::from_u128(u128::from(sample % small)));
+            }
+        }
+    }
+    let largest = crate::integer::subtract(span, &IntValue::from_i64(1));
+    let words = largest.to_big().bits().div_ceil(64).max(1);
+    let exponent = u32::try_from(64 * words).map_err(|_| {
+        failure("core.random", "resource_exhausted", native, "Random range is too wide")
+    })?;
+    let modulus = IntValue::from_big(Big::from_u64(2).power(exponent));
+    let threshold = crate::integer::divide(&modulus, span).expect("positive").1;
+    let size = usize::try_from(words * 8).expect("fits with the exponent");
+    loop {
+        let sample = IntValue::from_big(unsigned(&secure_bytes(native, size)?));
+        if crate::integer::compare(&sample, &threshold).is_ge() {
+            return Ok(crate::integer::divide(&sample, span).expect("positive").1);
+        }
+    }
 }
 
 fn platform() -> &'static str {
@@ -219,9 +267,27 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
                         "Secure random request exceeds 16 MiB",
                     )
                 })?;
-            let random = okkama_native::call("random", &[size.to_string().as_bytes()])
-                .map_err(|error| failure("core.system", "unexpected", native, error.message()))?;
-            Ok(byte_array(random))
+            Ok(byte_array(secure_bytes(native, size as usize)?))
+        }
+        "secure_integer" => {
+            let (start, stop) = (int(&args[0])?, int(&args[1])?);
+            if crate::integer::compare(start, stop).is_ge() {
+                return Err(failure(
+                    "core.random",
+                    "invalid_input",
+                    native,
+                    "Random range must be non-empty",
+                ));
+            }
+            let span = crate::integer::subtract(stop, start);
+            Ok(Value::Int(crate::integer::add(start, &secure_offset(native, &span)?)))
+        }
+        "secure_float" => {
+            // 53 старших бита из семи байт, как у random_float_from_sample.
+            let mut sample = [0u8; 8];
+            secure_fill(native, &mut sample[1..])?;
+            let value = u64::from_be_bytes(sample) >> 3;
+            Ok(Value::Float(value as f64 / 9_007_199_254_740_992.0))
         }
         "random_sample_accepted" | "random_integer_from_sample" => {
             let sample = bytes(&args[0])?;

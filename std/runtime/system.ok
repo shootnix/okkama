@@ -13,6 +13,14 @@ native system_cpu_count() is int;
 
 native secure_random(size is int) is @byte;
 
+// An unbiased integer in start..stop (start < stop): a sample of as many
+// 64-bit words as stop - start - 1 needs is drawn again while it falls below
+// 2^(64 * words) mod (stop - start).
+native secure_integer(start is int, stop is int) is int;
+
+// 53 random bits as a float in [0, 1).
+native secure_float() is float;
+
 // One coherent provider observation. Decimal strings avoid narrowing storage
 // capacities to the builtin runtime int width.
 native storage_usage(path is string) is %string:string;

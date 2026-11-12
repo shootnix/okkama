@@ -6,6 +6,7 @@
 pub mod ffi;
 pub mod ops;
 pub mod rsa_public;
+pub mod secure;
 pub mod x509;
 
 pub use ops::{Error, Hasher, call, interruptible};
