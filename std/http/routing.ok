@@ -291,19 +291,49 @@ object RouteMatch {
     }
 }
 
+// A pattern, the handler for it and the method it serves, or every method.
 object Route {
-    has method is Method;
+    has method is Maybe<Method>;
     has pattern is RoutePattern;
     has handling is Handling;
 
     Route(method is Method, pattern is RoutePattern, handling is Handling) {
-        self.method = method;
+        self.method = Maybe.some(method);
         self.pattern = pattern;
         self.handling = handling;
     }
 
+    // A route for every method, as web/routing's Any (#78). A more specific
+    // pattern still wins, and on the same pattern a route of the request's own
+    // method wins over this one.
+    Route(pattern is RoutePattern, handling is Handling) {
+        method = Maybe<Method>.none;
+        self.pattern = pattern;
+        self.handling = handling;
+    }
+
+    // The method; a route for every method has none and throws.
     method() is Method {
-        method;
+        match method {
+            case Maybe.some(one) {
+                one;
+            }
+            else {
+                throw InvalidRoute.because("a route for every method has no one method");
+            }
+        };
+    }
+
+    // The method's token on the wire, or "" for a route of every method.
+    method_token() is string {
+        match method {
+            case Maybe.some(one) {
+                MethodName(one).string();
+            }
+            else {
+                "";
+            }
+        };
     }
 
     pattern() is RoutePattern {
@@ -442,11 +472,7 @@ object Routes does Handling {
     hidden entries() is @RouteEntry {
         let entries is @RouteEntry = (0..routes.size()).map() -> index {
             let route = routes[index];
-            RouteEntry(
-                index: index,
-                method: MethodName(route.method()).string(),
-                parts: route.pattern().parts()
-            );
+            RouteEntry(index: index, method: route.method_token(), parts: route.pattern().parts());
         };
         entries;
     }
@@ -478,8 +504,8 @@ object Routes does Handling {
     hidden allowed(matching is @int) is @string {
         let start is @string = [];
         let names is @string = matching.ordering().reduce(start) -> kept, index {
-            let name = MethodName(routes[index].method()).string();
-            let named is @string = if kept.contains(name) {
+            let name = routes[index].method_token();
+            let named is @string = if name == "" || kept.contains(name) {
                 kept;
             }
             else {
@@ -530,8 +556,13 @@ hidden object RouteShapes {
             keys[index] == key;
         };
         let first = routes[pair[0]];
-        MethodName(first.method()).string() + " " + first.pattern().string() + " and " +
-            routes[pair[1]].pattern().string();
+        let method = if first.method_token() == "" {
+            "any method";
+        }
+        else {
+            first.method_token();
+        };
+        method + " " + first.pattern().string() + " and " + routes[pair[1]].pattern().string();
     }
 
     hidden key(route is Route) is string {
@@ -548,7 +579,7 @@ hidden object RouteShapes {
                 }
             }
         };
-        MethodName(route.method()).string() + "\t" + parts.join("\n");
+        route.method_token() + "\t" + parts.join("\n");
     }
 }
 
@@ -667,9 +698,9 @@ hidden object RouteTreeBuilding {
     }
 }
 
-// One node of the segment tree: the routes that end here by method name, and
-// the nodes for the next segment, one per literal, one for a parameter and one
-// for a final wildcard.
+// One node of the segment tree: the routes that end here by method token ("" for
+// every method), and the nodes for the next segment, one per literal, one for a
+// parameter and one for a final wildcard.
 hidden object RouteNode {
     has methods is %string:int;
     has literals is %string:int;
@@ -692,13 +723,19 @@ hidden object RouteNode {
     }
 
     // The route that ends here and takes the method: its own, else GET for
-    // HEAD; -1 for none.
+    // HEAD, else a route for every method (keyed ""); -1 for none.
     accepted(method is string) is int {
         let own = methods[method] else -1;
-        if own < 0 && method == "HEAD" {
-            return methods["GET"] else -1;
+        if own >= 0 {
+            return own;
         }
-        own;
+        if method == "HEAD" {
+            let get = methods["GET"] else -1;
+            if get >= 0 {
+                return get;
+            }
+        }
+        methods[""] else -1;
     }
 
     // The routes that end here, whatever their method.
@@ -1038,6 +1075,47 @@ test "only routes of one method with one shape are refused" {
         ],
         fallback: probe
     );
+}
+
+async test "a route for every method gives way to the request's own method" {
+    let routes is @Route = [
+        Route(pattern: RoutePattern("/proxy/*rest"), handling: RouteProbe("proxy")),
+        Route(
+            method: Method.get,
+            pattern: RoutePattern("/proxy/health"),
+            handling: RouteProbe("health")
+        ),
+        Route(pattern: RoutePattern("/notes"), handling: RouteProbe("any note")),
+        Route(method: Method.get, pattern: RoutePattern("/notes"), handling: RouteProbe("notes")),
+    ];
+    let table = RouteDispatch(Routes(routes: routes, fallback: RouteProbe("fallback")));
+    test.is(await table.answer(Method.get, "/proxy/health"), "health");
+    test.is(await table.answer(Method.post, "/proxy/health"), "proxy rest=health");
+    test.is(await table.answer(Method.other("PROPFIND"), "/proxy/a/b"), "proxy rest=a/b");
+    test.is(await table.answer(Method.get, "/notes"), "notes");
+    test.is(await table.answer(Method.head, "/notes"), "notes");
+    test.is(await table.answer(Method.delete, "/notes"), "any note");
+    test.is(
+        try {
+            routes[0].method();
+            "a method";
+        }
+        catch InvalidRoute.because(reason) {
+            reason;
+        },
+        "a route for every method has no one method"
+    );
+    test.is(routes[0].method_token(), "");
+    test.is(routes[1].method_token(), "GET");
+    test.throws(InvalidRoute) {
+        Routes(
+            routes: [
+                Route(pattern: RoutePattern("/a/:x"), handling: RouteProbe("a")),
+                Route(pattern: RoutePattern("/a/:y"), handling: RouteProbe("b")),
+            ],
+            fallback: RouteProbe("fallback")
+        );
+    };
 }
 
 async test "a table takes more than 256 routes" {

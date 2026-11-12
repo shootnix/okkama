@@ -121,6 +121,36 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   | dispatch before, µs | 4.9 | 12.6 | 24.2 | refused |
   | dispatch now, µs | 2.9 | 3.0 | 2.9 | 3.0 |
 
+- **Routes for any method, a path written once, and code around routes
+  (#77, #78).** In `web/routing`:
+  - `Resource("/notes", Get(notes.list), Post(notes.add))` gives several
+    methods one path; the routes in it take no path of their own (`Get(f)`).
+  - `Route(method: Method.options, path:, endpoint:)` routes any one method,
+    `Any(path: "/proxy/*rest", endpoint:)` every method. On one pattern a
+    route of the request's own method wins over `Any`. Underneath,
+    `http/routing` has `Route(pattern:, handling:)` for every method and
+    `route.method_token()`.
+  - `Around(x)` in a table, a `Scope` or a `Resource` puts `x` around its
+    routes; `x` does the new role `Surrounding`
+    (`async around(request, inner) is Responding`). It may answer by itself
+    (401) or call `inner` and work with the reply; a thrown `Exception`
+    reaches it as its problem reply. Arounds run outer before inner, and a
+    WebSocket upgrade passes them too.
+  - New module `web/around`: `AccessLog(out)` writes one line per request,
+    `BearerAuth(token:)` lets through only `Authorization: Bearer <token>`.
+
+  ```okkama
+  WebRoutes(
+      Around(AccessLog(Stdout())),
+      Resource("/notes", Get(notes.list), Post(notes.add)),
+      Scope("/admin", Around(BearerAuth(token: secret)), Get(path: "/stats", endpoint: admin.stats)),
+      Any(path: "/proxy/*rest", endpoint: proxy.forward),
+  )
+  ```
+
+  `WebRouting` gained `around()`; an application's own routing element
+  answers `Maybe<Surrounding>.none`.
+
 - **The server answers HTTP/1.0 (#102).** `ab` works: no Host is required,
   responses are not chunked, and keep-alive applies only when asked for.
 - **RequestJson readers share one translation of reading failures (#84).**

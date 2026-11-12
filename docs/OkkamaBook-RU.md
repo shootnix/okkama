@@ -4122,6 +4122,14 @@ endpoint: notes.one), Post(…)), Fallback(notes.missing))`. Без `Fallback` �
 "no-store"), SetCookie(name: "sid", value: token), ExpiredCookie("old"))`, где
 у `SetCookie` по умолчанию Path=/, Secure, HttpOnly и SameSite=Lax.
 `WebSocket(path:, application:)` — маршрут для WebSocket.
+`Resource("/notes", Get(notes.list), Post(notes.add))` пишет путь один раз для
+нескольких методов; `Route(method: Method.options, path:, endpoint:)` — маршрут
+любого одного метода, `Any(path:, endpoint:)` — всех методов. Если шаблоны
+пересекаются, побеждает самый точный: `/notes/new` раньше `/notes/:id`, а тот
+раньше `/notes/*rest`. `Around(AccessLog(Stdout()))` или
+`Around(BearerAuth(token: secret))` в таблице, `Scope` или `Resource`
+оборачивает их маршруты (`web/around`); свой обработчик вокруг маршрутов
+делает `Surrounding`.
 `WebApplication(routes).listen(address, port)` его обслуживает.
 
 `Caching(origin: client, cache: MemoryHttpCache(clock:, maximum:), clock:)`

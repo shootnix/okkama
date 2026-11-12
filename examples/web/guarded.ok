@@ -1,0 +1,68 @@
+module examples/web/guarded v1.0.0;
+
+import "web/app" take WebApplication;
+import "web/routing" take WebRoutes, Get, Delete, Any, Around, Scope, Resource;
+import "web/around" take BearerAuth;
+import "web/request" take WebRequest;
+import "web/reply" take TextReply, NoContentReply;
+import "http/message" take Request, Responding;
+import "http/method" take Method, MethodName;
+import "http/header" take Headers, Header;
+import "http/client" take HttpClient;
+import "http/endpoint" take LoopbackEndpoints;
+import "time/duration" take Duration;
+import "io/stdout" take Stdout;
+
+// An admin area behind a bearer token, one path with two methods written as
+// a Resource, and a route for every method. The program serves on a free
+// loopback port, calls itself with the std client and drains the server.
+
+object Site {
+    Site() {}
+
+    async stats(request is WebRequest) is Responding {
+        TextReply("3 notes");
+    }
+
+    async clear(request is WebRequest) is Responding {
+        NoContentReply();
+    }
+
+    async echo(request is WebRequest) is Responding {
+        TextReply("you sent " + MethodName(request.method()).string());
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    let site = Site();
+    let routes = WebRoutes(
+        Scope("/admin",
+            Around(BearerAuth(token: "s3cret")),
+            Resource("/notes", Get(site.stats), Delete(site.clear)),
+        ),
+        Any(path: "/echo", endpoint: site.echo),
+    );
+    let server = (await WebApplication(routes).server("127.0.0.1", 0)).started();
+    let base = "http://127.0.0.1:" + server::Local::port.string();
+    let client = HttpClient(endpoints: LoopbackEndpoints());
+    let token = Headers(Header(name: "Authorization", value: "Bearer s3cret"));
+
+    let anonymous = await client.get(base + "/admin/notes");
+    out.writeln("GET /admin/notes without a token -> ", anonymous::Head::code);
+    let stats = await client.response(Request(url: base + "/admin/notes", headers: token));
+    out.writeln("GET /admin/notes -> ", stats::Head::code, " ", await stats.text());
+    let cleared = await client.response(Request(url: base + "/admin/notes", method: Method.delete, headers: token));
+    out.writeln("DELETE /admin/notes -> ", cleared::Head::code);
+    let replaced = await client.response(Request(url: base + "/admin/notes", method: Method.put, headers: token));
+    out.writeln("PUT /admin/notes -> ", replaced::Head::code);
+    for [Method.get, Method.patch, Method.other("PURGE")] -> method {
+        let echoed = await client.response(Request(url: base + "/echo", method: method));
+        out.writeln(MethodName(method).string(), " /echo -> ", echoed::Head::code, " ", await echoed.text());
+    }
+
+    client.close();
+    await server.drain(limit: Duration(seconds: 5));
+    out.writeln("drained");
+    0;
+}

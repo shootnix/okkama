@@ -1,7 +1,7 @@
 module examples/web/notes v1.0.0;
 
 import "web/app" take WebApplication;
-import "web/routing" take WebRoutes, Get, Post, Scope, Fallback;
+import "web/routing" take WebRoutes, Get, Post, Scope, Resource, Fallback;
 import "web/request" take WebRequest;
 import "web/reply" take TextReply, JsonReply;
 import "http/message" take Responding;
@@ -61,8 +61,7 @@ async main() is int {
     let notes = Notes();
     let routes = WebRoutes(
         Scope("/api",
-            Get(path: "/notes", endpoint: notes.list),
-            Post(path: "/notes", endpoint: notes.add),
+            Resource("/notes", Get(notes.list), Post(notes.add)),
             Get(path: "/notes/:id", endpoint: notes.one),
         ),
         Fallback(notes.missing),

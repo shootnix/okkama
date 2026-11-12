@@ -3941,6 +3941,13 @@ fields one by one: `Headers(Header(name: "Cache-Control", value: "no-store"),
 SetCookie(name: "sid", value: token), ExpiredCookie("old"))`, where a
 `SetCookie` defaults to Path=/, Secure, HttpOnly and SameSite=Lax.
 `WebSocket(path:, application:)` routes a WebSocket.
+`Resource("/notes", Get(notes.list), Post(notes.add))` writes a path once for
+several methods; `Route(method: Method.options, path:, endpoint:)` routes any
+one method and `Any(path:, endpoint:)` every method. When patterns overlap,
+the most specific wins: `/notes/new` before `/notes/:id` before `/notes/*rest`.
+`Around(AccessLog(Stdout()))` or `Around(BearerAuth(token: secret))` in a table,
+a `Scope` or a `Resource` wraps its routes (`web/around`); an application's own
+around-handler does `Surrounding`.
 `WebApplication(routes).listen(address, port)` serves it.
 
 `Caching(origin: client, cache: MemoryHttpCache(clock:, maximum:), clock:)`

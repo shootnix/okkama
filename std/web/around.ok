@@ -1,0 +1,230 @@
+module web/around v1.0.0;
+
+import "web/routing" take Surrounding, WebRoutes, Around, Get, Scope;
+import "web/request" take WebRequest;
+import "web/exception" take Exception, ProblemReply;
+import "http/message" take Request, Response, Responding;
+import "http/status" take Status, StatusCode;
+import "http/header" take Headers, Header, HeaderName;
+import "http/method" take MethodName;
+import "http/request_context" take HttpRequestContext;
+import "http/target" take OriginTarget;
+import "http/exchange" take ExchangeDetails;
+import "http/version" take HttpVersion;
+import "io/stream" take WritingText;
+import "time/clock" take Timing, SystemClock, MonotonicInstant, Instant;
+import "time/duration" take Duration;
+import "crypto/constant_time" take ConstantTimeEqual;
+import "encoding/utf" take Utf8Encoded;
+import "async/atomic" take Atomic;
+import "async/cancellation" take Cancellation;
+import "net/stream" take ConnectionEndpoints;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "testing/time" take ManualClock;
+
+// Code that goes around endpoints with web/routing's Around (#77):
+//
+//     WebRoutes(
+//         Around(AccessLog(Stdout())),
+//         Get(path: "/notes", endpoint: notes.list),
+//         Scope("/admin", Around(BearerAuth(token: secret)), Get(path: "/stats", endpoint: admin.stats)),
+//     )
+//
+// An application's own around-handler does web/routing's Surrounding.
+
+// One line on out per request: the client's address, the method and the
+// target, the status and the time the rest of the chain took:
+//
+//     127.0.0.1 "GET /notes?limit=5" 200 0.412 ms
+//
+// A request that fails with an error other than an Exception is written with
+// status 500, and the error passes on.
+object AccessLog does Surrounding {
+    has out is WritingText;
+    has clock is Timing;
+
+    AccessLog(out is WritingText, clock is Timing = SystemClock()) {
+        self.out = out;
+        self.clock = clock;
+    }
+
+    async around(request is WebRequest, inner is async (WebRequest) is Responding) is Responding {
+        let start = clock.monotonic_instant();
+        let answer is Responding = try {
+            await inner(request);
+        }
+        catch failure is Error {
+            out.writeln(self.line(request, "500", start));
+            throw failure;
+        };
+        out.writeln(
+            self.line(request, StatusCode(answer.response()::Head::status).number().string(), start)
+        );
+        answer;
+    }
+
+    hidden line(request is WebRequest, status is string, start is MonotonicInstant) is string {
+        let micros = (clock.monotonic_instant().minus(start)::Span::seconds * 1000000.rat()).int();
+        let whole = (micros / 1000).int();
+        let part = (micros - whole * 1000).string();
+        let address = request.context().endpoints().remote_endpoint().address().string();
+        let target = request.request()::Head::target.string();
+        let method = MethodName(request.method()).string();
+        let took = whole.string() + "." + "000".slice(0, 3 - part.length()) + part;
+        address + " \"" + method + " " + target + "\" " + status + " " + took + " ms";
+    }
+}
+
+// Lets a request through only with the token in `Authorization: Bearer
+// <token>`; any other gets 401 with `WWW-Authenticate: Bearer`. The token is
+// compared in constant time.
+object BearerAuth does Surrounding {
+    has token is string;
+
+    BearerAuth(token is string) {
+        confirm token != ""
+            else throw InvalidBearerAuth.because("a bearer token must not be empty");
+        self.token = token;
+    }
+
+    async around(request is WebRequest, inner is async (WebRequest) is Responding) is Responding {
+        let given = request.header("Authorization", "");
+        if !given.lower().starts_with("bearer ") {
+            return ProblemReply(
+                status: Status.unauthorized,
+                detail: "a bearer token is required",
+                headers: Headers(Header(name: "WWW-Authenticate", value: "Bearer"))
+            );
+        }
+        let supplied = given.slice(7, given.length()).trim();
+        if !ConstantTimeEqual(
+            left: Utf8Encoded(token).bytes(),
+            right: Utf8Encoded(supplied).bytes()
+        ).matches() {
+            return ProblemReply(
+                status: Status.unauthorized,
+                detail: "the bearer token is not valid",
+                headers: Headers(
+                    Header(name: "WWW-Authenticate", value: "Bearer error=\"invalid_token\"")
+                )
+            );
+        }
+        await inner(request);
+    }
+}
+
+enum InvalidBearerAuth is Error = (because(reason is string));
+
+// Lines written to an Atomic, for the tests below.
+hidden object AroundLines does WritingText {
+    has lines is Atomic<@string>;
+
+    AroundLines(lines is Atomic<@string>) {
+        self.lines = lines;
+    }
+
+    write(values is ...string) is void {
+        let listed is @string = values...;
+        lines.replace(lines.value() + [listed.join("")]);
+    }
+
+    writeln(values is ...string) is void {
+        let listed is @string = values...;
+        lines.replace(lines.value() + [listed.join("")]);
+    }
+}
+
+hidden object AroundProbe {
+    AroundProbe() {}
+
+    async answer(request is WebRequest) is Responding {
+        Response(status: Status.ok);
+    }
+
+    async gone(request is WebRequest) is Responding {
+        throw Exception.status(410, "gone");
+    }
+}
+
+// The status a table answers to a GET of target with an Authorization field.
+hidden object AroundDispatch {
+    has routes is WebRoutes;
+
+    AroundDispatch(routes is WebRoutes) {
+        self.routes = routes;
+    }
+
+    async status(path is string, query is Maybe<string>, authorization is string) is string {
+        let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(
+            local: IpEndpoint(address: IpAddress("127.0.0.1"), port: 80),
+            remote: IpEndpoint(address: IpAddress("192.0.2.7"), port: 50000)
+        );
+        let context = HttpRequestContext(
+            details: ExchangeDetails(endpoints: ends, version: HttpVersion.http_1_1),
+            cancellation: Cancellation().cancelling()
+        );
+        let headers = if authorization == "" {
+            Headers();
+        }
+        else {
+            Headers(Header(name: "Authorization", value: authorization));
+        };
+        let request = Request(target: OriginTarget(path: path, query: query), headers: headers);
+        let result = await routes.handling(request, context);
+        let response = result.response();
+        let code = StatusCode(response::Head::status).number().string();
+        if response::Head::status == Status.unauthorized {
+            return code + " " + response::Head::headers.first(HeaderName("WWW-Authenticate"));
+        }
+        code;
+    }
+}
+
+async test "an access log writes one line per request" {
+    let empty is @string = [];
+    let lines = Atomic(empty);
+    defer lines.close();
+    let probe = AroundProbe();
+    let clock = ManualClock(start: Instant(origin: Duration(seconds: 0)));
+    let table = AroundDispatch(
+        WebRoutes(
+            Around(AccessLog(out: AroundLines(lines), clock: clock)),
+            Get(path: "/notes", endpoint: probe.answer),
+            Get(path: "/gone", endpoint: probe.gone),
+        )
+    );
+    test.is(await table.status("/notes", Maybe.some("limit=5"), ""), "200");
+    test.is(await table.status("/gone", Maybe<string>.none, ""), "410");
+    test.is(await table.status("/missing", Maybe<string>.none, ""), "404");
+    test.is(
+        lines.value().join("\n"),
+        "192.0.2.7 \"GET /notes?limit=5\" 200 0.000 ms\n192.0.2.7 \"GET /gone\" 410 0.000 ms\n192.0.2.7 \"GET /missing\" 404 0.000 ms"
+    );
+}
+
+async test "bearer authentication lets only the token through" {
+    let probe = AroundProbe();
+    let table = AroundDispatch(
+        WebRoutes(
+            Get(path: "/open", endpoint: probe.answer),
+            Scope(
+                "/admin",
+                Around(BearerAuth(token: "s3cret")),
+                Get(path: "/stats", endpoint: probe.answer)
+            ),
+        )
+    );
+    test.is(await table.status("/open", Maybe<string>.none, ""), "200");
+    test.is(await table.status("/admin/stats", Maybe<string>.none, "Bearer s3cret"), "200");
+    test.is(await table.status("/admin/stats", Maybe<string>.none, "bearer  s3cret "), "200");
+    test.is(await table.status("/admin/stats", Maybe<string>.none, ""), "401 Bearer");
+    test.is(await table.status("/admin/stats", Maybe<string>.none, "Basic czNjcmV0"), "401 Bearer");
+    test.is(
+        await table.status("/admin/stats", Maybe<string>.none, "Bearer s3cre"),
+        "401 Bearer error=\"invalid_token\""
+    );
+    test.throws(InvalidBearerAuth) {
+        BearerAuth(token: "");
+    };
+}

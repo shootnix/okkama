@@ -1,16 +1,25 @@
 module web/routing v1.0.0;
 
-import "http/routing" take Routes, Route, RoutePattern, RouteRejecting;
-import "http/handler" take Handling, HandlingResult, ResponseHandling, WebSocketHandling, WebSocketHandlingResult;
+import "http/routing" as http_routing take Routes, Route, RoutePattern, RouteRejecting;
+import "http/handler" take Handling, HandlingKind, HandlingResult, ResponseHandling,
+    WebSocketHandling, WebSocketHandlingResult;
 import "http/request_context" take HttpRequestContext;
-import "http/message" take Request, Responding;
+import "http/message" take Request, Response, Responding;
 import "http/status" take Status, StatusCode;
-import "http/header" take Headers, Header;
-import "http/websocket" take WebSocketLimits;
+import "http/header" take Headers, Header, HeaderName;
+import "http/target" take OriginTarget;
+import "http/websocket" take WebSocketLimits, WebSocketConnection;
 import "http/websocket_server" take WebSocketUpgrade;
 import "http/websocket_origin" take SameOriginWebSockets;
+import "http/exchange" take ExchangeDetails;
+import "http/version" take HttpVersion;
 import "time/duration" take Duration;
 import "http/method" take Method, MethodName;
+import "async/atomic" take Atomic;
+import "async/cancellation" take Cancellation;
+import "net/stream" take ConnectionEndpoints;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
 import "web/request" take WebRequest;
 import "web/exception" take Exception, ProblemReply;
 
@@ -19,8 +28,11 @@ import "web/exception" take Exception, ProblemReply;
 // serve many routes and keep its dependencies in its own fields:
 //
 //     WebRoutes(
+//         Around(AccessLog(Stdout())),
 //         Get(path: "/health", endpoint: system.health),
 //         Scope("/api",
+//             Resource("/notes", Get(notes.list), Post(notes.add)),
+//             Resource("/notes/:id", Get(notes.show), Delete(notes.remove)),
 //             Scope("/users", UserExceptions(),
 //                 Post(path: "", endpoint: users.register),
 //                 Get(path: "/:id", endpoint: users.show),
@@ -29,8 +41,10 @@ import "web/exception" take Exception, ProblemReply;
 //         Fallback(system.missing),
 //     );
 //
-// Without a Fallback, a request no route matches is answered 404 with a
-// problem body.
+// Get, Post, Put, Patch and Delete route one method; Route(method:, path:,
+// endpoint:) routes any other, such as OPTIONS, and Any(path:, endpoint:)
+// every method. A Resource writes its path once for several methods. Without
+// a Fallback, a request no route matches is answered 404 with a problem body.
 //
 // Everything compiles into one std http/routing.Routes, so its rules are kept:
 // a request goes to the most specific pattern (/users/me before /users/:id,
@@ -40,43 +54,64 @@ import "web/exception" take Exception, ProblemReply;
 // path) are answered by WebRejection as problem replies, Allow included.
 //
 // Paths: a Scope prefix starts with "/" and does not end with it. A route path
-// is "" (the scope itself, only inside a Scope) or starts with "/". The full
-// pattern is the concatenation of prefixes and the route path.
+// is "" (the scope or resource itself, only inside one) or starts with "/". The
+// full pattern is the concatenation of prefixes and the route path.
 //
-// Exceptions: an ExceptionScope wraps every endpoint below its Scope. Its
-// scoped() calls the endpoint and translates the errors it knows into
-// Exception replies; unknown errors propagate to the next outer scope.
-// Scopes run outermost first, so the innermost one sees errors first. After all
-// scopes, the framework itself answers: a thrown Exception becomes its reply.
-// Request bodies are read through web/request.RequestJson, which raises its own
-// 422 Exception; JSON errors from server-side data are not translated. Any other
-// error propagates to the std HttpServer, which answers 500 without a body;
-// cancellation and timeouts keep their std meaning.
+// Around a route run the exception scopes and the Arounds of the table, the
+// Scopes and the Resource it stands in: outer before inner, and within one of
+// them in the order they are written. An ExceptionScope translates the errors
+// it knows into replies; unknown errors propagate to the next outer scope.
+// After all of them, the framework itself answers: a thrown Exception becomes
+// its problem reply. Request bodies are read through web/request.RequestJson,
+// which raises its own 422 Exception; JSON errors from server-side data are not
+// translated. Any other error propagates to the std HttpServer, which answers
+// 500 without a body; cancellation and timeouts keep their std meaning.
 
 role ExceptionScope {
     async scoped(request is WebRequest, endpoint is async (WebRequest) is Responding) is Responding;
 }
 
+// Code around endpoints, put into a table with Around (#77): an access log,
+// authentication, headers for every reply. around() gets the request and the
+// rest of the chain as inner. It may answer by itself without calling inner,
+// as a refused login does, or call inner and work with its reply. An Exception
+// thrown further in reaches it as its problem reply; other errors pass through.
+role Surrounding {
+    async around(request is WebRequest, inner is async (WebRequest) is Responding) is Responding;
+}
+
 role WebRouting {
-    routes(prefix is string, scopes is @ExceptionScope) is @Route;
+    routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route;
 
     // The answer for requests no route matches. Only Fallback has one.
     fallback() is Maybe<Fallback>;
+
+    // The code this element puts around the routes beside it. Only Around has one.
+    around() is Maybe<Surrounding>;
 }
 
 object Get does WebRouting {
     has origin is MethodRoute;
 
     Get(path is string, endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Method.get, path: path, endpoint: endpoint);
+        origin = MethodRoute(method: Maybe.some(Method.get), path: path, endpoint: endpoint);
     }
 
-    routes(prefix is string, scopes is @ExceptionScope) is @Route {
+    // Inside a Resource, which gives the path: Resource("/notes", Get(notes.list)).
+    Get(endpoint is async (WebRequest) is Responding) {
+        origin = MethodRoute(method: Maybe.some(Method.get), path: "", endpoint: endpoint);
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         origin.routes(prefix, scopes);
     }
 
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
+    }
+
+    around() is Maybe<Surrounding> {
+        Maybe<Surrounding>.none;
     }
 }
 
@@ -84,15 +119,24 @@ object Post does WebRouting {
     has origin is MethodRoute;
 
     Post(path is string, endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Method.post, path: path, endpoint: endpoint);
+        origin = MethodRoute(method: Maybe.some(Method.post), path: path, endpoint: endpoint);
     }
 
-    routes(prefix is string, scopes is @ExceptionScope) is @Route {
+    // Inside a Resource, which gives the path.
+    Post(endpoint is async (WebRequest) is Responding) {
+        origin = MethodRoute(method: Maybe.some(Method.post), path: "", endpoint: endpoint);
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         origin.routes(prefix, scopes);
     }
 
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
+    }
+
+    around() is Maybe<Surrounding> {
+        Maybe<Surrounding>.none;
     }
 }
 
@@ -100,15 +144,24 @@ object Put does WebRouting {
     has origin is MethodRoute;
 
     Put(path is string, endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Method.put, path: path, endpoint: endpoint);
+        origin = MethodRoute(method: Maybe.some(Method.put), path: path, endpoint: endpoint);
     }
 
-    routes(prefix is string, scopes is @ExceptionScope) is @Route {
+    // Inside a Resource, which gives the path.
+    Put(endpoint is async (WebRequest) is Responding) {
+        origin = MethodRoute(method: Maybe.some(Method.put), path: "", endpoint: endpoint);
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         origin.routes(prefix, scopes);
     }
 
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
+    }
+
+    around() is Maybe<Surrounding> {
+        Maybe<Surrounding>.none;
     }
 }
 
@@ -116,15 +169,24 @@ object Patch does WebRouting {
     has origin is MethodRoute;
 
     Patch(path is string, endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Method.patch, path: path, endpoint: endpoint);
+        origin = MethodRoute(method: Maybe.some(Method.patch), path: path, endpoint: endpoint);
     }
 
-    routes(prefix is string, scopes is @ExceptionScope) is @Route {
+    // Inside a Resource, which gives the path.
+    Patch(endpoint is async (WebRequest) is Responding) {
+        origin = MethodRoute(method: Maybe.some(Method.patch), path: "", endpoint: endpoint);
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         origin.routes(prefix, scopes);
     }
 
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
+    }
+
+    around() is Maybe<Surrounding> {
+        Maybe<Surrounding>.none;
     }
 }
 
@@ -132,15 +194,161 @@ object Delete does WebRouting {
     has origin is MethodRoute;
 
     Delete(path is string, endpoint is async (WebRequest) is Responding) {
-        origin = MethodRoute(method: Method.delete, path: path, endpoint: endpoint);
+        origin = MethodRoute(method: Maybe.some(Method.delete), path: path, endpoint: endpoint);
     }
 
-    routes(prefix is string, scopes is @ExceptionScope) is @Route {
+    // Inside a Resource, which gives the path.
+    Delete(endpoint is async (WebRequest) is Responding) {
+        origin = MethodRoute(method: Maybe.some(Method.delete), path: "", endpoint: endpoint);
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         origin.routes(prefix, scopes);
     }
 
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
+    }
+
+    around() is Maybe<Surrounding> {
+        Maybe<Surrounding>.none;
+    }
+}
+
+// A route of any one method (#78), for those without a shortcut:
+// Route(method: Method.options, path: "/notes", endpoint: cors.preflight).
+object Route does WebRouting {
+    has origin is MethodRoute;
+
+    Route(method is Method, path is string, endpoint is async (WebRequest) is Responding) {
+        origin = MethodRoute(method: Maybe.some(method), path: path, endpoint: endpoint);
+    }
+
+    // Inside a Resource, which gives the path.
+    Route(method is Method, endpoint is async (WebRequest) is Responding) {
+        origin = MethodRoute(method: Maybe.some(method), path: "", endpoint: endpoint);
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
+        origin.routes(prefix, scopes);
+    }
+
+    fallback() is Maybe<Fallback> {
+        Maybe<Fallback>.none;
+    }
+
+    around() is Maybe<Surrounding> {
+        Maybe<Surrounding>.none;
+    }
+}
+
+// A route for every method (#78), such as a proxy's:
+// Any(path: "/proxy/*rest", endpoint: proxy.forward). On the same pattern a
+// route of the request's own method wins over it, and so does a more specific
+// pattern.
+object Any does WebRouting {
+    has origin is MethodRoute;
+
+    Any(path is string, endpoint is async (WebRequest) is Responding) {
+        origin = MethodRoute(method: Maybe<Method>.none, path: path, endpoint: endpoint);
+    }
+
+    // Inside a Resource, which gives the path.
+    Any(endpoint is async (WebRequest) is Responding) {
+        origin = MethodRoute(method: Maybe<Method>.none, path: "", endpoint: endpoint);
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
+        origin.routes(prefix, scopes);
+    }
+
+    fallback() is Maybe<Fallback> {
+        Maybe<Fallback>.none;
+    }
+
+    around() is Maybe<Surrounding> {
+        Maybe<Surrounding>.none;
+    }
+}
+
+// Several methods on one path, written once (#78):
+//
+//     Resource("/notes", Get(notes.list), Post(notes.add)),
+//     Resource("/notes/:id", Get(notes.show), Put(notes.replace), Delete(notes.remove)),
+//
+// The routes in it take no path of their own. An Around among them wraps only
+// the resource's routes.
+object Resource does WebRouting {
+    has path is string;
+    has routings is @WebRouting;
+
+    Resource(path is string, routings is ...WebRouting) {
+        confirm path == "" || path.starts_with("/")
+            else throw InvalidWebRoute.because("route path must be empty or start with /: " + path);
+        self.path = path;
+        let listed is @WebRouting = routings...;
+        self.routings = listed;
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
+        let full = prefix + path;
+        let inner = scopes + WebArounds(routings).scopes();
+        let empty is @http_routing.Route = [];
+        let all = routings.reduce(empty) -> collected, routing {
+            confirm routing.fallback() == Maybe<Fallback>.none
+                else throw InvalidWebRoute.because(
+                    "a Fallback belongs to WebRoutes, not to the resource " + full
+                );
+            collected + routing.routes(full, inner);
+        };
+        for all -> route {
+            confirm route.pattern().string() == full
+                else throw InvalidWebRoute.because(
+                    "a route in the resource " + full + " takes no path of its own: " + route.pattern().string()
+                );
+        }
+        all;
+    }
+
+    fallback() is Maybe<Fallback> {
+        Maybe<Fallback>.none;
+    }
+
+    around() is Maybe<Surrounding> {
+        Maybe<Surrounding>.none;
+    }
+}
+
+// Code around every route of the table, Scope or Resource it stands in (#77):
+//
+//     WebRoutes(
+//         Around(AccessLog(Stdout())),
+//         Get(path: "/notes", endpoint: notes.list),
+//         Scope("/admin", Around(BearerAuth(token: secret)), Get(path: "/stats", endpoint: admin.stats)),
+//     )
+//
+// A request no route matches passes through the table's Arounds on its way to
+// the Fallback. Requests the table refuses before any route (405, a malformed
+// path) do not. Before a WebSocket upgrade, an Around that calls inner lets
+// the upgrade go on, and one that answers by itself refuses it with that answer.
+object Around does WebRouting {
+    has origin is Surrounding;
+
+    Around(origin is Surrounding) {
+        self.origin = origin;
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
+        let empty is @http_routing.Route = [];
+        empty;
+    }
+
+    fallback() is Maybe<Fallback> {
+        Maybe<Fallback>.none;
+    }
+
+    around() is Maybe<Surrounding> {
+        Maybe.some(origin);
     }
 }
 
@@ -181,20 +389,26 @@ object Scope does WebRouting {
         self.routings = listed;
     }
 
-    routes(outer is string, scopes is @ExceptionScope) is @Route {
+    routes(outer is string, scopes is @ExceptionScope) is @http_routing.Route {
         for routings -> routing {
             confirm routing.fallback() == Maybe<Fallback>.none
-                else throw InvalidWebRoute.because("a Fallback belongs to WebRoutes, not to the scope " + prefix);
+                else throw InvalidWebRoute.because(
+                    "a Fallback belongs to WebRoutes, not to the scope " + prefix
+                );
         }
-        let inner = ScopeList(left: scopes, right: own).scopes();
-        let empty is @Route = [];
+        let inner = scopes + own + WebArounds(routings).scopes();
+        let empty is @http_routing.Route = [];
         routings.reduce(empty) -> all, routing {
-            RouteList(left: all, right: routing.routes(outer + prefix, inner)).routes();
+            all + routing.routes(outer + prefix, inner);
         };
     }
 
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
+    }
+
+    around() is Maybe<Surrounding> {
+        Maybe<Surrounding>.none;
     }
 }
 
@@ -207,13 +421,17 @@ object Fallback does WebRouting {
         self.endpoint = endpoint;
     }
 
-    routes(prefix is string, scopes is @ExceptionScope) is @Route {
-        let empty is @Route = [];
+    routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
+        let empty is @http_routing.Route = [];
         empty;
     }
 
     fallback() is Maybe<Fallback> {
         Maybe.some(self);
+    }
+
+    around() is Maybe<Surrounding> {
+        Maybe<Surrounding>.none;
     }
 
     // The endpoint it answers with.
@@ -224,21 +442,29 @@ object Fallback does WebRouting {
 
 // The application's route table. It is the Handling given to HttpServer.
 object WebRoutes does Handling {
-    has origin is Routes;
+    has origin is http_routing.Routes;
 
     // The routes one by one, with at most one Fallback among them:
     // WebRoutes(Scope("/api", Get(…), Post(…)), Fallback(app.missing)).
     WebRoutes(routings is ...WebRouting) {
         let listed is @WebRouting = routings...;
         let bare is @ExceptionScope = [];
-        origin = WebRouteTable(routings: listed, scopes: bare, fallback: WebFallbackOf(listed).endpoint()).routes();
+        origin = WebRouteTable(
+            routings: listed,
+            scopes: bare,
+            fallback: WebFallbackOf(listed).endpoint()
+        ).routes();
     }
 
     // WebRoutes(AppExceptions(), Get(…), Fallback(…)).
     WebRoutes(exceptions is ExceptionScope, routings is ...WebRouting) {
         let listed is @WebRouting = routings...;
         let single is @ExceptionScope = [exceptions];
-        origin = WebRouteTable(routings: listed, scopes: single, fallback: WebFallbackOf(listed).endpoint()).routes();
+        origin = WebRouteTable(
+            routings: listed,
+            scopes: single,
+            fallback: WebFallbackOf(listed).endpoint()
+        ).routes();
     }
 
     WebRoutes(routings is @WebRouting, fallback is async (WebRequest) is Responding) {
@@ -257,7 +483,7 @@ object WebRoutes does Handling {
 
     // The compiled std table. WebApplication serves it directly, which saves one
     // await level per request compared with going through handling().
-    table() is Routes {
+    table() is http_routing.Routes {
         origin;
     }
 
@@ -285,7 +511,8 @@ hidden object WebFallbackOf {
                 }
             }
         };
-        confirm found.size() <= 1 else throw InvalidWebRoute.because("WebRoutes takes at most one Fallback");
+        confirm found.size() <= 1
+            else throw InvalidWebRoute.because("WebRoutes takes at most one Fallback");
         if found.size() == 1 {
             found[0].answering();
         }
@@ -318,17 +545,78 @@ hidden object WebRouteTable {
         self.fallback = fallback;
     }
 
-    routes() is Routes {
-        let empty is @Route = [];
-        let all is @Route = routings.reduce(empty) -> collected, routing {
-            RouteList(left: collected, right: routing.routes("", scopes)).routes();
+    routes() is http_routing.Routes {
+        let chain = scopes + WebArounds(routings).scopes();
+        let empty is @http_routing.Route = [];
+        let all is @http_routing.Route = routings.reduce(empty) -> collected, routing {
+            collected + routing.routes("", chain);
         };
-        Routes(routes: all, fallback: WebEndpoint(fallback, scopes), rejection: WebRejection());
+        http_routing.Routes(
+            routes: all,
+            fallback: WebEndpoint(fallback, chain),
+            rejection: WebRejection()
+        );
+    }
+}
+
+// The Arounds among routings, as links of the chain around their routes.
+hidden object WebArounds {
+    has routings is @WebRouting;
+
+    WebArounds(routings is @WebRouting) {
+        self.routings = routings;
+    }
+
+    scopes() is @ExceptionScope {
+        let start is @ExceptionScope = [];
+        routings.reduce(start) -> kept, routing {
+            match routing.around() {
+                case Maybe.some(origin) {
+                    let link is @ExceptionScope = [AroundScope(origin)];
+                    kept + link;
+                }
+                else {
+                    kept;
+                }
+            };
+        };
+    }
+}
+
+// An Around as a link of the chain. Its inner answers an Exception thrown further
+// in with the problem reply, so the around-handler sees a reply for each refusal.
+hidden object AroundScope does ExceptionScope {
+    has origin is Surrounding;
+
+    AroundScope(origin is Surrounding) {
+        self.origin = origin;
+    }
+
+    async scoped(request is WebRequest, endpoint is async (WebRequest) is Responding) is Responding {
+        await origin.around(request, ExceptionReplies(endpoint).answer);
+    }
+}
+
+hidden object ExceptionReplies {
+    has endpoint is async (WebRequest) is Responding;
+
+    ExceptionReplies(endpoint is async (WebRequest) is Responding) {
+        self.endpoint = endpoint;
+    }
+
+    async answer(request is WebRequest) is Responding {
+        let answer is Responding = try {
+            await endpoint(request);
+        }
+        catch Exception.status(code, detail) {
+            ProblemReply(status: StatusCode(code).status(), detail: detail);
+        };
+        answer;
     }
 }
 
 // Requests rejected by std Routes before any endpoint runs get problem bodies too.
-hidden object WebRejection does RouteRejecting {
+hidden object WebRejection does http_routing.RouteRejecting {
     WebRejection();
 
     malformed(request is Request, reason is string) is HandlingResult {
@@ -345,24 +633,41 @@ hidden object WebRejection does RouteRejecting {
     }
 }
 
+// A route of one method, or of every method when there is none.
 hidden object MethodRoute {
-    has method is Method;
+    has method is Maybe<Method>;
     has path is string;
     has endpoint is async (WebRequest) is Responding;
 
-    MethodRoute(method is Method, path is string, endpoint is async (WebRequest) is Responding) {
-        confirm path == "" || path.slice(0, 1) == "/"
+    MethodRoute(
+        method is Maybe<Method>,
+        path is string,
+        endpoint is async (WebRequest) is Responding
+    ) {
+        confirm path == "" || path.starts_with("/")
             else throw InvalidWebRoute.because("route path must be empty or start with /: " + path);
         self.method = method;
         self.path = path;
         self.endpoint = endpoint;
     }
 
-    routes(prefix is string, scopes is @ExceptionScope) is @Route {
+    routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         let pattern = prefix + path;
         confirm pattern != ""
-            else throw InvalidWebRoute.because("an empty route path is only valid inside a Scope");
-        [Route(method: method, pattern: RoutePattern(pattern), handling: WebEndpoint(endpoint, scopes))];
+            else throw InvalidWebRoute.because(
+                "an empty route path is only valid inside a Scope or a Resource"
+            );
+        let compiled = http_routing.RoutePattern(pattern);
+        let handling = WebEndpoint(endpoint, scopes);
+        let route = match method {
+            case Maybe.some(one) {
+                http_routing.Route(method: one, pattern: compiled, handling: handling);
+            }
+            else {
+                http_routing.Route(pattern: compiled, handling: handling);
+            }
+        };
+        [route];
     }
 }
 
@@ -376,32 +681,68 @@ object WebSocket does WebRouting {
     has application is WebSocketHandling;
 
     WebSocket(path is string, application is WebSocketHandling) {
-        confirm path == "" || path.slice(0, 1) == "/"
+        confirm path == "" || path.starts_with("/")
             else throw InvalidWebRoute.because("route path must be empty or start with /: " + path);
         self.path = path;
         self.application = application;
     }
 
-    routes(prefix is string, scopes is @ExceptionScope) is @Route {
+    routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         let pattern = prefix + path;
         confirm pattern != ""
-            else throw InvalidWebRoute.because("an empty route path is only valid inside a Scope");
-        [Route(method: Method.get, pattern: RoutePattern(pattern), handling: WebSocketEndpoint(application))];
+            else throw InvalidWebRoute.because(
+                "an empty route path is only valid inside a Scope or a Resource"
+            );
+        [
+            http_routing.Route(
+                method: Method.get,
+                pattern: http_routing.RoutePattern(pattern),
+                handling: WebSocketEndpoint(application: application, scopes: scopes)
+            ),
+        ];
     }
 
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
     }
+
+    around() is Maybe<Surrounding> {
+        Maybe<Surrounding>.none;
+    }
 }
 
+// Before the upgrade the request passes the chain of its scopes. When the chain
+// reaches its end, the connection is upgraded; when a link answers by itself,
+// that answer is sent instead.
 hidden object WebSocketEndpoint does Handling {
     has application is WebSocketHandling;
+    has scopes is @ExceptionScope;
 
-    WebSocketEndpoint(application is WebSocketHandling) {
+    WebSocketEndpoint(application is WebSocketHandling, scopes is @ExceptionScope) {
         self.application = application;
+        self.scopes = scopes;
     }
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
+        if scopes.size() > 0 {
+            let passed = Atomic(false);
+            defer passed.close();
+            let answer is Responding = try {
+                await ScopedEndpoint(
+                    endpoint: WebSocketPass(passed).answer,
+                    scopes: scopes,
+                    index: 0
+                ).call(
+                    WebRequest(request: request, context: context)
+                );
+            }
+            catch Exception.status(code, detail) {
+                ProblemReply(status: StatusCode(code).status(), detail: detail);
+            };
+            if !passed.value() {
+                return ResponseHandling(answer.response());
+            }
+        }
         let empty is @string = [];
         WebSocketHandlingResult(
             origin: WebSocketUpgrade(
@@ -415,13 +756,27 @@ hidden object WebSocketEndpoint does Handling {
     }
 }
 
+// The end of the chain before an upgrade: notes that the request got through.
+hidden object WebSocketPass {
+    has passed is Atomic<bool>;
+
+    WebSocketPass(passed is Atomic<bool>) {
+        self.passed = passed;
+    }
+
+    async answer(request is WebRequest) is Responding {
+        passed.replace(true);
+        Response(status: Status.no_content);
+    }
+}
+
 hidden object WebPrefix {
     has origin is string;
 
     WebPrefix(origin is string) {
         confirm origin.length() > 1
-            && origin.slice(0, 1) == "/"
-            && origin.slice(origin.length() - 1, origin.length()) != "/"
+            && origin.starts_with("/")
+            && !origin.ends_with("/")
             else throw InvalidWebRoute.because(
                 "scope prefix must start with / and not end with it: " + origin
             );
@@ -445,7 +800,9 @@ hidden object WebEndpoint does Handling {
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
         let answer is Responding = try {
-            await ScopedEndpoint(endpoint: endpoint, scopes: scopes, index: 0).call(WebRequest(request: request, context: context));
+            await ScopedEndpoint(endpoint: endpoint, scopes: scopes, index: 0).call(
+                WebRequest(request: request, context: context)
+            );
         }
         catch Exception.status(code, detail) {
             ProblemReply(status: StatusCode(code).status(), detail: detail);
@@ -475,52 +832,11 @@ hidden object ScopedEndpoint {
             await endpoint(request);
         }
         else {
-            await scopes[index].scoped(request, ScopedEndpoint(endpoint: endpoint, scopes: scopes, index: index + 1).call);
+            await scopes[index].scoped(
+                request,
+                ScopedEndpoint(endpoint: endpoint, scopes: scopes, index: index + 1).call
+            );
         }
-    }
-}
-
-hidden object RouteList {
-    has left is @Route;
-    has right is @Route;
-
-    RouteList(left is @Route, right is @Route) {
-        self.left = left;
-        self.right = right;
-    }
-
-    routes() is @Route {
-        let joined is @Route = (0..left.size() + right.size()).map() -> index {
-            if index < left.size() {
-                left[index];
-            }
-            else {
-                right[index - left.size()];
-            }
-        };
-        joined;
-    }
-}
-
-hidden object ScopeList {
-    has left is @ExceptionScope;
-    has right is @ExceptionScope;
-
-    ScopeList(left is @ExceptionScope, right is @ExceptionScope) {
-        self.left = left;
-        self.right = right;
-    }
-
-    scopes() is @ExceptionScope {
-        let joined is @ExceptionScope = (0..left.size() + right.size()).map() -> index {
-            if index < left.size() {
-                left[index];
-            }
-            else {
-                right[index - left.size()];
-            }
-        };
-        joined;
     }
 }
 
@@ -539,16 +855,87 @@ test "scope prefixes are absolute and have no trailing slash" {
     };
 }
 
+// Answers with its name, for the tests below.
 hidden object RoutingProbe {
-    RoutingProbe();
+    has name is string;
+
+    RoutingProbe(name is string) {
+        self.name = name;
+    }
 
     async answer(request is WebRequest) is Responding {
-        ProblemReply(status: Status.other(418), detail: "probe");
+        Response(status: Status.ok, headers: Headers(Header(name: "X-Answer", value: name)));
+    }
+
+    async refusal(request is WebRequest) is Responding {
+        throw Exception.status(409, name);
+    }
+}
+
+// Writes its name into the trace on the way in and on the way out, and may
+// refuse without calling inner.
+hidden object TraceAround does Surrounding {
+    has name is string;
+    has trace is Atomic<@string>;
+    has refuses is bool;
+
+    TraceAround(name is string, trace is Atomic<@string>, refuses is bool = false) {
+        self.name = name;
+        self.trace = trace;
+        self.refuses = refuses;
+    }
+
+    async around(request is WebRequest, inner is async (WebRequest) is Responding) is Responding {
+        trace.replace(trace.value() + [name + ">"]);
+        if refuses {
+            return ProblemReply(status: Status.unauthorized, detail: name + " refuses");
+        }
+        let answer = await inner(request);
+        let status = StatusCode(answer.response()::Head::status).number().string();
+        trace.replace(trace.value() + ["<" + name + " " + status]);
+        answer;
+    }
+}
+
+// What a table answers to a method and a path: the X-Answer of a probe, or the
+// status, with the Allow field of a 405.
+hidden object RoutingDispatch {
+    has routes is WebRoutes;
+
+    RoutingDispatch(routes is WebRoutes) {
+        self.routes = routes;
+    }
+
+    async answer(method is Method, path is string) is string {
+        let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(
+            local: IpEndpoint(address: IpAddress("127.0.0.1"), port: 80),
+            remote: IpEndpoint(address: IpAddress("127.0.0.1"), port: 50000)
+        );
+        let context = HttpRequestContext(
+            details: ExchangeDetails(endpoints: ends, version: HttpVersion.http_1_1),
+            cancellation: Cancellation().cancelling()
+        );
+        let request = Request(
+            target: OriginTarget(path: path, query: Maybe<string>.none),
+            method: method
+        );
+        let result = await routes.handling(request, context);
+        let response = result.response();
+        let headers = response::Head::headers;
+        let status = response::Head::status;
+        if status == Status.ok {
+            return headers.first(HeaderName("X-Answer"));
+        }
+        let code = StatusCode(status).number().string();
+        if status == Status.method_not_allowed {
+            return code + " " + headers.first(HeaderName("Allow"));
+        }
+        code;
     }
 }
 
 test "routes take one Fallback, and only at the top" {
-    let probe = RoutingProbe();
+    let probe = RoutingProbe("probe");
     WebRoutes(Get(path: "/a", endpoint: probe.answer), Fallback(probe.answer));
     WebRoutes(Scope("/api", Get(path: "/a", endpoint: probe.answer)));
     test.throws(InvalidWebRoute) {
@@ -557,6 +944,148 @@ test "routes take one Fallback, and only at the top" {
     test.throws(InvalidWebRoute) {
         WebRoutes(Scope("/api", Get(path: "/a", endpoint: probe.answer), Fallback(probe.answer)));
     };
+    test.throws(InvalidWebRoute) {
+        WebRoutes(Resource("/a", Get(probe.answer), Fallback(probe.answer)));
+    };
     test.is(Fallback(probe.answer).routes("", []).size(), 0);
 }
 
+async test "a resource writes its path once for several methods" {
+    let list = RoutingProbe("list");
+    let add = RoutingProbe("add");
+    let show = RoutingProbe("show");
+    let table = RoutingDispatch(
+        WebRoutes(
+            Resource("/notes", Get(list.answer), Post(add.answer)),
+            Scope("/api", Resource("/notes/:id", Get(show.answer)), Resource("", Get(list.answer))),
+        )
+    );
+    test.is(await table.answer(Method.get, "/notes"), "list");
+    test.is(await table.answer(Method.post, "/notes"), "add");
+    test.is(await table.answer(Method.head, "/notes"), "list");
+    test.is(await table.answer(Method.delete, "/notes"), "405 GET, HEAD, POST");
+    test.is(await table.answer(Method.get, "/api/notes/7"), "show");
+    test.is(await table.answer(Method.get, "/api"), "list");
+    test.throws(InvalidWebRoute) {
+        WebRoutes(Resource("/notes", Get(path: "/x", endpoint: list.answer)));
+    };
+    test.throws(InvalidWebRoute) {
+        WebRoutes(Resource("/notes", Scope("/x", Get(list.answer))));
+    };
+    test.throws(InvalidWebRoute) {
+        WebRoutes(Get(list.answer));
+    };
+}
+
+async test "Route takes any one method and Any every method" {
+    let options = RoutingProbe("options");
+    let proxy = RoutingProbe("proxy");
+    let health = RoutingProbe("health");
+    let table = RoutingDispatch(
+        WebRoutes(
+            Route(method: Method.options, path: "/notes", endpoint: options.answer),
+            Any(path: "/proxy/*rest", endpoint: proxy.answer),
+            Get(path: "/proxy/health", endpoint: health.answer),
+            Resource(
+                "/feed",
+                Route(method: Method.other("PROPFIND"), endpoint: options.answer),
+                Any(proxy.answer)
+            ),
+        )
+    );
+    test.is(await table.answer(Method.options, "/notes"), "options");
+    test.is(await table.answer(Method.get, "/notes"), "405 OPTIONS");
+    test.is(await table.answer(Method.get, "/proxy/health"), "health");
+    test.is(await table.answer(Method.put, "/proxy/health"), "proxy");
+    test.is(await table.answer(Method.other("PURGE"), "/proxy/a/b"), "proxy");
+    test.is(await table.answer(Method.other("PROPFIND"), "/feed"), "options");
+    test.is(await table.answer(Method.get, "/feed"), "proxy");
+}
+
+async test "arounds run outer before inner and may answer by themselves" {
+    let empty is @string = [];
+    let trace = Atomic(empty);
+    defer trace.close();
+    let stats = RoutingProbe("stats");
+    let conflict = RoutingProbe("taken");
+    let table = RoutingDispatch(
+        WebRoutes(
+            Get(path: "/open", endpoint: stats.answer),
+            Around(TraceAround(name: "log", trace: trace)),
+            Scope(
+                "/admin",
+                Around(TraceAround(name: "auth", trace: trace, refuses: true)),
+                Get(path: "/stats", endpoint: stats.answer),
+            ),
+            Resource(
+                "/notes",
+                Around(TraceAround(name: "notes", trace: trace)),
+                Post(conflict.refusal)
+            ),
+        )
+    );
+    test.is(await table.answer(Method.get, "/open"), "stats");
+    test.is(trace.value().join(" "), "log> <log 200");
+    trace.replace(empty);
+    test.is(await table.answer(Method.get, "/admin/stats"), "401");
+    test.is(trace.value().join(" "), "log> auth> <log 401");
+    trace.replace(empty);
+    test.is(await table.answer(Method.post, "/notes"), "409");
+    test.is(trace.value().join(" "), "log> notes> <notes 409 <log 409");
+    trace.replace(empty);
+    test.is(await table.answer(Method.get, "/missing"), "404");
+    test.is(trace.value().join(" "), "log> <log 404");
+    trace.replace(empty);
+    test.is(await table.answer(Method.delete, "/open"), "405 GET, HEAD");
+    test.is(trace.value().join(" "), "");
+}
+
+// A WebSocket application that is never reached in the tests below.
+hidden object SilentSocket does WebSocketHandling {
+    SilentSocket() {}
+
+    async handle(
+        connection is WebSocketConnection,
+        request is Request,
+        context is HttpRequestContext
+    ) is WebSocketHandling {
+        self;
+    }
+}
+
+async test "an around refuses a WebSocket upgrade or lets it go on" {
+    let empty is @string = [];
+    let trace = Atomic(empty);
+    defer trace.close();
+    let routes = WebRoutes(
+        Around(TraceAround(name: "log", trace: trace)),
+        WebSocket(path: "/open", application: SilentSocket()),
+        Scope(
+            "/admin",
+            Around(TraceAround(name: "auth", trace: trace, refuses: true)),
+            WebSocket(path: "/live", application: SilentSocket())
+        ),
+    );
+    let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(
+        local: IpEndpoint(address: IpAddress("127.0.0.1"), port: 80),
+        remote: IpEndpoint(address: IpAddress("127.0.0.1"), port: 50000)
+    );
+    let context = HttpRequestContext(
+        details: ExchangeDetails(endpoints: ends, version: HttpVersion.http_1_1),
+        cancellation: Cancellation().cancelling()
+    );
+    let open = await routes.handling(
+        Request(target: OriginTarget(path: "/open", query: Maybe<string>.none)),
+        context
+    );
+    test.is(open.kind(), HandlingKind.websocket);
+    test.is(trace.value().join(" "), "log> <log 204");
+    trace.replace(empty);
+    let live = await routes.handling(
+        Request(target: OriginTarget(path: "/admin/live", query: Maybe<string>.none)),
+        context
+    );
+    test.is(live.kind(), HandlingKind.response);
+    test.is(live.response()::Head::status, Status.unauthorized);
+    test.is(trace.value().join(" "), "log> auth> <log 401");
+}
