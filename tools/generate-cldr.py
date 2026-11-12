@@ -78,34 +78,57 @@ print(f'compiled {len(groups)} rule groups for {len(models[0])} cardinal / {len(
 # parent value 'und'. Keep that distinction at the public data-key boundary.
 parents = json.loads((args.source / 'parentLocales.json').read_text())['supplemental']['parentLocales']['parentLocale']
 parents = {k: ('root' if v == 'und' else v) for k, v in parents.items()}
-parent_text = json.dumps(parents, separators=(',',':')).replace('{','[',1)[:-1] + ']'
+# The tables below are runtime data (#223); the modules only name them.
+from cldr_data import Tables
+tables = Tables('locales')
+for tag, value in sorted(parents.items()):
+    tables.add('parent', tag, [value])
 (args.output.parent / 'parents.ok').write_text('''module locale/internal/parents v1.0.0;
-// Generated from SHA-checked CLDR 46.1.0 parentLocales.json.
+
+// Generated from SHA-checked CLDR 46.1.0 parentLocales.json by
+// tools/generate-cldr.py. The table is runtime data (cldr-locales.dat, #223).
+import "runtime/cldr" take cldr_fields;
+
 object CldrParents {
- has values is %string:string;
- CldrParents() {values=''' + parent_text + ''';}
- parent(tag is string) is string {if values.has(tag) {values[tag];} else {"";}}
+    CldrParents();
+
+    // The explicit parent of a locale tag; empty when CLDR names none.
+    parent(tag is string) is string {
+        let found = cldr_fields("locales.parent", tag);
+        if found.size() > 0 {
+            found[0];
+        }
+        else {
+            "";
+        };
+    }
 }
 ''')
 likely = json.loads((args.source / 'likelySubtags.json').read_text())['supplemental']['likelySubtags']
 keys = sorted(likely)
 if any('|' in value for value in list(likely) + list(likely.values())):
     raise ValueError('unsafe table delimiter')
+for key in keys:
+    tables.add('likely', key, [likely[key]])
 (args.output.parent / 'likely.ok').write_text('''module locale/internal/likely v1.0.0;
-// Generated from SHA-checked CLDR 46.1.0 likelySubtags.json; ASCII sorted keys.
-// Compact literals avoid thousands of AST entries; lookup is binary search.
-import "compare" take Order;
+
+// Generated from SHA-checked CLDR 46.1.0 likelySubtags.json by
+// tools/generate-cldr.py. The table is runtime data (cldr-locales.dat, #223).
+import "runtime/cldr" take cldr_fields;
+
 object CldrLikely {
- has keys, values is @string;
- CldrLikely() {keys=''' + json.dumps('|'.join(keys)) + '''.split("|");values=''' + json.dumps('|'.join(likely[k] for k in keys)) + '''.split("|");}
- lookup(key is string) is string {self.search(key,0,keys.size());}
- hidden search(key is string,start is int,stop is int) is string {
-  if start>=stop {return "";}
-  let middle=start+((stop-start)/2).int();
-  let order=key.order(keys[middle]);
-  if order==Order.equal {return values[middle];}
-  if order==Order.less {self.search(key,start,middle);} else {self.search(key,middle+1,stop);}
- }
+    CldrLikely();
+
+    // The likely full tag of a key; empty for an unknown key.
+    lookup(key is string) is string {
+        let found = cldr_fields("locales.likely", key);
+        if found.size() > 0 {
+            found[0];
+        }
+        else {
+            "";
+        };
+    }
 }
 ''')
 print(f'compiled {len(parents)} parents and {len(keys)} likely-subtag records')
@@ -142,30 +165,32 @@ for tag, data in sorted(lists['main'].items()):
 list_keys = sorted(list_rows)
 if 'root' not in list_rows:
     raise ValueError('missing root list patterns')
-text = '''module locale/internal/lists v1.0.0;
-// Generated from SHA-checked CLDR 46.1.0 list patterns. Profiles store
-// pair/start/middle/end as prefix, separator, suffix; items stay literal.
-import "compare" take Order;
-import "strings/parse" take Number;
+for key in list_keys:
+    tables.add('list', key, list_rows[key])
+for profile, index in profiles.items():
+    tables.add('list_profile', index, list(profile))
+data, records, size = tables.save()
+(args.output.parent / 'lists.ok').write_text('''module locale/internal/lists v1.0.0;
+
+// Generated from SHA-checked CLDR 46.1.0 list patterns by
+// tools/generate-cldr.py. Profiles store pair/start/middle/end as prefix,
+// separator, suffix; items stay literal. The tables are runtime data
+// (cldr-locales.dat, #223).
+import "runtime/cldr" take cldr_fields;
+
 object CldrLists {
- has keys,rows,profiles is @string;
- CldrLists() {
- keys=KEYS.split("|");rows=ROWS.split("|");profiles=PROFILES;
- }
- lookup(tag is string,style is int) is @string {
-  let position=self.search(tag,0,keys.size());
-  if position<0 {let empty is @string=[];return empty;}
-  let row=rows[position].split(",");profiles[Number(row[style]).int()].split("|");
- }
- hidden search(key is string,start is int,stop is int) is int {
-  if start>=stop {return -1;}let middle=start+((stop-start)/2).int();
-  let order=key.order(keys[middle]);if order==Order.equal{return middle;}
-  if order==Order.less{self.search(key,start,middle);}else{self.search(key,middle+1,stop);}
- }
+    CldrLists();
+
+    // The twelve fragments of a locale's list style; empty for an unknown tag.
+    lookup(tag is string, style is int) is @string {
+        let row = cldr_fields("locales.list", tag);
+        if row.size() == 0 {
+            let empty is @string = [];
+            return empty;
+        }
+        cldr_fields("locales.list_profile", row[style]);
+    }
 }
-'''
-text = text.replace('KEYS',json.dumps('|'.join(list_keys)))
-text = text.replace('ROWS',json.dumps('|'.join(','.join(map(str,list_rows[k])) for k in list_keys)))
-text = text.replace('PROFILES',json.dumps(['|'.join(p) for p in profiles],ensure_ascii=False,separators=(',',':')))
-(args.output.parent / 'lists.ok').write_text(text)
+''')
+print(f'{records} records, {size} bytes in {data.name}')
 print(f'compiled {len(list_keys)} list locales / {len(profiles)} unique profiles')

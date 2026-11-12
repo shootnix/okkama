@@ -75,38 +75,92 @@ for tag,entry in sorted(numbers.items()):
  default=entry['defaultNumberingSystem'];default=default if default in systems else 'latn'
  rows[tag]='|'.join([','.join(systems),','.join(map(str,ids)),str(ids[systems.index(default)])])
 
-def literal(v):return json.dumps(v,ensure_ascii=False,separators=(',',':'))
-def mapping(v):return literal(v).replace('{','[',1)[:-1]+']' if v else '[:]'
-text=['module locale/internal/currencies v1.0.0;','// Generated from SHA-checked SIX ISO 4217 2026-09-17 and CLDR 46.1.0.',
-'import "compare" take Order;import "strings/parse" take Number;',
-'object CldrCurrencies {has tags,rows is @string;',
-'CldrCurrencies(){tags='+literal('|'.join(rows))+'.split("|");rows='+literal('|'.join(rows.values()))+'.split("|");}',
-'digits(code is string) is string{let values is %string:string='+mapping(codes)+';if values.has(code){values[code];}else{"";}}',
-'profile(tag is string,system is string) is int{let index=self.search(tag,0,tags.size());if index<0{return -1;}let names=rows[index*3].split(",");let ids=rows[index*3+1].split(",");for (0..names.size())->at{if names[at]==system{return Number(ids[at]).int();}}Number(rows[index*3+2]).int();}',
-'fields(profile is int) is @string{']
-for i,m in enumerate(profiles):text.append('if profile=='+str(i)+'{return '+literal(m['fields'])+'.split("|");}')
-text+=['let empty is @string=[];empty;}','compact(profile is int) is %string:string{']
-for i,m in enumerate(profiles):text.append('if profile=='+str(i)+'{return '+mapping(m['compact'])+';}')
-text+=['[:];}','currency(tag is string,code is string) is @string{']
-chunks=[];chunk=[];size=0
+from cldr_data import Tables
+
+# The tables are runtime data (#223); the module only names them.
+tables=Tables('currencies')
+for code,value in sorted(codes.items()):tables.add('digits',code,[value])
+for tag,row in rows.items():tables.add('row',tag,row.split('|'))
+for i,m in enumerate(profiles):
+ tables.add('fields',i,m['fields'].split('|'))
+ tables.add('compact',i,[part for key,value in m['compact'].items() for part in (key,value)])
 for tag,row in name_rows.items():
- width=len(literal(row).encode())+len(tag)+96
- if chunk and size+width>65536:chunks.append(chunk);chunk=[];size=0
- chunk.append((tag,row));size+=width
-if chunk:chunks.append(chunk)
+ values=row.split('|')
+ for at in range(0,len(values),10):tables.add('name',tag+'|'+values[at],values[at+1:at+10])
+for char in letters:tables.add('letter',char,['1'])
+data,records,size=tables.save()
+for stale in args.output.parent.glob('currency_names_*.ok'):stale.unlink()
+(args.output.parent/'currency_rows.ok').unlink(missing_ok=True)
 args.output.parent.mkdir(exist_ok=True,parents=True)
-imports=[]
-for index,chunk in enumerate(chunks):
- name='CurrencyNames'+str(index);module='locale/internal/currency_names_'+str(index)
- imports.append('import "'+module+'" take '+name+';')
- text.append('if tag.order('+literal(chunk[-1][0])+')!=Order.greater{return '+name+'().row(tag,code);}')
- lines=['module '+module+' v1.0.0;','// Generated bounded CLDR currency translation delta shard.', 'import "locale/internal/currency_rows" take CurrencyTranslationRows;', 'object '+name+' {'+name+'();row(tag is string,code is string) is @string{']
- for tag,row in chunk:lines.append('if tag=='+literal(tag)+'{return CurrencyTranslationRows('+literal(row)+').row(code);}')
- lines.append('let empty is @string=[];empty;}}')
- (args.output.parent/('currency_names_'+str(index)+'.ok')).write_text('\n'.join(lines)+'\n')
-text[1:1]=imports
-text+=['let empty is @string=[];empty;}', 'hidden search(tag is string,start is int,stop is int) is int{if start>=stop{return -1;}let middle=start+((stop-start)/2).int();let order=tag.order(tags[middle]);if order==Order.equal{return middle;}if order==Order.less{self.search(tag,start,middle);}else{self.search(tag,middle+1,stop);}}', '}', 'object CurrencySymbolLetters {CurrencySymbolLetters();membership(origin is string) is bool{origin.length()==1 && '+literal(letters)+'.split(origin).size()>1;}}']
-helper_text='module locale/internal/currency_rows v1.0.0;\n// Generated immutable packed currency row search.\nimport "compare" take Order;\n'+'object CurrencyTranslationRows {\nhas fields is @string;CurrencyTranslationRows(origin is string){fields=origin.split("|");}\nrow(code is string) is @string{let index=self.search(code,0,(fields.size()/10).int());if index<0{let empty is @string=[];return empty;}let values is @string=(1..10).map()->offset{fields[index*10+offset];};values;}\nhidden search(code is string,start is int,stop is int) is int{if start>=stop{return -1;}let middle=start+((stop-start)/2).int();let order=code.order(fields[middle*10]);if order==Order.equal{return middle;}if order==Order.less{self.search(code,start,middle);}else{self.search(code,middle+1,stop);}}\n}'+'\n'
-(args.output.parent/'currency_rows.ok').write_text(helper_text)
-args.output.parent.mkdir(exist_ok=True,parents=True);args.output.write_text('\n'.join(text)+'\n')
-print(f'compiled {len(codes)} ISO codes, {len(rows)} locale profiles, {len(profiles)} unique profiles, {len(name_rows)} translation delta rows; {args.output.stat().st_size} main bytes, {len(chunks)} bounded name modules')
+args.output.write_text('''module locale/internal/currencies v1.0.0;
+
+// Generated from SHA-checked SIX ISO 4217 2026-09-17 and CLDR 46.1.0 by
+// tools/generate-cldr-currencies.py. The tables are runtime data
+// (cldr-currencies.dat, #223).
+import "runtime/cldr" take cldr_fields;
+import "strings/parse" take Number;
+
+object CldrCurrencies {
+    CldrCurrencies();
+
+    // ISO 4217 minor units ("0", "2", "3", "4" or "N.A."); empty for an
+    // unknown code.
+    digits(code is string) is string {
+        let found = cldr_fields("currencies.digits", code);
+        if found.size() > 0 {
+            found[0];
+        }
+        else {
+            "";
+        };
+    }
+
+    // The currency profile of a locale tag and numbering system: the
+    // system's own, else the locale's default; -1 for an unknown tag.
+    profile(tag is string, system is string) is int {
+        let row = cldr_fields("currencies.row", tag);
+        if row.size() == 0 {
+            return -1;
+        }
+        let names = row[0].split(",");
+        let ids = row[1].split(",");
+        for (0..names.size()) -> at {
+            if names[at] == system {
+                return Number(ids[at]).int();
+            }
+        }
+        Number(row[2]).int();
+    }
+
+    // Standard, accounting and alphabetic-boundary patterns, unit patterns
+    // by plural category, and the currency decimal and group symbols.
+    fields(profile is int) is @string {
+        cldr_fields("currencies.fields", profile.string());
+    }
+
+    // Compact patterns by "exponent:category" and "exponent:category:alpha".
+    compact(profile is int) is %string:string {
+        let pairs = cldr_fields("currencies.compact", profile.string());
+        let empty is %string:string = [:];
+        (0..(pairs.size() / 2).int()).reduce(empty) -> kept, index {
+            kept + [pairs[index * 2]: pairs[index * 2 + 1]];
+        };
+    }
+
+    // Display name, the names by plural category, symbol and narrow symbol
+    // that a locale tag itself gives a currency; empty when it gives none.
+    currency(tag is string, code is string) is @string {
+        cldr_fields("currencies.name", tag + "|" + code);
+    }
+}
+
+object CurrencySymbolLetters {
+    CurrencySymbolLetters();
+
+    // Is a one-character text a letter at a currency symbol's boundary?
+    membership(origin is string) is bool {
+        origin.length() == 1 && cldr_fields("currencies.letter", origin).size() > 0;
+    }
+}
+''')
+print(f'compiled {len(codes)} ISO codes, {len(rows)} locale profiles, {len(profiles)} unique profiles, {len(name_rows)} translation delta rows; {records} records, {size} bytes in {data.name}')

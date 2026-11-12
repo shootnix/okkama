@@ -8,6 +8,7 @@ use std::rc::Rc;
 pub mod application;
 pub mod buffer;
 pub mod bytes;
+pub mod cldr;
 pub mod collation;
 pub mod compression;
 pub mod encoding;
@@ -115,6 +116,7 @@ pub fn execute(
         Provider::Buffer => buffer::execute(native, args, arrays),
         Provider::Compression => compression::execute(native, args, arrays),
         Provider::Signal => signal::execute(native, args),
+        Provider::Cldr => cldr::execute(native, args),
         Provider::Streams => context.streams.execute(
             native,
             args,
@@ -162,6 +164,7 @@ enum Provider {
     Buffer,
     Compression,
     Signal,
+    Cldr,
     Streams,
     /// UTF-8/16/32 и всё, чего нет у других providers (там — `Unsupported`).
     Utf,
@@ -255,6 +258,9 @@ fn route(native: Native) -> Provider {
     }
     if signal::handles(native) {
         return Provider::Signal;
+    }
+    if cldr::handles(native) {
+        return Provider::Cldr;
     }
     if matches!(
         native,
