@@ -554,12 +554,13 @@ hidden object PlistXmlEvents {
     root() is PlistValue {
         let error = xml_events_error(state);
         // The tokenizer's bounds are the plist's node and depth budgets.
-        let reason = if error.starts_with("elements nested deeper") || error.starts_with("more than") {
-            "node or depth budget exceeded";
-        }
-        else {
-            error;
-        };
+        let reason = if error.starts_with("elements nested deeper")
+            || error.starts_with("more than") {
+                "node or depth budget exceeded";
+            }
+            else {
+                error;
+            };
         confirm error == "" else throw self.located(xml_events_offset(state), reason);
         let wrapper = self.significant(0);
         confirm wrapper < count

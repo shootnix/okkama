@@ -630,7 +630,9 @@ test "mixed array retains order and dispatches snapshot" {
 }
 
 test "ordered literal table names and typed lookup" {
-    let table = TomlTable(TomlMember(name: "", value: TomlInteger(9007199254740993)), TomlMember(name: "a.b", value: TomlBoolean(true))
+    let table = TomlTable(
+        TomlMember(name: "", value: TomlInteger(9007199254740993)),
+        TomlMember(name: "a.b", value: TomlBoolean(true))
     );
     test.ok(table.membership(""));
     test.ok(table.membership("a.b"));
@@ -652,7 +654,10 @@ test "ordered literal table names and typed lookup" {
 
 test "duplicate keys reject and distinct Unicode names survive" {
     try {
-        TomlTable(TomlMember(name: "x", value: TomlBoolean(true)), TomlMember(name: "x", value: TomlBoolean(false)));
+        TomlTable(
+            TomlMember(name: "x", value: TomlBoolean(true)),
+            TomlMember(name: "x", value: TomlBoolean(false))
+        );
         test.fail("duplicate accepted");
     }
     catch DuplicateTomlMember.name(name) {
@@ -703,7 +708,10 @@ test "temporal coordinates preserve year zero and leap notation" {
     test.is([date::Calendar::year, date::Calendar::month, date::Calendar::day], [0, 2, 29]);
     test.is(date.string(), "0000-02-29");
     let time = TomlLocalTime(hour: 23, minute: 59, second: 60, nanosecond: 123400000);
-    test.is([time::Clock::hour, time::Clock::minute, time::Clock::second, time::Clock::nanosecond], [23, 59, 60, 123400000]);
+    test.is(
+        [time::Clock::hour, time::Clock::minute, time::Clock::second, time::Clock::nanosecond],
+        [23, 59, 60, 123400000]
+    );
     test.is(time.string(), "23:59:60.1234");
     let local = TomlLocalDateTime(date: date, time: time);
     test.is(local.date(), date);
@@ -723,8 +731,14 @@ test "temporal coordinates preserve year zero and leap notation" {
 test "temporal canonical boundaries and precision" {
     test.is(TomlLocalDate(year: 9999, month: 12, day: 31).string(), "9999-12-31");
     test.is(TomlLocalTime(hour: 0, minute: 0, second: 0, nanosecond: 0).string(), "00:00:00");
-    test.is(TomlLocalTime(hour: 1, minute: 2, second: 3, nanosecond: 1).string(), "01:02:03.000000001");
-    test.is(TomlLocalTime(hour: 1, minute: 2, second: 3, nanosecond: 999999999).string(), "01:02:03.999999999");
+    test.is(
+        TomlLocalTime(hour: 1, minute: 2, second: 3, nanosecond: 1).string(),
+        "01:02:03.000000001"
+    );
+    test.is(
+        TomlLocalTime(hour: 1, minute: 2, second: 3, nanosecond: 999999999).string(),
+        "01:02:03.999999999"
+    );
     test.is(TomlOffset(0).string(), "Z");
     test.is(TomlOffset(1439).string(), "+23:59");
     test.is(TomlOffset(-1439).string(), "-23:59");

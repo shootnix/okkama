@@ -364,7 +364,9 @@ test "plist scalar payloads keep their own nominal kinds" {
 }
 
 test "plist containers preserve order and exact member names" {
-    let value = PlistDictionary(PlistMember(name: "z", value: PlistBoolean(true)), PlistMember(name: "", value: PlistString("last"))
+    let value = PlistDictionary(
+        PlistMember(name: "z", value: PlistBoolean(true)),
+        PlistMember(name: "", value: PlistString("last"))
     );
     test.is(value.members().item(0).name(), "z");
     test.is(value.members().item(1).name(), "");
@@ -386,7 +388,10 @@ test "plist missing duplicate and cardinality failures are typed" {
     );
     test.is(
         try {
-            PlistDictionary(PlistMember(name: "x", value: PlistString("")), PlistMember(name: "x", value: PlistString("")));
+            PlistDictionary(
+                PlistMember(name: "x", value: PlistString("")),
+                PlistMember(name: "x", value: PlistString(""))
+            );
             "bad";
         }
         catch DuplicatePlistMember.name(name) {
