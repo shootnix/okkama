@@ -375,6 +375,25 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   responses are not chunked, and keep-alive applies only when asked for.
 - **RequestJson readers share one translation of reading failures (#84).**
 - **The gate prints the output tail of a new std failure (#502).**
+- **std hot paths without a string per character (#161, #170, #234).**
+  Release builds, nanoseconds per operation (median of 5):
+
+  | operation | Sparrow before → after | IR before → after |
+  |---|---|---|
+  | `MediaType("multipart/form-data; charset=utf-8; boundary=\"…\"")` | 25 426 → 5 923 | 338 750 → 272 642 |
+  | the same with an extended parameter decoding to Cyrillic | 34 156 → 11 093 | 422 202 → 383 787 |
+  | `Number("12345.6789").float()` and two more readings | 2 276 → 620 | 19 637 → 2 995 |
+
+  - `mime/media_type` encodes the field body once and compares byte codes;
+    token characters are one code class, quoted strings are copied in runs.
+  - `strings/parse`: a dotted `float()` is read by the new native
+    `runtime/number_text::float_parse`, rounded to the nearest float (before
+    it rounded twice); `byte()` uses the integer reader.
+  - About 60 places in std that joined arrays through a copying `map` now
+    write `a + b`, `old + [item]` or `[item] + old`; the hello server's
+    throughput is unchanged (18 200 requests/s on Sparrow).
+  - 17 module comments told readers to run the removed Perl tool; they say
+    `okkama run -t` now (#179).
 
 ## [0.5.4] — 2026-11-12
 
