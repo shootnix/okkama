@@ -39,13 +39,31 @@ object HeaderName does Comparing<HeaderName> {
 
 // A logical field value uses one Unicode scalar per wire octet (Latin-1).
 // No folding or implicit Unicode encoding; only edge SP/HTAB are removed.
-object Header {
+// A field of a message head, what Headers are made of: a Header is one, and
+// so is anything that knows its header form, such as a SetCookie.
+role HeaderField {
+    header() is Header;
+}
+
+object Header does HeaderField {
     has name is HeaderName;
     has value is string;
 
     Header(name is HeaderName, value is string) {
         self.name = name;
         self.value = HttpFieldValue(name: name, origin: value).string();
+    }
+
+    // Header(name: "Cache-Control", value: "no-store"): the name is checked as
+    // a field name here (#111).
+    Header(name is string, value is string) {
+        let field = HeaderName(name);
+        self.name = field;
+        self.value = HttpFieldValue(name: field, origin: value).string();
+    }
+
+    header() is Header {
+        self;
     }
 
     name() is HeaderName {
@@ -164,9 +182,13 @@ object Headers {
         limits = bounds;
     }
 
-    // The same, one argument per part: Headers(a, b).
-    Headers(entries is ...Header) {
-        let listed is @Header = entries...;
+    // The fields one by one: Headers(Header(name: "X-Trace", value: id),
+    // SetCookie(name: "sid", value: token)).
+    Headers(fields is ...HeaderField) {
+        let given is @HeaderField = fields...;
+        let listed is @Header = given.map() -> field {
+            field.header();
+        };
         let bounds = HeaderLimits();
         let snapshot = HeaderSnapshot(entries: listed, limits: bounds);
         origin = snapshot.entries();

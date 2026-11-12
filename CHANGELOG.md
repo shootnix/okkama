@@ -79,6 +79,33 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     instead of allocating Rust memory for every `map` or `filter`.
   - A 1 MiB streamed response takes 0.4 ms instead of 42 ms; a 1 MiB upload
     1.8 ms instead of 51 ms.
+- **Web replies build a Response; headers are fields (#82, #207, #220).**
+  The owner, 2026-11-12: «базовый объект Response, который собирается
+  максимально подробно, а Text, Json, Html — надстройки-декораторы с
+  понятными дефолтами»; «куки это часть заголовка, а не метод тела ответа».
+  - An endpoint answers anything `Responding` (a new role in http/message):
+    a `Response` built in full, or a reply that builds one with the defaults
+    of its kind and takes `status:` and `headers:` for what differs.
+  - The replies carry a `Reply` suffix: `TextReply("ok")`, `HtmlReply`,
+    `JsonReply`, `CreatedReply`, `RedirectReply("/notes")` (303 unless told),
+    `NoContentReply()`, `ProblemReply(status:, detail:)`. Statuses are
+    `Status` values. The `.header(name, value)` successors are gone.
+  - Headers are fields one by one: `Headers(Header(name: "Cache-Control",
+    value: "no-store"), SetCookie(name: "sid", value: token),
+    ExpiredCookie("old"))`. `Header` takes its name as a string; a
+    `SetCookie` defaults to Path=/, Secure, HttpOnly and SameSite=Lax and
+    takes `max_age:`.
+  - `WebSocket(path:, application:)` routes a WebSocket; a `WebApplication`
+    server knows its own URL to check the Origin of an upgrade.
+
+  | Before | After |
+  |---|---|
+  | `async show(r is WebRequest) is HandlingResult` | `async show(r is WebRequest) is Responding` |
+  | `Text(status: 200, text: "ok")` | `TextReply("ok")` |
+  | `JsonReply(status: 201, value: v)` | `JsonReply(value: v, status: Status.created)` |
+  | `Problem(401, "expired").header("WWW-Authenticate", "Bearer")` | `ProblemReply(status: Status.unauthorized, detail: "expired", headers: Headers(Header(name: "WWW-Authenticate", value: "Bearer")))` |
+  | `.header("Set-Cookie", "sid=…; Path=/; HttpOnly")` | `headers: Headers(SetCookie(name: "sid", value: token))` |
+
 - **The server answers HTTP/1.0 (#102).** `ab` works: no Host is required,
   responses are not chunked, and keep-alive applies only when asked for.
 - **RequestJson readers share one translation of reading failures (#84).**

@@ -3,13 +3,20 @@ module web/app v1.0.0;
 import "http/server" take HttpServer;
 import "http/server_policy" take ServerPolicy;
 import "net/tcp" take TcpListening;
-import "net/ip" take IpAddress;
+import "net/ip" take IpAddress, IpVersion;
+import "url/value" take ParsedUrl;
 import "time/clock" take Timing, SystemClock;
-import "web/routing" take WebRoutes, Get, Post, Scope, Fallback;
+import "web/routing" take WebRoutes, Get, Post, Scope, Fallback, WebSocket;
 import "web/request" take WebRequest;
 import "http/method" take MethodName;
-import "web/reply" take Text;
-import "http/handler" take HandlingResult;
+import "web/reply" take TextReply;
+import "http/message" take Responding, Request;
+import "http/handler" take WebSocketHandling;
+import "http/request_context" take HttpRequestContext;
+import "http/header" take Headers, Header;
+import "http/websocket" take WebSocketConnection, WebSocketLimits, TextWebSocketMessage, WebSocketClosed;
+import "http/websocket_client" take WebSocketConnecting, WebSocketPolicy;
+import "net/dns" take FixedResolution;
 import "http/client" take HttpClient;
 import "http/endpoint" take LoopbackEndpoints;
 import "http/body" take TextBody;
@@ -43,9 +50,19 @@ object WebApplication {
         self.clock = clock;
     }
 
+    // The server knows its own URL, so a WebSocket route can check the Origin
+    // of an upgrade against it.
     async server(address is string, port is int) is HttpServer {
-        let listener = await TcpListening(port: port, address: IpAddress(address)).listener();
-        HttpServer(listener: listener, handling: routes.table(), policy: policy, clock: clock);
+        let host = IpAddress(address);
+        let listener = await TcpListening(port: port, address: host).listener();
+        let literal = if host.version() == IpVersion.v6 {
+            "[" + host.string() + "]";
+        }
+        else {
+            host.string();
+        };
+        let own = ParsedUrl("http://" + literal + ":" + listener::Local::port.string() + "/").parts();
+        HttpServer(listener: listener, handling: routes.table(), url: own, policy: policy, clock: clock);
     }
 
     async listen(address is string, port is int) is void {
@@ -59,16 +76,33 @@ object WebApplication {
 hidden object Greetings {
     Greetings();
 
-    async hello(request is WebRequest) is HandlingResult {
-        Text(status: 200, text: "Hello, " + request.path("name") + (request.query("mark") else "") + "!");
+    async hello(request is WebRequest) is Responding {
+        TextReply("Hello, " + request.path("name") + (request.query("mark") else "") + "!");
     }
 
-    async echo(request is WebRequest) is HandlingResult {
-        Text(status: 201, text: (await request.text(1024)).upper());
+    async echo(request is WebRequest) is Responding {
+        TextReply(text: (await request.text(1024)).upper(), status: Status.created);
     }
 
-    async missing(request is WebRequest) is HandlingResult {
-        Text(status: 404, text: "no " + MethodName(request.method()).string() + " here");
+    async missing(request is WebRequest) is Responding {
+        TextReply(text: "no " + MethodName(request.method()).string() + " here", status: Status.not_found);
+    }
+}
+
+hidden object Shouting does WebSocketHandling {
+    Shouting();
+
+    async handle(connection is WebSocketConnection, request is Request, context is HttpRequestContext) is WebSocketHandling {
+        try {
+            loop {
+                let message = await connection.message();
+                await connection.send(TextWebSocketMessage(message.text().upper()));
+            }
+        }
+        catch e is WebSocketClosed {
+            self;
+        }
+        self;
     }
 }
 
@@ -79,6 +113,7 @@ async test "a web application routes requests over loopback and drains" {
             Get(path: "/hello/:name", endpoint: greetings.hello),
             Post(path: "/echo", endpoint: greetings.echo),
         ),
+        WebSocket(path: "/shout", application: Shouting()),
         Fallback(greetings.missing),
     );
     let server = (await WebApplication(routes).server("127.0.0.1", 0)).started();
@@ -91,6 +126,20 @@ async test "a web application routes requests over loopback and drains" {
     let lost = await client.get(base + "/nowhere");
     test.is(lost::Head::status, Status.not_found);
     test.is(await lost.text(), "no GET here");
+    let socket = await WebSocketConnecting(
+        url: ParsedUrl("ws://127.0.0.1:" + server::Local::port.string() + "/shout").parts(),
+        headers: Headers(Header(name: "Origin", value: base)),
+        resolver: FixedResolution(),
+        policy: WebSocketPolicy(
+            limits: WebSocketLimits(),
+            opening: Duration(seconds: 5),
+            closing: Duration(seconds: 2),
+            access: LoopbackEndpoints(),
+        ),
+    ).connection();
+    await socket.send(TextWebSocketMessage("hey"));
+    test.is((await socket.message()).text(), "HEY");
+    await socket.close(1000, "bye");
     client.close();
     await server.drain(limit: Duration(seconds: 5));
 }

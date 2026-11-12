@@ -1,15 +1,21 @@
 module web/routing v1.0.0;
 
 import "http/routing" take Routes, Route, RoutePattern, RouteRejecting;
-import "http/handler" take Handling, HandlingResult;
+import "http/handler" take Handling, HandlingResult, ResponseHandling, WebSocketHandling, WebSocketHandlingResult;
 import "http/request_context" take HttpRequestContext;
-import "http/message" take Request;
+import "http/message" take Request, Responding;
+import "http/status" take Status, StatusCode;
+import "http/header" take Headers, Header;
+import "http/websocket" take WebSocketLimits;
+import "http/websocket_server" take WebSocketUpgrade;
+import "http/websocket_origin" take SameOriginWebSockets;
+import "time/duration" take Duration;
 import "http/method" take Method, MethodName;
 import "web/request" take WebRequest;
-import "web/exception" take Exception, Problem;
+import "web/exception" take Exception, ProblemReply;
 
 // Route tables built from controller actions. An endpoint is any bound action
-// of type `async (WebRequest) is HandlingResult`, so one controller object can
+// of type `async (WebRequest) is Responding`, so one controller object can
 // serve many routes and keep its dependencies in its own fields:
 //
 //     WebRoutes(
@@ -47,7 +53,7 @@ import "web/exception" take Exception, Problem;
 // cancellation and timeouts keep their std meaning.
 
 role ExceptionScope {
-    async scoped(request is WebRequest, endpoint is async (WebRequest) is HandlingResult) is HandlingResult;
+    async scoped(request is WebRequest, endpoint is async (WebRequest) is Responding) is Responding;
 }
 
 role WebRouting {
@@ -60,7 +66,7 @@ role WebRouting {
 object Get does WebRouting {
     has origin is MethodRoute;
 
-    Get(path is string, endpoint is async (WebRequest) is HandlingResult) {
+    Get(path is string, endpoint is async (WebRequest) is Responding) {
         origin = MethodRoute(method: Method.get, path: path, endpoint: endpoint);
     }
 
@@ -76,7 +82,7 @@ object Get does WebRouting {
 object Post does WebRouting {
     has origin is MethodRoute;
 
-    Post(path is string, endpoint is async (WebRequest) is HandlingResult) {
+    Post(path is string, endpoint is async (WebRequest) is Responding) {
         origin = MethodRoute(method: Method.post, path: path, endpoint: endpoint);
     }
 
@@ -92,7 +98,7 @@ object Post does WebRouting {
 object Put does WebRouting {
     has origin is MethodRoute;
 
-    Put(path is string, endpoint is async (WebRequest) is HandlingResult) {
+    Put(path is string, endpoint is async (WebRequest) is Responding) {
         origin = MethodRoute(method: Method.put, path: path, endpoint: endpoint);
     }
 
@@ -108,7 +114,7 @@ object Put does WebRouting {
 object Patch does WebRouting {
     has origin is MethodRoute;
 
-    Patch(path is string, endpoint is async (WebRequest) is HandlingResult) {
+    Patch(path is string, endpoint is async (WebRequest) is Responding) {
         origin = MethodRoute(method: Method.patch, path: path, endpoint: endpoint);
     }
 
@@ -124,7 +130,7 @@ object Patch does WebRouting {
 object Delete does WebRouting {
     has origin is MethodRoute;
 
-    Delete(path is string, endpoint is async (WebRequest) is HandlingResult) {
+    Delete(path is string, endpoint is async (WebRequest) is Responding) {
         origin = MethodRoute(method: Method.delete, path: path, endpoint: endpoint);
     }
 
@@ -194,9 +200,9 @@ object Scope does WebRouting {
 // The answer for requests no route matches: WebRoutes(Get(…), Fallback(app.missing)).
 // Without one, WebRoutes answers 404 with a problem body.
 object Fallback does WebRouting {
-    has endpoint is async (WebRequest) is HandlingResult;
+    has endpoint is async (WebRequest) is Responding;
 
-    Fallback(endpoint is async (WebRequest) is HandlingResult) {
+    Fallback(endpoint is async (WebRequest) is Responding) {
         self.endpoint = endpoint;
     }
 
@@ -210,7 +216,7 @@ object Fallback does WebRouting {
     }
 
     // The endpoint it answers with.
-    answering() is async (WebRequest) is HandlingResult {
+    answering() is async (WebRequest) is Responding {
         endpoint;
     }
 }
@@ -234,7 +240,7 @@ object WebRoutes does Handling {
         origin = WebRouteTable(routings: listed, scopes: single, fallback: WebFallbackOf(listed).endpoint()).routes();
     }
 
-    WebRoutes(routings is @WebRouting, fallback is async (WebRequest) is HandlingResult) {
+    WebRoutes(routings is @WebRouting, fallback is async (WebRequest) is Responding) {
         let bare is @ExceptionScope = [];
         origin = WebRouteTable(routings: routings, scopes: bare, fallback: fallback).routes();
     }
@@ -242,7 +248,7 @@ object WebRoutes does Handling {
     WebRoutes(
         routings is @WebRouting,
         exceptions is ExceptionScope,
-        fallback is async (WebRequest) is HandlingResult
+        fallback is async (WebRequest) is Responding
     ) {
         let single is @ExceptionScope = [exceptions];
         origin = WebRouteTable(routings: routings, scopes: single, fallback: fallback).routes();
@@ -267,7 +273,7 @@ hidden object WebFallbackOf {
         self.routings = routings;
     }
 
-    endpoint() is async (WebRequest) is HandlingResult {
+    endpoint() is async (WebRequest) is Responding {
         let found is @Fallback = routings.reduce([]) -> kept, routing {
             match routing.fallback() {
                 case Maybe.some(fallback) {
@@ -291,20 +297,20 @@ hidden object WebFallbackOf {
 hidden object WebNotFound {
     WebNotFound();
 
-    async answer(request is WebRequest) is HandlingResult {
-        Problem(status: 404, detail: "no route matches");
+    async answer(request is WebRequest) is Responding {
+        ProblemReply(status: Status.not_found, detail: "no route matches");
     }
 }
 
 hidden object WebRouteTable {
     has routings is @WebRouting;
     has scopes is @ExceptionScope;
-    has fallback is async (WebRequest) is HandlingResult;
+    has fallback is async (WebRequest) is Responding;
 
     WebRouteTable(
         routings is @WebRouting,
         scopes is @ExceptionScope,
-        fallback is async (WebRequest) is HandlingResult
+        fallback is async (WebRequest) is Responding
     ) {
         self.routings = routings;
         self.scopes = scopes;
@@ -325,26 +331,25 @@ hidden object WebRejection does RouteRejecting {
     WebRejection();
 
     malformed(request is Request, reason is string) is HandlingResult {
-        Problem(status: 400, detail: reason);
+        ResponseHandling(ProblemReply(status: Status.bad_request, detail: reason).response());
     }
 
     disallowed(request is Request, allowed is @string) is HandlingResult {
-        Problem(
-            405,
-            "method " + MethodName(request::Head::method).string() + " is not allowed here"
-        ).header(
-            "Allow",
-            allowed.join(", ")
+        let refusal = ProblemReply(
+            status: Status.method_not_allowed,
+            detail: "method " + MethodName(request::Head::method).string() + " is not allowed here",
+            headers: Headers(Header(name: "Allow", value: allowed.join(", ")))
         );
+        ResponseHandling(refusal.response());
     }
 }
 
 hidden object MethodRoute {
     has method is Method;
     has path is string;
-    has endpoint is async (WebRequest) is HandlingResult;
+    has endpoint is async (WebRequest) is Responding;
 
-    MethodRoute(method is Method, path is string, endpoint is async (WebRequest) is HandlingResult) {
+    MethodRoute(method is Method, path is string, endpoint is async (WebRequest) is Responding) {
         confirm path == "" || path.slice(0, 1) == "/"
             else throw InvalidWebRoute.because("route path must be empty or start with /: " + path);
         self.method = method;
@@ -357,6 +362,55 @@ hidden object MethodRoute {
         confirm pattern != ""
             else throw InvalidWebRoute.because("an empty route path is only valid inside a Scope");
         [Route(method: method, pattern: RoutePattern(pattern), handling: WebEndpoint(endpoint, scopes))];
+    }
+}
+
+// A WebSocket at path (#220): an upgrade is answered with the defaults (the
+// Origin must be the server's own, default limits, 5 seconds to open) and the
+// connection goes to application:
+//
+//     WebRoutes(Get(path: "/", endpoint: site.page), WebSocket(path: "/chat", application: chat))
+object WebSocket does WebRouting {
+    has path is string;
+    has application is WebSocketHandling;
+
+    WebSocket(path is string, application is WebSocketHandling) {
+        confirm path == "" || path.slice(0, 1) == "/"
+            else throw InvalidWebRoute.because("route path must be empty or start with /: " + path);
+        self.path = path;
+        self.application = application;
+    }
+
+    routes(prefix is string, scopes is @ExceptionScope) is @Route {
+        let pattern = prefix + path;
+        confirm pattern != ""
+            else throw InvalidWebRoute.because("an empty route path is only valid inside a Scope");
+        [Route(method: Method.get, pattern: RoutePattern(pattern), handling: WebSocketEndpoint(application))];
+    }
+
+    fallback() is Maybe<Fallback> {
+        Maybe<Fallback>.none;
+    }
+}
+
+hidden object WebSocketEndpoint does Handling {
+    has application is WebSocketHandling;
+
+    WebSocketEndpoint(application is WebSocketHandling) {
+        self.application = application;
+    }
+
+    async handling(request is Request, context is HttpRequestContext) is HandlingResult {
+        let empty is @string = [];
+        WebSocketHandlingResult(
+            origin: WebSocketUpgrade(
+                protocols: empty,
+                limits: WebSocketLimits(),
+                access: SameOriginWebSockets(),
+                deadline: Duration(seconds: 5),
+            ),
+            application: application,
+        );
     }
 }
 
@@ -380,32 +434,33 @@ hidden object WebPrefix {
 
 // Adapts one endpoint and its scope chain to std Handling.
 hidden object WebEndpoint does Handling {
-    has endpoint is async (WebRequest) is HandlingResult;
+    has endpoint is async (WebRequest) is Responding;
     has scopes is @ExceptionScope;
 
-    WebEndpoint(endpoint is async (WebRequest) is HandlingResult, scopes is @ExceptionScope) {
+    WebEndpoint(endpoint is async (WebRequest) is Responding, scopes is @ExceptionScope) {
         self.endpoint = endpoint;
         self.scopes = scopes;
     }
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
-        try {
+        let answer is Responding = try {
             await ScopedEndpoint(endpoint: endpoint, scopes: scopes, index: 0).call(WebRequest(request: request, context: context));
         }
         catch Exception.status(code, detail) {
-            Problem(status: code, detail: detail);
-        }
+            ProblemReply(status: StatusCode(code).status(), detail: detail);
+        };
+        ResponseHandling(answer.response());
     }
 }
 
 // scopes[index] wraps the rest of the chain; past the last scope is the endpoint.
 hidden object ScopedEndpoint {
-    has endpoint is async (WebRequest) is HandlingResult;
+    has endpoint is async (WebRequest) is Responding;
     has scopes is @ExceptionScope;
     has index is int;
 
     ScopedEndpoint(
-        endpoint is async (WebRequest) is HandlingResult,
+        endpoint is async (WebRequest) is Responding,
         scopes is @ExceptionScope,
         index is int
     ) {
@@ -414,7 +469,7 @@ hidden object ScopedEndpoint {
         self.index = index;
     }
 
-    async call(request is WebRequest) is HandlingResult {
+    async call(request is WebRequest) is Responding {
         if index == scopes.size() {
             await endpoint(request);
         }
@@ -483,11 +538,11 @@ test "scope prefixes are absolute and have no trailing slash" {
     };
 }
 
-object RoutingProbe {
+hidden object RoutingProbe {
     RoutingProbe();
 
-    async answer(request is WebRequest) is HandlingResult {
-        Problem(status: 418, detail: "probe");
+    async answer(request is WebRequest) is Responding {
+        ProblemReply(status: Status.other(418), detail: "probe");
     }
 }
 

@@ -4,135 +4,93 @@ import "http/message" take Response;
 import "http/status" take Status, StatusCode;
 import "http/header" take Headers, Header, HeaderName;
 import "http/body" take ByteBody, EmptyBody;
-import "collections/list" take List, EmptyList;
 
-// Shared response assembly for web/reply and web/exception. Replies own their
-// representation and framing metadata: callers may add other fields, but never
-// Content-Type, Content-Length or Transfer-Encoding.
+// Shared response assembly for web/reply and web/exception. A reply owns its
+// representation and framing fields; the headers a caller gives may carry any
+// other field, but never Content-Type, Content-Length or Transfer-Encoding.
 
-// Fields are kept newest first on a persistent list, so adding one costs the
-// same however many came before; the array is gathered once (#83).
-object ReplyHeaders {
-    has origin is List<Header>;
-
-    ReplyHeaders() {
-        let empty is List<Header> = EmptyList();
-        origin = empty;
-    }
-
-    ReplyHeaders(origin is @Header) {
-        let empty is List<Header> = EmptyList();
-        self.origin = origin.reduce(empty) -> fields, header {
-            fields.prefix(header);
-        };
-    }
-
-    added(name is string, value is string) is ReplyHeaders {
-        let field = HeaderName(name);
-        let lowered = field.lowercase();
-        confirm lowered != "content-type"
-            && lowered != "content-length"
-            && lowered != "transfer-encoding"
-            else throw InvalidReply.because(name + " is owned by the reply itself");
-        let following is ReplyHeaders = self.prefixed(Header(name: field, value: value));
-        following;
-    }
-
-    hidden prefixed(header is Header) is ^ReplyHeaders {
-        ^origin = origin.prefix(header);
-    }
-
-    entries() is @Header {
-        once let fields is @Header = self.gathered();
-        fields;
-    }
-
-    hidden gathered() is @Header {
-        let empty is @Header = [];
-        let newest is @Header = origin.reduce(empty) -> fields, header {
-            fields + [header];
-        };
-        newest.reversed();
-    }
-}
-
+// The response of a reply with a representation.
 object ReplyResponse {
-    has code is int;
+    has code is Status;
     has media is string;
     has content is @byte;
-    has extra is ReplyHeaders;
+    has given is Headers;
 
-    ReplyResponse(status is int, media is string, content is @byte, extra is ReplyHeaders) {
-        code = status;
+    ReplyResponse(status is Status, media is string, content is @byte, headers is Headers) {
+        code = BodyStatus(status).status();
         self.media = media;
         self.content = content;
-        self.extra = extra;
+        given = headers;
     }
 
     response() is Response {
         let fixed is @Header = [
-            Header(name: HeaderName("Content-Type"), value: media),
-            Header(name: HeaderName("Content-Length"), value: content.size().string())
+            Header(name: "Content-Type", value: media),
+            Header(name: "Content-Length", value: content.size().string())
         ];
-        Response(
-            status: StatusCode(code).status(),
-            headers: Headers(ReplyFields(fixed: fixed, extra: extra).entries()),
-            body: ByteBody(content)
-        );
+        Response(status: code, headers: ReplyFields(fixed: fixed, given: given).headers(), body: ByteBody(content));
     }
 }
 
-// Bodiless replies: 204 carries no framing field at all; redirects declare length 0
-// so the connection stays reusable.
+// Bodiless replies: 204 carries no framing field at all; redirects declare
+// length 0 so the connection stays reusable.
 object EmptyReplyResponse {
-    has code is int;
-    has extra is ReplyHeaders;
+    has code is Status;
+    has given is Headers;
 
-    EmptyReplyResponse(status is int, extra is ReplyHeaders) {
+    EmptyReplyResponse(status is Status, headers is Headers) {
         code = status;
-        self.extra = extra;
+        given = headers;
     }
 
     response() is Response {
-        let fixed is @Header = if code == 204 {
+        let fixed is @Header = if code == Status.no_content {
             let bare is @Header = [];
             bare;
         }
         else {
-            [Header(name: HeaderName("Content-Length"), value: "0")];
+            [Header(name: "Content-Length", value: "0")];
         };
-        Response(
-            status: StatusCode(code).status(),
-            headers: Headers(ReplyFields(fixed: fixed, extra: extra).entries())
-        );
+        Response(status: code, headers: ReplyFields(fixed: fixed, given: given).headers(), body: EmptyBody());
     }
 }
 
+// The reply's own fields, then the given ones, which may not take over the
+// representation or the framing.
 hidden object ReplyFields {
     has fixed is @Header;
-    has extra is ReplyHeaders;
+    has given is Headers;
 
-    ReplyFields(fixed is @Header, extra is ReplyHeaders) {
+    ReplyFields(fixed is @Header, given is Headers) {
         self.fixed = fixed;
-        self.extra = extra;
+        self.given = given;
     }
 
-    entries() is @Header {
-        fixed + extra.entries();
+    headers() is Headers {
+        let more = given.entries();
+        let extra is @Header = (0..more.size()).map() -> index {
+            let field = more.item(index);
+            let lowered = field.name().lowercase();
+            confirm lowered != "content-type" && lowered != "content-length" && lowered != "transfer-encoding"
+                else throw InvalidReply.because(field.name().string() + " is owned by the reply itself");
+            field;
+        };
+        Headers(entries: fixed + extra, limits: given.limits());
     }
 }
 
-// Status codes that carry a representation body.
+// Statuses that carry a representation body.
 object BodyStatus {
-    has code is int;
+    has code is Status;
 
-    BodyStatus(status is int) {
-        confirm status >= 200 && status <= 599 && status != 204 && status != 205 && status != 304
-            else throw InvalidReply.because("status " + status.string() + " cannot carry a body");
+    BodyStatus(status is Status) {
+        let number = StatusCode(status).number();
+        confirm number >= 200 && number <= 599 && number != 204 && number != 205 && number != 304
+            else throw InvalidReply.because("status " + number.string() + " cannot carry a body");
         code = status;
     }
 
-    code() is int {
+    status() is Status {
         code;
     }
 }
@@ -140,29 +98,25 @@ object BodyStatus {
 enum InvalidReply is Error = (because(reason is string));
 
 test "framing headers are owned by the reply" {
-    let rejected = try {
-        ReplyHeaders().added("content-length", "1");
-        false;
-    }
-    catch failure is InvalidReply {
-        true;
+    let owned = Headers(Header(name: "Content-Length", value: "1"));
+    test.throws(InvalidReply) {
+        ReplyResponse(status: Status.ok, media: "text/plain", content: [], headers: owned).response();
     };
-    test.ok(rejected);
-    test.is(
-        ReplyHeaders().added("X-Trace", "a").added("Cache-Control", "no-store").entries().size(),
-        2
-    );
+    let traced = Headers(Header(name: "X-Trace", value: "a"), Header(name: "Cache-Control", value: "no-store"));
+    let response = ReplyResponse(status: Status.ok, media: "text/plain", content: [104.byte()], headers: traced).response();
+    test.is(response::Head::headers.entries().size(), 4);
+    test.is(response::Head::headers.first(HeaderName("Content-Length")), "1");
 }
 
 test "only representation statuses carry bodies" {
-    test.is(BodyStatus(200).code(), 200);
+    test.is(BodyStatus(Status.ok).status(), Status.ok);
     test.throws(InvalidReply) {
-        BodyStatus(204);
+        BodyStatus(Status.no_content);
     };
     test.throws(InvalidReply) {
-        BodyStatus(304);
+        BodyStatus(Status.not_modified);
     };
     test.throws(InvalidReply) {
-        BodyStatus(101);
+        BodyStatus(Status.switching_protocols);
     };
 }

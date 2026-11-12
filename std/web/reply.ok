@@ -1,241 +1,155 @@
 module web/reply v1.0.0;
 
-import "http/status" take StatusCode, Status;
-import "http/handler" take HandlingResult, HandlingKind, WebSocketHandling, WrongHandlingKind;
-import "http/message" take Response;
-import "http/websocket_server" take WebSocketUpgrade;
-import "json" take Json;
+import "http/status" take Status, StatusCode;
+import "http/message" take Response, Responding;
+import "http/header" take Headers, Header, HeaderName;
+import "json" take Json, JsonField;
 import "encoding/utf" take Utf8Encoded;
-import "web/internal/reply" take ReplyHeaders, ReplyResponse, EmptyReplyResponse, BodyStatus,
-    InvalidReply;
+import "web/internal/reply" take ReplyResponse, EmptyReplyResponse, BodyStatus, InvalidReply;
 
-// Endpoint replies. Each one is a std HandlingResult, so an endpoint can return
-// it directly, and can still return ResponseHandling or WebSocketHandlingResult
-// when it needs full control. header(name, value) is a successor that adds one
-// field; Content-Type, Content-Length and Transfer-Encoding belong to the reply.
+// Endpoint replies. Each one builds a std Response with the defaults of its
+// kind and takes only what differs: status: and headers:. Content-Type and
+// Content-Length belong to the reply; any other field comes in headers:
 //
-//     JsonReply(200, UserJson(user: user).value()).header("Cache-Control", "no-store");
+//     TextReply("ok")
+//     TextReply(text: "no access", status: Status.forbidden)
+//     JsonReply(value: user, headers: Headers(Header(name: "Cache-Control", value: "no-store")))
+//     RedirectReply(location: "/notes", headers: Headers(SetCookie(name: "sid", value: token)))
+//
+// An endpoint that needs full control answers a Response itself: both are
+// Responding.
 
-object Text does HandlingResult {
-    has code is int;
-    has content is string;
-    has extra is ReplyHeaders;
+// text/plain in UTF-8, 200 unless told.
+object TextReply does Responding {
+    has text is string;
+    has code is Status;
+    has given is Headers;
 
-    Text(status is int, text is string) {
-        code = BodyStatus(status).code();
-        content = text;
-        extra = ReplyHeaders();
-    }
-
-    header(name is string, value is string) is ^Text {
-        ^extra = extra.added(name, value);
-    }
-
-    status() is int {
-        code;
-    }
-
-    kind() is HandlingKind {
-        HandlingKind.response;
+    TextReply(text is string, status is Status = Status.ok, headers is Headers = Headers()) {
+        self.text = text;
+        code = BodyStatus(status).status();
+        given = headers;
     }
 
     response() is Response {
-        ReplyResponse(status: code, media: "text/plain; charset=utf-8", content: Utf8Encoded(content).bytes(), extra: extra).response();
-    }
-
-    websocket() is WebSocketUpgrade {
-        throw WrongHandlingKind.mismatch;
-    }
-
-    application() is WebSocketHandling {
-        throw WrongHandlingKind.mismatch;
+        ReplyResponse(status: code, media: "text/plain; charset=utf-8", content: Utf8Encoded(text).bytes(), headers: given).response();
     }
 }
 
-object Html does HandlingResult {
-    has code is int;
-    has content is string;
-    has extra is ReplyHeaders;
+// text/html in UTF-8, 200 unless told.
+object HtmlReply does Responding {
+    has html is string;
+    has code is Status;
+    has given is Headers;
 
-    Html(status is int, html is string) {
-        code = BodyStatus(status).code();
-        content = html;
-        extra = ReplyHeaders();
-    }
-
-    header(name is string, value is string) is ^Html {
-        ^extra = extra.added(name, value);
-    }
-
-    status() is int {
-        code;
-    }
-
-    kind() is HandlingKind {
-        HandlingKind.response;
+    HtmlReply(html is string, status is Status = Status.ok, headers is Headers = Headers()) {
+        self.html = html;
+        code = BodyStatus(status).status();
+        given = headers;
     }
 
     response() is Response {
-        ReplyResponse(status: code, media: "text/html; charset=utf-8", content: Utf8Encoded(content).bytes(), extra: extra).response();
-    }
-
-    websocket() is WebSocketUpgrade {
-        throw WrongHandlingKind.mismatch;
-    }
-
-    application() is WebSocketHandling {
-        throw WrongHandlingKind.mismatch;
+        ReplyResponse(status: code, media: "text/html; charset=utf-8", content: Utf8Encoded(html).bytes(), headers: given).response();
     }
 }
 
-object JsonReply does HandlingResult {
-    has code is int;
-    has content is Json;
-    has extra is ReplyHeaders;
+// application/json, 200 unless told.
+object JsonReply does Responding {
+    has value is Json;
+    has code is Status;
+    has given is Headers;
 
-    JsonReply(status is int, value is Json) {
-        code = BodyStatus(status).code();
-        content = value;
-        extra = ReplyHeaders();
-    }
-
-    header(name is string, value is string) is ^JsonReply {
-        ^extra = extra.added(name, value);
-    }
-
-    status() is int {
-        code;
-    }
-
-    kind() is HandlingKind {
-        HandlingKind.response;
+    JsonReply(value is Json, status is Status = Status.ok, headers is Headers = Headers()) {
+        self.value = value;
+        code = BodyStatus(status).status();
+        given = headers;
     }
 
     response() is Response {
-        ReplyResponse(status: code, media: "application/json", content: Utf8Encoded(content.string()).bytes(), extra: extra).response();
-    }
-
-    websocket() is WebSocketUpgrade {
-        throw WrongHandlingKind.mismatch;
-    }
-
-    application() is WebSocketHandling {
-        throw WrongHandlingKind.mismatch;
+        ReplyResponse(status: code, media: "application/json", content: Utf8Encoded(value.string()).bytes(), headers: given).response();
     }
 }
 
-// 201 with a Location field and the created representation.
-object Created does HandlingResult {
-    has content is Json;
-    has extra is ReplyHeaders;
+// 201 with a Location field and the created representation as JSON.
+object CreatedReply does Responding {
+    has location is string;
+    has value is Json;
+    has given is Headers;
 
-    Created(location is string, value is Json) {
-        confirm location != "" else throw InvalidReply.because("Created requires a location");
-        content = value;
-        extra = ReplyHeaders().added("Location", location);
-    }
-
-    header(name is string, value is string) is ^Created {
-        ^extra = extra.added(name, value);
-    }
-
-    status() is int {
-        201;
-    }
-
-    kind() is HandlingKind {
-        HandlingKind.response;
+    CreatedReply(location is string, value is Json, headers is Headers = Headers()) {
+        confirm location != "" else throw InvalidReply.because("a created reply requires a location");
+        self.location = location;
+        self.value = value;
+        given = headers;
     }
 
     response() is Response {
-        ReplyResponse(status: 201, media: "application/json", content: Utf8Encoded(content.string()).bytes(), extra: extra).response();
-    }
-
-    websocket() is WebSocketUpgrade {
-        throw WrongHandlingKind.mismatch;
-    }
-
-    application() is WebSocketHandling {
-        throw WrongHandlingKind.mismatch;
+        let fields = given.addition(Header(name: "Location", value: location));
+        ReplyResponse(status: Status.created, media: "application/json", content: Utf8Encoded(value.string()).bytes(), headers: fields).response();
     }
 }
 
-object NoContent does HandlingResult {
-    has extra is ReplyHeaders;
+// A redirect to location: 303 See Other unless told; 301, 302, 307 and 308
+// are the others.
+object RedirectReply does Responding {
+    has location is string;
+    has code is Status;
+    has given is Headers;
 
-    NoContent() {
-        extra = ReplyHeaders();
-    }
-
-    header(name is string, value is string) is ^NoContent {
-        ^extra = extra.added(name, value);
-    }
-
-    status() is int {
-        204;
-    }
-
-    kind() is HandlingKind {
-        HandlingKind.response;
-    }
-
-    response() is Response {
-        EmptyReplyResponse(status: 204, extra: extra).response();
-    }
-
-    websocket() is WebSocketUpgrade {
-        throw WrongHandlingKind.mismatch;
-    }
-
-    application() is WebSocketHandling {
-        throw WrongHandlingKind.mismatch;
-    }
-}
-
-object Redirect does HandlingResult {
-    has code is int;
-    has extra is ReplyHeaders;
-
-    Redirect(status is int, location is string) {
-        confirm status == 301 || status == 302 || status == 303 || status == 307 || status == 308
+    RedirectReply(location is string, status is Status = Status.see_other, headers is Headers = Headers()) {
+        let number = StatusCode(status).number();
+        confirm number == 301 || number == 302 || number == 303 || number == 307 || number == 308
             else throw InvalidReply.because("redirect status must be 301, 302, 303, 307 or 308");
-        confirm location != "" else throw InvalidReply.because("Redirect requires a location");
+        confirm location != "" else throw InvalidReply.because("a redirect requires a location");
+        self.location = location;
         code = status;
-        extra = ReplyHeaders().added("Location", location);
-    }
-
-    header(name is string, value is string) is ^Redirect {
-        ^extra = extra.added(name, value);
-    }
-
-    status() is int {
-        code;
-    }
-
-    kind() is HandlingKind {
-        HandlingKind.response;
+        given = headers;
     }
 
     response() is Response {
-        EmptyReplyResponse(status: code, extra: extra).response();
-    }
-
-    websocket() is WebSocketUpgrade {
-        throw WrongHandlingKind.mismatch;
-    }
-
-    application() is WebSocketHandling {
-        throw WrongHandlingKind.mismatch;
+        EmptyReplyResponse(status: code, headers: given.addition(Header(name: "Location", value: location))).response();
     }
 }
 
-test "text reply declares its representation and keeps added fields" {
-    let response = Text(status: 200, text: "Привет").header("X-Trace", "t1").response();
+// 204: no representation and no framing field.
+object NoContentReply does Responding {
+    has given is Headers;
+
+    NoContentReply(headers is Headers = Headers()) {
+        given = headers;
+    }
+
+    response() is Response {
+        EmptyReplyResponse(status: Status.no_content, headers: given).response();
+    }
+}
+
+test "a text reply declares its representation and keeps the given fields" {
+    let response = TextReply(text: "Привет", headers: Headers(Header(name: "X-Trace", value: "t1"))).response();
     test.is(response::Head::status, Status.ok);
     test.is(response::Head::headers.entries().size(), 3);
+    test.is(response::Head::headers.first(HeaderName("Content-Type")), "text/plain; charset=utf-8");
     test.is(response.body().length().string(), "12");
-    test.is(NoContent().response()::Head::headers.entries().size(), 0);
+    test.is(TextReply("ok").response()::Head::headers.entries().size(), 2);
+    test.is(TextReply(text: "no", status: Status.forbidden).response()::Head::status, Status.forbidden);
+    test.is(NoContentReply().response()::Head::headers.entries().size(), 0);
     test.throws(InvalidReply) {
-        Redirect(status: 200, location: "/x");
+        TextReply(text: "x", status: Status.no_content);
     };
+}
+
+test "redirects and created replies carry their location" {
+    let moved = RedirectReply("/notes").response();
+    test.is(moved::Head::status, Status.see_other);
+    test.is(moved::Head::headers.first(HeaderName("Location")), "/notes");
+    test.is(moved::Head::headers.first(HeaderName("Content-Length")), "0");
+    test.is(RedirectReply(location: "/x", status: Status.permanent_redirect).response()::Head::status, Status.permanent_redirect);
+    test.throws(InvalidReply) {
+        RedirectReply(location: "/x", status: Status.ok);
+    };
+    let created = CreatedReply(location: "/notes/7", value: Json(JsonField("id", 7))).response();
+    test.is(created::Head::status, Status.created);
+    test.is(created::Head::headers.first(HeaderName("Location")), "/notes/7");
+    test.is(JsonReply(Json(JsonField("a", 1))).response()::Head::headers.first(HeaderName("Content-Type")), "application/json");
+    test.is(HtmlReply("<p>hi</p>").response()::Head::headers.first(HeaderName("Content-Type")), "text/html; charset=utf-8");
 }

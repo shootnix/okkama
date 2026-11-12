@@ -4,7 +4,8 @@ import "time/clock" take Instant;
 import "encoding/utf" take Utf8Encoded;
 import "net/endpoint" take HostName, InvalidHostName;
 import "http/token" take HttpToken, InvalidToken;
-import "http/header" take HttpAsciiLowercase;
+import "http/header" take HttpAsciiLowercase, Header, HeaderField;
+import "time/duration" take Duration;
 import "http/date" take HttpDate, InvalidHttpDate;
 import "collections/set" take Set, OrderedSet;
 import "collections/iteration" take Cursor;
@@ -410,6 +411,69 @@ hidden object CookieFlagValues {
     }
 }
 
+// A Set-Cookie field of a response, with safe defaults: Path=/, Secure,
+// HttpOnly and SameSite=Lax, and Max-Age when it is given (#207):
+//
+//     Headers(SetCookie(name: "sid", value: token),
+//         SetCookie(name: "theme", value: "dark", max_age: Duration(days: 30)))
+//
+// SetCookie(cookie) sends a Cookie with exactly its own attributes.
+object SetCookie does HeaderField {
+    has cookie is Cookie;
+    has seconds is @int;
+
+    SetCookie(name is string, value is string) {
+        cookie = Cookie(name: name, value: value, attributes: SafeCookieAttributes().attributes());
+        seconds = [];
+    }
+
+    SetCookie(name is string, value is string, max_age is Duration) {
+        let whole = max_age::Span::seconds.int();
+        confirm whole >= 0 else throw InvalidCookie.because("Max-Age cannot be negative");
+        cookie = Cookie(name: name, value: value, attributes: SafeCookieAttributes().attributes());
+        seconds = [whole];
+    }
+
+    SetCookie(cookie is Cookie) {
+        self.cookie = cookie;
+        seconds = [];
+    }
+
+    header() is Header {
+        let age = if seconds.size() == 1 {
+            "; Max-Age=" + seconds[0].string();
+        }
+        else {
+            "";
+        };
+        Header(name: "Set-Cookie", value: cookie.string() + age);
+    }
+}
+
+// The Set-Cookie field that removes a cookie set with the defaults of
+// SetCookie: an empty value at Path=/ with Max-Age=0.
+object ExpiredCookie does HeaderField {
+    has cookie is Cookie;
+
+    ExpiredCookie(name is string) {
+        confirm name != "" else throw InvalidCookie.because("an expired cookie needs its name");
+        cookie = Cookie(name: name, value: "", attributes: SafeCookieAttributes().attributes());
+    }
+
+    header() is Header {
+        Header(name: "Set-Cookie", value: cookie.string() + "; Max-Age=0");
+    }
+}
+
+hidden object SafeCookieAttributes {
+    SafeCookieAttributes();
+
+    attributes() is CookieAttributes {
+        let flags is Set<CookieFlag> = OrderedSet([CookieFlag.secure, CookieFlag.http_only]);
+        CookieAttributes(domain: "", path: "/", expiry: CookieExpiry(), same_site: SameSite.lax, flags: flags);
+    }
+}
+
 enum InvalidCookie is Error = (because(reason is string));
 
 test "session expiry has no absolute instant" {
@@ -443,3 +507,20 @@ test "cookie prefix and wire policy" {
         true;
     });
 }
+
+test "set-cookie fields carry safe defaults, Max-Age and expiry" {
+    test.is(
+        SetCookie(name: "sid", value: "abc").header().value(),
+        "sid=abc; Path=/; SameSite=Lax; Secure; HttpOnly"
+    );
+    test.is(
+        SetCookie(name: "theme", value: "dark", max_age: Duration(days: 30)).header().value(),
+        "theme=dark; Path=/; SameSite=Lax; Secure; HttpOnly; Max-Age=2592000"
+    );
+    test.is(ExpiredCookie("sid").header().value(), "sid=; Path=/; SameSite=Lax; Secure; HttpOnly; Max-Age=0");
+    test.is(SetCookie(name: "sid", value: "abc").header().name().string(), "Set-Cookie");
+    test.throws(InvalidCookie) {
+        SetCookie(name: "bad name", value: "x");
+    };
+}
+

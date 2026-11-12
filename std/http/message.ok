@@ -129,9 +129,15 @@ object Request {
     }
 }
 
+// What an endpoint answers: a Response, or a reply that builds one with its
+// defaults (TextReply, JsonReply and the others in web/reply).
+role Responding {
+    response() is Response;
+}
+
 // A response shows its head through the cap `Head`; `body()` is the opening
 // to read. Unless told, it has no fields, an empty body and HTTP/1.1.
-object Response {
+object Response does Responding {
     has status is Status;
     has headers is Headers;
     has body is BodyOpening;
@@ -193,6 +199,10 @@ object Response {
 
     body() is BodyOpening {
         body;
+    }
+
+    response() is Response {
+        self;
     }
 }
 

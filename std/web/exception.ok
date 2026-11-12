@@ -1,82 +1,67 @@
 module web/exception v1.0.0;
 
-import "http/handler" take HandlingResult, HandlingKind, WebSocketHandling, WrongHandlingKind;
-import "http/message" take Response;
+import "http/message" take Response, Responding;
 import "http/status" take Status, StatusCode;
-import "http/websocket_server" take WebSocketUpgrade;
+import "http/header" take Headers, Header;
 import "json" take Json, JsonField;
 import "encoding/utf" take Utf8Encoded;
-import "web/internal/reply" take ReplyHeaders, ReplyResponse, InvalidReply;
+import "web/internal/reply" take ReplyResponse, InvalidReply;
 
-// An HTTP failure. Endpoints and exception scopes throw Exception or return a
-// Problem; the framework turns a thrown Exception into its Problem response.
+// An HTTP failure. Endpoints and exception scopes throw Exception or answer a
+// ProblemReply; the framework turns a thrown Exception into its ProblemReply.
 // The body is RFC 9457 problem details with type about:blank:
 //
 //     throw Exception.status(404, "user 7 not found");
 //     // {"type":"about:blank","title":"Not Found","status":404,"detail":"user 7 not found"}
 //
-//     Problem(401, "token expired").header("WWW-Authenticate", "Bearer");
+//     ProblemReply(status: Status.unauthorized, detail: "token expired",
+//         headers: Headers(Header(name: "WWW-Authenticate", value: "Bearer")))
 //
 // detail is sent to the client: never put internal diagnostics into it.
 enum Exception is Error = (status(code is int, detail is string));
 
 // The problem-details reply of an HTTP failure (4xx or 5xx).
-object Problem does HandlingResult {
-    has code is int;
+object ProblemReply does Responding {
+    has code is Status;
     has message is string;
-    has extra is ReplyHeaders;
+    has given is Headers;
 
-    Problem(status is int, detail is string) {
-        confirm status >= 400 && status <= 599
+    ProblemReply(status is Status, detail is string, headers is Headers = Headers()) {
+        let number = StatusCode(status).number();
+        confirm number >= 400 && number <= 599
             else throw InvalidReply.because("problem status must be 4xx or 5xx");
         code = status;
         message = detail;
-        extra = ReplyHeaders();
-    }
-
-    header(name is string, value is string) is ^Problem {
-        ^extra = extra.added(name, value);
+        given = headers;
     }
 
     title() is string {
         let phrase = StatusCode(code).phrase();
         if phrase == "" {
-            "HTTP " + code.string();
+            "HTTP " + StatusCode(code).number().string();
         }
         else {
             phrase;
         }
     }
 
-    kind() is HandlingKind {
-        HandlingKind.response;
-    }
-
     response() is Response {
         let problem = Json(
             JsonField("type", "about:blank"),
             JsonField("title", self.title()),
-            JsonField("status", code),
+            JsonField("status", StatusCode(code).number()),
             JsonField("detail", message)
         );
         ReplyResponse(
             status: code,
             media: "application/problem+json",
             content: Utf8Encoded(problem.string()).bytes(),
-            extra: extra
+            headers: given
         ).response();
     }
 
-    websocket() is WebSocketUpgrade {
-        throw WrongHandlingKind.mismatch;
-    }
-
-    application() is WebSocketHandling {
-        throw WrongHandlingKind.mismatch;
-    }
-
     cap Problem {
-        status is int {
+        status is Status {
             code;
         }
 
@@ -91,9 +76,16 @@ test "problems name status, title and detail" {
         Exception.status(404, "user 7 not found").text(),
         "Exception.status(404, \"user 7 not found\")"
     );
-    test.is(Problem(status: 404, detail: "user 7 not found").title(), "Not Found");
-    test.is(Problem(status: 599, detail: "x").title(), "HTTP 599");
+    test.is(ProblemReply(status: Status.not_found, detail: "user 7 not found").title(), "Not Found");
+    test.is(ProblemReply(status: Status.other(599), detail: "x").title(), "HTTP 599");
     test.throws(InvalidReply) {
-        Problem(status: 302, detail: "x");
+        ProblemReply(status: Status.found, detail: "x");
     };
+    let refused = ProblemReply(
+        status: Status.unauthorized,
+        detail: "token expired",
+        headers: Headers(Header(name: "WWW-Authenticate", value: "Bearer"))
+    ).response();
+    test.is(refused::Head::status, Status.unauthorized);
+    test.is(refused::Head::headers.entries().size(), 3);
 }

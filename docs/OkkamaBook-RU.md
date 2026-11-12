@@ -4114,7 +4114,14 @@ HTTP/2 обработчик читает `request::Head::target.path()` и `quer
 endpoint: notes.one), Post(…)), Fallback(notes.missing))`. Без `Fallback` на
 запрос, которому не нашлось маршрута, отвечает 404 с problem-телом. Endpoint
 получает `WebRequest` с `path("id")`, `query("limit") else "10"`, `await json(limit)` и `await text(limit)` и отвечает
-`Text(status:, text:)` или `JsonReply(status:, value:)`.
+чем-то `Responding`: ответом с умолчаниями — `TextReply("hi")`, `HtmlReply(…)`,
+`JsonReply(value)`, `CreatedReply(location:, value:)`, `RedirectReply("/notes")`,
+`NoContentReply()` или `ProblemReply(status:, detail:)`, каждый берёт `status:`
+и `headers:` для того, что отличается, — или полностью собранным `Response`.
+Заголовки — поля поштучно: `Headers(Header(name: "Cache-Control", value:
+"no-store"), SetCookie(name: "sid", value: token), ExpiredCookie("old"))`, где
+у `SetCookie` по умолчанию Path=/, Secure, HttpOnly и SameSite=Lax.
+`WebSocket(path:, application:)` — маршрут для WebSocket.
 `WebApplication(routes).listen(address, port)` его обслуживает.
 
 `Caching(origin: client, cache: MemoryHttpCache(clock:, maximum:), clock:)`

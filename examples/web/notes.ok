@@ -3,8 +3,9 @@ module examples/web/notes v1.0.0;
 import "web/app" take WebApplication;
 import "web/routing" take WebRoutes, Get, Post, Scope, Fallback;
 import "web/request" take WebRequest;
-import "web/reply" take Text, JsonReply;
-import "http/handler" take HandlingResult;
+import "web/reply" take TextReply, JsonReply;
+import "http/message" take Responding;
+import "http/status" take Status;
 import "http/client" take HttpClient;
 import "http/endpoint" take LoopbackEndpoints;
 import "http/body" take JsonBody;
@@ -28,30 +29,30 @@ object Notes {
         items = Atomic(none_yet);
     }
 
-    async list(request is WebRequest) is HandlingResult {
+    async list(request is WebRequest) is Responding {
         let limit = Number(request.query("limit") else "10").int();
         let shown is @Json = items.value().take(limit).map() -> text {
             Json(text);
         };
-        JsonReply(status: 200, value: Json(shown));
+        JsonReply(Json(shown));
     }
 
-    async add(request is WebRequest) is HandlingResult {
+    async add(request is WebRequest) is Responding {
         let body = await request.json(4096);
         items.replace(items.value() + [body.text("text")]);
-        JsonReply(status: 201, value: Json(JsonField("id", items.value().size())));
+        JsonReply(value: Json(JsonField("id", items.value().size())), status: Status.created);
     }
 
-    async one(request is WebRequest) is HandlingResult {
+    async one(request is WebRequest) is Responding {
         let id = Number(request.path("id")).int();
         if id < 1 || id > items.value().size() {
-            return Text(status: 404, text: "no note " + id.string());
+            return TextReply(text: "no note " + id.string(), status: Status.not_found);
         }
-        Text(status: 200, text: items.value()[id - 1]);
+        TextReply(items.value()[id - 1]);
     }
 
-    async missing(request is WebRequest) is HandlingResult {
-        Text(status: 404, text: "not found");
+    async missing(request is WebRequest) is Responding {
+        TextReply(text: "not found", status: Status.not_found);
     }
 }
 

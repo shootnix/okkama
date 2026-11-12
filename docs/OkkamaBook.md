@@ -3933,7 +3933,14 @@ the `Origin` against. Over HTTP/1.1 and HTTP/2 alike, a handler reads
 endpoint: notes.one), Post(…)), Fallback(notes.missing))`. Without a
 `Fallback`, a request no route matches gets a 404 problem. An endpoint gets a
 `WebRequest` with `path("id")`, `query("limit") else "10"`, `await json(limit)` and `await text(limit)`, and answers
-`Text(status:, text:)` or `JsonReply(status:, value:)`.
+anything `Responding`: a reply with defaults, `TextReply("hi")`, `HtmlReply(…)`,
+`JsonReply(value)`, `CreatedReply(location:, value:)`, `RedirectReply("/notes")`,
+`NoContentReply()` or `ProblemReply(status:, detail:)`, each taking `status:`
+and `headers:` for what differs, or a `Response` built in full. Headers are
+fields one by one: `Headers(Header(name: "Cache-Control", value: "no-store"),
+SetCookie(name: "sid", value: token), ExpiredCookie("old"))`, where a
+`SetCookie` defaults to Path=/, Secure, HttpOnly and SameSite=Lax.
+`WebSocket(path:, application:)` routes a WebSocket.
 `WebApplication(routes).listen(address, port)` serves it.
 
 `Caching(origin: client, cache: MemoryHttpCache(clock:, maximum:), clock:)`
