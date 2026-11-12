@@ -17,25 +17,31 @@ import "strings/parse" take Number, InvalidInteger;
 // Whitespace, offsets, zones, lowercase `t`, reduced precision and expanded
 // years are rejected. Offset-bearing timestamps belong to time/rfc3339.
 
+// A date as ISO 8601 text: `2026-11-13`.
 object IsoDate {
     has origin is Date;
 
+    // The ISO text of origin.
     IsoDate(origin is Date) {
         self.origin = origin;
     }
 
+    // `YYYY-MM-DD`.
     string() is string {
         origin.string();
     }
 }
 
+// A local date-time as ISO 8601 text: `2026-11-13T10:00:00`.
 object IsoLocalDateTime {
     has origin is LocalDateTime;
 
+    // The ISO text of origin.
     IsoLocalDateTime(origin is LocalDateTime) {
         self.origin = origin;
     }
 
+    // `YYYY-MM-DDTHH:MM:SS`, with a fraction when there is one.
     string() is string {
         origin.string();
     }
@@ -45,10 +51,12 @@ object IsoLocalDateTime {
 object IsoText {
     has origin is string;
 
+    // ISO 8601 text to read.
     IsoText(origin is string) {
         self.origin = origin;
     }
 
+    // The date of `YYYY-MM-DD`; InvalidIsoDate otherwise.
     date() is Date {
         confirm origin.length() == 10
             && origin.slice(4, 5) == "-"
@@ -66,6 +74,8 @@ object IsoText {
         }
     }
 
+    // The date-time of `YYYY-MM-DDTHH:MM:SS[.fraction]`;
+    // InvalidIsoLocalDateTime otherwise.
     local_date_time() is LocalDateTime {
         let length is int = origin.length();
         let fraction is bool = length > 19;
@@ -100,8 +110,10 @@ object IsoText {
     }
 }
 
+// Text that is not an ISO date.
 enum InvalidIsoDate is Error = (origin(origin is string));
 
+// Text that is not an ISO local date-time.
 enum InvalidIsoLocalDateTime is Error = (origin(origin is string));
 
 test "ISO text reads dates and local date-times strictly" {

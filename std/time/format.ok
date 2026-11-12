@@ -24,12 +24,15 @@ import "runtime/time_format" take time_pattern_invalid_offset, time_format_date,
 // locale-dependent directives are deliberately absent until an explicit
 // locale value exists.
 
+// A date written with a pattern: `FormattedDate(origin: date, pattern:
+// "yyyy-MM-dd")`.
 object FormattedDate {
     has origin is Date;
     has pattern is string;
     has source is string;
     has reading is bool;
 
+    // origin written with pattern.
     FormattedDate(origin is Date, pattern is string) {
         self.origin = origin;
         self.pattern = pattern;
@@ -45,6 +48,7 @@ object FormattedDate {
         reading = true;
     }
 
+    // The date.
     date() is Date {
         if reading {
             self.parsed();
@@ -79,6 +83,7 @@ object FormattedDate {
         Date(year: parts[0], month: parts[1], day: parts[2]);
     }
 
+    // The date as text; InvalidTimePattern for a bad pattern.
     string() is string {
         let invalid is int = time_pattern_invalid_offset(pattern, false, false);
         confirm invalid == -1 else throw InvalidTimePattern.located(pattern, invalid);
@@ -92,12 +97,14 @@ object FormattedDate {
     }
 }
 
+// A local date-time written with a pattern.
 object FormattedLocalDateTime {
     has origin is LocalDateTime;
     has pattern is string;
     has source is string;
     has reading is bool;
 
+    // origin written with pattern.
     FormattedLocalDateTime(origin is LocalDateTime, pattern is string) {
         self.origin = origin;
         self.pattern = pattern;
@@ -116,6 +123,7 @@ object FormattedLocalDateTime {
         reading = true;
     }
 
+    // The date-time.
     local_date_time() is LocalDateTime {
         if reading {
             self.parsed();
@@ -158,6 +166,7 @@ object FormattedLocalDateTime {
         );
     }
 
+    // The date-time as text.
     string() is string {
         let invalid is int = time_pattern_invalid_offset(pattern, true, false);
         confirm invalid == -1 else throw InvalidTimePattern.located(pattern, invalid);
@@ -177,10 +186,13 @@ object FormattedLocalDateTime {
     }
 }
 
+// A pattern that cannot be read; offset says where.
 enum InvalidTimePattern is Error = (located(pattern is string, offset is int));
 
+// Text that does not match the pattern; offset says where.
 enum InvalidFormattedDate is Error = (located(origin is string, offset is int));
 
+// Text that does not match the pattern; offset says where.
 enum InvalidFormattedLocalDateTime is Error = (located(origin is string, offset is int));
 
 test "patterns format and read dates and local date-times" {

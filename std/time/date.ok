@@ -13,13 +13,16 @@ import "compare" take Comparing, Order;
 // host calendar dependency. Date ordinals are one-based: 0001-01-01 is day 1
 // and Monday. DaysBetween(left: left, right: right) is signed and means right minus left.
 
+// A day of the week, Monday first.
 enum Weekday = (monday, tuesday, wednesday, thursday, friday, saturday, sunday);
 
+// A calendar date, years 1 to 9999, in the proleptic Gregorian calendar.
 object Date does Comparing<Date> {
     has year_value is int;
     has month_value is int;
     has day_value is int;
 
+    // The date; a day the month does not have is InvalidDate.
     Date(year is int, month is int, day is int) {
         confirm year >= 1 && year <= 9999
             else throw InvalidDate.because("date year must be within 1..9999");
@@ -88,6 +91,7 @@ object Date does Comparing<Date> {
             ("00" + day).slice(day.length(), day.length() + 2);
     }
 
+    // Its day of the week.
     weekday() is Weekday {
         match (GregorianDay(self).number() - 1) % 7 {
             case 0 {
@@ -114,6 +118,7 @@ object Date does Comparing<Date> {
         }
     }
 
+    // Earlier dates come first.
     order(other is Date) is Order {
         if year_value != other::Calendar::year {
             year_value.order(other::Calendar::year);
@@ -147,20 +152,24 @@ object Date does Comparing<Date> {
     }
 }
 
+// How many days from one date to another.
 object DaysBetween {
     has left is Date;
     has right is Date;
 
+    // From left to right.
     DaysBetween(left is Date, right is Date) {
         self.left = left;
         self.right = right;
     }
 
+    // The days; negative when right comes before left.
     count() is int {
         GregorianDay(right).number() - GregorianDay(left).number();
     }
 }
 
+// A date the calendar does not have.
 enum InvalidDate is Error = (because(message is string));
 
 // The day number of a date in the proleptic Gregorian calendar, counted from
@@ -173,11 +182,13 @@ object GregorianDay {
     has origin is int;
     has given is Maybe<Date>;
 
+    // The day number of date.
     GregorianDay(date is Date) {
         origin = 0;
         given = Maybe.some(date);
     }
 
+    // The date of day number.
     GregorianDay(number is int) {
         confirm number >= 1 && number <= 3652059
             else throw InvalidDate.because("day number is outside years 1..9999");
@@ -185,6 +196,7 @@ object GregorianDay {
         given = Maybe<Date>.none;
     }
 
+    // Days since 0001-01-01, which is day 1.
     number() is int {
         once let counted = self.counted();
         counted;
@@ -228,6 +240,7 @@ object GregorianDay {
             date::Calendar::day;
     }
 
+    // The date.
     date() is Date {
         let shifted is int = self.number() + 305;
         let era is int = (shifted / 146097).int();
