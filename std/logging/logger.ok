@@ -1,0 +1,174 @@
+module logging/logger v1.0.0;
+
+import "logging/level" take LogLevel;
+import "logging/name" take LogName, ChildLogName;
+import "logging/field" take LogFields;
+import "logging/named" take Logging, NamedLogging;
+import "logging/write" take LogWriting, CollectedLogs;
+import "logging/filter" take AllowedLogs;
+import "logging/stream" take TextStreamLogs;
+import "io/stdout" take Stderr;
+import "json" take JsonField;
+
+// A logger for an application (#181): text lines to standard error, info and
+// above, unless told otherwise.
+//
+//     let log = Logger("shop");
+//     log.info("started");
+//     log.debug("query", JsonField("ms", 9));   // below info: one check, nothing built
+//     log.error("payment failed", failure);     // with the error that caused it
+//
+// Another destination or level:
+//
+//     Logger(name: "shop", destination: JsonStreamLogs(Stdout()), level: LogLevel.debug)
+//
+// NamedLogging stays for a clock, fixed fields or a process of one's own.
+object Logger does Logging {
+    has name is LogName;
+    has level is LogLevel;
+    has target is LogWriting;
+    has destination is LogWriting;
+    has origin is NamedLogging;
+
+    Logger(
+        name is string,
+        destination is LogWriting = TextStreamLogs(Stderr()),
+        level is LogLevel = LogLevel.info
+    ) {
+        self.name = LogName(name.split("."));
+        self.level = level;
+        target = destination;
+        self.destination = AllowedLogs(origin: destination, level: level);
+        origin = NamedLogging(name: self.name, destination: self.destination);
+    }
+
+    debug(message is string, fields is ...JsonField) is void {
+        let listed is @JsonField = fields...;
+        self.emit(LogLevel.debug, message, listed);
+    }
+
+    info(message is string, fields is ...JsonField) is void {
+        let listed is @JsonField = fields...;
+        self.emit(LogLevel.info, message, listed);
+    }
+
+    warning(message is string, fields is ...JsonField) is void {
+        let listed is @JsonField = fields...;
+        self.emit(LogLevel.warning, message, listed);
+    }
+
+    // With the error that caused it: log.warning("retrying", failure).
+    warning(message is string, cause is Error, fields is ...JsonField) is void {
+        let listed is @JsonField = fields...;
+        self.failed(LogLevel.warning, message, cause, listed);
+    }
+
+    error(message is string, fields is ...JsonField) is void {
+        let listed is @JsonField = fields...;
+        self.emit(LogLevel.error, message, listed);
+    }
+
+    error(message is string, cause is Error, fields is ...JsonField) is void {
+        let listed is @JsonField = fields...;
+        self.failed(LogLevel.error, message, cause, listed);
+    }
+
+    critical(message is string, fields is ...JsonField) is void {
+        let listed is @JsonField = fields...;
+        self.emit(LogLevel.critical, message, listed);
+    }
+
+    critical(message is string, cause is Error, fields is ...JsonField) is void {
+        let listed is @JsonField = fields...;
+        self.failed(LogLevel.critical, message, cause, listed);
+    }
+
+    log(level is LogLevel, message is string) is void {
+        origin.log(level, message);
+    }
+
+    log(level is LogLevel, message is string, fields is LogFields) is void {
+        origin.log(level, message, fields);
+    }
+
+    log(level is LogLevel, message is string, fields is LogFields, cause is Error) is void {
+        origin.log(level, message, fields, cause);
+    }
+
+    // Would a record of this level be written? Ask it before building costly
+    // fields: if log.enabled(LogLevel.debug) { ... }.
+    enabled(level is LogLevel) is bool {
+        destination.enabled(name, level);
+    }
+
+    // The logger of a part, to the same destination at the same level:
+    // Logger("shop").child("db") is "shop.db".
+    child(segment is string) is Logger {
+        let named = ChildLogName(origin: name, segment: segment).name();
+        Logger(name: named.string(), destination: target, level: level);
+    }
+
+    name() is LogName {
+        name;
+    }
+
+    hidden emit(level is LogLevel, message is string, fields is @JsonField) is void {
+        if destination.enabled(name, level) {
+            origin.log(level, message, LogFields(fields));
+        }
+    }
+
+    hidden failed(level is LogLevel, message is string, cause is Error, fields is @JsonField) is void {
+        if destination.enabled(name, level) {
+            origin.log(level, message, LogFields(fields), cause);
+        }
+    }
+}
+
+test "a logger writes its levels and leaves the rest unbuilt" {
+    let kept = CollectedLogs();
+    let log = Logger(name: "shop", destination: kept);
+    log.debug("query", JsonField("ms", 9));
+    log.info("started");
+    log.warning("slow", JsonField("ms", 900), JsonField("path", "/cart"));
+    log.error("payment failed", LoggerProbe.failed("card declined"));
+    log.critical("down", LoggerProbe.failed("disk"), JsonField("disk", "/var"));
+    test.is(kept.size(), 4);
+    let records = kept.records();
+    test.is(records.item(0)::Entry::message, "started");
+    test.ok(records.item(0)::Entry::level == LogLevel.info);
+    test.is(records.item(1).context().fields().values().string(), "{\"ms\":900,\"path\":\"/cart\"}");
+    test.ok(records.item(2).has_cause());
+    test.ok(records.item(2)::Entry::level == LogLevel.error);
+    test.is(records.item(3).context().fields().values().string(), "{\"disk\":\"/var\"}");
+    test.ok(!log.enabled(LogLevel.debug));
+    test.ok(log.enabled(LogLevel.warning));
+    test.is(log.name().string(), "shop");
+}
+
+test "a logger's level, children and the Logging role" {
+    let kept = CollectedLogs();
+    let log = Logger(name: "shop", destination: kept, level: LogLevel.debug);
+    let db = log.child("db");
+    db.debug("query");
+    test.is(db.name().string(), "shop.db");
+    test.is(kept.records().first().context().name().string(), "shop.db");
+    let general is Logging = log;
+    general.log(LogLevel.info, "via the role");
+    test.is(kept.size(), 2);
+    let quiet = Logger(name: "shop", destination: kept, level: LogLevel.error);
+    quiet.warning("dropped");
+    quiet.child("db").warning("dropped too");
+    test.is(kept.size(), 2);
+    let named = Logger(name: "shop.web", destination: kept);
+    test.is(named.name().string(), "shop.web");
+}
+
+test "a logger needs only its name" {
+    let log = Logger("shop");
+    test.is(log.name().string(), "shop");
+    test.ok(log.enabled(LogLevel.info));
+    test.ok(!log.enabled(LogLevel.debug));
+}
+
+hidden enum LoggerProbe is Error = (failed(reason is string));
