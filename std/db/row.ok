@@ -374,7 +374,10 @@ test "a row reads its cells by name: strict, Maybe and Presence" {
         Column(index: 3, name: "data", declaration: "BLOB"),
         Column(index: 4, name: "on", declaration: "BOOLEAN"),
     ];
-    let row = Row(columns: columns, values: [Param(7), Param("Ada"), Param(Maybe<string>.none), Param([1.byte()]), Param(true)]);
+    let row = Row(
+        columns: columns,
+        values: [Param(7), Param("Ada"), Param(Maybe<string>.none), Param([1.byte()]), Param(true)]
+    );
     test.is(row.size(), 5);
     test.is(row.int("id"), 7);
     test.is(row.integer("id").string(), "7");
@@ -387,7 +390,10 @@ test "a row reads its cells by name: strict, Maybe and Presence" {
     test.throws(RowValueFailure) {
         row.flag("id");
     };
-    test.is(Row(columns: [Column(index: 0, name: "f", declaration: "")], values: [Param(1)]).flag("f"), true);
+    test.is(
+        Row(columns: [Column(index: 0, name: "f", declaration: "")], values: [Param(1)]).flag("f"),
+        true
+    );
     test.is(row.item(1).kind() == DbValueKind.text, true);
     test.is(row.columns().first()::Parts::name, "id");
     test.is(row.columns().last()::Parts::declaration, "BOOLEAN");
@@ -424,7 +430,10 @@ test "a row reads its cells by name: strict, Maybe and Presence" {
 
 test "a row refuses ambiguous names and mismatched widths" {
     let twice = Row(
-        columns: [Column(index: 0, name: "id", declaration: ""), Column(index: 1, name: "id", declaration: "")],
+        columns: [
+            Column(index: 0, name: "id", declaration: ""),
+            Column(index: 1, name: "id", declaration: "")
+        ],
         values: [Param(1), Param(2)],
     );
     test.is(twice.item(1).kind() == DbValueKind.integer, true);
@@ -434,7 +443,13 @@ test "a row refuses ambiguous names and mismatched widths" {
     test.throws(InvalidRow) {
         Row(columns: [Column(index: 0, name: "id", declaration: "")], values: [Param(1), Param(2)]);
     };
-    let schema = DbRowSchema(columns: [Column(index: 0, name: "a", declaration: ""), Column(index: 1, name: "b", declaration: "")], limits: DbLimits());
+    let schema = DbRowSchema(
+        columns: [
+            Column(index: 0, name: "a", declaration: ""),
+            Column(index: 1, name: "b", declaration: "")
+        ],
+        limits: DbLimits()
+    );
     test.is(schema.size(), 2);
     test.is(schema.position("b"), 1);
     test.is(schema.position("c"), -1);
