@@ -8,7 +8,8 @@ import "collections/sequence" take Sequencing;
 import "compare" take Order;
 import "logging/field" take LogFields;
 import "time/clock" take Instant;
-import "time/duration" take Duration, DurationUnit;
+import "time/duration" take Duration;
+import "async/atomic" take Atomic;
 
 role LogAllowing {
     allowed(name is LogName, level is LogLevel) is bool;
@@ -35,6 +36,8 @@ object LevelOverride {
 object LevelThresholds does LogAllowing {
     has fallback is LogLevel;
     has overrides is @LevelOverride;
+    // The threshold of each logger name asked about, resolved once (#182).
+    has resolved is Atomic<%string:LogLevel>;
 
     LevelThresholds(fallback is LogLevel, overrides is Sequencing<LevelOverride>) {
         let size = overrides.size();
@@ -50,6 +53,8 @@ object LevelThresholds does LogAllowing {
         }
         self.fallback = fallback;
         self.overrides = snapshot;
+        let empty is %string:LogLevel = [:];
+        resolved = Atomic(empty);
     }
 
     // Levels by dotted logger name, the longest name winning:
@@ -63,9 +68,34 @@ object LevelThresholds does LogAllowing {
         };
         self.fallback = fallback;
         self.overrides = listed;
+        let empty is %string:LogLevel = [:];
+        resolved = Atomic(empty);
     }
 
+    // A logger's threshold is looked up once per name; at most 4096 names are
+    // kept, and the 4097th starts the table afresh.
     allowed(name is LogName, level is LogLevel) is bool {
+        let key = name.string();
+        let known = resolved.value();
+        let threshold = if known.has(key) {
+            known[key];
+        }
+        else {
+            let chosen = self.threshold(name);
+            let kept is %string:LogLevel = if known.size() >= 4096 {
+                [:];
+            }
+            else {
+                known;
+            };
+            resolved.replace(kept + [key: chosen]);
+            chosen;
+        };
+        LogLevelOrder(left: level, right: threshold).order() != Order.less;
+    }
+
+    // The level of the longest override that is a prefix of name.
+    hidden threshold(name is LogName) is LogLevel {
         let choice = overrides.reduce(LogThresholdChoice(level: fallback, size: 0)) -> old, override {
             let prefix = override.name().segments();
             let actual = name.segments();
@@ -84,7 +114,7 @@ object LevelThresholds does LogAllowing {
                 old;
             }
         };
-        LogLevelOrder(left: level, right: choice.level()).order() != Order.less;
+        choice.level();
     }
 }
 
@@ -157,30 +187,43 @@ test "thresholds: the most specific override wins; allowed logs drop the rest" {
     test.ok(thresholds.allowed(LogName("app", "db"), LogLevel.debug));
     test.ok(thresholds.allowed(LogName("app", "db", "pool"), LogLevel.debug));
     test.ok(!thresholds.allowed(LogName("app", "http"), LogLevel.debug));
+    // Asked again, from the resolved table (#182).
+    for (0..2) -> round {
+        test.ok(!thresholds.allowed(LogName("app"), LogLevel.info));
+        test.ok(thresholds.allowed(LogName("app", "db", "pool"), LogLevel.debug));
+        test.ok(!thresholds.allowed(LogName("app", "http"), LogLevel.debug));
+    }
     let collected = CollectedLogs();
     let allowed = AllowedLogs(origin: collected, allowing: thresholds);
     for [[LogLevel.info, LogLevel.error]] -> pair {
         for pair -> level {
             let name = LogName("app");
             allowed.write(LogRecord(
-        occurred: Instant(Duration(seconds: 0)),
-        level: level,
-        message: "m",
-        context: LogContext(name: name, fields: LogFields(), process: 1),
-    ));
+                occurred: Instant(Duration(seconds: 0)),
+                level: level,
+                message: "m",
+                context: LogContext(name: name, fields: LogFields(), process: 1),
+            ));
         }
     }
     test.is(collected.size(), 1);
 }
 
 test "thresholds and filters take levels by dotted name" {
-    let levels = LevelThresholds(fallback: LogLevel.info, overrides: ["shop.db": LogLevel.debug, "shop.db.slow": LogLevel.error]);
+    let levels = LevelThresholds(
+        fallback: LogLevel.info,
+        overrides: ["shop.db": LogLevel.debug, "shop.db.slow": LogLevel.error]
+    );
     test.ok(levels.allowed(LogName("shop", "db"), LogLevel.debug));
     test.ok(!levels.allowed(LogName("shop"), LogLevel.debug));
     test.ok(!levels.allowed(LogName("shop", "db", "slow"), LogLevel.warning));
     test.ok(LevelThresholds(fallback: LogLevel.warning).allowed(LogName("any"), LogLevel.error));
     let kept = CollectedLogs();
-    let filtered = AllowedLogs(origin: kept, level: LogLevel.info, overrides: ["shop.db": LogLevel.debug]);
+    let filtered = AllowedLogs(
+        origin: kept,
+        level: LogLevel.info,
+        overrides: ["shop.db": LogLevel.debug]
+    );
     for [LogName("shop"), LogName("shop", "db")] -> name {
         filtered.write(LogRecord(
             occurred: Instant(Duration(seconds: 0)),
@@ -191,4 +234,3 @@ test "thresholds and filters take levels by dotted name" {
     }
     test.is(kept.size(), 1);
 }
-
