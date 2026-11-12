@@ -59,7 +59,11 @@ object TextTemplate {
         confirm maximum_input >= 0 && maximum_nodes >= 0 && maximum_output >= 0
             else throw InvalidTemplateLimits.invalid;
         self.origin = origin;
-        program = TemplateProgram(source: origin, maximum_input: maximum_input, maximum_nodes: maximum_nodes);
+        program = TemplateProgram(
+            source: origin,
+            maximum_input: maximum_input,
+            maximum_nodes: maximum_nodes
+        );
         self.maximum_output = maximum_output;
     }
 
@@ -186,7 +190,11 @@ object TemplateProgram {
     instructions() is @TemplateInstruction {
         confirm source.length() <= maximum_input
             else throw TemplateFailure.located(0, 1, 1, "template input limit exceeded");
-        let scanner = TemplateScanner(source: source, maximum: maximum_nodes, structured: structured);
+        let scanner = TemplateScanner(
+            source: source,
+            maximum: maximum_nodes,
+            structured: structured
+        );
         loop {
             last if !scanner.more();
             scanner = scanner.following();
@@ -200,6 +208,9 @@ object TemplateProgram {
 // validated instruction sequence is returned, before any user data observation.
 hidden object TemplateScanner {
     has source is string;
+    // The source's characters, compared by code while scanning (#169);
+    // successors share the array.
+    has symbols is @char;
     has maximum, position is int;
     has structured is bool = false;
     has nodes is List<TemplateInstruction>;
@@ -208,6 +219,7 @@ hidden object TemplateScanner {
     TemplateScanner(source is string, maximum is int) {
         self.source = source;
         self.maximum = maximum;
+        symbols = source.characters();
         position = 0;
         let empty_nodes is List<TemplateInstruction> = EmptyList();
         nodes = empty_nodes;
@@ -219,6 +231,7 @@ hidden object TemplateScanner {
         self.source = source;
         self.maximum = maximum;
         self.structured = structured;
+        symbols = source.characters();
         position = 0;
         let empty_nodes is List<TemplateInstruction> = EmptyList();
         nodes = empty_nodes;
@@ -318,7 +331,9 @@ hidden object TemplateScanner {
             let completed = self.flushed_parts(fragments, position);
             confirm completed.size() < maximum
                 else throw self.failure(position, "template node limit exceeded");
-            ^nodes = completed.prefix(TemplateInstruction(text: path, variable: false, tag: first, offset: position));
+            ^nodes = completed.prefix(
+                TemplateInstruction(text: path, variable: false, tag: first, offset: position)
+            );
             let empty is List<string> = EmptyList();
             ^literal = empty;
             ^position = if standalone {
@@ -354,7 +369,9 @@ hidden object TemplateScanner {
         let completed = self.flushed(position);
         confirm completed.size() < maximum
             else throw self.failure(position, "template node limit exceeded");
-        ^nodes = completed.prefix(TemplateInstruction(text: name, variable: true, tag: "", offset: position));
+        ^nodes = completed.prefix(
+            TemplateInstruction(text: name, variable: true, tag: "", offset: position)
+        );
         let empty is List<string> = EmptyList();
         ^literal = empty;
         ^position = end + 2;
@@ -399,19 +416,29 @@ hidden object TemplateScanner {
         }
     }
 
+    // The next "{{" or "}}" from start, or the end.
     hidden delimiter(start is int) is int {
-        for (start..source.length()) -> index {
-            let pair = self.at(index, 2);
-            if pair == "{{" || pair == "}}" {
+        let stop = symbols.size() - 1;
+        if start >= stop {
+            return symbols.size();
+        }
+        for (start..stop) -> index {
+            let code = symbols[index].code();
+            if (code == 123 || code == 125) && symbols[index + 1].code() == code {
                 return index;
             }
         }
-        source.length();
+        symbols.size();
     }
 
+    // The next "}}" from start, or -1.
     hidden closing(start is int) is int {
-        for (start..source.length()) -> index {
-            if self.at(index, 2) == "}}" {
+        let stop = symbols.size() - 1;
+        if start >= stop {
+            return -1;
+        }
+        for (start..stop) -> index {
+            if symbols[index].code() == 125 && symbols[index + 1].code() == 125 {
                 return index;
             }
         }
@@ -419,24 +446,24 @@ hidden object TemplateScanner {
     }
 
     hidden horizontal_end(start is int) is int {
-        for (start..source.length()) -> index {
-            let char = source.slice(index, index + 1);
-            if char != " " && char != "\t" {
+        for (start..symbols.size()) -> index {
+            let code = symbols[index].code();
+            if code != 32 && code != 9 {
                 return index;
             }
         }
-        source.length();
+        symbols.size();
     }
 
     hidden indentation(start is int) is int {
         // Stop on the first non-horizontal character, rather than copying the
         // complete source prefix for every comment on a long document.
         for (0..start) -> distance {
-            let char = source.slice(start - distance - 1, start - distance);
-            if char == "\n" {
+            let code = symbols[start - distance - 1].code();
+            if code == 10 {
                 return distance;
             }
-            if char != " " && char != "\t" {
+            if code != 32 && code != 9 {
                 return -1;
             }
         }
@@ -568,7 +595,10 @@ enum TemplateOutputLimitExceeded is Error = (exceeded);
 // these local tests cover lazy construction, grammar and byte budgets directly.
 test "plain template construction retains source without parsing" {
     test.is(TextTemplate("{{invalid").source(), "{{invalid");
-    test.is(TextTemplate(origin: "", maximum_input: 0, maximum_nodes: 0, maximum_output: 0).source(), "");
+    test.is(
+        TextTemplate(origin: "", maximum_input: 0, maximum_nodes: 0, maximum_output: 0).source(),
+        ""
+    );
 }
 
 test "plain templates validate syntax and byte bounds" {
@@ -603,14 +633,24 @@ test "Okkama template program yields immutable ordered instructions" {
     test.is(nodes[1].text(), "x");
     test.ok(nodes[1].variable());
     test.is(nodes[2].text(), "!");
-    test.is(TemplateProgram(source: "", maximum_input: 0, maximum_nodes: 0).instructions().size(), 0);
+    test.is(
+        TemplateProgram(source: "", maximum_input: 0, maximum_nodes: 0).instructions().size(),
+        0
+    );
 }
 
 test "Okkama template program standalone comments and escapes" {
-    let nodes = TemplateProgram(source: "a\n {{! multi\nline }} \t\r\nb{{{{x}}}}", maximum_input: 100, maximum_nodes: 1).instructions();
+    let nodes = TemplateProgram(
+        source: "a\n {{! multi\nline }} \t\r\nb{{{{x}}}}",
+        maximum_input: 100,
+        maximum_nodes: 1
+    ).instructions();
     test.is(nodes.size(), 1);
     test.is(nodes[0].text(), "a\nb{{x}}");
-    test.is(TemplateProgram(source: " {{!only}}", maximum_input: 20, maximum_nodes: 0).instructions().size(), 0);
+    test.is(
+        TemplateProgram(source: " {{!only}}", maximum_input: 20, maximum_nodes: 0).instructions().size(),
+        0
+    );
 }
 
 test "Okkama template program preserves failure coordinates and bounds" {
@@ -647,11 +687,26 @@ test "Okkama template program preserves failure coordinates and bounds" {
 }
 
 test "Okkama template program delimiter and comment boundaries" {
-    test.is(TemplateProgram(source: "{{{{{{x}}}}}}", maximum_input: 100, maximum_nodes: 3).instructions().size(), 3);
-    test.is(TemplateProgram(source: "{{{{{{x}}}}}}", maximum_input: 100, maximum_nodes: 3).instructions()[2].text(), "}}");
-    test.is(TemplateProgram(source: "a{{!inline}}b", maximum_input: 100, maximum_nodes: 1).instructions()[0].text(), "ab");
-    test.is(TemplateProgram(source: " {{!a}}\n\t{{!b}}\r\n", maximum_input: 100, maximum_nodes: 0).instructions().size(), 0);
-    test.is(TemplateProgram(source: "a\r{{!b}}\nc", maximum_input: 100, maximum_nodes: 1).instructions()[0].text(), "a\r\nc");
+    test.is(
+        TemplateProgram(source: "{{{{{{x}}}}}}", maximum_input: 100, maximum_nodes: 3).instructions().size(),
+        3
+    );
+    test.is(
+        TemplateProgram(source: "{{{{{{x}}}}}}", maximum_input: 100, maximum_nodes: 3).instructions()[2].text(),
+        "}}"
+    );
+    test.is(
+        TemplateProgram(source: "a{{!inline}}b", maximum_input: 100, maximum_nodes: 1).instructions()[0].text(),
+        "ab"
+    );
+    test.is(
+        TemplateProgram(source: " {{!a}}\n\t{{!b}}\r\n", maximum_input: 100, maximum_nodes: 0).instructions().size(),
+        0
+    );
+    test.is(
+        TemplateProgram(source: "a\r{{!b}}\nc", maximum_input: 100, maximum_nodes: 1).instructions()[0].text(),
+        "a\r\nc"
+    );
     for ["{{}}", "{{ }}", "{{.}}", "{{a..b}}", "{{#a}}", "}}", "{{{x}}}"] -> text {
         test.ok(try {
             TemplateProgram(source: text, maximum_input: 100, maximum_nodes: 10).instructions();
@@ -665,5 +720,8 @@ test "Okkama template program delimiter and comment boundaries" {
 
 test "a template renders a map of dotted paths" {
     let greeting = TextTemplate("Hello, {{user.name}}! You have {{user.unread}} new messages.");
-    test.is(greeting.string(["user.name": "Ada", "user.unread": "3"]), "Hello, Ada! You have 3 new messages.");
+    test.is(
+        greeting.string(["user.name": "Ada", "user.unread": "3"]),
+        "Hello, Ada! You have 3 new messages."
+    );
 }
