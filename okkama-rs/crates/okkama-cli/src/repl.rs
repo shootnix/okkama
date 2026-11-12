@@ -63,6 +63,7 @@ pub(crate) fn run() -> ExitCode {
     loop {
         if interactive {
             print!("{}", if input.is_empty() { "okkama> " } else { "   ...> " });
+            let _ = okkama_runtime::stdout::flush();
             let _ = io::stdout().flush();
         }
         let mut line = String::new();
@@ -115,6 +116,7 @@ impl Session {
             ":reset" => *self = Self::default(),
             other => eprintln!("unknown command `{other}` (:help lists commands)"),
         }
+        let _ = okkama_runtime::stdout::flush();
         let _ = io::stdout().flush();
         true
     }
@@ -138,6 +140,7 @@ impl Session {
             }
             _ => self.statements(text),
         }
+        let _ = okkama_runtime::stdout::flush();
         let _ = io::stdout().flush();
     }
 
@@ -226,6 +229,7 @@ impl Session {
             }
         };
         let args: Vec<Carried> = carried.iter().map(|index| self.vars[*index].value.clone()).collect();
+        let _ = okkama_runtime::stdout::flush();
         let _ = io::stdout().flush();
         let (result, trace) = run_cell(&module, &cell, KEEPER, &args);
         match result {
