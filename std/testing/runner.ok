@@ -22,8 +22,8 @@ object RecordedTestReport {
             RecordedTestResult(entry).outcome();
         };
         report = TestReport(
-            start: Instant(Duration(value: Number(document.text("start_ns")).rat(), unit: DurationUnit.nanosecond)),
-            duration: Duration(value: Number(document.text("duration_ns")).rat(), unit: DurationUnit.nanosecond),
+            start: Instant(Duration(nanoseconds: Number(document.text("start_ns")).int())),
+            duration: Duration(nanoseconds: Number(document.text("duration_ns")).int()),
             seed: document.int("seed"),
             results: results
         );
@@ -106,7 +106,7 @@ hidden object RecordedTestResult {
         result = TestResult(
             name: entry.text("name"),
             status: status,
-            duration: Duration(value: Number(entry.text("duration_ns")).rat(), unit: DurationUnit.nanosecond),
+            duration: Duration(nanoseconds: Number(entry.text("duration_ns")).int()),
             failures: failures,
             output: TestOutput(output: output, errors: errors, truncated: entry.boolean("truncated")),
             skip_reason: if entry.has("skip_reason") {

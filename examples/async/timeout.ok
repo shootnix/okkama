@@ -3,7 +3,7 @@ module examples/async/timeout v1.0.0;
 import "async/timeout" take Within, TimedOut;
 import "async/collect" take Raced, AllFutures;
 import "time/clock" take SystemClock, Timing;
-import "time/duration" take Duration, DurationUnit;
+import "time/duration" take Duration;
 import "io/stdout" take Stdout;
 
 // Bound a slow operation by time, race two answers, wait for several.
@@ -15,7 +15,7 @@ object Lookup {
     Lookup(:name, :delay, :clock);
 
     async answer() is string {
-        await clock.wait(Duration(value: delay.rat(), unit: DurationUnit.millisecond));
+        await clock.wait(Duration(milliseconds: delay));
         name;
     }
 }

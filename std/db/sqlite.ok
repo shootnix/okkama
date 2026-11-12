@@ -1757,7 +1757,7 @@ test "SQLite rejects contradictory flags and sub-millisecond busy timeouts" {
             read_only: false,
             create: true,
             foreign_keys: true,
-            busy_timeout: Duration(value: 1.rat() / 2000.rat(), unit: DurationUnit.second),
+            busy_timeout: Duration(microseconds: 500),
             journal: SqliteJournal.default_mode
         );
         false;

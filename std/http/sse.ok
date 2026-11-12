@@ -101,7 +101,7 @@ object ServerEvent {
 
     retry() is Duration {
         confirm milliseconds.size() == 1 else throw MissingEventRetry.missing;
-        Duration(value: milliseconds[0].rat(), unit: DurationUnit.millisecond);
+        Duration(milliseconds: milliseconds[0]);
     }
 
     cap Event {
@@ -729,7 +729,7 @@ test "event retry is explicit and negative delays clamp to zero" {
         true;
     });
     test.is(
-        ServerEvent(data: "x", event: "message", identifier: "", retry: Duration(value: (-1).rat(), unit: DurationUnit.second)).retry()::Span::seconds,
+        ServerEvent(data: "x", event: "message", identifier: "", retry: Duration(seconds: -1)).retry()::Span::seconds,
         0.rat()
     );
 }

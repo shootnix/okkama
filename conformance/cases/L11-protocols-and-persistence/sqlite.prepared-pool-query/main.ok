@@ -13,13 +13,13 @@ import "fs/temp" take TemporaryDirectory;
 import "fs/directory" take Directory;
 import "fs/path" take Path;
 import "time/clock" take SystemClock;
-import "time/duration" take Duration,DurationUnit;
+import "time/duration" take Duration;
 
 async main() is int {
     let c=Checks();
     let scratch=TemporaryDirectory(Directory(Path(".")),"db-api-");defer scratch.close();
     let database=SqliteDatabase(path: Path(scratch.path().string()+"/test.sqlite"),options: SqliteOptions());
-    let options=PoolOptions(minimum: 0,maximum: 1,idle_timeout: Duration(value: 30.rat(),unit: DurationUnit.second),lifetime: Duration(value: 60.rat(),unit: DurationUnit.second),acquisition_timeout: Duration(value: 5.rat(),unit: DurationUnit.second));
+    let options=PoolOptions(minimum: 0,maximum: 1,idle_timeout: Duration(seconds: 30),lifetime: Duration(seconds: 60),acquisition_timeout: Duration(seconds: 5));
     let pool=DbPreparedPool(origin: SqliteAcquiring(database),options: options,clock: SystemClock());
     defer await pool.settled();defer pool.close();
     let lease=await pool.connection();

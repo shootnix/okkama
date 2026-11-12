@@ -385,10 +385,10 @@ hidden object CookieAttributeReading {
         let cap = reference.plus(Duration(days: 400));
         let expires = if age.size() == 1 {
             CookieExpiry(if age[0] <= 0 {
-                Instant(Duration(value: (-11644473600).rat(), unit: DurationUnit.second));
+                Instant(Duration(seconds: -11644473600));
             }
             else {
-                reference.plus(Duration(value: age[0].rat(), unit: DurationUnit.second));
+                reference.plus(Duration(seconds: age[0]));
             });
         }
         else {
