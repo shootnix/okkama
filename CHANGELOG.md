@@ -249,6 +249,32 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     for walking a whole tree.
   - Both now look keys up in a map of names instead of comparing every pair.
 
+- **`okkama man`: reference pages from doc comments (#512, phase A).**
+
+      okkama man                          the index of std, by area
+      okkama man io/stdout                a module (std/io/stdout: std only)
+      okkama man io/stdout Stdout         one declaration
+      okkama man io/stdout Stdout.write   one action, every overload
+      okkama man ./src/app.ok             a file of your own
+      okkama man --format markdown json
+
+  - **Comments:** a module documents itself in ordinary `//` comments whose
+    text is a CommonMark subset.
+    - The comment right after `module` is the overview; one after the imports
+      counts too.
+    - The comment right above a declaration is its documentation.
+  - **Pages** have NAME, VERSION, SYNOPSIS, DESCRIPTION, PUBLIC API, ERRORS,
+    ENGINE NOTES and SEE ALSO.
+    - Signatures come from the declarations.
+    - Hidden ones never show.
+  - **One model:** `okkama_compiler::doc` is the one documentation model; the
+    editor's hover reads the same comments.
+  - **Terminal:** the page wraps to the width and is bold unless `NO_COLOR`;
+    `$PAGER` shows it when set.
+  - Book §28.4.
+  - Links and hover from the model (#513), doctests and the `missing-docs`
+    lint (#514), and roff, HTML and JSON (#515) follow.
+
 ### Fixed
 
 - **Parsed JSON grew Sparrow's memory (#510).** Sparrow keeps JSON nodes and
