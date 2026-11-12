@@ -1,9 +1,11 @@
 module regex/search v1.0.0;
 
 import "collections/iteration" take Cursor, Iterating, IterationEnded;
-import "regex/pattern" take Regex, RegexQuery, RegexMatchObservation, RegexRangeOutsideInput, NoRegexMatch;
+import "regex/pattern" take Regex, RegexQuery, RegexMatchObservation, RegexRangeOutsideInput,
+    NoRegexMatch;
 import "regex/range" take RegexRange;
-import "regex/match" take RegexCapture, RegexMatch, RegexMatching, UnmatchedRegexCapture, MissingRegexGroup;
+import "regex/match" take RegexCapture, RegexMatch, RegexMatching, UnmatchedRegexCapture,
+    MissingRegexGroup;
 
 // Mandatory searches are matches themselves: read them directly.
 // Work is lazy and memoized by an opaque query state on the first observation.
@@ -41,7 +43,12 @@ object FirstRegexMatch does RegexMatching {
     }
 
     FirstRegexMatch(origin is string, regex is Regex, range is RegexRange) {
-        observation = RegexMatchObservation(origin: origin, regex: regex, range: range, mode: RegexQuery.first);
+        observation = RegexMatchObservation(
+            origin: origin,
+            regex: regex,
+            range: range,
+            mode: RegexQuery.first
+        );
     }
 
     text() is string {
@@ -78,7 +85,12 @@ object PrefixRegexMatch does RegexMatching {
     }
 
     PrefixRegexMatch(origin is string, regex is Regex, range is RegexRange) {
-        observation = RegexMatchObservation(origin: origin, regex: regex, range: range, mode: RegexQuery.prefix);
+        observation = RegexMatchObservation(
+            origin: origin,
+            regex: regex,
+            range: range,
+            mode: RegexQuery.prefix
+        );
     }
 
     text() is string {
@@ -115,7 +127,12 @@ object EntireRegexMatch does RegexMatching {
     }
 
     EntireRegexMatch(origin is string, regex is Regex, range is RegexRange) {
-        observation = RegexMatchObservation(origin: origin, regex: regex, range: range, mode: RegexQuery.entire);
+        observation = RegexMatchObservation(
+            origin: origin,
+            regex: regex,
+            range: range,
+            mode: RegexQuery.entire
+        );
     }
 
     text() is string {
@@ -257,7 +274,10 @@ test "first, prefix and entire searches" {
         "none"
     );
     // Offsets count Unicode scalars: the digit after "a😀я" is at 3.
-    test.is(FirstRegexMatch(origin: "a😀я1", regex: Regex("\\d"), range: RegexRange(1, 4)).range()::Bounds::start, 3);
+    test.is(
+        FirstRegexMatch(origin: "a😀я1", regex: Regex("\\d"), range: RegexRange(1, 4)).range()::Bounds::start,
+        3
+    );
 }
 
 test "captures and named groups" {
@@ -289,15 +309,24 @@ test "captures and named groups" {
 }
 
 test "matches walk every non-overlapping match" {
-    test.is(RegexMatches(origin: "a1 b22 c", regex: Regex("\\d+")).map() -> found {
-        found.text() + "@" + found.range()::Bounds::start.string();
-    }.join(","), "1@1,22@4");
+    test.is(
+        RegexMatches(origin: "a1 b22 c", regex: Regex("\\d+")).map() -> found {
+            found.text() + "@" + found.range()::Bounds::start.string();
+        }.join(","),
+        "1@1,22@4"
+    );
     // An empty match advances by one scalar.
-    test.is(RegexMatches(origin: "abc", regex: Regex("x*")).map() -> found {
-        found.range()::Bounds::start.string();
-    }.join(","), "0,1,2,3");
+    test.is(
+        RegexMatches(origin: "abc", regex: Regex("x*")).map() -> found {
+            found.range()::Bounds::start.string();
+        }.join(","),
+        "0,1,2,3"
+    );
     test.ok(RegexMatches(origin: "abc", regex: Regex("b")).found());
-    test.is(RegexMatches(origin: "abc", regex: Regex("\\d")).map() -> found {
-        found.text();
-    }.join(","), "");
+    test.is(
+        RegexMatches(origin: "abc", regex: Regex("\\d")).map() -> found {
+            found.text();
+        }.join(","),
+        ""
+    );
 }

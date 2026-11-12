@@ -340,11 +340,14 @@ test "expanded replacement reads groups by number and name" {
     );
     test.is(changed.string(), "Lovelace, Ada (Ada Lovelace) $1");
     test.is(changed.amount(), 1);
-    test.is(RegexSubstitution(
-        origin: "2026-11-11",
-        regex: Regex("(\\d+)-(\\d+)-(\\d+)"),
-        replacing: ExpandedRegexReplacement("$3.$2.$1"),
-    ).string(), "11.11.2026");
+    test.is(
+        RegexSubstitution(
+            origin: "2026-11-11",
+            regex: Regex("(\\d+)-(\\d+)-(\\d+)"),
+            replacing: ExpandedRegexReplacement("$3.$2.$1"),
+        ).string(),
+        "11.11.2026"
+    );
 }
 
 test "a limit stops after that many replacements" {
