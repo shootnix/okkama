@@ -6,6 +6,7 @@ import "collections/list" take List, EmptyList;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument;
+import "strings/parse" take Number, Truth, InvalidInteger, InvalidBoolean;
 
 object QueryParameter {
     has key, text is string;
@@ -63,16 +64,46 @@ object QueryParameters {
         };
     }
 
-    first(name is string) is string {
-        for origin -> entry {
-            if entry.name() == name {
-                return entry.value();
+    // The first value of name: query.text("q"). An absent name is
+    // MissingQueryParameter.
+    text(name is string) is string {
+        match self.maybe(name).text() {
+            case Maybe.some(found) {
+                found;
+            }
+            else {
+                throw MissingQueryParameter.name(name);
             }
         }
-        throw MissingQueryParameter.name(name);
     }
 
-    values(name is string) is Sequencing<string> {
+    // The first value of name as an integer: query.int("page"). A value that
+    // is not one is InvalidQueryValue, naming the parameter and the value.
+    int(name is string) is int {
+        match self.maybe(name).int() {
+            case Maybe.some(found) {
+                found;
+            }
+            else {
+                throw MissingQueryParameter.name(name);
+            }
+        }
+    }
+
+    // The first value of name as true or false: query.boolean("all").
+    boolean(name is string) is bool {
+        match self.maybe(name).boolean() {
+            case Maybe.some(found) {
+                found;
+            }
+            else {
+                throw MissingQueryParameter.name(name);
+            }
+        }
+    }
+
+    // Every value of name in order: query.list("tag"); [] when it is absent.
+    list(name is string) is @string {
         let matches is @QueryParameter = origin.filter() -> entry {
             entry.name() == name;
         };
@@ -80,6 +111,16 @@ object QueryParameters {
             entry.value();
         };
         values;
+    }
+
+    // A value that may be absent: query.maybe("page").int() else 1.
+    maybe(name is string) is QueryMaybeValue {
+        for origin -> entry {
+            if entry.name() == name {
+                return QueryMaybeValue(name: name, value: Maybe.some(entry.value()));
+            }
+        }
+        QueryMaybeValue(name: name, value: Maybe<string>.none);
     }
 
     string() is string {
@@ -100,8 +141,15 @@ object QueryParameters {
 // HTML form text: "+" stays "+").
 //
 //     let page = ParsedUrl("https://example.com/search?q=okkama&page=2").parts();
-//     let parameters = ParsedQuery(page::Parts::query else "").parameters();
-//     parameters.first("q");     // "okkama"
+//     let query = ParsedQuery(page::Parts::query else "").parameters();
+//     query.text("q");                      // "okkama"
+//     query.int("page");                    // 2
+//     query.maybe("limit").int() else 20;   // 20
+//     query.list("tag");                    // [] when absent
+//
+// With a name given more than once, text(), int() and boolean() read the first
+// value and list() all of them. Parameters are built part by part:
+// QueryParameters(QueryParameter(name: "q", value: "okkama")).string().
 object ParsedQuery {
     has origin is string;
     has maximum_parameters, maximum_bytes is int;
@@ -132,7 +180,58 @@ object ParsedQuery {
     }
 }
 
+// A value of a query parameter, which may be absent: its readers answer Maybe.
+// A value that is there but malformed is still InvalidQueryValue.
+object QueryMaybeValue {
+    has name is string;
+    has value is Maybe<string>;
+
+    QueryMaybeValue(name is string, value is Maybe<string>) {
+        self.name = name;
+        self.value = value;
+    }
+
+    text() is Maybe<string> {
+        value;
+    }
+
+    int() is Maybe<int> {
+        match value {
+            case Maybe.some(text) {
+                Maybe.some(try {
+                    Number(text).int();
+                }
+                catch failure is InvalidInteger {
+                    throw InvalidQueryValue.named(name, text, "an integer");
+                });
+            }
+            else {
+                Maybe<int>.none;
+            }
+        }
+    }
+
+    boolean() is Maybe<bool> {
+        match value {
+            case Maybe.some(text) {
+                Maybe.some(try {
+                    Truth(text).bool();
+                }
+                catch failure is InvalidBoolean {
+                    throw InvalidQueryValue.named(name, text, "true or false");
+                });
+            }
+            else {
+                Maybe<bool>.none;
+            }
+        }
+    }
+}
+
 enum MissingQueryParameter is Error = (name(name is string));
+
+// A parameter whose value is not what its reader expects.
+enum InvalidQueryValue is Error = (named(name is string, value is string, expected is string));
 
 enum InvalidQueryEncoding is Error = (located(offset is int, reason is string));
 
@@ -372,5 +471,42 @@ hidden object ParameterText {
 test "flags and duplicate parameters retain their identity" {
     let entries = ParsedQuery("a&a=&a=1").parameters();
     test.is(entries.string(), "a&a=&a=1");
-    test.is(entries.values("a").size(), 3);
+    test.is(entries.list("a").size(), 3);
+}
+
+test "parameters read like json values" {
+    let query = ParsedQuery("q=okkama&page=2&tag=a&tag=b&all=true&bad=x").parameters();
+    test.is(query.text("q"), "okkama");
+    test.is(query.int("page"), 2);
+    test.ok(query.boolean("all"));
+    test.is(query.list("tag"), ["a", "b"]);
+    test.is(query.list("none").size(), 0);
+    test.is(query.maybe("limit").int() else 20, 20);
+    test.is(query.maybe("page").int() else 1, 2);
+    test.is(query.maybe("q").text() else "", "okkama");
+    test.ok(try {
+        query.text("missing");
+        false;
+    }
+    catch MissingQueryParameter.name(name) {
+        name == "missing";
+    });
+    test.ok(try {
+        query.int("bad");
+        false;
+    }
+    catch InvalidQueryValue.named(name, value, expected) {
+        name == "bad" && value == "x" && expected == "an integer";
+    });
+    test.ok(try {
+        query.maybe("bad").boolean();
+        false;
+    }
+    catch InvalidQueryValue.named(name, _value, expected) {
+        name == "bad" && expected == "true or false";
+    });
+    test.is(
+        QueryParameters(QueryParameter(name: "q", value: "a b&c"), QueryParameter(name: "flag")).string(),
+        "q=a%20b%26c&flag"
+    );
 }
