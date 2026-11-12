@@ -2,6 +2,8 @@ module math/decimal v1.0.0;
 
 import "compare" take Comparing, Order;
 import "numbers/bigint" take BigInt;
+import "math/rounding" take Rounding;
+import "runtime/number_text" take int_parse, float_parse;
 import "runtime/decimal" take decimal_valid, decimal_canonical, decimal_coefficient,
     decimal_exponent, decimal_order;
 
@@ -10,6 +12,22 @@ import "runtime/decimal" take decimal_valid, decimal_canonical, decimal_coeffici
 //
 //     Decimal("001.2000").string(); // "1.2"
 //     Decimal("1000").string();     // "1e3"
+//
+// Arithmetic is exact and written in Okkama on the integer coefficient and
+// the exponent (#191). plus, minus and times keep every digit; divided and
+// rounded keep `scale` digits after the point, rounded as asked:
+//
+//     let price = Decimal("19.99");
+//     price.plus(Decimal("0.01")).string();   // "2e1"
+//     price.times(Decimal(3)).string();       // "5.997e1"
+//     Decimal(10).divided(by: Decimal(3), scale: 2, rounding: Rounding.half_even).string(); // "3.33"
+//     Decimal("2.675").rounded(scale: 2, rounding: Rounding.half_up).string();            // "2.68"
+//     price.rat();    // 1999/100
+//     price.float();  // 19.99
+//
+// Lining two exponents up, or a scale far from the exponent, may not shift a
+// coefficient by more than 4096 digits: DecimalLimitExceeded. A far exponent
+// in a document cannot ask for a number of millions of digits.
 
 object Decimal does Comparing<Decimal> {
     has origin is string;
@@ -17,6 +35,11 @@ object Decimal does Comparing<Decimal> {
     Decimal(origin is string) {
         confirm decimal_valid(origin) else throw InvalidDecimal.origin(origin);
         self.origin = decimal_canonical(origin);
+    }
+
+    // An integer as a decimal: Decimal(7).
+    Decimal(origin is int) {
+        self.origin = decimal_canonical(origin.string());
     }
 
     coefficient() is BigInt {
@@ -45,9 +68,252 @@ object Decimal does Comparing<Decimal> {
     string() is string {
         origin;
     }
+
+    plus(other is Decimal) is Decimal {
+        let mine = DecimalTerms(self);
+        let theirs = DecimalTerms(other);
+        let exponent = mine.lowest(theirs);
+        DecimalParts(
+            coefficient: mine.scaled(exponent) + theirs.scaled(exponent),
+            exponent: exponent
+        ).decimal();
+    }
+
+    minus(other is Decimal) is Decimal {
+        let mine = DecimalTerms(self);
+        let theirs = DecimalTerms(other);
+        let exponent = mine.lowest(theirs);
+        DecimalParts(
+            coefficient: mine.scaled(exponent) - theirs.scaled(exponent),
+            exponent: exponent
+        ).decimal();
+    }
+
+    times(other is Decimal) is Decimal {
+        let mine = DecimalTerms(self);
+        let theirs = DecimalTerms(other);
+        DecimalParts(
+            coefficient: mine.whole() * theirs.whole(),
+            exponent: mine.exponent() + theirs.exponent()
+        )
+            .decimal();
+    }
+
+    // The quotient with scale digits after the point:
+    // total.divided(by: Decimal(4), scale: 2, rounding: Rounding.half_even).
+    // Dividing by zero is DecimalDivisionByZero.
+    divided(by is Decimal, scale is int, rounding is Rounding) is Decimal {
+        let mine = DecimalTerms(self);
+        let theirs = DecimalTerms(by);
+        confirm theirs.whole() != 0 else throw DecimalDivisionByZero.dividend(origin);
+        // self / by * 10^scale is mine.whole() * 10^shift / theirs.whole().
+        let shift = mine.exponent() - theirs.exponent() + scale;
+        let power = DecimalShift(shift).power();
+        let quotient = if shift >= 0 {
+            DecimalQuotient(dividend: mine.whole() * power, divisor: theirs.whole());
+        }
+        else {
+            DecimalQuotient(dividend: mine.whole(), divisor: theirs.whole() * power);
+        };
+        DecimalParts(coefficient: quotient.rounded(rounding), exponent: -scale).decimal();
+    }
+
+    // The value with at most scale digits after the point:
+    // total.rounded(scale: 2, rounding: Rounding.half_up). A negative scale
+    // rounds to tens, hundreds and so on.
+    rounded(scale is int, rounding is Rounding) is Decimal {
+        let mine = DecimalTerms(self);
+        let shift = mine.exponent() + scale;
+        if shift >= 0 {
+            return self;
+        }
+        let quotient = DecimalQuotient(dividend: mine.whole(), divisor: DecimalShift(shift).power());
+        DecimalParts(coefficient: quotient.rounded(rounding), exponent: -scale).decimal();
+    }
+
+    // The exact fraction: Decimal("0.75").rat() is 3/4.
+    rat() is rat {
+        let mine = DecimalTerms(self);
+        let power = DecimalShift(mine.exponent()).power();
+        if mine.exponent() >= 0 {
+            (mine.whole() * power).rat();
+        }
+        else {
+            rat(mine.whole(), power);
+        }
+    }
+
+    // The nearest float: Decimal("0.1").float() is 0.1. Far beyond the range
+    // of float it is an infinity or zero.
+    float() is float {
+        let mine = DecimalTerms(self);
+        let digits = mine.whole().abs().string();
+        let sign = if mine.whole() < 0 {
+            "-";
+        }
+        else {
+            "";
+        };
+        // The power of ten of the first digit; float ends near 1e308 and 1e-324.
+        let leading = mine.exponent() + digits.length() - 1;
+        let plain = if mine.whole() == 0 || leading < -400 {
+            "0.0";
+        }
+        else if leading > 400 {
+            "1" + DecimalZeros(400).string() + ".0";
+        }
+        else if mine.exponent() >= 0 {
+            digits + DecimalZeros(mine.exponent()).string() + ".0";
+        }
+        else if -mine.exponent() < digits.length() {
+            let point = digits.length() + mine.exponent();
+            digits.slice(0, point) + "." + digits.slice(point, digits.length());
+        }
+        else {
+            "0." + DecimalZeros(-mine.exponent() - digits.length()).string() + digits;
+        };
+        float_parse(sign + plain);
+    }
+}
+
+// The integer coefficient and the exponent of a decimal.
+hidden object DecimalTerms {
+    has whole is int;
+    has exponent is int;
+
+    DecimalTerms(origin is Decimal) {
+        whole = int_parse(decimal_coefficient(origin.string()), 10);
+        exponent = decimal_exponent(origin.string());
+    }
+
+    whole() is int {
+        whole;
+    }
+
+    exponent() is int {
+        exponent;
+    }
+
+    // The lower of the two exponents, which lines both up exactly.
+    lowest(other is DecimalTerms) is int {
+        let lowest = if exponent < other.exponent() {
+            exponent;
+        }
+        else {
+            other.exponent();
+        };
+        lowest;
+    }
+
+    // The coefficient for an exponent at or below this one.
+    scaled(to is int) is int {
+        whole * DecimalShift(exponent - to).power();
+    }
+}
+
+// count zeros, for writing a decimal out in full.
+hidden object DecimalZeros {
+    has count is int;
+
+    DecimalZeros(count is int) {
+        self.count = count;
+    }
+
+    string() is string {
+        (10).pow(count).string().slice(1, count + 1);
+    }
+}
+
+// A power of ten no larger than 10^4096.
+hidden object DecimalShift {
+    has shift is int;
+
+    DecimalShift(shift is int) {
+        confirm shift.abs() <= 4096 else throw DecimalLimitExceeded.shift(shift, 4096);
+        self.shift = shift;
+    }
+
+    power() is int {
+        (10).pow(shift.abs());
+    }
+}
+
+// A coefficient and an exponent, written as the canonical decimal.
+hidden object DecimalParts {
+    has coefficient is int;
+    has exponent is int;
+
+    DecimalParts(coefficient is int, exponent is int) {
+        self.coefficient = coefficient;
+        self.exponent = exponent;
+    }
+
+    decimal() is Decimal {
+        Decimal(coefficient.string() + "e" + exponent.string());
+    }
+}
+
+// An integer quotient rounded the way it is asked to be.
+hidden object DecimalQuotient {
+    has dividend is int;
+    has divisor is int;
+
+    DecimalQuotient(dividend is int, divisor is int) {
+        self.dividend = dividend;
+        self.divisor = divisor;
+    }
+
+    rounded(rounding is Rounding) is int {
+        let negative = (dividend < 0) != (divisor < 0);
+        let top = dividend.abs();
+        let bottom = divisor.abs();
+        let remainder = top % bottom;
+        let truncated = ((top - remainder) / bottom).int();
+        let twice = remainder * 2;
+        let up = match rounding {
+            case Rounding.toward_zero {
+                false;
+            }
+            case Rounding.away_from_zero {
+                remainder > 0;
+            }
+            case Rounding.floor {
+                negative && remainder > 0;
+            }
+            case Rounding.ceiling {
+                !negative && remainder > 0;
+            }
+            case Rounding.half_up {
+                twice >= bottom;
+            }
+            case Rounding.half_down {
+                twice > bottom;
+            }
+            else {
+                twice > bottom || (twice == bottom && truncated % 2 == 1);
+            }
+        };
+        let magnitude = if up {
+            truncated + 1;
+        }
+        else {
+            truncated;
+        };
+        if negative {
+            -magnitude;
+        }
+        else {
+            magnitude;
+        }
+    }
 }
 
 enum InvalidDecimal is Error = (origin(origin is string));
+
+enum DecimalDivisionByZero is Error = (dividend(dividend is string));
+
+// A shift of a coefficient by more than limit digits.
+enum DecimalLimitExceeded is Error = (shift(shift is int, limit is int));
 
 test "equivalent spellings share one canonical form" {
     test.is(Decimal("001.2000").string(), "1.2");
@@ -68,4 +334,86 @@ test "equivalent spellings share one canonical form" {
             "[" + invalid + "]"
         );
     }
+}
+
+test "decimals add, subtract and multiply exactly" {
+    test.is(Decimal("19.99").plus(Decimal("0.01")).string(), "2e1");
+    test.is(Decimal("0.1").plus(Decimal("0.2")).string(), "3e-1");
+    test.is(Decimal("1e3").plus(Decimal("-0.001")).string(), "9.99999e2");
+    test.is(Decimal("1").minus(Decimal("1.5")).string(), "-5e-1");
+    test.is(Decimal("2.5").minus(Decimal("2.5")).string(), "0");
+    test.is(Decimal("19.99").times(Decimal(3)).string(), "5.997e1");
+    test.is(Decimal("-1.5").times(Decimal("2e3")).string(), "-3e3");
+    test.is(Decimal(7).string(), "7");
+    test.is(Decimal(-120).string(), "-1.2e2");
+    test.is(Decimal(0).string(), "0");
+    test.is(
+        Decimal("123456789012345678901234567890").plus(Decimal(1)).string(),
+        "1.23456789012345678901234567891e29"
+    );
+}
+
+test "decimals divide and round as asked" {
+    let third = (rounding is Rounding) is string {
+        Decimal(-10).divided(by: Decimal(3), scale: 2, rounding: rounding).string();
+    };
+    test.is(
+        Decimal(10).divided(by: Decimal(3), scale: 2, rounding: Rounding.half_even).string(),
+        "3.33"
+    );
+    test.is(third(Rounding.toward_zero), "-3.33");
+    test.is(third(Rounding.away_from_zero), "-3.34");
+    test.is(third(Rounding.floor), "-3.34");
+    test.is(third(Rounding.ceiling), "-3.33");
+    let eighth = (rounding is Rounding) is string {
+        Decimal(1).divided(by: Decimal(8), scale: 2, rounding: rounding).string();
+    };
+    test.is(eighth(Rounding.half_even), "1.2e-1");
+    test.is(eighth(Rounding.half_up), "1.3e-1");
+    test.is(eighth(Rounding.half_down), "1.2e-1");
+    test.is(
+        Decimal("0.375").divided(by: Decimal(1), scale: 2, rounding: Rounding.half_even).string(),
+        "3.8e-1"
+    );
+    test.is(
+        Decimal("4.5").divided(by: Decimal("0.15"), scale: 0, rounding: Rounding.toward_zero).string(),
+        "3e1"
+    );
+    test.is(Decimal("2.675").rounded(scale: 2, rounding: Rounding.half_up).string(), "2.68");
+    test.is(Decimal("2.665").rounded(scale: 2, rounding: Rounding.half_even).string(), "2.66");
+    test.is(Decimal("-2.665").rounded(scale: 2, rounding: Rounding.half_up).string(), "-2.67");
+    test.is(Decimal("1234.5").rounded(scale: -2, rounding: Rounding.half_up).string(), "1.2e3");
+    test.is(Decimal("2.5").rounded(scale: 5, rounding: Rounding.floor).string(), "2.5");
+    test.is(
+        try {
+            Decimal(1).divided(by: Decimal("0.00"), scale: 2, rounding: Rounding.half_even).string();
+        }
+        catch DecimalDivisionByZero.dividend(dividend) {
+            "by zero: " + dividend;
+        },
+        "by zero: 1"
+    );
+}
+
+test "decimals become fractions and floats, within limits" {
+    test.is(Decimal("0.75").rat(), rat(3, 4));
+    test.is(Decimal("1e3").rat(), 1000.rat());
+    test.is(Decimal("-12.5").rat(), rat(-25, 2));
+    test.is(Decimal("0.1").float(), 0.1);
+    test.is(Decimal("1e3").float(), 1000.0);
+    test.is(Decimal("-2.5e-3").float(), -0.0025);
+    test.is(Decimal("123.456").float(), 123.456);
+    test.is(Decimal("1e-400").float(), 0.0);
+    test.ok(Decimal("1e400").float() > 1.0e308);
+    test.ok(Decimal("-1e5000").float() < -1.0e308);
+    test.is(
+        try {
+            Decimal("1e5000").plus(Decimal(1)).string();
+        }
+        catch DecimalLimitExceeded.shift(shift, limit) {
+            shift.string() + " > " + limit.string();
+        },
+        "5000 > 4096"
+    );
+    test.is(Decimal("1e5000").times(Decimal("1e5000")).string(), "1e10000");
 }

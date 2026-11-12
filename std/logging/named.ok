@@ -5,6 +5,8 @@ import "logging/name" take LogName, ChildLogName, InvalidLogName;
 import "logging/field" take LogFields, EmptyLogFields, CombinedLogFields;
 import "logging/record" take LogContext, LogRecord, InvalidLogProcess;
 import "logging/write" take LogWriting, CollectedLogs;
+import "logging/filter" take AllowedLogs;
+import "async/atomic" take Atomic;
 import "time/clock" take Timing, Instant, SystemClock;
 import "runtime/process" take process_current_id;
 import "json" take JsonField;
@@ -15,11 +17,16 @@ role LogProcessReading {
     id() is int;
 }
 
+// The process id, read once per logger, not once per record (#180).
 hidden object CurrentLogProcess does LogProcessReading {
-    CurrentLogProcess();
+    has pid is int;
+
+    CurrentLogProcess() {
+        pid = process_current_id();
+    }
 
     id() is int {
-        process_current_id();
+        pid;
     }
 }
 
@@ -78,22 +85,36 @@ object NamedLogging does Logging {
         self.process = process;
     }
 
+    // A level the destination would not write costs one question (#180): no
+    // fields, clock, process id or record are made for it.
     log(level is LogLevel, message is string) is void {
-        let empty is @Error = [];
-        self.emit(level, message, EmptyLogFields().fields(), empty);
+        if destination.enabled(name, level) {
+            let empty is @Error = [];
+            self.emit(level, message, EmptyLogFields().fields(), empty);
+        }
     }
 
     log(level is LogLevel, message is string, fields is LogFields) is void {
-        let empty is @Error = [];
-        self.emit(level, message, fields, empty);
+        if destination.enabled(name, level) {
+            let empty is @Error = [];
+            self.emit(level, message, fields, empty);
+        }
     }
 
     log(level is LogLevel, message is string, fields is LogFields, cause is Error) is void {
-        self.emit(level, message, fields, [cause]);
+        if destination.enabled(name, level) {
+            self.emit(level, message, fields, [cause]);
+        }
     }
 
     child(segment is string) is NamedLogging {
-        NamedLogging(name: ChildLogName(origin: name, segment: segment).name(), destination: destination, clock: clock, fields: fields, process: process);
+        NamedLogging(
+            name: ChildLogName(origin: name, segment: segment).name(),
+            destination: destination,
+            clock: clock,
+            fields: fields,
+            process: process
+        );
     }
 
     name() is LogName {
@@ -109,7 +130,13 @@ object NamedLogging does Logging {
             LogRecord(occurred: at, level: level, message: message, context: context);
         }
         else {
-            LogRecord(occurred: at, level: level, message: message, context: context, cause: causes[0]);
+            LogRecord(
+                occurred: at,
+                level: level,
+                message: message,
+                context: context,
+                cause: causes[0]
+            );
         };
         destination.write(record);
     }
@@ -149,4 +176,42 @@ test "a named logger needs only its name and destination" {
     test.throws(InvalidLogName) {
         NamedLogging(name: "shop..db", destination: kept);
     };
+}
+
+hidden object CountedLogProcess does LogProcessReading {
+    has reads is Atomic<int>;
+
+    CountedLogProcess() {
+        reads = Atomic(0);
+    }
+
+    id() is int {
+        reads.replace(reads.value() + 1);
+        7;
+    }
+
+    reads() is int {
+        reads.value();
+    }
+}
+
+test "a level the destination would not write builds nothing" {
+    let kept = CollectedLogs();
+    let process = CountedLogProcess();
+    let logging = NamedLogging(
+        name: LogName("shop"),
+        destination: AllowedLogs(origin: kept, level: LogLevel.info),
+        clock: ManualClock(Instant(Duration(seconds: 0))),
+        fields: LogFields(),
+        process: process,
+    );
+    for (0..100) -> index {
+        logging.log(LogLevel.debug, "skipped", LogFields(JsonField("index", index)));
+    }
+    test.is(process.reads(), 0);
+    test.is(kept.size(), 0);
+    logging.log(LogLevel.info, "kept");
+    test.is(process.reads(), 1);
+    test.is(kept.size(), 1);
+    test.is(kept.records().first().context().process(), 7);
 }

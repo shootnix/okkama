@@ -16,7 +16,11 @@ object RedactedLogs does LogWriting {
     has replacement is Json;
 
     // The named fields are written as "[redacted]" unless a replacement is given.
-    RedactedLogs(origin is LogWriting, names is Sequencing<string>, replacement is Json = Json("[redacted]")) {
+    RedactedLogs(
+        origin is LogWriting,
+        names is Sequencing<string>,
+        replacement is Json = Json("[redacted]")
+    ) {
         let size = names.size();
         confirm size >= 0 && size <= 256
             else throw InvalidLogField.because("redaction name count exceeds 256");
@@ -50,7 +54,13 @@ object RedactedLogs does LogWriting {
         else {
             [];
         };
-        origin.write(ChangedLogRecord(origin: record, fields: LogFields(fields), causes: causes).record());
+        origin.write(
+            ChangedLogRecord(origin: record, fields: LogFields(fields), causes: causes).record()
+        );
+    }
+
+    enabled(name is LogName, level is LogLevel) is bool {
+        origin.enabled(name, level);
     }
 }
 
@@ -70,7 +80,13 @@ object RedactedCauseLogs does LogWriting {
         else {
             [];
         };
-        origin.write(ChangedLogRecord(origin: record, fields: record.context().fields(), causes: causes).record());
+        origin.write(
+            ChangedLogRecord(origin: record, fields: record.context().fields(), causes: causes).record()
+        );
+    }
+
+    enabled(name is LogName, level is LogLevel) is bool {
+        origin.enabled(name, level);
     }
 }
 
@@ -89,22 +105,48 @@ hidden object ChangedLogRecord {
     }
 
     record() is LogRecord {
-        let context = LogContext(name: origin.context().name(), fields: fields, process: origin.context().process());
+        let context = LogContext(
+            name: origin.context().name(),
+            fields: fields,
+            process: origin.context().process()
+        );
         if causes.size() == 0 {
-            LogRecord(occurred: origin.time(), level: origin::Entry::level, message: origin::Entry::message, context: context);
+            LogRecord(
+                occurred: origin.time(),
+                level: origin::Entry::level,
+                message: origin::Entry::message,
+                context: context
+            );
         }
         else {
-            LogRecord(occurred: origin.time(), level: origin::Entry::level, message: origin::Entry::message, context: context, cause: causes[0]);
+            LogRecord(
+                occurred: origin.time(),
+                level: origin::Entry::level,
+                message: origin::Entry::message,
+                context: context,
+                cause: causes[0]
+            );
         }
     }
 }
 
 test "redaction replaces the named members and keeps the rest in order" {
     let collected = CollectedLogs();
-    let redacted = RedactedLogs(origin: collected, names: ["pass", "token"], replacement: Json("***"));
+    let redacted = RedactedLogs(
+        origin: collected,
+        names: ["pass", "token"],
+        replacement: Json("***")
+    );
     let time = Instant(Duration(seconds: 0));
     let fields = LogFields(JsonField("user", "ann"), JsonField("id", 7), JsonField("pass", "x"));
-    redacted.write(LogRecord(occurred: time, level: LogLevel.info, message: "hi", context: LogContext(name: LogName("app"), fields: fields, process: 1)));
+    redacted.write(
+        LogRecord(
+            occurred: time,
+            level: LogLevel.info,
+            message: "hi",
+            context: LogContext(name: LogName("app"), fields: fields, process: 1)
+        )
+    );
     redacted.write(
         LogRecord(
             occurred: time,

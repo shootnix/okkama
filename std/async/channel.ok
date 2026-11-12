@@ -1,5 +1,7 @@
 module async/channel v1.0.0;
 
+import "async/atomic" take Atomic;
+
 // Bounded typed channels for cooperative async work.
 //
 // `Channel<T>` owns one FIFO communication state. `sending()` returns a
@@ -46,7 +48,8 @@ module async/channel v1.0.0;
 //
 // Either endpoint may close the complete channel. Closing is idempotent. New and
 // blocked sends throw `ChannelClosed`. Already buffered values remain available;
-// after they are drained, `item()` throws `ChannelClosed`.
+// after they are drained, `item()` throws `ChannelClosed` and `next()`
+// answers none, which ends a `for await` over the receiver.
 //
 //     let sending = channel.sending();
 //     defer sending.close();
@@ -98,6 +101,21 @@ object Receiving<T> {
         panic "Receiving.item is a VM intrinsic";
     }
 
+    // The next value, or none once the channel is closed and drained, so a
+    // receiver is walked with for await (#199):
+    //
+    //     for await jobs.receiving() -> job {
+    //         await job.run();
+    //     }
+    async next() is Maybe<T> {
+        try {
+            Maybe.some(await self.item());
+        }
+        catch closed is ChannelClosed {
+            Maybe<T>.none;
+        }
+    }
+
     close() is void {
         panic "Receiving.close is a VM intrinsic";
     }
@@ -136,4 +154,51 @@ async test "a channel hands values over in order until closed" {
         },
         "-1"
     );
+}
+
+hidden object ChannelProducer {
+    has output is Sending<int>;
+
+    ChannelProducer(output is Sending<int>) {
+        self.output = output;
+    }
+
+    async run(count is int) is int {
+        for (0..count) -> index {
+            await output.send(index * 10);
+        }
+        output.close();
+        count;
+    }
+}
+
+async test "a receiver is walked with for await until closed and drained" {
+    let channel is Channel<int> = Channel(capacity: 2);
+    let producer = spawn ChannelProducer(channel.sending()).run(5);
+    let received = Atomic(0);
+    let seen = Atomic("");
+    for await channel.receiving() -> value {
+        received.replace(received.value() + value);
+        seen.replace(seen.value() + value.string() + ",");
+    }
+    test.is(await producer, 5);
+    test.is(received.value(), 100);
+    test.is(seen.value(), "0,10,20,30,40,");
+    // A drained, closed receiver answers none at once, and keeps answering it.
+    let after = match await channel.receiving().next() {
+        case Maybe.some(value) {
+            value;
+        }
+        else {
+            -1;
+        }
+    };
+    test.is(after, -1);
+    let empty is Channel<string> = Channel(capacity: 0);
+    empty.sending().close();
+    let walked = Atomic(0);
+    for await empty.receiving() -> _text {
+        walked.replace(walked.value() + 1);
+    }
+    test.is(walked.value(), 0);
 }

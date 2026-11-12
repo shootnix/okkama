@@ -31,8 +31,10 @@ object LogName does Comparing<LogName> {
         key.segments();
     }
 
+    // Joined once per name: thresholds look loggers up by it (#180).
     string() is string {
-        key.string();
+        once let text = key.string();
+        text;
     }
 
     order(other is LogName) is Order {
