@@ -1,12 +1,12 @@
 module http/sse v1.0.0;
 
-import "http/body" take BodyOpening, BodyReading, BodyClosed, BodyAlreadyOpened, UnknownBodyLength,
-    TrailersUnavailable;
+import "http/body" take ByteBody, BodyOpening, BodyReading, BodyClosed, BodyAlreadyOpened,
+    UnknownBodyLength, TrailersUnavailable;
 import "http/header" take Headers, Header, HeaderName;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
 import "runtime/utf" take utf8_valid_prefix;
-import "time/duration" take Duration, DurationUnit;
+import "time/duration" take Duration;
 import "numbers/bigint" take BigInt;
 import "strings/parse" take Number;
 import "compare" take Order;
@@ -429,8 +429,8 @@ object ServerEvents {
                 }
             }
             if name == "retry" && value != "" {
-                let digits = (0..value.length()).reduce(true) -> valid, index {
-                    valid && "0123456789".split(value.slice(index, index + 1)).size() == 2;
+                let digits = value.characters().reduce(true) -> valid, character {
+                    valid && character.code() >= 48 && character.code() <= 57;
                 };
                 if digits {
                     let amount = BigInt(value);
@@ -517,23 +517,28 @@ hidden object EventReadCleanup {
 
 // WHATWG replacement decoding at line boundaries. Native strict prefix scans
 // preserve maximal well-formed runs; malformed maximal subparts consume once.
+// The bytes of a line as text: well-formed UTF-8 as it is, each ill-formed
+// sequence as U+FFFD. The bytes are read in place (#166).
 hidden object EventUtf8 {
-    has origin is string;
+    has origin is @byte;
 
     EventUtf8(origin is @byte) {
-        self.origin = Latin1Decoded(origin).string();
+        self.origin = origin;
     }
 
     string() is string {
-        let prefix = utf8_valid_prefix(Latin1Encoded(origin).bytes());
+        let prefix = utf8_valid_prefix(origin);
+        if prefix == origin.size() {
+            return Utf8Decoded(origin).string();
+        }
         let at = Atomic(prefix);
-        let result = Atomic(Utf8Decoded(Latin1Encoded(origin.slice(0, prefix)).bytes()).string());
+        let result = Atomic(Utf8Decoded(origin.slice(0, prefix)).string());
         loop {
             let start = at.value();
-            if start == origin.length() {
+            if start == origin.size() {
                 return result.value();
             }
-            let lead = Latin1Encoded(origin.slice(start, start + 1)).bytes()[0].int();
+            let lead = origin[start].int();
             let width = if lead >= 194 && lead <= 223 {
                 2;
             }
@@ -552,10 +557,10 @@ hidden object EventUtf8 {
             };
             let consumed = Atomic(1);
             for (1..width) -> index {
-                if start + index >= origin.length() {
+                if start + index >= origin.size() {
                     last;
                 }
-                let code = Latin1Encoded(origin.slice(start + index, start + index + 1)).bytes()[0].int();
+                let code = origin[start + index].int();
                 let lower = if index == 1 && lead == 224 {
                     160;
                 }
@@ -584,7 +589,7 @@ hidden object EventUtf8 {
                 consumed.replace(consumed.value() + 1);
             }
             let text = if (width == 1 && lead < 128) || (width > 1 && consumed.value() == width) {
-                Utf8Decoded(Latin1Encoded(origin.slice(start, start + width)).bytes()).string();
+                Utf8Decoded(origin.slice(start, start + width)).string();
             }
             else {
                 "�";
@@ -737,4 +742,15 @@ test "event retry is explicit and negative delays clamp to zero" {
         ServerEvent(data: "x", event: "message", identifier: "", retry: Duration(seconds: -1)).retry()::Span::seconds,
         0.rat()
     );
+}
+
+async test "an event stream reads retry digits and replaces ill-formed UTF-8" {
+    let wire = Utf8Encoded("retry: 2500\ndata: привет\n\nretry: 12x\ndata: ").bytes() +
+        [byte(104), byte(195), byte(105), byte(226), byte(130), byte(10), byte(10)];
+    let events = ServerEvents(ByteBody(wire).reading());
+    let first = await events.event();
+    test.is(first::Event::data, "привет");
+    test.is(EventRetry(first.retry()).milliseconds(), 2500);
+    let second = await events.event();
+    test.is(second::Event::data, "h�i�");
 }
