@@ -676,10 +676,11 @@ test "combinations, with replacement, permutations and products in order" {
     test.is(joined(CombinationsWithReplacement(origin: letters, size: 2)), "aa,ab,ac,bb,bc,cc");
     test.is(joined(Permutations(origin: letters, size: 2)), "ab,ac,ba,bc,ca,cb");
     test.is(joined(Permutations(origin: letters)), "abc,acb,bac,bca,cab,cba");
-    // Dimensions are Sequencing objects: an array of arrays cannot cross into
-    // a role of roles yet (#488).
     let dimensions is @Sequencing<string> = [Sorted(["b", "a"]), Sorted(["y", "x"])];
     test.is(joined(CartesianProduct(origins: dimensions)), "ax,ay,bx,by");
+    // An array of arrays crosses into a role of roles (#488).
+    test.is(joined(CartesianProduct(origins: [["a", "b"], ["x", "y"]])), "ax,ay,bx,by");
+    test.is(joined(CartesianProduct(origins: [["1"], ["2", "3"], ["4"]])), "124,134");
 }
 
 test "empty and oversized selections" {

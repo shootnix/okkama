@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.boundary.nested-array-as-role-of-roles",
+  "title": "an array of arrays crosses into a role of roles",
+  "purpose": "Arrays already adapt to Sequencing<T>; an inner array that reaches a role element is adapted the same way, at any depth (#488).",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "TYPE.BOUNDARIES",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "ROLE.CONFORMANCE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ax\nay\nbx\nby\n6\nst\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#12.1",
+    "docs/okkama-spec-11072026.md#6.3"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #488",
+    "expected_basis": "The checker accepts @@T as Sequencing<Sequencing<T>>; lowering wraps each inner array in the builtin array adapter."
+  },
+  "status": "mandatory"
+}

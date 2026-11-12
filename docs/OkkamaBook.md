@@ -3661,13 +3661,13 @@ objects that need it, so its lifetime and its users stay visible.
 - An imported module's `main()` never runs on import.
 - Cyclic imports are rejected.
 
-### 26.5 Standard libraries: current std and legacy stdlib
+### 26.5 The standard library
 
-The current library is the root `std/` tree. It is being reviewed module by
+The library is the root `std/` tree. In 0.5.4 it was reviewed module by
 module (#352) against the [std principles](std-principles.md): objects are
-mechanisms, not records; APIs are flat; sequences are walked with `for`; and
-a computation names its answer. Each module the review has finished is
-described below. The guides for std's domains are in okkama-docs
+mechanisms, not records; an object answers in the form people use; APIs are
+flat; sequences are walked with `for`; and a computation names its answer.
+Each area is described below. The guides for std's domains are in okkama-docs
 (`docs/std/`), and its migration guide (`docs/std/stdlib-v4-migration.md`)
 lists the removed APIs.
 
