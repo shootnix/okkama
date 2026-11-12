@@ -33,21 +33,27 @@ import "runtime/fs" take path_encode, lstat, mkdir, mkdir_all, rmdir, rename, re
 //
 //     DirectoryTree(origin: Directory(path: root)).remove();
 
+// Something that knows where a directory is: Directory, TemporaryDirectory.
 role DirectoryLocating {
+    // The directory's path.
     path() is Path;
 }
 
+// A directory on disk, by path; nothing happens until a command is called.
 object Directory does DirectoryLocating {
     has origin is Path;
 
+    // The directory at path; it need not exist yet.
     Directory(path is Path) {
         origin = path;
     }
 
+    // Its path.
     path() is Path {
         origin;
     }
 
+    // Whether a directory is there.
     existence() is bool {
         try {
             lstat(path_encode(origin.string()))["kind"] == 2;
@@ -62,6 +68,8 @@ object Directory does DirectoryLocating {
         }
     }
 
+    // Makes the directory, one level, with permissions 0755 under the umask;
+    // FileError.already_exists when it is there.
     create() is void {
         try {
             mkdir(path_encode(origin.string()), 493);
@@ -86,6 +94,8 @@ object Directory does DirectoryLocating {
         }
     }
 
+    // Removes the directory when it is empty; FileError.not_empty otherwise.
+    // DirectoryTree removes a whole tree.
     remove() is void {
         try {
             rmdir(path_encode(origin.string()));
@@ -101,6 +111,8 @@ object Directory does DirectoryLocating {
         self.move(destination: destination, overwrite: false);
     }
 
+    // Moves the directory, replacing an existing destination when overwrite is
+    // true.
     move(destination is Path, overwrite is bool) is void {
         try {
             if overwrite {
@@ -122,21 +134,26 @@ object Directory does DirectoryLocating {
     }
 }
 
+// One name found in a directory, with what it is.
 object DirectoryEntry {
     has origin is Path;
 
+    // The entry at path.
     DirectoryEntry(path is Path) {
         origin = path;
     }
 
+    // The full path of the entry.
     path() is Path {
         origin;
     }
 
+    // What the entry is; a link is symbolic_link and is never followed.
     kind() is FileKind {
         self.stat()::Shape::kind;
     }
 
+    // Its metadata, without following a link.
     stat() is FileStat {
         try {
             FileStatFromMap(origin: lstat(path_encode(origin.string()))).stat();
@@ -147,13 +164,17 @@ object DirectoryEntry {
     }
 }
 
+// The entries of one directory, sorted by name: `for DirectoryEntries(origin:
+// dir) -> entry { … }`.
 object DirectoryEntries does Iterating<DirectoryEntry> {
     has origin is DirectoryLocating;
 
+    // The entries of origin, read when the walk starts.
     DirectoryEntries(origin is DirectoryLocating) {
         self.origin = origin;
     }
 
+    // A snapshot of the entries, sorted.
     cursor() is Cursor<DirectoryEntry> {
         try {
             DirectoryEntryCursor(
@@ -196,13 +217,17 @@ hidden object DirectoryEntryCursor does Cursor<DirectoryEntry> {
     }
 }
 
+// Every entry below a directory, depth first, parents before children; links
+// are not followed.
 object Descendants does Iterating<DirectoryEntry> {
     has origin is DirectoryLocating;
 
+    // Everything below origin.
     Descendants(origin is DirectoryLocating) {
         self.origin = origin;
     }
 
+    // Starts the walk; each directory is read when it is entered.
     cursor() is Cursor<DirectoryEntry> {
         let following is List<Cursor<DirectoryEntry>> = EmptyList();
         DescendantCursorFrom(
@@ -286,13 +311,16 @@ hidden object ExhaustedDescendantCursor does Cursor<DirectoryEntry> {
     }
 }
 
+// A directory with everything in it, for removing it whole.
 object DirectoryTree {
     has origin is DirectoryLocating;
 
+    // The tree at origin.
     DirectoryTree(origin is DirectoryLocating) {
         self.origin = origin;
     }
 
+    // Removes the tree bottom-up; links are removed, never followed.
     remove() is void {
         let removed is Path = origin.path();
         try {

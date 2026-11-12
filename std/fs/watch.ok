@@ -50,25 +50,30 @@ import "runtime/fs" take FileWatchState, path_encode, file_watch_create, file_wa
 // may coalesce repeated identical changes that happen faster than they can be
 // observed, but preserve the order of the events they do report.
 
+// What happened to a path.
 enum FileEventKind = (created, modified, removed, renamed);
 
+// One change seen by a FileWatch.
 object FileEvent {
     has origin is Path;
     has change is FileEventKind;
     has previous is Maybe<Path>;
 
+    // A change to path.
     FileEvent(path is Path, kind is FileEventKind) {
         origin = path;
         change = kind;
         previous = Maybe<Path>.none;
     }
 
+    // A rename from previous_path to path.
     FileEvent(path is Path, kind is FileEventKind, previous_path is Path) {
         origin = path;
         change = kind;
         previous = Maybe.some(previous_path);
     }
 
+    // The path that changed.
     path() is Path {
         origin;
     }
@@ -80,6 +85,7 @@ object FileEvent {
         }
     }
 
+    // The old path of a rename; MissingPreviousPath for other changes.
     previous_path() is Path {
         match previous {
             case Maybe.some(path) {
@@ -92,9 +98,11 @@ object FileEvent {
     }
 }
 
+// Watches a file, or a directory and its immediate children, for changes.
 object FileWatch does Closing {
     has state is FileWatchState;
 
+    // Starts watching an existing path.
     FileWatch(path is Path) {
         state = try {
             file_watch_create(path_encode(path.string()));
@@ -104,6 +112,7 @@ object FileWatch does Closing {
         };
     }
 
+    // The next change, once it happens.
     async event() is FileEvent {
         let details is %string:string = try {
             await file_watch_event(state);
@@ -144,6 +153,7 @@ object FileWatch does Closing {
         }
     }
 
+    // Whether it is closed.
     closed() is bool {
         try {
             file_watch_closed(state);
@@ -153,6 +163,7 @@ object FileWatch does Closing {
         }
     }
 
+    // Stops watching.
     close() is void {
         try {
             file_watch_close(state);
@@ -163,6 +174,7 @@ object FileWatch does Closing {
     }
 }
 
+// Only a rename has a previous path.
 enum MissingPreviousPath is Error = (path(path is string));
 
 test "an event carries its path and kind; only a rename has a previous path" {

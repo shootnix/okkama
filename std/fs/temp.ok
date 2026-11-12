@@ -40,9 +40,13 @@ import "runtime/fs" take FileState, TemporaryDirectoryState, path_encode, path_d
 // TemporaryDirectory.close() recursively deletes its contents. Symbolic links
 // are removed as leaves; their targets are never traversed or deleted.
 
+// A file with an unpredictable name, readable and writable, removed on close
+// unless preserved.
 object TemporaryFile does Reading, Writing, WritingText, Closing {
     has state is FileState;
 
+    // Makes the file now inside directory, its name starting with prefix (one
+    // name, not a path), readable by the owner only.
     TemporaryFile(directory is DirectoryLocating, prefix is string) {
         state = try {
             temporary_file_create(
@@ -55,6 +59,7 @@ object TemporaryFile does Reading, Writing, WritingText, Closing {
         };
     }
 
+    // At most limit bytes from the current position; [] at the end.
     bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         try {
@@ -65,10 +70,12 @@ object TemporaryFile does Reading, Writing, WritingText, Closing {
         }
     }
 
+    // Writes the bytes of source.
     write(source is ByteSource) is void {
         self.write(source.bytes());
     }
 
+    // Writes the bytes.
     write(bytes is @byte) is void {
         let written is int = try {
             file_state_write(state, bytes);
@@ -85,11 +92,13 @@ object TemporaryFile does Reading, Writing, WritingText, Closing {
         self.write(Utf8Encoded(text.join("")));
     }
 
+    // Writes the strings as UTF-8 and then one LF.
     writeln(values is ...string) is void {
         let text is @string = values...;
         self.write(Utf8Encoded(text.join("") + "\n"));
     }
 
+    // Sends written bytes on to the disk.
     flush() is void {
         try {
             file_state_flush(state);
@@ -103,6 +112,7 @@ object TemporaryFile does Reading, Writing, WritingText, Closing {
         self.close();
     }
 
+    // Whether it is closed.
     closed() is bool {
         try {
             file_state_closed(state);
@@ -112,6 +122,7 @@ object TemporaryFile does Reading, Writing, WritingText, Closing {
         }
     }
 
+    // Closes the file and removes it unless it was preserved.
     close() is void {
         try {
             file_state_close(state);
@@ -121,6 +132,7 @@ object TemporaryFile does Reading, Writing, WritingText, Closing {
         }
     }
 
+    // Where it is.
     path() is Path {
         try {
             Path(path_decode(temporary_file_path(state)));
@@ -135,6 +147,8 @@ object TemporaryFile does Reading, Writing, WritingText, Closing {
         FileEntry(path: self.path()).stat()::Shape::size;
     }
 
+    // Keeps the file at destination: renamed when possible, copied across file
+    // systems; an existing destination is refused.
     preserve(destination is Path) is void {
         try {
             temporary_file_preserve(state, path_encode(destination.string()));
@@ -145,24 +159,30 @@ object TemporaryFile does Reading, Writing, WritingText, Closing {
     }
 }
 
+// A temporary file kept under a chosen name before it is closed.
 object TemporaryFilePreservation {
     has owner is TemporaryFile;
     has destination is Path;
 
+    // Plans to keep origin at destination.
     TemporaryFilePreservation(origin is TemporaryFile, destination is Path) {
         owner = origin;
         self.destination = destination;
     }
 
+    // The kept file.
     destination() is FileEntry {
         FileEntry(path: destination);
     }
 
+    // Keeps it; an existing destination is never replaced.
     preserve() is void {
         owner.preserve(destination);
     }
 }
 
+// A directory with an unpredictable name, removed with everything in it on
+// close.
 object TemporaryDirectory does DirectoryLocating, Closing {
     has state is TemporaryDirectoryState;
 
@@ -188,6 +208,7 @@ object TemporaryDirectory does DirectoryLocating, Closing {
         TemporaryFile(directory: self, prefix: prefix);
     }
 
+    // Where it is.
     path() is Path {
         try {
             Path(path_decode(temporary_directory_path(state)));
@@ -201,6 +222,7 @@ object TemporaryDirectory does DirectoryLocating, Closing {
         self.close();
     }
 
+    // Whether it is closed.
     closed() is bool {
         try {
             temporary_directory_closed(state);
@@ -210,6 +232,8 @@ object TemporaryDirectory does DirectoryLocating, Closing {
         }
     }
 
+    // Removes the directory and everything in it; links are removed, never
+    // followed.
     close() is void {
         try {
             temporary_directory_close(state);

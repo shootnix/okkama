@@ -22,12 +22,15 @@ import "runtime/system" take system_platform;
 // resolve symlinks or `..`. The paths they make are tidied: a `.` segment and a
 // repeated separator go away, so Path("a/./b").child("c") is `a/b/c`.
 
+// Which platform's grammar a path follows: separators, roots, drive letters.
 enum PathStyle = (posix, windows);
 
+// A path as names, worked out by the text alone: the disk is never asked.
 object Path does Comparing<Path> {
     has origin is string;
     has path_style is PathStyle;
 
+    // A path in this platform's grammar: `Path("var/log/app.log")`.
     Path(origin is string) {
         confirm !origin.empty() else throw InvalidPath.because("path cannot be empty");
         self.origin = origin;
@@ -40,12 +43,16 @@ object Path does Comparing<Path> {
         };
     }
 
+    // A path in another platform's grammar: `Path("C:\\Users",
+    // PathStyle.windows)`.
     Path(origin is string, style is PathStyle) {
         confirm !origin.empty() else throw InvalidPath.because("path cannot be empty");
         self.origin = origin;
         path_style = style;
     }
 
+    // The parts joined with this platform's separator: `Path("etc", "okkama",
+    // "config.toml")`; a later absolute part replaces what came before.
     Path(parts is ...string) {
         let values is @string = parts...;
         confirm values.size() > 0
@@ -69,6 +76,7 @@ object Path does Comparing<Path> {
         path_style = style;
     }
 
+    // The path without its last name; the root's parent is the root.
     parent() is Path {
         Path(
             path_parent(origin, PathStyleCode(origin: path_style).code()),
@@ -76,6 +84,7 @@ object Path does Comparing<Path> {
         );
     }
 
+    // This path with one more name: `Path("var").child("log")`.
     child(part is string) is Path {
         confirm !part.empty() else throw InvalidPath.because("path part cannot be empty");
         Path(
@@ -107,6 +116,7 @@ object Path does Comparing<Path> {
         }
     }
 
+    // Whether the path starts at a root.
     absolute() is bool {
         path_absolute(origin, PathStyleCode(origin: path_style).code());
     }
@@ -250,10 +260,12 @@ object Path does Comparing<Path> {
         path_parts(origin, PathStyleCode(origin: path_style).code());
     }
 
+    // Orders paths by their text, for sorting.
     order(other is Path) is Order {
         origin.order(other.string());
     }
 
+    // The path as text, with this path's separators.
     string() is string {
         origin;
     }
@@ -266,9 +278,12 @@ object Path does Comparing<Path> {
     }
 }
 
+// The path grammar of the platform the program runs on.
 object NativePathStyle {
+    // Asks the runtime once.
     NativePathStyle();
 
+    // PathStyle.windows on Windows, PathStyle.posix elsewhere.
     style() is PathStyle {
         if system_platform() == "windows" {
             PathStyle.windows;
@@ -294,6 +309,7 @@ hidden object PathStyleCode {
     }
 }
 
+// An empty path, or an empty part in a join or a child.
 enum InvalidPath is Error = (because(message is string));
 
 test "joining, parents and absolute paths follow the grammar, not the host" {

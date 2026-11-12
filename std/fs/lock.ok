@@ -19,12 +19,16 @@ import "runtime/fs" take FileLockState, file_lock_closed, file_lock_close;
 // most one live lock. Closing the lock or its file releases it, both closes
 // are idempotent, and the lock keeps its file open while it lives.
 
+// A shared lock lives with other shared locks; an exclusive one with none.
 enum FileLockMode = (shared, exclusive);
 
+// A whole-file advisory lock, from File.lock(mode); close it or its file to
+// release it.
 object FileLock does Closing {
     has state is FileLockState;
     has owner is Closing;
 
+    // Made by File.lock(mode); not constructed directly.
     FileLock(state is FileLockState, owner is Closing) {
         self.state = state;
         self.owner = owner;
@@ -34,6 +38,7 @@ object FileLock does Closing {
         self.close();
     }
 
+    // Whether it is released.
     closed() is bool {
         try {
             file_lock_closed(state);
@@ -43,6 +48,7 @@ object FileLock does Closing {
         }
     }
 
+    // Releases the lock; releasing again does nothing.
     close() is void {
         try {
             file_lock_close(state);

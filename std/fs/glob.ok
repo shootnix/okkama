@@ -34,15 +34,20 @@ import "runtime/fs" take path_encode, matching_paths;
 // `**` is recursive only as a complete segment and matches zero or more path
 // segments. A matching symlink path is returned, but traversal never enters it.
 
+// Every path below root that matches a glob pattern, sorted: `*` and `?` within
+// a name, classes like `[a-z]` and `[!0]`, and `**` as a whole part for any
+// depth.
 object MatchingPaths does Iterating<Path> {
     has origin is DirectoryLocating;
     has glob is string;
 
+    // Paths below root matching pattern, which always uses / between parts.
     MatchingPaths(root is DirectoryLocating, pattern is string) {
         origin = root;
         glob = pattern;
     }
 
+    // Finds the matches and starts the walk.
     cursor() is Cursor<Path> {
         let paths is @string = try {
             matching_paths(path_encode(origin.path().string()), glob);
@@ -83,6 +88,7 @@ hidden object MatchingPathCursor does Cursor<Path> {
     }
 }
 
+// A pattern that is not a valid glob; the message says why.
 enum InvalidGlobPattern is Error = (detailed(pattern is string, message is string));
 
 test "patterns match inside one segment; ** crosses segments; results are sorted" {

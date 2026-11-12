@@ -68,12 +68,19 @@ import "fs/directory" take Directory;
 //         case Maybe.none { Stdout().writeln("already running"); }
 //     }
 
+// How File opens its file: reading (the default), writing (emptied first),
+// appending, or reading and writing or appending together.
 enum FileMode = (reading, writing, appending, reading_and_writing, reading_and_appending);
 
+// A file on disk, opened on first use and closed once; read and written through
+// text() or binary().
 object File does Closing {
     has state is FileState;
     has location is string;
 
+    // A file at path, opened on first use; text is read and written as encoding
+    // (UTF-8 unless told: `utf-16-le`, `utf-16-be`, `utf-32-le`, `utf-32-be`,
+    // `ascii`, `latin-1`).
     File(path is Path, mode is FileMode = FileMode.reading, encoding is string = "utf-8") {
         state = FileOpening(mode: mode, path: path, encoding: encoding).state();
         location = path.string();
@@ -83,10 +90,12 @@ object File does Closing {
         self.close();
     }
 
+    // The text view; the first view used decides, and binary() then refuses.
     text() is FileText {
         FileText(owner: self, state: state, location: location);
     }
 
+    // The byte view; the first view used decides, and text() then refuses.
     binary() is FileBytes {
         FileBytes(owner: self, state: state, location: location);
     }
@@ -118,10 +127,12 @@ object File does Closing {
         }
     }
 
+    // Whether the file is closed.
     closed() is bool {
         file_state_closed(state);
     }
 
+    // Closes the file; closing again does nothing.
     close() is void {
         try {
             file_state_close(state);
@@ -138,12 +149,14 @@ object FileText does ReadingText, WritingText, Batching<string> {
     has state is FileState;
     has location is string;
 
+    // Made by File.text(); not constructed directly.
     FileText(owner is File, state is FileState, location is string) {
         self.owner = owner;
         self.state = state;
         self.location = location;
     }
 
+    // The next line without its LF and one CR before it; EndOfInput at the end.
     line() is string {
         try {
             file_state_read_line(state);
@@ -158,12 +171,14 @@ object FileText does ReadingText, WritingText, Batching<string> {
         }
     }
 
+    // The remaining lines.
     lines() is @string {
         self.map() -> line {
             line;
         };
     }
 
+    // The remaining text, unchanged.
     content() is string {
         try {
             file_state_read_text(state);
@@ -183,6 +198,7 @@ object FileText does ReadingText, WritingText, Batching<string> {
         }
     }
 
+    // Writes the strings in the file's encoding, one after another.
     write(values is ...string) is void {
         let text is @string = values...;
         try {
@@ -193,6 +209,7 @@ object FileText does ReadingText, WritingText, Batching<string> {
         }
     }
 
+    // Writes the strings and then one LF.
     writeln(values is ...string) is void {
         let text is @string = values...;
         try {
@@ -214,6 +231,7 @@ object FileText does ReadingText, WritingText, Batching<string> {
         }
     }
 
+    // Sends written text on to the disk.
     flush() is void {
         try {
             file_state_flush(state);
@@ -231,12 +249,14 @@ object FileBytes does Reading, Writing, ByteSource, Batching<byte> {
     has state is FileState;
     has location is string;
 
+    // Made by File.binary(); not constructed directly.
     FileBytes(owner is File, state is FileState, location is string) {
         self.owner = owner;
         self.state = state;
         self.location = location;
     }
 
+    // The next byte; EndOfInput at the end.
     byte() is byte {
         let one = self.bytes(1);
         confirm one.size() == 1 else throw EndOfInput.reached;
@@ -266,10 +286,12 @@ object FileBytes does Reading, Writing, ByteSource, Batching<byte> {
         self.bytes(65536);
     }
 
+    // Writes the bytes of source.
     write(source is ByteSource) is void {
         self.write(source.bytes());
     }
 
+    // Writes the bytes.
     write(bytes is @byte) is void {
         try {
             let written is int = file_state_write(state, bytes);
@@ -280,6 +302,7 @@ object FileBytes does Reading, Writing, ByteSource, Batching<byte> {
         }
     }
 
+    // Sends written bytes on to the disk.
     flush() is void {
         try {
             file_state_flush(state);
@@ -299,6 +322,8 @@ object FileBytes does Reading, Writing, ByteSource, Batching<byte> {
         }
     }
 
+    // Moves the position to offset bytes from the start, the current position
+    // or the end.
     seek(offset is int, from is SeekOrigin) is void {
         try {
             file_state_seek(state, offset, NativeSeekOrigin(from).code());
@@ -308,6 +333,7 @@ object FileBytes does Reading, Writing, ByteSource, Batching<byte> {
         }
     }
 
+    // Cuts or extends the file to size bytes.
     truncate(size is int) is void {
         try {
             file_state_truncate(state, size);
@@ -318,6 +344,7 @@ object FileBytes does Reading, Writing, ByteSource, Batching<byte> {
     }
 }
 
+// Where a seek counts from.
 enum SeekOrigin = (start, current, end);
 
 hidden object FileOpening {
