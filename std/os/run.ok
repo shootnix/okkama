@@ -1,0 +1,122 @@
+module os/run v1.0.0;
+
+import "fs/path" take Path;
+import "os/command" take InheritedCommand;
+import "os/command_capture" take CommandCapture, CompletedCommand, CaptureLimitExceeded;
+import "os/process" take ExitKind, ProcessFailure;
+
+// Run a tool and read what it printed (#197):
+//
+//     let status = await Run("git", ["status", "--short"]).text();
+//     let done = await Run("make", ["test"]).completion();  // any exit code
+//
+// The program is looked up on PATH and runs with the environment and working
+// directory of this process; no shell parses the name or the arguments.
+// Standard output and standard error are each kept up to 1 MiB, more is
+// CaptureLimitExceeded. text() and bytes() want a zero exit code: any other
+// end is CommandFailed with what the program wrote to standard error.
+// CommandCapture over a Command sets another environment, directory, input
+// or limit.
+object Run {
+    has capture is CommandCapture;
+
+    Run(program is string, arguments is @string = []) {
+        capture = CommandCapture(
+            origin: InheritedCommand(program: Path(program), arguments: arguments),
+            limit: 1048576,
+        );
+    }
+
+    // Standard output as UTF-8 text, after a zero exit code.
+    async text() is string {
+        let done = await self.succeeded();
+        done::Captured::output;
+    }
+
+    // The exact bytes of standard output, after a zero exit code.
+    async bytes() is @byte {
+        let done = await self.succeeded();
+        done::Bytes::output;
+    }
+
+    // The completed command whatever its exit code: done.exit().success().
+    async completion() is CompletedCommand {
+        await capture.completion();
+    }
+
+    hidden async succeeded() is CompletedCommand {
+        let done = await capture.completion();
+        if !done.exit().success() {
+            let errors = try {
+                done::Captured::errors;
+            }
+            catch failure is Error {
+                "";
+            };
+            if done.exit()::Status::kind == ExitKind.exited {
+                throw CommandFailed.exited(done.exit().code(), errors);
+            }
+            throw CommandFailed.stopped(done.exit()::Status::kind, errors);
+        }
+        done;
+    }
+}
+
+// A run that did not end with exit code zero: the code, or how it was
+// stopped, and what it wrote to standard error.
+enum CommandFailed is Error = (exited(code is int, errors is string), stopped(
+    kind is ExitKind,
+    errors is string
+));
+
+async test "a run reads the output of a tool found on PATH" {
+    test.is(await Run("printf", ["%s|%s", "a b", "c;d"]).text(), "a b|c;d");
+    test.is(await Run("printf", ["hi"]).bytes(), [byte(104), byte(105)]);
+    test.ok((await Run("true").completion()).exit().success());
+}
+
+async test "a run that fails names its code and its errors" {
+    test.is(
+        try {
+            await Run("sh", ["-c", "printf partial; printf 'no such file' >&2; exit 3"]).text();
+        }
+        catch CommandFailed.exited(code, errors) {
+            code.string() + ": " + errors;
+        },
+        "3: no such file"
+    );
+    let done = await Run("sh", ["-c", "exit 4"]).completion();
+    test.is(done.exit().code(), 4);
+    test.is(
+        try {
+            await Run("sh", ["-c", "kill -9 $$"]).text();
+        }
+        catch CommandFailed.stopped(kind, _errors) {
+            if kind == ExitKind.killed {
+                "killed";
+            }
+            else {
+                "other";
+            };
+        },
+        "killed"
+    );
+    test.is(
+        try {
+            await Run("okkama-no-such-program-7f3a").text();
+        }
+        catch failure is ProcessFailure {
+            "missing";
+        },
+        "missing"
+    );
+    test.is(
+        try {
+            await Run("sh", ["-c", "head -c 1048577 /dev/zero"]).text();
+        }
+        catch CaptureLimitExceeded.detailed(_stream, limit) {
+            limit.string();
+        },
+        "1048576"
+    );
+}
