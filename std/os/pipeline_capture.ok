@@ -25,14 +25,18 @@ import "runtime/process" take PipelineState, CapturedPipeline, pipeline_state_cr
 // The limit applies independently to final stdout and every stderr stream.
 // completion() waits for every command and never returns a partial result.
 
+// Which stream of which command went over its limit.
 enum PipelineStream = (output, errors);
 
+// Commands joined output to input, like a shell pipeline but without a shell,
+// run to the end.
 object PipelineCapture {
     has commands is @Commanding;
     has input is ByteSource;
     has limit is int;
     has state is PipelineState;
 
+    // Runs commands with the first one's input empty.
     PipelineCapture(commands is @Commanding, limit is int) {
         self.commands = commands;
         let empty is @byte = [];
@@ -41,6 +45,7 @@ object PipelineCapture {
         state = pipeline_state_create();
     }
 
+    // Runs commands with input written to the first one.
     PipelineCapture(commands is @Commanding, input is @byte, limit is int) {
         self.commands = commands;
         self.input = ByteSnapshot(input);
@@ -56,6 +61,8 @@ object PipelineCapture {
         state = pipeline_state_create();
     }
 
+    // Runs them all and waits; keeps the last one's output and every one's
+    // errors, at most limit bytes each.
     async completion() is CompletedPipeline {
         confirm commands.size() > 0 else throw EmptyPipeline.empty;
         confirm limit > 0 else throw InvalidPipelineCaptureLimit.limit(limit);
@@ -126,17 +133,20 @@ object PipelineCapture {
     }
 }
 
+// How each command of a pipeline ended, and what it printed.
 object CompletedPipeline {
     has completed_exits is @Exit;
     has captured_output is @byte;
     has captured_errors is @@byte;
 
+    // A result as given.
     CompletedPipeline(exits is @Exit, output is @byte, errors is @@byte) {
         completed_exits = exits;
         captured_output = output;
         captured_errors = errors;
     }
 
+    // How each command ended, in order.
     exits() is @Exit {
         completed_exits;
     }
@@ -168,10 +178,13 @@ object CompletedPipeline {
     }
 }
 
+// A pipeline of no commands.
 enum EmptyPipeline is Error = (empty);
 
+// A limit below one.
 enum InvalidPipelineCaptureLimit is Error = (limit(limit is int));
 
+// A stream of the command at command_index printed more than the limit.
 enum PipelineCaptureLimitExceeded is Error = (detailed(
     command_index is int,
     stream is PipelineStream,

@@ -34,20 +34,32 @@ import "os/environment" take Environment;
 // string() is diagnostic and never shell-round-trippable. It omits the
 // environment, but arguments themselves can still contain secrets.
 
+// A program to run, its arguments, environment and directory; never a shell
+// line.
 role Commanding {
+    // The program: a path with a directory runs that file, a bare name is
+    // looked up in PATH.
     program() is Path;
+    // The arguments, each one exact string.
     arguments() is @string;
+    // The environment the program gets.
     environment() is Environment;
+    // The directory it runs in.
     directory() is DirectoryLocating;
+    // A line for logs and errors, not for a shell; it leaves out the
+    // environment.
     string() is string;
 }
 
+// A command with everything given: program, arguments, environment and
+// directory.
 object Command does Commanding {
     has command_program is Path;
     has command_arguments is @string;
     has command_environment is Environment;
     has command_directory is DirectoryLocating;
 
+    // Runs program with arguments in directory, with exactly environment.
     Command(
         program is Path,
         environment is Environment,
@@ -60,22 +72,27 @@ object Command does Commanding {
         command_directory = directory;
     }
 
+    // The program.
     program() is Path {
         command_program;
     }
 
+    // The arguments.
     arguments() is @string {
         command_arguments;
     }
 
+    // The environment given.
     environment() is Environment {
         command_environment;
     }
 
+    // The directory given.
     directory() is DirectoryLocating {
         command_directory;
     }
 
+    // The program and arguments, for logs.
     string() is string {
         "Command(program: " +
             self.quoted(command_program.string()) +
@@ -117,10 +134,12 @@ object Command does Commanding {
     }
 }
 
+// A command that takes the process's environment and working directory.
 object InheritedCommand does Commanding {
     has command_program is Path;
     has command_arguments is @string;
 
+    // Runs program with arguments, inheriting the rest.
     InheritedCommand(
         program is Path,
         arguments is @string = [],
@@ -129,22 +148,27 @@ object InheritedCommand does Commanding {
         command_arguments = arguments;
     }
 
+    // The program.
     program() is Path {
         command_program;
     }
 
+    // The arguments.
     arguments() is @string {
         command_arguments;
     }
 
+    // The process environment, read when asked.
     environment() is Environment {
         Environment();
     }
 
+    // The working directory of the process.
     directory() is DirectoryLocating {
         WorkingDirectory();
     }
 
+    // The program and arguments, for logs.
     string() is string {
         "Command(program: " +
             self.quoted(command_program.string()) +

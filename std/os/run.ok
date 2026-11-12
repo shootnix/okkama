@@ -18,9 +18,13 @@ import "os/command" take InheritedCommand;
 import "os/command_capture" take CommandCapture, CompletedCommand, CaptureLimitExceeded;
 import "os/process" take ExitKind, ProcessFailure;
 
+// Runs a program found in PATH with the process's environment, and gives what
+// it printed.
 object Run {
     has capture is CommandCapture;
 
+    // Runs program with arguments; nothing runs until text(), bytes() or
+    // completion() is asked.
     Run(program is string, arguments is @string = []) {
         capture = CommandCapture(
             origin: InheritedCommand(program: Path(program), arguments: arguments),

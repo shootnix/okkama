@@ -38,14 +38,19 @@ import "runtime/process" take ProcessState, process_state_create, process_state_
 // level orchestration. Process.close() is idempotent; it forcefully stops and
 // reaps a running child and discards unread pipe data.
 
+// A signal to stop a process: interrupt (Ctrl-C), terminate, or kill, which
+// cannot be caught.
 enum Signal = (interrupt, terminate, kill);
 
+// How a process ended: with an exit code, or stopped by a signal.
 enum ExitKind = (exited, interrupted, terminated, killed, other);
 
+// How a process ended.
 object Exit {
     has classification is ExitKind;
     has exit_code is int;
 
+    // An end as given.
     Exit(kind is ExitKind, code is int) {
         classification = kind;
         exit_code = code;
@@ -58,20 +63,24 @@ object Exit {
         }
     }
 
+    // The exit code; MissingExitCode when a signal stopped the process.
     code() is int {
         confirm classification == ExitKind.exited else throw MissingExitCode.missing;
         exit_code;
     }
 
+    // Whether it exited with code 0.
     success() is bool {
         classification == ExitKind.exited && exit_code == 0;
     }
 }
 
+// A child process; it starts when first used, not when made.
 object Process {
     has origin is Commanding;
     has state is ProcessState;
 
+    // A process for command; nothing runs yet.
     Process(command is Commanding) {
         origin = command;
         state = process_state_create();
@@ -82,10 +91,13 @@ object Process {
         ProcessInput(origin: self);
     }
 
+    // Its standard output, read blocking; streams() reads it without blocking
+    // other tasks.
     output() is ProcessOutput {
         ProcessOutput(origin: self);
     }
 
+    // Its standard error, read blocking.
     errors() is ProcessErrors {
         ProcessErrors(origin: self);
     }
@@ -107,6 +119,7 @@ object Process {
         ProcessStreams(state);
     }
 
+    // Its process id, starting it if needed.
     id() is int {
         self.start();
         try {
@@ -117,6 +130,7 @@ object Process {
         }
     }
 
+    // Whether it is still running.
     running() is bool {
         self.start();
         try {
@@ -127,6 +141,7 @@ object Process {
         }
     }
 
+    // Waits for it to end and tells how.
     async exit() is Exit {
         self.start();
         let status is %string:int = try {
@@ -157,6 +172,7 @@ object Process {
         Exit(kind: kind, code: status["code"]);
     }
 
+    // Sends a signal; UnsupportedSignal where the platform has no such signal.
     signal(value is Signal) is void {
         self.start();
         let code is int = if value == Signal.interrupt {
@@ -183,6 +199,8 @@ object Process {
         }
     }
 
+    // Stops and reaps a running child and drops unread output; closing an
+    // unstarted process never starts it.
     close() is void {
         try {
             process_state_close(state);
@@ -192,6 +210,7 @@ object Process {
         }
     }
 
+    // Writes to its standard input; ProcessInput is the usual way.
     input_write(content is @byte) is void {
         self.start();
         let written is int = try {
@@ -203,6 +222,7 @@ object Process {
         confirm written == content.size() else throw IncompleteWrite.after(written);
     }
 
+    // Sends written input on.
     input_flush() is void {
         self.start();
         try {
@@ -213,6 +233,7 @@ object Process {
         }
     }
 
+    // Whether its standard input is closed.
     input_closed() is bool {
         try {
             process_state_input_closed(state);
@@ -222,6 +243,7 @@ object Process {
         }
     }
 
+    // Closes its standard input, so it sees the end.
     input_close() is void {
         if !self.input_closed() {
             self.start();
@@ -234,6 +256,8 @@ object Process {
         }
     }
 
+    // At most limit bytes of its standard output; ProcessOutput is the usual
+    // way.
     output_bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         self.start();
@@ -245,6 +269,8 @@ object Process {
         }
     }
 
+    // At most limit bytes of its standard error; ProcessErrors is the usual
+    // way.
     error_bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         self.start();
@@ -283,17 +309,21 @@ object Process {
     }
 }
 
+// The standard input of a process, written blocking.
 object ProcessInput does Writing, WritingText, Closing {
     has owner is Process;
 
+    // The input of origin.
     ProcessInput(origin is Process) {
         owner = origin;
     }
 
+    // Writes the bytes of source.
     write(source is ByteSource) is void {
         owner.input_write(source.bytes());
     }
 
+    // Writes the bytes.
     write(bytes is @byte) is void {
         owner.input_write(bytes);
     }
@@ -304,31 +334,38 @@ object ProcessInput does Writing, WritingText, Closing {
         owner.input_write(Utf8Encoded(text.join("")).bytes());
     }
 
+    // Writes the strings as UTF-8 and then one LF.
     writeln(values is ...string) is void {
         let text is @string = values...;
         owner.input_write(Utf8Encoded(text.join("") + "\n").bytes());
     }
 
+    // Sends written bytes on.
     flush() is void {
         owner.input_flush();
     }
 
+    // Whether it is closed.
     closed() is bool {
         owner.input_closed();
     }
 
+    // Closes it, so the process sees the end of its input; it keeps running.
     close() is void {
         owner.input_close();
     }
 }
 
+// The standard output of a process, read blocking.
 object ProcessOutput does Reading {
     has owner is Process;
 
+    // The output of origin.
     ProcessOutput(origin is Process) {
         owner = origin;
     }
 
+    // At most limit bytes; [] at the end.
     bytes(limit is int) is @byte {
         owner.output_bytes(limit);
     }
@@ -340,13 +377,16 @@ object ProcessOutput does Reading {
     }
 }
 
+// The standard error of a process, read blocking.
 object ProcessErrors does Reading {
     has owner is Process;
 
+    // The error stream of origin.
     ProcessErrors(origin is Process) {
         owner = origin;
     }
 
+    // At most limit bytes; [] at the end.
     bytes(limit is int) is @byte {
         owner.error_bytes(limit);
     }
@@ -361,18 +401,22 @@ object ProcessErrors does Reading {
 object ProcessStreams {
     has state is ProcessState;
 
+    // Made by Process.streams(); not constructed directly.
     ProcessStreams(state is ProcessState) {
         self.state = state;
     }
 
+    // Its standard input, written asynchronously.
     input() is ProcessStreamInput {
         ProcessStreamInput(state);
     }
 
+    // Its standard output, read asynchronously.
     output() is ProcessStreamOutput {
         ProcessStreamOutput(state: state, errors: false);
     }
 
+    // Its standard error, read asynchronously.
     errors() is ProcessStreamOutput {
         ProcessStreamOutput(state: state, errors: true);
     }
@@ -382,14 +426,17 @@ object ProcessStreams {
 object ProcessStreamInput does AsyncWriting, Closing {
     has state is ProcessState;
 
+    // Made by ProcessStreams.input(); not constructed directly.
     ProcessStreamInput(state is ProcessState) {
         self.state = state;
     }
 
+    // Writes the bytes of source once the process takes them.
     async write(source is ByteSource) is AsyncWriting {
         await self.write(source.bytes());
     }
 
+    // Writes the bytes once the process takes them.
     async write(bytes is @byte) is AsyncWriting {
         let written is int = try {
             await process_state_input_write_async(state, bytes);
@@ -407,11 +454,13 @@ object ProcessStreamInput does AsyncWriting, Closing {
         await self.write(Utf8Encoded(text.join("")).bytes());
     }
 
+    // Writes the strings as UTF-8 and then one LF.
     async writeln(values is ...string) is AsyncWriting {
         let text is @string = values...;
         await self.write(Utf8Encoded(text.join("") + "\n").bytes());
     }
 
+    // Whether it is closed.
     closed() is bool {
         try {
             process_state_input_closed(state);
@@ -438,11 +487,13 @@ object ProcessStreamOutput does AsyncReading {
     has state is ProcessState;
     has errors is bool;
 
+    // Made by ProcessStreams.output() and errors(); not constructed directly.
     ProcessStreamOutput(state is ProcessState, errors is bool) {
         self.state = state;
         self.errors = errors;
     }
 
+    // At most limit bytes once they come; [] at the end.
     async bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         try {
@@ -480,10 +531,12 @@ object ProcessStreamOutput does AsyncReading {
 object ProcessLines {
     has input is ByteInput;
 
+    // Made by ProcessStreamOutput.lines(); not constructed directly.
     ProcessLines(input is ByteInput) {
         self.input = input;
     }
 
+    // The next line, or none at the end; `for await` calls it.
     async next() is Maybe<string> {
         match await input.line([byte(10)], 1048576) {
             case Maybe.some(line) {
@@ -536,12 +589,16 @@ hidden object ProcessStreamDrain {
     }
 }
 
+// A process printed more than the limit asked for.
 enum OutputLimitExceeded is Error = (limit(limit is int));
 
+// A signal stopped the process, so it has no exit code.
 enum MissingExitCode is Error = (missing);
 
+// The platform has no such signal.
 enum UnsupportedSignal is Error = (signal(signal is Signal));
 
+// The process could not be started or talked to; code and message say why.
 enum ProcessFailure is Error = (detailed(code is string, message is string));
 
 test "an exit tells how the process ended; only an exited one has a code" {

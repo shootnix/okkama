@@ -24,11 +24,15 @@ import "runtime/system" take system_platform, system_architecture, system_byte_o
 //         output.writeln("little-endian host");
 //     }
 
+// The few operating systems code usually branches on; others are other.
 enum OperatingSystem = (linux, macos, windows, freebsd, other);
 
+// The system and machine the program runs on.
 object Platform {
+    // The running platform.
     Platform();
 
+    // Which operating system.
     operating_system() is OperatingSystem {
         let platform is string = try {
             system_platform();
@@ -55,6 +59,7 @@ object Platform {
         }
     }
 
+    // The machine architecture, such as `x86_64` or `aarch64`.
     architecture() is string {
         try {
             system_architecture();
@@ -64,6 +69,7 @@ object Platform {
         }
     }
 
+    // The machine's byte order; formats still name their own.
     byte_order() is ByteOrder {
         let byte_order is string = try {
             system_byte_order();
@@ -96,9 +102,12 @@ object Platform {
 // the runtime, not a promise about physical sockets or permanently available
 // parallelism.
 
+// The computer the program runs on.
 object Host {
+    // This host.
     Host();
 
+    // Its host name.
     name() is string {
         try {
             system_host_name();
@@ -108,6 +117,7 @@ object Host {
         }
     }
 
+    // How many processors the program may use.
     cpu_count() is int {
         let processors is int = try {
             system_cpu_count();
@@ -120,6 +130,7 @@ object Host {
     }
 }
 
+// The system could not answer; message says why.
 enum UnavailableHostInformation is Error = (because(message is string));
 
 test "the platform names a known system, an architecture and a byte order" {

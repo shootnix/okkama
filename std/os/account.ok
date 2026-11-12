@@ -23,28 +23,37 @@ import "size" take Sizing;
 // stores it only as a string. home() comes from the account database, not from
 // HOME, USERPROFILE or another process-environment variable.
 
+// An account: the process's own with User(), or a named one; asked about only
+// when read.
 object User {
     has selected_name is string;
     has current is bool;
 
+    // The account the process runs as.
     User() {
         selected_name = "";
         current = true;
     }
 
+    // The account called name; MissingUser when it is read and there is none.
     User(name is string) {
         selected_name = name;
         current = false;
     }
 
+    // The account name.
     name() is string {
         self.record()["name"];
     }
 
+    // A stable identifier: a decimal UID, a Windows SID or another; compare and
+    // store it only as text.
     identity() is string {
         self.record()["identity"];
     }
 
+    // The home directory from the account database, never from HOME;
+    // MissingUserHome when it has none.
     home() is Directory {
         let record is %string:string = self.record();
         confirm !record["home"].empty()
@@ -98,21 +107,26 @@ object User {
 //         output.writeln(user.name());
 //     }
 
+// A named group of accounts.
 object Group {
     has selected_name is string;
 
+    // The group called name; MissingGroup when it is read and there is none.
     Group(name is string) {
         selected_name = name;
     }
 
+    // The group name.
     name() is string {
         self.record()["name"];
     }
 
+    // A stable identifier, such as a decimal GID.
     identity() is string {
         self.record()["identity"];
     }
 
+    // The accounts that belong to it.
     users() is Sequencing<User> {
         GroupUsers(name: selected_name);
     }
@@ -218,14 +232,19 @@ hidden object GroupUserCursor does Cursor<User> {
     }
 }
 
+// No account has that name.
 enum MissingUser is Error = (name(name is string));
 
+// No group has that name.
 enum MissingGroup is Error = (name(name is string));
 
+// The account has no home directory.
 enum MissingUserHome is Error = (name(name is string));
 
+// An empty name or one with characters no account can have.
 enum InvalidAccountName is Error = (origin(origin is string));
 
+// The system could not answer; message says why.
 enum UnavailableAccountInformation is Error = (because(message is string));
 
 test "the current user is found again by name, with the same identity" {
