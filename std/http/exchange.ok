@@ -15,6 +15,8 @@ import "http/header" take Headers, HeaderName, HttpAsciiLowercase, Header;
 import "http/body" take BodyReading, ByteBody;
 import "http/media_type" take HttpMediaType;
 import "io/buffer" take ByteBuffer;
+import "io/stream" take AsyncReading;
+import "io/transfer" take Copy;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded;
 import "encoding/single_byte" take AsciiDecoded, Latin1Decoded;
 import "json" take Json, ParsedJson;
@@ -191,14 +193,7 @@ object ClientResponse {
         defer input.close();
         let joined = ByteBuffer();
         defer joined.closing().close();
-        let output = joined.writing();
-        loop {
-            let chunk = await input.bytes(65536);
-            if chunk.size() == 0 {
-                last;
-            }
-            output.write(chunk);
-        }
+        await Copy(from: ExchangeBodyBytes(input), to: joined.writing()).count();
         joined.content().bytes();
     }
 
@@ -255,6 +250,19 @@ hidden object BodyCharset {
 }
 
 enum UnsupportedBodyCharset is Error = (named(name is string));
+
+// A body reading seen as an AsyncReading, for io/transfer.
+hidden object ExchangeBodyBytes does AsyncReading {
+    has input is BodyReading;
+
+    ExchangeBodyBytes(input is BodyReading) {
+        self.input = input;
+    }
+
+    async bytes(limit is int) is @byte {
+        await input.bytes(limit);
+    }
+}
 
 async test "a client response reads its head through caps and its body whole" {
     let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(

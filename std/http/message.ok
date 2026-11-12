@@ -8,7 +8,8 @@ import "http/version" take HttpVersion;
 import "http/target" take RequestTarget, RequestTargetSnapshot, RequestTargetMethod, AbsoluteTarget;
 import "url/value" take ParsedUrl;
 import "encoding/utf" take Utf8Decoded;
-import "async/atomic" take Atomic;
+import "io/stream" take AsyncReading;
+import "io/transfer" take ReadUntilEnd, ReadLimitExceeded;
 import "numbers/bigint" take BigInt;
 import "compare" take Order;
 
@@ -46,7 +47,10 @@ object Request {
         body is BodyOpening = EmptyBody(),
         version is HttpVersion = HttpVersion.http_1_1
     ) {
-        self.target = RequestCoordinates(method: method, target: AbsoluteTarget(ParsedUrl(url).parts())).target();
+        self.target = RequestCoordinates(
+            method: method,
+            target: AbsoluteTarget(ParsedUrl(url).parts())
+        ).target();
         self.method = method;
         self.headers = headers;
         self.body = body;
@@ -103,29 +107,30 @@ object Request {
 
     hidden async streamed(input is BodyReading, limit is int) is @byte {
         defer input.close();
-        let empty is @@byte = [];
-        let chunks = Atomic(empty);
-        let taken = Atomic(0);
-        loop {
-            let chunk = await input.bytes(65536);
-            last if chunk.size() == 0;
-            taken.replace(taken.value() + chunk.size());
-            confirm taken.value() <= limit else throw BodyLimitExceeded.limit(limit);
-            chunks.replace(chunks.value() + [chunk]);
+        try {
+            await ReadUntilEnd(origin: MessageBodyBytes(input), limit: limit).bytes();
         }
-        let parts = chunks.value();
-        if parts.size() == 1 {
-            return parts[0];
-        }
-        let start is @byte = [];
-        parts.reduce(start) -> all, part {
-            all + part;
+        catch failure is ReadLimitExceeded {
+            throw BodyLimitExceeded.limit(limit);
         };
     }
 
     // The whole body as UTF-8 text, at most limit bytes.
     async text(limit is int) is string {
         Utf8Decoded(await self.bytes(limit)).string();
+    }
+}
+
+// A body reading seen as an AsyncReading, for io/transfer.
+hidden object MessageBodyBytes does AsyncReading {
+    has input is BodyReading;
+
+    MessageBodyBytes(input is BodyReading) {
+        self.input = input;
+    }
+
+    async bytes(limit is int) is @byte {
+        await input.bytes(limit);
     }
 }
 
@@ -247,7 +252,10 @@ test "a request to a URL is a GET with no fields unless told" {
 
 test "a response takes content and its media type" {
     let response = Response(status: Status.ok, content: TextBody(text: "hi"));
-    test.is(response::Head::headers.values(HeaderName("Content-Type")).item(0), "text/plain; charset=utf-8");
+    test.is(
+        response::Head::headers.values(HeaderName("Content-Type")).item(0),
+        "text/plain; charset=utf-8"
+    );
     test.is(response.body().length().string(), "2");
     let typed = Response(
         status: Status.created,
@@ -259,9 +267,17 @@ test "a response takes content and its media type" {
 }
 
 async test "a request reads its whole body within a limit" {
-    let request = Request(url: "http://example.test/notes", method: Method.post, body: TextBody(text: "héllo").opening());
+    let request = Request(
+        url: "http://example.test/notes",
+        method: Method.post,
+        body: TextBody(text: "héllo").opening()
+    );
     test.is(await request.text(limit: 64), "héllo");
-    let again = Request(url: "http://example.test/notes", method: Method.post, body: TextBody(text: "héllo").opening());
+    let again = Request(
+        url: "http://example.test/notes",
+        method: Method.post,
+        body: TextBody(text: "héllo").opening()
+    );
     test.throws(BodyLimitExceeded) {
         await again.bytes(limit: 3);
     };
@@ -290,7 +306,11 @@ hidden object DeclaredBody does BodyOpening {
 }
 
 async test "a declared length over the limit is refused before reading" {
-    let declared = Request(url: "http://example.test/upload", method: Method.post, body: DeclaredBody());
+    let declared = Request(
+        url: "http://example.test/upload",
+        method: Method.post,
+        body: DeclaredBody()
+    );
     let refusal = try {
         await declared.bytes(limit: 1024);
         "read";
@@ -302,7 +322,10 @@ async test "a declared length over the limit is refused before reading" {
         "read";
     };
     test.is(refusal, "refused at 1024");
-    let streamed = Request(url: "http://example.test/notes", method: Method.post, body: TextBody(text: "two words").opening());
+    let streamed = Request(
+        url: "http://example.test/notes",
+        method: Method.post,
+        body: TextBody(text: "two words").opening()
+    );
     test.is(await streamed.text(limit: 9), "two words");
 }
-
