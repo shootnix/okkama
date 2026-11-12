@@ -103,6 +103,24 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   plaintext without a word. Checked against a Postgres service by name on
   IR, Sparrow and the JVM.
 
+- **CSV is read from an upload as it comes (#204).**
+
+      for await CsvStream(origin: upload) -> row { … }
+      for await CsvRecords(origin: upload) -> record { record.text("name"); }
+
+  `CsvStream` and `CsvRecords` take an `AsyncReading` and give rows or
+  records to `for await`, with `CsvStream`'s limits unless given. Walking
+  such a source with `for`, or `row()`, is `AsyncCsvOrigin.walked`.
+
+- **Language: `test.close`, `test.text` and `test.bytes` (#187).**
+  `test.close(actual, expected, tolerance)` compares floats;
+  `test.text(actual, expected)` names the scalar where two strings part, with
+  its line and column; `test.bytes(actual, expected)` names the first
+  differing offset or the sizes. IR, Sparrow and the JVM write the same
+  reports. Book and spec §14, Bible §15.2; the editor grammar highlights
+  them (vscode-okkama 0.9.0); conformance `L04.test.close-text-bytes-pass`
+  and `-fail`.
+
 ### Fixed
 
 - **A server's memory grew with every request (#503).** `examples/web/hello.ok`
@@ -169,6 +187,11 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `1/2 (rat)`. The debug bridge now converts a rat like other values.
 
 ### Changed
+
+- **Gettext plural formulas evaluate in `int` (#205).** The Russian formula
+  takes Sparrow 9 581 → 460 ns per lookup and the IR engine
+  45 879 → 12 138 ns (release builds). Characterization tests pin the forms,
+  64-bit wrap-around and every refusal.
 
 - **A disabled log level costs almost nothing (#180).** `LogWriting` gains
   `enabled(name, level)`, and `NamedLogging` asks it before it builds
