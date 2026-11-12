@@ -42,6 +42,8 @@ public final class ProcessNatives {
         boolean inputClosed;
         boolean closed;
         boolean capturing;
+        /** A stream away on a worker (#196): input, output, errors. */
+        final boolean[] busy = new boolean[3];
     }
 
     static final class Captured {
@@ -524,6 +526,96 @@ public final class ProcessNatives {
     public static List<Object> runtime_process__process_state_errors_read(Object handle, BigInteger limit) {
         String operation = symbol("process_state_errors_read", 2);
         return read(started(handle, operation).errors, limit, operation);
+    }
+
+    // ---- asynchronous halves (#196): the blocking call runs on a worker ----
+
+    private static Future later(final ProcessState state, final int slot, Callable<Object> work, final String operation,
+            final String message) {
+        state.busy[slot] = true;
+        final Future promise = Future.promise();
+        final Scheduler.Op op = Scheduler.offload(work, new Scheduler.Outcome() {
+            public void deliver(Object value, Throwable error) {
+                state.busy[slot] = false;
+                if (error == null) {
+                    Scheduler.settle(promise, value, null);
+                } else if (slot == 0 && error instanceof IOException && brokenPipe((IOException) error)) {
+                    Scheduler.settle(promise, null, failure("broken_pipe", operation, message));
+                } else {
+                    Scheduler.settle(promise, null, hostFailure(operation, message, error));
+                }
+            }
+        });
+        promise.listen(new Runnable() {
+            public void run() {
+                op.detach();
+            }
+        });
+        return promise;
+    }
+
+    private static Future readLater(Object handle, BigInteger limit, boolean output, String name) {
+        final String operation = symbol(name, 2);
+        final ProcessState state;
+        try {
+            state = started(handle, operation);
+            if (limit.signum() <= 0) {
+                throw failure("invalid_input", operation, "Process read size must be positive");
+            }
+            if (state.busy[output ? 1 : 2]) {
+                throw failure("invalid_input", operation, "A read of this stream is already waiting");
+            }
+        } catch (Failure failure) {
+            return Scheduler.resolved(null, failure);
+        }
+        final InputStream stream = output ? state.output : state.errors;
+        final int size = limit.compareTo(BigInteger.valueOf(CHUNK)) > 0 ? CHUNK : limit.intValue();
+        if (stream == null) {
+            return Scheduler.resolved(Natives.fromBytes(new byte[0], 0), null);
+        }
+        return later(state, output ? 1 : 2, new Callable<Object>() {
+            public Object call() throws IOException {
+                byte[] buffer = new byte[size];
+                int count = stream.read(buffer, 0, size);
+                return Natives.fromBytes(buffer, Math.max(count, 0));
+            }
+        }, operation, "Cannot read process output");
+    }
+
+    public static Future runtime_process__process_state_output_read_async(Object handle, BigInteger limit) {
+        return readLater(handle, limit, true, "process_state_output_read_async");
+    }
+
+    public static Future runtime_process__process_state_errors_read_async(Object handle, BigInteger limit) {
+        return readLater(handle, limit, false, "process_state_errors_read_async");
+    }
+
+    public static Future runtime_process__process_state_input_write_async(Object handle, List<?> source) {
+        final String operation = symbol("process_state_input_write_async", 2);
+        final ProcessState state;
+        try {
+            state = started(handle, operation);
+            if (state.inputClosed) {
+                throw failure("already_closed", operation, "Process input is already closed");
+            }
+            if (state.busy[0]) {
+                throw failure("invalid_input", operation, "A write of this stream is already waiting");
+            }
+        } catch (Failure failure) {
+            return Scheduler.resolved(null, failure);
+        }
+        final byte[] bytes = Natives.toBytes(source);
+        if (bytes.length == 0) {
+            return Scheduler.resolved(BigInteger.ZERO, null);
+        }
+        final OutputStream stream = state.input;
+        return later(state, 0, new Callable<Object>() {
+            public Object call() throws IOException {
+                stream.write(bytes);
+                stream.flush();
+                return BigInteger.valueOf(bytes.length);
+            }
+        }, operation, "Cannot write process input");
     }
 
     // ---- захват ----
