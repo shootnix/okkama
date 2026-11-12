@@ -8,6 +8,60 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 0.5.5 is in progress.
 
+### Added
+
+- **`fs/path` takes paths apart (#124).** `Path` gains `parts()`, `stem()`,
+  `extension()`, `extension_replaced(…)`, `relative_to(base)` and
+  `normalized()`, for POSIX and Windows paths alike. The native
+  `runtime/fs.path_parts` splits a path the same way in the IR engine,
+  Sparrow and the JVM.
+
+- **`Directory.create(parents: true)` makes the missing parents (#125).**
+
+- **`FileEntry.copy(destination)` copies a file with its permission bits
+  (#126).** `copy` and `move` take `overwrite`; see Changed for `move`.
+
+- **`TextBuffer` builds text piece by piece (#139).** `strings/buffer` keeps
+  the text in the runtime, as `ByteBuffer` keeps bytes: a write appends
+  without copying what is there.
+
+      let page = TextBuffer();
+      page.write("<li>", name, "</li>");
+      page.writeln();
+      let html = page.string();
+
+  It is a `WritingText`, so it goes wherever text is written.
+
+- **CSV records read their fields by column name (#202).** `CsvRecords(text)`
+  takes the first row as the header:
+
+      for CsvRecords(text) -> record {
+          record.text("name");
+          record.int("age");
+          record.maybe("note").text() else "";
+      }
+
+  A failure names the row and the column: `MissingCsvColumn`,
+  `MissingCsvValue`, `InvalidCsvValue`. `CsvRecord(fields:)` prints as before.
+
+- **A regex answers the common questions itself (#217).** `Regex` gains
+  `found(text)`, `first(text)` (a `Maybe<RegexMatch>`), `all(text)`,
+  `replaced(origin:, by:)` and `parts(text)`. They walk matches as
+  `RegexMatches` does; tests check them against `RegexMatches`,
+  `FirstRegexMatch`, `RegexSubstitution` and `RegexParts`. The replacement
+  is literal (`with` is a reserved word, hence `by`); `$1` and `${name}`
+  stay with `ExpandedRegexReplacement`. Matches read named groups like json
+  values: `match.int("year")`, `match.text("month")`,
+  `match.maybe("day").text() else ""`.
+
+- **`ParsedJson` reads UTF-8 bytes (#135).** `ParsedJson(bytes)` hands the
+  bytes to the parser, which checks the UTF-8 itself: no Okkama string in
+  between. Bytes that are not UTF-8 are `JsonError.invalid` where the valid
+  prefix ends. `WebRequest.json(limit)` and `ClientResponse.json()` parse
+  bodies this way: a 10 KB body takes Sparrow 146 → 134 µs and the IR engine
+  181 → 141 µs (release builds). New native
+  `runtime/json.json_parse_bytes_state`.
+
 ### Fixed
 
 - **A server's memory grew with every request (#503).** `examples/web/hello.ok`
@@ -74,6 +128,36 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `1/2 (rat)`. The debug bridge now converts a rat like other values.
 
 ### Changed
+
+- **Standard output is buffered (#132).** The IR engine flushed after every
+  write and Sparrow after every line. Now a terminal gets each line as it
+  ends and a pipe or a file gets blocks of 64 KiB; `Stdout().flush()` writes
+  out what is pending. The runtimes flush before standard error is written,
+  before standard input is read from a terminal, before a child process
+  starts, before the terminal is written and when the program ends, so the
+  order holds. 200 000 lines into a pipe: Sparrow 155 → 56 ms, the IR engine
+  1 084 → 590 ms (release builds, wall time). The JVM keeps flushing each
+  write.
+
+- **`move` refuses an occupied destination (#126).** It used a plain rename,
+  which silently replaced an existing file. Now an existing destination is
+  `FileError.already_exists`, which names it, unless the call says
+  `overwrite: true`. A move with `overwrite: true` replaces in one step; a
+  copy is written beside the destination and renamed over it. New natives
+  `runtime/fs.copy_file` and `runtime/fs.rename_noreplace`.
+
+- **Writers take bytes directly (#129).** `Writing.write(bytes is @byte)` and
+  `AsyncWriting.write(bytes is @byte)`: `output.write(bytes)` instead of
+  `output.write(ByteSnapshot(bytes))`. Every writer in std has it, and 107
+  calls in std lost their wrapper.
+
+- **Query parameters and environment variables read like json values (#134,
+  #143).** `QueryParameters.first` and `values` and `Environment.variable`
+  give way to `text`, `int`, `boolean`, `list` and `maybe`:
+  `query.int("page")`, `env.maybe("PORT").int() else 8080`,
+  `env.list("PATH")`. A value of the wrong kind is `InvalidQueryValue` or
+  `InvalidEnvironmentValue`, naming the name, the value and what was
+  expected.
 
 - **The HTTP server is faster than Python's `http.server` (#75, #76, #81,
   #83, #100, #101, #108, #110, #112–#117, #503).** The hello server
