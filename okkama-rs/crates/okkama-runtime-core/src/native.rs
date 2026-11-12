@@ -20,6 +20,7 @@ pub mod idna;
 pub mod input;
 pub mod jre;
 pub mod json;
+pub mod json_split;
 pub mod db;
 pub mod markup;
 pub mod math;

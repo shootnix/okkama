@@ -173,7 +173,9 @@ fn bytes_state(bytes: &[u8], maximum_depth: BigInt) -> ParseState {
 }
 
 pub(crate) fn handles(native: Native) -> bool {
-    native.symbol().starts_with("runtime/json@1::")
+    // The stream splitter (#136) runs in okkama-runtime-core, through the
+    // origin bridge.
+    native.symbol().starts_with("runtime/json@1::") && !native.symbol().starts_with("runtime/json@1::json_split_")
 }
 fn failure(native: Native, code: &str, message: &str) -> ProviderError {
     ProviderError::Native(NativeFailure {
