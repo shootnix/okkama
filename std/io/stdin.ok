@@ -1,23 +1,40 @@
 module io/stdin v1.0.0;
 
 import "io/stream" take Reading, ReadingText, Closing, InvalidReadLimit;
-import "encoding/utf" take Utf8Decoded;
+import "encoding/utf" take Utf8Decoded, Utf8Encoded, InvalidUtf8;
 import "io/buffer" take ByteBuffer;
-import "runtime/stdio" take stdin_read;
+import "collections/iteration" take Batching;
+import "async/atomic" take Atomic;
+import "runtime/stdio" take stdin_read, stdin_read_line;
+import "runtime/utf" take utf8_valid_prefix;
 import "runtime/input_state" take Utf8InputState, input_state_create, input_state_append,
     input_state_size, input_state_line_offset, input_state_take, input_state_eof,
     input_state_finish, input_state_closed, input_state_close;
 
-// Raw process input and a strict UTF-8 text decorator.
+// The process input, as lines of text or as bytes (#221).
+//
+//     for Stdin() -> line { … }                               // UTF-8 lines
+//     let command = Stdin().line();
+//     for Stdin(decoding: InputDecoding.lenient) -> line { … } // bad bytes as U+FFFD
+//     let chunk = Stdin().bytes(limit: 65536);                 // bytes as they come
+//     for Stdin().chunks(size: 65536) -> chunk { … }
+//
+// A line is what comes before LF, without that LF and one CR right before it;
+// a last line without LF counts too. Decoding is strict UTF-8 unless told:
+// InvalidUtf8 then names the first bad byte of the line. line() throws
+// EndOfInput at the end; for stops there. Stdin.bytes(limit) returns at most
+// limit unmodified bytes; limit must be positive and [] is stable EOF.
+//
+// Every Stdin value reads the same process input through one buffer of the
+// runtime, so lines and bytes may be mixed and Stdin() made anew each time.
+// On a terminal, what was written to Stdout shows before the program waits.
+//
+// Utf8Input decodes any Reading, a Stdin too:
 //
 //     let input = Utf8Input(origin: Stdin());
 //     let command is string = input.line();
 //     let remainder is string = input.content();
 //     input.close();
-//
-// Stdin.bytes(limit) returns at most limit unmodified bytes. limit must be
-// positive; [] is stable EOF. Every Stdin value observes the same process
-// stream.
 //
 // Utf8Input buffers bytes read ahead from its non-owned Reading. line() splits
 // on LF, removes that LF and one immediately preceding CR, and preserves every
@@ -29,12 +46,183 @@ import "runtime/input_state" take Utf8InputState, input_state_create, input_stat
 // close() is idempotent, clears the decoder buffer and does not close the
 // wrapped Reading. Reading after close throws ClosedInput.
 
-object Stdin does Reading {
-    Stdin();
+object Stdin does Reading, Batching<string> {
+    has decoding is InputDecoding;
+
+    Stdin() {
+        decoding = InputDecoding.strict;
+    }
+
+    Stdin(decoding is InputDecoding) {
+        self.decoding = decoding;
+    }
 
     bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         stdin_read(limit);
+    }
+
+    // The next line; EndOfInput at the end of the input.
+    line() is string {
+        let raw = stdin_read_line();
+        confirm raw.size() > 0 else throw EndOfInput.reached;
+        InputLine(origin: raw, decoding: decoding).string();
+    }
+
+    // The next line for for, or none at the end of the input.
+    batch() is @string {
+        let raw = stdin_read_line();
+        if raw.size() == 0 {
+            let ended is @string = [];
+            return ended;
+        }
+        [InputLine(origin: raw, decoding: decoding).string()];
+    }
+
+    // The bytes in pieces of at most size for for, as they come.
+    chunks(size is int) is StdinChunks {
+        StdinChunks(size);
+    }
+}
+
+// How input bytes become text: strict UTF-8 refuses a bad byte with
+// InvalidUtf8; lenient puts U+FFFD for each ill-formed sequence, as browsers do.
+enum InputDecoding = (strict, lenient);
+
+// The process input in pieces of at most size bytes, for for.
+object StdinChunks does Batching<@byte> {
+    has size is int;
+
+    StdinChunks(size is int) {
+        confirm size > 0 else throw InvalidReadLimit.limit(size);
+        self.size = size;
+    }
+
+    batch() is @@byte {
+        let chunk = stdin_read(size);
+        if chunk.size() == 0 {
+            let ended is @@byte = [];
+            return ended;
+        }
+        [chunk];
+    }
+}
+
+// A raw line as text: its LF and one CR before it go, then it is decoded.
+hidden object InputLine {
+    has origin is @byte;
+    has decoding is InputDecoding;
+
+    InputLine(origin is @byte, decoding is InputDecoding) {
+        self.origin = origin;
+        self.decoding = decoding;
+    }
+
+    string() is string {
+        let size = origin.size();
+        let end = if size > 0 && origin[size - 1] == byte(10) {
+            if size > 1 && origin[size - 2] == byte(13) {
+                size - 2;
+            }
+            else {
+                size - 1;
+            }
+        }
+        else {
+            size;
+        };
+        let content = if end == size {
+            origin;
+        }
+        else {
+            origin.slice(0, end);
+        };
+        if decoding == InputDecoding.lenient {
+            return LenientUtf8(content).string();
+        }
+        Utf8Decoded(content).string();
+    }
+}
+
+// Bytes as text, each ill-formed UTF-8 sequence, in its maximal subpart, as
+// U+FFFD (the WHATWG decoder's rule); well-formed runs are decoded whole.
+hidden object LenientUtf8 {
+    has origin is @byte;
+
+    LenientUtf8(origin is @byte) {
+        self.origin = origin;
+    }
+
+    string() is string {
+        let prefix = utf8_valid_prefix(origin);
+        if prefix == origin.size() {
+            return Utf8Decoded(origin).string();
+        }
+        let at = Atomic(prefix);
+        let result = Atomic(Utf8Decoded(origin.slice(0, prefix)).string());
+        loop {
+            let start = at.value();
+            last if start == origin.size();
+            let lead = origin[start].int();
+            let width = if lead >= 194 && lead <= 223 {
+                2;
+            }
+            else {
+                if lead >= 224 && lead <= 239 {
+                    3;
+                }
+                else {
+                    if lead >= 240 && lead <= 244 {
+                        4;
+                    }
+                    else {
+                        1;
+                    }
+                }
+            };
+            let consumed = Atomic(1);
+            for (1..width) -> index {
+                last if start + index >= origin.size();
+                let code = origin[start + index].int();
+                let lower = if index == 1 && lead == 224 {
+                    160;
+                }
+                else {
+                    if index == 1 && lead == 240 {
+                        144;
+                    }
+                    else {
+                        128;
+                    }
+                };
+                let upper = if index == 1 && lead == 237 {
+                    159;
+                }
+                else {
+                    if index == 1 && lead == 244 {
+                        143;
+                    }
+                    else {
+                        191;
+                    }
+                };
+                last if code < lower || code > upper;
+                consumed.replace(consumed.value() + 1);
+            }
+            let whole = (width == 1 && lead < 128) || (width > 1 && consumed.value() == width);
+            if whole {
+                // A well-formed sequence: decode the run of them up to the next bad byte.
+                let rest = origin.slice(start, origin.size());
+                let run = utf8_valid_prefix(rest);
+                result.replace(result.value() + Utf8Decoded(rest.slice(0, run)).string());
+                at.replace(start + run);
+            }
+            else {
+                result.replace(result.value() + "\u{FFFD}");
+                at.replace(start + consumed.value());
+            }
+        }
+        result.value();
     }
 }
 
@@ -173,4 +361,38 @@ test "content returns the rest unchanged and refuses bad UTF-8" {
         },
         -1
     );
+}
+
+test "input lines lose LF and one CR and decode strictly or leniently" {
+    let line = InputLine(origin: Utf8Encoded("héllo\r\n").bytes(), decoding: InputDecoding.strict);
+    test.is(line.string(), "héllo");
+    test.is(
+        InputLine(origin: Utf8Encoded("a\r\r\n").bytes(), decoding: InputDecoding.strict).string(),
+        "a\r"
+    );
+    test.is(
+        InputLine(origin: Utf8Encoded("last\r").bytes(), decoding: InputDecoding.strict).string(),
+        "last\r"
+    );
+    test.is(InputLine(origin: [byte(10)], decoding: InputDecoding.strict).string(), "");
+    let bad is @byte = [byte(65), byte(255), byte(66), byte(10)];
+    test.throws(InvalidUtf8) {
+        InputLine(origin: bad, decoding: InputDecoding.strict).string();
+    };
+    test.is(InputLine(origin: bad, decoding: InputDecoding.lenient).string(), "A\u{FFFD}B");
+}
+
+test "lenient UTF-8 replaces each maximal ill-formed subpart once" {
+    // The Unicode and WHATWG examples: a truncated three-byte sequence is one
+    // U+FFFD, a surrogate's bytes and an overlong lead are one per byte.
+    test.is(LenientUtf8([byte(226), byte(130), byte(65)]).string(), "\u{FFFD}A");
+    test.is(LenientUtf8([byte(237), byte(160), byte(128)]).string(), "\u{FFFD}\u{FFFD}\u{FFFD}");
+    test.is(LenientUtf8([byte(192), byte(175)]).string(), "\u{FFFD}\u{FFFD}");
+    test.is(LenientUtf8([byte(240), byte(159), byte(152)]).string(), "\u{FFFD}");
+    let mixed = Utf8Encoded("чай").bytes() + [byte(255)] + Utf8Encoded("tea ☕").bytes();
+    test.is(LenientUtf8(mixed).string(), "чай\u{FFFD}tea ☕");
+    test.is(LenientUtf8([]).string(), "");
+    test.throws(InvalidReadLimit) {
+        Stdin().chunks(size: 0);
+    };
 }

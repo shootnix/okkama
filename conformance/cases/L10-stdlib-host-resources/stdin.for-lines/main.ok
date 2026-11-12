@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "io/stdin" take Stdin, InputDecoding, EndOfInput;
+
+main() is int {
+    Stdout().writeln("first=" + Stdin().line());
+    for Stdin(decoding: InputDecoding.lenient) -> line {
+        Stdout().writeln("[" + line + "]");
+    }
+    let after = try {
+        Stdin().line();
+    }
+    catch e is EndOfInput {
+        "EOF";
+    };
+    Stdout().writeln(after);
+    0;
+}

@@ -4072,7 +4072,8 @@ Integer ranges are half-open.
 `RegexSubstitution` with `ExpandedRegexReplacement("${last}, ${first}")` to
 replace. Offsets count Unicode scalars.
 
-`io`, `text` and `unicode`: `Stdout().writeln(…)` and `Stdin().line()`;
+`io`, `text` and `unicode`: `Stdout().writeln(…)`, `Stdin().line()` and
+`for Stdin() -> line` (#221);
 `Indented`, `Dedented`, `Wrapped` and `Shortened` lay out text;
 `Normalized(origin:, form:)` and `UnicodeCharacter(c).name()` follow
 Unicode 16.0.0.

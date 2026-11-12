@@ -4255,7 +4255,8 @@ zone:)` показывает момент в зоне: `local_datetime()`, `offs
 `RegexSubstitution` с `ExpandedRegexReplacement("${last}, ${first}")` для
 замены. Смещения считают скалярные значения Unicode.
 
-`io`, `text` и `unicode`: `Stdout().writeln(…)` и `Stdin().line()`;
+`io`, `text` и `unicode`: `Stdout().writeln(…)`, `Stdin().line()` и
+`for Stdin() -> line` (#221);
 `Indented`, `Dedented`, `Wrapped` и `Shortened` раскладывают текст;
 `Normalized(origin:, form:)` и `UnicodeCharacter(c).name()` следуют
 Unicode 16.0.0.
@@ -4524,10 +4525,8 @@ object Packet does ByteSource {
 ```okkama
 module app v1.0.0;
 
-import "io/input" take EndOfInput;
-import "io/stdin" take Stdin;
-import "io/stdout" take Stdout;
-import "io/stderr" take Stderr;
+import "io/stdin" take Stdin, EndOfInput;
+import "io/stdout" take Stdout, Stderr;
 
 main() is int {
     let out = Stdout();
@@ -4545,11 +4544,13 @@ main() is int {
 }
 ```
 
-`Stdin.line()` строго декодирует UTF-8 и удаляет одно окончание LF, CRLF или
-CR. `StdinBytes.bytes(limit)` возвращает сырые октеты. `StdoutBytes` и
-`StderrBytes` пишут сырые октеты; форматирующие `Stdout` и `Stderr` объединяют
-display-представления, кодируют UTF-8 и не выпускают нативные счётчики за
-границу `runtime/stdio`.
+`Stdin().line()` строго декодирует UTF-8 и убирает LF и один CR перед ним, а
+в конце ввода бросает `EndOfInput`. `for Stdin() -> line` идёт по строкам до
+конца ввода; `Stdin(decoding: InputDecoding.lenient)` ставит U+FFFD вместо
+битых байтов. `Stdin().bytes(limit: 65536)` возвращает сырые байты, а
+`for Stdin().chunks(size: 65536) -> chunk` отдаёт их кусками. Все значения
+`Stdin()` читают один ввод процесса через общий буфер, так что строки и байты
+можно смешивать (#221). `Stdout` и `Stderr` пишут и текст в UTF-8, и байты.
 
 ## Глава 27. Граница нативного рантайма (обзор)
 

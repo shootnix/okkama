@@ -1,0 +1,14 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "io/stdin" take Stdin;
+
+main() is int {
+    let first = Stdin().bytes(limit: 3);
+    Stdout().writeln("first=" + first.size().string());
+    for Stdin().chunks(size: 4) -> chunk {
+        Stdout().writeln("chunk=" + chunk.size().string());
+    }
+    Stdout().writeln("end=" + Stdin().bytes(limit: 4).size().string());
+    0;
+}
