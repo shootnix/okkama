@@ -227,6 +227,28 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 - **`BigInt(7)` and `int()` (#190).** `BigInt` gains `plus`, `minus`,
   `times`, `divided` and `remainder` as methods next to the operators.
 
+- **TOML and plist read like json (#140, #141).**
+
+      let config = ParsedToml(text).root();
+      config.get("server").int("port");
+      config.maybe("debug").boolean() else false;
+      for config.tables("replica") -> replica { replica.text("host"); }
+
+      let info = ParsedPlist(bytes).dictionary();
+      info.text("CFBundleIdentifier");
+      info.date("Built");
+
+  - `TomlTable` reads `text`, `int`, `float`, `boolean`, `get`, `tables`,
+    arrays (`texts`, `ints`, `floats`, `booleans`), the four TOML dates and
+    `maybe(name)`.
+  - `PlistDictionary` reads `text`, `int`, `float`, `boolean`, `data`,
+    `date`, `get`, `dictionaries`, `texts`, `ints` and `maybe(name)`.
+  - A value of another kind is `TomlKindMismatch` or `PlistKindMismatch`,
+    with the key and both kinds.
+  - Nothing is converted, and there is no Json in between; the visitors stay
+    for walking a whole tree.
+  - Both now look keys up in a map of names instead of comparing every pair.
+
 ### Fixed
 
 - **Parsed JSON grew Sparrow's memory (#510).** Sparrow keeps JSON nodes and
