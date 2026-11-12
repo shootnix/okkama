@@ -283,7 +283,12 @@ object PostgresTcp does PostgresTransporting {
 
     async transport() is PgTransport {
         let tcp = await TcpConnecting(remote: endpoint, options: TcpOptions(true, true)).connection();
-        PgTransport(input: tcp.input(), output: tcp.output(), origin: tcp, cancel: PgCancelTcp(endpoint));
+        PgTransport(
+            input: tcp.input(),
+            output: tcp.output(),
+            origin: tcp,
+            cancel: PgCancelTcp(endpoint)
+        );
     }
 }
 
@@ -316,7 +321,12 @@ object PostgresTls does PostgresTransporting {
             );
         let tls = await TlsClientHandshake(origin: tcp, server: server, policy: policy).connection();
         published.set();
-        PgTransport(input: tls.input(), output: tls.output(), origin: tls, cancel: PgCancelTcp(endpoint));
+        PgTransport(
+            input: tls.input(),
+            output: tls.output(),
+            origin: tls,
+            cancel: PgCancelTcp(endpoint)
+        );
     }
 }
 
@@ -365,8 +375,16 @@ object PostgresDatabase {
         defer anchor.close();
         let input = PgInput(channel.input());
         let output = PgOutput(channel.output());
-        await output.send(PgStartupMessage(user: credentials::Credentials::user, options: options).bytes());
-        await PgAuthentication(input: input, output: output, credentials: credentials, options: options, entropy: entropy).completed();
+        await output.send(
+            PgStartupMessage(user: credentials::Credentials::user, options: options).bytes()
+        );
+        await PgAuthentication(
+            input: input,
+            output: output,
+            credentials: credentials,
+            options: options,
+            entropy: entropy
+        ).completed();
         let version = Atomic("");
         let status = Atomic("");
         let process = Atomic(0);
@@ -510,13 +528,21 @@ hidden object PgAuthentication {
                 confirm options::Settings::cleartext
                     else throw PgDisabledMethod("cleartext password").failure();
                 await output.send(
-                    PgFrame(kind: "p", body: @byte(credentials.password().export_bytes()..., 0.byte())).bytes()
+                    PgFrame(
+                        kind: "p",
+                        body: @byte(credentials.password().export_bytes()..., 0.byte())
+                    ).bytes()
                 );
             }
             if code == 5 {
-                confirm options::Settings::md5 else throw PgDisabledMethod("MD5 password").failure();
+                confirm options::Settings::md5
+                    else throw PgDisabledMethod("MD5 password").failure();
                 let salt = fields.take(4);
-                let response = Md5Password(user: credentials::Credentials::user, password: credentials.password(), salt: salt).string();
+                let response = Md5Password(
+                    user: credentials::Credentials::user,
+                    password: credentials.password(),
+                    salt: salt
+                ).string();
                 await output.send(PgFrame(kind: "p", body: PgCString(response).bytes()).bytes());
             }
             if code == 10 {
@@ -703,6 +729,7 @@ object PostgresConnection does DbConnection, DbExecuting, DbPreparing, DbPrepare
     destroy {
         origin.close();
     }
+
     // db.execution(sql, values) and db.query(sql, values).one(): the values
     // are always bound, never pasted into the SQL.
     async execution(sql is string, values is Sequencing<DbValue>) is Execution {
@@ -1071,7 +1098,10 @@ object PgSession does Closing {
         }
         if rollback.value() {
             rollback.replace(false);
-            await self.send(PgFrame(kind: "Q", body: PgCString("ROLLBACK").bytes()).bytes(), operation);
+            await self.send(
+                PgFrame(kind: "Q", body: PgCString("ROLLBACK").bytes()).bytes(),
+                operation
+            );
             await self.ready(operation);
         }
         complete.set();
@@ -1172,7 +1202,13 @@ object PgSession does Closing {
         if token > 0 {
             transaction_prepared.replace(@string(transaction_prepared.value()..., name));
         }
-        PgPrepared(owner: self, name: name, parameters: outcome.parameter_count(), description: outcome.description(), token: token);
+        PgPrepared(
+            owner: self,
+            name: name,
+            parameters: outcome.parameter_count(),
+            description: outcome.description(),
+            token: token
+        );
     }
 
     async prepared_execution(
@@ -1344,7 +1380,12 @@ object PgSession does Closing {
         await self.settle(operation);
         self.permit(token);
         let complete = Event();
-        let cleanup = PgFinishInterrupted(owner: self, commit: commit, state: state, complete: complete);
+        let cleanup = PgFinishInterrupted(
+            owner: self,
+            commit: commit,
+            state: state,
+            complete: complete
+        );
         defer cleanup.close();
         await self.send(
             PgFrame(kind: "Q", body: PgCString(if commit {
@@ -1517,7 +1558,10 @@ object PgOutcome {
 
     row(body is @byte) is void {
         self.data_rows(
-            PgDataRows(bytes: @byte(68.byte(), PgInt32(body.size() + 4).bytes()..., body...), count: 1)
+            PgDataRows(
+                bytes: @byte(68.byte(), PgInt32(body.size() + 4).bytes()..., body...),
+                count: 1
+            )
         );
     }
 
@@ -1824,7 +1868,11 @@ hidden object PgRequest {
     parse(name is string) is @byte {
         PgFrame(
             kind: "P",
-            body: @byte(PgCString(name).bytes()..., PgCString(text).bytes()..., PgInt16(0).bytes()...)
+            body: @byte(
+                PgCString(name).bytes()...,
+                PgCString(text).bytes()...,
+                PgInt16(0).bytes()...
+            )
         ).bytes();
     }
 
@@ -2232,6 +2280,7 @@ object PgTransaction does Transaction, DbExecuting, DbPreparing {
             owner.abandon(token);
         }
     }
+
     // db.execution(sql, values) and db.query(sql, values).one(): the values
     // are always bound, never pasted into the SQL.
     async execution(sql is string, values is Sequencing<DbValue>) is Execution {
@@ -2325,8 +2374,14 @@ test "startup message carries protocol 3.0 and UTF-8 session settings" {
 }
 
 test "bind frames carry formats, NULL and binary bytes" {
-    let request = PgRequest(text: "SELECT $1, $2, $3", values: [DbNull(), DbBytes([7.byte()]), DbBoolean(true)]);
-    let fields = PgMessage(kind: "B", body: request.bind("", "s1").slice(5, request.bind("", "s1").size())).fields();
+    let request = PgRequest(
+        text: "SELECT $1, $2, $3",
+        values: [DbNull(), DbBytes([7.byte()]), DbBoolean(true)]
+    );
+    let fields = PgMessage(
+        kind: "B",
+        body: request.bind("", "s1").slice(5, request.bind("", "s1").size())
+    ).fields();
     test.is(fields.cstring(), "");
     test.is(fields.cstring(), "s1");
     test.is(fields.int16(), 3);
@@ -2395,7 +2450,9 @@ test "SQLSTATE classes map to portable failure kinds" {
 test "transaction options become one BEGIN" {
     test.is(PgBegin(TransactionOptions()).sql(), "BEGIN READ WRITE");
     test.is(
-        PgBegin(TransactionOptions(isolation: Isolation.serializable, read_only: true, deferrable: true)).sql(),
+        PgBegin(
+            TransactionOptions(isolation: Isolation.serializable, read_only: true, deferrable: true)
+        ).sql(),
         "BEGIN ISOLATION LEVEL SERIALIZABLE READ ONLY DEFERRABLE"
     );
 }
