@@ -1,0 +1,210 @@
+module web/testing v1.0.0;
+
+import "http/handler" take Handling, HandlingKind;
+import "http/request_context" take HttpRequestContext;
+import "http/message" take Request, Response, Responding;
+import "http/method" take Method;
+import "http/status" take Status;
+import "http/header" take Headers, Header, HeaderName;
+import "http/target" take ParsedRequestTarget;
+import "http/body" take Content, EmptyBody, TextBody, JsonBody;
+import "http/exchange" take ClientResponse, ExchangeDetails;
+import "http/version" take HttpVersion;
+import "async/cancellation" take Cancellation;
+import "net/stream" take ConnectionEndpoints;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "web/routing" take WebRoutes, Get, Post, Resource, Around;
+import "web/around" take BearerAuth;
+import "web/request" take WebRequest;
+import "web/reply" take TextReply, JsonReply, CreatedReply;
+import "json" take Json, JsonField;
+
+// Calls a route table the way HttpClient calls a server, without a network
+// (#85). A request goes through the routes, their arounds and exception
+// scopes, and comes back as the ClientResponse a real client gets, so a test
+// reads it the same way:
+//
+//     let client = WebTestClient(routes);
+//     let page = await client.get("/notes/7");
+//     test.is(page::Head::code, 200);
+//     test.is((await page.json()).text("title"), "Tea");
+//
+// A target is a path with an optional query, "/notes?limit=5". The request
+// comes from 127.0.0.1 over HTTP/1.1. A HEAD response has no body, as on the
+// wire, and an accepted WebSocket upgrade is 101 Switching Protocols.
+object WebTestClient {
+    has routes is Handling;
+
+    WebTestClient(routes is Handling) {
+        self.routes = routes;
+    }
+
+    async response(request is Request) is ClientResponse {
+        let ends is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(
+            local: IpEndpoint(address: IpAddress("127.0.0.1"), port: 80),
+            remote: IpEndpoint(address: IpAddress("127.0.0.1"), port: 50000)
+        );
+        let details = ExchangeDetails(endpoints: ends, version: HttpVersion.http_1_1);
+        let context = HttpRequestContext(
+            details: details,
+            cancellation: Cancellation().cancelling()
+        );
+        let result = await routes.handling(request, context);
+        let answered = if result.kind() == HandlingKind.websocket {
+            Response(status: Status.switching_protocols);
+        }
+        else {
+            result.response();
+        };
+        let response = if request::Head::method == Method.head {
+            Response(
+                status: answered::Head::status,
+                headers: answered::Head::headers,
+                body: EmptyBody()
+            );
+        }
+        else {
+            answered;
+        };
+        ClientResponse(request: request, response: response, details: details);
+    }
+
+    async get(target is string) is ClientResponse {
+        await self.response(TestRequest(target: target, method: Method.get).request());
+    }
+
+    async head(target is string) is ClientResponse {
+        await self.response(TestRequest(target: target, method: Method.head).request());
+    }
+
+    async options(target is string) is ClientResponse {
+        await self.response(TestRequest(target: target, method: Method.options).request());
+    }
+
+    async delete(target is string) is ClientResponse {
+        await self.response(TestRequest(target: target, method: Method.delete).request());
+    }
+
+    async post(target is string, body is Content, headers is Headers = Headers()) is ClientResponse {
+        await self.response(TestRequest(target: target, method: Method.post).request(body, headers));
+    }
+
+    async put(target is string, body is Content, headers is Headers = Headers()) is ClientResponse {
+        await self.response(TestRequest(target: target, method: Method.put).request(body, headers));
+    }
+
+    async patch(target is string, body is Content, headers is Headers = Headers()) is ClientResponse {
+        await self.response(
+            TestRequest(target: target, method: Method.patch).request(body, headers)
+        );
+    }
+}
+
+// A request for a target, with a body framed the way HttpClient frames it:
+// Content-Type from the content and Content-Length from its size, unless the
+// headers give them.
+hidden object TestRequest {
+    has target is string;
+    has method is Method;
+
+    TestRequest(target is string, method is Method) {
+        self.target = target;
+        self.method = method;
+    }
+
+    request() is Request {
+        Request(
+            target: ParsedRequestTarget(origin: target, method: method).target(),
+            method: method
+        );
+    }
+
+    request(body is Content, headers is Headers) is Request {
+        let opening = body.opening();
+        let typed = if headers.membership(HeaderName("Content-Type")) {
+            headers;
+        }
+        else {
+            headers.addition(Header(name: "Content-Type", value: body.media_type()));
+        };
+        let fields = if typed.membership(HeaderName("Content-Length"))
+            || typed.membership(HeaderName("Transfer-Encoding")) {
+                typed;
+            }
+            else {
+                typed.addition(Header(name: "Content-Length", value: opening.length().string()));
+            };
+        Request(
+            target: ParsedRequestTarget(origin: target, method: method).target(),
+            method: method,
+            headers: fields,
+            body: opening
+        );
+    }
+}
+
+hidden object TestNotes {
+    TestNotes() {}
+
+    async show(request is WebRequest) is Responding {
+        let id = request.path().int("id");
+        JsonReply(Json(JsonField("id", id), JsonField("title", "Tea")));
+    }
+
+    async add(request is WebRequest) is Responding {
+        let body = await request.json(4096);
+        CreatedReply(location: "/notes/2", value: Json(JsonField("title", body.text("title"))));
+    }
+
+    async search(request is WebRequest) is Responding {
+        TextReply("page " + (request.query().maybe("page").int() else 1).string());
+    }
+}
+
+async test "a test client calls the routes without a network" {
+    let notes = TestNotes();
+    let client = WebTestClient(
+        WebRoutes(
+            Resource("/notes", Get(notes.search), Post(notes.add)),
+            Get(path: "/notes/:id", endpoint: notes.show),
+            Get(path: "/admin", endpoint: notes.search),
+        )
+    );
+    let page = await client.get("/notes/7");
+    test.is(page::Head::code, 200);
+    test.is((await page.json()).text("title"), "Tea");
+    test.is((await page.json()).int("id"), 7);
+    test.is(await (await client.get("/notes?page=3")).text(), "page 3");
+    let created = await client.post("/notes", JsonBody(Json(JsonField("title", "Milk"))));
+    test.is(created::Head::status, Status.created);
+    test.is(created::Head::headers.text("Location"), "/notes/2");
+    test.is((await created.json()).text("title"), "Milk");
+    let bad = await client.get("/notes/x");
+    test.is(bad::Head::code, 400);
+    test.is((await bad.json()).text("detail"), "path parameter id must be an integer");
+    let missing = await client.get("/elsewhere");
+    test.is(missing::Head::code, 404);
+    let refused = await client.delete("/notes");
+    test.is(refused::Head::code, 405);
+    test.is(refused::Head::headers.text("Allow"), "GET, HEAD, POST");
+    let head = await client.head("/notes/7");
+    test.is(head::Head::code, 200);
+    test.is((await head.bytes()).size(), 0);
+    let text = await client.put("/notes", TextBody("x"));
+    test.is(text::Head::code, 405);
+}
+
+async test "a test client passes the arounds of the routes" {
+    let notes = TestNotes();
+    let client = WebTestClient(
+        WebRoutes(Around(BearerAuth(token: "s3cret")), Get(path: "/notes", endpoint: notes.search))
+    );
+    test.is((await client.get("/notes"))::Head::code, 401);
+    let request = Request(
+        target: ParsedRequestTarget(origin: "/notes?page=2", method: Method.get).target(),
+        headers: Headers(Header(name: "Authorization", value: "Bearer s3cret"))
+    );
+    let page = await client.response(request);
+    test.is(await page.text(), "page 2");
+}

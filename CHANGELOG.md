@@ -176,6 +176,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   | `Number(request.query("limit") else "10").int()` | `request.query().maybe("limit").int() else 10` |
   | `headers.first(HeaderName("Content-Type"))` | `headers.text("Content-Type")` |
 
+- **A test client for route tables (#85).** `web/testing`'s
+  `WebTestClient(routes)` sends requests through a table, its arounds and
+  exception scopes without a network, with `get`, `head`, `options`,
+  `delete`, `post`, `put`, `patch` and `response(request)` like
+  `HttpClient`, and answers the same `ClientResponse`:
+
+  ```okkama
+  let page = await WebTestClient(routes).get("/notes/7");
+  test.is(page::Head::code, 200);
+  test.is((await page.json()).text("title"), "Tea");
+  ```
+
+  `examples/web/testing.ok` tests a table this way.
+
 - **The server answers HTTP/1.0 (#102).** `ab` works: no Host is required,
   responses are not chunked, and keep-alive applies only when asked for.
 - **RequestJson readers share one translation of reading failures (#84).**

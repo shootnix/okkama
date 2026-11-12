@@ -4135,7 +4135,9 @@ endpoint: notes.one), Post(…)), Fallback(notes.missing))`. Без `Fallback` �
 `Around(BearerAuth(token: secret))` в таблице, `Scope` или `Resource`
 оборачивает их маршруты (`web/around`); свой обработчик вокруг маршрутов
 делает `Surrounding`.
-`WebApplication(routes).listen(address, port)` его обслуживает.
+`WebApplication(routes).listen(address, port)` его обслуживает, а в тестах
+`await WebTestClient(routes).get("/notes/7")` проводит запрос через маршруты без
+сети и отвечает тем же `ClientResponse`, что получает настоящий клиент.
 
 `Caching(origin: client, cache: MemoryHttpCache(clock:, maximum:), clock:)`
 отвечает свежими ответами из памяти, а `Proxied(proxy: ProxyPolicy(…), …)`

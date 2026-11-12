@@ -3953,7 +3953,9 @@ the most specific wins: `/notes/new` before `/notes/:id` before `/notes/*rest`.
 `Around(AccessLog(Stdout()))` or `Around(BearerAuth(token: secret))` in a table,
 a `Scope` or a `Resource` wraps its routes (`web/around`); an application's own
 around-handler does `Surrounding`.
-`WebApplication(routes).listen(address, port)` serves it.
+`WebApplication(routes).listen(address, port)` serves it, and in tests
+`await WebTestClient(routes).get("/notes/7")` sends a request through the
+routes without a network and answers the `ClientResponse` a real client gets.
 
 `Caching(origin: client, cache: MemoryHttpCache(clock:, maximum:), clock:)`
 answers fresh responses from memory, and `Proxied(proxy: ProxyPolicy(…), …)`

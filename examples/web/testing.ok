@@ -1,0 +1,61 @@
+module examples/web/testing v1.0.0;
+
+import "web/routing" take WebRoutes, Get, Resource, Post;
+import "web/testing" take WebTestClient;
+import "web/request" take WebRequest;
+import "web/reply" take TextReply, CreatedReply;
+import "http/message" take Responding;
+import "http/body" take TextBody;
+import "json" take Json, JsonField;
+import "io/stdout" take Stdout;
+
+// Tests of a route table without a network: WebTestClient sends a request
+// through the routes and gives back the ClientResponse a real client would
+// get. `okkama run -t examples/web/testing.ok` runs the tests; the program
+// prints the same exchanges.
+
+object Notes {
+    Notes() {}
+
+    async show(request is WebRequest) is Responding {
+        let id = request.path().int("id");
+        TextReply("note " + id.string());
+    }
+
+    async add(request is WebRequest) is Responding {
+        CreatedReply(location: "/notes/2", value: Json(JsonField("text", await request.text(1024))));
+    }
+
+    routes() is WebRoutes {
+        WebRoutes(Resource("/notes", Post(self.add)), Get(path: "/notes/:id", endpoint: self.show));
+    }
+}
+
+async test "a note is shown by its id" {
+    let page = await WebTestClient(Notes().routes()).get("/notes/1");
+    test.is(page::Head::code, 200);
+    test.is(await page.text(), "note 1");
+}
+
+async test "an id that is not a number is the client's mistake" {
+    let page = await WebTestClient(Notes().routes()).get("/notes/x");
+    test.is(page::Head::code, 400);
+    test.is((await page.json()).text("detail"), "path parameter id must be an integer");
+}
+
+async test "a note is added" {
+    let page = await WebTestClient(Notes().routes()).post("/notes", TextBody("buy tea"));
+    test.is(page::Head::headers.text("Location"), "/notes/2");
+}
+
+async main() is int {
+    let out = Stdout();
+    let client = WebTestClient(Notes().routes());
+    for ["/notes/1", "/notes/x", "/elsewhere"] -> target {
+        let page = await client.get(target);
+        out.writeln("GET ", target, " -> ", page::Head::code, " ", await page.text());
+    }
+    let added = await client.post("/notes", TextBody("buy tea"));
+    out.writeln("POST /notes -> ", added::Head::code, " ", await added.text());
+    0;
+}
