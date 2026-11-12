@@ -10242,6 +10242,41 @@
      "requirement": "required"
     }
    },
+   "contract": "STD.COMPRESSION.BROTLI",
+   "discrepancies": [],
+   "family": "Standard library: compression",
+   "spec_refs": [
+    "std/compression/brotli.ok"
+   ],
+   "status": "mandatory",
+   "title": "std compression/brotli public contract (BrotliCompressed, BrotliCompressor, BrotliDecompressed, BrotliDecompressor)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
    "contract": "STD.COMPRESSION.DEFLATE",
    "discrepancies": [],
    "family": "Standard library: compression",
@@ -10389,7 +10424,7 @@
     "std/compression/state.ok"
    ],
    "status": "mandatory",
-   "title": "std compression/state public contract (Compressing, CompressionLimitExceeded, CompressionOutput, Decompressing, DecompressionBudget, InvalidCompressedData, InvalidCompressionLimit)"
+   "title": "std compression/state public contract (Compressing, CompressionLimitExceeded, CompressionOutput, Decompressing, DecompressionBudget, InvalidCompressedData, InvalidCompressionLimit, UnsupportedCompression)"
   },
   {
    "aspects": {
@@ -10425,6 +10460,41 @@
    ],
    "status": "mandatory",
    "title": "std compression/zlib public contract (ZlibCompressed, ZlibCompressor, ZlibDecompressed, ZlibDecompressor)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [],
+     "gap": true,
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.COMPRESSION.ZSTD",
+   "discrepancies": [],
+   "family": "Standard library: compression",
+   "spec_refs": [
+    "std/compression/zstd.ok"
+   ],
+   "status": "mandatory",
+   "title": "std compression/zstd public contract (ZstdCompressed, ZstdCompressor, ZstdDecompressed, ZstdDecompressor)"
   },
   {
    "aspects": {
@@ -13775,7 +13845,7 @@
     "std/http/body_coding.ok"
    ],
    "status": "mandatory",
-   "title": "std http/body_coding public contract (GzipDecodedBody, GzipEncodedBody)"
+   "title": "std http/body_coding public contract (BrotliDecodedBody, BrotliEncodedBody, GzipDecodedBody, GzipEncodedBody)"
   },
   {
    "aspects": {
@@ -29682,6 +29752,9 @@
    "STD.COLLECTIONS.VIEWS [normal]",
    "STD.COLLECTIONS.VIEWS [boundary]",
    "STD.COLLECTIONS.VIEWS [invalid]",
+   "STD.COMPRESSION.BROTLI [normal]",
+   "STD.COMPRESSION.BROTLI [boundary]",
+   "STD.COMPRESSION.BROTLI [invalid]",
    "STD.COMPRESSION.DEFLATE [normal]",
    "STD.COMPRESSION.DEFLATE [boundary]",
    "STD.COMPRESSION.DEFLATE [invalid]",
@@ -29700,6 +29773,9 @@
    "STD.COMPRESSION.ZLIB [normal]",
    "STD.COMPRESSION.ZLIB [boundary]",
    "STD.COMPRESSION.ZLIB [invalid]",
+   "STD.COMPRESSION.ZSTD [normal]",
+   "STD.COMPRESSION.ZSTD [boundary]",
+   "STD.COMPRESSION.ZSTD [invalid]",
    "STD.CONFIG.DOCUMENT [normal]",
    "STD.CONFIG.DOCUMENT [boundary]",
    "STD.CONFIG.DOCUMENT [invalid]",
@@ -30714,12 +30790,14 @@
    "STD.COLLECTIONS.REPETITION",
    "STD.COLLECTIONS.SEQUENCE",
    "STD.COLLECTIONS.VIEWS",
+   "STD.COMPRESSION.BROTLI",
    "STD.COMPRESSION.DEFLATE",
    "STD.COMPRESSION.GZIP",
    "STD.COMPRESSION.INTERNAL.CODEC",
    "STD.COMPRESSION.READ",
    "STD.COMPRESSION.STATE",
    "STD.COMPRESSION.ZLIB",
+   "STD.COMPRESSION.ZSTD",
    "STD.CONFIG.DOCUMENT",
    "STD.CONFIG.ENVIRONMENT",
    "STD.CONFIG.KEY",
@@ -31042,5 +31120,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "9e39c082f6bb77a3809b99970bacf860541420faaf95f9ab21db146b0a33f82f"
+ "suite_tree_sha256": "29f0877f9edb614bc6a1f20ada49dc76b1ec6ea38b0bae0654479c22280989e5"
 }
