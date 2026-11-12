@@ -630,5 +630,8 @@ natives! {
     FsCopyFile = 644, "runtime/fs@1::copy_file/3", "(@byte, @byte, bool) -> bool";
     FsRenameNoreplace = 645, "runtime/fs@1::rename_noreplace/2", "(@byte, @byte) -> bool";
     StdoutFlush = 646, "runtime/stdio@1::stdout_flush/0", "() -> bool";
+    TextBufferCreate = 647, "runtime/buffer@1::text_buffer_create/0", "() -> TextBufferState";
+    TextBufferAppend = 648, "runtime/buffer@1::text_buffer_append/2", "(TextBufferState, string) -> bool";
+    TextBufferText = 649, "runtime/buffer@1::text_buffer_text/1", "(TextBufferState) -> string";
 }
 // retired: 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258

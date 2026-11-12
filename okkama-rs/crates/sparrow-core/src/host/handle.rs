@@ -24,6 +24,7 @@ pub(crate) enum Handle {
     Regex(crate::host::native_regex::RegexHandle),
     Secret(crate::host::native_secret::Secret),
     Buffer(crate::host::native_buffer::Buffer),
+    TextBuffer(String),
     Digest(Box<okkama_native::Hasher>),
     TestState {
         limit: i64,
@@ -54,6 +55,7 @@ impl Handle {
             | Self::Regex(_)
             | Self::Secret(_)
             | Self::Buffer(_)
+            | Self::TextBuffer(_)
             | Self::Digest(_)
             | Self::TestState { .. }
             | Self::Origin(_)

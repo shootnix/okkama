@@ -40,6 +40,20 @@ public final class TextNatives {
         return state;
     }
 
+    /** Текст, собираемый по кускам (#139): добавление не копирует уже собранное. */
+    public static Object runtime_buffer__text_buffer_create() {
+        return new StringBuilder();
+    }
+
+    public static boolean runtime_buffer__text_buffer_append(Object handle, String text) {
+        ((StringBuilder) handle).append(text);
+        return true;
+    }
+
+    public static String runtime_buffer__text_buffer_text(Object handle) {
+        return ((StringBuilder) handle).toString();
+    }
+
     public static Object runtime_buffer__buffer_state_create(List<?> initial) {
         BufferState state = new BufferState();
         state.bytes = Natives.toBytes(initial);
