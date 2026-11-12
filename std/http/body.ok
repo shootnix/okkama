@@ -50,8 +50,52 @@ object ByteBody does BodyOpening {
     }
 
     reading() is BodyReading {
-        let source = ByteBodyInput(origin);
-        StreamBodyReading(input: source, owner: source, trailers: Headers());
+        MemoryBodyReading(origin);
+    }
+}
+
+// A body already in memory, read directly: no lock and no task per read
+// (#117). Trailers are empty and known once the end has been read.
+hidden object MemoryBodyReading does BodyReading, AsyncReading, Closing {
+    has origin is @byte;
+    has offset is Atomic<int>;
+    has stopped, finished is Atomic<bool>;
+
+    MemoryBodyReading(origin is @byte) {
+        self.origin = origin;
+        offset = Atomic(0);
+        stopped = Atomic(false);
+        finished = Atomic(false);
+    }
+
+    async bytes(limit is int) is @byte {
+        confirm limit > 0 else throw InvalidReadLimit.limit(limit);
+        confirm !stopped.value() else throw BodyClosed.closed;
+        let start = offset.value();
+        let end = if origin.size() - start < limit {
+            origin.size();
+        }
+        else {
+            start + limit;
+        };
+        offset.replace(end);
+        if end == start {
+            finished.replace(true);
+        }
+        origin.slice(start, end);
+    }
+
+    trailers() is Headers {
+        confirm finished.value() else throw TrailersUnavailable.unavailable;
+        Headers();
+    }
+
+    closed() is bool {
+        stopped.value();
+    }
+
+    close() is void {
+        stopped.replace(true);
     }
 }
 
@@ -135,7 +179,8 @@ object EmptyBody does BodyOpening {
     }
 
     reading() is BodyReading {
-        ByteBody([]).reading();
+        let empty is @byte = [];
+        MemoryBodyReading(empty);
     }
 }
 
@@ -289,11 +334,8 @@ object ByteBodyInput does AsyncReading, Closing {
         else {
             remaining;
         };
-        let chunk is @byte = (start..start + amount).map() -> index {
-            origin[index];
-        };
         offset.replace(start + amount);
-        chunk;
+        origin.slice(start, start + amount);
     }
 
     closed() is bool {
@@ -356,3 +398,30 @@ async test "byte body reads are independent and trailers require EOF" {
     test.is(await first.bytes(1), []);
     test.is(first.trailers().entries().size(), 0);
 }
+
+async test "a body in memory is read in pieces, then ends with its trailers" {
+    let reading = ByteBody([1.byte(), 2.byte(), 3.byte()]).reading();
+    let first = await reading.bytes(2);
+    test.is(first.size(), 2);
+    test.throws(TrailersUnavailable) {
+        reading.trailers();
+    };
+    let second = await reading.bytes(5);
+    test.is(second[0], 3.byte());
+    let end = await reading.bytes(5);
+    test.is(end.size(), 0);
+    test.is(reading.trailers().entries().size(), 0);
+    reading.close();
+    test.ok(reading.closed());
+    let refused = try {
+        await reading.bytes(1);
+        "read";
+    }
+    catch failure is BodyClosed {
+        "closed";
+    };
+    test.is(refused, "closed");
+    let nothing = await EmptyBody().reading().bytes(8);
+    test.is(nothing.size(), 0);
+}
+
