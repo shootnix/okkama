@@ -1,6 +1,7 @@
 module mail/message v1.0.0;
 
-import "mime/part" take MimeBody, MimePart, MimeLimits, ParsedMime, InvalidMime, BinaryBody, TextBody;
+import "mime/part" take MimeBody, MimePart, MimeLimits, ParsedMime, InvalidMime, BinaryBody,
+    TextBody;
 import "mime/word" take EncodedWord;
 import "random/source" take Randomizing, SecureRandom, PcgRandom;
 import "time/clock" take Timing, SystemClock, Instant;
@@ -58,7 +59,8 @@ object MailMessage does ByteSource {
         let addresses is @string = (0..to.size()).map() -> index {
             to.item(index);
         };
-        confirm addresses.size() > 0 else throw InvalidArgument.because("a message needs a recipient");
+        confirm addresses.size() > 0
+            else throw InvalidArgument.because("a message needs a recipient");
         let parts = from.split("@");
         let domain = if parts.size() > 1 {
             parts[parts.size() - 1].split(">")[0];
@@ -80,14 +82,27 @@ object MailMessage does ByteSource {
             MessageHeader(name: MessageHeaderName("From"), value: from),
             MessageHeader(name: MessageHeaderName("To"), value: addresses.join(", ")),
             MessageHeader(name: MessageHeaderName("Subject"), value: title),
-            MessageHeader(name: MessageHeaderName("Date"), value: MailDate(ZonedDateTime(instant: clock.instant(), zone: utc)).string()),
-            MessageHeader(name: MessageHeaderName("Message-ID"), value: MessageId("<" + HexEncoded(random.bytes(16)).string() + "@" + domain + ">").string()),
+            MessageHeader(
+                name: MessageHeaderName("Date"),
+                value: MailDate(ZonedDateTime(instant: clock.instant(), zone: utc)).string()
+            ),
+            MessageHeader(
+                name: MessageHeaderName("Message-ID"),
+                value: MessageId("<" + HexEncoded(random.bytes(16)).string() + "@" + domain + ">").string()
+            ),
             MessageHeader(name: MessageHeaderName("MIME-Version"), value: "1.0"),
-            MessageHeader(name: MessageHeaderName("Content-Type"), value: "text/plain; charset=utf-8"),
+            MessageHeader(
+                name: MessageHeaderName("Content-Type"),
+                value: "text/plain; charset=utf-8"
+            ),
         );
         let limits = MimeLimits();
         bounds = limits;
-        content = MimePart(headers: headers, body: TextBody(origin: text, charset: "utf-8"), limits: limits);
+        content = MimePart(
+            headers: headers,
+            body: TextBody(origin: text, charset: "utf-8"),
+            limits: limits
+        );
     }
 
     part() is MimePart {
@@ -159,7 +174,10 @@ object DeliveredMail does ByteSource {
             field.name().order(MessageHeaderName("Bcc")) != Order.equal
                 && field.name().order(MessageHeaderName("Resent-Bcc")) != Order.equal;
         };
-        content.part().headers(MessageHeaders(entries: public_fields, maximum_entries: size), content.limits()).bytes();
+        content.part().headers(
+            MessageHeaders(entries: public_fields, maximum_entries: size),
+            content.limits()
+        ).bytes();
     }
 }
 
@@ -246,7 +264,9 @@ hidden object MailDatePrinting {
         confirm known || seconds == 0
             else throw InvalidMail.located(0, "unknown mail offset must have zero displacement");
         let local = try {
-            LocalDateTime(date: Date(1970, 1, 1), time: TimeOfDay(0, 0, 0, 0)).plus(elapsed.plus(offset));
+            LocalDateTime(date: Date(1970, 1, 1), time: TimeOfDay(0, 0, 0, 0)).plus(
+                elapsed.plus(offset)
+            );
         }
         catch failure is InvalidDate {
             throw InvalidMail.located(0, "mail date outside supported calendar");
@@ -293,7 +313,10 @@ hidden object MailParsedDate {
     }
 
     date_time() is ZonedDateTime {
-        let zone = FixedZone(name: "mail", offset: Duration(offset.seconds().rat(), DurationUnit.second));
+        let zone = FixedZone(
+            name: "mail",
+            offset: Duration(offset.seconds().rat(), DurationUnit.second)
+        );
         ZonedDateTime(instant: zone.instant(local, Fold.earlier), zone: zone);
     }
 
@@ -405,7 +428,10 @@ hidden object MailDateParsing {
             else {
                 1;
             };
-            return MailDateOffset(seconds: sign * (hour * 3600 + minute * 60), known: text != "-0000");
+            return MailDateOffset(
+                seconds: sign * (hour * 3600 + minute * 60),
+                known: text != "-0000"
+            );
         }
         let hours = match name {
             case "ut", "gmt" {
@@ -697,7 +723,9 @@ hidden object MailIdentifier {
 }
 
 test "delivery preparation retains the source message" {
-    let fields = MessageHeaders(MessageHeader(name: MessageHeaderName("Bcc"), value: "private@example.test"));
+    let fields = MessageHeaders(
+        MessageHeader(name: MessageHeaderName("Bcc"), value: "private@example.test")
+    );
     let message = MailMessage(headers: fields, body: BinaryBody([]));
     test.is(DeliveredMail(message).bytes().size(), 2);
     test.is(message.headers().entries().size(), 1);
@@ -743,10 +771,24 @@ test "a message from its fields sets its date, identifier and content type" {
     test.ok(message.string().contains("\nSubject: Lunch?\n"));
     test.ok(message.string().ends_with("\n\nShall we?\n"));
     test.ok(!message.string().contains("\r"));
-    let other = MailMessage(from: "a@b.test", to: ["c@d.test"], subject: "Привет", text: "", clock: clock, random: PcgRandom(1));
+    let other = MailMessage(
+        from: "a@b.test",
+        to: ["c@d.test"],
+        subject: "Привет",
+        text: "",
+        clock: clock,
+        random: PcgRandom(1)
+    );
     test.is(other.headers().first(MessageHeaderName("Subject")).slice(0, 8), "=?UTF-8?");
     test.throws(InvalidArgument) {
         let nobody is @string = [];
-        MailMessage(from: "a@b.test", to: nobody, subject: "x", text: "", clock: clock, random: PcgRandom(1));
+        MailMessage(
+            from: "a@b.test",
+            to: nobody,
+            subject: "x",
+            text: "",
+            clock: clock,
+            random: PcgRandom(1)
+        );
     };
 }
