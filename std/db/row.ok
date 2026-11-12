@@ -2,14 +2,14 @@ module db/row v1.0.0;
 
 import "runtime/db" as native_db;
 import "async/atomic" take Atomic;
-import "db/value" take DbValue, DbValueKind, ObservedDbValue, DbNativeValue;
+import "db/value" take DbValue, DbValueKind, ObservedDbValue, DbNativeValue, DbNull, DbInteger,
+    DbText, DbBytes, DbBoolean;
 import "db/statement" take DbLimits, DbBoundaryLimit;
 import "collections/sequence" take Sequencing;
 import "encoding/utf" take Utf8Encoded;
 import "db/read" take RowValues, DbColumnReader, DbMaybeReader, DbPresenceReader, DbPage;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
-import "db/param" take Param;
 import "db/read" take RowValueFailure;
 
 object Column {
@@ -376,7 +376,7 @@ test "a row reads its cells by name: strict, Maybe and Presence" {
     ];
     let row = Row(
         columns: columns,
-        values: [Param(7), Param("Ada"), Param(Maybe<string>.none), Param([1.byte()]), Param(true)]
+        values: [DbInteger(7), DbText("Ada"), DbNull(), DbBytes([1.byte()]), DbBoolean(true)]
     );
     test.is(row.size(), 5);
     test.is(row.int("id"), 7);
@@ -391,7 +391,9 @@ test "a row reads its cells by name: strict, Maybe and Presence" {
         row.flag("id");
     };
     test.is(
-        Row(columns: [Column(index: 0, name: "f", declaration: "")], values: [Param(1)]).flag("f"),
+        Row(columns: [Column(index: 0, name: "f", declaration: "")], values: [DbInteger(1)]).flag(
+            "f"
+        ),
         true
     );
     test.is(row.item(1).kind() == DbValueKind.text, true);
@@ -434,14 +436,17 @@ test "a row refuses ambiguous names and mismatched widths" {
             Column(index: 0, name: "id", declaration: ""),
             Column(index: 1, name: "id", declaration: "")
         ],
-        values: [Param(1), Param(2)],
+        values: [DbInteger(1), DbInteger(2)],
     );
     test.is(twice.item(1).kind() == DbValueKind.integer, true);
     test.throws(AmbiguousColumn) {
         twice.int("id");
     };
     test.throws(InvalidRow) {
-        Row(columns: [Column(index: 0, name: "id", declaration: "")], values: [Param(1), Param(2)]);
+        Row(
+            columns: [Column(index: 0, name: "id", declaration: "")],
+            values: [DbInteger(1), DbInteger(2)]
+        );
     };
     let schema = DbRowSchema(
         columns: [

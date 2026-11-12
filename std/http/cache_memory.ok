@@ -462,7 +462,7 @@ hidden object CacheMemoryBudget {
     has value is int;
 
     CacheMemoryBudget(maximum is BigInt) {
-        confirm maximum.sign() >= 0 && maximum.order(BigInt("1073741824")) != Order.greater
+        confirm maximum.sign() >= 0 && maximum.order(BigInt(1073741824)) != Order.greater
             else throw InvalidCachedResponse.invalid;
         value = AsciiEncoded(maximum.string()).bytes().reduce(0) -> sum, octet {
             sum * 10 + octet.int() - 48;

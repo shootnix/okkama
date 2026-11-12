@@ -2,31 +2,28 @@ module numbers/bigrational v1.0.0;
 
 import "compare" take Comparing, Order;
 import "numbers/bigint" take BigInt;
-import "runtime/bigint" take bigint_sign, bigint_gcd, bigint_quotient, bigint_difference;
 
 // Canonical exact ratio: positive denominator, gcd=1, unique zero 0/1.
 //
-//     let third = BigRational(numerator: BigInt("1"), denominator: BigInt("3"));
+//     let third = BigRational(numerator: BigInt(1), denominator: BigInt(3));
 //     third.plus(third).string();    // "2/3"
 //     third.divided(third).string(); // "1/1"
 object BigRational does Comparing<BigRational> {
     has upper, lower is BigInt;
 
-    // The ratio is reduced here, with the runtime's integer arithmetic on the
-    // digits, so equal ratios have equal fields and compare equal.
+    // The ratio is reduced here, so equal ratios have equal fields and compare
+    // equal.
     BigRational(numerator is BigInt, denominator is BigInt) {
-        let top = numerator::Digits::text;
-        let bottom = denominator::Digits::text;
-        confirm bigint_sign(bottom) != 0 else throw ZeroBigRationalDenominator.zero;
-        let common = bigint_gcd(top, bottom);
-        let divisor = if bigint_sign(bottom) < 0 {
-            bigint_difference("0", common);
+        confirm denominator.sign() != 0 else throw ZeroBigRationalDenominator.zero;
+        let common = numerator.gcd(denominator);
+        let divisor = if denominator.sign() < 0 {
+            -common;
         }
         else {
             common;
         };
-        upper = BigInt(bigint_quotient(top, divisor));
-        lower = BigInt(bigint_quotient(bottom, divisor));
+        upper = numerator / divisor;
+        lower = denominator / divisor;
     }
 
     numerator() is BigInt {
@@ -82,14 +79,14 @@ enum ZeroBigRationalDenominator is Error = (zero);
 enum BigRationalDivisionByZero is Error = (by_zero);
 
 test "rationals add, subtract, multiply and divide exactly" {
-    let half = BigRational(numerator: BigInt("1"), denominator: BigInt("2"));
-    let third = BigRational(numerator: BigInt("1"), denominator: BigInt("3"));
+    let half = BigRational(numerator: BigInt(1), denominator: BigInt(2));
+    let third = BigRational(numerator: BigInt(1), denominator: BigInt(3));
     test.is(half.plus(third).string(), "5/6");
     test.is(half.minus(third).string(), "1/6");
     test.is(third.minus(half).string(), "-1/6");
     test.is(half.times(third).string(), "1/6");
     test.is(half.divided(third).string(), "3/2");
-    let zero = BigRational(numerator: BigInt("0"), denominator: BigInt("5"));
+    let zero = BigRational(numerator: BigInt(0), denominator: BigInt(5));
     test.ok(try {
         half.divided(zero);
         false;

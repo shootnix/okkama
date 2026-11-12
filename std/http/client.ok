@@ -84,7 +84,7 @@ object HttpClient does Exchanging, Closing {
         chain = ClientChain(
             transport: built,
             redirects: redirects,
-            limit: Number(limits.body_bytes().string()).int()
+            limit: limits.body_bytes().int()
         ).exchanging();
     }
 
@@ -111,7 +111,7 @@ object HttpClient does Exchanging, Closing {
             transport: built,
             redirects: redirects,
             cookies: cookies,
-            limit: Number(limits.body_bytes().string()).int()
+            limit: limits.body_bytes().int()
         ).exchanging();
     }
 

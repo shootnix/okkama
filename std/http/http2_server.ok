@@ -205,7 +205,7 @@ hidden object Http2ServerState does Http2ReceivingEvents, Http2ReceivingBarrier,
     }
 
     body_limit() is int {
-        Number(policy.limits().body_bytes().string()).int();
+        policy.limits().body_bytes().int();
     }
 
     budget() is HpackBudget {
@@ -1014,7 +1014,7 @@ hidden object Http2ServerBodySending {
             confirm total <= maximum else throw InvalidHttpMessage.because("response byte limit");
             for [declared, known] -> batch {
                 for batch -> length {
-                    let order = BigInt(total.string()).order(length);
+                    let order = BigInt(total).order(length);
                     confirm order != Order.greater && (bytes.size() > 0 || order == Order.equal)
                         else throw InvalidHttpMessage.because("response length mismatch");
                 }

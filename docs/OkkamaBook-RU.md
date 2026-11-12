@@ -3112,7 +3112,7 @@ total > Money(cents: 300);                           // order() == Order.greater
 - `<`, `<=`, `>`, `>=` идут через `compare.Comparing<T>`: `a < b` — это
   `a.order(b) == Order.less`. `==` остаётся структурным.
 - В std: `BigInt` (`+ - * / %`, `-a`, сравнения; `/` отбрасывает дробную часть
-  к нулю), `Duration` (`+ -`, `-a`, сравнения), `Instant` и `MonotonicInstant`
+  к нулю; `BigInt(7)` и `.int()`, потому что `BigInt` хранит `int`, #189), `Duration` (`+ -`, `-a`, сравнения), `Instant` и `MonotonicInstant`
   (`+ Duration`, `- Duration`, `- Instant`, сравнения), `Decimal` (сравнения).
 
 ## Глава 23. Фейки ролей и тестирование
@@ -4085,7 +4085,7 @@ TextTemplate(…)])` называет шаблоны. `SectionTemplate(source:, 
 
 `db` работает с SQLite и PostgreSQL через одни и те же роли. `await
 SqliteMemory().connection()` открывает базу. `await db.execution(sql,
-[Param(…)])` выполняет SQL с привязанными значениями, а `db.query(sql, values)`
+[DbInteger(7), DbText("Ada")])` выполняет SQL с привязанными значениями, а `db.query(sql, values)`
 отвечает `one()`, `maybe()` или `all(limit)`; транзакции умеют то же.
 `row.int("id")` и `row.maybe("body").text()` читают по имени столбца, а
 `Query(origin:, statement:).rows()` отдаёт поток.
@@ -5829,11 +5829,13 @@ Connector передаётся на прикладной границе. Stateme
 
 ```okkama
 let transaction=await connection.transaction(TransactionOptions());
-await transaction.execution("INSERT INTO customers VALUES(?,?)",[Param(7),Param("Ada")]);
+await transaction.execution("INSERT INTO customers VALUES(?,?)",[DbInteger(7),DbText("Ada")]);
 await transaction.commit();
 ```
 
-`Param` из `db/param` принимает скаляры и параметры `Maybe<T>`. `Query` из
+Значения привязываются типизированными объектами из `db/value` (#188):
+`DbInteger(7)`, `DbText("Ada")`, `DbBoolean`, `DbFloating`, `DbDecimal`,
+`DbBytes` и `DbNull()`; каждый принимает и `Maybe`, чей `none` даёт NULL. `Query` из
 `db/query` принимает `(origin: connection, statement: Statement(...))` или `(prepared:, values:)`;
 методы `one()`, `maybe()`, `all(limit)` и `rows()` используют один контракт результата.
 Колонки читаются прямо: `row.text(name)` или `row.maybe(name).text() else fallback`.

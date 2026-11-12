@@ -74,12 +74,12 @@ object Http1RequestFraming {
             else throw InvalidHttpMessage.because("Transfer-Encoding with Content-Length");
         if codings.size() > 0 {
             fields.supported(codings);
-            return Http1BodyPlan(kind: Http1BodyKind.chunked, count: BigInt("0"), reusable: reuse);
+            return Http1BodyPlan(kind: Http1BodyKind.chunked, count: BigInt(0), reusable: reuse);
         }
         if length.size() > 0 {
             return fields.fixed(length[0], reuse);
         }
-        Http1BodyPlan(kind: Http1BodyKind.empty, count: BigInt("0"), reusable: reuse);
+        Http1BodyPlan(kind: Http1BodyKind.empty, count: BigInt(0), reusable: reuse);
     }
 }
 
@@ -104,7 +104,7 @@ object Http1ResponseFraming {
         let status = head::Head::status;
         let class = StatusCode(status).class();
         if method == Method.connect && class == StatusClass.successful {
-            return Http1BodyPlan(kind: Http1BodyKind.tunnel, count: BigInt("0"), reusable: false);
+            return Http1BodyPlan(kind: Http1BodyKind.tunnel, count: BigInt(0), reusable: false);
         }
         let fields = Http1FramingFields(origin: head.headers(), version: head::Head::version, limits: limits);
         let length = fields.length();
@@ -115,21 +115,21 @@ object Http1ResponseFraming {
             confirm length.size() == 0 && codings.size() == 0
                 else throw InvalidHttpMessage.because("framing field on body-forbidden status");
             if status == Status.switching_protocols {
-                return Http1BodyPlan(kind: Http1BodyKind.upgrade, count: BigInt("0"), reusable: false);
+                return Http1BodyPlan(kind: Http1BodyKind.upgrade, count: BigInt(0), reusable: false);
             }
-            return Http1BodyPlan(kind: Http1BodyKind.empty, count: BigInt("0"), reusable: fields.reusable());
+            return Http1BodyPlan(kind: Http1BodyKind.empty, count: BigInt(0), reusable: fields.reusable());
         }
         if method == Method.head || status == Status.not_modified {
-            return Http1BodyPlan(kind: Http1BodyKind.empty, count: BigInt("0"), reusable: fields.reusable());
+            return Http1BodyPlan(kind: Http1BodyKind.empty, count: BigInt(0), reusable: fields.reusable());
         }
         if codings.size() > 0 {
             fields.supported(codings);
-            return Http1BodyPlan(kind: Http1BodyKind.chunked, count: BigInt("0"), reusable: fields.reusable());
+            return Http1BodyPlan(kind: Http1BodyKind.chunked, count: BigInt(0), reusable: fields.reusable());
         }
         if length.size() > 0 {
             return fields.fixed(length[0], fields.reusable());
         }
-        Http1BodyPlan(kind: Http1BodyKind.close_delimited, count: BigInt("0"), reusable: false);
+        Http1BodyPlan(kind: Http1BodyKind.close_delimited, count: BigInt(0), reusable: false);
     }
 }
 
@@ -256,7 +256,7 @@ object Http1FramingFields {
     }
 
     fixed(length is BigInt, reuse is bool) is Http1BodyPlan {
-        confirm length.order(BigInt(limits::Limits::body_bytes.string())) != Order.greater
+        confirm length.order(BigInt(limits::Limits::body_bytes)) != Order.greater
             else throw Http1LimitExceeded.kind("body_bytes");
         Http1BodyPlan(kind: Http1BodyKind.fixed, count: length, reusable: reuse);
     }

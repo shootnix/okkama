@@ -20,7 +20,7 @@ object WebSocketMessageAssembly does Closing {
     WebSocketMessageAssembly(limits is WebSocketLimits) {
         bytes = ByteBuffer();
         opcode = Atomic(-1);
-        maximum = Number(limits.message_bytes().string()).int();
+        maximum = limits.message_bytes().int();
         frame_maximum = limits::Limits::frame_bytes;
     }
 

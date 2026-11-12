@@ -17,7 +17,7 @@ object HttpLimits {
     HttpLimits() {
         header_bytes = 65536;
         line_bytes = 8192;
-        body_bytes = BigInt("1073741824");
+        body_bytes = BigInt(1073741824);
     }
 
     HttpLimits(header_bytes is int, line_bytes is int, body_bytes is BigInt) {
@@ -26,7 +26,7 @@ object HttpLimits {
             && line_bytes > 0
             && line_bytes <= header_bytes
             && body_bytes.sign() > 0
-            && body_bytes.order(BigInt("9007199254740991")) != Order.greater
+            && body_bytes.order(BigInt(9007199254740991)) != Order.greater
             else throw InvalidClientPolicy.because("invalid HTTP budgets");
         self.header_bytes = header_bytes;
         self.line_bytes = line_bytes;

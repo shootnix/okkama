@@ -842,7 +842,7 @@ hidden object ExactJsonNumber {
         }
         else {
             let scale = try {
-                BigInt("10").power(exact.exponent(), 4096);
+                BigInt(10).power(exact.exponent(), 4096);
             }
             catch failure is BigPowerLimitExceeded {
                 throw JsonError.invalid_number(
@@ -865,7 +865,7 @@ hidden object ExactJsonNumber {
                 integer.string(),
                 "integer outside int range"
             );
-        int_parse(integer.string(), 10);
+        integer.int();
     }
 }
 

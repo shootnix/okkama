@@ -286,7 +286,7 @@ object PopListing {
                 confirm parts.size() == 2
                     else throw InvalidPopData.because("UIDL requires number and identifier");
                 let number = PopNumber(PopDecimal(origin: parts[0], limits: limits).number());
-                PopMessage(number: number, size: BigInt("0"), identifiers: [PopIdentifier(parts[1])]);
+                PopMessage(number: number, size: BigInt(0), identifiers: [PopIdentifier(parts[1])]);
             };
             for identified -> message {
                 let number = message.number().number();
@@ -320,7 +320,7 @@ enum MissingPopIdentifier is Error = (missing);
 test "POP3 number and opaque identifier have different identities" {
     test.is(PopNumber(7).number(), 7);
     test.is(PopIdentifier("7").string(), "7");
-    let absent = PopMessage(number: PopNumber(7), size: BigInt("0"), identifiers: []);
+    let absent = PopMessage(number: PopNumber(7), size: BigInt(0), identifiers: []);
     test.is(absent.identified(), false);
 }
 

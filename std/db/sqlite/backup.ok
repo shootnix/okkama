@@ -44,7 +44,7 @@ object BackupReport {
     has copies, total is BigInt;
 
     BackupReport(copies is BigInt, total is BigInt) {
-        confirm copies.order(BigInt("0")) != Order.less && total.order(copies) != Order.less
+        confirm copies.order(BigInt(0)) != Order.less && total.order(copies) != Order.less
             else throw InvalidSqliteBackup.invalid;
         self.copies = copies;
         self.total = total;
@@ -65,19 +65,19 @@ hidden object CountingBackup does SqliteBackupMaking {
     CountingBackup();
 
     async backup(target is Path, pages is int, clock is Timing, timeout is Duration) is BackupReport {
-        BackupReport(copies: BigInt(pages.string()), total: BigInt("16"));
+        BackupReport(copies: BigInt(pages), total: BigInt(16));
     }
 }
 
 test "a backup report counts copied pages within the total" {
-    let report = BackupReport(copies: BigInt("4"), total: BigInt("16"));
+    let report = BackupReport(copies: BigInt(4), total: BigInt(16));
     test.is(report.copies().string(), "4");
     test.is(report.total().string(), "16");
     test.throws(InvalidSqliteBackup) {
-        BackupReport(copies: BigInt("17"), total: BigInt("16"));
+        BackupReport(copies: BigInt(17), total: BigInt(16));
     };
     test.throws(InvalidSqliteBackup) {
-        BackupReport(copies: BigInt("-1"), total: BigInt("16"));
+        BackupReport(copies: BigInt(-1), total: BigInt(16));
     };
 }
 

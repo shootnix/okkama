@@ -25,6 +25,10 @@ role DbValueWriting {
     bytes(value is @byte) is void;
 }
 
+// The typed values bound to a statement (#188): DbInteger(7), DbText("Ada"),
+// DbBoolean(true), DbFloating(1.5), DbDecimal(Decimal("9.50")),
+// DbBytes(data) and DbNull(). Each also takes a Maybe, whose none binds SQL
+// NULL: DbText(user.nickname).
 object DbNull does DbValue {
     DbNull();
 
@@ -39,49 +43,316 @@ object DbNull does DbValue {
 
 object DbBoolean does DbValue {
     has origin is bool;
+    has present is bool;
 
     DbBoolean(value is bool) {
         origin = value;
+        present = true;
+    }
+
+    DbBoolean(value is Maybe<bool>) {
+        origin = value else false;
+        present = DbPresence(value != Maybe<bool>.none).present();
     }
 
     kind() is DbValueKind {
-        DbValueKind.boolean;
+        if present {
+            DbValueKind.boolean;
+        }
+        else {
+            DbValueKind.null_value;
+        }
     }
 
     bool() is bool {
+        confirm present else throw InvalidDbValue.because("NULL has no boolean");
         origin;
     }
 
     print(output is DbValueWriting) is void {
-        output.boolean(origin);
+        if present {
+            output.boolean(origin);
+        }
+        else {
+            output.null_value();
+        }
     }
 }
 
+// An integer of at most 4096 digits; it keeps the int (#188).
 object DbInteger does DbValue {
-    has origin is BigInt;
+    has origin is int;
+    has present is bool;
+
+    DbInteger(value is int) {
+        DbIntegerDigits(value).check();
+        origin = value;
+        present = true;
+    }
 
     DbInteger(value is BigInt) {
-        confirm value.string().length() <= 4096 else throw DbValueLimit.because("integer digits");
-        origin = value;
+        let number = value.int();
+        DbIntegerDigits(number).check();
+        origin = number;
+        present = true;
+    }
+
+    DbInteger(value is Maybe<int>) {
+        let number = value else 0;
+        DbIntegerDigits(number).check();
+        origin = number;
+        present = DbPresence(value != Maybe<int>.none).present();
+    }
+
+    DbInteger(value is Maybe<BigInt>) {
+        let number = match value {
+            case Maybe.some(given) {
+                given.int();
+            }
+            else {
+                0;
+            }
+        };
+        DbIntegerDigits(number).check();
+        origin = number;
+        present = DbPresence(value != Maybe<BigInt>.none).present();
     }
 
     kind() is DbValueKind {
-        DbValueKind.integer;
+        if present {
+            DbValueKind.integer;
+        }
+        else {
+            DbValueKind.null_value;
+        }
     }
 
     integer() is BigInt {
+        confirm present else throw InvalidDbValue.because("NULL has no integer");
+        BigInt(origin);
+    }
+
+    int() is int {
+        confirm present else throw InvalidDbValue.because("NULL has no integer");
         origin;
     }
 
     print(output is DbValueWriting) is void {
-        output.integer(origin);
+        if present {
+            output.integer(BigInt(origin));
+        }
+        else {
+            output.null_value();
+        }
     }
 }
 
 object DbFloating does DbValue {
     has origin is float;
+    has present is bool;
 
     DbFloating(value is float) {
+        origin = DbFinite(value).float();
+        present = true;
+    }
+
+    DbFloating(value is Maybe<float>) {
+        origin = DbFinite(value else 0.0).float();
+        present = DbPresence(value != Maybe<float>.none).present();
+    }
+
+    kind() is DbValueKind {
+        if present {
+            DbValueKind.floating;
+        }
+        else {
+            DbValueKind.null_value;
+        }
+    }
+
+    float() is float {
+        confirm present else throw InvalidDbValue.because("NULL has no float");
+        origin;
+    }
+
+    print(output is DbValueWriting) is void {
+        if present {
+            output.floating(origin);
+        }
+        else {
+            output.null_value();
+        }
+    }
+}
+
+object DbDecimal does DbValue {
+    has origin is Decimal;
+    has present is bool;
+
+    DbDecimal(value is Decimal) {
+        confirm value.string().length() <= 4096 else throw DbValueLimit.because("decimal digits");
+        origin = value;
+        present = true;
+    }
+
+    DbDecimal(value is Maybe<Decimal>) {
+        let number = value else Decimal(0);
+        confirm number.string().length() <= 4096 else throw DbValueLimit.because("decimal digits");
+        origin = number;
+        present = DbPresence(value != Maybe<Decimal>.none).present();
+    }
+
+    kind() is DbValueKind {
+        if present {
+            DbValueKind.decimal;
+        }
+        else {
+            DbValueKind.null_value;
+        }
+    }
+
+    decimal() is Decimal {
+        confirm present else throw InvalidDbValue.because("NULL has no decimal");
+        origin;
+    }
+
+    print(output is DbValueWriting) is void {
+        if present {
+            output.decimal(origin);
+        }
+        else {
+            output.null_value();
+        }
+    }
+}
+
+object DbText does DbValue {
+    has origin is string;
+    has width is int;
+    has present is bool;
+
+    DbText(value is string) {
+        width = DbTextWidth(value).bytes();
+        origin = value;
+        present = true;
+    }
+
+    DbText(value is Maybe<string>) {
+        let text = value else "";
+        width = DbTextWidth(text).bytes();
+        origin = text;
+        present = DbPresence(value != Maybe<string>.none).present();
+    }
+
+    width() is int {
+        width;
+    }
+
+    kind() is DbValueKind {
+        if present {
+            DbValueKind.text;
+        }
+        else {
+            DbValueKind.null_value;
+        }
+    }
+
+    string() is string {
+        confirm present else throw InvalidDbValue.because("NULL has no text");
+        origin;
+    }
+
+    print(output is DbValueWriting) is void {
+        if present {
+            output.text(origin);
+        }
+        else {
+            output.null_value();
+        }
+    }
+}
+
+object DbBytes does DbValue {
+    has origin is @byte;
+    has present is bool;
+
+    DbBytes(value is @byte) {
+        confirm value.size() <= 8388608 else throw DbValueLimit.because("binary bytes");
+        origin = value;
+        present = true;
+    }
+
+    DbBytes(value is Maybe<@byte>) {
+        let empty is @byte = [];
+        let data = value else empty;
+        confirm data.size() <= 8388608 else throw DbValueLimit.because("binary bytes");
+        origin = data;
+        present = DbPresence(value != Maybe<@byte>.none).present();
+    }
+
+    kind() is DbValueKind {
+        if present {
+            DbValueKind.bytes;
+        }
+        else {
+            DbValueKind.null_value;
+        }
+    }
+
+    bytes() is @byte {
+        confirm present else throw InvalidDbValue.because("NULL has no bytes");
+        origin;
+    }
+
+    print(output is DbValueWriting) is void {
+        if present {
+            output.bytes(origin);
+        }
+        else {
+            output.null_value();
+        }
+    }
+}
+
+// Whether a Maybe held a value, so a constructor can say it in one line.
+hidden object DbPresence {
+    has given is bool;
+
+    DbPresence(given is bool) {
+        self.given = given;
+    }
+
+    present() is bool {
+        given;
+    }
+}
+
+// At most 4096 digits; an int of 64 bits never has more than 19.
+hidden object DbIntegerDigits {
+    has value is int;
+
+    DbIntegerDigits(value is int) {
+        self.value = value;
+    }
+
+    check() is void {
+        if value >= -9223372036854775808 && value <= 9223372036854775807 {
+            return;
+        }
+        confirm value.abs().string().length() <= 4096
+            else throw DbValueLimit.because("integer digits");
+    }
+}
+
+// A finite float.
+hidden object DbFinite {
+    has value is float;
+
+    DbFinite(value is float) {
+        self.value = value;
+    }
+
+    float() is float {
         let text = value.string();
         confirm text != "NaN"
             && text != "Inf"
@@ -90,90 +361,23 @@ object DbFloating does DbValue {
             && text != "inf"
             && text != "-inf"
             else throw InvalidDbValue.because("finite floating value required");
-        origin = value;
-    }
-
-    kind() is DbValueKind {
-        DbValueKind.floating;
-    }
-
-    float() is float {
-        origin;
-    }
-
-    print(output is DbValueWriting) is void {
-        output.floating(origin);
+        value;
     }
 }
 
-object DbDecimal does DbValue {
-    has origin is Decimal;
+// The UTF-8 size of a text of at most 8 MiB.
+hidden object DbTextWidth {
+    has value is string;
 
-    DbDecimal(value is Decimal) {
-        confirm value.string().length() <= 4096 else throw DbValueLimit.because("decimal digits");
-        origin = value;
+    DbTextWidth(value is string) {
+        self.value = value;
     }
 
-    kind() is DbValueKind {
-        DbValueKind.decimal;
-    }
-
-    decimal() is Decimal {
-        origin;
-    }
-
-    print(output is DbValueWriting) is void {
-        output.decimal(origin);
-    }
-}
-
-object DbText does DbValue {
-    has origin is string;
-    has width is int;
-
-    DbText(value is string) {
+    bytes() is int {
         confirm value.length() <= 8388608 else throw DbValueLimit.because("text bytes");
         let size = Utf8Encoded(value).bytes().size();
         confirm size <= 8388608 else throw DbValueLimit.because("text bytes");
-        origin = value;
-        width = size;
-    }
-
-    width() is int {
-        width;
-    }
-
-    kind() is DbValueKind {
-        DbValueKind.text;
-    }
-
-    string() is string {
-        origin;
-    }
-
-    print(output is DbValueWriting) is void {
-        output.text(origin);
-    }
-}
-
-object DbBytes does DbValue {
-    has origin is @byte;
-
-    DbBytes(value is @byte) {
-        confirm value.size() <= 8388608 else throw DbValueLimit.because("binary bytes");
-        origin = value;
-    }
-
-    kind() is DbValueKind {
-        DbValueKind.bytes;
-    }
-
-    bytes() is @byte {
-        origin;
-    }
-
-    print(output is DbValueWriting) is void {
-        output.bytes(origin);
+        size;
     }
 }
 
@@ -321,7 +525,7 @@ object DbValueCapture does DbValueWriting {
 
     integer(value is BigInt) is void {
         self.emit(DbValueKind.integer);
-        self.published(native_db.db_integer(DbInteger(value).integer().string()));
+        self.published(native_db.db_integer(DbInteger(value).int().string()));
     }
 
     integer_value() is BigInt {

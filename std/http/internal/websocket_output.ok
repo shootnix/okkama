@@ -34,7 +34,7 @@ object WebSocketOutput {
         self.random = random;
         frame_maximum = limits::Limits::frame_bytes;
         maximum = limits::Limits::queue;
-        message_maximum = Number(limits.message_bytes().string()).int();
+        message_maximum = limits.message_bytes().int();
         let empty is @WebSocketOutputTicket = [];
         jobs = Atomic(empty);
         current = Atomic(empty);

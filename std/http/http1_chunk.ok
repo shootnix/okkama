@@ -61,7 +61,7 @@ object ParsedHttp1ChunkLine {
             }
         };
         confirm value <= limits::Limits::body_bytes else throw Http1LimitExceeded.kind("body_bytes");
-        BigInt(value.string());
+        BigInt(value);
     }
 
     // States: 0 before the size, 1 in the size, 2 blanks before ';', 3 after

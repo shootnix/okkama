@@ -150,7 +150,7 @@ object BestEffortLogs does LogWriting {
 
     BestEffortLogs(origin is LogWriting) {
         self.origin = origin;
-        count = Atomic(BigInt("0"));
+        count = Atomic(BigInt(0));
     }
 
     write(record is LogRecord) is void {
@@ -158,7 +158,7 @@ object BestEffortLogs does LogWriting {
             origin.write(record);
         }
         catch failure is Error {
-            count.replace((count.value() + BigInt("1")));
+            count.replace((count.value() + BigInt(1)));
         }
     }
 

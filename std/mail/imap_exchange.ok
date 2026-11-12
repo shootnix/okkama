@@ -48,7 +48,7 @@ object ImapCommandChannel does Closing {
         stopped = Event();
         let channel is Channel<ImapExchangeState> = Channel(1);
         states = channel;
-        initial = channel.sending().send(ImapExchangeState(prefix: prefix, serial: BigInt("1")));
+        initial = channel.sending().send(ImapExchangeState(prefix: prefix, serial: BigInt(1)));
     }
 
     request(command is ImapCommand) is ImapCommandExchange {
@@ -107,7 +107,7 @@ object ImapCommandChannel does Closing {
         ).read();
         let following = ImapExchangeState(
             prefix: result.remainder(),
-            serial: (state.serial() + BigInt("1"))
+            serial: (state.serial() + BigInt(1))
         );
         await states.sending().send(following);
         completed.set();
@@ -144,7 +144,7 @@ object ImapCommandChannel does Closing {
         let scope is FutureScope<int, ImapCommandRead> = FutureScope(action: action.run);
         let result = await scope.outcome();
         await states.sending().send(
-            ImapExchangeState(prefix: result.remainder(), serial: (state.serial() + BigInt("1")))
+            ImapExchangeState(prefix: result.remainder(), serial: (state.serial() + BigInt(1)))
         );
         completed.set();
         [result];
@@ -311,7 +311,7 @@ hidden object ImapDoneWriting {
 }
 
 test "exchange state retains exact unread bytes and unbounded serial" {
-    let state = ImapExchangeState(prefix: [0.byte(), 255.byte()], serial: BigInt("4294967296"));
+    let state = ImapExchangeState(prefix: [0.byte(), 255.byte()], serial: BigInt(4294967296));
     test.is(state.prefix(), [0.byte(), 255.byte()]);
     test.is(state.serial().string(), "4294967296");
 }

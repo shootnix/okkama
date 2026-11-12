@@ -90,16 +90,16 @@ object PluralNumber does PluralOperands {
                 trimmed_fraction;
             }
             case "v" {
-                BigInt(visible.string());
+                BigInt(visible);
             }
             case "w" {
-                BigInt(trimmed.string());
+                BigInt(trimmed);
             }
             case "c" {
-                BigInt("0");
+                BigInt(0);
             }
             case "e" {
-                BigInt("0");
+                BigInt(0);
             }
             else {
                 throw InvalidPluralNumber.because("unknown integer operand: " + name);
@@ -123,10 +123,10 @@ object PluralNumber does PluralOperands {
             value;
         }
         else {
-            (value % BigInt(modulus.string()));
+            (value % BigInt(modulus));
         };
-        selected.order(BigInt(minimum.string())) != Order.less
-            && selected.order(BigInt(maximum.string())) != Order.greater;
+        selected.order(BigInt(minimum)) != Order.less
+            && selected.order(BigInt(maximum)) != Order.greater;
     }
 }
 
