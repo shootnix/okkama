@@ -51,6 +51,14 @@ native process_state_output_read(state is ProcessState, limit is int) is @byte;
 
 native process_state_errors_read(state is ProcessState, limit is int) is @byte;
 
+// The same streams, asynchronously (#196): a read or a write waits without
+// holding up other tasks. An empty result is the end of the stream.
+native async process_state_output_read_async(state is ProcessState, limit is int) is @byte;
+
+native async process_state_errors_read_async(state is ProcessState, limit is int) is @byte;
+
+native async process_state_input_write_async(state is ProcessState, source is @byte) is int;
+
 // Atomically communicates with a started child: writes all input, closes
 // stdin, drains stdout and stderr concurrently, and waits for termination.
 // The limit applies independently to each captured output stream.

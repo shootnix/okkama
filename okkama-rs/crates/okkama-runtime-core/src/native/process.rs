@@ -287,6 +287,8 @@ struct ProcessState {
     input_closed: bool,
     closed: bool,
     capturing: bool,
+    /// A stream away on a worker thread (#196): input, output, errors.
+    busy: [bool; 3],
 }
 
 type ProcessRef = Rc<RefCell<ProcessState>>;
@@ -340,6 +342,55 @@ fn read_stream(stream: Option<&mut dyn Read>, limit: &IntValue, operation: &str)
             Err(error) => {
                 return Err(as_error(raise(crate::host::code(&error), operation, "Cannot read process output")));
             }
+        }
+    }
+}
+
+// ---- asynchronous halves (#196) ----
+
+/// Run `work` on a worker thread with a stream taken out of the state, give
+/// the stream back when it is done, and settle the future with `answer`.
+fn later<S: Send + 'static, R: Send + 'static>(
+    state: ProcessRef,
+    slot: usize,
+    stream: S,
+    work: impl FnOnce(&mut S) -> R + Send + 'static,
+    restore: fn(&mut ProcessState, S),
+    answer: impl FnOnce(R) -> Result<Value, Rc<Failure>> + 'static,
+) -> Value {
+    state.borrow_mut().busy[slot] = true;
+    let promise = sched::promise();
+    let target = promise.clone();
+    let op = sched::offload(
+        move || {
+            let mut stream = stream;
+            let result = work(&mut stream);
+            (stream, result)
+        },
+        move |(stream, result)| {
+            let mut borrowed = state.borrow_mut();
+            borrowed.busy[slot] = false;
+            if !borrowed.closed && !(slot == 0 && borrowed.input_closed) {
+                restore(&mut borrowed, stream);
+            }
+            drop(borrowed);
+            sched::settle(&target, answer(result));
+        },
+    );
+    promise.listen(move || op.detach());
+    Value::Future(promise)
+}
+
+fn read_blocking<S: Read>(stream: &mut S, size: usize) -> std::io::Result<Vec<u8>> {
+    let mut buffer = vec![0u8; size];
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(count) => {
+                buffer.truncate(count);
+                return Ok(buffer);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
         }
     }
 }
@@ -679,6 +730,73 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
                 borrowed.errors.as_mut().map(|stream| stream as &mut dyn Read)
             };
             read_stream(stream, limit, operation)
+        }
+        "process_state_output_read_async" | "process_state_errors_read_async" => {
+            let state = match started(&args[0], operation) {
+                Ok(state) => state,
+                Err(failure) => return Ok(resolved(failure)),
+            };
+            let limit = int(&args[1])?;
+            if limit.signum() <= 0 {
+                return Ok(resolved(raise("invalid_input", operation, "Process read size must be positive")));
+            }
+            let size = limit.to_i64().map_or(CHUNK, |limit| (limit as usize).min(CHUNK));
+            let output = name == "process_state_output_read_async";
+            let slot = if output { 1 } else { 2 };
+            if state.borrow().busy[slot] {
+                return Ok(resolved(raise("invalid_input", operation, "A read of this stream is already waiting")));
+            }
+            let operation = operation.to_string();
+            let answer = move |result: std::io::Result<Vec<u8>>| {
+                result
+                    .map(byte_array)
+                    .map_err(|error| raise(crate::host::code(&error), &operation, "Cannot read process output"))
+            };
+            if output {
+                let Some(stream) = state.borrow_mut().output.take() else {
+                    return Ok(Value::Future(sched::resolved(Ok(byte_array([])))));
+                };
+                Ok(later(state, slot, stream, move |s| read_blocking(s, size), |state, s| state.output = Some(s), answer))
+            } else {
+                let Some(stream) = state.borrow_mut().errors.take() else {
+                    return Ok(Value::Future(sched::resolved(Ok(byte_array([])))));
+                };
+                Ok(later(state, slot, stream, move |s| read_blocking(s, size), |state, s| state.errors = Some(s), answer))
+            }
+        }
+        "process_state_input_write_async" => {
+            let state = match started(&args[0], operation) {
+                Ok(state) => state,
+                Err(failure) => return Ok(resolved(failure)),
+            };
+            if state.borrow().input_closed {
+                return Ok(resolved(raise("already_closed", operation, "Process input is already closed")));
+            }
+            if state.borrow().busy[0] {
+                return Ok(resolved(raise("invalid_input", operation, "A write of this stream is already waiting")));
+            }
+            let payload = bytes(&args[1])?;
+            let size = payload.len();
+            if size == 0 {
+                return Ok(Value::Future(sched::resolved(Ok(int_value(0)))));
+            }
+            let Some(stream) = state.borrow_mut().input.take() else {
+                return Ok(resolved(raise("broken_pipe", operation, "Process input unavailable")));
+            };
+            let operation = operation.to_string();
+            Ok(later(
+                state,
+                0,
+                stream,
+                move |s| s.write_all(&payload).and_then(|()| s.flush()),
+                |state, s| state.input = Some(s),
+                move |result| {
+                    result.map(|()| int_value(size as i64)).map_err(|error| {
+                        let code = if broken_pipe(&error) { "broken_pipe" } else { crate::host::code(&error) };
+                        raise(code, &operation, "Cannot write process input")
+                    })
+                },
+            ))
         }
         "process_state_capture" => {
             let limit = int(&args[2])?;

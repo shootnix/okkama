@@ -652,5 +652,8 @@ natives! {
     XmlXmlAttributeName = 666, "runtime/xml@1::xml_attribute_name/3", "(XmlEventsState, int, int) -> string";
     XmlXmlAttributeValue = 667, "runtime/xml@1::xml_attribute_value/3", "(XmlEventsState, int, int) -> string";
     XmlXmlEventOffset = 668, "runtime/xml@1::xml_event_offset/2", "(XmlEventsState, int) -> int";
+    ProcessProcessStateOutputReadAsync = 669, "runtime/process@1::process_state_output_read_async/2", "async (ProcessState, int) -> @byte";
+    ProcessProcessStateErrorsReadAsync = 670, "runtime/process@1::process_state_errors_read_async/2", "async (ProcessState, int) -> @byte";
+    ProcessProcessStateInputWriteAsync = 671, "runtime/process@1::process_state_input_write_async/2", "async (ProcessState, @byte) -> int";
 }
 // retired: 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258

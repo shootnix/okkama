@@ -25,6 +25,13 @@ pub(crate) struct State {
     input_closed: bool,
     closed: bool,
     capturing: bool,
+    /// The streams read or written asynchronously (#196): once a stream is
+    /// used so, it stays a tokio stream here.
+    input_async: Option<tokio::process::ChildStdin>,
+    output_async: Option<tokio::process::ChildStdout>,
+    errors_async: Option<tokio::process::ChildStderr>,
+    /// A stream away in a pending operation: input, output, errors.
+    busy: [bool; 3],
 }
 impl State {
     fn close(&mut self) -> std::io::Result<()> {
@@ -33,6 +40,9 @@ impl State {
         self.input.take();
         self.output.take();
         self.errors.take();
+        self.input_async.take();
+        self.output_async.take();
+        self.errors_async.take();
         if let Some(child) = &self.child {
             child.close()?;
         }
@@ -44,6 +54,9 @@ impl State {
         self.input.take();
         self.output.take();
         self.errors.take();
+        self.input_async.take();
+        self.output_async.take();
+        self.errors_async.take();
     }
 }
 impl Drop for State {
@@ -208,6 +221,9 @@ impl Heap {
                     Native::ProcessProcessStateExit
                         | Native::ProcessProcessStateCapture
                         | Native::ProcessPipelineStateCapture
+                        | Native::ProcessProcessStateOutputReadAsync
+                        | Native::ProcessProcessStateErrorsReadAsync
+                        | Native::ProcessProcessStateInputWriteAsync
                 ) {
                     return self
                         .native_io(async move { Err::<bool, _>(e) })
@@ -412,6 +428,7 @@ impl Heap {
             ProcessProcessStateInputClose => {
                 state.input_closed = true;
                 state.input.take();
+                state.input_async.take();
                 Ok(yes)
             }
             ProcessProcessStateInputFlush | ProcessProcessStateInputWrite => {
@@ -459,6 +476,113 @@ impl Heap {
                 };
                 bytes.truncate(size);
                 Ok(self.native_byte_array(bytes)?)
+            }
+            ProcessProcessStateOutputReadAsync | ProcessProcessStateErrorsReadAsync => {
+                let limit = crate::host::native_file::big(self.integer(a[1])?);
+                if limit <= 0.into() {
+                    return Err(fail(n, "invalid_input", "Read limit must be positive"));
+                }
+                use num_traits::ToPrimitive;
+                let limit = limit.to_i64().unwrap_or(i64::MAX).min(65536) as usize;
+                let output = n == ProcessProcessStateOutputReadAsync;
+                let slot = if output { 1 } else { 2 };
+                if state.busy[slot] {
+                    return Err(fail(n, "invalid_input", "A read of this stream is already waiting"));
+                }
+                use tokio::io::AsyncReadExt;
+                if output {
+                    let stream = match (state.output_async.take(), state.output.take()) {
+                        (Some(stream), _) => Some(stream),
+                        (None, Some(file)) => {
+                            Some(process_host::async_output(file).map_err(|e| ProviderError::Native(host(n, e)))?)
+                        }
+                        (None, None) => None,
+                    };
+                    let Some(mut stream) = stream else {
+                        drop(state);
+                        return Ok(self.native_io(async move { Ok::<Vec<u8>, NativeFailure>(vec![]) })?);
+                    };
+                    state.busy[slot] = true;
+                    drop(state);
+                    let owner = shared.clone();
+                    return Ok(self.native_io(async move {
+                        let mut bytes = vec![0; limit];
+                        let result = stream.read(&mut bytes).await;
+                        let mut back = owner.borrow_mut();
+                        back.busy[slot] = false;
+                        if !back.closed {
+                            back.output_async = Some(stream);
+                        }
+                        let size = result.map_err(|e| host(n, e))?;
+                        bytes.truncate(size);
+                        Ok(bytes)
+                    })?);
+                }
+                let stream = match (state.errors_async.take(), state.errors.take()) {
+                    (Some(stream), _) => Some(stream),
+                    (None, Some(file)) => {
+                        Some(process_host::async_errors(file).map_err(|e| ProviderError::Native(host(n, e)))?)
+                    }
+                    (None, None) => None,
+                };
+                let Some(mut stream) = stream else {
+                    drop(state);
+                    return Ok(self.native_io(async move { Ok::<Vec<u8>, NativeFailure>(vec![]) })?);
+                };
+                state.busy[slot] = true;
+                drop(state);
+                let owner = shared.clone();
+                Ok(self.native_io(async move {
+                    let mut bytes = vec![0; limit];
+                    let result = stream.read(&mut bytes).await;
+                    let mut back = owner.borrow_mut();
+                    back.busy[slot] = false;
+                    if !back.closed {
+                        back.errors_async = Some(stream);
+                    }
+                    let size = result.map_err(|e| host(n, e))?;
+                    bytes.truncate(size);
+                    Ok(bytes)
+                })?)
+            }
+            ProcessProcessStateInputWriteAsync => {
+                if state.input_closed {
+                    return Err(fail(n, "already_closed", "Process input is closed"));
+                }
+                if state.busy[0] {
+                    return Err(fail(n, "invalid_input", "A write of this stream is already waiting"));
+                }
+                let bytes = self.native_bytes(a[1])?;
+                if bytes.is_empty() {
+                    drop(state);
+                    return Ok(self.native_io(async move { Ok::<i64, NativeFailure>(0) })?);
+                }
+                let stream = match (state.input_async.take(), state.input.take()) {
+                    (Some(stream), _) => stream,
+                    (None, Some(file)) => {
+                        process_host::async_input(file).map_err(|e| ProviderError::Native(host(n, e)))?
+                    }
+                    (None, None) => return Err(fail(n, "broken_pipe", "Process input unavailable")),
+                };
+                state.busy[0] = true;
+                drop(state);
+                let owner = shared.clone();
+                let mut stream = stream;
+                Ok(self.native_io(async move {
+                    use tokio::io::AsyncWriteExt;
+                    let result = async {
+                        stream.write_all(&bytes).await?;
+                        stream.flush().await
+                    }
+                    .await;
+                    let mut back = owner.borrow_mut();
+                    back.busy[0] = false;
+                    if !back.closed && !back.input_closed {
+                        back.input_async = Some(stream);
+                    }
+                    result.map_err(|e| host(n, e))?;
+                    Ok(bytes.len() as i64)
+                })?)
             }
             ProcessProcessStateCapture => {
                 let limit = crate::host::native_file::big(self.integer(a[2])?);
