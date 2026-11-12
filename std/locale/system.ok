@@ -76,7 +76,10 @@ object PreferredLocales does Sequencing<Locale> {
     has origin is @Locale;
 
     PreferredLocales(origin is Environment) {
-        self.origin = PreferredLocalePolicy(environment: origin, preferences: SystemLanguagePreferences()).values();
+        self.origin = PreferredLocalePolicy(
+            environment: origin,
+            preferences: SystemLanguagePreferences()
+        ).values();
     }
 
     PreferredLocales(origin is Environment, preferences is PreferredLanguageReading) {
@@ -115,10 +118,13 @@ object PreferredLocalePolicy {
 
     values() is @Locale {
         if preferences.platform_owned() {
-            return self.parsed(FixedLanguagePreferences(origin: preferences.tags(), platform_owned: true).tags(), false);
+            return self.parsed(
+                FixedLanguagePreferences(origin: preferences.tags(), platform_owned: true).tags(),
+                false
+            );
         }
         if environment.membership("LANGUAGE") {
-            let text = environment.variable("LANGUAGE");
+            let text = environment.text("LANGUAGE");
             confirm text.length() <= 4096
                 else throw InvalidPreferredLocales.because("LANGUAGE length");
             let fields = text.split(":");
@@ -131,7 +137,7 @@ object PreferredLocalePolicy {
         }
         for ["LC_ALL", "LC_MESSAGES", "LANG"] -> name {
             if environment.membership(name) {
-                let values = self.parse([environment.variable(name)], true);
+                let values = self.parse([environment.text(name)], true);
                 if values.size() > 0 {
                     return values;
                 }
@@ -244,6 +250,12 @@ enum PreferredLocaleUnavailable is Error = (because(reason is string));
 
 test "POSIX language preferences normalize without changing environment" {
     let env = Environment(["LANG": "en_US.UTF-8"]);
-    test.is(PreferredLocales(origin: env, preferences: FixedLanguagePreferences(origin: [], platform_owned: false)).first().string(), "en-US");
-    test.is(env.variable("LANG"), "en_US.UTF-8");
+    test.is(
+        PreferredLocales(
+            origin: env,
+            preferences: FixedLanguagePreferences(origin: [], platform_owned: false)
+        ).first().string(),
+        "en-US"
+    );
+    test.is(env.text("LANG"), "en_US.UTF-8");
 }

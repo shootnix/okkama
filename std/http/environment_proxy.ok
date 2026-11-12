@@ -16,11 +16,11 @@ object EnvironmentProxy {
     EnvironmentProxy(environment is Environment) {
         self.environment = environment;
         let text = if environment.membership("no_proxy") {
-            environment.variable("no_proxy");
+            environment.text("no_proxy");
         }
         else {
             if environment.membership("NO_PROXY") {
-                environment.variable("NO_PROXY");
+                environment.text("NO_PROXY");
             }
             else {
                 "";
@@ -74,10 +74,10 @@ object EnvironmentProxy {
 
     hidden variable(lowercase is string, uppercase is string) is @string {
         if environment.membership(lowercase) {
-            return [environment.variable(lowercase)];
+            return [environment.text(lowercase)];
         }
         if uppercase != "" && environment.membership(uppercase) {
-            return [environment.variable(uppercase)];
+            return [environment.text(uppercase)];
         }
         [];
     }
@@ -106,7 +106,8 @@ hidden object NoProxyRule {
         }
         let actual_kind = origin.host_kind();
         if kind == NoProxyKind.network {
-            return actual_kind == UrlHostKind.address && network[0].membership(origin.host_address());
+            return actual_kind == UrlHostKind.address
+                && network[0].membership(origin.host_address());
         }
         if port.size() == 1 {
             let actual = origin::Parts::port else if origin::Parts::scheme == "https" {
