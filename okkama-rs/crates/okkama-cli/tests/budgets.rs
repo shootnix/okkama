@@ -192,3 +192,42 @@ fn long_host_operations_stop_for_the_timeout() {
         }
     }
 }
+
+/// Finished tasks are not kept (#503): each step starts a task in its own
+/// FutureGroup, awaits it and drops the group. The core kept every spawned
+/// task as a root and every group's tasks as roots, so memory grew with the
+/// steps until the budget stopped it; now it stays flat on every engine.
+const WORKERS: &str = "module app v1.0.0;
+import \"async/scope\" take FutureGroup;
+import \"async/event\" take Event;
+import \"async/atomic\" take Atomic;
+import \"io/stdout\" take Stdout;
+object Worker {
+    has group is FutureGroup<bool>;
+    has done is Event;
+    Worker() { group = FutureGroup(); done = Event(); }
+    start() is void { group.start(self.run()); }
+    async run() is bool { defer done.set(); true; }
+    async settled() is bool { await group.wait(); true; }
+}
+async main() is int {
+    let count = Atomic(0);
+    loop {
+        last if count.value() == 100000;
+        let worker = Worker();
+        worker.start();
+        await worker.settled();
+        count.replace(count.value() + 1);
+    }
+    Stdout().writeln(count.value().string());
+    0;
+}
+";
+
+#[test]
+fn finished_tasks_and_their_groups_are_collected() {
+    let output = run("sparrow", WORKERS, &["--max-memory", "96M", "--timeout", "120"]);
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim_end(), "100000", "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(output.status.code(), Some(0));
+}
+

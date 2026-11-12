@@ -382,6 +382,29 @@ impl Runtime {
         }
     }
 
+    /// Drop finished spawned tasks that shutdown no longer needs (#503): it
+    /// cancels running ones and reports unobserved failures. A long-running
+    /// program (a server) otherwise kept every task it ever spawned, with
+    /// everything its frame refers to, as a root of every collection.
+    pub(crate) fn prune_spawned(&mut self) {
+        let mut kept = Vec::with_capacity(self.spawned.len());
+        for &task in &self.spawned {
+            let state = get(task, STATE);
+            let needed = match state {
+                COLD | RUNNING => true,
+                FAILURE_STATE => {
+                    get(task, FLAGS) & OBSERVED == 0
+                        && !matches!(self.failure(get(task, FAILURE)).map(|f| &f.kind), Some(FailureKind::Cancelled))
+                }
+                _ => false,
+            };
+            if needed {
+                kept.push(task);
+            }
+        }
+        self.spawned = kept;
+    }
+
     pub(crate) fn observe(future: Word) {
         set(future, FLAGS, get(future, FLAGS) | OBSERVED);
     }

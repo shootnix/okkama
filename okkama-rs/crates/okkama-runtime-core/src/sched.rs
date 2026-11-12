@@ -140,6 +140,10 @@ struct Scheduler {
     /// Продолжения внешних операций по номеру.
     pending: RefCell<HashMap<u64, Continuation>>,
     next_op: Cell<u64>,
+    /// Timers by deadline (#503): the event loop waits until the nearest one
+    /// instead of a sleeping thread per wait. A cancelled timer has no entry
+    /// in `pending` and is skipped when it comes due.
+    timers: RefCell<std::collections::BinaryHeap<std::cmp::Reverse<(std::time::Instant, u64)>>>,
 }
 
 impl Scheduler {
@@ -158,6 +162,7 @@ impl Scheduler {
             receiver,
             pending: RefCell::new(HashMap::new()),
             next_op: Cell::new(0),
+            timers: RefCell::new(std::collections::BinaryHeap::new()),
         }
     }
 }
@@ -233,6 +238,7 @@ pub fn reset() {
         s.registered_ids.borrow_mut().clear();
         s.external.set(0);
         s.pending.borrow_mut().clear();
+        s.timers.borrow_mut().clear();
         while s.receiver.try_recv().is_ok() {}
         for task in s.ready.borrow_mut().drain(..) {
             task.queued.set(false);
@@ -730,15 +736,88 @@ fn drive(until: &Future) -> Result<(), Rc<Failure>> {
     Ok(())
 }
 
-/// Дождаться одной внешней доставки и выполнить её продолжение.
+/// Дождаться одной внешней доставки (или срока таймера) и выполнить её
+/// продолжение.
 fn deliver() -> Result<(), Rc<Failure>> {
-    let (id, delivery) = with(|s| s.receiver.recv())
-        .map_err(|_| trap("async runtime was interrupted"))?;
-    let done = with(|s| s.pending.borrow_mut().remove(&id));
-    if let Some(done) = done {
-        done(delivery);
+    loop {
+        if fire_due_timers() {
+            return Ok(());
+        }
+        let next = with(|s| s.timers.borrow().peek().map(|entry| entry.0.0));
+        let received = match next {
+            Some(deadline) => {
+                let now = std::time::Instant::now();
+                if deadline <= now {
+                    continue;
+                }
+                match with(|s| s.receiver.recv_timeout(deadline - now)) {
+                    Ok(received) => received,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        return Err(trap("async runtime was interrupted"));
+                    }
+                }
+            }
+            None => with(|s| s.receiver.recv()).map_err(|_| trap("async runtime was interrupted"))?,
+        };
+        let (id, delivery) = received;
+        let done = with(|s| s.pending.borrow_mut().remove(&id));
+        if let Some(done) = done {
+            done(delivery);
+        }
+        return Ok(());
     }
-    Ok(())
+}
+
+/// Run the continuations of timers that are due; true when one ran.
+fn fire_due_timers() -> bool {
+    let now = std::time::Instant::now();
+    let mut fired = false;
+    loop {
+        let due = with(|s| {
+            let mut timers = s.timers.borrow_mut();
+            match timers.peek() {
+                Some(entry) if entry.0.0 <= now => timers.pop().map(|entry| entry.0.1),
+                _ => None,
+            }
+        });
+        let Some(id) = due else {
+            return fired;
+        };
+        let done = with(|s| s.pending.borrow_mut().remove(&id));
+        if let Some(done) = done {
+            done(Box::new(()));
+            fired = true;
+        }
+    }
+}
+
+/// Run `done` on the event loop after `duration`, without a thread (#503).
+/// Returns the operation and its id: `forget(id)` drops a cancelled timer's
+/// continuation at once instead of at its deadline.
+pub fn timer(duration: std::time::Duration, done: impl FnOnce() + 'static) -> (Op, u64) {
+    let op = Op(Rc::new(Cell::new(true)));
+    let attached = op.clone();
+    let id = with(|s| {
+        let id = s.next_op.get();
+        s.next_op.set(id + 1);
+        s.external.set(s.external.get() + 1);
+        s.pending.borrow_mut().insert(
+            id,
+            Box::new(move |_delivery: Delivery| {
+                attached.detach();
+                done();
+            }),
+        );
+        s.timers.borrow_mut().push(std::cmp::Reverse((std::time::Instant::now() + duration, id)));
+        id
+    });
+    (op, id)
+}
+
+/// Drop the continuation of a pending operation (a cancelled timer).
+pub fn forget(id: u64) {
+    let _ = with(|s| s.pending.borrow_mut().remove(&id));
 }
 
 fn shutdown() -> Result<Option<Rc<Failure>>, Rc<Failure>> {
@@ -1042,6 +1121,24 @@ mod tests {
 
     /// A spawned future that only the cancelled task awaits is cancelled
     /// with it (#147); one that another task also awaits is left running.
+    #[test]
+    fn timers_fire_by_deadline_on_the_event_loop_and_forgotten_ones_never_run() {
+        reset();
+        let order = Rc::new(RefCell::new(Vec::new()));
+        let (late, early, gone) = (order.clone(), order.clone(), order.clone());
+        let _late = timer(std::time::Duration::from_millis(20), move || late.borrow_mut().push("late"));
+        let _early = timer(std::time::Duration::from_millis(5), move || early.borrow_mut().push("early"));
+        let (cancelled, id) = timer(std::time::Duration::from_millis(1), move || gone.borrow_mut().push("cancelled"));
+        cancelled.detach();
+        forget(id);
+        while with(|s| s.external.get()) > 0 {
+            deliver().unwrap();
+        }
+        assert_eq!(*order.borrow(), vec!["early", "late"]);
+        assert!(with(|s| s.pending.borrow().is_empty()));
+        reset();
+    }
+
     #[test]
     fn cancellation_reaches_a_spawned_future_unless_another_task_awaits_it() {
         reset();

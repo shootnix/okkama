@@ -249,7 +249,31 @@ impl Positions {
 pub struct Allocations {
     /// (kind, object descriptor or 0) → (count, bytes).
     pub kinds: std::collections::BTreeMap<(&'static str, u32), (u64, u64)>,
+    /// Objects alive after the last collection, by kind and descriptor:
+    /// (count, bytes). A census for leak hunting (`--stats`).
+    pub live: std::collections::BTreeMap<(&'static str, u32), (u64, u64)>,
     pub collection_nanos: u64,
+}
+
+/// The census name of a header's kind.
+fn kind_name(kind: u8) -> &'static str {
+    match kind {
+        OBJECT => "object",
+        STRING => "string",
+        ARRAY => "array",
+        BIGINT => "bigint",
+        PAYLOAD => "payload",
+        CLOSURE => "closure",
+        FRAME => "frame",
+        _ => "other",
+    }
+}
+
+fn census(live: &mut std::collections::BTreeMap<(&'static str, u32), (u64, u64)>, header: u64, bytes: usize) {
+    let descriptor = if kind(header) == OBJECT { payload(header) } else { 0 };
+    let entry = live.entry((kind_name(kind(header)), descriptor)).or_default();
+    entry.0 += 1;
+    entry.1 += bytes as u64;
 }
 
 impl Heap {
@@ -1081,16 +1105,34 @@ impl Heap {
     /// Mark everything reachable from `roots`, then sweep. Roots report each
     /// word with its representation; the heap traces the rest by layout.
     pub fn collect(&mut self, roots: impl FnOnce(&mut dyn FnMut(Word, Repr))) {
+        self.collect_with(roots, |_, _| {});
+    }
+
+    /// `collect` with ephemerons (#503): after everything reachable from
+    /// `roots` is marked, `ephemerons` is asked, with a test of whether an
+    /// object is marked, to report the values of entries whose keys are.
+    /// It is asked again until it reports nothing unmarked, so a value is kept
+    /// only while its key is reachable some other way, and a cycle through
+    /// the entry (a group's task referring to the group) is collected.
+    pub fn collect_with(
+        &mut self,
+        roots: impl FnOnce(&mut dyn FnMut(Word, Repr)),
+        mut ephemerons: impl FnMut(&dyn Fn(Word) -> bool, &mut dyn FnMut(Word, Repr)),
+    ) {
         // A freed string's address may be reused for another one.
         self.positions = Positions::default();
         let started = self.allocations.is_some().then(std::time::Instant::now);
-        self.collect_inner(roots);
+        self.collect_inner(roots, &mut ephemerons);
         if let (Some(allocations), Some(started)) = (&mut self.allocations, started) {
             allocations.collection_nanos += started.elapsed().as_nanos() as u64;
         }
     }
 
-    fn collect_inner(&mut self, roots: impl FnOnce(&mut dyn FnMut(Word, Repr))) {
+    fn collect_inner(
+        &mut self,
+        roots: impl FnOnce(&mut dyn FnMut(Word, Repr)),
+        ephemerons: &mut dyn FnMut(&dyn Fn(Word) -> bool, &mut dyn FnMut(Word, Repr)),
+    ) {
         crate::maps::begin_pass();
         let mut worklist = std::mem::take(&mut self.worklist);
         roots(&mut |word, repr| {
@@ -1098,6 +1140,29 @@ impl Heap {
                 worklist.push(pointer);
             }
         });
+        loop {
+            self.mark_reachable(&mut worklist);
+            // SAFETY: keys are live object pointers; their headers are read.
+            let marked = |object: Word| unsafe { *(object as *const u64) } & MARK != 0;
+            let mut found = false;
+            ephemerons(&marked, &mut |word, repr| {
+                if let Some(pointer) = repr.pointer(word)
+                    && unsafe { *(pointer as *const u64) } & MARK == 0
+                {
+                    worklist.push(pointer);
+                    found = true;
+                }
+            });
+            if !found {
+                break;
+            }
+        }
+        self.worklist = worklist;
+        self.sweep();
+    }
+
+    /// Mark everything reachable from the worklist.
+    fn mark_reachable(&self, worklist: &mut Vec<Word>) {
         while let Some(object) = worklist.pop() {
             // SAFETY: every pushed word is a live object pointer.
             let header = unsafe { *(object as *const u64) };
@@ -1151,8 +1216,6 @@ impl Heap {
                 _ => {}
             }
         }
-        self.worklist = worklist;
-        self.sweep();
     }
 
     /// Overwrite every free cell past its link (collector stress).
@@ -1171,6 +1234,9 @@ impl Heap {
 
     fn sweep(&mut self) {
         self.free = [0; CLASSES.len()];
+        if let Some(allocations) = &mut self.allocations {
+            allocations.live.clear();
+        }
         let mut live = 0;
         let mut external_live = 0;
         for page in &mut self.pages {
@@ -1184,6 +1250,9 @@ impl Heap {
                     unsafe { *(address as *mut u64) = header & !MARK };
                     live += size * 8;
                     external_live += unsafe { owned_bytes(address, header) };
+                    if let Some(allocations) = &mut self.allocations {
+                        census(&mut allocations.live, header, size * 8);
+                    }
                     continue;
                 }
                 if kind(header) != FREE {
@@ -1204,6 +1273,9 @@ impl Heap {
             if header & MARK != 0 {
                 memory[0] = header & !MARK;
                 live += memory.len() * 8;
+                if let Some(allocations) = &mut self.allocations {
+                    census(&mut allocations.live, header, memory.len() * 8);
+                }
                 large_bytes += memory.len() * 8;
                 external_live += unsafe { owned_bytes(address, header) };
                 true

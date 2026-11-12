@@ -8,6 +8,33 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 0.5.5 is in progress.
 
+### Fixed
+
+- **A server's memory grew with every request (#503).** `examples/web/hello.ok`
+  on Sparrow reached 483 MB after 7 400 requests; Python's `http.server`
+  stays at 17 MB. Each request kept its peer, connection, request, response,
+  groups and async frames forever. There were two causes in Tomato:
+  - Every task started with `spawn` or `FutureGroup.start` stayed in the
+    runtime's spawned list until the program ended, and that list is a root
+    of every collection. Finished tasks that shutdown no longer needs are now
+    dropped before each collection: it still cancels running tasks and
+    reports unobserved failures.
+  - The intrinsic state of a FutureGroup was traced as a root even after the
+    group itself was unreachable. A group's tasks now count only while the
+    group is reachable (ephemerons), so a group and its tasks no longer keep
+    each other alive.
+
+  On the IR engine every `clock.wait` slept in a thread of its own until its
+  deadline, even when a timeout was cancelled. Three timeouts per request
+  piled up thousands of threads, and the server died after about 4 500
+  connections with "failed to spawn thread". Timers are now a deadline heap
+  on the event loop, and a cancelled timer drops its continuation at once.
+
+  Now the hello server stays at 59 MB on Sparrow and 52 MB on the IR engine
+  over 6 000 connections. It also answers 1 930 requests per second instead
+  of 1 350. `sparrow --stats` prints a census of the objects alive after the
+  last collection, by type.
+
 ## [0.5.4] — 2026-11-12
 
 0.5.4 is the review of the standard library (#352).

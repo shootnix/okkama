@@ -223,6 +223,7 @@ impl Runtime {
             return;
         }
         self.count(|_| "gc collection".into());
+        self.prune_spawned();
         let jit = &self.jit;
         let constants = &self.constants;
         let roots = &self.roots;
@@ -236,9 +237,13 @@ impl Runtime {
             .copied()
             .collect();
         let states = &self.states;
-        self.heap.collect(|visit| {
+        self.heap.collect_with(|visit| {
+            // A group's tasks are kept only while the group is reachable some
+            // other way (#503); running and parked tasks are roots of their own.
             for state in states.values() {
-                state.trace(visit);
+                if !matches!(state, crate::primitives::State::Group(_)) {
+                    state.trace(visit);
+                }
             }
             // SAFETY: frame records above a helper called from machine code
             // lead through JIT frames to the Rust entry.
@@ -249,6 +254,12 @@ impl Runtime {
             visit(ctx.failure, Repr::Ref);
             for &task in &tasks {
                 visit(task, Repr::Ref);
+            }
+        }, |marked, visit| {
+            for (&object, state) in states.iter() {
+                if matches!(state, crate::primitives::State::Group(_)) && marked(object) {
+                    state.trace(visit);
+                }
             }
         });
         let released = self.heap.take_released();
@@ -303,6 +314,13 @@ impl Runtime {
                         };
                         [(format!("alloc runtime {what}, count"), count), (format!("alloc runtime {what}, bytes"), bytes)]
                     })
+                    .chain(allocations.live.iter().flat_map(|(&(kind, descriptor), &(count, bytes))| {
+                        let what = match kind {
+                            "object" => format!("object {}", program.objects.get(descriptor as usize).map_or("?", |object| object.name.as_str())),
+                            other => other.to_string(),
+                        };
+                        [(format!("live after the last collection {what}, count"), count), (format!("live after the last collection {what}, bytes"), bytes)]
+                    }))
                     .chain([
                         ("collection, microseconds".to_string(), allocations.collection_nanos / 1000),
                         ("run, microseconds".to_string(), self.created.elapsed().as_micros() as u64),

@@ -157,12 +157,15 @@ fn sleep(native: Native, source: &str) -> Value {
     }
     let promise = sched::promise();
     let target = promise.clone();
-    let op = sched::offload(
-        move || std::thread::sleep(std::time::Duration::from_nanos(nanoseconds as u64)),
-        move |()| sched::settle(&target, Ok(Value::Bool(true))),
-    );
-    // Отменённое ожидание не держит программу.
-    promise.listen(move || op.detach());
+    // A timer on the event loop, not a sleeping thread per wait (#503).
+    let (op, id) = sched::timer(std::time::Duration::from_nanos(nanoseconds as u64), move || {
+        sched::settle(&target, Ok(Value::Bool(true)))
+    });
+    // Отменённое ожидание не держит программу и не держит продолжение.
+    promise.listen(move || {
+        op.detach();
+        sched::forget(id);
+    });
     Value::Future(promise)
 }
 
