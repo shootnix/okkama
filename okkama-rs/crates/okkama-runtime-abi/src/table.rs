@@ -617,5 +617,7 @@ natives! {
     TlsTransportServer = 631, "runtime/tls_transport@1::server/5", "(SocketState, int, @string, @@byte, @byte) -> TlsState";
     SignalSignalWait = 632, "runtime/signal@1::signal_wait/1", "async (@string) -> string";
     FsRootRootedEntryPiece = 633, "runtime/fs_root@1::rooted_entry_piece/3", "async (RootedEntryState, int, int) -> @byte";
+    NumberTextFloatParseValid = 634, "runtime/number_text@1::float_parse_valid/1", "(string) -> bool";
+    NumberTextFloatParse = 635, "runtime/number_text@1::float_parse/1", "(string) -> float";
 }
 // retired: 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258

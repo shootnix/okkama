@@ -14,7 +14,7 @@ module strings/parse v1.0.0;
 // Explicit bases span 2..36. A rational is an integer or
 // `numerator/positive-denominator`. Errors keep the exact source text.
 
-import "runtime/number_text" take int_parse_valid, int_parse;
+import "runtime/number_text" take int_parse_valid, int_parse, float_parse_valid, float_parse;
 
 // A number written as text, read as the type asked for.
 object Number {
@@ -33,45 +33,20 @@ object Number {
         int_parse(source, base);
     }
 
+    // A dotted spelling is read by the runtime, nearest float (#170); one
+    // without a dot is an integer, so "-0" stays 0.0 as before.
     float() is float {
         confirm source.length() > 0 && source != "-" else throw InvalidFloat.source(source);
-        let negative is bool = source.slice(0, 1) == "-";
-        let offset is int = if negative {
-            1;
-        }
-        else {
-            0;
-        };
-        let decimal is int = self.point(offset);
-
-        if decimal == -1 {
-            try {
-                let res is int = self.int();
-                res.float();
+        if !source.contains(".") {
+            return try {
+                self.int().float();
             }
             catch error is InvalidInteger {
                 throw InvalidFloat.source(source);
-            }
+            };
         }
-        else {
-            confirm decimal > offset && decimal + 1 < source.length()
-                else throw InvalidFloat.source(source);
-
-            let whole is float = self.decimal_run(offset, decimal);
-            let fraction is float = self.decimal_run(decimal + 1, source.length());
-            let divisor is float = ((decimal + 1)..source.length())
-                .reduce(1.0) -> result, index {
-                    result * 10.0;
-                };
-            let magnitude is float = whole + fraction / divisor;
-
-            if negative {
-                -magnitude;
-            }
-            else {
-                magnitude;
-            }
-        }
+        confirm float_parse_valid(source) else throw InvalidFloat.source(source);
+        float_parse(source);
     }
 
     rat() is rat {
@@ -97,61 +72,17 @@ object Number {
         }
     }
 
+    // Digits below the base, no sign, at most 255; base 0 reads the 0b, 0o
+    // and 0x prefixes (#170: the integer reader, not a digit at a time).
     byte(base is int = 10) is byte {
-        confirm source.length() > 0 && (base == 0 || (base >= 2 && base <= 36))
+        confirm source.length() > 0
+            && (base == 0 || (base >= 2 && base <= 36))
+            && !source.starts_with("-")
+            && int_parse_valid(source, base)
             else throw InvalidByte.source(source);
-        let prefix is string = if 2 <= source.length() {
-            source.slice(0, 2);
-        }
-        else {
-            "";
-        };
-        let prefixed is bool = base == 0
-            && match prefix {
-                case "0b", "0B", "0o", "0O", "0x", "0X" {
-                    true;
-                }
-                else {
-                    false;
-                }
-            };
-        let radix is int = if base != 0 {
-            base;
-        }
-        else {
-            match prefix {
-                case "0b", "0B" {
-                    2;
-                }
-                case "0o", "0O" {
-                    8;
-                }
-                case "0x", "0X" {
-                    16;
-                }
-                else {
-                    10;
-                }
-            }
-        };
-        let start is int = if prefixed {
-            2;
-        }
-        else {
-            0;
-        };
-        confirm start < source.length()
-            else throw InvalidByte.source(source);
-        let integer is int = (start..source.length())
-            .reduce(0) -> result, index {
-                let digit is int = self.digit(index, radix);
-                let candidate is int = result * radix + digit;
-                confirm candidate <= 255
-                    else throw InvalidByte.source(source);
-                candidate;
-            };
-
-        integer.byte();
+        let value = int_parse(source, base);
+        confirm value <= 255 else throw InvalidByte.source(source);
+        value.byte();
     }
 
     test "reads integer spellings" {
@@ -196,6 +127,12 @@ object Number {
         test.is(Number("42.5").float(), 42.5);
         test.is(Number("-42.5").float(), -42.5);
         test.is(Number("001.050").float(), 1.05);
+        // The nearest float, however many digits (#170).
+        test.is(Number("3.14159265358979323846").float(), 3.141592653589793);
+        test.is(
+            Number("0.000000000000000000000000000001").float(),
+            0.000000000000000000000000000001
+        );
     }
 
     test "rejects non-float spellings" {
@@ -256,185 +193,6 @@ object Number {
                 invalid
             );
         }
-    }
-
-    hidden point(offset is int) is int {
-        (offset..source.length()).reduce(-1) -> found, index {
-            if source.slice(index, index + 1) == "." {
-                confirm found == -1 else throw InvalidFloat.source(source);
-                index;
-            }
-            else {
-                found;
-            }
-        };
-    }
-
-    hidden decimal_run(start is int, end is int) is float {
-        (start..end).reduce(0.0) -> result, index {
-            result * 10.0 + self.decimal_digit(index);
-        };
-    }
-
-    hidden decimal_digit(index is int) is float {
-        let symbol is string = source.slice(index, index + 1);
-
-        match symbol {
-            case "0" {
-                0.0;
-            }
-            case "1" {
-                1.0;
-            }
-            case "2" {
-                2.0;
-            }
-            case "3" {
-                3.0;
-            }
-            case "4" {
-                4.0;
-            }
-            case "5" {
-                5.0;
-            }
-            case "6" {
-                6.0;
-            }
-            case "7" {
-                7.0;
-            }
-            case "8" {
-                8.0;
-            }
-            case "9" {
-                9.0;
-            }
-
-            else {
-                throw InvalidFloat.source(source);
-            }
-        }
-    }
-
-    hidden digit(index is int, base is int) is int {
-        let symbol is string = source.slice(index, index + 1);
-
-        let result is int = match symbol {
-            case "0" {
-                0;
-            }
-            case "1" {
-                1;
-            }
-            case "2" {
-                2;
-            }
-            case "3" {
-                3;
-            }
-            case "4" {
-                4;
-            }
-            case "5" {
-                5;
-            }
-            case "6" {
-                6;
-            }
-            case "7" {
-                7;
-            }
-            case "8" {
-                8;
-            }
-            case "9" {
-                9;
-            }
-            case "a", "A" {
-                10;
-            }
-            case "b", "B" {
-                11;
-            }
-            case "c", "C" {
-                12;
-            }
-            case "d", "D" {
-                13;
-            }
-            case "e", "E" {
-                14;
-            }
-            case "f", "F" {
-                15;
-            }
-            case "g", "G" {
-                16;
-            }
-            case "h", "H" {
-                17;
-            }
-            case "i", "I" {
-                18;
-            }
-            case "j", "J" {
-                19;
-            }
-            case "k", "K" {
-                20;
-            }
-            case "l", "L" {
-                21;
-            }
-            case "m", "M" {
-                22;
-            }
-            case "n", "N" {
-                23;
-            }
-            case "o", "O" {
-                24;
-            }
-            case "p", "P" {
-                25;
-            }
-            case "q", "Q" {
-                26;
-            }
-            case "r", "R" {
-                27;
-            }
-            case "s", "S" {
-                28;
-            }
-            case "t", "T" {
-                29;
-            }
-            case "u", "U" {
-                30;
-            }
-            case "v", "V" {
-                31;
-            }
-            case "w", "W" {
-                32;
-            }
-            case "x", "X" {
-                33;
-            }
-            case "y", "Y" {
-                34;
-            }
-            case "z", "Z" {
-                35;
-            }
-            else {
-                throw InvalidByte.source(source);
-            }
-        };
-        confirm result < base else throw InvalidByte.source(source);
-        result;
     }
 }
 
