@@ -7,7 +7,7 @@ import "fs/stat" take FileKind;
 import "io/stdout" take Stdout;
 
 // A path on disk: is something there, what is it, how big, who may read it;
-// then move it and remove it. Reading and writing belong to fs/file.
+// then copy it, move it and remove it. Reading and writing belong to fs/file.
 
 main() is int {
     let out = Stdout();
@@ -24,9 +24,16 @@ main() is int {
     out.writeln("bytes: ", stat::Shape::size);
     out.writeln("owner reads: ", stat.mode().owner()::Access::readable);
 
+    // copy keeps the permission bits; neither copy nor move replaces what is
+    // already there unless asked with overwrite: true.
+    notes.copy(Path("notes.bak"));
+    let backup = FileEntry(path: Path("notes.bak"));
+    out.writeln("copied: ", backup.stat()::Shape::size, " bytes");
     notes.move(Path("notes.old"));
     let old = FileEntry(path: Path("notes.old"));
     out.writeln("moved: ", notes.existence(), " ", old.existence());
+    backup.move(destination: Path("notes.old"), overwrite: true);
+    out.writeln("backup over old: ", backup.existence(), " ", old.existence());
     old.remove();
     out.writeln("removed: ", old.existence());
     0;

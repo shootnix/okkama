@@ -14,9 +14,8 @@ import "io/stdout" take Stdout;
 
 main() is int {
     let out = Stdout();
-    for ["releases", "releases/v1", "releases/v2"] -> folder {
-        Directory(path: Path(folder)).create();
-    }
+    Directory(path: Path("releases/v1")).create(parents: true);
+    Directory(path: Path("releases/v2")).create(parents: true);
     let current = SymbolicLink(path: Path("releases/current"));
     current.create(Path("v1"));
     out.writeln("current -> ", current.target());

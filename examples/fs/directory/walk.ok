@@ -13,9 +13,8 @@ import "io/stdout" take Stdout;
 main() is int {
     let out = Stdout();
     let root = Path("site");
-    for ["site", "site/pages", "site/pages/blog", "site/assets"] -> folder {
-        Directory(path: Path(folder)).create();
-    }
+    Directory(path: Path("site/pages/blog")).create(parents: true);
+    Directory(path: Path("site/assets")).create(parents: true);
     for ["site/index.html", "site/pages/about.html", "site/pages/blog/first.html", "site/assets/logo.svg"] -> name {
         let file = File(path: Path(name), mode: FileMode.writing);
         file.text().write("<!-- " + name + " -->");
@@ -34,7 +33,7 @@ main() is int {
 
     // Count the HTML files of the tree.
     let pages = Descendants(origin: Directory(path: root)).reduce(0) -> count, entry {
-        if entry.kind() == FileKind.file && entry.path().string().ends_with(".html") {
+        if entry.kind() == FileKind.file && entry.path().extension() == "html" {
             count + 1;
         }
         else {

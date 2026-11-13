@@ -2,7 +2,6 @@ module examples/regex/replace v1.0.0;
 
 import "regex/pattern" take Regex;
 import "regex/replace" take RegexSubstitution, LiteralRegexReplacement, ExpandedRegexReplacement;
-import "regex/split" take RegexParts;
 import "io/stdout" take Stdout;
 
 // Replace matches, by a literal or a template with groups, and split text.
@@ -25,6 +24,8 @@ main() is int {
     );
     out.writeln(swapped.string());
 
+    out.writeln(Regex("\\s+").replaced(origin: "too   many    spaces", by: " "));
+
     let once = RegexSubstitution(
         origin: "a-b-c-d",
         regex: Regex("-"),
@@ -33,7 +34,7 @@ main() is int {
     );
     out.writeln(once.string());
 
-    for RegexParts(origin: "one, two;three ,four", regex: Regex("\\s*[,;]\\s*")) -> field {
+    for Regex("\\s*[,;]\\s*").parts("one, two;three ,four") -> field {
         out.writeln("[" + field + "]");
     }
     0;

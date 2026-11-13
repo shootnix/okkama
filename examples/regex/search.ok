@@ -1,10 +1,11 @@
 module examples/regex/search v1.0.0;
 
 import "regex/pattern" take Regex, RegexFlag, NoRegexMatch;
-import "regex/search" take FirstRegexMatch, EntireRegexMatch, RegexMatches;
+import "regex/search" take FirstRegexMatch, EntireRegexMatch;
 import "io/stdout" take Stdout;
 
 // Find the first match, every match, named groups, and check a whole string.
+// The regex answers the common questions itself: found and all.
 
 main() is int {
     let out = Stdout();
@@ -14,11 +15,11 @@ main() is int {
     let first = FirstRegexMatch(origin: log, regex: request);
     out.writeln("first: ", first.text(), " at ", first.range()::Bounds::start);
 
-    for RegexMatches(origin: log, regex: request) -> found {
+    for request.all(log) -> found {
         out.writeln(found.group("method").text() + " " + found.group("path").text() + " -> " + found.group("status").text());
     }
 
-    let failures = RegexMatches(origin: log, regex: request).reduce(0) -> count, found {
+    let failures = request.all(log).reduce(0) -> count, found {
         if found.group("status").text().starts_with("4") {
             count + 1;
         }
@@ -27,6 +28,7 @@ main() is int {
         }
     };
     out.writeln("failures: ", failures);
+    out.writeln("any 5xx: ", Regex(" 5\\d\\d ").found(log));
 
     // A whole string, case-insensitively.
     let code = Regex(expression: "[a-z]{3}-\\d{4}", flags: [RegexFlag.ignore_case]);

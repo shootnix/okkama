@@ -1,10 +1,12 @@
 module examples/async/channel v1.0.0;
 
-import "async/channel" take Channel, Sending, Receiving, ChannelClosed;
+import "async/channel" take Channel, Sending, Receiving;
 import "io/stdout" take Stdout;
+import "strings/buffer" take TextBuffer;
 
 // A producer and a consumer share a bounded channel. The producer closes its
-// side when done; the consumer reads until ChannelClosed.
+// side when done; the consumer walks the channel with `for await`, which ends
+// once the channel is closed and drained.
 
 object Producer {
     has output is Sending<string>;
@@ -24,23 +26,11 @@ object Consumer {
     Consumer(:input);
 
     async run() is string {
-        await self.collect("");
-    }
-
-    hidden async collect(seen is string) is string {
-        let word = try {
-            await input.item();
+        let lengths = TextBuffer();
+        for await input -> word {
+            lengths.write(word.length().string(), " ");
         }
-        catch error is ChannelClosed {
-            return seen;
-        };
-        let length = word.length().string();
-        await self.collect(if seen == "" {
-            length;
-        }
-        else {
-            seen + " " + length;
-        });
+        lengths.string().trim();
     }
 }
 

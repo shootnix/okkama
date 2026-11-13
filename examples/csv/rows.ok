@@ -1,14 +1,14 @@
 module examples/csv/rows v1.0.0;
 
-import "csv" take CsvDialect, CsvRecord, CsvRows, CsvString, InvalidCsv;
+import "csv" take CsvDialect, CsvRecord, CsvRecords, CsvRows, CsvString, InvalidCsv;
 import "csv/stream" take CsvStream, EndOfCsv;
 import "io/stdout" take Stdout;
 import "strings/format" take Formatted;
 
-// Read CSV text row by row, write rows back as CSV, use another dialect,
-// and read a source one row at a time without holding all of it. Quotes
-// and separators inside fields survive the round trip; nothing guesses a
-// header.
+// Read CSV text row by row, read records by column name, write rows back as
+// CSV, use another dialect, and read a source one row at a time without
+// holding all of it. Quotes and separators inside fields survive the round
+// trip. CsvRows never guesses a header; CsvRecords takes the first row as one.
 
 main() is int {
     let out = Stdout();
@@ -16,6 +16,12 @@ main() is int {
 
     for CsvRows(text) -> row {
         out.writeln(row.size(), " fields: ", row.join(" | "));
+    }
+
+    let orders = "id,total,note\r\n1,10,gift\r\n2,32,\r\n";
+    for CsvRecords(orders) -> record {
+        let note = record.maybe("note").text() else "none";
+        out.writeln(Formatted("order {}: total {}, note {}", record.text("id"), record.int("total"), note));
     }
 
     let rows is @@string = CsvRows(text).map() -> row { row; };

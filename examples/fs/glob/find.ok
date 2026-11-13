@@ -12,9 +12,8 @@ import "io/stdout" take Stdout;
 
 main() is int {
     let out = Stdout();
-    for ["app", "app/src", "app/src/net", "app/logs"] -> folder {
-        Directory(path: Path(folder)).create();
-    }
+    Directory(path: Path("app/src/net")).create(parents: true);
+    Directory(path: Path("app/logs")).create(parents: true);
     for [
         "app/src/main.ok", "app/src/util.ok", "app/src/util-test.ok", "app/src/net/tcp.ok",
         "app/src/net/tcp-test.ok", "app/logs/2026-01.log", "app/logs/2026-11.log",

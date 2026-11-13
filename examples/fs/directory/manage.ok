@@ -23,10 +23,10 @@ main() is int {
     published.remove();
     out.writeln("published removed: ", !published.existence());
 
-    // A full one goes with DirectoryTree.
+    // A full one goes with DirectoryTree. create(parents: true) makes archive
+    // on the way to archive/2026.
     let archive = Directory(path: Path("archive"));
-    archive.create();
-    Directory(path: Path("archive/2026")).create();
+    Directory(path: Path("archive/2026")).create(parents: true);
     let note = File(path: Path("archive/2026/note.txt"), mode: FileMode.writing);
     note.text().write("kept");
     note.close();
