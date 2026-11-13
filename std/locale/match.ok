@@ -290,7 +290,11 @@ object FilteredLocales does Sequencing<Locale> {
         };
         let ranked is @LocalePreference = unique.map() -> index {
             let position = lexical.item(index);
-            LocalePreference(locale: choices[position], priority: ranking.rank(choices[position]), position: position);
+            LocalePreference(
+                locale: choices[position],
+                priority: ranking.rank(choices[position]),
+                position: position
+            );
         };
         let accepted is @LocalePreference = ranked.filter() -> candidate {
             candidate.priority() >= 0;
@@ -509,7 +513,10 @@ enum InvalidLocaleSelection is Error = (because(reason is string));
 test "basic filtering respects hyphen boundaries and case" {
     test.ok(BasicLanguageRange("EN").matches(Locale(language: "en", region: "US")));
     test.ok(!BasicLanguageRange("en-US").matches(Locale(language: "en", region: "GB")));
-    test.is(LanguagePrefixes(Locale(language: "en", region: "US")).values().item(0).string(), "en-us");
+    test.is(
+        LanguagePrefixes(Locale(language: "en", region: "US")).values().item(0).string(),
+        "en-us"
+    );
 }
 
 test "basic range grammar rejects extended wildcard and POSIX syntax" {

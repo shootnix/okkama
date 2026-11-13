@@ -130,7 +130,12 @@ enum InvalidLocalizedList is Error = (because(reason is string));
 
 test "list item placeholders remain literal" {
     test.is(
-        LocalizedList(values: ["{1}", "{0}"], locale: Locale("en"), kind: ListKind.conjunction, style: ListStyle.long).string(),
+        LocalizedList(
+            values: ["{1}", "{0}"],
+            locale: Locale("en"),
+            kind: ListKind.conjunction,
+            style: ListStyle.long
+        ).string(),
         "{1} and {0}"
     );
 }
