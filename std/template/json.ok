@@ -137,7 +137,9 @@ test "dotted paths read scalars of a Json" {
     );
     test.is(
         try {
-            JsonTemplateStrings(origin: data, maximum_members: 1, maximum_output: 100).string("name");
+            JsonTemplateStrings(origin: data, maximum_members: 1, maximum_output: 100).string(
+                "name"
+            );
             false;
         }
         catch e is TemplateJsonLimitExceeded {
@@ -154,7 +156,9 @@ test "template JSON failures have stable diagnostics" {
 }
 
 test "a JSON number renders as its JSON text, not in scientific form" {
-    let data = JsonTemplateStrings(ParsedJson("{\"n\":17,\"price\":4.5,\"big\":1e3,\"neg\":-0.25}").root());
+    let data = JsonTemplateStrings(
+        ParsedJson("{\"n\":17,\"price\":4.5,\"big\":1e3,\"neg\":-0.25}").root()
+    );
     test.is(data.string("n"), "17");
     test.is(data.string("price"), "4.5");
     test.is(data.string("big"), "1000");

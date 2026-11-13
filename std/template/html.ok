@@ -64,11 +64,19 @@ object HtmlTemplate {
     }
 
     write(data is Json, destination is WritingText) is void {
-        let instructions = HtmlTemplateProgram(source: origin, maximum_input: maximum_input, maximum_nodes: maximum_nodes).instructions();
+        let instructions = HtmlTemplateProgram(
+            source: origin,
+            maximum_input: maximum_input,
+            maximum_nodes: maximum_nodes
+        ).instructions();
         let output = TemplateSectionOutput(destination: destination, maximum: maximum_output);
         for instructions -> instruction {
             if instruction.variable() {
-                let value = JsonTemplateStrings(origin: data, maximum_members: 1024, maximum_output: output.remaining()).string(
+                let value = JsonTemplateStrings(
+                    origin: data,
+                    maximum_members: 1024,
+                    maximum_output: output.remaining()
+                ).string(
                     instruction.text()
                 );
                 output.append(EscapedHtml(origin: value, quotes: instruction.quotes()).string());
@@ -117,7 +125,12 @@ hidden object HtmlTemplateProgram {
     }
 
     instructions() is @HtmlTemplateInstruction {
-        let instructions = TemplateProgram(source: source, maximum_input: maximum_input, maximum_nodes: maximum_nodes, structured: true).instructions();
+        let instructions = TemplateProgram(
+            source: source,
+            maximum_input: maximum_input,
+            maximum_nodes: maximum_nodes,
+            structured: true
+        ).instructions();
         confirm source.split(Utf8Decoded([byte(0)]).string()).size() == 1
             else throw InvalidHtmlTemplate.because("NUL in source");
         let plan = instructions.reduce(HtmlTemplatePlan()) -> previous, instruction {
@@ -160,7 +173,11 @@ hidden object HtmlTemplatePlan {
         };
         ^context = following;
         ^items = items.prefix(
-            HtmlTemplateInstruction(text: instruction.text(), variable: instruction.variable(), quotes: quotes)
+            HtmlTemplateInstruction(
+                text: instruction.text(),
+                variable: instruction.variable(),
+                quotes: quotes
+            )
         );
     }
 

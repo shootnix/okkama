@@ -167,7 +167,9 @@ test "empty library permits zero and rejects negative bounds" {
 }
 
 test "a library reads a map of templates by name" {
-    let library = TemplateLibrary(["item": TextTemplate("- {{title}}"), "head": TextTemplate("Order")]);
+    let library = TemplateLibrary(
+        ["item": TextTemplate("- {{title}}"), "head": TextTemplate("Order")]
+    );
     test.ok(library.membership("item"));
     test.is(library.template("head").source(), "Order");
     test.ok(!library.membership("tail"));

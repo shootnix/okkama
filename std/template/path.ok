@@ -39,7 +39,11 @@ object TemplatePath does Comparing<TemplatePath> {
     }
 
     TemplatePath(segments is Sequencing<string>, maximum_segments is int, maximum_length is int) {
-        origin = TemplatePathSnapshot(source: segments, maximum_segments: maximum_segments, maximum_length: maximum_length).items();
+        origin = TemplatePathSnapshot(
+            source: segments,
+            maximum_segments: maximum_segments,
+            maximum_length: maximum_length
+        ).items();
     }
 
     segments() is Sequencing<string> {
@@ -97,7 +101,11 @@ object TemplatePathFromString {
         confirm origin.length() <= maximum_length else throw TemplatePathLimitExceeded.exceeded;
         confirm origin != "" && origin != "."
             else throw InvalidTemplatePath.because("empty or reserved template path");
-        TemplatePath(segments: origin.split("."), maximum_segments: maximum_segments, maximum_length: maximum_length);
+        TemplatePath(
+            segments: origin.split("."),
+            maximum_segments: maximum_segments,
+            maximum_length: maximum_length
+        );
     }
 }
 
@@ -195,7 +203,10 @@ test "template paths reject syntax and resource bounds" {
     catch error is InvalidTemplatePath {
         true;
     });
-    test.is(TemplatePath(segments: ["é", "😀"], maximum_segments: 2, maximum_length: 3).string(), "é.😀");
+    test.is(
+        TemplatePath(segments: ["é", "😀"], maximum_segments: 2, maximum_length: 3).string(),
+        "é.😀"
+    );
     test.ok(try {
         TemplatePath(segments: ["é", "😀"], maximum_segments: 2, maximum_length: 2);
         false;

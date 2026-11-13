@@ -341,8 +341,13 @@ hidden object EventLog does HandlingHtmlEvent {
                 attribute.name();
             }
         };
-        seen.replace(@string(seen.value()..., "<" + event.name() + "[" + names.join(",") + "]"
-            + if event.self_closing() { "/>"; } else { ">"; }));
+        seen.replace(@string(seen.value()..., "<" + event.name() + "[" + names.join(",") + "]" +
+            if event.self_closing() {
+                "/>";
+            }
+            else {
+                ">";
+            }));
     }
 
     handle(event is EndingHtmlTag) is void {
@@ -372,7 +377,9 @@ hidden object EventLog does HandlingHtmlEvent {
 
 test "events come in source order, names lowercased, references decoded" {
     let log = EventLog();
-    for HtmlEvents(origin: "<!DOCTYPE html><P Class='a &amp; b' hidden>Fish &amp; chips<br/><!-- c --></p>") -> event {
+    for HtmlEvents(
+        origin: "<!DOCTYPE html><P Class='a &amp; b' hidden>Fish &amp; chips<br/><!-- c --></p>"
+    ) -> event {
         event.dispatch(log);
     }
     test.is(log.events(), [

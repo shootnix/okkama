@@ -162,7 +162,10 @@ test "template binding errors retain path and budget contracts" {
         true;
     });
     test.ok(try {
-        TemplateBindings(values: [TemplateBinding(path: TemplatePath("a"), value: "")], maximum_bindings: 0);
+        TemplateBindings(
+            values: [TemplateBinding(path: TemplatePath("a"), value: "")],
+            maximum_bindings: 0
+        );
         false;
     }
     catch error is TemplateBindingLimitExceeded {

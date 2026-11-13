@@ -205,7 +205,11 @@ hidden object TemplateSectionRun {
                 else {
                     if node.kind() == TemplateTreeKind.variable {
                         output.append(
-                            JsonTemplateStrings(origin: data, maximum_members: maximum_members, maximum_output: output.remaining()).string(
+                            JsonTemplateStrings(
+                                origin: data,
+                                maximum_members: maximum_members,
+                                maximum_output: output.remaining()
+                            ).string(
                                 node.text()
                             )
                         );
@@ -265,7 +269,9 @@ hidden object TemplateOutputMeter {
     TemplateOutputMeter(maximum is int) {
         confirm maximum >= 0 else throw InvalidTemplateLimits.invalid;
         self.maximum = maximum;
-        count = ByteBuffer(IntegerBytes(value: 0, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes());
+        count = ByteBuffer(
+            IntegerBytes(value: 0, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes()
+        );
     }
 
     remaining() is int {
