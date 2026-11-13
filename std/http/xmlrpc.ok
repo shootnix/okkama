@@ -1,5 +1,20 @@
 module http/xmlrpc v1.0.0;
 
+// XML-RPC over HTTP: values, calls, a client and a handler.
+//
+//     let rpc = XmlRpcClient(origin: HttpClient(), endpoint: ParsedUrl("https://example.com/RPC2").parts(), limits: XmlRpcLimits());
+//     let result = await rpc.result(XmlRpcCall(method: "sum", parameters: [XmlRpcInteger(2), XmlRpcInteger(3)]));
+//     match result.kind() {
+//         case XmlRpcResultKind.success { result.value(); }
+//         case XmlRpcResultKind.fault { result.fault()::Fault::code; }
+//     }
+//
+// Values are the XML-RPC types: int, boolean, string, double (kept as exact
+// decimal text when read), dateTime.iso8601 (local, whole seconds), base64,
+// array, struct and, when the limits allow it, nil. Everything read is bounded
+// by XmlRpcLimits: depth 64, 4096 values, 1 MiB of text and 1 MiB of binary by
+// default. XmlRpcHandling answers POSTs on one path with a XmlRpcCalling.
+
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "numbers/bigint" take BigInt;
@@ -29,113 +44,151 @@ import "http/target" take AbsoluteTarget, RequestTargetKind;
 import "url/value" take UrlParts;
 import "io/decorators" take InvalidReading;
 
+// The kind of an XML-RPC value.
 enum XmlRpcKind = (integer, boolean, text, floating, datetime, binary, array, structure, nil_value);
 
+// A result is a value or a fault.
 enum XmlRpcResultKind = (success, fault);
 
+// A document or value that is not valid XML-RPC; reason says why.
 enum InvalidXmlRpc is Error = (because(reason is string));
 
+// A call or response over a limit; kind says which.
 enum XmlRpcLimitExceeded is Error = (kind(kind is string));
 
+// The value of a fault, or the fault of a success, was asked for.
 enum WrongXmlRpcResult is Error = (mismatch);
 
+// The endpoint answered with a status other than 2xx.
 enum XmlRpcHttpFailed is Error = (status(status is int));
 
 // Broad values cooperate through one typed event; no downcast or role escape.
 role XmlRpcValue {
+    // Which kind it is.
     kind() is XmlRpcKind;
+    // Calls the writer's one callback for its kind.
     print(to is XmlRpcWriting) is void;
 }
 
+// Something that takes XML-RPC values one kind at a time.
 role XmlRpcWriting {
+    // An int.
     integer(value is int) is void;
+    // A boolean.
     boolean(value is bool) is void;
+    // A string.
     text(value is string) is void;
+    // A double.
     floating(value is Decimal) is void;
+    // A dateTime.iso8601.
     datetime(value is LocalDateTime) is void;
+    // A base64 value.
     binary(value is @byte) is void;
+    // An array's values.
     elements(values is Sequencing<XmlRpcValue>) is void;
+    // A struct's members.
     members(values is Sequencing<XmlRpcMember>) is void;
+    // A nil.
     nil_value() is void;
 }
 
+// An XML-RPC int (32-bit).
 object XmlRpcInteger does XmlRpcValue {
     has origin is int;
 
+    // The value.
     XmlRpcInteger(value is int) {
         confirm value >= -2147483648 && value <= 2147483647
             else throw InvalidXmlRpc.because("32-bit integer required");
         origin = value;
     }
 
+    // The value.
     int() is int {
         origin;
     }
 
+    // XmlRpcKind.integer.
     kind() is XmlRpcKind {
         XmlRpcKind.integer;
     }
 
+    // Calls the writer's integer callback.
     print(to is XmlRpcWriting) is void {
         to.integer(origin);
     }
 }
 
+// An XML-RPC boolean.
 object XmlRpcBoolean does XmlRpcValue {
     has origin is bool;
 
+    // true or false.
     XmlRpcBoolean(value is bool) {
         origin = value;
     }
 
+    // The value.
     bool() is bool {
         origin;
     }
 
+    // XmlRpcKind.boolean.
     kind() is XmlRpcKind {
         XmlRpcKind.boolean;
     }
 
+    // Calls the writer's boolean callback.
     print(to is XmlRpcWriting) is void {
         to.boolean(origin);
     }
 }
 
+// An XML-RPC string.
 object XmlRpcText does XmlRpcValue {
     has origin is string;
 
+    // The text.
     XmlRpcText(value is string) {
         origin = value;
     }
 
+    // The text.
     string() is string {
         origin;
     }
 
+    // XmlRpcKind.text.
     kind() is XmlRpcKind {
         XmlRpcKind.text;
     }
 
+    // Calls the writer's text callback.
     print(to is XmlRpcWriting) is void {
         to.text(origin);
     }
 }
 
+// An XML-RPC double, from a float.
 object XmlRpcFloat does XmlRpcValue {
     has origin is float;
 
+    // The value; it is written as its decimal text.
     XmlRpcFloat(value is float) {
         origin = value;
     }
 
+    // The value.
     float() is float {
         origin;
     }
 
+    // XmlRpcKind.floating.
     kind() is XmlRpcKind {
         XmlRpcKind.floating;
     }
 
+    // Calls the writer's floating callback.
     print(to is XmlRpcWriting) is void {
         to.floating(Decimal(origin.string()));
     }
@@ -145,6 +198,7 @@ object XmlRpcFloat does XmlRpcValue {
 object XmlRpcDouble does XmlRpcValue {
     has origin is Decimal;
 
+    // The value.
     XmlRpcDouble(value is Decimal) {
         confirm value.order(Decimal("1.7976931348623157e308")) != Order.greater
             && value.order(Decimal("-1.7976931348623157e308")) != Order.less
@@ -152,64 +206,79 @@ object XmlRpcDouble does XmlRpcValue {
         origin = value;
     }
 
+    // The value.
     decimal() is Decimal {
         origin;
     }
 
+    // XmlRpcKind.floating.
     kind() is XmlRpcKind {
         XmlRpcKind.floating;
     }
 
+    // Calls the writer's floating callback.
     print(to is XmlRpcWriting) is void {
         to.floating(origin);
     }
 }
 
+// An XML-RPC dateTime.iso8601.
 object XmlRpcDateTime does XmlRpcValue {
     has origin is LocalDateTime;
 
+    // A local date-time in whole seconds; InvalidXmlRpc otherwise.
     XmlRpcDateTime(value is LocalDateTime) {
         confirm value.time()::Clock::nanosecond == 0
             else throw InvalidXmlRpc.because("whole local seconds required");
         origin = value;
     }
 
+    // The value.
     local_date_time() is LocalDateTime {
         origin;
     }
 
+    // XmlRpcKind.datetime.
     kind() is XmlRpcKind {
         XmlRpcKind.datetime;
     }
 
+    // Calls the writer's datetime callback.
     print(to is XmlRpcWriting) is void {
         to.datetime(origin);
     }
 }
 
+// An XML-RPC base64 value.
 object XmlRpcBinary does XmlRpcValue {
     has origin is @byte;
 
+    // The bytes.
     XmlRpcBinary(value is @byte) {
         origin = value;
     }
 
+    // The bytes.
     bytes() is @byte {
         origin;
     }
 
+    // XmlRpcKind.binary.
     kind() is XmlRpcKind {
         XmlRpcKind.binary;
     }
 
+    // Calls the writer's binary callback.
     print(to is XmlRpcWriting) is void {
         to.binary(origin);
     }
 }
 
+// An XML-RPC array.
 object XmlRpcArray does XmlRpcValue {
     has origin is @XmlRpcValue;
 
+    // The values, at most 4096.
     XmlRpcArray(values is Sequencing<XmlRpcValue>) {
         let count = values.size();
         confirm count >= 0 && count <= 4096 else throw XmlRpcLimitExceeded.kind("container_items");
@@ -230,40 +299,49 @@ object XmlRpcArray does XmlRpcValue {
         origin = copied;
     }
 
+    // The values.
     values() is Sequencing<XmlRpcValue> {
         origin;
     }
 
+    // XmlRpcKind.array.
     kind() is XmlRpcKind {
         XmlRpcKind.array;
     }
 
+    // Calls the writer's elements callback.
     print(to is XmlRpcWriting) is void {
         to.elements(origin);
     }
 }
 
+// A struct member: a name and a value.
 object XmlRpcMember {
     has name is string;
     has value is XmlRpcValue;
 
+    // name holding value.
     XmlRpcMember(name is string, value is XmlRpcValue) {
         self.name = name;
         self.value = value;
     }
 
+    // Its name.
     name() is string {
         name;
     }
 
+    // Its value.
     value() is XmlRpcValue {
         value;
     }
 }
 
+// An XML-RPC struct.
 object XmlRpcStruct does XmlRpcValue {
     has origin is @XmlRpcMember;
 
+    // The members, at most 4096; InvalidXmlRpc for a repeated name.
     XmlRpcStruct(values is Sequencing<XmlRpcMember>) {
         let count = values.size();
         confirm count >= 0 && count <= 4096 else throw XmlRpcLimitExceeded.kind("container_items");
@@ -314,35 +392,44 @@ object XmlRpcStruct does XmlRpcValue {
         origin = copied;
     }
 
+    // The members, in order.
     values() is Sequencing<XmlRpcMember> {
         origin;
     }
 
+    // XmlRpcKind.structure.
     kind() is XmlRpcKind {
         XmlRpcKind.structure;
     }
 
+    // Calls the writer's members callback.
     print(to is XmlRpcWriting) is void {
         to.members(origin);
     }
 }
 
+// The nil extension; only read and written when the limits enable it.
 object XmlRpcNil does XmlRpcValue {
+    // nil.
     XmlRpcNil();
 
+    // XmlRpcKind.nil_value.
     kind() is XmlRpcKind {
         XmlRpcKind.nil_value;
     }
 
+    // Calls the writer's nil_value callback.
     print(to is XmlRpcWriting) is void {
         to.nil_value();
     }
 }
 
+// A method call: a name and parameters.
 object XmlRpcCall {
     has method is string;
     has parameters is @XmlRpcValue;
 
+    // Calls method with parameters.
     XmlRpcCall(method is string, parameters is Sequencing<XmlRpcValue>) {
         XmlRpcMethod(method);
         self.method = method;
@@ -354,10 +441,12 @@ object XmlRpcCall {
         self.parameters = copied;
     }
 
+    // The method name.
     method() is string {
         method;
     }
 
+    // The parameters.
     parameters() is Sequencing<XmlRpcValue> {
         parameters;
     }
@@ -381,16 +470,19 @@ hidden object XmlRpcMethod {
     }
 }
 
+// A fault: a code and a message.
 object XmlRpcFault {
     has code is int;
     has message is string;
 
+    // The fault.
     XmlRpcFault(code is int, message is string) {
         XmlRpcInteger(code);
         self.code = code;
         self.message = message;
     }
 
+    // The code and the message.
     cap Fault {
         code is int {
             code;
@@ -402,9 +494,13 @@ object XmlRpcFault {
     }
 }
 
+// What a call returned: a value or a fault.
 role XmlRpcResult {
+    // Success or fault.
     kind() is XmlRpcResultKind;
+    // The value; WrongXmlRpcResult for a fault.
     value() is XmlRpcValue;
+    // The fault; WrongXmlRpcResult for a success.
     fault() is XmlRpcFault;
 }
 
@@ -448,10 +544,12 @@ hidden object XmlRpcFailure does XmlRpcResult {
     }
 }
 
+// How deep and large a call or response may be.
 object XmlRpcLimits {
     has depth, values, text_bytes, binary_bytes is int;
     has nil_enabled is bool;
 
+    // Depth 64, 4096 values, 1 MiB of text, 1 MiB of binary, no nil.
     XmlRpcLimits() {
         depth = 64;
         values = 4096;
@@ -460,6 +558,7 @@ object XmlRpcLimits {
         nil_enabled = false;
     }
 
+    // The limits as given, without nil.
     XmlRpcLimits(depth is int, values is int, text_bytes is BigInt, binary_bytes is BigInt) {
         XmlRpcBudget(
             depth: depth,
@@ -474,6 +573,7 @@ object XmlRpcLimits {
         nil_enabled = false;
     }
 
+    // The limits as given; nil_enabled allows nil.
     XmlRpcLimits(
         depth is int,
         values is int,
@@ -494,14 +594,17 @@ object XmlRpcLimits {
         self.nil_enabled = nil_enabled;
     }
 
+    // Bytes of text in all.
     text_bytes() is BigInt {
         BigInt(text_bytes);
     }
 
+    // Bytes of binary in all.
     binary_bytes() is BigInt {
         BigInt(binary_bytes);
     }
 
+    // The largest document these limits allow, at most 16 MiB.
     wire_bytes() is int {
         let derived = text_bytes * 6 + ((binary_bytes + 2) / 3).int() * 4 + values * 128 + 1024;
         if derived < 16777216 {
@@ -512,6 +615,7 @@ object XmlRpcLimits {
         }
     }
 
+    // The depth, the number of values and whether nil is allowed.
     cap Limits {
         depth is int {
             depth;
@@ -809,15 +913,18 @@ hidden object XmlRpcDateText {
     }
 }
 
+// A call written as an XML-RPC document.
 object XmlRpcCallWire {
     has origin is XmlRpcCall;
     has limits is XmlRpcLimits;
 
+    // origin within limits.
     XmlRpcCallWire(origin is XmlRpcCall, limits is XmlRpcLimits) {
         self.origin = origin;
         self.limits = limits;
     }
 
+    // The document.
     bytes() is @byte {
         let wire = XmlRpcWire(limits);
         wire.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?><methodCall>");
@@ -1248,15 +1355,18 @@ hidden object XmlRpcParsing {
     }
 }
 
+// A call read from an XML-RPC document.
 object ParsedXmlRpcCall {
     has bytes is @byte;
     has limits is XmlRpcLimits;
 
+    // bytes to read within limits.
     ParsedXmlRpcCall(bytes is @byte, limits is XmlRpcLimits) {
         self.bytes = bytes;
         self.limits = limits;
     }
 
+    // The call; InvalidXmlRpc for a document that is not one.
     call() is XmlRpcCall {
         XmlRpcParsing(bytes: bytes, limits: limits).call();
     }
@@ -1508,15 +1618,20 @@ hidden object XmlRpcFaultScalar does XmlRpcWriting {
     }
 }
 
+// Something that answers XML-RPC calls.
 role XmlRpcCalling {
+    // The result of call.
     async result(call is XmlRpcCall) is XmlRpcResult;
 }
 
+// Calls methods on an XML-RPC endpoint.
 object XmlRpcClient does XmlRpcCalling {
     has origin is Exchanging;
     has endpoint is UrlParts;
     has limits is XmlRpcLimits;
 
+    // Posts to endpoint through origin, within limits; InvalidXmlRpc unless
+    // endpoint is http or https.
     XmlRpcClient(origin is Exchanging, endpoint is UrlParts, limits is XmlRpcLimits) {
         let parts = endpoint;
         confirm (parts::Parts::scheme == "http" || parts::Parts::scheme == "https")
@@ -1528,6 +1643,8 @@ object XmlRpcClient does XmlRpcCalling {
         self.limits = limits;
     }
 
+    // Posts call and reads the result; XmlRpcHttpFailed for a status other than
+    // 2xx.
     async result(call is XmlRpcCall) is XmlRpcResult {
         let bytes = XmlRpcCallWire(origin: call, limits: limits).bytes();
         let request = Request(
@@ -1610,11 +1727,13 @@ hidden object XmlRpcMedia {
     }
 }
 
+// A handler that answers XML-RPC calls on one path.
 object XmlRpcHandling does Handling {
     has path is string;
     has calling is XmlRpcCalling;
     has limits is XmlRpcLimits;
 
+    // Answers POSTs to path with calling, within limits.
     XmlRpcHandling(path is string, calling is XmlRpcCalling, limits is XmlRpcLimits) {
         confirm path != ""
             && path.slice(0, 1) == "/"
@@ -1626,6 +1745,8 @@ object XmlRpcHandling does Handling {
         self.limits = limits;
     }
 
+    // 200 with the result; 404 on another path, 405 for another method, 415,
+    // 413 or 400 for a body that is not a call.
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
         let kind = request::Head::target.kind();
         let requested = if kind == RequestTargetKind.origin {
