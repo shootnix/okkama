@@ -107,8 +107,7 @@ impl Heap {
         use Native::*;
         if n == DbCapture {
             let kind = self
-                .integer(a[0])?
-                .to_i64()
+                .int64(a[0])?
                 .filter(|n| (0..=6).contains(n))
                 .ok_or_else(|| invalid(n))?;
             return Ok(self.db_new(DbHandle::Capture(Capture {
@@ -122,7 +121,7 @@ impl Heap {
         ) {
             // Read and validate arguments before borrowing mutable capture state.
             let kind = if n == DbCaptureEmit {
-                self.integer(a[1])?.to_i64()
+                self.int64(a[1])?
             } else {
                 None
             };

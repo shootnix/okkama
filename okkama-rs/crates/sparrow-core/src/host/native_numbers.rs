@@ -117,12 +117,7 @@ impl Heap {
             BigintBits => return self.allocate(BigInt::from(left.bits())).map(Outcome::Value),
             BigintCanonical => return self.allocate_text(left.to_string()).map(Outcome::Value),
             BigintPower => {
-                let big = |slot| {
-                    self.integer(slot).map(|n| match n {
-                        Integer::Small(n) => BigInt::from(n),
-                        Integer::Big(n) => (*n).clone(),
-                    })
-                };
+                let big = |slot| self.bigint(slot).map(std::borrow::Cow::into_owned);
                 let exponent = big(args[1])?;
                 let maximum = big(args[2])?;
                 if exponent.is_negative() {

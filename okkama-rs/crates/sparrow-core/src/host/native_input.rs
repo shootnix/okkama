@@ -102,7 +102,7 @@ impl Heap {
             let _ = okkama_runtime_core::stdout::before_input();
             let count = if n == StdinRead {
                 use num_traits::ToPrimitive;
-                let limit = crate::host::native_file::big(self.integer(a[0])?);
+                let limit = self.bigint(a[0])?.into_owned();
                 if limit <= 0.into() {
                     return Err(fail(
                         n,
@@ -130,7 +130,7 @@ impl Heap {
             None
         };
         let count = if n == InputStateInputStateTake {
-            self.integer(a[1])?.to_i64()
+            self.int64(a[1])?
         } else {
             None
         };

@@ -3,7 +3,7 @@ use crate::host::{
     Error,
     handle::Handle,
     ProviderError,
-    native_file::{RawFile, big},
+    native_file::RawFile,
     native_fs::{fail, host},
     *,
 };
@@ -260,7 +260,7 @@ impl Heap {
             if bytes.is_empty() || bytes.contains(&0) {
                 return Err(fail(n, "invalid_input", "Invalid file path"));
             }
-            let flags = match self.integer(a[1])?.to_i64() {
+            let flags = match self.int64(a[1])? {
                 Some(0) => 1,
                 Some(1) => 2 | 4 | 8,
                 Some(2) => 2 | 4 | 16,
@@ -343,7 +343,7 @@ impl Heap {
         let cwd = self.working_directory()?;
         match n {
             FsFileStateRead => {
-                let limit = big(self.integer(a[1])?);
+                let limit = self.bigint(a[1])?.into_owned();
                 if limit <= 0.into() {
                     return Err(fail(n, "invalid_input", "Read limit must be positive"));
                 }
@@ -391,7 +391,7 @@ impl Heap {
             }
             FsFileStateReadLines => {
                 state.prepare(n, &cwd, true, false)?;
-                let target = self.integer(a[1])?.to_i64().map_or(1 << 26, |v| v.clamp(1, 1 << 26)) as usize;
+                let target = self.int64(a[1])?.map_or(1 << 26, |v| v.clamp(1, 1 << 26)) as usize;
                 let needle = encode(n, "\n", &state.encoding)?;
                 let unit = needle.len();
                 while state.buffer.len() - state.start < target && !state.eof {
@@ -469,8 +469,7 @@ impl Heap {
             }
             FsFileStateLocked => {
                 let mode = self
-                    .integer(a[1])?
-                    .to_i64()
+                    .int64(a[1])?
                     .filter(|v| (0..=1).contains(v))
                     .ok_or_else(|| fail(n, "invalid_input", "Invalid lock mode"))?;
                 let channel = state.opened(n, &cwd)?;
@@ -498,7 +497,7 @@ impl Heap {
                     if state.flags & 2 == 0 {
                         return Err(fail(n, "invalid_input", "File is not writable"));
                     }
-                    let size = big(self.integer(a[1])?);
+                    let size = self.bigint(a[1])?.into_owned();
                     if size.sign() == num_bigint::Sign::Minus {
                         return Err(fail(n, "invalid_input", "Negative truncate size"));
                     }
@@ -518,10 +517,9 @@ impl Heap {
                             .map_err(|e| host(n, e))? as i64,
                     ));
                 }
-                let offset = big(self.integer(a[1])?);
+                let offset = self.bigint(a[1])?.into_owned();
                 let origin = self
-                    .integer(a[2])?
-                    .to_i64()
+                    .int64(a[2])?
                     .filter(|v| (0..=2).contains(v))
                     .ok_or_else(|| fail(n, "invalid_input", "Invalid seek origin"))?;
                 let file = state.opened(n, &cwd)?.open(n)?;
@@ -546,13 +544,11 @@ impl Heap {
                     return Err(fail(n, "invalid_input", "File already has a live lock"));
                 }
                 let mode = self
-                    .integer(a[1])?
-                    .to_i64()
+                    .int64(a[1])?
                     .filter(|v| (0..=1).contains(v))
                     .ok_or_else(|| fail(n, "invalid_input", "Invalid lock mode"))?;
                 let wait = self
-                    .integer(a[2])?
-                    .to_i64()
+                    .int64(a[2])?
                     .filter(|v| (0..=1).contains(v))
                     .ok_or_else(|| fail(n, "invalid_input", "Invalid lock waiting mode"))?;
                 if state.flags & if mode == 0 { 1 } else { 2 } == 0 {

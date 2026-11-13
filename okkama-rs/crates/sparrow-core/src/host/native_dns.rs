@@ -122,7 +122,7 @@ impl Heap {
     pub(crate) fn native_dns(&mut self, n: Native, a: &[Slot]) -> Result<Outcome, Error> {
         let source = self.text(a[0])?.to_owned();
         let future = if n == Native::NetworkDnsAddresses {
-            let port = self.integer(a[1])?.to_i64();
+            let port = self.int64(a[1])?;
             self.native_io(async move {
                 if source.is_empty()
                     || source.len() > 254

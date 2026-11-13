@@ -311,7 +311,7 @@ impl Heap {
                 state.commands.push(self.process_command(n, a)?);
                 return Ok(yes);
             }
-            let limit = crate::host::native_file::big(self.integer(a[2])?);
+            let limit = self.bigint(a[2])?.into_owned();
             if limit <= 0.into() {
                 return Err(fail(n, "invalid_input", "Capture limit must be positive"));
             }
@@ -414,7 +414,7 @@ impl Heap {
                 child.wait().await.map(Status).map_err(|e| host(n, e))
             })?),
             ProcessProcessStateSignal => {
-                let signal = match self.integer(a[1])?.to_i64() {
+                let signal = match self.int64(a[1])? {
                     Some(0) => rustix::process::Signal::INT,
                     Some(1) => rustix::process::Signal::TERM,
                     Some(2) => rustix::process::Signal::KILL,
@@ -453,7 +453,7 @@ impl Heap {
                 Ok(Slot::small(bytes.len() as i64))
             }
             ProcessProcessStateOutputRead | ProcessProcessStateErrorsRead => {
-                let limit = crate::host::native_file::big(self.integer(a[1])?);
+                let limit = self.bigint(a[1])?.into_owned();
                 if limit <= 0.into() {
                     return Err(fail(n, "invalid_input", "Read limit must be positive"));
                 }
@@ -478,7 +478,7 @@ impl Heap {
                 Ok(self.native_byte_array(bytes)?)
             }
             ProcessProcessStateOutputReadAsync | ProcessProcessStateErrorsReadAsync => {
-                let limit = crate::host::native_file::big(self.integer(a[1])?);
+                let limit = self.bigint(a[1])?.into_owned();
                 if limit <= 0.into() {
                     return Err(fail(n, "invalid_input", "Read limit must be positive"));
                 }
@@ -585,7 +585,7 @@ impl Heap {
                 })?)
             }
             ProcessProcessStateCapture => {
-                let limit = crate::host::native_file::big(self.integer(a[2])?);
+                let limit = self.bigint(a[2])?.into_owned();
                 if limit <= 0.into() {
                     return Err(fail(n, "invalid_input", "Capture limit must be positive"));
                 }

@@ -231,8 +231,7 @@ impl Heap {
             }
             NetworkUnixListen => {
                 let backlog = self
-                    .integer(a[1])?
-                    .to_i64()
+                    .int64(a[1])?
                     .filter(|v| (0..=i32::MAX as i64).contains(v))
                     .ok_or_else(|| {
                         native(failure(

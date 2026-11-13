@@ -1653,7 +1653,7 @@ impl Heap {
     }
 
     fn sqlite_int(&self, n: Native, v: Slot) -> Result<i64, ProviderError> {
-        self.integer(v)?.to_i64().ok_or_else(|| {
+        self.int64(v)?.ok_or_else(|| {
             ProviderError::Native(fail(n, "invalid_input", "Invalid SQLite integer"))
         })
     }
@@ -1786,8 +1786,7 @@ impl Heap {
                 let path = self.native_bytes(a[0])?;
                 let (read_only, create, foreign) = (a[1].bits != 0, a[2].bits != 0, a[3].bits != 0);
                 let busy = self
-                    .integer(a[4])?
-                    .to_i64()
+                    .int64(a[4])?
                     .filter(|b| (0..=60000).contains(b));
                 let journal = self.text(a[5])?.to_owned();
                 let memory = a[6].bits != 0;
@@ -1912,8 +1911,7 @@ impl Heap {
                     .map_err(ProviderError::Native)?;
                 let operation: Operation = if prepared {
                     let id = self
-                        .integer(a[1])?
-                        .to_i64()
+                        .int64(a[1])?
                         .filter(|id| *id >= 1)
                         .ok_or_else(|| {
                             ProviderError::Native(fail(
@@ -1973,8 +1971,7 @@ impl Heap {
                 let rows = n == DatabaseSqlitePreparedRows;
                 let state = self.sqlite_connection(n, a[0])?;
                 let id = self
-                    .integer(a[1])?
-                    .to_i64()
+                    .int64(a[1])?
                     .filter(|id| *id >= 1)
                     .ok_or_else(|| {
                         ProviderError::Native(fail(n, "invalid_input", "Invalid SQLite bindings"))
@@ -2048,8 +2045,7 @@ impl Heap {
                 let blob = self.sqlite_int(n, a[1])?;
                 let offset = self.text(a[2])?.to_owned();
                 let size = self
-                    .integer(a[3])?
-                    .to_i64()
+                    .int64(a[3])?
                     .filter(|size| i32::try_from(*size).is_ok())
                     .unwrap_or(-1);
                 Ok(self.sqlite_request(
@@ -2069,7 +2065,7 @@ impl Heap {
                         "SQLite blob byte budget",
                     )));
                 }
-                let blob = self.integer(a[1])?.to_i64().unwrap_or(0);
+                let blob = self.int64(a[1])?.unwrap_or(0);
                 let offset = self.text(a[2])?.to_owned();
                 Ok(self.sqlite_request(
                     n,
@@ -2093,8 +2089,7 @@ impl Heap {
                 let state = self.sqlite_connection(n, a[0])?;
                 let backup = self.sqlite_int(n, a[1])?;
                 let pages = self
-                    .integer(a[2])?
-                    .to_i64()
+                    .int64(a[2])?
                     .filter(|pages| i32::try_from(*pages).is_ok())
                     .unwrap_or(-1);
                 Ok(self.sqlite_request(
@@ -2143,13 +2138,11 @@ impl Heap {
                     ))
                 };
                 let id = self
-                    .integer(a[1])?
-                    .to_i64()
+                    .int64(a[1])?
                     .filter(|id| *id >= 1)
                     .ok_or_else(invalid)?;
                 let maximum = self
-                    .integer(a[2])?
-                    .to_i64()
+                    .int64(a[2])?
                     .filter(|m| (1..=64).contains(m))
                     .ok_or_else(invalid)?;
                 Ok(self.sqlite_request(
@@ -2384,7 +2377,7 @@ impl Heap {
             DatabaseSqliteReplyCells => {
                 use crate::host::native_db::Cell as DbCell;
                 let reply = self.sqlite_reply(n, a[0])?;
-                let at = self.integer(a[1])?.to_i64();
+                let at = self.int64(a[1])?;
                 let cells: Vec<DbCell> = {
                     let data = reply.data.borrow();
                     let rows = data.rows.as_ref().filter(|_| reply.ok).ok_or_else(|| {
@@ -2419,7 +2412,7 @@ impl Heap {
             }
             DatabaseSqliteReplyKind | DatabaseSqliteReplyText | DatabaseSqliteReplyBytes => {
                 let reply = self.sqlite_reply(n, a[0])?;
-                let (row, column) = (self.integer(a[1])?.to_i64(), self.integer(a[2])?.to_i64());
+                let (row, column) = (self.int64(a[1])?, self.int64(a[2])?);
                 let cell = {
                     let data = reply.data.borrow();
                     let rows: &[Vec<Cell>] = if reply.ok {

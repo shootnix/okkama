@@ -151,8 +151,7 @@ impl Heap {
             return Ok(self.allocate_text(text)?);
         }
         let spec = match self
-            .integer(a[if n == FsPathChild { 2 } else { 1 }])?
-            .to_i64()
+            .int64(a[if n == FsPathChild { 2 } else { 1 }])?
         {
             Some(0) => Spec::Unix,
             Some(1) => Spec::Win32,

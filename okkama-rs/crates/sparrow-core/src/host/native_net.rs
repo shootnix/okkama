@@ -17,7 +17,7 @@ impl Heap {
     }
     pub(crate) fn native_net(&mut self, native: Native, args: &[Slot]) -> Result<Outcome, Error> {
         if native == Native::NetIpParse {
-            let family = match self.integer(args[0])?.to_i64() {
+            let family = match self.int64(args[0])? {
                 Some(1) => 1u8,
                 Some(2) => 2u8,
                 _ => {
@@ -29,8 +29,7 @@ impl Heap {
                 }
             };
             let Some(port) = self
-                .integer(args[2])?
-                .to_i64()
+                .int64(args[2])?
                 .filter(|n| (0..=65535).contains(n))
             else {
                 return self.net_failure(
