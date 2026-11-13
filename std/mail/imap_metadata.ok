@@ -48,7 +48,10 @@ object ImapStatusCode {
                 end = end.following(end.index() + 1);
             }
             let limits = ImapDataLimits();
-            let tokens = ImapDataLexing(origin: line.slice(start + 1, end.index()), initial: ImapDataTokens(limits)).tokens().entries();
+            let tokens = ImapDataLexing(
+                origin: line.slice(start + 1, end.index()),
+                initial: ImapDataTokens(limits)
+            ).tokens().entries();
             let tree = ImapDataTree(tokens: tokens, limits: limits);
             let result is MimeItems<ImapValue> = MimeItems();
             let position = MimePosition(0);
@@ -397,7 +400,10 @@ object ImapSearchResult {
                 let smallest = MimePosition(4294967295);
                 let largest = MimePosition(0);
                 for (0..identifiers.size()) -> index {
-                    let number = ImapUnsigned(origin: identifiers.item(index).string(), nonzero: true).int();
+                    let number = ImapUnsigned(
+                        origin: identifiers.item(index).string(),
+                        nonzero: true
+                    ).int();
                     if number < smallest.index() {
                         smallest = smallest.following(number);
                     }
