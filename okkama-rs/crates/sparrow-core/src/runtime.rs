@@ -80,6 +80,49 @@ impl Payload for Failure {
     }
 }
 
+/// A statistics event (#450): counted under a small key, named only when
+/// the report is written, so counting allocates nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Event {
+    /// A fixed name.
+    Named(&'static str),
+    /// An instruction run by the generic helper: `exec <mnemonic>`.
+    Exec(&'static str),
+    /// A Future of a function: `future <symbol>`.
+    Future(usize),
+    /// An intrinsic call: `intrinsic <symbol>`.
+    Intrinsic(usize),
+    /// A native call: `native <symbol>`.
+    Native(usize),
+    /// A resource of an object type: `resource <name>`.
+    Resource(usize),
+    /// A region instruction in a function: `region <mnemonic> in <symbol>`.
+    Region(&'static str, usize),
+    /// Compiling a function, microseconds: `compile <symbol>, microseconds`.
+    Compile(usize),
+    /// A function's machine code, bytes: `machine code <symbol>, bytes`.
+    MachineCode(usize),
+}
+impl Event {
+    /// The name the report prints, as counting used to spell it.
+    pub fn name(&self, program: &okkama_sparrow::Program) -> String {
+        let symbol = |function: usize| program.functions.get(function).map_or("?", |f| f.symbol.as_str());
+        match *self {
+            Event::Named(name) => name.to_string(),
+            Event::Exec(mnemonic) => format!("exec {mnemonic}"),
+            Event::Future(function) => format!("future {}", symbol(function)),
+            Event::Intrinsic(function) => format!("intrinsic {}", symbol(function)),
+            Event::Native(function) => format!("native {}", symbol(function)),
+            Event::Resource(object) => {
+                format!("resource {}", program.objects.get(object).map_or("?", |o| o.name.as_str()))
+            }
+            Event::Region(mnemonic, function) => format!("region {mnemonic} in {}", symbol(function)),
+            Event::Compile(function) => format!("compile {}, microseconds", symbol(function)),
+            Event::MachineCode(function) => format!("machine code {}, bytes", symbol(function)),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Runtime {
     pub heap: Heap,
@@ -115,7 +158,7 @@ pub struct Runtime {
     pub(crate) host: Option<Box<crate::host::Heap>>,
     pub io: crate::io::Io,
     /// Event counts by name when `SPARROW_CORE_STATS` is set (diagnostics).
-    pub stats: Option<Box<std::collections::HashMap<String, u64>>>,
+    pub stats: Option<Box<crate::word::FastMap<Event, u64>>>,
     /// When this runtime was made: `--stats` reports the run's wall time, so
     /// machine code ≈ run − compile − collection (#55).
     created: std::time::Instant,
@@ -219,7 +262,7 @@ impl Runtime {
         if !self.heap.needs_collection() {
             return;
         }
-        self.count(|_| "gc collection".into());
+        self.count(|| Event::Named("gc collection"));
         let started = self.heap.allocations.is_some().then(std::time::Instant::now);
         self.prune_spawned();
         let jit = &self.jit;
@@ -271,12 +314,9 @@ impl Runtime {
 
     /// Count an event (only when statistics are on).
     #[inline]
-    pub fn count(&mut self, event: impl FnOnce(&Runtime) -> String) {
-        if self.stats.is_some() {
-            let key = event(self);
-            if let Some(stats) = &mut self.stats {
-                *stats.entry(key).or_default() += 1;
-            }
+    pub fn count(&mut self, event: impl FnOnce() -> Event) {
+        if let Some(stats) = &mut self.stats {
+            *stats.entry(event()).or_default() += 1;
         }
     }
 
@@ -330,7 +370,13 @@ impl Runtime {
                     ])
             })
             .collect();
-        let mut entries: Vec<_> = stats
+        // Events are named now, not when counted (#450); events that read
+        // the same, such as two functions of one symbol, add up.
+        let mut named: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+        for (event, count) in stats.iter() {
+            *named.entry(event.name(program)).or_default() += count;
+        }
+        let mut entries: Vec<_> = named
             .iter()
             .chain(extra.iter().map(|(k, v)| (k, v)))
             .chain(helpers.iter().map(|(k, v)| (k, v)))
@@ -395,7 +441,7 @@ pub(crate) fn fatal(ctx: &mut Ctx, runtime: &mut Runtime, message: String) -> Wo
 pub extern "C" fn rt_allocate(ctx: *mut Ctx, words: u64) -> Word {
     let frame = frame_pointer!();
     let (ctx, runtime) = unsafe { runtime(ctx) };
-    runtime.count(|_| "allocation slow path".into());
+    runtime.count(|| Event::Named("allocation slow path"));
     if let (Some(limit), Some(used)) = (runtime.limits.memory, runtime.memory_used()) {
         // A small cell comes from a new page when its free list is empty.
         let bytes = match Heap::class_of(words as usize) {
@@ -668,7 +714,7 @@ pub extern "C" fn rt_native(ctx: *mut Ctx, function: u64, arguments: *const Word
     let (ctx, runtime) = unsafe { runtime(ctx) };
     // SAFETY: the caller's argument slot outlives the call; natives do not collect.
     let arguments = unsafe { std::slice::from_raw_parts(arguments, count as usize) };
-    runtime.count(|r| format!("native {}", r.loaded.program.functions[function as usize].symbol));
+    runtime.count(|| Event::Native(function as usize));
     // A panicking provider must not unwind through machine code: it stops the
     // run with an internal error and poisons the runtime (H-14).
     let called = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -826,7 +872,7 @@ pub extern "C" fn rt_closure(ctx: *mut Ctx, function: u64, captures: *const Word
 #[inline(never)]
 pub extern "C" fn rt_call_closure(ctx: *mut Ctx, closure: Word, arguments: *const Word, count: u64) -> Word {
     let (ctx_ref, runtime) = unsafe { runtime(ctx) };
-    runtime.count(|_| "closure call".into());
+    runtime.count(|| Event::Named("closure call"));
     let function = heap::payload(runtime.heap.header_of(closure)) as usize;
     let params = runtime.loaded.program.functions[function].params.len();
     let captured = params - count as usize;

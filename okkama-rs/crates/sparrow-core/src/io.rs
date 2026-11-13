@@ -135,7 +135,7 @@ impl Runtime {
             }
         }
         if !self.io.shared.pending.load(Ordering::Acquire) {
-            self.count(|_| "scheduler idle wait".into());
+            self.count(|| crate::runtime::Event::Named("scheduler idle wait"));
             let started = std::time::Instant::now();
             let shared = self.io.shared.clone();
             // An interruptible run wakes to look at its interrupt flag.
@@ -158,7 +158,7 @@ impl Runtime {
                 }
             });
             if let Some(stats) = &mut self.stats {
-                *stats.entry("scheduler idle wait, microseconds".into()).or_default() += started.elapsed().as_micros() as u64;
+                *stats.entry(crate::runtime::Event::Named("scheduler idle wait, microseconds")).or_default() += started.elapsed().as_micros() as u64;
             }
         }
         self.poll_io();
