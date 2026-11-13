@@ -1226,9 +1226,12 @@ impl Heap {
         crate::maps::begin_pass();
         let marking = self.allocations.is_some().then(std::time::Instant::now);
         let mut worklist = std::mem::take(&mut self.worklist);
+        // An object is marked when it is queued, not when it is traced
+        // (#438): one shared by many edges enters the worklist once.
         roots(&mut |word, repr| {
             if let Some(pointer) = repr.pointer(word) {
-                worklist.push(pointer);
+                // SAFETY: a root is a live object pointer.
+                unsafe { mark_and_queue(pointer, &mut worklist) };
             }
         });
         loop {
@@ -1240,7 +1243,8 @@ impl Heap {
                 if let Some(pointer) = repr.pointer(word)
                     && unsafe { *(pointer as *const u64) } & MARK == 0
                 {
-                    worklist.push(pointer);
+                    // SAFETY: an ephemeron value is a live object pointer.
+                    unsafe { mark_and_queue(pointer, &mut worklist) };
                     found = true;
                 }
             });
@@ -1279,15 +1283,13 @@ impl Heap {
     /// Mark everything reachable from the worklist.
     fn mark_reachable(&self, worklist: &mut Vec<Word>) {
         while let Some(object) = worklist.pop() {
-            // SAFETY: every pushed word is a live object pointer.
-            let header = unsafe { *(object as *const u64) };
-            if header & MARK != 0 {
-                continue;
-            }
-            unsafe { *(object as *mut u64) = header | MARK };
+            // SAFETY: every queued word is a live object pointer, marked when
+            // it was queued; the header's other bits are read without it.
+            let header = unsafe { *(object as *const u64) } & !MARK;
             let mut push = |word: Word, repr: Repr| {
                 if let Some(pointer) = repr.pointer(word) {
-                    worklist.push(pointer);
+                    // SAFETY: a traced field holds a live object pointer.
+                    unsafe { mark_and_queue(pointer, worklist) };
                 }
             };
             let fields = |layout: &[Repr], push: &mut dyn FnMut(Word, Repr)| {
@@ -1500,6 +1502,19 @@ unsafe fn owned_bytes(address: Word, header: u64) -> usize {
         PAYLOAD if unsafe { *((address + 8) as *const u64) } == 0 => 0,
         PAYLOAD => payload_bytes(unsafe { &**(*((address + 8) as *const u64) as *const Box<dyn Payload>) }),
         _ => 0,
+    }
+}
+
+/// Mark `object` and queue it for tracing, unless it is marked already
+/// (#438): each reachable object enters the worklist once.
+///
+/// SAFETY: `object` is a live object pointer.
+#[inline(always)]
+unsafe fn mark_and_queue(object: Word, worklist: &mut Vec<Word>) {
+    let header = unsafe { *(object as *const u64) };
+    if header & MARK == 0 {
+        unsafe { *(object as *mut u64) = header | MARK };
+        worklist.push(object);
     }
 }
 
