@@ -124,17 +124,40 @@ test "server policy has bounded defaults and refuses unsupported budgets" {
     test.is(policy.timeouts().keep_alive_timeout()::Span::seconds, 5.rat());
     test.is(policy.timeouts().headers_timeout()::Span::seconds, 30.rat());
     let both is Set<HttpVersion> = OrderedSet([HttpVersion.http_1_1, HttpVersion.http_2]);
-    let custom = ServerPolicy(protocols: both, limits: HttpLimits(), timeouts: ServerTimeouts(), connections: 1, ranges: 128);
+    let custom = ServerPolicy(
+        protocols: both,
+        limits: HttpLimits(),
+        timeouts: ServerTimeouts(),
+        connections: 1,
+        ranges: 128
+    );
     test.is(custom.protocols().size(), 2);
     test.throws(InvalidServerPolicy) {
-        ServerPolicy(protocols: both, limits: HttpLimits(), timeouts: ServerTimeouts(), connections: 0, ranges: 16);
+        ServerPolicy(
+            protocols: both,
+            limits: HttpLimits(),
+            timeouts: ServerTimeouts(),
+            connections: 0,
+            ranges: 16
+        );
     };
     let ancient is Set<HttpVersion> = OrderedSet([HttpVersion.http_1_0]);
     test.throws(InvalidServerPolicy) {
-        ServerPolicy(protocols: ancient, limits: HttpLimits(), timeouts: ServerTimeouts(), connections: 8, ranges: 16);
+        ServerPolicy(
+            protocols: ancient,
+            limits: HttpLimits(),
+            timeouts: ServerTimeouts(),
+            connections: 8,
+            ranges: 16
+        );
     };
     let second = Duration(seconds: 1);
     test.throws(InvalidServerPolicy) {
-        ServerTimeouts(headers: second, body_idle: second, keep_alive: Duration(seconds: -1), handling: second);
+        ServerTimeouts(
+            headers: second,
+            body_idle: second,
+            keep_alive: Duration(seconds: -1),
+            handling: second
+        );
     };
 }

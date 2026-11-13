@@ -199,7 +199,11 @@ object RobotsPolicy {
                 confirm group.value() < 256 else throw RobotsLimitExceeded.kind("groups");
                 confirm records.value().size() < 4096
                     else throw RobotsLimitExceeded.kind("records");
-                records.replace(records.value().prefix(RobotsRecord(name: name, value: token, group: group.value())));
+                records.replace(
+                    records.value().prefix(
+                        RobotsRecord(name: name, value: token, group: group.value())
+                    )
+                );
                 next;
             }
             if group.value() < 0 {
@@ -220,7 +224,14 @@ object RobotsPolicy {
                     confirm records.value().size() < 4096
                         else throw RobotsLimitExceeded.kind("records");
                     records.replace(
-                        records.value().prefix(RobotsRecord(name: name, value: value, group: group.value(), pattern: checked))
+                        records.value().prefix(
+                            RobotsRecord(
+                                name: name,
+                                value: value,
+                                group: group.value(),
+                                pattern: checked
+                            )
+                        )
                     );
                 }
             }
@@ -236,7 +247,13 @@ object RobotsPolicy {
                         else throw RobotsLimitExceeded.kind("records");
                     records.replace(
                         records.value().prefix(
-                            RobotsRecord(name: name, value: value, group: group.value(), patterns: [], delays: [checked])
+                            RobotsRecord(
+                                name: name,
+                                value: value,
+                                group: group.value(),
+                                patterns: [],
+                                delays: [checked]
+                            )
                         )
                     );
                 }
