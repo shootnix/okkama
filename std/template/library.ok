@@ -1,9 +1,11 @@
 module template/library v1.0.0;
 
-// Exact association between a nonempty Unicode name and a plain template.
-// Names are not paths: no trimming, case folding, normalization or I/O.
-// Declaration/lookup never compiles or renders the retained template.
-// Example: NamedTemplate("header", TextTemplate("Hello {{name}}"));
+// Named text templates, for partials of section templates.
+//
+//     let partials = TemplateLibrary(["item": TextTemplate("  - {{title}}\n")]);
+//     SectionTemplate(source: "{{#items}}{{>item}}{{/items}}", partials: partials);
+//
+// Names are exact: no trimming or case folding.
 
 import "collections/sequence" take Sequencing;
 import "template/compile" take TextTemplate;

@@ -1,30 +1,16 @@
 module template/sections v1.0.0;
 
-// Bounded JSON section template, entirely in Okkama. Construction binds source
-// and nonnegative budgets; string(data) compiles the complete tree before JSON
-// observation, then returns text only on success. No escaping or parent fallback.
-// Arrays iterate in order; objects render once. Truthy scalars render once as
-// current context; zero is true. False/null/empty text/empty array/absence are
-// false. Inverted blocks keep enclosing context. '.' selects the current item.
-// Each executed body costs one shared iteration, even an empty/inverted body.
-// Defaults: 10000 iterations, 1048576 UTF-8 output bytes, 1024 object members;
-// input/token/depth bounds are TemplateTree defaults. Partial tags anywhere in
-// the tree fail before data observation unless an explicit library is supplied.
-// Library constructors enable lazy reached-partial expansion; source catalog
-// entries compile with TemplateTree defaults. Flat TextTemplate budgets do not
-// apply. Default partial depth 32; each expansion costs one shared iteration.
-// Active section depth remains <=64 across partials; no indentation propagation.
-// write(data,destination) streams the same result in <=1024-scalar chunks. Each
-// contribution is byte-preflighted before writing. Successful prefixes survive
-// later errors; source/sink failures stop further work. Borrowed sinks are never
-// closed/flushed and no newline is added. No ambient file/module access.
-// Every custom JSON print must emit exactly one event; source errors propagate.
-// Temporary buffers close on all paths; sources are borrowed, never closed.
-// Streaming storage: eight-byte output meter + one byte per executed body + bounded member snapshots
-// and depth-bounded parser/visitor stacks and one scalar interpolation. string()
-// additionally owns its result buffer. Repeated rendering uses fresh budgets.
-// Contract: docs/std/template-sections-guide.md. Example: SectionTemplate("{{#.}}{{.}}{{/.}}").string(items).
-// Run: okkama run -t std/template/sections.ok
+// Section templates over JSON, in the Mustache style.
+//
+//     let order = SectionTemplate(
+//         source: "Order {{id}}:\n{{#items}}  - {{title}}\n{{/items}}{{^items}}  (empty)\n{{/items}}",
+//     );
+//     order.string(ParsedJson(text).root());
+//
+// `{{#name}}…{{/name}}` repeats over an array, renders once for an object or a
+// true value, and not at all for false, null, "", [] or a missing member;
+// `{{^name}}` is the opposite; `{{.}}` is the current item; `{{>name}}`
+// includes a template from the partials library. Nothing is escaped.
 
 import "template/library" take TemplateLibrary;
 import "template/tree" take TemplateTree, TemplateTreeNode, TemplateTreeKind;

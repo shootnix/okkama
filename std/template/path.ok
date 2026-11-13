@@ -1,25 +1,11 @@
 module template/path v1.0.0;
 
-// Immutable named template path: nonempty sequence of nonempty exact strings.
-// TemplatePath("user","name").string() -> "user.name".
-// Default budgets: 64 segments, 4096 Unicode scalars including separator dots;
-// optional maximum_segments/maximum_length override both, and must be >=0.
-// Source size() is observed once, bounds checked before item access, then indices
-// read once in order. The first invalid item stops reading. Source exceptions
-// propagate unchanged. Borrowed sources are never closed; snapshots outlive them.
-// No native state, I/O, environment access, reflection or owned resource.
+// Template paths: `user.name` as its parts.
 //
-// segments() retains identity; string() is diagnostic, not an identity encoding.
-// ["a.b"] and ["a","b"] have the same string but differ under order(). Direct
-// segments may contain literal dots, whitespace or Unicode normalization forms.
-// order() compares segments lexicographically, then length for equal prefixes.
-// Repeated observations never revisit the source. No trimming/case folding.
+//     TemplatePath("user", "name").string();                 // "user.name"
+//     TemplatePathFromString("user.name").path();
 //
-// FromString binds source lazily; negative configuration fails in construction.
-// value() checks length before splitting literal dots, then validates segments.
-// Empty source/segments and "." are invalid; template syntax reserves "." for
-// the current item. Parsing does not change the directly supplied segment API.
-// Run: okkama run -t std/template/path.ok
+// By default at most 64 parts and 4096 characters.
 
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;

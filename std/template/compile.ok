@@ -1,16 +1,16 @@
 module template/compile v1.0.0;
 
-// Parser migration contract: TemplateProgram(source, maximum_input,
-// maximum_nodes).instructions() performs bounded parsing in Okkama and returns
-// ordered immutable TemplateInstruction values (text()/variable()). Constructors
-// bind only; every observation parses afresh, with no native program cache.
-// Preserve the existing flat grammar, standalone comments, node accounting,
-// complete-before-lookup behavior and original scalar/CRLF diagnostics.
-// Maximum input is checked before scanning. Literal fragments are collected in
-// persistent lists and joined once per instruction, avoiding repeated prefix
-// copying. Diagnostics scan only the prefix preceding the offending position.
-// Private native UTF-8 byte sizing remains unchanged; grammar parsing does not
-// call runtime/template. Section/partial grammar comes after this migration.
+// Text templates: `{{name}}` filled from strings.
+//
+//     let greeting = TextTemplate("Hello, {{user.name}}! You have {{user.unread}} new messages.");
+//     greeting.string(["user.name": "Ada", "user.unread": "3"]);
+//     greeting.write(data: TemplateBindings(texts), destination: Stdout());
+//
+// Names are dotted paths; `{{! comment }}` is dropped. Nothing is escaped (use
+// template/html for HTML). The whole source is checked before any value is
+// looked up; a missing value is MissingTemplateValue. Sections and partials are
+// template/sections.
+
 import "template/model" take TemplateStrings, TemplateBindings;
 import "template/path" take TemplatePathFromString;
 import "collections/list" take List, EmptyList;

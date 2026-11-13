@@ -1,16 +1,11 @@
 module template/render v1.0.0;
 
-// Explicit command binding a bounded TextTemplate, nominal string data and a
-// borrowed text destination. Construction performs no compilation/lookup/write.
-// write() validates the complete source, then resolves contributions in order,
-// preflights each against the template's UTF-8 output budget, and writes chunks
-// <=1024 scalars (<=4096 UTF-8 bytes). No full result is accumulated here.
-// Successful prefixes remain on later failure; there is no rollback promise.
-// Sink/source errors propagate unchanged and stop later work. Repeated write()
-// renders afresh and appends again. Never adds a newline, flushes or closes.
-// No owned resource/destroy. The destination remains usable after this command.
-// Example: TemplateOutput(template,data,Utf8Output(origin:buffer.writing())).write().
-// Run: okkama run -t std/template/render.ok
+// Writing a filled text template piece by piece to a destination, without
+// building the whole text.
+//
+//     TemplateOutput(origin: template, data: bindings, destination: Stdout()).write();
+//
+// What was written before a failure stays written.
 
 import "template/compile" take TextTemplate;
 import "template/model" take TemplateStrings, TemplateBindings;

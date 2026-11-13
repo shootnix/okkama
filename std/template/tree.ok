@@ -1,17 +1,12 @@
 module template/tree v1.0.0;
 
-// Immutable structured source program, compiled entirely in Okkama. Constructors
-// bind only; nodes() validates the complete source anew before returning a tree.
-// Default budgets: 1048576 input scalars, 20000 flat tokens (including closing
-// tags), 64 nested sections. All budgets are nonnegative; empty input accepts 0.
-// Grammar: flat TextTemplate syntax plus #/path sections, ^/path inverted
-// sections, current item '.', and static >name partials. Standalone structural
-// tags drop indentation and their following LF/CRLF. No data/library observation,
-// partial expansion, I/O, native parsing or cache. Returned nodes outlive us.
-// Errors retain original scalar/CRLF coordinates. Memory is bounded by the
-// input/token/depth budgets. TextTemplate still accepts only the flat grammar.
-// Example: TemplateTree("{{#users}}{{.}}{{/users}}").nodes().
-// Contract: docs/std/template-tree-guide.md. Run: okkama run -t std/template/tree.ok
+// The syntax tree of a section template: literals, variables, sections,
+// inverted sections and partials. SectionTemplate uses it.
+//
+//     for TemplateTree("{{#items}}{{name}}{{/items}}").nodes() -> node { node.kind(); }
+//
+// By default at most 1 Mi characters of source, 20000 tokens and sections
+// nested 64 deep.
 
 import "template/compile" take TemplateProgram, TemplateInstruction, TemplateFailure,
     InvalidTemplateLimits;

@@ -1,24 +1,12 @@
 module template/model v1.0.0;
 
-// Explicit immutable string data for plain template interpolation. No arbitrary
-// application objects, reflection, implicit JSON traversal, HTML trust or I/O.
-// TemplateBinding(TemplatePath("user","name"), "Ada") binds exact coordinates.
-// Its path()/string() expose those coordinates without parsing or escaping.
+// The strings a text template is filled with.
 //
-// TemplateBindings snapshots a Sequencing<TemplateBinding>; optional nonnegative
-// maximum_bindings defaults to 1024. Empty/zero is valid. size() is read once;
-// negative size/excess count fails before item access; then ascending items are
-// read exactly once. Duplicate validation observes the completed snapshot.
-// Path identity compares segment sequences: ["a.b"] differs from ["a","b"].
-// Borrowed sources are never closed. Source exceptions propagate unchanged.
+//     TemplateBindings(["user.name": "Ada"]);
+//     TemplateBindings(TemplateBinding(path: TemplatePath("user", "name"), value: "Ada"));
 //
-// string(path) returns a present value, including "", or MissingTemplateValue.
-// Repeated queries never revisit the source. Returned strings/paths outlive this
-// snapshot. Duplicate checking O(n²), lookup O(n), within the explicit item bound.
-// Values are retained strings, not copied buffers; count does not bound text
-// lengths. Compile/render objects supply independent source/output limits.
-// No native handles/external resources or destroy.
-// Run: okkama run -t std/template/model.ok
+// A value is looked up by its exact path; MissingTemplateValue when absent.
+// Values are plain strings: no objects, no reflection.
 
 import "template/path" take TemplatePath, TemplatePathFromString;
 

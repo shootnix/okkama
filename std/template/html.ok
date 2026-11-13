@@ -1,20 +1,14 @@
 module template/html v1.0.0;
 
-// Contextual HTML fragment template. Constructors bind only; each observation
-// validates the entire source before JSON lookup or output. Text and an explicit
-// whitelist of quoted ordinary attributes are the only interpolation contexts.
-// Text escapes &<>; attributes also escape both quotes through EscapedHtml.
-// No raw/trusted form, browser repair or sanitization of authored literal markup.
-// Strict balanced ASCII tags, depth <=64, safe comments/doctype and conservative
-// raw-element handling avoid ambiguous browser states. Foreign markup is rejected.
-// Default bounds: 65536 input scalars, 10000 instructions, 1048576 output bytes.
-// Output counts escaped UTF-8, streams <=1024 scalars per call and borrows the sink.
-// Owned temporary buffers close on errors; a late error can leave a written prefix.
-// Parsing is O(input * bounded name/depth); plan storage is bounded by nodes/input.
-// One scalar escape may use <=6 times its bounded input, no aggregate stream buffer.
-// Flat JSON variables/current item, comments and delimiter escapes only in this
-// slice. Sections and partials fail explicitly. No native parser/provider changes.
-// Contract: docs/std/template-html-guide.md. Run: okkama run -t std/template/html.ok
+// HTML templates that escape each value for where it lands.
+//
+//     let card = HtmlTemplate("<p title=\"{{.}}\">Hello, {{.}}</p>");
+//     card.string(Json("Ada & \"friends\""));   // <p title="Ada &amp; &quot;friends&quot;">…
+//
+// Values may go into text and into a whitelist of quoted ordinary attributes;
+// anywhere else, such as an event handler attribute, the template is refused
+// with InvalidHtmlTemplate before anything is written. The template's own
+// markup must be balanced; nothing is sanitized or repaired.
 
 import "template/compile" take TemplateProgram, TemplateInstruction, InvalidTemplateLimits;
 import "template/json" take JsonTemplateStrings;
