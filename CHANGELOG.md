@@ -33,6 +33,11 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   characters: 405 → 311 µs. Implemented by Codex, reviewed and verified by
   Claude.
 
+- **Writing to standard output no longer copies the bytes (#458).** Sparrow
+  wrote stdout and stderr from an owned copy of every byte array. It now
+  writes from the array itself. Writing 64 bytes: 37 → 28 ns; 64 KiB:
+  6.4 → 4.7 µs; a `writeln` of a short line: 188 → 162 ns.
+
 ## [0.5.7] — 2026-11-13
 
 0.5.7 removes the quadratic paths that the hardening audit found in
