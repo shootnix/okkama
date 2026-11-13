@@ -9,6 +9,7 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread::{JoinHandle, sleep, spawn};
 use std::time::{Duration, Instant};
 
@@ -25,6 +26,9 @@ struct App {
     engine: &'static str,
     child: Child,
     port: u16,
+    /// The program's stderr as it comes, read by `errors` (#556).
+    stderr: Arc<Mutex<String>>,
+    errors: Option<JoinHandle<()>>,
 }
 
 struct Ended {
@@ -51,14 +55,27 @@ impl App {
         if tls {
             command.arg("tls");
         }
-        let child = command
+        let mut child = command
             .env("OKKAMA_STDLIB_DIR", here.join("../../../std"))
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .expect("start okkama");
-        let mut app = App { engine, child, port };
+        let stderr = Arc::new(Mutex::new(String::new()));
+        let errors = child.stderr.take().map(|mut err| {
+            let stderr = Arc::clone(&stderr);
+            spawn(move || {
+                let mut chunk = [0u8; 4096];
+                while let Ok(read) = err.read(&mut chunk) {
+                    if read == 0 {
+                        break;
+                    }
+                    stderr.lock().expect("stderr").push_str(&String::from_utf8_lossy(&chunk[..read]));
+                }
+            })
+        });
+        let mut app = App { engine, child, port, stderr, errors };
         let deadline = Instant::now() + Duration::from_secs(180);
         while TcpStream::connect(("127.0.0.1", port)).is_err() {
             if let Some(status) = app.child.try_wait().expect("poll the program") {
@@ -94,6 +111,16 @@ impl App {
         })
     }
 
+    /// Wait until the slow request is being handled, not just connected (#556):
+    /// a fixed sleep let the signal win the race on a loaded machine.
+    fn slow_started(&self, limit: Duration) {
+        let deadline = Instant::now() + limit;
+        while !self.stderr.lock().expect("stderr").contains("slow started") {
+            assert!(Instant::now() < deadline, "{}: /slow never started", self.engine);
+            sleep(Duration::from_millis(50));
+        }
+    }
+
     /// Whether the program stops accepting connections within `limit`. A
     /// debug build compiles the drain on first use, so the limit is generous;
     /// a passing run returns as soon as a connection is refused.
@@ -116,9 +143,10 @@ impl App {
         if let Some(mut out) = self.child.stdout.take() {
             let _ = out.read_to_string(&mut stdout);
         }
-        if let Some(mut err) = self.child.stderr.take() {
-            let _ = err.read_to_string(&mut stderr);
+        if let Some(errors) = self.errors.take() {
+            let _ = errors.join();
         }
+        stderr.push_str(&self.stderr.lock().expect("stderr"));
         Ended { status, stdout, stderr }
     }
 
@@ -151,7 +179,7 @@ fn sigterm_drains_the_request_in_flight_and_listen_returns() {
         let hello = app.get("/").join().expect("hello thread").expect("hello answer");
         assert!(hello.starts_with("HTTP/1.1 200") && hello.ends_with("hello"), "{engine}: {hello}");
         let slow = app.get("/slow");
-        sleep(Duration::from_secs(1));
+        app.slow_started(Duration::from_secs(60));
         app.signal("TERM");
         assert!(app.refusing(Duration::from_secs(30)), "{engine}: still accepting after SIGTERM");
         let answer = slow.join().expect("slow thread").expect("slow answer");
@@ -167,7 +195,7 @@ fn a_second_signal_during_the_drain_ends_the_process_at_once() {
     for engine in engines() {
         let app = App::start(engine, 60, false);
         let slow = app.get("/slow");
-        sleep(Duration::from_secs(1));
+        app.slow_started(Duration::from_secs(60));
         app.signal("INT");
         assert!(app.refusing(Duration::from_secs(30)), "{engine}: still accepting after SIGINT");
         app.signal("INT");

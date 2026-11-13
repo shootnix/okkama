@@ -90,6 +90,11 @@ folding classes. It changes no public API.
 
 ### Fixed
 
+- **The SIGTERM drain test waits for the slow request instead of a second
+  (#556).** It slept a fixed second before signalling; on a loaded runner
+  the server had not taken `/slow` yet and the test read an empty answer.
+  `/slow` now says `slow started` on stderr and the test signals after it.
+
 - **The large-function compile-time test tolerates a slow CI sample (#554).**
   It failed on every macOS CI run since 0.5.6 with `lets` growing ×8.1–9.0
   against a ×8 bound. A probe on the same runner showed every compiler phase

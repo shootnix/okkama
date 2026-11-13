@@ -3,7 +3,8 @@ module app v1.0.0;
 // Run by tests/signals.rs (#80). Serves on the port named by the first
 // argument until SIGTERM or SIGINT, then says "stopped". /slow answers after
 // the number of seconds in the second argument, so a request can still be in
-// flight when the signal comes. A third argument, "tls", serves HTTPS.
+// flight when the signal comes; it says "slow started" on stderr when it
+// begins. A third argument, "tls", serves HTTPS.
 import "web/app" take WebApplication;
 import "web/routing" take WebRoutes, Get;
 import "web/request" take WebRequest;
@@ -13,7 +14,7 @@ import "cli/arguments" take ProcessArguments;
 import "strings/parse" take Number;
 import "time/clock" take SystemClock;
 import "time/duration" take Duration;
-import "io/stdout" take Stdout;
+import "io/stdout" take Stdout, Stderr;
 import "net/tls" take TlsIdentity;
 
 object Pages {
@@ -28,6 +29,8 @@ object Pages {
     }
 
     async slow(request is WebRequest) is Responding {
+        // The test signals only after this line (#556).
+        Stderr().writeln("slow started");
         await SystemClock().wait(Duration(seconds: delay));
         TextReply("slow and done");
     }
