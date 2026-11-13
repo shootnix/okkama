@@ -60,8 +60,16 @@ fn one_large_function_compiles_in_linear_time() {
         return;
     }
     for (name, shape) in [("lets", lets as fn(usize) -> String), ("branches", branches), ("literal", literal), ("loops", loops)] {
-        let (small, large) = (compile(&shape(5_000)), compile(&shape(20_000)));
-        let growth = large.as_secs_f64() / small.as_secs_f64().max(1e-4);
-        assert!(growth < 8.0, "{name}: 5 000 → 20 000 took {small:?} → {large:?} (×{growth:.1})");
+        // A shared CI machine sometimes slows one sample down by half (#554),
+        // so the pair is measured up to three times and the test passes on
+        // the first linear one. A quadratic phase gives about ×16 every time.
+        let mut attempts = Vec::new();
+        let linear = (0..3).any(|_| {
+            let (small, large) = (compile(&shape(5_000)), compile(&shape(20_000)));
+            let growth = large.as_secs_f64() / small.as_secs_f64().max(1e-4);
+            attempts.push(format!("{small:?} → {large:?} (×{growth:.1})"));
+            growth < 8.0
+        });
+        assert!(linear, "{name}: 5 000 → 20 000 took {}", attempts.join("; "));
     }
 }

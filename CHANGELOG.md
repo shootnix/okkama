@@ -90,6 +90,13 @@ folding classes. It changes no public API.
 
 ### Fixed
 
+- **The large-function compile-time test tolerates a slow CI sample (#554).**
+  It failed on every macOS CI run since 0.5.6 with `lets` growing ×8.1–9.0
+  against a ×8 bound. A probe on the same runner showed every compiler phase
+  growing linearly (×4–5); the failures were single slow samples on a shared
+  3-vCPU machine. The pair is now measured up to three times; a quadratic
+  phase (×16) still fails.
+
 - **The quoted-printable docs say what the encoder does with tabs (#549).**
   They promised that a tab stays literal inside a line; the encoder always
   writes `=09`, which is valid RFC 2045. The docs now say so and a test
