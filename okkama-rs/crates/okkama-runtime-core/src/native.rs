@@ -322,13 +322,14 @@ fn unicode_text(native: Native, args: &[Value], arrays: &mut ArrayHeap) -> Resul
         .iter()
         .map(Value::as_byte)
         .collect::<Result<Vec<_>, _>>()?;
-    let (text, prefix) = decode_prefix(&bytes, width, big);
     if matches!(
         native,
         Native::Utf8ValidPrefix | Native::Utf16ValidPrefix | Native::Utf32ValidPrefix
     ) {
+        let prefix = scan_prefix(&bytes, width, big, None);
         return Ok(Value::Int(IntValue::from_u128(prefix as u128)));
     }
+    let (text, prefix) = decode_prefix(&bytes, width, big);
     if prefix != bytes.len() {
         let encoding = match (width, big) {
             (1, _) => "UTF-8",
@@ -375,15 +376,20 @@ fn encode(text: &str, width: usize, big: bool) -> Vec<u8> {
 
 /// Return the first malformed scalar's starting BYTE offset, never replacement text.
 fn decode_prefix(bytes: &[u8], width: usize, big: bool) -> (String, usize) {
+    let mut text = String::new();
+    let prefix = scan_prefix(bytes, width, big, Some(&mut text));
+    (text, prefix)
+}
+
+// The borrowed sink is optional so validation shares scalar rules without text allocation (#459).
+fn scan_prefix(bytes: &[u8], width: usize, big: bool, mut text: Option<&mut String>) -> usize {
     if width == 1 {
         let prefix =
             std::str::from_utf8(bytes).map_or_else(|error| error.valid_up_to(), |_| bytes.len());
-        return (
-            std::str::from_utf8(&bytes[..prefix])
-                .expect("validated UTF-8 prefix")
-                .into(),
-            prefix,
-        );
+        if let Some(text) = text {
+            text.push_str(std::str::from_utf8(&bytes[..prefix]).expect("validated UTF-8 prefix"));
+        }
+        return prefix;
     }
     let unit = |offset: usize| -> Option<u32> {
         let data = bytes.get(offset..offset.checked_add(width)?)?;
@@ -393,7 +399,6 @@ fn decode_prefix(bytes: &[u8], width: usize, big: bool) -> (String, usize) {
         }
         Some(value)
     };
-    let mut text = String::new();
     let mut offset = 0;
     while let Some(mut scalar) = unit(offset) {
         let mut length = width;
@@ -407,15 +412,103 @@ fn decode_prefix(bytes: &[u8], width: usize, big: bool) -> (String, usize) {
         let Some(value) = char::from_u32(scalar) else {
             break;
         };
-        text.push(value);
+        if let Some(text) = text.as_mut() {
+            text.push(value);
+        }
         offset += length;
     }
-    (text, offset)
+    offset
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validity_459_utf_natives() {
+        let mut arrays = ArrayHeap;
+        for (width, valid, decode) in [
+            (1, Native::Utf8ValidPrefix, Native::Utf8Decode),
+            (2, Native::Utf16ValidPrefix, Native::Utf16Decode),
+            (4, Native::Utf32ValidPrefix, Native::Utf32Decode),
+        ] {
+            for big in [false, true] {
+                let bytes = encode("Aé🙂", width, big);
+                let input = arrays.allocate(bytes.iter().copied().map(Value::Byte).collect());
+                let order = Value::Str(Rc::from(if big { "big" } else { "little" }));
+                let args = [input, order];
+                assert_eq!(
+                    unicode_text(valid, &args, &mut arrays)
+                        .unwrap()
+                        .as_int()
+                        .unwrap(),
+                    &IntValue::from_u128(bytes.len() as u128)
+                );
+                assert_eq!(
+                    unicode_text(decode, &args, &mut arrays)
+                        .unwrap()
+                        .as_string()
+                        .unwrap(),
+                    "Aé🙂"
+                );
+            }
+        }
+    }
+
+    fn validity_459_prefix(bytes: &[u8], width: usize, big: bool, text: &str, prefix: usize) {
+        assert_eq!(decode_prefix(bytes, width, big), (text.into(), prefix));
+        assert_eq!(scan_prefix(bytes, width, big, None), prefix);
+    }
+
+    #[test]
+    fn validity_459_utf_prefixes() {
+        for width in [1, 2, 4] {
+            for big in [false, true] {
+                for text in ["", "Aé🙂\u{10ffff}"] {
+                    let bytes = encode(text, width, big);
+                    validity_459_prefix(&bytes, width, big, text, bytes.len());
+                }
+                let bytes = encode("A🙂", width, big);
+                for removed in 1..if width == 1 { 4 } else { width } {
+                    validity_459_prefix(&bytes[..bytes.len() - removed], width, big, "A", width);
+                }
+            }
+        }
+        for bad in [
+            &[0xff, b'B'][..],
+            &[0xc0, 0x80],
+            &[0xe0, 0x80, 0x80],
+            &[0xed, 0xa0, 0x80],
+            &[0xf4, 0x90, 0x80, 0x80],
+            &[0xf0, 0x90],
+        ] {
+            validity_459_prefix(&[b"A", bad].concat(), 1, true, "A", 1);
+        }
+        for big in [false, true] {
+            for units in [&[0xd800u16][..], &[0xdc00], &[0xd800, 65]] {
+                let mut bytes = encode("A", 2, big);
+                for unit in units {
+                    bytes.extend(if big {
+                        unit.to_be_bytes()
+                    } else {
+                        unit.to_le_bytes()
+                    });
+                }
+                validity_459_prefix(&bytes, 2, big, "A", 2);
+            }
+            for scalar in [0xd800u32, 0xdc00, 0x110000, 0xffffffff] {
+                let mut bytes = encode("A", 4, big);
+                bytes.extend(if big {
+                    scalar.to_be_bytes()
+                } else {
+                    scalar.to_le_bytes()
+                });
+                bytes.extend(encode("B", 4, big));
+                validity_459_prefix(&bytes, 4, big, "A", 4);
+            }
+            validity_459_prefix(&[encode("A", 2, big), vec![0]].concat(), 2, big, "A", 2);
+        }
+    }
 
     #[test]
     fn unicode_boundaries_and_bom_roundtrip_without_normalization() {

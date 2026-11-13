@@ -238,8 +238,13 @@ fn word_bytes(word: u64, out: &mut Vec<u8>, count: usize) {
     }
 }
 
-/// Первое неверное смещение или -1; `octets` — результат.
-fn base85_parsed(source: &[u32], name: &str, alphabet: &[u8], octets: &mut Vec<u8>) -> i64 {
+// An optional borrowed sink preserves error order without collecting validation output (#459).
+fn base85_parsed(
+    source: &[u32],
+    name: &str,
+    alphabet: &[u8],
+    mut octets: Option<&mut Vec<u8>>,
+) -> i64 {
     let mut values: Vec<u64> = Vec::new();
     let mut group_start = 0usize;
     let size = source.len();
@@ -248,7 +253,9 @@ fn base85_parsed(source: &[u32], name: &str, alphabet: &[u8], octets: &mut Vec<u
             if !values.is_empty() {
                 return offset as i64;
             }
-            word_bytes(0, octets, 4);
+            if let Some(octets) = octets.as_mut() {
+                word_bytes(0, octets, 4);
+            }
             group_start = offset + 1;
             continue;
         }
@@ -265,7 +272,9 @@ fn base85_parsed(source: &[u32], name: &str, alphabet: &[u8], octets: &mut Vec<u
             if word > 0xFFFF_FFFF {
                 return offset as i64;
             }
-            word_bytes(word, octets, 4);
+            if let Some(octets) = octets.as_mut() {
+                word_bytes(word, octets, 4);
+            }
             values.clear();
             group_start = offset + 1;
         }
@@ -282,9 +291,10 @@ fn base85_parsed(source: &[u32], name: &str, alphabet: &[u8], octets: &mut Vec<u
         if word > 0xFFFF_FFFF {
             return size as i64 - 1;
         }
-        let mut partial = Vec::new();
-        word_bytes(word, &mut partial, amount - 1);
-        let canonical = base85_encoded(&partial, name, alphabet);
+        // The canonical tail check needs at most three bytes even without an output sink (#459).
+        let partial = (word as u32).to_be_bytes();
+        let partial = &partial[..amount - 1];
+        let canonical = base85_encoded(partial, name, alphabet);
         let end = (group_start + amount).min(size);
         let spelling: String = source[group_start..end]
             .iter()
@@ -293,7 +303,9 @@ fn base85_parsed(source: &[u32], name: &str, alphabet: &[u8], octets: &mut Vec<u
         if canonical != spelling {
             return size as i64 - 1;
         }
-        octets.extend(partial);
+        if let Some(octets) = octets {
+            octets.extend_from_slice(partial);
+        }
     }
     -1
 }
@@ -352,7 +364,8 @@ fn qp_hex(octet: u8) -> i64 {
     }
 }
 
-fn qp_parsed(octets: &[u8], decoded: &mut Vec<u8>) -> i64 {
+// Validation borrows only the input; emission does not change rejection order (#459).
+fn qp_parsed(octets: &[u8], mut decoded: Option<&mut Vec<u8>>) -> i64 {
     let size = octets.len();
     let mut offset = 0usize;
     let mut column = 0usize;
@@ -362,7 +375,9 @@ fn qp_parsed(octets: &[u8], decoded: &mut Vec<u8>) -> i64 {
             if offset + 1 >= size || octets[offset + 1] != 10 {
                 return offset as i64;
             }
-            decoded.extend([13, 10]);
+            if let Some(decoded) = decoded.as_mut() {
+                decoded.extend([13, 10]);
+            }
             column = 0;
             offset += 2;
             continue;
@@ -389,7 +404,9 @@ fn qp_parsed(octets: &[u8], decoded: &mut Vec<u8>) -> i64 {
             if column + 3 > 76 {
                 return (offset + (76 - column)) as i64;
             }
-            decoded.push((high * 16 + low) as u8);
+            if let Some(decoded) = decoded.as_mut() {
+                decoded.push((high * 16 + low) as u8);
+            }
             column += 3;
             offset += 3;
             continue;
@@ -406,7 +423,9 @@ fn qp_parsed(octets: &[u8], decoded: &mut Vec<u8>) -> i64 {
         if column + 1 > 76 {
             return offset as i64;
         }
-        decoded.push(octet);
+        if let Some(decoded) = decoded.as_mut() {
+            decoded.push(octet);
+        }
         column += 1;
         offset += 1;
     }
@@ -524,14 +543,14 @@ pub fn execute(native: Native, args: &[Value], arrays: &mut ArrayHeap) -> Result
                 &points(args[0].as_string()?),
                 &name,
                 &alphabet,
-                &mut Vec::new(),
+                None,
             ))
         }
         Base85Decode => {
             let name = args[1].as_string()?.to_string();
             let alphabet = base85_alphabet(native, &name)?;
             let mut octets = Vec::new();
-            if base85_parsed(&points(args[0].as_string()?), &name, &alphabet, &mut octets) != -1 {
+            if base85_parsed(&points(args[0].as_string()?), &name, &alphabet, Some(&mut octets)) != -1 {
                 return Err(failed(native));
             }
             byte_array(octets, arrays)
@@ -540,10 +559,10 @@ pub fn execute(native: Native, args: &[Value], arrays: &mut ArrayHeap) -> Result
             let encoded = qp_encode(&bytes(&args[0], arrays)?);
             byte_array(encoded, arrays)
         }
-        QuotedPrintableInvalidOffset => int(qp_parsed(&bytes(&args[0], arrays)?, &mut Vec::new())),
+        QuotedPrintableInvalidOffset => int(qp_parsed(&bytes(&args[0], arrays)?, None)),
         QuotedPrintableDecode => {
             let mut decoded = Vec::new();
-            if qp_parsed(&bytes(&args[0], arrays)?, &mut decoded) != -1 {
+            if qp_parsed(&bytes(&args[0], arrays)?, Some(&mut decoded)) != -1 {
                 return Err(failed(native));
             }
             byte_array(decoded, arrays)
@@ -566,6 +585,117 @@ pub fn execute(native: Native, args: &[Value], arrays: &mut ArrayHeap) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn base85_result(
+        source: &[u32],
+        name: &str,
+        alphabet: &[u8],
+        out: Option<&mut Vec<u8>>,
+    ) -> i64 {
+        let invalid = base85_parsed(source, name, alphabet, out);
+        assert_eq!(base85_parsed(source, name, alphabet, None), invalid);
+        invalid
+    }
+
+    fn qp_result(source: &[u8], out: Option<&mut Vec<u8>>) -> i64 {
+        let invalid = qp_parsed(source, out);
+        assert_eq!(qp_parsed(source, None), invalid);
+        invalid
+    }
+
+    #[test]
+    fn validity_459_base85() {
+        for name in ["ascii85", "rfc1924"] {
+            let alphabet = base85_alphabet(Native::Base85Decode, name).unwrap();
+            let zero = char::from(alphabet[0]);
+            let high = char::from(alphabet[84]);
+            for (source, expected) in [
+                (String::new(), -1),
+                (format!("{zero}"), 1),
+                (format!("{zero}é"), 1),
+                (format!("{zero}😀"), 1),
+                (format!("{high}{high}{high}{high}{high}é"), 4),
+                (format!("{high}{high}"), 1),
+                (format!("{zero}{high}"), 1),
+            ] {
+                let mut out = Vec::new();
+                assert_eq!(
+                    base85_result(&points(&source), name, &alphabet, Some(&mut out)),
+                    expected,
+                    "{name}: {source}"
+                );
+            }
+            for size in 0..=12 {
+                let input: Vec<u8> = (0..size).map(|n| (n * 19) as u8).collect();
+                let spelling = base85_encoded(&input, name, &alphabet);
+                let mut out = Vec::new();
+                assert_eq!(
+                    base85_result(&points(&spelling), name, &alphabet, Some(&mut out)),
+                    -1
+                );
+                assert_eq!(out, input);
+            }
+            for (source, expected) in if name == "ascii85" {
+                [("z", -1), ("y", 0), ("!z", 1), ("z!", 2)]
+            } else {
+                [("z", 1), ("y", 1), ("0000z", -1), ("0000y", -1)]
+            } {
+                let mut out = Vec::new();
+                assert_eq!(
+                    base85_result(&points(source), name, &alphabet, Some(&mut out)),
+                    expected
+                );
+                if name == "ascii85" && source == "z" {
+                    assert_eq!(out, [0; 4]);
+                }
+            }
+        }
+        assert!(base85_alphabet(Native::Base85Decode, "z85").is_err());
+    }
+
+    #[test]
+    fn validity_459_quoted_printable() {
+        for (source, expected) in [
+            ("", -1),
+            ("a=Q0", 1),
+            ("a=", 1),
+            ("a=0", 1),
+            ("=ff", -1),
+            ("a\r", 1),
+            ("a\n", 1),
+            ("a ", 1),
+            ("a\t", 1),
+            ("a \r\n", 1),
+            ("a=\r\nb", -1),
+            ("a\r\nb", -1),
+        ] {
+            let mut out = Vec::new();
+            assert_eq!(
+                qp_result(source.as_bytes(), Some(&mut out)),
+                expected,
+                "{source:?}"
+            );
+            if source == "=ff" {
+                assert_eq!(out, [255]);
+            }
+        }
+        for (source, expected) in [
+            ("a".repeat(76), -1),
+            ("a".repeat(77), 76),
+            (format!("{}=FF", "a".repeat(74)), 76),
+            (format!("{}=Q0", "a".repeat(75)), 75),
+            (format!("{}=\r\n", "a".repeat(76)), 76),
+        ] {
+            assert_eq!(
+                qp_result(source.as_bytes(), Some(&mut Vec::new())),
+                expected
+            );
+        }
+        let input: Vec<u8> = (0..=255).collect();
+        let mut out = Vec::new();
+        assert_eq!(qp_result(&qp_encode(&input), Some(&mut out)), -1);
+        assert_eq!(out, input);
+    }
 
     fn base_result(source: &str, alphabet: &[u8], width: u32, quantum: usize) -> Result<Vec<u8>, i64> {
         let result = base_parsed(source, alphabet, width, quantum, true);
@@ -771,7 +901,7 @@ mod tests {
             }
         }
         let mut decoded = Vec::new();
-        assert_eq!(qp_parsed(&encoded, &mut decoded), -1);
+        assert_eq!(qp_parsed(&encoded, Some(&mut decoded)), -1);
         assert_eq!(decoded, input);
     }
 
@@ -810,7 +940,7 @@ mod tests {
         assert_eq!(base85_encoded(&[0, 0, 0, 0], "ascii85", &alphabet), "z");
         let mut out = Vec::new();
         assert_eq!(
-            base85_parsed(&points(&encoded), "ascii85", &alphabet, &mut out),
+            base85_parsed(&points(&encoded), "ascii85", &alphabet, Some(&mut out)),
             -1
         );
         assert_eq!(out, b"Man is");
@@ -821,7 +951,7 @@ mod tests {
         let encoded = qp_encode(b"a=b \xff\r\nend ");
         assert_eq!(encoded, b"a=3Db =FF\r\nend=20");
         let mut decoded = Vec::new();
-        assert_eq!(qp_parsed(&encoded, &mut decoded), -1);
+        assert_eq!(qp_parsed(&encoded, Some(&mut decoded)), -1);
         assert_eq!(decoded, b"a=b \xff\r\nend ");
     }
 }
