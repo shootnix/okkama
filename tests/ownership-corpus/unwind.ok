@@ -1,0 +1,71 @@
+// Book 14.3, 20.3: nested throw cleanup, handler-owned resources, rethrow.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+enum Stop is Error = (now);
+
+main() is int {
+    let t = Tap(5);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let outer = Res("O", log);
+        try {
+            let a = Res("A", log);
+            {
+                let b = Res("B", log);
+                throw Stop.now;
+            }
+        } catch e is Stop {
+            t.note("all unrelated try locals close before handler: " + log.value());
+            t = t.is(log.value(), "BA", "all unrelated try locals close before handler");
+            let h = Res("H", log);
+            e.text();
+        }
+
+        t.note("catch owns its fresh resources: " + log.value());
+        t = t.is(log.value(), "BAH", "catch owns its fresh resources");
+    }
+
+    t.note("outer owner survives handler: " + log.value());
+    t = t.is(log.value(), "BAHO", "outer owner survives handler");
+    log.replace("");
+    try {
+        let a = Res("A", log);
+        try {
+            let b = Res("B", log);
+            throw Stop.now;
+        }
+
+        catch e is Error {
+            let h = Res("H", log);
+            throw;
+        }
+    } catch e is Stop {
+        t.note("rethrow drains handler then enclosing try: " + log.value());
+        t = t.is(log.value(), "BHA", "rethrow drains handler then enclosing try");
+    }
+
+    t.note("rethrow never repeats destruction: " + log.value());
+    t = t.is(log.value(), "BHA", "rethrow never repeats destruction");
+    t.done();
+}

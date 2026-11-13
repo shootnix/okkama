@@ -1,0 +1,80 @@
+// Book 14.3, 14.5, 20.2: resources returned from try and catch, try optional.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+enum Stop is Error = (now);
+
+object Make {
+    Make();
+    make(log is Atomic<string>) is Res {
+        Res("M", log);
+    }
+}
+
+main() is int {
+    let t = Tap(6);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let value = try {
+            let local = Res("L", log);
+            Res("T", log);
+        } catch e is Stop {
+            Res("X", log);
+        };
+        t.note("successful try releases unrelated locals: " + log.value());
+        t = t.is(log.value(), "L", "successful try releases unrelated locals");
+        value.label();
+    }
+
+    t.note("try result transfers to caller: " + log.value());
+    t = t.is(log.value(), "LT", "try result transfers to caller");
+    log.replace("");
+    {
+        let value = try {
+            let local = Res("L", log);
+            throw Stop.now;
+            Res("X", log);
+        }
+
+        catch e is Stop {
+            let local = Res("H", log);
+            Res("C", log);
+        };
+        t.note("catch local closes before expression yields: " + log.value());
+        t = t.is(log.value(), "LH", "catch local closes before expression yields");
+        value.label();
+    }
+
+    t.note("caught result escapes handler: " + log.value());
+    t = t.is(log.value(), "LHC", "caught result escapes handler");
+    log.replace("");
+    {
+        let optional = try? Make().make(log);
+        t.note("Maybe retains successful resource: " + log.value());
+        t = t.is(log.value(), "", "Maybe retains successful resource");
+    }
+
+    t.note("optional result closes with receiving scope: " + log.value());
+    t = t.is(log.value(), "M", "optional result closes with receiving scope");
+    t.done();
+}

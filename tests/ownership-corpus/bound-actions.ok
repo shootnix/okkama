@@ -1,0 +1,78 @@
+// Book 18.5, 20.2: bound receiver lifetime, escaping method reference.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Owner {
+    has resource is Res;
+    has log is Atomic<string>;
+    Owner(resource is Res, log is Atomic<string>) {
+        self.resource = resource;
+        self.log = log;
+    }
+
+    label() is string {
+        resource.label();
+    }
+
+    destroy {
+        log.replace(log.value() + "O");
+    }
+}
+
+object Factory {
+    Factory();
+    make(log is Atomic<string>) is () is string {
+        Owner(Res("R", log), log).label;
+    }
+}
+
+main() is int {
+    let t = Tap(5);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let action = Factory().make(log);
+        t.note("bound action keeps escaped receiver and hidden resource: " + log.value());
+        t = t.is(log.value(), "", "bound action keeps escaped receiver and hidden resource");
+        action();
+        t.note("bound action invocation borrows its retained receiver: " + log.value());
+        t = t.is(log.value(), "", "bound action invocation borrows its retained receiver");
+    }
+
+    t.note("bound action closes full receiver graph: " + log.value());
+    t = t.is(log.value(), "OR", "bound action closes full receiver graph");
+    log.replace("");
+    {
+        let owner = Owner(Res("R", log), log);
+        {
+            let action is () is string = owner.label;
+            action();
+        }
+
+        t.note("borrowed method reference does not take receiver ownership: " + log.value());
+        t = t.is(log.value(), "", "borrowed method reference does not take receiver ownership");
+    }
+
+    t.note("outer receiver closes once: " + log.value());
+    t = t.is(log.value(), "OR", "outer receiver closes once");
+    t.done();
+}

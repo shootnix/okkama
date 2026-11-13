@@ -1,0 +1,75 @@
+// Book 18.1, 20.2: fresh values through multiple calls and early returns.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Relay {
+    Relay();
+    inner(r is Res) is Res {
+        r;
+    }
+
+    middle(r is Res) is Res {
+        self.inner(r);
+    }
+
+    outer(r is Res) is Res {
+        return self.middle(r);
+    }
+
+    consume(r is Res) is void {
+        self.middle(r).label();
+    }
+}
+
+main() is int {
+    let t = Tap(5);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let r = Relay().outer(Res("A", log));
+        t.note("returned identity survives three calls: " + log.value());
+        t = t.is(log.value(), "", "returned identity survives three calls");
+        r.label();
+    }
+
+    t.note("outer caller owns relayed identity: " + log.value());
+    t = t.is(log.value(), "A", "outer caller owns relayed identity");
+    log.replace("");
+    Relay().consume(Res("B", log));
+    t.note("nonreturning outer call owns fresh argument: " + log.value());
+    t = t.is(log.value(), "B", "nonreturning outer call owns fresh argument");
+    log.replace("");
+    {
+        let r = Res("C", log);
+        {
+            let alias = Relay().outer(r);
+            alias.label();
+        }
+
+        t.note("returned caller-owned argument remains borrowed: " + log.value());
+        t = t.is(log.value(), "", "returned caller-owned argument remains borrowed");
+    }
+
+    t.note("borrow is never promoted to second owner: " + log.value());
+    t = t.is(log.value(), "C", "borrow is never promoted to second owner");
+    t.done();
+}

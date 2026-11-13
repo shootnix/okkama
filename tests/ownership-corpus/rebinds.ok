@@ -1,0 +1,64 @@
+// Book 12.1a, 18.5, 19, 20.2: rebind retains old identities; closure snapshot.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    renamed(name is string) is ^Res {
+        ^name = name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+main() is int {
+    let t = Tap(5);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let r = Res("A", log);
+        r = r.renamed("B");
+        t.note("rebind does not eagerly destroy original: " + log.value());
+        t = t.is(log.value(), "", "rebind does not eagerly destroy original");
+        {
+            r = r.renamed("C");
+            t.note("nested rebind updates original scope: " + log.value());
+            t = t.is(log.value(), "", "nested rebind updates original scope");
+        }
+
+        t.note("successor assigned outward survives nested scope: " + log.value());
+        t = t.is(log.value(), "", "successor assigned outward survives nested scope");
+        r.label();
+    }
+
+    t.note("all rebound identities close in reverse construction order: " + log.value());
+    t = t.is(log.value(), "CBA", "all rebound identities close in reverse construction order");
+    log.replace("");
+    {
+        let r = Res("X", log);
+        let snapshot = () is string {
+            r.label();
+        };
+        r = r.renamed("Y");
+        log.replace(log.value() + snapshot() + "|");
+        r.label();
+    }
+
+    t.note("capture observes old identity without double destroy: " + log.value());
+    t = t.is(log.value(), "X|YX", "capture observes old identity without double destroy");
+    t.done();
+}

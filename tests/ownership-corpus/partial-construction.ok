@@ -1,0 +1,96 @@
+// Book 17.5, 20.2: completed resources tracked before failed argument or aggregate.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+enum Stop is Error = (now);
+
+object Work {
+    Work();
+    fail() is Res {
+        throw Stop.now;
+    }
+
+    take(a is Res, b is Res) is void {
+        a.label();
+        b.label();
+    }
+}
+
+object Broken {
+    has item is Res;
+    has log is Atomic<string>;
+    Broken(log is Atomic<string>) {
+        self.log = log;
+        item = Res("I", log);
+        throw Stop.now;
+    }
+
+    destroy {
+        log.replace(log.value() + "wrong");
+    }
+}
+
+main() is int {
+    let t = Tap(4);
+    let log = Atomic("");
+    defer log.close();
+    try {
+        Work().take(Res("A", log), Work().fail());
+    }
+
+    catch e is Stop {
+        t.note("earlier completed argument cleaned if later argument throws: " + log.value());
+        t = t.is(log.value(), "A", "earlier completed argument cleaned if later argument throws");
+    }
+
+    log.replace("");
+    try {
+        let items = [Res("B", log), Work().fail()];
+    }
+
+    catch e is Stop {
+        t.note("earlier completed array element is tracked: " + log.value());
+        t = t.is(log.value(), "B", "earlier completed array element is tracked");
+    }
+
+    log.replace("");
+    try {
+        let items = ["z": Res("C", log), "a": Work().fail()];
+    }
+
+    catch e is Stop {
+        t.note("earlier map value survives failed admission until unwind: " + log.value());
+        t = t.is(log.value(), "C", "earlier map value survives failed admission until unwind");
+    }
+
+    log.replace("");
+    try {
+        let broken = Broken(log);
+    }
+
+    catch e is Stop {
+        t.note("unfinished self has no destroy but completed field does: " + log.value());
+        t = t.is(log.value(), "I", "unfinished self has no destroy but completed field does");
+    }
+
+    t.done();
+}

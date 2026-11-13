@@ -1,0 +1,67 @@
+// Book 20.2, 31.5: result transfer across suspension and repeated awaits.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Work {
+    Work();
+    async make(log is Atomic<string>, ready is Event, gate is Event) is Res {
+        let local = Res("L", log);
+        ready.set();
+        await gate.wait();
+        Res("R", log);
+    }
+}
+
+async main() is int {
+    let t = Tap(5);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let ready = Event();
+        let gate = Event();
+        let pending = spawn Work().make(log, ready, gate);
+        await ready.wait();
+        t.note("suspended producer keeps local alive: " + log.value());
+        t = t.is(log.value(), "", "suspended producer keeps local alive");
+        gate.set();
+        let result = await pending;
+        t.note("producer local closes before result is published: " + log.value());
+        t = t.is(log.value(), "L", "producer local closes before result is published");
+        let again = await pending;
+        result.label();
+        again.label();
+        t.note("cached result aliases do not destroy result: " + log.value());
+        t = t.is(log.value(), "L", "cached result aliases do not destroy result");
+    }
+
+    t.note("awaiting scope destroys result once: " + log.value());
+    t = t.is(log.value(), "LR", "awaiting scope destroys result once");
+    log.replace("");
+    {
+        await Work().make(log, Event(), Event(ready: true));
+        t.note("discarded awaited result gets lexical owner: " + log.value());
+        t = t.is(log.value(), "L", "discarded awaited result gets lexical owner");
+    }
+
+    t.done();
+}

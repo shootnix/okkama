@@ -1,0 +1,55 @@
+// OIR-1 section 7: let k = [Res(name: "q")].size(); // Res "q" lives to the end of the block.
+// Book 20.2: fresh receiver adopted by action, borrowed receiver retained.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+main() is int {
+    let t = Tap(6);
+    let log = Atomic("");
+    defer log.close();
+    {
+        Res("A", log).label();
+        t.note("fresh receiver closes when synchronous action returns: " + log.value());
+        t = t.is(log.value(), "A", "fresh receiver closes when synchronous action returns");
+        let b = Res("B", log);
+        b.label();
+        b.label();
+        t.note("bound receiver remains borrowed across calls: " + log.value());
+        t = t.is(log.value(), "A", "bound receiver remains borrowed across calls");
+        [Res("C", log)].size();
+        t.note("aggregate receiver retains contents until block exit: " + log.value());
+        t = t.is(log.value(), "A", "aggregate receiver retains contents until block exit");
+    }
+
+    t.note("caller later closes borrowed receiver: " + log.value());
+    t = t.is(log.value(), "ACB", "caller later closes borrowed receiver");
+    log.replace("");
+    {
+        [Res("D", log), Res("E", log)].size();
+        t.note("temporary aggregate contents remain live inside block: " + log.value());
+        t = t.is(log.value(), "", "temporary aggregate contents remain live inside block");
+    }
+
+    t.note("temporary aggregate does not close twice: " + log.value());
+    t = t.is(log.value(), "ED", "temporary aggregate does not close twice");
+    t.done();
+}

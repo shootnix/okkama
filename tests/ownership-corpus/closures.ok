@@ -1,0 +1,92 @@
+// Book 18.5, 20.2: escaped captures, shared captures, closure field storage.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Factory {
+    Factory();
+    make(log is Atomic<string>) is () is string {
+        let z = Res("A", log);
+        let a = Res("B", log);
+        () is string {
+            a.label() + z.label();
+        };
+    }
+}
+
+object Stored {
+    has action is () is string;
+    Stored(action is () is string) {
+        self.action = action;
+    }
+
+    call() is string {
+        action();
+    }
+}
+
+main() is int {
+    let t = Tap(6);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let f = Factory().make(log);
+        t.note("returned closure retains both captured resources: " + log.value());
+        t = t.is(log.value(), "", "returned closure retains both captured resources");
+        f();
+        f();
+        t.note("invoking capture does not adopt borrowed resources: " + log.value());
+        t = t.is(log.value(), "", "invoking capture does not adopt borrowed resources");
+    }
+
+    t.note("capture enumeration cannot reorder destruction: " + log.value());
+    t = t.is(log.value(), "BA", "capture enumeration cannot reorder destruction");
+    log.replace("");
+    {
+        let a = Res("A", log);
+        let f = () is string {
+            a.label();
+        };
+        let g = () is string {
+            a.label();
+        };
+        {
+            let stored = Stored(f);
+            stored.call();
+            g();
+        }
+
+        t.note("stored and sibling closures borrow same outer resource: " + log.value());
+        t = t.is(log.value(), "", "stored and sibling closures borrow same outer resource");
+    }
+
+    t.note("shared captures close once: " + log.value());
+    t = t.is(log.value(), "A", "shared captures close once");
+    log.replace("");
+    {
+        let stored = Stored(Factory().make(log));
+        stored.call();
+    }
+
+    t.note("closure field transports full capture graph: " + log.value());
+    t = t.is(log.value(), "BA", "closure field transports full capture graph");
+    t.done();
+}

@@ -1,0 +1,80 @@
+// Book 19, 20.2–20.3: nested staged fields survive caught failure; failed staging drains.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+enum Stop is Error = (now);
+
+object Holder {
+    has item is Res;
+    Holder(item is Res) {
+        self.item = item;
+    }
+
+    label() is string {
+        item.label();
+    }
+
+    staged(log is Atomic<string>) is ^Holder {
+        try {
+            ^item = Res("B", log);
+            throw Stop.now;
+        } catch e is Stop {
+            log.replace(log.value() + "c");
+        }
+    }
+
+    failed(log is Atomic<string>) is ^Holder {
+        ^item = Res("F", log);
+        throw Stop.now;
+    }
+}
+
+main() is int {
+    let t = Tap(4);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let original = Holder(Res("A", log));
+        {
+            let updated = original.staged(log);
+            updated.label();
+            t.note("staged resource survives nested caught throw: " + log.value());
+            t = t.is(log.value(), "c", "staged resource survives nested caught throw");
+        }
+
+        t.note("successful staging transfers final resource: " + log.value());
+        t = t.is(log.value(), "cB", "successful staging transfers final resource");
+        try {
+            let failed = original.failed(log);
+            failed.label();
+        } catch e is Stop {
+            t.note("failed action drains staged fresh resource before catch: " + log.value());
+            t = t.is(log.value(), "cBF", "failed action drains staged fresh resource before catch");
+        }
+
+        original.label();
+    }
+
+    t.note("failed staging never destroys borrowed original early: " + log.value());
+    t = t.is(log.value(), "cBFA", "failed staging never destroys borrowed original early");
+    t.done();
+}

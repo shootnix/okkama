@@ -1,0 +1,67 @@
+// Book 20.2; Book Shared infrastructure snapshots with Atomic: stored capabilities borrow.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+async main() is int {
+    let t = Tap(6);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let a = Res("A", log);
+        let b = Res("B", log);
+        let cell = Atomic(a);
+        {
+            let alias = cell.value();
+            alias.label();
+        }
+
+        t.note("Atomic read borrows stored resource: " + log.value());
+        t = t.is(log.value(), "", "Atomic read borrows stored resource");
+        cell.replace(b);
+        t.note("Atomic replacement does not destroy original owner: " + log.value());
+        t = t.is(log.value(), "", "Atomic replacement does not destroy original owner");
+        cell.close();
+        t.note("Atomic close does not destroy borrowed replacement: " + log.value());
+        t = t.is(log.value(), "", "Atomic close does not destroy borrowed replacement");
+    }
+
+    t.note("both Atomic values retain original lexical owner: " + log.value());
+    t = t.is(log.value(), "BA", "both Atomic values retain original lexical owner");
+    log.replace("");
+    {
+        let outer = Res("O", log);
+        let cell = Atomic(outer);
+        {
+            let inner = Res("I", log);
+            cell.replace(inner);
+        }
+
+        t.note("storing inner resource does not extend its lexical lifetime: " + log.value());
+        t = t.is(log.value(), "I", "storing inner resource does not extend its lexical lifetime");
+        // Do not dereference the expired value: Atomic is explicitly borrowing.
+        cell.close();
+    }
+
+    t.note("cell close never reacquires expired or outer identity: " + log.value());
+    t = t.is(log.value(), "IO", "cell close never reacquires expired or outer identity");
+    t.done();
+}

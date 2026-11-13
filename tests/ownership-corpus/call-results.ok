@@ -1,0 +1,85 @@
+// Book 18.1, 20.2: kept/dropped results, returned fields and extracted children.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Box {
+    has item is Res;
+    Box(item is Res) {
+        self.item = item;
+    }
+
+    item() is Res {
+        item;
+    }
+}
+
+object Factory {
+    Factory();
+    make(name is string, log is Atomic<string>) is Res {
+        Res(name, log);
+    }
+
+    boxed(log is Atomic<string>) is Box {
+        Box(Res("F", log));
+    }
+
+    nested(log is Atomic<string>) is Res {
+        self.make("N", log);
+    }
+}
+
+main() is int {
+    let t = Tap(6);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let kept = Factory().nested(log);
+        Factory().make("D", log);
+        t.note("both kept and discarded results get lexical owners: " + log.value());
+        t = t.is(log.value(), "", "both kept and discarded results get lexical owners");
+        kept.label();
+    }
+
+    t.note("discarded result and kept result close LIFO: " + log.value());
+    t = t.is(log.value(), "DN", "discarded result and kept result close LIFO");
+    log.replace("");
+    {
+        let box = Factory().boxed(log);
+        t.note("returned object carries its resource field: " + log.value());
+        t = t.is(log.value(), "", "returned object carries its resource field");
+        box.item().label();
+    }
+
+    t.note("returned object field closes with caller: " + log.value());
+    t = t.is(log.value(), "F", "returned object field closes with caller");
+    log.replace("");
+    {
+        let child = Box(Res("C", log)).item();
+        t.note("child escapes temporary containing object: " + log.value());
+        t = t.is(log.value(), "", "child escapes temporary containing object");
+        child.label();
+    }
+
+    t.note("extracted child closes once: " + log.value());
+    t = t.is(log.value(), "C", "extracted child closes once");
+    t.done();
+}

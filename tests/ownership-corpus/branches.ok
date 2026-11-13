@@ -1,0 +1,93 @@
+// #308: branches destroy their lets and discarded values at the branch boundary.
+// OIR-1 section 7 branch-tail wording predates #308; see t/lang/destroy.ok.
+// Book 11.6, 12.3–12.4, 20.2: selected branch values retained and discarded.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+main() is int {
+    let t = Tap(8);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let chosen = if true {
+            let local = Res("L", log);
+            Res("A", log);
+        } else {
+            Res("Z", log);
+        };
+        t.note("unrelated branch local closes before selected result: " + log.value());
+        t = t.is(log.value(), "L", "unrelated branch local closes before selected result");
+        chosen.label();
+    }
+
+    t.note("kept if result closes with caller: " + log.value());
+    t = t.is(log.value(), "LA", "kept if result closes with caller");
+    log.replace("");
+    {
+        if false {
+            Res("Z", log);
+        } else {
+            Res("B", log);
+        };
+        t.note("discarded if result closes with branch (#308): " + log.value());
+        t = t.is(log.value(), "B", "discarded if result closes with branch (#308)");
+    }
+
+    t.note("discarded if result eventually closes: " + log.value());
+    t = t.is(log.value(), "B", "discarded if result eventually closes");
+    log.replace("");
+    {
+        let chosen = match 2 {
+            case 1 {
+                Res("Z", log);
+            }
+            case 2 {
+                let local = Res("L", log);
+                Res("M", log);
+            } else {
+                Res("Z", log);
+            }
+        };
+        t.note("match transfers only its selected result: " + log.value());
+        t = t.is(log.value(), "L", "match transfers only its selected result");
+        chosen.label();
+    }
+
+    t.note("kept match result closes once: " + log.value());
+    t = t.is(log.value(), "LM", "kept match result closes once");
+    log.replace("");
+    {
+        match 1 {
+            case 1 {
+                Res("D", log);
+            } else {
+                Res("Z", log);
+            }
+        };
+        t.note("discarded match result closes with branch (#308): " + log.value());
+        t = t.is(log.value(), "D", "discarded match result closes with branch (#308)");
+    }
+
+    t.note("discarded match result closes: " + log.value());
+    t = t.is(log.value(), "D", "discarded match result closes");
+    t.done();
+}

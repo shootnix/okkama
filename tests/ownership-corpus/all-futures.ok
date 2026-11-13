@@ -1,0 +1,77 @@
+// Book 20.2, 31.5; async/collect: result graph and duplicate future identities.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+import "async/collect" take AllFutures;
+import "async/event" take Event;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+enum Stop is Error = (now);
+
+object Work {
+    Work();
+    async make(name is string, log is Atomic<string>) is Res {
+        Res(name, log);
+    }
+
+    async waiting(log is Atomic<string>, ready is Event, never is Event) is Res {
+        let local = Res("L", log);
+        ready.set();
+        await never.wait();
+        Res("wrong", log);
+    }
+
+    async failed(log is Atomic<string>, ready is Event) is Res {
+        await ready.wait();
+        let local = Res("F", log);
+        throw Stop.now;
+    }
+}
+
+async main() is int {
+    let t = Tap(3);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let origins is @Future<Res> = [];
+        let empty = await AllFutures(origins: origins).results();
+        empty.size();
+    }
+
+    t.note("empty collector introduces no resource: " + log.value());
+    t = t.is(log.value(), "", "empty collector introduces no resource");
+    {
+        let ready = Event();
+        let origins is @Future<Res> = [Work().waiting(log, ready, Event()), Work().failed(log, ready)];
+        try {
+            let results = await AllFutures(origins: origins).results();
+            results.size();
+        }
+
+        catch e is Stop {
+            t.note("failed input cleans itself before cancelled sibling: " + log.value());
+            t = t.is(log.value(), "FL", "failed input cleans itself before cancelled sibling");
+        }
+    }
+
+    t.note("failed collector settles after all resource cleanup: " + log.value());
+    t = t.is(log.value(), "FL", "failed collector settles after all resource cleanup");
+    t.done();
+}

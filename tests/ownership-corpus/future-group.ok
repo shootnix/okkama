@@ -1,0 +1,80 @@
+// Book 20.2–20.3, 31.5; async/scope: supervised resources and duplicate registration.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Work {
+    Work();
+    async run(name is string, log is Atomic<string>, ready is Event, gate is Event) is int {
+        let r = Res(name, log);
+        ready.set();
+        await gate.wait();
+        1;
+    }
+}
+
+async main() is int {
+    let t = Tap(5);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let group is FutureGroup<int> = FutureGroup();
+        let firstGate = Event();
+        let secondGate = Event();
+        let firstReady = Event();
+        let secondReady = Event();
+        let first = Work().run("A", log, firstReady, firstGate);
+        let second = Work().run("B", log, secondReady, secondGate);
+        group.start(first);
+        group.start(first);
+        group.start(second);
+        await firstReady.wait();
+        await secondReady.wait();
+        t.note("registered futures retain live resources: " + log.value());
+        t = t.is(log.value(), "", "registered futures retain live resources");
+        firstGate.set();
+        await first;
+        t.note("first gate gives deterministic completion order: " + log.value());
+        t = t.is(log.value(), "A", "first gate gives deterministic completion order");
+        secondGate.set();
+        await group.wait();
+        t.note("group waits for remaining cleanup without restarting duplicate: " + log.value());
+        t = t.is(log.value(), "AB", "group waits for remaining cleanup without restarting duplicate");
+    }
+
+    t.note("dropping settled group does not repeat destruction: " + log.value());
+    t = t.is(log.value(), "AB", "dropping settled group does not repeat destruction");
+    log.replace("");
+    {
+        let group is FutureGroup<int> = FutureGroup();
+        let ready = Event();
+        group.start(Work().run("C", log, ready, Event()));
+        await ready.wait();
+        group.cancel();
+        await group.wait();
+        t.note("explicit group cancellation awaits resource cleanup: " + log.value());
+        t = t.is(log.value(), "C", "explicit group cancellation awaits resource cleanup");
+    }
+
+    t.done();
+}
