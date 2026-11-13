@@ -228,15 +228,10 @@ impl Runtime {
         let jit = &self.jit;
         let constants = &self.constants;
         let roots = &self.roots;
-        let tasks: Vec<Word> = self
-            .ready
-            .iter()
-            .chain(&self.spawned)
-            .chain(&self.running)
-            .chain(self.timers.iter().map(|(_, frame)| frame))
-            .chain(self.io.requests.keys())
-            .copied()
-            .collect();
+        // The scheduler's roots are visited where they live, without a
+        // vector of them per collection (#434).
+        let (ready, spawned, running) = (&self.ready, &self.spawned, &self.running);
+        let (timers, requests) = (&self.timers, &self.io.requests);
         let states = &self.states;
         self.heap.collect_with(|visit| {
             // A group's tasks are kept only while the group is reachable some
@@ -253,7 +248,8 @@ impl Runtime {
                 visit(word, repr);
             }
             visit(ctx.failure, Repr::Ref);
-            for &task in &tasks {
+            let tasks = ready.iter().chain(spawned).chain(running);
+            for &task in tasks.chain(timers.iter().map(|(_, frame)| frame)).chain(requests.keys()) {
                 visit(task, Repr::Ref);
             }
         }, |marked, visit| {
