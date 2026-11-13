@@ -11,6 +11,10 @@ pub(crate) struct State {
 }
 
 impl State {
+    pub(crate) fn begin_test_trace(&self, name: &str) {
+        self.destroy_trace.borrow_mut().begin_test(name);
+    }
+
     pub(crate) fn set_arguments(&self, arguments: Vec<String>) {
         self.native.borrow_mut().arguments = arguments;
     }

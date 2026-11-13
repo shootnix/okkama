@@ -101,6 +101,16 @@ impl Payload for RegionValue {
 }
 
 impl Resources {
+    /// Test runtimes start fresh; mark even tests with no destroyed objects.
+    pub(crate) fn trace_test(name: &str) {
+        use std::io::Write;
+        if let Some(mut file) = std::env::var_os("SPARROW_TRACE_DESTROY")
+            .and_then(|path| std::fs::OpenOptions::new().create(true).append(true).open(path).ok())
+        {
+            let _ = writeln!(file, "# test {name}");
+        }
+    }
+
     pub fn new(program: &Program) -> Self {
         Self {
             enabled: program.objects.iter().any(|o| o.destroy.is_some()),

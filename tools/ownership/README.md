@@ -16,7 +16,9 @@ python3 tools/ownership/oracle.py MODE --toolchain /tc \
 `MODE` is one of:
 
 - `engines`: build SPB, run IR and Sparrow, compare stdout bytes, exit code
-  and destroy-trace bytes. No trace sorting or serial normalization.
+  and destroy-trace bytes. Test traces are compared as ordered blocks starting
+  with `# test <name>`; both engines restart creation serials for each test.
+  Empty tests retain their separator. No trace sorting or serial normalization.
 - `ab`: build independently with environments A and B; execute A, A again,
   then B on Sparrow. Classify each corpus as `same`, `DIFF`,
   `nondeterministic`, `build-fail` (plus explicit infrastructure failures).
@@ -58,7 +60,8 @@ oracle, not the alternating steady-state timing benchmark from `ab555.sh`.
 
 Every subprocess gets closed stdin, a wall timeout, and a separate process
 group killed at completion/timeout. Default concurrency is four programs.
-Runtime cwd is the source directory. `OKKAMA_IMPORT_DIRS` defaults to
+Build and runtime cwd is the source directory for both engines and every A/A2/B
+variant; each command records its cwd in the JSON report. `OKKAMA_IMPORT_DIRS` defaults to
 `<root>/t/support`; std comes from the installation. Environment overrides
 apply to both build and run, independently for A/B, on top of the inherited
 environment. For a clean baseline explicitly set
