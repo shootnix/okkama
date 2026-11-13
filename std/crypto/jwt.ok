@@ -1,0 +1,1283 @@
+module crypto/jwt v1.0.0;
+
+// JSON Web Tokens (RFC 7519) signed as JWS compact serialization (RFC 7515):
+// HS256/384/512, RS256/384/512, ES256/384 and EdDSA (Ed25519, RFC 8037).
+//
+//     let key = JwtHmacKey(algorithm: JwtAlgorithm.hs256, secret: secret);
+//     let token = JwtToken(
+//         claims: Json(JsonField("sub", "user-7"), JsonField("role", "admin")),
+//         key: key,
+//         expires: Duration(minutes: 15)
+//     ).string();
+//
+//     let verified = JwtVerified(token: token, key: key, leeway: Duration(seconds: 30));
+//     verified.claims().text("sub");                       // "user-7"
+//     verified.claims().maybe("role").text() else "user";
+//
+// The key decides the algorithm, both when signing and when verifying: a
+// token whose `alg` is not the key's is JwtAlgorithmMismatch, and `none` is
+// never accepted, so one algorithm cannot stand in for another. exp and nbf
+// are checked whenever they are present (within the leeway), aud and iss when
+// the verifier names them. Several keys go in JwtKeys, chosen by the token's
+// kid. Tokens are at most 8 KiB.
+//
+// A service that only checks tokens holds the public half: JwtRsaKey,
+// JwtEcdsaKey and JwtEd25519Key take `verifying:` a public key as well as
+// `signing:` a private one, and such a key throws JwtKeyCannotSign when asked
+// to sign.
+//
+//     let issuer = JwtEd25519Key(signing: private, id: "2026-11");
+//     let checker = JwtKeys(JwtEd25519Key(verifying: public, id: "2026-11"));
+//     JwtVerified(token: token, keys: checker, issuer: "auth").claims();
+//
+// # Errors
+//
+// - InvalidJwt: not a compact JWS with a JSON header and claims.
+// - JwtAlgorithmMismatch: the token's alg is not the key's.
+// - JwtSignatureMismatch: the signature does not verify.
+// - JwtExpired, JwtNotYetValid: outside exp or nbf (and iat in the future).
+// - JwtAudienceMismatch, JwtIssuerMismatch: aud or iss is not the expected one.
+// - JwtUnknownKey: no key has the token's kid.
+// - InvalidJwtKey: a key that does not fit its algorithm.
+// - JwtKeyCannotSign: a verifying key asked to sign.
+
+import "json" take Json, JsonField, JsonKind, ParsedJson, JsonError;
+import "encoding/base64" take Base64Encoded, Base64Decoded, Base64Alphabet, InvalidBase64;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
+import "crypto/secret" take SecretBytes;
+import "crypto/hmac" take Hmac, HmacHash;
+import "crypto/rsa" take RsaPrivateKey, RsaPublicKey, RsaHash, RsaPkcs1Signing, RsaPkcs1Verifying;
+import "crypto/ecdsa" take EcdsaPrivateKey, EcdsaPublicKey, EcdsaCurve;
+import "crypto/ed25519" take Ed25519PrivateKey, Ed25519PublicKey;
+import "crypto/key" take VerifyingKey;
+import "crypto/error" take InvalidCryptoInput;
+import "collections/sequence" take Sequencing;
+import "time/clock" take Timing, SystemClock;
+import "time/duration" take Duration;
+import "time/clock" take Instant;
+import "testing/time" take ManualClock;
+import "crypto/nonce" take Entropy;
+import "encoding/hex" take HexEncoded, HexDecoded;
+
+// The JWS algorithms std signs and verifies.
+enum JwtAlgorithm = (hs256, hs384, hs512, rs256, rs384, rs512, es256, es384, eddsa);
+
+// The `alg` name of an algorithm.
+object JwtAlgorithmName {
+    has origin is JwtAlgorithm;
+
+    // The algorithm.
+    JwtAlgorithmName(origin is JwtAlgorithm) {
+        self.origin = origin;
+    }
+
+    // `HS256`, `RS256`, `ES256`, `EdDSA` and the like.
+    string() is string {
+        match origin {
+            case JwtAlgorithm.hs256 {
+                "HS256";
+            }
+            case JwtAlgorithm.hs384 {
+                "HS384";
+            }
+            case JwtAlgorithm.hs512 {
+                "HS512";
+            }
+            case JwtAlgorithm.rs256 {
+                "RS256";
+            }
+            case JwtAlgorithm.rs384 {
+                "RS384";
+            }
+            case JwtAlgorithm.rs512 {
+                "RS512";
+            }
+            case JwtAlgorithm.es256 {
+                "ES256";
+            }
+            case JwtAlgorithm.es384 {
+                "ES384";
+            }
+            case JwtAlgorithm.eddsa {
+                "EdDSA";
+            }
+        }
+    }
+}
+
+// A key that signs or verifies tokens of one algorithm.
+role JwtKey {
+    // Its algorithm.
+    algorithm() is JwtAlgorithm;
+    // Its kid, "" for none.
+    id() is string;
+    // The JWS signature of input; JwtKeyCannotSign for a verifying key.
+    signature(input is @byte) is @byte;
+    // Whether signature signs input.
+    verified(input is @byte, signature is @byte) is bool;
+}
+
+// An HMAC key: HS256, HS384 or HS512.
+object JwtHmacKey does JwtKey {
+    has kind is JwtAlgorithm;
+    has secret is SecretBytes;
+    has hash is HmacHash;
+    has label is string;
+
+    // secret for algorithm, at least as long as the hash (32, 48 or 64 bytes);
+    // InvalidJwtKey otherwise.
+    JwtHmacKey(algorithm is JwtAlgorithm, secret is SecretBytes, id is string = "") {
+        let pair is @int = match algorithm {
+            case JwtAlgorithm.hs256 {
+                [0, 32];
+            }
+            case JwtAlgorithm.hs384 {
+                [1, 48];
+            }
+            case JwtAlgorithm.hs512 {
+                [2, 64];
+            }
+            else {
+                [-1, 0];
+            }
+        };
+        confirm pair[0] >= 0
+            else throw InvalidJwtKey.because("an HMAC key needs HS256, HS384 or HS512");
+        confirm secret.size() >= (pair[1])
+            else throw InvalidJwtKey.because("the HMAC secret is shorter than the hash");
+        kind = algorithm;
+        self.secret = secret;
+        hash = match pair[0] {
+            case 0 {
+                HmacHash.sha256;
+            }
+            case 1 {
+                HmacHash.sha384;
+            }
+            else {
+                HmacHash.sha512;
+            }
+        };
+        label = id;
+    }
+
+    // Its algorithm.
+    algorithm() is JwtAlgorithm {
+        kind;
+    }
+
+    // Its kid.
+    id() is string {
+        label;
+    }
+
+    // The HMAC of input.
+    signature(input is @byte) is @byte {
+        Hmac(hash, secret, input).bytes();
+    }
+
+    // Whether signature is the HMAC of input, compared in constant time.
+    verified(input is @byte, signature is @byte) is bool {
+        Hmac(hash, secret, input).matches(signature);
+    }
+}
+
+// An RSA key: RS256, RS384 or RS512 (PKCS#1 v1.5), at least 2048 bits.
+object JwtRsaKey does JwtKey {
+    has kind is JwtAlgorithm;
+    has hash is RsaHash;
+    has signing is @RsaPrivateKey;
+    has public is RsaPublicKey;
+    has label is string;
+
+    // Signs and verifies with key; InvalidJwtKey for another algorithm or a key
+    // under 2048 bits.
+    JwtRsaKey(algorithm is JwtAlgorithm, signing is RsaPrivateKey, id is string = "") {
+        kind = algorithm;
+        hash = JwtRsaHash(algorithm).hash();
+        self.signing = [signing];
+        public = signing.public_key();
+        confirm signing.public_key().bits() >= 2048
+            else throw InvalidJwtKey.because("an RSA key needs 2048 bits or more");
+        label = id;
+    }
+
+    // Verifies with key only; InvalidJwtKey for another algorithm or a key under
+    // 2048 bits.
+    JwtRsaKey(algorithm is JwtAlgorithm, verifying is RsaPublicKey, id is string = "") {
+        kind = algorithm;
+        hash = JwtRsaHash(algorithm).hash();
+        let empty is @RsaPrivateKey = [];
+        signing = empty;
+        public = verifying;
+        confirm verifying.bits() >= 2048
+            else throw InvalidJwtKey.because("an RSA key needs 2048 bits or more");
+        label = id;
+    }
+
+    // Its algorithm.
+    algorithm() is JwtAlgorithm {
+        kind;
+    }
+
+    // Its kid.
+    id() is string {
+        label;
+    }
+
+    // The PKCS#1 v1.5 signature of input; JwtKeyCannotSign without the private key.
+    signature(input is @byte) is @byte {
+        confirm signing.size() == 1 else throw JwtKeyCannotSign.verifying;
+        RsaPkcs1Signing(key: signing[0], hash: hash).signature(input);
+    }
+
+    // Whether signature signs input.
+    verified(input is @byte, signature is @byte) is bool {
+        RsaPkcs1Verifying(key: public, hash: hash).verified(input, signature);
+    }
+}
+
+hidden object JwtRsaHash {
+    has origin is JwtAlgorithm;
+
+    JwtRsaHash(origin is JwtAlgorithm) {
+        self.origin = origin;
+    }
+
+    hash() is RsaHash {
+        match origin {
+            case JwtAlgorithm.rs256 {
+                RsaHash.sha256;
+            }
+            case JwtAlgorithm.rs384 {
+                RsaHash.sha384;
+            }
+            case JwtAlgorithm.rs512 {
+                RsaHash.sha512;
+            }
+            else {
+                throw InvalidJwtKey.because("an RSA key needs RS256, RS384 or RS512");
+            }
+        }
+    }
+}
+
+// An ECDSA key: ES256 on P-256 or ES384 on P-384. Signatures on the wire are
+// the fixed-width R and S of RFC 7518, not DER.
+object JwtEcdsaKey does JwtKey {
+    has kind is JwtAlgorithm;
+    has width is int;
+    has signing is @EcdsaPrivateKey;
+    has public is VerifyingKey;
+    has label is string;
+
+    // Signs and verifies with key; InvalidJwtKey unless the algorithm is ES256 on
+    // P-256 or ES384 on P-384.
+    JwtEcdsaKey(algorithm is JwtAlgorithm, signing is EcdsaPrivateKey, id is string = "") {
+        kind = algorithm;
+        width = JwtEcdsaWidth(algorithm).width();
+        public = JwtEcdsaPublic(
+            curve: JwtEcdsaWidth(algorithm).curve(),
+            origin: signing.public_key()
+        ).key();
+        self.signing = [signing];
+        label = id;
+    }
+
+    // Verifies with key only, an EcdsaPublicKey or any VerifyingKey whose
+    // SubjectPublicKeyInfo is on the algorithm's curve; InvalidJwtKey otherwise.
+    JwtEcdsaKey(algorithm is JwtAlgorithm, verifying is VerifyingKey, id is string = "") {
+        kind = algorithm;
+        width = JwtEcdsaWidth(algorithm).width();
+        let empty is @EcdsaPrivateKey = [];
+        signing = empty;
+        public = JwtEcdsaPublic(curve: JwtEcdsaWidth(algorithm).curve(), origin: verifying).key();
+        label = id;
+    }
+
+    // Its algorithm.
+    algorithm() is JwtAlgorithm {
+        kind;
+    }
+
+    // Its kid.
+    id() is string {
+        label;
+    }
+
+    // R and S of input's signature; JwtKeyCannotSign without the private key.
+    signature(input is @byte) is @byte {
+        confirm signing.size() == 1 else throw JwtKeyCannotSign.verifying;
+        JwtEcdsaRaw(der: signing[0].signature(input), width: width).bytes();
+    }
+
+    // Whether the R and S in signature sign input.
+    verified(input is @byte, signature is @byte) is bool {
+        if signature.size() != width * 2 {
+            return false;
+        }
+        public.verified(input, JwtEcdsaDer(raw: signature, width: width).bytes());
+    }
+}
+
+hidden object JwtEcdsaWidth {
+    has origin is JwtAlgorithm;
+
+    JwtEcdsaWidth(origin is JwtAlgorithm) {
+        self.origin = origin;
+    }
+
+    width() is int {
+        match origin {
+            case JwtAlgorithm.es256 {
+                32;
+            }
+            case JwtAlgorithm.es384 {
+                48;
+            }
+            else {
+                throw InvalidJwtKey.because("an ECDSA key needs ES256 or ES384");
+            }
+        }
+    }
+
+    curve() is EcdsaCurve {
+        if self.width() == 32 {
+            EcdsaCurve.p256;
+        }
+        else {
+            EcdsaCurve.p384;
+        }
+    }
+}
+
+// A verifying key as an ECDSA public key on curve.
+hidden object JwtEcdsaPublic {
+    has curve is EcdsaCurve;
+    has origin is VerifyingKey;
+
+    JwtEcdsaPublic(curve is EcdsaCurve, origin is VerifyingKey) {
+        self.curve = curve;
+        self.origin = origin;
+    }
+
+    key() is VerifyingKey {
+        try {
+            EcdsaPublicKey(curve: curve, spki: origin.bytes());
+        }
+        catch failure is InvalidCryptoInput {
+            throw InvalidJwtKey.because("the key is not an ECDSA key on the algorithm's curve");
+        };
+    }
+}
+
+// A verifying key as an Ed25519 public key.
+hidden object JwtEd25519Public {
+    has origin is VerifyingKey;
+
+    JwtEd25519Public(origin is VerifyingKey) {
+        self.origin = origin;
+    }
+
+    key() is VerifyingKey {
+        let spki = origin.bytes();
+        confirm spki.size() == 44
+            && HexEncoded(spki.slice(0, 12)).string() == "302a300506032b6570032100"
+            else throw InvalidJwtKey.because("the key is not an Ed25519 key");
+        Ed25519PublicKey(spki.slice(12, 44));
+    }
+}
+
+// A DER ECDSA signature as fixed-width R and S.
+hidden object JwtEcdsaRaw {
+    has der is @byte;
+    has width is int;
+
+    JwtEcdsaRaw(der is @byte, width is int) {
+        self.der = der;
+        self.width = width;
+    }
+
+    bytes() is @byte {
+        confirm der.size() >= 8 && der[0].int() == 48
+            else throw InvalidJwtKey.because("the ECDSA signature is not DER");
+        let start = if der[1].int() == 129 {
+            3;
+        }
+        else {
+            2;
+        };
+        let r = self.integer(start);
+        let s = self.integer(start + 2 + der[start + 1].int());
+        r + s;
+    }
+
+    hidden integer(at is int) is @byte {
+        confirm at + 2 <= der.size() && der[at].int() == 2
+            else throw InvalidJwtKey.because("the ECDSA signature is not DER");
+        let size = der[at + 1].int();
+        confirm at + 2 + size <= der.size()
+            else throw InvalidJwtKey.because("the ECDSA signature is not DER");
+        let value = der.slice(at + 2, at + 2 + size);
+        let first = (0..value.size()).reduce(value.size()) -> found, index {
+            if found == value.size() && value[index].int() != 0 {
+                index;
+            }
+            else {
+                found;
+            }
+        };
+        let trimmed = value.slice(first, value.size());
+        confirm trimmed.size() <= width
+            else throw InvalidJwtKey.because("the ECDSA key is on another curve");
+        let pad is @byte = (0..width - trimmed.size()).map() -> index {
+            byte(0);
+        };
+        pad + trimmed;
+    }
+}
+
+// Fixed-width R and S as a DER ECDSA signature.
+hidden object JwtEcdsaDer {
+    has raw is @byte;
+    has width is int;
+
+    JwtEcdsaDer(raw is @byte, width is int) {
+        self.raw = raw;
+        self.width = width;
+    }
+
+    bytes() is @byte {
+        let body = self.integer(raw.slice(0, width)) + self.integer(raw.slice(width, width * 2));
+        let length is @byte = if body.size() < 128 {
+            [body.size().byte()];
+        }
+        else {
+            [byte(129), body.size().byte()];
+        };
+        [byte(48)] + length + body;
+    }
+
+    hidden integer(value is @byte) is @byte {
+        let trimmed = JwtLeadingZeros(value).trimmed();
+        let positive is @byte = if trimmed[0].int() >= 128 {
+            [byte(0)] + trimmed;
+        }
+        else {
+            trimmed;
+        };
+        [byte(2), positive.size().byte()] + positive;
+    }
+}
+
+hidden object JwtLeadingZeros {
+    has origin is @byte;
+
+    JwtLeadingZeros(origin is @byte) {
+        self.origin = origin;
+    }
+
+    // Without leading zero bytes, keeping at least one byte.
+    trimmed() is @byte {
+        let first = (0..origin.size()).reduce(origin.size() - 1) -> found, index {
+            if found == origin.size() - 1 && origin[index].int() != 0 && index < found {
+                index;
+            }
+            else {
+                found;
+            }
+        };
+        origin.slice(first, origin.size());
+    }
+}
+
+// An Ed25519 key: EdDSA (RFC 8037).
+object JwtEd25519Key does JwtKey {
+    has signing is @Ed25519PrivateKey;
+    has public is VerifyingKey;
+    has label is string;
+
+    // Signs and verifies with key.
+    JwtEd25519Key(signing is Ed25519PrivateKey, id is string = "") {
+        self.signing = [signing];
+        public = signing.public_key();
+        label = id;
+    }
+
+    // Verifies with key only, an Ed25519PublicKey or any VerifyingKey whose
+    // SubjectPublicKeyInfo is Ed25519; InvalidJwtKey otherwise.
+    JwtEd25519Key(verifying is VerifyingKey, id is string = "") {
+        let empty is @Ed25519PrivateKey = [];
+        signing = empty;
+        public = JwtEd25519Public(verifying).key();
+        label = id;
+    }
+
+    // JwtAlgorithm.eddsa.
+    algorithm() is JwtAlgorithm {
+        JwtAlgorithm.eddsa;
+    }
+
+    // Its kid.
+    id() is string {
+        label;
+    }
+
+    // The 64-byte signature of input; JwtKeyCannotSign without the private key.
+    signature(input is @byte) is @byte {
+        confirm signing.size() == 1 else throw JwtKeyCannotSign.verifying;
+        signing[0].signature(input);
+    }
+
+    // Whether signature signs input.
+    verified(input is @byte, signature is @byte) is bool {
+        public.verified(input, signature);
+    }
+}
+
+// Several keys, chosen by the kid of a token, as a JWKS lists them.
+object JwtKeys {
+    has origin is @JwtKey;
+
+    // The keys, each with a distinct, nonempty kid; InvalidJwtKey otherwise.
+    JwtKeys(keys is ...JwtKey) {
+        let listed is @JwtKey = keys...;
+        origin = JwtKeySnapshot(listed).keys();
+    }
+
+    // The keys of a sequence.
+    JwtKeys(keys is Sequencing<JwtKey>) {
+        let listed is @JwtKey = (0..keys.size()).map() -> index {
+            keys.item(index);
+        };
+        origin = JwtKeySnapshot(listed).keys();
+    }
+
+    // The key with kid id; JwtUnknownKey when none has it.
+    key(id is string) is JwtKey {
+        for origin -> candidate {
+            if candidate.id() == id {
+                return candidate;
+            }
+        }
+        throw JwtUnknownKey.id(id);
+    }
+}
+
+hidden object JwtKeySnapshot {
+    has origin is @JwtKey;
+
+    JwtKeySnapshot(origin is @JwtKey) {
+        self.origin = origin;
+    }
+
+    keys() is @JwtKey {
+        confirm origin.size() > 0 && origin.size() <= 256
+            else throw InvalidJwtKey.because("JwtKeys holds 1 to 256 keys");
+        for (0..origin.size()) -> index {
+            let id = origin[index].id();
+            confirm id != "" else throw InvalidJwtKey.because("every key in JwtKeys needs a kid");
+            for (0..index) -> earlier {
+                confirm origin[earlier].id() != id
+                    else throw InvalidJwtKey.because("two keys have kid " + id);
+            }
+        }
+        origin;
+    }
+}
+
+// Base64url without padding, as JWS writes segments.
+hidden object JwtSegment {
+    has origin is @byte;
+
+    JwtSegment(origin is @byte) {
+        self.origin = origin;
+    }
+
+    string() is string {
+        Base64Encoded(origin: origin, alphabet: Base64Alphabet.url).string().replace("=", "");
+    }
+}
+
+hidden object JwtSegmentBytes {
+    has origin is string;
+    has part is string;
+
+    JwtSegmentBytes(origin is string, part is string) {
+        self.origin = origin;
+        self.part = part;
+    }
+
+    bytes() is @byte {
+        confirm !origin.contains("=") && origin.length() % 4 != 1
+            else throw InvalidJwt.because("the " + part + " is not base64url");
+        let padded = origin + match origin.length() % 4 {
+            case 2 {
+                "==";
+            }
+            case 3 {
+                "=";
+            }
+            else {
+                "";
+            }
+        };
+        try {
+            Base64Decoded(origin: padded, alphabet: Base64Alphabet.url).bytes();
+        }
+        catch failure is InvalidBase64 {
+            throw InvalidJwt.because("the " + part + " is not base64url");
+        }
+    }
+}
+
+hidden object JwtSegmentJson {
+    has origin is string;
+    has part is string;
+
+    JwtSegmentJson(origin is string, part is string) {
+        self.origin = origin;
+        self.part = part;
+    }
+
+    json() is Json {
+        let bytes = JwtSegmentBytes(origin: origin, part: part).bytes();
+        let value = try {
+            ParsedJson(Utf8Decoded(bytes).string()).root();
+        }
+        catch failure is InvalidUtf8 {
+            throw InvalidJwt.because("the " + part + " is not UTF-8");
+        }
+        catch failure is JsonError {
+            throw InvalidJwt.because("the " + part + " is not JSON: " + failure.text());
+        };
+        confirm value.kind() == JsonKind.object_value
+            else throw InvalidJwt.because("the " + part + " is not a JSON object");
+        value;
+    }
+}
+
+hidden object JwtNow {
+    has clock is Timing;
+
+    JwtNow(clock is Timing) {
+        self.clock = clock;
+    }
+
+    seconds() is int {
+        clock.instant().unix_duration()::Span::seconds.int();
+    }
+}
+
+// A token: claims signed with a key.
+object JwtToken {
+    has claims is Json;
+    has key is JwtKey;
+    has lifetime is @Duration;
+    has clock is Timing;
+
+    // claims signed with key, as they are.
+    JwtToken(claims is Json, key is JwtKey) {
+        self.claims = claims;
+        self.key = key;
+        let empty is @Duration = [];
+        lifetime = empty;
+        clock = SystemClock();
+    }
+
+    // claims with iat now and exp after expires, signed with key.
+    JwtToken(claims is Json, key is JwtKey, expires is Duration, clock is Timing = SystemClock()) {
+        self.claims = claims;
+        self.key = key;
+        lifetime = [expires];
+        self.clock = clock;
+    }
+
+    // The compact token; InvalidJwt when claims is not an object.
+    string() is string {
+        confirm claims.kind() == JsonKind.object_value
+            else throw InvalidJwt.because("the claims are not a JSON object");
+        let header = if key.id() == "" {
+            Json(
+                JsonField("alg", JwtAlgorithmName(key.algorithm()).string()),
+                JsonField("typ", "JWT")
+            );
+        }
+        else {
+            Json(
+                JsonField("alg", JwtAlgorithmName(key.algorithm()).string()),
+                JsonField("typ", "JWT"),
+                JsonField("kid", key.id())
+            );
+        };
+        let body = if lifetime.size() == 1 {
+            let now = JwtNow(clock).seconds();
+            claims.merged(
+                Json(
+                    JsonField("iat", now),
+                    JsonField("exp", now + lifetime[0]::Span::seconds.int())
+                )
+            );
+        }
+        else {
+            claims;
+        };
+        let input = JwtSegment(Utf8Encoded(header.string()).bytes()).string() +
+            "." + JwtSegment(Utf8Encoded(body.string()).bytes()).string();
+        input + "." + JwtSegment(key.signature(Utf8Encoded(input).bytes())).string();
+    }
+}
+
+// A token checked: its signature with the key of its algorithm, its times and,
+// when given, its audience and issuer.
+object JwtVerified {
+    has token is string;
+    has keys is @JwtKeys;
+    has single is @JwtKey;
+    has clock is Timing;
+    has leeway is int;
+    has audience is string;
+    has issuer is string;
+
+    // token checked with key at the clock's time; aud and iss are checked when
+    // not "".
+    JwtVerified(
+        token is string,
+        key is JwtKey,
+        clock is Timing = SystemClock(),
+        leeway is Duration = Duration(seconds: 0),
+        audience is string = "",
+        issuer is string = ""
+    ) {
+        self.token = token;
+        let empty is @JwtKeys = [];
+        keys = empty;
+        single = [key];
+        self.clock = clock;
+        self.leeway = leeway::Span::seconds.int();
+        self.audience = audience;
+        self.issuer = issuer;
+    }
+
+    // The same with the key chosen by the token's kid.
+    JwtVerified(
+        token is string,
+        keys is JwtKeys,
+        clock is Timing = SystemClock(),
+        leeway is Duration = Duration(seconds: 0),
+        audience is string = "",
+        issuer is string = ""
+    ) {
+        self.token = token;
+        self.keys = [keys];
+        let empty is @JwtKey = [];
+        single = empty;
+        self.clock = clock;
+        self.leeway = leeway::Span::seconds.int();
+        self.audience = audience;
+        self.issuer = issuer;
+    }
+
+    // The header, once everything checks.
+    header() is Json {
+        self.checked()[0];
+    }
+
+    // The claims, once everything checks.
+    claims() is Json {
+        self.checked()[1];
+    }
+
+    hidden checked() is @Json {
+        confirm token.length() <= 8192
+            else throw InvalidJwt.because("the token is longer than 8 KiB");
+        let parts = token.split(".");
+        confirm parts.size() == 3 && parts[0] != "" && parts[1] != "" && parts[2] != ""
+            else throw InvalidJwt.because("a token has three nonempty parts");
+        let header = JwtSegmentJson(origin: parts[0], part: "header").json();
+        confirm !header.has("crit") else throw InvalidJwt.because("crit is not supported");
+        confirm header.has("alg") && header.get("alg").kind() == JsonKind.string_value
+            else throw InvalidJwt.because("the header has no alg");
+        let alg = header.text("alg");
+        let key = self.key(header);
+        let expected = JwtAlgorithmName(key.algorithm()).string();
+        confirm alg == expected else throw JwtAlgorithmMismatch.detailed(expected, alg);
+        let signature = JwtSegmentBytes(origin: parts[2], part: "signature").bytes();
+        confirm key.verified(Utf8Encoded(parts[0] + "." + parts[1]).bytes(), signature)
+            else throw JwtSignatureMismatch.mismatch;
+        let claims = JwtSegmentJson(origin: parts[1], part: "claims").json();
+        let now = JwtNow(clock).seconds();
+        let exp = self.date(claims, "exp");
+        confirm exp.size() == 0 || now < exp[0] + leeway else throw JwtExpired.at(exp[0]);
+        let nbf = self.date(claims, "nbf");
+        confirm nbf.size() == 0 || now + leeway >= (nbf[0]) else throw JwtNotYetValid.at(nbf[0]);
+        let iat = self.date(claims, "iat");
+        confirm iat.size() == 0 || now + leeway >= (iat[0]) else throw JwtNotYetValid.at(iat[0]);
+        if audience != "" {
+            confirm self.audience_matches(claims) else throw JwtAudienceMismatch.mismatch;
+        }
+        if issuer != "" {
+            confirm claims.has("iss")
+                && claims.get("iss").kind() == JsonKind.string_value
+                && claims.text("iss") == issuer
+                else throw JwtIssuerMismatch.mismatch;
+        }
+        [header, claims];
+    }
+
+    hidden key(header is Json) is JwtKey {
+        let kid = if header.has("kid") && header.get("kid").kind() == JsonKind.string_value {
+            header.text("kid");
+        }
+        else {
+            "";
+        };
+        if keys.size() == 1 {
+            confirm kid != "" else throw JwtUnknownKey.id("");
+            return keys[0].key(kid);
+        }
+        let key = single[0];
+        confirm kid == "" || key.id() == "" || kid == key.id() else throw JwtUnknownKey.id(kid);
+        key;
+    }
+
+    hidden date(claims is Json, name is string) is @int {
+        if !claims.has(name) {
+            let empty is @int = [];
+            return empty;
+        }
+        let value = try {
+            claims.int(name);
+        }
+        catch failure is JsonError {
+            throw InvalidJwt.because(name + " must be a whole NumericDate");
+        };
+        [value];
+    }
+
+    hidden audience_matches(claims is Json) is bool {
+        if !claims.has("aud") {
+            return false;
+        }
+        let aud = claims.get("aud");
+        if aud.kind() == JsonKind.string_value {
+            return aud.text() == audience;
+        }
+        if aud.kind() == JsonKind.array_value {
+            return aud.items().reduce(false) -> found, item {
+                found || (item.kind() == JsonKind.string_value && item.text() == audience);
+            };
+        }
+        false;
+    }
+}
+
+// A token that is not a compact JWS with a JSON header and claims; reason says
+// why.
+enum InvalidJwt is Error = (because(reason is string));
+
+// The token's alg is not the key's: expected and actual name them.
+enum JwtAlgorithmMismatch is Error = (detailed(expected is string, actual is string));
+
+// The signature does not verify.
+enum JwtSignatureMismatch is Error = (mismatch);
+
+// The token expired at the NumericDate seconds.
+enum JwtExpired is Error = (at(seconds is int));
+
+// The token is not valid before the NumericDate seconds.
+enum JwtNotYetValid is Error = (at(seconds is int));
+
+// aud does not name the expected audience.
+enum JwtAudienceMismatch is Error = (mismatch);
+
+// iss is not the expected issuer.
+enum JwtIssuerMismatch is Error = (mismatch);
+
+// No key has the token's kid.
+enum JwtUnknownKey is Error = (id(id is string));
+
+// A key that does not fit its algorithm; reason says why.
+enum InvalidJwtKey is Error = (because(reason is string));
+
+// A verifying key was asked to sign.
+enum JwtKeyCannotSign is Error = (verifying);
+
+hidden object JwtTestVectors {
+    JwtTestVectors() {}
+
+    // RFC 7515 A.1: HS256 over {"iss":"joe","exp":1300819380,...}.
+    hs256() is string {
+        "eyJ0eXAiOiJKV1QiLA0KICJhbGciOiJIUzI1NiJ9" +
+            ".eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS9pc19yb290Ijp0cnVlfQ" +
+            ".dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+    }
+
+    hs256_key() is JwtHmacKey {
+        JwtHmacKey(
+            algorithm: JwtAlgorithm.hs256,
+            secret: SecretBytes(
+                HexDecoded(
+                    "0323354b2b0fa5bc837e0665777ba68f5ab328e6f054c928a90f84b2d2502ebf" +
+                        "d3fb5a92d20647ef968ab4c377623d223d2e2172052e4f08c0cd9af567d080a3"
+                ).bytes()
+            )
+        );
+    }
+
+    // RFC 7515 A.3: ES256 over the same claims.
+    es256() is string {
+        "eyJhbGciOiJFUzI1NiJ9" +
+            ".eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS9pc19yb290Ijp0cnVlfQ" +
+            ".DtEhU3ljbEg8L38VWAfUAqOyKAM6-Xx-F4GawxaepmXFCgfTjDxw5djxLa8ISlSApmWQxfKTUJqPP3-Kg6NU1Q";
+    }
+
+    es256_key_public() is EcdsaPublicKey {
+        EcdsaPublicKey(
+            curve: EcdsaCurve.p256,
+            spki: HexDecoded(
+                "3059301306072a8648ce3d020106082a8648ce3d030107034200" +
+                    "047fcdce2770f6c45d4183cbee6fdb4b7b580733357be9ef13bacf6e3c7bd15445" +
+                    "c7f144cd1bbd9b7e872cdfedb9eeb9f4b3695d6ea90b24ad8a4623288588e5ad"
+            ).bytes()
+        );
+    }
+
+    es256_key() is JwtEcdsaKey {
+        JwtEcdsaKey(algorithm: JwtAlgorithm.es256, verifying: self.es256_key_public());
+    }
+
+    clock(seconds is int) is ManualClock {
+        ManualClock(Instant(Duration(seconds: seconds)));
+    }
+
+    secret() is SecretBytes {
+        SecretBytes(Utf8Encoded("0123456789abcdef0123456789abcdef").bytes());
+    }
+
+    // header and claims JSON texts, signed with key.
+    forged(header is string, claims is string, key is JwtKey) is string {
+        let input = JwtSegment(Utf8Encoded(header).bytes()).string() + "." + JwtSegment(
+            Utf8Encoded(claims).bytes()
+        ).string();
+        input + "." + JwtSegment(key.signature(Utf8Encoded(input).bytes())).string();
+    }
+}
+
+test "JWT verifies the RFC 7515 HS256 example" {
+    let v = JwtTestVectors();
+    let verified = JwtVerified(token: v.hs256(), key: v.hs256_key(), clock: v.clock(1300819379));
+    test.is(verified.claims().text("iss"), "joe");
+    test.is(verified.claims().boolean("http://example.com/is_root"), true);
+    test.is(verified.header().text("typ"), "JWT");
+    test.throws(JwtExpired) {
+        JwtVerified(token: v.hs256(), key: v.hs256_key(), clock: v.clock(1300819380)).claims();
+    };
+    test.is(
+        JwtVerified(
+            token: v.hs256(),
+            key: v.hs256_key(),
+            clock: v.clock(1300819385),
+            leeway: Duration(seconds: 6)
+        ).claims().int("exp"),
+        1300819380
+    );
+}
+
+test "JWT verifies the RFC 7515 ES256 example" {
+    let v = JwtTestVectors();
+    test.is(
+        JwtVerified(token: v.es256(), key: v.es256_key(), clock: v.clock(1300819000)).claims().text(
+            "iss"
+        ),
+        "joe"
+    );
+    test.throws(JwtKeyCannotSign) {
+        v.es256_key().signature([1.byte()]);
+    };
+    let parts = v.es256().split(".");
+    test.throws(JwtSignatureMismatch) {
+        JwtVerified(
+            token: parts[0] + "." + parts[1] + ".AAAA",
+            key: v.es256_key(),
+            clock: v.clock(1300819000)
+        ).claims();
+    };
+}
+
+test "JWT signs the RFC 8037 Ed25519 example" {
+    let key = JwtEd25519Key(
+        signing: Ed25519PrivateKey(
+            seed: SecretBytes(
+                HexDecoded("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60").bytes()
+            )
+        )
+    );
+    let input = Utf8Encoded("eyJhbGciOiJFZERTQSJ9.RXhhbXBsZSBvZiBFZDI1NTE5IHNpZ25pbmc").bytes();
+    test.is(
+        JwtSegment(key.signature(input)).string(),
+        "hgyY0il_MGCjP0JzlnLWG1PPOt7-09PGcvMg3AIbQR6dWbhijcNR4ki4iylGjg5BhVsPt9g7sVvpAr_MuM0KAg"
+    );
+    let public = JwtEd25519Key(
+        verifying: Ed25519PublicKey(
+            HexDecoded("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a").bytes()
+        )
+    );
+    test.ok(public.verified(input, key.signature(input)));
+    test.ok(!public.verified([1.byte()], key.signature(input)));
+}
+
+test "JWT round-trips every algorithm" {
+    let v = JwtTestVectors();
+    let rsa = RsaPrivateKey(bits: 2048, entropy: Entropy.fake());
+    let p384 = EcdsaPrivateKey(curve: EcdsaCurve.p384, entropy: Entropy.fake());
+    let p256 = EcdsaPrivateKey(curve: EcdsaCurve.p256, entropy: Entropy.fake());
+    let keys is @JwtKey = [
+        JwtHmacKey(algorithm: JwtAlgorithm.hs256, secret: v.secret()),
+        JwtHmacKey(
+            algorithm: JwtAlgorithm.hs384,
+            secret: SecretBytes(HexDecoded("00".repeat(48)).bytes())
+        ),
+        JwtHmacKey(
+            algorithm: JwtAlgorithm.hs512,
+            secret: SecretBytes(HexDecoded("01".repeat(64)).bytes())
+        ),
+        JwtRsaKey(algorithm: JwtAlgorithm.rs256, signing: rsa),
+        JwtRsaKey(algorithm: JwtAlgorithm.rs384, signing: rsa),
+        JwtRsaKey(algorithm: JwtAlgorithm.rs512, signing: rsa),
+        JwtEcdsaKey(algorithm: JwtAlgorithm.es256, signing: p256),
+        JwtEcdsaKey(algorithm: JwtAlgorithm.es384, signing: p384),
+        JwtEd25519Key(signing: Ed25519PrivateKey(entropy: Entropy.fake()))
+    ];
+    for keys -> key {
+        let token = JwtToken(
+            claims: Json(JsonField("sub", "user-7")),
+            key: key,
+            expires: Duration(minutes: 15),
+            clock: v.clock(1700000000)
+        ).string();
+        let claims = JwtVerified(token: token, key: key, clock: v.clock(1700000100)).claims();
+        test.is(claims.text("sub"), "user-7");
+        test.is(claims.int("iat"), 1700000000);
+        test.is(claims.int("exp"), 1700000900);
+    }
+    let public = JwtRsaKey(algorithm: JwtAlgorithm.rs256, verifying: rsa.public_key());
+    let token = JwtToken(claims: Json(JsonField("n", 1)), key: keys[3]).string();
+    test.is(JwtVerified(token: token, key: public).claims().int("n"), 1);
+    let es = JwtEcdsaKey(
+        algorithm: JwtAlgorithm.es256,
+        verifying: EcdsaPublicKey(curve: EcdsaCurve.p256, spki: p256.public_key().bytes())
+    );
+    test.is(
+        JwtVerified(
+            token: JwtToken(claims: Json(JsonField("n", 2)), key: keys[6]).string(),
+            key: es
+        ).claims().int("n"),
+        2
+    );
+    test.is(token.split(".")[2].length(), 342);
+    for 0..24 -> index {
+        let input = Utf8Encoded("message " + index.string()).bytes();
+        test.ok(keys[6].verified(input, keys[6].signature(input)));
+        test.ok(keys[7].verified(input, keys[7].signature(input)));
+        test.is(keys[7].signature(input).size(), 96);
+    }
+}
+
+test "JWT refuses another algorithm and none" {
+    let v = JwtTestVectors();
+    let hs = JwtHmacKey(algorithm: JwtAlgorithm.hs256, secret: v.secret());
+    let hs512 = JwtHmacKey(
+        algorithm: JwtAlgorithm.hs512,
+        secret: SecretBytes(HexDecoded("01".repeat(64)).bytes())
+    );
+    let token = JwtToken(claims: Json(JsonField("a", 1)), key: hs512).string();
+    test.throws(JwtAlgorithmMismatch) {
+        JwtVerified(token: token, key: hs).claims();
+    };
+    let unsecured = v.forged("{\"alg\":\"none\"}", "{\"a\":1}", hs);
+    test.throws(JwtAlgorithmMismatch) {
+        JwtVerified(token: unsecured, key: hs).claims();
+    };
+    let unsigned = unsecured.split(".")[0] + "." + unsecured.split(".")[1] + ".";
+    test.throws(InvalidJwt) {
+        JwtVerified(token: unsigned, key: hs).claims();
+    };
+    test.throws(JwtAlgorithmMismatch) {
+        JwtVerified(token: v.hs256(), key: v.es256_key()).claims();
+    };
+}
+
+test "JWT checks the shape of a token" {
+    let v = JwtTestVectors();
+    let hs = JwtHmacKey(algorithm: JwtAlgorithm.hs256, secret: v.secret());
+    let good = JwtToken(claims: Json(JsonField("a", 1)), key: hs).string();
+    test.is(JwtVerified(token: good, key: hs).claims().int("a"), 1);
+    test.throws(InvalidJwt) {
+        JwtVerified(token: good + ".x", key: hs).claims();
+    };
+    test.throws(InvalidJwt) {
+        JwtVerified(token: "a.b", key: hs).claims();
+    };
+    test.throws(InvalidJwt) {
+        JwtVerified(token: "e30.e30.%%%", key: hs).claims();
+    };
+    test.throws(InvalidJwt) {
+        JwtVerified(token: good + "=", key: hs).claims();
+    };
+    test.throws(InvalidJwt) {
+        JwtVerified(token: "x".repeat(8193), key: hs).claims();
+    };
+    test.throws(InvalidJwt) {
+        JwtVerified(token: v.forged("{\"alg\":\"HS256\",\"alg\":\"none\"}", "{}", hs), key: hs).claims();
+    };
+    test.throws(InvalidJwt) {
+        JwtVerified(token: v.forged("{\"alg\":\"HS256\",\"crit\":[\"b64\"]}", "{}", hs), key: hs).claims();
+    };
+    test.throws(InvalidJwt) {
+        JwtVerified(token: v.forged("{\"alg\":\"HS256\"}", "[1]", hs), key: hs).claims();
+    };
+    test.throws(InvalidJwt) {
+        JwtVerified(token: v.forged("{\"alg\":\"HS256\"}", "{\"exp\":\"soon\"}", hs), key: hs).claims();
+    };
+    test.throws(InvalidJwt) {
+        JwtVerified(token: v.forged("{\"alg\":256}", "{}", hs), key: hs).claims();
+    };
+    test.throws(InvalidJwt) {
+        JwtToken(claims: Json([Json(1)]), key: hs).string();
+    };
+}
+
+test "JWT checks nbf, iat, aud and iss" {
+    let v = JwtTestVectors();
+    let hs = JwtHmacKey(algorithm: JwtAlgorithm.hs256, secret: v.secret());
+    let early = v.forged("{\"alg\":\"HS256\"}", "{\"nbf\":1000,\"iat\":990}", hs);
+    test.throws(JwtNotYetValid) {
+        JwtVerified(token: early, key: hs, clock: v.clock(999)).claims();
+    };
+    test.is(JwtVerified(token: early, key: hs, clock: v.clock(1000)).claims().int("nbf"), 1000);
+    test.is(
+        JwtVerified(token: early, key: hs, clock: v.clock(995), leeway: Duration(seconds: 5)).claims().int(
+            "nbf"
+        ),
+        1000
+    );
+    let future = v.forged("{\"alg\":\"HS256\"}", "{\"iat\":2000}", hs);
+    test.throws(JwtNotYetValid) {
+        JwtVerified(token: future, key: hs, clock: v.clock(1000)).claims();
+    };
+    let aud = v.forged("{\"alg\":\"HS256\"}", "{\"aud\":[\"api\",\"web\"],\"iss\":\"auth\"}", hs);
+    test.is(
+        JwtVerified(token: aud, key: hs, audience: "web", issuer: "auth").claims().text("iss"),
+        "auth"
+    );
+    test.throws(JwtAudienceMismatch) {
+        JwtVerified(token: aud, key: hs, audience: "admin").claims();
+    };
+    test.throws(JwtIssuerMismatch) {
+        JwtVerified(token: aud, key: hs, issuer: "other").claims();
+    };
+    test.throws(JwtAudienceMismatch) {
+        JwtVerified(token: v.forged("{\"alg\":\"HS256\"}", "{}", hs), key: hs, audience: "web").claims();
+    };
+}
+
+test "JWT chooses keys by kid" {
+    let v = JwtTestVectors();
+    let a = JwtHmacKey(algorithm: JwtAlgorithm.hs256, secret: v.secret(), id: "a");
+    let b = JwtEd25519Key(signing: Ed25519PrivateKey(entropy: Entropy.fake()), id: "b");
+    let keys = JwtKeys(a, b);
+    let token = JwtToken(claims: Json(JsonField("k", "b")), key: b).string();
+    test.is(JwtVerified(token: token, keys: keys).header().text("kid"), "b");
+    test.is(
+        JwtVerified(token: JwtToken(claims: Json(JsonField("k", 1)), key: a).string(), keys: keys).claims().int(
+            "k"
+        ),
+        1
+    );
+    let stranger = JwtHmacKey(algorithm: JwtAlgorithm.hs256, secret: v.secret(), id: "c");
+    test.throws(JwtUnknownKey) {
+        JwtVerified(
+            token: JwtToken(claims: Json(JsonField("k", 1)), key: stranger).string(),
+            keys: keys
+        ).claims();
+    };
+    test.throws(JwtUnknownKey) {
+        JwtVerified(
+            token: JwtToken(claims: Json(JsonField("k", 1)), key: stranger).string(),
+            key: a
+        ).claims();
+    };
+    test.throws(JwtUnknownKey) {
+        JwtVerified(token: v.hs256(), keys: keys).claims();
+    };
+    test.throws(InvalidJwtKey) {
+        JwtKeys(a, a);
+    };
+    test.throws(InvalidJwtKey) {
+        JwtKeys(a, JwtHmacKey(algorithm: JwtAlgorithm.hs256, secret: v.secret()));
+    };
+}
+
+test "JWT refuses keys that do not fit" {
+    let v = JwtTestVectors();
+    test.throws(InvalidJwtKey) {
+        JwtHmacKey(
+            algorithm: JwtAlgorithm.hs256,
+            secret: SecretBytes(HexDecoded("00".repeat(31)).bytes())
+        );
+    };
+    test.throws(InvalidJwtKey) {
+        JwtHmacKey(algorithm: JwtAlgorithm.hs512, secret: v.secret());
+    };
+    test.throws(InvalidJwtKey) {
+        JwtHmacKey(algorithm: JwtAlgorithm.rs256, secret: v.secret());
+    };
+    test.throws(InvalidJwtKey) {
+        JwtRsaKey(
+            algorithm: JwtAlgorithm.rs256,
+            verifying: RsaPublicKey(
+                HexDecoded(
+                    "30819f300d06092a864886f70d010101050003818d0030818902818100cc12ea" +
+                        "0429ef8530581d3ef6a38befc635deff11e21f66e1d124e6940a3c6c6bc7fb85" +
+                        "1bab78f2f27fc75b90c6494306909a784d431286effd55f09b48d8c7d2eed5bb" +
+                        "83c9c73e1952da764bfa008c9903444c31b9f8599cb2fb06b96361be613d680c" +
+                        "4beb27cc1b0bb17e25d8ebce9d8a6b1f732ac439bf4f2e3a7daa06c3c3020301" +
+                        "0001"
+                ).bytes()
+            )
+        );
+    };
+    test.throws(InvalidJwtKey) {
+        let p384 = EcdsaPrivateKey(curve: EcdsaCurve.p384, entropy: Entropy.fake());
+        JwtEcdsaKey(
+            algorithm: JwtAlgorithm.es256,
+            verifying: p384.public_key()
+        );
+    };
+    test.throws(InvalidJwtKey) {
+        JwtEcdsaKey(
+            algorithm: JwtAlgorithm.es384,
+            signing: EcdsaPrivateKey(curve: EcdsaCurve.p256, entropy: Entropy.fake())
+        );
+    };
+    test.throws(InvalidJwtKey) {
+        JwtRsaKey(
+            algorithm: JwtAlgorithm.hs256,
+            signing: RsaPrivateKey(bits: 2048, entropy: Entropy.fake())
+        );
+    };
+    test.throws(InvalidJwtKey) {
+        JwtEd25519Key(verifying: v.es256_key_public());
+    };
+    let ed = Ed25519PrivateKey(entropy: Entropy.fake());
+    let input = [5.byte()];
+    test.ok(
+        JwtEd25519Key(verifying: ed.public_key()).verified(
+            input,
+            JwtEd25519Key(signing: ed).signature(input)
+        )
+    );
+    test.is(JwtAlgorithmName(JwtAlgorithm.eddsa).string(), "EdDSA");
+    test.is(JwtAlgorithmName(JwtAlgorithm.rs384).string(), "RS384");
+}

@@ -18,6 +18,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 - **`Directory.create(parents: true)` makes the missing parents (#125).**
 
+- **`crypto/jwt`: JSON Web Tokens (#194).** Tokens are signed and checked
+  as compact JWS with HS256/384/512, RS256/384/512, ES256/384 and EdDSA:
+
+      let key = JwtHmacKey(algorithm: JwtAlgorithm.hs256, secret: secret);
+      let token = JwtToken(claims: claims, key: key, expires: Duration(minutes: 15)).string();
+      JwtVerified(token: token, key: key, audience: "orders").claims().text("sub");
+
+  The key determines the algorithm. `alg: none` and algorithm swaps are
+  refused, `exp`/`nbf`/`iat` are checked with a leeway, and `aud`/`iss` are
+  checked when the verifier names them. `JwtKeys` picks the key by `kid`. A
+  key built from a public key only verifies. The module carries the RFC 7515
+  and RFC 8037 test vectors. `examples/crypto/jwt.ok` signs a session token
+  and an Ed25519 access token.
+
 - **An XML-RPC server can answer with the standard results (#516).**
   `XmlRpcSuccess` and `XmlRpcFailure` are public, so an `XmlRpcCalling`
   written outside std returns them:
