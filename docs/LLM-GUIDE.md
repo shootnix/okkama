@@ -201,7 +201,7 @@ five configurations.
 Benchmarks live outside the repository in `../okkama-docs/benchmarks`
 (`OKKAMA_REPO` points the runner at a checkout; default `../okkama-new`).
 
-- Micro-benchmarks (#244): `python3 micro/run.py --okkama BIN [--engines tomato,ir,jvm] [--runs 5] [--only NAME,…] [--label L] [--compare micro/results/OLD.json]` in `okkama-docs/benchmarks` — one construct (`micro/lang`) or std action (`micro/std`) per program, timed in-process, net ns/op over the empty loop; `micro/coverage.py` lists std modules without one (`STD-COVERAGE.md`)
+- Micro-benchmarks (#244, protocol v2): `python3 micro/run.py --image okkama-dev --toolchain TC --stdlib TC/lib/okkama/std --okkama /toolchain/bin/okkama --engines sparrow|ir --n N --warmup W --runs 5 --build-profile P --revision REV --label L` in `okkama-docs/benchmarks` runs each program in a limited Linux container (TC is a Linux installation built in Docker); gross ns/iteration, independent checksum oracles, VALID/INCONCLUSIVE cells, result files never overwritten. `micro/report.py TEXTS --old A.json… --new B.json… -o micro.html` makes the release page. Required before every release and, when quick, after a ticket (Sparrow N=4M, IR N=200k)
 - Engine ladder: `python3 run.py --runs 10 [--only 03-float] [--engines tomato,ir,jvm,go,java,kotlin,python]`
   — the reference languages are Go, Java, Kotlin and Python (#363). Go, Java
   and Kotlin are built before measuring, and their build time is kept apart.
@@ -235,20 +235,27 @@ Benchmarks live outside the repository in `../okkama-docs/benchmarks`
   lines; compare medians of several alternating rounds with checksums.
 - PGO workloads are copies of the ladder in `okkama-rs/tools/pgo/workloads`.
 
-Reference numbers (0.5.4, Apple M2 Max / Docker arm64; plain release build;
-geometric mean over 01–10, report
-`okkama-docs/benchmarks/reports/2026-11-12-v0.5.4`; compare releases with a
-back-to-back A/B, not against an older report, and never against a PGO build):
-- Cold runs: Go is 2.3× faster than Sparrow. Sparrow is 1.43× faster than
-  Java, 1.72× faster than Kotlin, 5.9× faster than Python and 4.5× faster than
-  Okkama's JVM backend.
-- Warmed up (`--steady`): Go and HotSpot (Java, Kotlin) are 2.7–2.9× faster
-  than Sparrow, and Sparrow is 8.6× faster than Python.
-- Memory: Sparrow 8–25 MB, Go 4–13 MB, Java 44–209 MB.
-- Against 0.5.3 (v0.5.3 rebuilt, same morning): Sparrow −4.1%, every program
-  faster; the JVM backend −2.0%.
-- The largest gap is 11-ownership (region tracking): Sparrow takes 139 ms
-  against Go's 11, Java's 49 and Python's 66.
+Reference numbers (0.5.5, Apple M2 Max / Docker arm64; plain release build).
+Since 0.5.5 the release report is the micro-benchmark A/B
+(`okkama-docs/benchmarks/micro`, protocol v2, report
+`okkama-docs/benchmarks/reports/2026-11-13-v0.5.5/micro.html`): the previous
+tag rebuilt and the candidate, one session, Linux containers. The
+cross-language ladder report is made on demand. Compare releases with a
+back-to-back A/B, not against an older report, and never against a PGO build.
+- Micro against 0.5.4: Sparrow −7.5% by geometric mean over 57 reliable pairs,
+  8 programs faster beyond the noise band, 1 slower (`try-catch` +24% on Linux
+  with peak memory 535 → 76 MB, #544); the IR engine −1.2% (noise).
+- Ladder against 0.5.4: wall time at parity (Sparrow +0.7%, the JVM +0.8%);
+  10-app 107 → 95 ms and 13.3 → 12.5 MB with #522.
+- Cold runs (ladder, 01–10): Go is 2.3× faster than Sparrow. Sparrow is 1.5×
+  faster than Java, 1.8× faster than Kotlin, 5.8× faster than Python and 4.4×
+  faster than Okkama's JVM backend.
+- Warmed up (`--steady`): Go and HotSpot (Java, Kotlin) are 2.6–2.8× faster
+  than Sparrow, and Sparrow is 8.7× faster than Python.
+- Memory: Sparrow 7–46 MB, Go 4–13 MB, Java 44–429 MB.
+- The largest gap is 11-ownership (region tracking): Sparrow takes 111 ms
+  against Go's 13, Java's 54 and Python's 71; 97% of it is ownership
+  bookkeeping (`okkama-docs/ownership-hardening.md`).
 
 PostgreSQL vs psycopg2: scans 1.3–1.7× slower, inserts faster; a
 point query is one round trip since #11 (68 µs vs psycopg2's 73 µs, Docker

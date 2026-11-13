@@ -6,7 +6,36 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
-0.5.5 is in progress.
+## [0.5.5] — 2026-11-13
+
+0.5.5 is the library release: the web stack, data formats, the platform, and
+documentation for all of std.
+- **Web.** The HTTP server beats Python's `http.server` on keep-alive and on
+  new connections. The release adds route tables with the most specific
+  pattern first, sessions and CSRF, HTTPS servers, compressed replies, server
+  events, WebSockets walked with `for await`, and a test client for route
+  tables.
+- **Data.** ZIP, XML, zstd, Brotli, gzip/deflate/zlib. JSON and CSV can be read
+  from a stream with `for await`. TOML and plist read like json, CSV records
+  read by column name, and JWT is in `crypto/jwt` (#194).
+- **Platform.** Path parts, `copy` and `move(overwrite:)`,
+  `create(parents: true)`, `Run`, asynchronous processes, standard input by
+  lines, buffered standard output, PostgreSQL by URL.
+- **Documentation.** Every std module carries a synopsis, a description,
+  errors and a comment on each public name, and `okkama man` reads them
+  (#512). The examples were brought to the 0.5.5 API.
+- **Language.** `test.close`, `test.text` and `test.bytes`; elementary
+  functions, `min`, `max` and `clamp`.
+- **Measured.** From this release the release report is the micro-benchmark
+  A/B: v0.5.4 rebuilt against the candidate, 75 programs, protocol v2 in
+  limited Linux containers (`okkama-docs/benchmarks/reports/2026-11-13-v0.5.5/micro.html`).
+  - Sparrow is 7.5% faster by geometric mean, with 8 programs faster beyond
+    the noise band and 1 slower: `try-catch` is 24% slower with peak memory
+    535 → 76 MB, which is #544 and the owner's call. The IR engine is at
+    parity.
+  - The ladder is at parity. It caught #522 before the release, and 10-app
+    runs in 95 ms and 12.5 MB.
+  - Conformance passes 1025/1025 on six configurations.
 
 ### Added
 
@@ -5460,7 +5489,8 @@ First release of the Rust implementation: the compiler (lexer, parser, analysis,
 IR, Sparrow (VM with JIT) and JVM engines, the standard library, LSP, `fmt`, `lint`, the
 `blade` project manager, and packages for macOS and Linux.
 
-[Unreleased]: https://github.com/shootnix/okkama/compare/v0.5.4...HEAD
+[Unreleased]: https://github.com/shootnix/okkama/compare/v0.5.5...HEAD
+[0.5.5]: https://github.com/shootnix/okkama/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/shootnix/okkama/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/shootnix/okkama/compare/v0.5.1...v0.5.3
 [0.5.1]: https://github.com/shootnix/okkama/compare/v0.5.0...v0.5.1

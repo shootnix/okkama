@@ -8,7 +8,7 @@ is enforced by the runtime — not by code review.**
 [![CI](https://github.com/shootnix/okkama/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/shootnix/okkama/actions/workflows/ci.yml)
 [![Packages](https://github.com/shootnix/okkama/actions/workflows/packages.yml/badge.svg?branch=develop)](https://github.com/shootnix/okkama/actions/workflows/packages.yml)
 [![Release](https://img.shields.io/github/v/release/shootnix/okkama?include_prereleases&label=release)](https://github.com/shootnix/okkama/releases)
-[![Conformance](https://img.shields.io/badge/conformance-1021%2F1021%20×%203%20engines-brightgreen)](conformance/)
+[![Conformance](https://img.shields.io/badge/conformance-1025%2F1025%20×%203%20engines-brightgreen)](conformance/)
 [![License](https://img.shields.io/github/license/shootnix/okkama)](LICENSE)
 
 [Install](#install) ·
@@ -504,15 +504,15 @@ okkama build hello.ok --target sparrow -o hello.spb && sparrow hello.spb
 
 | | IR interpreter | Sparrow (JIT) | JVM |
 |---|---|---|---|
-| Start-up (`hello`) | 11 ms | **10 ms** | 49 ms |
-| `fib(32)`, 7 M calls | 1.36 s | **28 ms** | 177 ms |
-| Mandelbrot (float) | 0.52 s | **27 ms** | 135 ms |
-| 1 M successor steps | 1.02 s | **24 ms** | 126 ms |
-| 6-module application | 1.61 s | **103 ms** | 406 ms |
-| Peak memory, application | 9 MB | 13 MB | 257 MB |
+| Start-up (`hello`) | 11 ms | **11 ms** | 52 ms |
+| `fib(32)`, 7 M calls | 1.25 s | **29 ms** | 186 ms |
+| Mandelbrot (float) | 0.54 s | **28 ms** | 146 ms |
+| 1 M successor steps | 0.92 s | **24 ms** | 133 ms |
+| 6-module application | 1.58 s | **95 ms** | 367 ms |
+| Peak memory, application | 10 MB | 12 MB | 258 MB |
 | Needs | nothing | nothing | JDK |
 
-Median of ten cold runs on an Apple M2 Max (0.5.4, release build, start-up
+Median of ten cold runs on an Apple M2 Max (0.5.5, release build, start-up
 included). Sparrow (its current version is called Tomato) compiles every function to
 machine code (Cranelift) before it runs; calls are direct, async frames are
 stackless and the collector is precise.
