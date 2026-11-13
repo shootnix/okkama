@@ -28,6 +28,11 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   Resident memory stays where it was, because mimalloc keeps the freed
   pages for reuse.
 
+- **Sparrow marks an object when it queues it (#438).** An object shared
+  by many references entered the mark worklist once per reference. Now it
+  enters once. Marking takes 23–34% less time on `11-ownership`, whose
+  records sit in an array and a map at once, and 26% less after a burst.
+
 ### Fixed
 
 - **The `else` of `confirm` after an index is the confirm's (#521).**
