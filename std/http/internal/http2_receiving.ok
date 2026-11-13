@@ -1,5 +1,10 @@
 module http/internal/http2_receiving v1.0.0;
 
+// The receive side of HTTP/2 flow control: the connection window, the bodies of
+// open streams, and the credit returned as they are read.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/internal/http2_body" take Http2BodyBuffer, Http2BodyEvents;
 import "http/internal/http2_input" take Http2ControlQueuing;
 import "http/internal/http2_flow" take Http2FlowWindow, Http2DataPayload, Http2WindowFrame;
@@ -19,6 +24,7 @@ object Http2ReceiveFlow does Http2BodyEvents {
     has maximum is int;
     has stopped is Event;
 
+    // A ledger queuing WINDOW_UPDATEs on controls, with maximum streams.
     Http2ReceiveFlow(controls is Http2ControlQueuing, maximum is int) {
         confirm maximum > 0 && maximum <= 256
             else throw InvalidState.because("invalid receive slot limit");
@@ -33,6 +39,7 @@ object Http2ReceiveFlow does Http2BodyEvents {
         stopped = Event();
     }
 
+    // The same, starting from window.
     Http2ReceiveFlow(controls is Http2ControlQueuing, maximum is int, window is Http2FlowWindow) {
         confirm maximum > 0
             && maximum <= 256
@@ -48,10 +55,12 @@ object Http2ReceiveFlow does Http2BodyEvents {
         stopped = Event();
     }
 
+    // The connection window left.
     remaining() is int {
         window.value().remaining();
     }
 
+    // How many streams have bodies.
     active() is int {
         slots.value().size();
     }
@@ -72,6 +81,7 @@ object Http2ReceiveFlow does Http2BodyEvents {
         }
     }
 
+    // Expects a body on stream.
     register(stream is int) is void {
         confirm !stopped.ready() else throw InvalidState.because("receive ledger stopped");
         confirm stream > highest.value() && stream <= 2147483647 && stream % 2 == 1
@@ -90,6 +100,7 @@ object Http2ReceiveFlow does Http2BodyEvents {
         highest.replace(stream);
     }
 
+    // Attaches body to stream.
     attach(stream is int, body is Http2BodyBuffer) is void {
         confirm !stopped.ready() && body.stream() == stream && !body.closed()
             else throw InvalidState.because("invalid receive body attachment");
@@ -99,6 +110,7 @@ object Http2ReceiveFlow does Http2BodyEvents {
         matched[0].attach(body);
     }
 
+    // Registers stream with body.
     open(stream is int, body is Http2BodyBuffer) is void {
         confirm body.stream() == stream && !body.closed()
             else throw InvalidState.because("invalid receive body attachment");
@@ -106,18 +118,21 @@ object Http2ReceiveFlow does Http2BodyEvents {
         self.attach(stream, body);
     }
 
+    // The slot of stream, if any.
     matching(stream is int) is @Http2ReceivingSlot {
         slots.value().filter() -> slot {
             slot.stream() == stream;
         };
     }
 
+    // Forgets stream.
     retire(stream is int) is void {
         slots.replace(slots.value().filter() -> slot {
             slot.stream() != stream;
         });
     }
 
+    // Returns amount bytes to the connection window.
     return_credit(amount is int) is void {
         if amount > 0 {
             window.replace(window.value().credited(amount));
@@ -127,6 +142,7 @@ object Http2ReceiveFlow does Http2BodyEvents {
         }
     }
 
+    // amount bytes of stream were read.
     credit(stream is int, amount is int, stream_update is bool) is void {
         self.return_credit(amount);
         if amount > 0 && stream_update && !stopped.ready() {
@@ -134,6 +150,7 @@ object Http2ReceiveFlow does Http2BodyEvents {
         }
     }
 
+    // amount bytes of stream were dropped.
     discard(stream is int, amount is int, cancel is bool) is void {
         self.return_credit(amount);
         self.retire(stream);
@@ -142,6 +159,7 @@ object Http2ReceiveFlow does Http2BodyEvents {
         }
     }
 
+    // Charges and delivers a DATA frame.
     data(data is Http2DataPayload) is void {
         confirm !stopped.ready() else throw InvalidState.because("receive ledger stopped");
         window.replace(window.value().received(data.flow_bytes()));
@@ -184,6 +202,7 @@ object Http2ReceiveFlow does Http2BodyEvents {
         }
     }
 
+    // Applies a stream fault; true when it was handled.
     failed(failure is Http2Fault) is bool {
         let matched = self.matching(Http2FaultView(failure).stream());
         if matched.size() == 0 {
@@ -200,6 +219,7 @@ object Http2ReceiveFlow does Http2BodyEvents {
         true;
     }
 
+    // Cancels the body of stream.
     cancel(stream is int) is void {
         let matched = self.matching(stream);
         if matched.size() == 0 {
@@ -213,6 +233,7 @@ object Http2ReceiveFlow does Http2BodyEvents {
         known[0].close();
     }
 
+    // Fails every body with failure.
     stop(failure is Error) is void {
         stopped.set();
         for slots.value() -> slot {
@@ -226,24 +247,29 @@ object Http2ReceiveFlow does Http2BodyEvents {
     }
 }
 
+// The bodies waiting on one stream.
 object Http2ReceivingSlot {
     has stream is int;
     has body is Atomic<@Http2BodyBuffer>;
 
+    // The slot of stream.
     Http2ReceivingSlot(stream is int) {
         self.stream = stream;
         let empty is @Http2BodyBuffer = [];
         body = Atomic(empty);
     }
 
+    // The stream.
     stream() is int {
         stream;
     }
 
+    // Its bodies.
     bodies() is @Http2BodyBuffer {
         body.value();
     }
 
+    // Attaches origin.
     attach(origin is Http2BodyBuffer) is void {
         confirm body.value().size() == 0
             else throw InvalidState.because("receive body already attached");

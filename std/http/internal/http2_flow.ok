@@ -1,5 +1,10 @@
 module http/internal/http2_flow v1.0.0;
 
+// HTTP/2 flow control (RFC 9113 §5.2): window accounting for the connection and
+// each stream, DATA payloads and WINDOW_UPDATE frames.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/internal/http2_frame" take Http2Frame, Http2FrameHeader, Http2FrameRules, Http2Fault,
     Http2FaultScope;
 import "encoding/binary" take IntegerBytes, Binary, Signedness;
@@ -11,6 +16,7 @@ object Http2FlowWindow {
     has scope is Http2FaultScope;
     has stream, remaining is int;
 
+    // The window of stream (0 for the connection) with remaining bytes.
     Http2FlowWindow(scope is Http2FaultScope, stream is int, remaining is int) {
         confirm remaining >= -2147483647
             && remaining <= 2147483647
@@ -29,18 +35,22 @@ object Http2FlowWindow {
         self.remaining = remaining;
     }
 
+    // Connection or stream.
     scope() is Http2FaultScope {
         scope;
     }
 
+    // The stream.
     stream() is int {
         stream;
     }
 
+    // The window, which may be negative after a settings change.
     remaining() is int {
         remaining;
     }
 
+    // The window, or 0 when negative.
     available() is int {
         if remaining < 0 {
             0;
@@ -50,6 +60,7 @@ object Http2FlowWindow {
         }
     }
 
+    // This window after sending length bytes; Http2NoCredit beyond it.
     sent(length is int) is ^Http2FlowWindow {
         Http2FlowDebit(length);
         // Caller decides when an empty terminal DATA frame is legal; zero
@@ -58,6 +69,7 @@ object Http2FlowWindow {
         ^remaining = remaining - length;
     }
 
+    // This window after receiving length bytes; Http2Fault beyond it.
     received(length is int) is ^Http2FlowWindow {
         Http2FlowDebit(length);
         confirm length == 0 || length <= remaining
@@ -65,6 +77,8 @@ object Http2FlowWindow {
         ^remaining = remaining - length;
     }
 
+    // This window after a WINDOW_UPDATE of increment; Http2Fault for 0 or an
+    // overflow.
     credited(increment is int) is ^Http2FlowWindow {
         confirm increment > 0 && increment <= 2147483647
             else throw Http2Fault.detailed(scope, 1, stream, "invalid window increment");
@@ -73,6 +87,7 @@ object Http2FlowWindow {
         ^remaining = remaining + increment;
     }
 
+    // This stream window after a change of the initial window by delta.
     adjusted(delta is int) is ^Http2FlowWindow {
         confirm scope == Http2FaultScope.stream
             else throw Http2Fault.detailed(
@@ -108,6 +123,7 @@ hidden object Http2FlowDebit {
 object Http2SendCredit {
     has connection, stream is Http2FlowWindow;
 
+    // The connection's window and the stream's.
     Http2SendCredit(connection is Http2FlowWindow, stream is Http2FlowWindow) {
         confirm connection.scope() == Http2FaultScope.connection
             && stream.scope() == Http2FaultScope.stream
@@ -121,14 +137,17 @@ object Http2SendCredit {
         self.stream = stream;
     }
 
+    // The connection window.
     connection() is Http2FlowWindow {
         connection;
     }
 
+    // The stream window.
     stream() is Http2FlowWindow {
         stream;
     }
 
+    // How many bytes may be sent now.
     available() is int {
         let first = connection.available();
         let second = stream.available();
@@ -140,6 +159,7 @@ object Http2SendCredit {
         }
     }
 
+    // This credit after sending length bytes.
     spent(length is int) is ^Http2SendCredit {
         Http2FlowDebit(length);
         confirm length == 0 || length <= self.available()
@@ -149,11 +169,14 @@ object Http2SendCredit {
     }
 }
 
+// A send went beyond the window.
 enum Http2NoCredit is Error = (stream(stream is int));
 
+// A received DATA frame.
 object Http2DataPayload {
     has frame is Http2Frame;
 
+    // Reads frame; Http2Fault when it is not valid DATA.
     Http2DataPayload(frame is Http2Frame) {
         confirm frame.header().kind().int() == 0
             else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "DATA required");
@@ -161,18 +184,22 @@ object Http2DataPayload {
         self.frame = frame;
     }
 
+    // The stream.
     stream() is int {
         frame.header().stream();
     }
 
+    // The bytes it counts against the window, padding included.
     flow_bytes() is int {
         frame.header().length();
     }
 
+    // Whether it ends the stream.
     end_stream() is bool {
         (frame.header().flags().int() & 1) != 0;
     }
 
+    // The data, without padding.
     bytes() is @byte {
         let payload = frame.payload();
         let padded = (frame.header().flags().int() & 8) != 0;
@@ -185,9 +212,11 @@ object Http2DataPayload {
     }
 }
 
+// A received WINDOW_UPDATE.
 object Http2WindowIncrement {
     has stream, amount is int;
 
+    // Reads frame; Http2Fault when it is not a valid WINDOW_UPDATE.
     Http2WindowIncrement(frame is Http2Frame) {
         confirm frame.header().kind().int() == 8
             else throw Http2Fault.detailed(
@@ -201,18 +230,22 @@ object Http2WindowIncrement {
         amount = Binary(bytes: frame.payload(), order: ByteOrder.big).int(Signedness.unsigned) & 2147483647;
     }
 
+    // The stream, 0 for the connection.
     stream() is int {
         stream;
     }
 
+    // The increment.
     amount() is int {
         amount;
     }
 }
 
+// A WINDOW_UPDATE to send.
 object Http2WindowFrame {
     has stream, amount is int;
 
+    // amount for stream (0 for the connection).
     Http2WindowFrame(stream is int, amount is int) {
         confirm stream >= 0 && stream <= 2147483647 && amount > 0 && amount <= 2147483647
             else throw Http2Fault.detailed(
@@ -225,6 +258,7 @@ object Http2WindowFrame {
         self.amount = amount;
     }
 
+    // The frame.
     frame() is Http2Frame {
         Http2Frame(
             header: Http2FrameHeader(8.byte(), 0.byte(), stream, 4),
