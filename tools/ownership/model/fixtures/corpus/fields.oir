@@ -1,0 +1,36 @@
+# corpus/fields
+profile own
+summary item take direct
+scope.begin fields
+new a A
+new b B
+object pair left=a right=b
+bind pair_bind pair
+check ''
+scope.end fields
+check BA
+reset.log
+scope.begin shared
+new shared_a A
+bind shared_bind shared_a
+object shared_pair left=shared_a right=shared_a
+scope.end shared
+check A
+reset.log
+scope.begin parent
+new c C
+new owner O item=c
+bind owner_bind owner
+scope.end parent
+check OC
+reset.log
+scope.begin escaped
+new c2 C
+new owner2 O item=c2
+call.enter extract item owner2
+get child owner2 item
+call.exit extract child
+check O
+use child
+scope.end escaped
+check OC

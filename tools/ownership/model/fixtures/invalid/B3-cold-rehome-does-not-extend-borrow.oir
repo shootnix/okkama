@@ -1,0 +1,8 @@
+# invalid/B3-cold-rehome-does-not-extend-borrow
+profile own
+scope.begin outer async
+scope.begin inner
+new borrowed A
+bind bound borrowed
+future f void - bound borrowed
+cache.rehome f outer

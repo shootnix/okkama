@@ -1,0 +1,16 @@
+# valid/final-cleanup-cancel-aborts-result
+profile own
+scope.begin caller async
+scope.begin action
+new.async a A
+new r R
+exit.prepare action r
+cleanup.begin action
+cleanup.step action
+cancel action
+cleanup.resume action
+cleanup.step action
+cleanup.step action
+cleanup.step action
+assert.failure Cancelled
+scope.end caller

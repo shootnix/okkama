@@ -1,0 +1,16 @@
+# review/12-duplicate-collector-positions
+profile own
+scope.begin caller async
+future a new A bound
+future b new B bound
+collect.all results a b a
+assert.items results @result:a @result:b @result:a
+completions stream a a
+completion.next first stream
+await first_view first
+use first_view
+completion.next second stream
+await second_view second
+use second_view
+check ''
+scope.end caller

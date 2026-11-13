@@ -1,0 +1,546 @@
+{
+  "result": "PASS",
+  "unittest_tests": 11,
+  "fixtures": 110,
+  "accepted": 73,
+  "rejected_as_expected": 37,
+  "verified_positive_paths": 75,
+  "by_status": {
+    "corpus-golden": 25,
+    "normative": 76,
+    "proposed-581": 8,
+    "unresolved-fake": 1
+  },
+  "review_findings": 24,
+  "verifier_rules": 11,
+  "corpus_programs": 25,
+  "corpus_tap_checks": 133,
+  "corpus": [
+    {
+      "source": "tests/ownership-corpus/scopes.ok",
+      "source_sha256": "a94e400d76f8d7ee381b5a96ee5c5ea1a07c1b344fdc664b3f799da5f0095fa0",
+      "fixture": "corpus/scopes.oir",
+      "checks": 6,
+      "checkpoints": [
+        "CB",
+        "CBS",
+        "CBSA",
+        "",
+        "X",
+        "Y"
+      ],
+      "destroy": [
+        "C",
+        "B",
+        "S",
+        "A",
+        "X",
+        "Y"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/branches.ok",
+      "source_sha256": "6cae9756e08f2b8c835a7bec1fb2b9d6fdf094a091745b17033d5d0260a8876e",
+      "fixture": "corpus/branches.oir",
+      "checks": 8,
+      "checkpoints": [
+        "L",
+        "LA",
+        "B",
+        "B",
+        "L",
+        "LM",
+        "D",
+        "D"
+      ],
+      "destroy": [
+        "L",
+        "A",
+        "B",
+        "L",
+        "M",
+        "D"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/loops.ok",
+      "source_sha256": "fbabe5eee2f3979fa0448b6a408df6015b80a2c8904ee7952e1b307304836218",
+      "fixture": "corpus/loops.oir",
+      "checks": 6,
+      "checkpoints": [
+        "dAdB",
+        "L",
+        "LR",
+        "IO",
+        "iAiB",
+        "AB"
+      ],
+      "destroy": [
+        "A",
+        "B",
+        "L",
+        "R",
+        "I",
+        "O",
+        "i",
+        "A",
+        "i",
+        "B",
+        "A",
+        "B"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/rebinds.ok",
+      "source_sha256": "21becb66df3cdb080476bd31b5efb6da38572ae484f9425bc9cdc1024e26a81d",
+      "fixture": "corpus/rebinds.oir",
+      "checks": 5,
+      "checkpoints": [
+        "",
+        "",
+        "",
+        "CBA",
+        "X|YX"
+      ],
+      "destroy": [
+        "C",
+        "B",
+        "A",
+        "Y",
+        "X"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/temporary-receivers.ok",
+      "source_sha256": "af1a96d3988bd2dd507219c699daaa0f69b50cfc2f0cc69a4446c23443c9e1da",
+      "fixture": "corpus/temporary-receivers.oir",
+      "checks": 6,
+      "checkpoints": [
+        "A",
+        "A",
+        "A",
+        "ACB",
+        "",
+        "ED"
+      ],
+      "destroy": [
+        "A",
+        "C",
+        "B",
+        "E",
+        "D"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/temporary-arguments.ok",
+      "source_sha256": "e783139c6fb5134f3eb275785c3191b61807e17a14f31eab9839cbf944a67267",
+      "fixture": "corpus/temporary-arguments.oir",
+      "checks": 5,
+      "checkpoints": [
+        "BA",
+        "B",
+        "B",
+        "BA",
+        "DC"
+      ],
+      "destroy": [
+        "B",
+        "A",
+        "B",
+        "A",
+        "D",
+        "C"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/call-chains.ok",
+      "source_sha256": "c42a33eccb452f574ede15fda115e84f3cc7254c9f24111fdb3d0ef15ba4539d",
+      "fixture": "corpus/call-chains.oir",
+      "checks": 5,
+      "checkpoints": [
+        "",
+        "A",
+        "B",
+        "",
+        "C"
+      ],
+      "destroy": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/call-results.ok",
+      "source_sha256": "99f292735a5caeb790461c09462b951e842292d1796d82a8176f3fdf23f00401",
+      "fixture": "corpus/call-results.oir",
+      "checks": 6,
+      "checkpoints": [
+        "",
+        "DN",
+        "",
+        "F",
+        "",
+        "C"
+      ],
+      "destroy": [
+        "D",
+        "N",
+        "F",
+        "C"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/fields.ok",
+      "source_sha256": "9a2cc676972069f9b9fdacf7f35f56091d4ef2fddafa68b1af3b99a93fdf0b5e",
+      "fixture": "corpus/fields.oir",
+      "checks": 6,
+      "checkpoints": [
+        "",
+        "BA",
+        "A",
+        "OC",
+        "O",
+        "OC"
+      ],
+      "destroy": [
+        "B",
+        "A",
+        "A",
+        "O",
+        "C",
+        "O",
+        "C"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/arrays.ok",
+      "source_sha256": "256b4cc0c4010f4ff84038c401f749e0e451f3ec49cd1464d515c555de9193c3",
+      "fixture": "corpus/arrays.oir",
+      "checks": 7,
+      "checkpoints": [
+        "",
+        "CBA",
+        "A",
+        "B",
+        "BA",
+        "Z",
+        "QQ"
+      ],
+      "destroy": [
+        "C",
+        "B",
+        "A",
+        "A",
+        "B",
+        "A",
+        "Z",
+        "Q",
+        "Q"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/maps.ok",
+      "source_sha256": "109b7a00f637d286f3f97f4634fe73667ee6f8900a618b6aeadc8f57f00b6f31",
+      "fixture": "corpus/maps.oir",
+      "checks": 5,
+      "checkpoints": [
+        "CBA",
+        "A",
+        "",
+        "BA",
+        "YX"
+      ],
+      "destroy": [
+        "C",
+        "B",
+        "A",
+        "A",
+        "B",
+        "A",
+        "Y",
+        "X"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/collection-copies.ok",
+      "source_sha256": "a57d6436c8a2dba3c95f70a2f87acfc02c8df2e0c79d21d593a7d9d68a2af00a",
+      "fixture": "corpus/collection-copies.oir",
+      "checks": 5,
+      "checkpoints": [
+        "",
+        "",
+        "CBA",
+        "",
+        "BA"
+      ],
+      "destroy": [
+        "C",
+        "B",
+        "A",
+        "B",
+        "A"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/successor-fields.ok",
+      "source_sha256": "4738cb691b3942628fd1c317211cbad217fd56aca85f10f2c1858da5dc03889c",
+      "fixture": "corpus/successor-fields.oir",
+      "checks": 4,
+      "checkpoints": [
+        "S",
+        "SOA",
+        "SB",
+        "SBOA"
+      ],
+      "destroy": [
+        "S",
+        "O",
+        "A",
+        "S",
+        "B",
+        "O",
+        "A"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/successor-staging.ok",
+      "source_sha256": "21971260d822ce843d5bfd73f1d97864553fe6aed61ef139d04d77a5855a5bb3",
+      "fixture": "corpus/successor-staging.oir",
+      "checks": 4,
+      "checkpoints": [
+        "c",
+        "cB",
+        "cBF",
+        "cBFA"
+      ],
+      "destroy": [
+        "B",
+        "F",
+        "A"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/unwind.ok",
+      "source_sha256": "8204b6940ea42a92b2b8fb88b3f04775a2c4e5b00920abe56f0c29969f848d6d",
+      "fixture": "corpus/unwind.oir",
+      "checks": 5,
+      "checkpoints": [
+        "BA",
+        "BAH",
+        "BAHO",
+        "BHA",
+        "BHA"
+      ],
+      "destroy": [
+        "B",
+        "A",
+        "H",
+        "O",
+        "B",
+        "H",
+        "A"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/try-results.ok",
+      "source_sha256": "f7bba6f85813da935ffbd79aa85666cd4c31d3b3cd909bc07de9d4cb3f9e9dcb",
+      "fixture": "corpus/try-results.oir",
+      "checks": 6,
+      "checkpoints": [
+        "L",
+        "LT",
+        "LH",
+        "LHC",
+        "",
+        "M"
+      ],
+      "destroy": [
+        "L",
+        "T",
+        "L",
+        "H",
+        "C",
+        "M"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/defer-order.ok",
+      "source_sha256": "8db20e27e47e4a595dd26429a7888f15bb1dc3b1eca152e52b0b48535d171019",
+      "fixture": "corpus/defer-order.oir",
+      "checks": 5,
+      "checkpoints": [
+        "2A1BA",
+        "",
+        "DA",
+        "dL",
+        "dLR"
+      ],
+      "destroy": [
+        "B",
+        "A",
+        "D",
+        "A",
+        "L",
+        "R"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/destroy-failures.ok",
+      "source_sha256": "0d756928a900c29b877112f3eae9e4ba35ab3a23258f92eed986101cc3b7b9f3",
+      "fixture": "corpus/destroy-failures.oir",
+      "checks": 4,
+      "checkpoints": [
+        "BA",
+        "BA",
+        "BAp",
+        "Ad"
+      ],
+      "destroy": [
+        "B",
+        "A",
+        "B",
+        "A",
+        "A"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/partial-construction.ok",
+      "source_sha256": "cf79021afd16d35a1e3448976c0d553b03d40173bd8e4a6e1bac7f5da9f83e30",
+      "fixture": "corpus/partial-construction.oir",
+      "checks": 4,
+      "checkpoints": [
+        "A",
+        "B",
+        "C",
+        "I"
+      ],
+      "destroy": [
+        "A",
+        "B",
+        "C",
+        "I"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/confirm-and-errors.ok",
+      "source_sha256": "f41b3ffc8494ab4f8a3c0fd2c2d06a49e0bd041ee41d793f80e7480089cc9684",
+      "fixture": "corpus/confirm-and-errors.oir",
+      "checks": 5,
+      "checkpoints": [
+        "A",
+        "A7",
+        "",
+        "A",
+        "AH"
+      ],
+      "destroy": [
+        "A",
+        "A",
+        "A",
+        "H"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/closures.ok",
+      "source_sha256": "c8ae79a3dffbfb24b08212a2ea8e70ceac88bafd9afdf859cef67f1a8900e0b3",
+      "fixture": "corpus/closures.oir",
+      "checks": 6,
+      "checkpoints": [
+        "",
+        "",
+        "BA",
+        "",
+        "A",
+        "BA"
+      ],
+      "destroy": [
+        "B",
+        "A",
+        "A",
+        "B",
+        "A"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/bound-actions.ok",
+      "source_sha256": "6d711501aebfcb38d2e4a0df76010b6ed1efdf349d3466c7513bfc9093232292",
+      "fixture": "corpus/bound-actions.oir",
+      "checks": 5,
+      "checkpoints": [
+        "",
+        "",
+        "OR",
+        "",
+        "OR"
+      ],
+      "destroy": [
+        "O",
+        "R",
+        "O",
+        "R"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/caps.ok",
+      "source_sha256": "7cb5cc78ebd212baeea9212505ef76f013a98059ccf460d1fe4cfc594dc209db",
+      "fixture": "corpus/caps.oir",
+      "checks": 4,
+      "checkpoints": [
+        "",
+        "OR",
+        "S",
+        "SO|OR"
+      ],
+      "destroy": [
+        "O",
+        "R",
+        "S",
+        "O",
+        "R"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/roles-generics.ok",
+      "source_sha256": "c128b268e8f25ab49833d33f4ea8d10d1a3b04453f9df27a7d6795119d279f00",
+      "fixture": "corpus/roles-generics.oir",
+      "checks": 5,
+      "checkpoints": [
+        "",
+        "R",
+        "BA",
+        "",
+        "X"
+      ],
+      "destroy": [
+        "R",
+        "B",
+        "A",
+        "X"
+      ]
+    },
+    {
+      "source": "tests/ownership-corpus/atomic-resources.ok",
+      "source_sha256": "e27678ffe8b598bbb8ac633deaeb4a738bbac774ef3fa89ab186d99403b3a0ad",
+      "fixture": "corpus/atomic-resources.oir",
+      "checks": 6,
+      "checkpoints": [
+        "",
+        "",
+        "",
+        "BA",
+        "I",
+        "IO"
+      ],
+      "destroy": [
+        "B",
+        "A",
+        "I",
+        "O"
+      ]
+    }
+  ],
+  "runtime_executed": false,
+  "proposals_approved": false,
+  "comparison": "All original literal t.is(log.value(), expected, ...) goldens; no runtime execution."
+}

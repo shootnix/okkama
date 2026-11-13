@@ -1,0 +1,10 @@
+# valid/body-failure-not-replaced-by-defer-return
+profile own
+failure body typed Body
+scope.begin caller
+scope.begin action
+new a A
+defer action exit.prepare action a
+scope.unwind action body
+assert.failure Body
+scope.end caller

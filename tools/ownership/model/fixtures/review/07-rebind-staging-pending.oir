@@ -1,0 +1,22 @@
+# review/07-rebind-staging-pending
+profile own
+scope.begin caller
+scope.begin s
+new a A
+bind r a
+defer s emit.label &r
+scope.begin iteration1
+new b B
+rebind r b
+scope.end iteration1
+scope.begin iteration2
+new c C
+rebind r c
+scope.end iteration2
+new result R
+exit.prepare s result
+defer s fail typed Defer
+scope.end s
+assert.failure Defer
+check CRCBA
+scope.end caller

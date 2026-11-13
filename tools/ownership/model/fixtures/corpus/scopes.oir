@@ -1,0 +1,32 @@
+# corpus/scopes
+profile own
+scope.begin outer
+new a A
+bind a_bind a
+scope.begin middle
+new b B
+scope.begin inner
+new c C
+scope.end inner
+scope.end middle
+check CB
+scope.begin shadow
+new shadow_a S
+use shadow_a
+scope.end shadow
+check CBS
+use a
+scope.end outer
+check CBSA
+reset.log
+scope.begin temporary
+new x X
+check ''
+scope.end temporary
+check X
+reset.log
+scope.begin discarded
+new y Y
+use y
+scope.end discarded
+check Y

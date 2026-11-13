@@ -1,0 +1,17 @@
+# review/01-bound-take-aliases
+profile own
+summary retain take direct
+scope.begin outer
+new a A
+bind a_bind a
+scope.begin inner
+call.enter constructor retain a
+new h H child=a
+call.exit constructor h
+array duplicates a a
+use h
+scope.end inner
+check H
+use a
+assert.owner a outer
+scope.end outer

@@ -1,0 +1,13 @@
+# review/05-broken-late-old-stage
+profile own
+failure stop typed Stop
+scope.begin constructor
+scope.begin inner
+new a A
+new b B
+stage constructor right b
+stage constructor left a
+scope.end inner
+check ''
+scope.unwind constructor stop
+catch Stop caught

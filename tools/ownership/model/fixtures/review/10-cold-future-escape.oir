@@ -1,0 +1,15 @@
+# review/10-cold-future-escape
+profile own
+scope.begin caller async
+scope.begin make
+new receiver R
+new arg A
+future cold void - bound receiver arg
+cache.rehome cold caller
+exit.prepare make cold
+scope.end make
+exit.commit make caller
+check ''
+await result cold
+check AR
+scope.end caller

@@ -1,0 +1,8 @@
+# review/23-destroy-self-roots-failure
+profile own
+scope.begin s
+new a A
+new b B
+on.destroy b 'alias alias_self self' 'use alias_self' 'gc self a' 'new temporary T' 'fail typed Cleanup'
+scope.end s
+assert.failure Cleanup

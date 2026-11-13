@@ -1,0 +1,12 @@
+# valid/bound-unique-take-keeps-original-boundary
+profile own
+summary label borrow direct
+scope.begin s async
+future f new R bound
+unique-cache unique f
+await.take result f unique
+call.enter label_call label result
+use result
+call.exit label_call -
+check ''
+scope.end s

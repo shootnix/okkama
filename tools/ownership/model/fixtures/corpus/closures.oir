@@ -1,0 +1,42 @@
+# corpus/closures
+profile own
+summary make take direct
+scope.begin first
+call.enter factory make
+new z A
+new a B
+closure f a z
+call.exit factory f
+bind f_bind f
+check ''
+use f
+use f
+check ''
+scope.end first
+check BA
+reset.log
+scope.begin second
+new shared A
+bind shared_bind shared
+closure f2 shared
+closure g2 shared
+scope.begin storage
+object stored action=f2
+use stored
+use g2
+scope.end storage
+check ''
+scope.end second
+check A
+reset.log
+scope.begin third
+call.enter factory2 make
+new z2 A
+new a2 B
+closure f3 a2 z2
+call.exit factory2 f3
+object stored3 action=f3
+bind stored_bind stored3
+use stored3
+scope.end third
+check BA

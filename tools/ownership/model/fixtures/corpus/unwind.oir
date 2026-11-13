@@ -1,0 +1,33 @@
+# corpus/unwind
+profile own
+failure stop typed Stop
+scope.begin outer
+new o O
+scope.begin try_outer
+new a A
+scope.begin try_inner
+new b B
+scope.unwind try_inner stop
+scope.unwind try_outer stop
+catch Stop first
+scope.begin handler
+check BA
+new h H
+scope.end handler
+check BAH
+scope.end outer
+check BAHO
+reset.log
+scope.begin try2
+new a2 A
+scope.begin inner2
+new b2 B
+scope.unwind inner2 stop
+catch Stop rethrow
+scope.begin handler2
+new h2 H
+scope.unwind handler2 rethrow
+scope.unwind try2 rethrow
+catch Stop final
+check BHA
+check BHA

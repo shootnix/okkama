@@ -1,0 +1,31 @@
+# corpus/successor-fields
+profile own
+scope.begin original_scope
+new a A
+new original O item=a
+bind original_bind original
+scope.begin copy_scope
+get inherited original item
+new copy S item=inherited
+succ copy
+use copy
+scope.end copy_scope
+check S
+use original
+scope.end original_scope
+check SOA
+reset.log
+scope.begin original_scope2
+new a2 A
+new original2 O item=a2
+bind original_bind2 original2
+scope.begin replace_scope
+new b B
+new replaced S item=b
+succ replaced
+use replaced
+scope.end replace_scope
+check SB
+use original2
+scope.end original_scope2
+check SBOA

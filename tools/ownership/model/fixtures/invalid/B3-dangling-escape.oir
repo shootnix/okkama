@@ -1,0 +1,16 @@
+# invalid/B3-dangling-escape
+profile own
+scope.begin outer
+scope.begin inner
+new a A
+# First transfer excludes the unrelated borrowed dependency.
+scope.split inner a held
+own.split held a rest selected deps
+own.admit rest inner
+own.admit selected inner
+plain result
+# A deps-only view selects no owned identity.
+deps.view view a
+exit.prepare inner view
+scope.end inner
+exit.commit inner outer

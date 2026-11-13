@@ -1,0 +1,27 @@
+# review/11-shared-outcome-and-borrowed-take
+profile own
+summary label borrow direct
+scope.begin caller async
+future f new R bound
+scope.begin first
+await first_view f
+use first_view
+call.enter label_call label first_view
+use first_view
+call.exit label_call -
+scope.end first
+check ''
+scope.begin second
+await second_view f
+use second_view
+scope.end second
+new a A
+bind a_bind a
+scope.begin temporary
+future identity borrow a temporary a
+unique-cache unique identity
+await.take borrowed identity unique
+use borrowed
+scope.end temporary
+use a
+scope.end caller

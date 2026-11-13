@@ -1,0 +1,54 @@
+# corpus/loops
+profile own
+# Finite visited iterations, next/last lowered to lexical exits.
+scope.begin iter_A
+new a A
+defer iter_A emit d
+scope.end iter_A
+scope.begin iter_B
+new b B
+defer iter_B emit d
+scope.end iter_B
+check dAdB
+reset.log
+scope.begin receiving
+scope.begin valued_last
+new local L
+new result R
+exit.prepare valued_last result
+scope.end valued_last
+exit.commit valued_last receiving
+check L
+use result
+scope.end receiving
+check LR
+reset.log
+scope.begin loop_outer
+new outer O
+scope.begin loop_inner
+new inner I
+scope.end loop_inner
+scope.end loop_outer
+check IO
+reset.log
+scope.begin outerA
+new a2 A
+scope.begin innerA
+new ia i
+scope.end innerA
+scope.end outerA
+scope.begin outerB
+new b2 B
+scope.begin innerB
+new ib i
+scope.end innerB
+scope.end outerB
+check iAiB
+reset.log
+scope.begin next_iteration
+new a3 A
+scope.end next_iteration
+scope.begin last_iteration
+new b3 B
+scope.end last_iteration
+check AB

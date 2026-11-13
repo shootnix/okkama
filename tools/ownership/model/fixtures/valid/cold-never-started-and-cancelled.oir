@@ -1,0 +1,11 @@
+# valid/cold-never-started-and-cancelled
+profile own
+scope.begin s async
+new r R
+new a A
+future cold void - bound r a
+new b B
+future cancelled void - bound b
+future.cancel cancelled
+check ''
+scope.end s

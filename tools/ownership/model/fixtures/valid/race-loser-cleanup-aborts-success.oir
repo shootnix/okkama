@@ -1,0 +1,17 @@
+# valid/race-loser-cleanup-aborts-success
+profile own
+failure cleanup typed Cleanup
+scope.begin caller async
+scope.begin race
+new loser_input L
+on.destroy loser_input 'fail typed Cleanup'
+future loser void - bound loser_input
+future winner new W bound
+future.start loser
+await uncommitted winner
+future.cancel loser
+assert.failure Cancelled Cleanup
+scope.unwind race cleanup
+assert.failure Cleanup
+check LW
+scope.end caller

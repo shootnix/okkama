@@ -1,0 +1,17 @@
+# valid/branch-mutually-exclusive-tokens
+profile own
+scope.begin s
+new a A
+scope.split s a input
+branch true left right
+label left
+own.move input moved_left
+own.admit moved_left s
+jump merge
+label right
+own.move input moved_right
+own.admit moved_right s
+jump merge
+label merge
+use a
+scope.end s

@@ -1,0 +1,33 @@
+# corpus/confirm-and-errors
+profile own
+failure stop typed Stop
+scope.begin failed_confirm
+new a A
+scope.unwind failed_confirm stop
+catch Stop bound_code
+check A
+plain code7
+error.payload code7
+emit 7
+check A7
+reset.log
+scope.begin successful_confirm
+new a2 A
+use a2
+check ''
+scope.end successful_confirm
+check A
+reset.log
+scope.begin outer_try
+scope.begin inner_try
+new a3 A
+scope.unwind inner_try stop
+catch Stop cause
+scope.begin handler
+new h H
+failure wrapped typed Wrapped
+failure.cause wrapped cause
+scope.unwind handler wrapped
+scope.unwind outer_try wrapped
+catch Wrapped final
+check AH

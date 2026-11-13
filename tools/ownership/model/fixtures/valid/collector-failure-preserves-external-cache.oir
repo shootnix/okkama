@@ -1,0 +1,11 @@
+# valid/collector-failure-preserves-external-cache
+profile own
+scope.begin s async
+future a new A bound
+future b fail Stop bound
+collect.all ignored a b a
+assert.failure Stop
+await result a
+use result
+check ''
+scope.end s

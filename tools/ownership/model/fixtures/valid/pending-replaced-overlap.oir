@@ -1,0 +1,16 @@
+# valid/pending-replaced-overlap
+profile own
+scope.begin caller
+scope.begin action
+new a A
+new b B
+new c C
+array first a b
+array replacement b c
+exit.prepare action first
+defer action exit.prepare action replacement
+scope.end action
+exit.commit action caller
+check A
+use replacement
+scope.end caller

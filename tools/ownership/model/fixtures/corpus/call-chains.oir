@@ -1,0 +1,44 @@
+# corpus/call-chains
+profile own
+summary relay take direct
+summary observe borrow direct
+scope.begin main
+scope.begin first
+new a A
+call.enter outer relay a
+call.enter middle relay a
+call.enter inner relay a
+call.exit inner a
+call.exit middle a
+call.exit outer a
+bind result a
+check ''
+use a
+scope.end first
+check A
+reset.log
+new b B
+call.enter consume observe b
+call.enter middle_b relay b
+call.exit middle_b b
+use b
+call.exit consume -
+check B
+reset.log
+scope.begin caller
+new c C
+bind c_bind c
+scope.begin consumer
+call.enter outer_c relay c
+call.enter middle_c relay c
+call.enter inner_c relay c
+call.exit inner_c c
+call.exit middle_c c
+call.exit outer_c c
+alias borrowed c
+use borrowed
+scope.end consumer
+check ''
+scope.end caller
+check C
+scope.end main

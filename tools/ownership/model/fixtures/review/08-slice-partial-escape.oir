@@ -1,0 +1,15 @@
+# review/08-slice-partial-escape
+profile own
+scope.begin caller
+scope.begin selected
+new a A
+new b B
+array original a b
+bind original_bind original
+slice result original 0 1
+exit.prepare selected result
+scope.end selected
+exit.commit selected caller
+check B
+use result
+scope.end caller

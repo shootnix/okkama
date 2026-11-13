@@ -1,0 +1,28 @@
+# corpus/bound-actions
+profile own
+summary make take direct
+scope.begin first
+call.enter factory make
+new r R
+new owner O resource=r
+bound action owner
+call.exit factory action
+bind action_bind action
+check ''
+use action
+check ''
+scope.end first
+check OR
+reset.log
+scope.begin second
+new r2 R
+new owner2 O resource=r2
+bind owner_bind owner2
+scope.begin inner
+bound action2 owner2
+use action2
+scope.end inner
+check ''
+use owner2
+scope.end second
+check OR

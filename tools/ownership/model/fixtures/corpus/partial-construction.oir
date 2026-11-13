@@ -1,0 +1,36 @@
+# corpus/partial-construction
+profile own
+summary fail borrow direct
+failure stop typed Stop
+scope.begin argument
+new a A
+call.enter later_argument fail
+call.exit later_argument - stop
+scope.unwind argument stop
+catch Stop first
+check A
+reset.log
+scope.begin array_scope
+new b B
+call.enter later_element fail
+call.exit later_element - stop
+scope.unwind array_scope stop
+catch Stop second
+check B
+reset.log
+scope.begin map_scope
+new c C
+call.enter later_value fail
+call.exit later_value - stop
+scope.unwind map_scope stop
+catch Stop third
+check C
+reset.log
+scope.begin constructor_caller
+call.enter constructor fail
+new i I
+stage constructor item i
+call.exit constructor - stop
+scope.unwind constructor_caller stop
+catch Stop fourth
+check I

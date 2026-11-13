@@ -1,0 +1,12 @@
+# review/03-callee-failure-before-caller-defer
+profile own
+summary fail borrow direct
+failure stop typed Stop
+scope.begin caller
+defer caller emit d
+new a A
+call.enter callee fail a
+call.exit callee - stop
+check A
+scope.unwind caller stop
+catch Stop caught

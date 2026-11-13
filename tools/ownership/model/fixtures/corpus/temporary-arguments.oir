@@ -1,0 +1,37 @@
+# corpus/temporary-arguments
+profile own
+summary inspect borrow direct
+summary anonymous borrow closure
+scope.begin main
+new a A
+new b B
+call.enter two inspect a b
+use a
+use b
+call.exit two -
+check BA
+reset.log
+scope.begin mixed
+new outer_a A
+bind a_bind outer_a
+new fresh_b B
+call.enter mixed_call inspect outer_a fresh_b
+use outer_a
+use fresh_b
+call.exit mixed_call -
+check B
+call.enter duplicates inspect outer_a outer_a
+use outer_a
+call.exit duplicates -
+check B
+scope.end mixed
+check BA
+reset.log
+new c C
+new d D
+call.enter anon anonymous c d
+use c
+use d
+call.exit anon -
+check DC
+scope.end main

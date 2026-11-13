@@ -1,0 +1,33 @@
+# corpus/temporary-receivers
+profile own
+summary label borrow direct
+scope.begin block
+new a A
+call.enter label_a label a
+use a
+call.exit label_a -
+check A
+new b B
+bind b_bind b
+call.enter label_b label b
+use b
+call.exit label_b -
+call.enter label_b_again label b
+use b
+call.exit label_b_again -
+check A
+new c C
+array singleton c
+use singleton
+check A
+scope.end block
+check ACB
+reset.log
+scope.begin second
+new d D
+new e E
+array pair d e
+use pair
+check ''
+scope.end second
+check ED

@@ -1,0 +1,15 @@
+# review/24-shared-dag-cost
+profile own
+scope.begin s
+new r R
+bind r_bind r
+array pair1 r r
+array pair2 r r
+array pair3 r r
+array rows pair1 pair2 pair3
+use rows
+scope.split s rows p
+own.dynamic p s any opaque s
+use r
+check ''
+scope.end s

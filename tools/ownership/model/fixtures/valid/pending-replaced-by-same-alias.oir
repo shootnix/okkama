@@ -1,0 +1,12 @@
+# valid/pending-replaced-by-same-alias
+profile own
+scope.begin caller
+scope.begin action
+new a A
+alias same a
+exit.prepare action a
+defer action exit.prepare action same
+scope.end action
+exit.commit action caller
+use same
+scope.end caller

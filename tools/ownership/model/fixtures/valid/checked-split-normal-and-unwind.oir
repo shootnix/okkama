@@ -1,0 +1,22 @@
+# valid/checked-split-normal-and-unwind
+profile own
+scope.begin s
+new a A
+new b B
+array both a b
+scope.split s both input
+invoke.split input a ok normal failed
+label normal
+edge.bind rest $rest
+edge.bind selected $selected
+edge.bind deps $deps
+own.admit rest s
+own.admit selected s
+jump done
+label failed
+edge.bind original $packet
+edge.bind selection_error $failure
+own.admit original s
+jump done
+label done
+scope.end s

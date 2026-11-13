@@ -1,0 +1,9 @@
+# valid/defer-all-failures-lifo
+profile own
+scope.begin s
+new a A
+on.destroy a 'fail typed Destroy'
+defer s fail typed FirstRegistered
+defer s fail typed LastRegistered
+scope.end s
+assert.failure LastRegistered FirstRegistered Destroy

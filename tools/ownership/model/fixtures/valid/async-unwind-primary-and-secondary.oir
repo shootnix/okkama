@@ -1,0 +1,15 @@
+# valid/async-unwind-primary-and-secondary
+profile own
+failure body typed Body
+scope.begin s async
+new a A
+new.async b B
+on.destroy b 'fail typed Cleanup'
+cleanup.begin s body
+cleanup.step s
+cancel s
+gc a b
+cleanup.resume s
+cleanup.step s
+cleanup.step s
+assert.failure Body Cleanup

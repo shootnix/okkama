@@ -1,0 +1,24 @@
+# review/19-distinct-storage-protocols
+profile own
+scope.begin outer
+new o O
+bind outer_bind o
+storage atomic atomic
+storage.set atomic value o
+scope.begin inner
+new i I
+bind inner_bind i
+storage.set atomic value i
+scope.end inner
+check I
+storage.close atomic
+storage channel channel
+new message M
+storage.set channel first message
+scope.begin receiver
+storage.get delivered channel first
+use delivered
+scope.end receiver
+check IM
+use o
+scope.end outer

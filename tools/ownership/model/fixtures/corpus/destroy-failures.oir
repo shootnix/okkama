@@ -1,0 +1,32 @@
+# corpus/destroy-failures
+profile own
+failure body typed Body
+scope.begin first
+new a A
+new b B
+on.destroy b 'alias self_alias self' 'use self_alias' 'fail typed Cleanup'
+alias b_alias b
+scope.end first
+catch Cleanup caught
+check BA
+check BA
+reset.log
+scope.begin second
+new a2 A
+on.destroy a2 'fail typed Cleanup'
+new b2 B
+on.destroy b2 'fail typed Cleanup'
+scope.unwind second body
+catch Body caught_body
+emit p
+check BAp
+assert.failure Body Cleanup Cleanup
+reset.log
+scope.begin third
+new a3 A
+on.destroy a3 'fail typed Cleanup'
+defer third fail typed Body
+scope.end third
+catch Body caught_defer
+emit d
+check Ad

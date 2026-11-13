@@ -1,0 +1,36 @@
+# corpus/atomic-resources
+profile own
+scope.begin first
+new a A
+bind a_bind a
+new b B
+bind b_bind b
+storage cell atomic
+storage.set cell value a
+scope.begin reader
+storage.get alias cell value
+use alias
+scope.end reader
+check ''
+storage.set cell value b
+check ''
+storage.close cell
+check ''
+scope.end first
+check BA
+reset.log
+scope.begin second
+new outer O
+bind outer_bind outer
+storage cell2 atomic
+storage.set cell2 value outer
+scope.begin inner
+new i I
+bind inner_bind i
+storage.set cell2 value i
+scope.end inner
+check I
+storage.close cell2
+use outer
+scope.end second
+check IO
