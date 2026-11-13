@@ -1,9 +1,23 @@
 module mail/imap_session v1.0.0;
 
-// Session state above an already authenticated owned command channel.
-// This constructor is protocol infrastructure; it performs no authentication
-// and does not assert that the supplied transport has verified TLS.
-// Selection and observation updates share one lock with each whole operation.
+// An IMAP session after login: mailboxes, searching, fetching, flags, copies
+// and moves, IDLE.
+//
+//     let inbox = await session.mailbox(ImapMailboxName("INBOX"));
+//     let found = await SearchedMail(origin: inbox, matching: UnseenMail()).uids();
+//     let fetched = await FetchedMail(origin: inbox, uids: found, data: [ImapDatum.headers]).messages();
+//     for fetched -> message {
+//         message.headers().first("Subject");
+//     }
+//     await ChangedMailFlags(origin: inbox, uids: found, flags: MailFlags(SystemFlag(SystemMailFlag.seen)), change: FlagChange.add).messages();
+//     await inbox.moved(uids: found, to: ImapMailboxName("Archive"));
+//
+//     let events = MailboxEvents(inbox);               // IDLE
+//     let event = await events.next();
+//
+// The caller connects, authenticates and hands the command channel to
+// ImapSession. Message operations go by UID, and UIDs carry their mailbox and
+// UIDVALIDITY, so stale ones are refused. One operation runs at a time.
 
 import "mail/imap" take ImapCapabilities, ImapFeature;
 import "mail/imap_exchange" take ImapCommandChannel, ImapChannelClosed;
@@ -32,6 +46,7 @@ import "io/stream" take Closing;
 import "error" take InvalidState, InvalidArgument, UnsupportedOperation;
 import "mail/message" take MailMessage;
 
+// An authenticated IMAP session.
 object ImapSession does Closing {
     has origin is ImapCommandChannel;
     has capabilities is ImapCapabilities;
@@ -43,6 +58,7 @@ object ImapSession does Closing {
     has idle_slots is Channel<ImapIdleSlot>;
     has idle_initial is Future<Sending<ImapIdleSlot>>;
 
+    // Over origin, with the server's capabilities, for account.
     ImapSession(origin is ImapCommandChannel, capabilities is ImapCapabilities, account is string) {
         confirm account.length() > 0 && account.length() <= 4096
             else throw InvalidArgument.because("IMAP account scope must contain 1..4096 characters");
@@ -64,28 +80,34 @@ object ImapSession does Closing {
         idle_initial = slots.sending().send(ImapIdleSlot());
     }
 
+    // The server's capabilities.
     capabilities() is ImapCapabilities {
         capabilities;
     }
 
+    // The account.
     account() is string {
         account;
     }
 
+    // How many IDLE events may wait.
     event_capacity() is int {
         origin.limits()::Limits::responses;
     }
 
+    // Whether it was closed.
     closed() is bool {
         origin.closed();
     }
 
+    // Closes the connection.
     close() is void {
         states.sending().close();
         idle_slots.sending().close();
         origin.close();
     }
 
+    // Closes the connection, ignoring errors.
     abort() is void {
         try {
             self.close();
@@ -94,6 +116,7 @@ object ImapSession does Closing {
         catch failure is NativeFailure {}
     }
 
+    // LIST of every mailbox.
     async mailboxes() is Sequencing<ImapMailbox> {
         let reply = await self.run(
             ImapCommand(
@@ -118,14 +141,17 @@ object ImapSession does Closing {
         boxes.entries();
     }
 
+    // SELECT: the mailbox, writable.
     async mailbox(name is ImapMailboxName) is SelectedMailbox {
         await self.select(name, false);
     }
 
+    // EXAMINE: the mailbox, read-only.
     async examine(name is ImapMailboxName) is SelectedMailbox {
         await self.select(name, true);
     }
 
+    // SELECT, or EXAMINE when read_only.
     async select(name is ImapMailboxName, read_only is bool) is SelectedMailbox {
         confirm !self.closed() else throw ImapChannelClosed.closed;
         await initial;
@@ -157,6 +183,7 @@ object ImapSession does Closing {
         SelectedMailbox(origin: self, token: token);
     }
 
+    // The state of the selection token.
     async observation(token is ImapSelectionToken) is ImapMailboxState {
         confirm !self.closed() else throw ImapChannelClosed.closed;
         await initial;
@@ -181,6 +208,7 @@ object ImapSession does Closing {
         result;
     }
 
+    // Runs command for the selection, checking UIDVALIDITY and writability.
     async run(
         command is ImapCommand,
         selected is @ImapSelectionToken,
@@ -250,6 +278,7 @@ object ImapSession does Closing {
         ImapSessionReply(result: result, selection: selections);
     }
 
+    // Takes the session lock.
     async entry() is LockGuard {
         confirm !self.closed() else throw ImapChannelClosed.closed;
         await idle_initial;
@@ -277,6 +306,7 @@ object ImapSession does Closing {
         await lock.guard();
     }
 
+    // Starts IDLE on the selection, sending events.
     async activate_idle(
         token is ImapSelectionToken,
         events is Sending<MailboxEvent>,
@@ -317,6 +347,7 @@ object ImapSession does Closing {
         task;
     }
 
+    // Runs IDLE until stop fires.
     async idle_run(
         token is ImapSelectionToken,
         events is Sending<MailboxEvent>,
@@ -370,8 +401,8 @@ object ImapSession does Closing {
         self.abort();
     }
 
-    // Mailboxes as actions: await session.created(name), renamed(name, to:),
-    // deleted(name); appended(mailbox, message:, flags:) stores a message.
+    // Mailboxes as actions: await session.created(name), renamed(name: n, to:
+    // m), deleted(name); appended(mailbox:, message:, flags:) stores a message.
     async created(name is ImapMailboxName) is ImapMailboxName {
         await CreatedImapMailbox(origin: self, name: name).mailbox();
     }
@@ -389,19 +420,23 @@ object ImapSession does Closing {
     }
 }
 
+// The selected mailbox of a session.
 object SelectedMailbox does Closing {
     has origin is ImapSession;
     has token is ImapSelectionToken;
 
+    // Selection token of origin.
     SelectedMailbox(origin is ImapSession, token is ImapSelectionToken) {
         self.origin = origin;
         self.token = token;
     }
 
+    // Its name.
     name() is ImapMailboxName {
         token.name();
     }
 
+    // Whether another selection replaced it, or the session closed.
     closed() is bool {
         origin.closed() || token.closed();
     }
@@ -411,77 +446,93 @@ object SelectedMailbox does Closing {
         origin.close();
     }
 
+    // Its state now.
     async state() is ImapMailboxState {
         await origin.observation(token);
     }
 
+    // The session.
     session() is ImapSession {
         origin;
     }
 
+    // Its selection token.
     context() is ImapSelectionToken {
         token;
     }
 
-    // Mailbox changes as actions: await box.copied(uids, to: archive).
+    // Mailbox changes as actions: await box.copied(uids: uids, to: archive).
     async copied(uids is MailboxUids, to is ImapMailboxName) is ImapCopiedUids {
         await CopiedMail(origin: self, uids: uids, destination: to).uids();
     }
 
+    // UID MOVE to another mailbox; the UIDs it got when the server says.
     async moved(uids is MailboxUids, to is ImapMailboxName) is ImapCopiedUids {
         await MovedMail(origin: self, uids: uids, destination: to).uids();
     }
 
+    // UID EXPUNGE; the message numbers removed.
     async expunged(uids is MailboxUids) is Sequencing<ImapSequence> {
         await ExpungedMail(origin: self, uids: uids).identifiers();
     }
 }
 
+// One selection of a mailbox; it expires when another is made.
 object ImapSelectionToken {
     has name is ImapMailboxName;
     has generation is BigInt;
     has stopped is Event;
 
+    // Selection generation of name.
     ImapSelectionToken(name is ImapMailboxName, generation is BigInt) {
         self.name = name;
         self.generation = generation;
         stopped = Event();
     }
 
+    // The mailbox.
     name() is ImapMailboxName {
         name;
     }
 
+    // Its number.
     generation() is BigInt {
         generation;
     }
 
+    // Whether it expired.
     closed() is bool {
         stopped.ready();
     }
 
+    // Expires it.
     expire() is void {
         stopped.set();
     }
 }
 
+// A selection and its state.
 object ImapSelectedState {
     has token is ImapSelectionToken;
     has value is ImapMailboxState;
 
+    // As given.
     ImapSelectedState(token is ImapSelectionToken, value is ImapMailboxState) {
         self.token = token;
         self.value = value;
     }
 
+    // The selection.
     token() is ImapSelectionToken {
         token;
     }
 
+    // The state.
     state() is ImapMailboxState {
         value;
     }
 
+    // This after response.
     observed(response is ImapResponse) is ^ImapSelectedState {
         let updated = value.observed(response);
         ^value = updated;
@@ -535,19 +586,23 @@ hidden object ImapSessionState {
     }
 }
 
+// A command's responses and the state after them.
 object ImapSessionReply {
     has result is ImapCommandRead;
     has selection is @ImapSelectedState;
 
+    // As given.
     ImapSessionReply(result is ImapCommandRead, selection is @ImapSelectedState) {
         self.result = result;
         self.selection = selection;
     }
 
+    // The responses.
     read() is ImapCommandRead {
         result;
     }
 
+    // The state after them; InvalidState without a selection.
     state() is ImapMailboxState {
         confirm selection.size() == 1 else throw InvalidState.because("no IMAP mailbox selected");
         selection[0].state();
@@ -570,13 +625,16 @@ hidden object ImapSessionCleanup {
     }
 }
 
+// A UID SEARCH in a mailbox.
 object SearchedMail {
     has pending is Future<MailboxUids>;
 
+    // Searches origin by matching.
     SearchedMail(origin is SelectedMailbox, matching is MailMatching) {
         pending = ImapSearching(origin: origin, command: ImapCommand(matching: matching)).read();
     }
 
+    // The UIDs found.
     uids() is Future<MailboxUids> {
         pending;
     }
@@ -631,9 +689,11 @@ hidden object ImapSearching {
     }
 }
 
+// A UID FETCH in a mailbox.
 object FetchedMail {
     has pending is Future<Sequencing<ImapMessage>>;
 
+    // Fetches data of uids in origin.
     FetchedMail(origin is SelectedMailbox, uids is MailboxUids, data is Sequencing<ImapDatum>) {
         let ids = uids.checked(origin.name(), uids.validity(), origin.session().account());
         pending = ImapFetching(
@@ -644,14 +704,17 @@ object FetchedMail {
         ).read();
     }
 
+    // The messages; StaleImapUids for UIDs of another selection.
     messages() is Future<Sequencing<ImapMessage>> {
         pending;
     }
 }
 
+// A UID STORE in a mailbox.
 object ChangedMailFlags {
     has pending is Future<Sequencing<ImapMessage>>;
 
+    // Changes the flags of uids in origin as change says.
     ChangedMailFlags(
         origin is SelectedMailbox,
         uids is MailboxUids,
@@ -667,6 +730,7 @@ object ChangedMailFlags {
         ).read();
     }
 
+    // The messages with their new flags.
     messages() is Future<Sequencing<ImapMessage>> {
         pending;
     }
@@ -721,25 +785,31 @@ hidden object ImapFetching {
     }
 }
 
+// What an IDLE event reports.
 enum MailboxEventKind = (exists, recent, expunge, flags, fetch, status, other);
 
+// One change seen during IDLE.
 object MailboxEvent {
     has response is ImapResponse;
     has state is ImapMailboxState;
 
+    // response, with the state after it.
     MailboxEvent(response is ImapResponse, state is ImapMailboxState) {
         self.response = response;
         self.state = state;
     }
 
+    // The response.
     response() is ImapResponse {
         response;
     }
 
+    // The mailbox state after it.
     state() is ImapMailboxState {
         state;
     }
 
+    // The message number it is about.
     sequence() is ImapSequence {
         if response.name() == "FETCH" {
             return ImapFetch(response).sequence();
@@ -751,16 +821,19 @@ object MailboxEvent {
         throw MissingImapDatum.name("sequence");
     }
 
+    // The UID of a FETCH event; MissingImapDatum otherwise.
     uid() is ImapUid {
         confirm response.name() == "FETCH" else throw MissingImapDatum.name("UID");
         ImapFetch(response).uid();
     }
 
+    // The flags of a FETCH event.
     flags() is MailFlags {
         confirm response.name() == "FETCH" else throw MissingImapDatum.name("FLAGS");
         ImapFetch(response).flags();
     }
 
+    // Which kind.
     kind() is MailboxEventKind {
         match response.name() {
             case "EXISTS" {
@@ -788,12 +861,14 @@ object MailboxEvent {
     }
 }
 
+// The changes of a mailbox, through IDLE.
 object MailboxEvents {
     has origin is SelectedMailbox;
     has stop, finished, begun is Event;
     has events is Channel<MailboxEvent>;
     has activation is Future<ImapIdleTask>;
 
+    // Starts IDLE on origin.
     MailboxEvents(origin is SelectedMailbox) {
         self.origin = origin;
         let stopped = Event();
@@ -811,10 +886,12 @@ object MailboxEvents {
         );
     }
 
+    // Whether it was closed.
     closed() is bool {
         finished.ready() || origin.closed();
     }
 
+    // The next change; MailboxEventsClosed once closed.
     async event() is MailboxEvent {
         if self.closed() {
             if begun.ready() {
@@ -841,10 +918,12 @@ object MailboxEvents {
         }
     }
 
+    // The same as event().
     async next() is MailboxEvent {
         await self.event();
     }
 
+    // Ends IDLE.
     async close() is MailboxEvents {
         stop.set();
         if !begun.ready() {
@@ -866,14 +945,17 @@ object MailboxEvents {
     }
 }
 
+// Events were asked for after close().
 enum MailboxEventsClosed is Error = (closed);
 
+// IDLE running in the background.
 object ImapIdleTask {
     has stop is Event;
     has started is Event;
     has pending is Future<int>;
     has group is FutureGroup<int>;
 
+    // IDLE on token of origin, sending events until stop.
     ImapIdleTask(
         origin is ImapSession,
         token is ImapSelectionToken,
@@ -888,6 +970,7 @@ object ImapIdleTask {
         pending = origin.idle_run(token, events, stop, finished);
     }
 
+    // Starts it.
     start() is void {
         if !started.ready() {
             started.set();
@@ -895,10 +978,12 @@ object ImapIdleTask {
         }
     }
 
+    // Asks it to stop.
     stop() is void {
         stop.set();
     }
 
+    // How many events it sent.
     outcome() is Future<int> {
         pending;
     }
@@ -940,11 +1025,13 @@ hidden object ImapIdleEnding {
     }
 }
 
+// Turns untagged responses into events.
 object ImapEventObservation does ImapResponseObserving {
     has states is Channel<ImapMailboxState>;
     has initial is Future<Sending<ImapMailboxState>>;
     has events is Sending<MailboxEvent>;
 
+    // From state, sending to events.
     ImapEventObservation(state is ImapMailboxState, events is Sending<MailboxEvent>) {
         let channel is Channel<ImapMailboxState> = Channel(1);
         states = channel;
@@ -952,6 +1039,7 @@ object ImapEventObservation does ImapResponseObserving {
         self.events = events;
     }
 
+    // Sends the event of response.
     async observed(response is ImapResponse) is int {
         await initial;
         let state = await states.receiving().item();
@@ -964,33 +1052,42 @@ object ImapEventObservation does ImapResponseObserving {
 
 // Changes to mailboxes and messages (formerly mail/imap_changes).
 
+// The UIDs a server gave to copied or appended messages, when it says
+// (UIDPLUS).
 object ImapAssignedUids {
     has values is @MailboxUids;
 
+    // Not known.
     ImapAssignedUids() {
         values = [];
     }
 
+    // These.
     ImapAssignedUids(value is MailboxUids) {
         values = [value];
     }
 
+    // Whether they are known.
     known() is bool {
         values.size() > 0;
     }
 
+    // The UIDs; MissingAssignedImapUids when not known.
     uids() is MailboxUids {
         confirm self.known() else throw MissingAssignedImapUids.missing;
         values[0];
     }
 }
 
+// The server did not say which UIDs it gave.
 enum MissingAssignedImapUids is Error = (missing);
 
+// The result of a copy or move.
 object ImapCopiedUids {
     has sources is ImapUidSet;
     has assigned is ImapAssignedUids;
 
+    // Reads result for requested copied to destination.
     ImapCopiedUids(
         result is ImapCommandRead,
         requested is ImapUidSet,
@@ -1047,10 +1144,12 @@ object ImapCopiedUids {
         }
     }
 
+    // The source UIDs.
     sources() is ImapUidSet {
         sources;
     }
 
+    // The UIDs in the destination, when known.
     assigned() is ImapAssignedUids {
         assigned;
     }
@@ -1071,25 +1170,31 @@ hidden object ImapUidPlus {
     }
 }
 
+// A UID COPY.
 object CopiedMail {
     has pending is Future<ImapCopiedUids>;
 
+    // Copies uids of origin to destination.
     CopiedMail(origin is SelectedMailbox, uids is MailboxUids, destination is ImapMailboxName) {
         pending = ImapCopying(origin: origin, uids: uids, destination: destination, move: false).uids();
     }
 
+    // The result.
     uids() is Future<ImapCopiedUids> {
         pending;
     }
 }
 
+// A UID MOVE.
 object MovedMail {
     has pending is Future<ImapCopiedUids>;
 
+    // Moves uids of origin to destination.
     MovedMail(origin is SelectedMailbox, uids is MailboxUids, destination is ImapMailboxName) {
         pending = ImapCopying(origin: origin, uids: uids, destination: destination, move: true).uids();
     }
 
+    // The result.
     uids() is Future<ImapCopiedUids> {
         pending;
     }
@@ -1133,13 +1238,16 @@ hidden object ImapCopying {
     }
 }
 
+// A UID EXPUNGE.
 object ExpungedMail {
     has pending is Future<Sequencing<ImapSequence>>;
 
+    // Expunges uids of origin.
     ExpungedMail(origin is SelectedMailbox, uids is MailboxUids) {
         pending = ImapExpunging(origin: origin, uids: uids).sequences();
     }
 
+    // The message numbers removed.
     identifiers() is Future<Sequencing<ImapSequence>> {
         pending;
     }
@@ -1180,9 +1288,11 @@ hidden object ImapExpunging {
     }
 }
 
+// An APPEND.
 object AppendedMail {
     has pending is Future<ImapAssignedUids>;
 
+    // Appends message with flags to mailbox.
     AppendedMail(
         origin is ImapSession,
         mailbox is ImapMailboxName,
@@ -1196,6 +1306,7 @@ object AppendedMail {
         ).uids();
     }
 
+    // The UID it got, when the server says.
     uids() is Future<ImapAssignedUids> {
         pending;
     }
@@ -1247,9 +1358,11 @@ hidden object ImapAppending {
     }
 }
 
+// A CREATE.
 object CreatedImapMailbox {
     has pending is Future<ImapMailboxName>;
 
+    // Creates name.
     CreatedImapMailbox(origin is ImapSession, name is ImapMailboxName) {
         pending = ImapMailboxChanging(
             origin: origin,
@@ -1258,14 +1371,17 @@ object CreatedImapMailbox {
         ).mailbox();
     }
 
+    // The name.
     mailbox() is Future<ImapMailboxName> {
         pending;
     }
 }
 
+// A DELETE.
 object ImapMailboxDeletion {
     has pending is Future<ImapMailboxName>;
 
+    // Deletes name.
     ImapMailboxDeletion(origin is ImapSession, name is ImapMailboxName) {
         pending = ImapMailboxChanging(
             origin: origin,
@@ -1274,14 +1390,17 @@ object ImapMailboxDeletion {
         ).mailbox();
     }
 
+    // The name.
     delete() is Future<ImapMailboxName> {
         pending;
     }
 }
 
+// A RENAME.
 object RenamedImapMailbox {
     has pending is Future<ImapMailboxName>;
 
+    // Renames source to destination.
     RenamedImapMailbox(
         origin is ImapSession,
         source is ImapMailboxName,
@@ -1294,14 +1413,17 @@ object RenamedImapMailbox {
         ).mailbox();
     }
 
+    // The new name.
     mailbox() is Future<ImapMailboxName> {
         pending;
     }
 }
 
+// A SUBSCRIBE or UNSUBSCRIBE.
 object ImapSubscription {
     has pending is Future<ImapMailboxName>;
 
+    // Subscribes to name, or unsubscribes.
     ImapSubscription(origin is ImapSession, name is ImapMailboxName, subscribed is bool) {
         let action = if subscribed {
             ImapMailboxCommand.subscribe;
@@ -1316,6 +1438,7 @@ object ImapSubscription {
         ).mailbox();
     }
 
+    // The name.
     apply() is Future<ImapMailboxName> {
         pending;
     }
