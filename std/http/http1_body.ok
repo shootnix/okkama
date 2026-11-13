@@ -1,5 +1,8 @@
 module http/http1_body v1.0.0;
 
+// Reading an HTTP/1.1 body by its plan: fixed length, chunked with trailers, or
+// until close. The owner of the connection is closed at the end or on abort.
+
 import "http/body" take BodyOpening, BodyReading, StreamBodyReading, BodyClosed, BodyAlreadyOpened;
 import "http/http1_framing" take Http1BodyPlan, Http1BodyKind;
 import "http/http1_chunk" take ParsedHttp1ChunkLine, ParsedHttp1Trailers;
@@ -25,6 +28,8 @@ object Http1BodyReading does BodyReading {
     has reading is StreamBodyReading;
     has plan is Http1BodyPlan;
 
+    // Reads the body plan describes from prefix and origin, within the default
+    // limits.
     Http1BodyReading(
         origin is AsyncReading,
         owner is Closing,
@@ -44,6 +49,7 @@ object Http1BodyReading does BodyReading {
         self.plan = plan;
     }
 
+    // The same within limits.
     Http1BodyReading(
         origin is AsyncReading,
         owner is Closing,
@@ -64,24 +70,29 @@ object Http1BodyReading does BodyReading {
         self.plan = plan;
     }
 
+    // At most limit bytes of the body; [] at its end.
     async bytes(limit is int) is @byte {
         await reading.bytes(limit);
     }
 
+    // The chunked trailers; TrailersUnavailable before the end.
     trailers() is Headers {
         reading.trailers();
         input.trailers();
     }
 
+    // Bytes read past the end of the body.
     remainder() is @byte {
         reading.trailers();
         input.remainder();
     }
 
+    // Whether it was closed.
     closed() is bool {
         reading.closed();
     }
 
+    // Stops reading and closes the owner.
     close() is void {
         reading.close();
     }
@@ -90,25 +101,30 @@ object Http1BodyReading does BodyReading {
         reading.abort();
     }
 
+    // The length of a fixed body; UnknownBodyLength otherwise.
     length() is BigInt {
         plan.length();
     }
 }
 
+// A body arriving on an HTTP/1 connection, as a one-shot opening.
 object Http1IncomingBody does BodyOpening {
     has origin is Http1BodyReading;
     has opened is Atomic<bool>;
 
+    // The body origin reads.
     Http1IncomingBody(origin is Http1BodyReading) {
         confirm !origin.closed() else throw BodyClosed.closed;
         self.origin = origin;
         opened = Atomic(false);
     }
 
+    // Its length when fixed; UnknownBodyLength otherwise.
     length() is BigInt {
         origin.length();
     }
 
+    // false.
     replayable() is bool {
         false;
     }
@@ -118,6 +134,7 @@ object Http1IncomingBody does BodyOpening {
         Maybe<@byte>.none;
     }
 
+    // origin the first time; BodyAlreadyOpened after.
     reading() is BodyReading {
         confirm opened.compare_and_replace(false, true) else throw BodyAlreadyOpened.opened;
         origin;

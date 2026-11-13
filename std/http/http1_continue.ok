@@ -1,5 +1,8 @@
 module http/http1_continue v1.0.0;
 
+// `Expect: 100-continue` on the client side: the head goes first, the body
+// after a 100 or after a short wait.
+
 import "http/message" take Request, InvalidHttpMessage;
 import "http/http1_head" take Http1RequestHead, Http1ResponseHead, Http1Limits;
 import "http/http1_framing" take Http1BodyPlan, Http1BodyKind;
@@ -16,10 +19,12 @@ import "async/timeout" take Before;
 import "time/clock" take Timing, MonotonicInstant, SystemClock;
 import "time/duration" take Duration, DurationUnit;
 
+// The start of a request: its head, and its body unless it waits for 100.
 object Http1RequestStart {
     has pending is Future<AsyncWriting>;
     has expectation is bool;
 
+    // Writes request to origin as head and plan say, within limits.
     Http1RequestStart(
         origin is AsyncWriting,
         request is Request,
@@ -55,10 +60,13 @@ object Http1RequestStart {
         expectation = present;
     }
 
+    // Writes the head, and the body unless it waits; the future gives the
+    // writer back when done.
     output() is Future<AsyncWriting> {
         pending;
     }
 
+    // Whether the request expects 100-continue.
     expectation() is bool {
         expectation;
     }
@@ -91,12 +99,14 @@ hidden object Http1ContinueHead {
     }
 }
 
+// Where a 100-continue wait stands.
 object Http1ContinueState {
     has active, sent is bool;
     has clock is Timing;
     has limit is Duration;
     has deadline is @MonotonicInstant;
 
+    // A wait of up to limit, when active.
     Http1ContinueState(active is bool, clock is Timing, limit is Duration) {
         self.active = active;
         sent = !active;
@@ -105,20 +115,24 @@ object Http1ContinueState {
         deadline = [];
     }
 
+    // This state once the head is sent.
     begun() is ^Http1ContinueState {
         if active {
             ^deadline = [clock.monotonic_instant().plus(limit)];
         }
     }
 
+    // Whether the body has gone.
     body_sent() is bool {
         sent;
     }
 
+    // This state once the body has gone.
     sending_completed() is ^Http1ContinueState {
         ^sent = true;
     }
 
+    // The response head, sending the body on 100 or when the wait ends.
     reading(origin is Future<Http1HeadRead<Http1ResponseHead>>) is Future<Http1HeadRead<Http1ResponseHead>> {
         if active && !sent {
             let bounded is Before<Http1HeadRead<Http1ResponseHead>> = Before(

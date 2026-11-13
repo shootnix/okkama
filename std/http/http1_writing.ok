@@ -1,5 +1,7 @@
 module http/http1_writing v1.0.0;
 
+// Writing HTTP/1.1 heads: checked and bounded before a single write.
+
 import "http/status" take StatusCode;
 import "http/http1_head" take Http1RequestHead, Http1ResponseHead, Http1Limits, Http1LimitExceeded;
 import "http/http1_framing" take Http1RequestFraming, Http1ResponseFraming, Http1BodyPlan;
@@ -14,14 +16,17 @@ import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
 object Http1RequestHeadWriting {
     has pending is Future<AsyncWriting>;
 
+    // Writes head to origin within the default limits.
     Http1RequestHeadWriting(origin is AsyncWriting, head is Http1RequestHead) {
         pending = Http1HeadOutput().request(origin, head, Http1Limits());
     }
 
+    // The same within limits.
     Http1RequestHeadWriting(origin is AsyncWriting, head is Http1RequestHead, limits is Http1Limits) {
         pending = Http1HeadOutput().request(origin, head, limits);
     }
 
+    // Writes the head; the future gives the writer back when done.
     output() is Future<AsyncWriting> {
         pending;
     }
@@ -34,51 +39,61 @@ object Http1RequestHeadWire {
     has head is Http1RequestHead;
     has limits is Http1Limits;
 
+    // head within limits.
     Http1RequestHeadWire(head is Http1RequestHead, limits is Http1Limits) {
         self.head = head;
         self.limits = limits;
     }
 
+    // Its body plan.
     plan() is Http1BodyPlan {
         once let plan = Http1RequestFraming(head: head, limits: limits).plan();
         plan;
     }
 
+    // The head's bytes.
     bytes() is @byte {
         self.plan();
         Http1HeadOutput().request_bytes(head, limits);
     }
 }
 
+// The bytes of a response head, with its body plan.
 object Http1ResponseHeadWire {
     has head is Http1ResponseHead;
     has method is Method;
     has limits is Http1Limits;
 
+    // head answering method, within limits.
     Http1ResponseHeadWire(head is Http1ResponseHead, method is Method, limits is Http1Limits) {
         self.head = head;
         self.method = method;
         self.limits = limits;
     }
 
+    // Its body plan.
     plan() is Http1BodyPlan {
         once let plan = Http1ResponseFraming(head: head, method: method, limits: limits).plan();
         plan;
     }
 
+    // The head's bytes.
     bytes() is @byte {
         self.plan();
         Http1HeadOutput().response_bytes(head, limits);
     }
 }
 
+// Writes a response head.
 object Http1ResponseHeadWriting {
     has pending is Future<AsyncWriting>;
 
+    // Writes head answering method, within the default limits.
     Http1ResponseHeadWriting(origin is AsyncWriting, head is Http1ResponseHead, method is Method) {
         pending = Http1HeadOutput().response(origin, head, method, Http1Limits());
     }
 
+    // The same within limits.
     Http1ResponseHeadWriting(
         origin is AsyncWriting,
         head is Http1ResponseHead,
@@ -88,6 +103,7 @@ object Http1ResponseHeadWriting {
         pending = Http1HeadOutput().response(origin, head, method, limits);
     }
 
+    // Writes the head; the future gives the writer back when done.
     output() is Future<AsyncWriting> {
         pending;
     }

@@ -1,5 +1,8 @@
 module http/http1_body_writing v1.0.0;
 
+// Writing an HTTP/1.1 body by its plan: as is for a fixed length, in chunks
+// with trailers for chunked.
+
 import "http/body" take BodyOpening, BodyReading, UnknownBodyLength;
 import "http/http1_framing" take Http1BodyPlan, Http1BodyKind;
 import "http/http1_chunk" take ParsedHttp1Trailers;
@@ -16,9 +19,11 @@ import "compare" take Order;
 import "async/atomic" take Atomic;
 import "async/scope" take FutureGroup;
 
+// Writes one body to a stream.
 object Http1BodyWriting {
     has pending is Future<AsyncWriting>;
 
+    // Writes body to origin as plan says, within the default limits.
     Http1BodyWriting(
         origin is AsyncWriting,
         body is BodyOpening,
@@ -35,6 +40,7 @@ object Http1BodyWriting {
         ).write();
     }
 
+    // The same within limits, chunk_bytes at a time.
     Http1BodyWriting(
         origin is AsyncWriting,
         body is BodyOpening,
@@ -53,6 +59,7 @@ object Http1BodyWriting {
         ).write();
     }
 
+    // Writes the body; the future gives the writer back when done.
     output() is Future<AsyncWriting> {
         pending;
     }

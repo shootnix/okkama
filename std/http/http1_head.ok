@@ -1,5 +1,18 @@
 module http/http1_head v1.0.0;
 
+// HTTP/1.1 message heads (RFC 9112): the start line and the fields, read from
+// text and checked.
+//
+//     let head = ParsedHttp1RequestHead("GET /index.html HTTP/1.1\r\nHost: example.com\r\n\r\n").head();
+//     head::Head::method;                  // Method.get
+//     head.target().path();                // "/index.html"
+//     head.host();                         // the Host field as URL parts
+//     let request = head.request(EmptyBody());
+//
+// Heads are bounded by Http1Limits: 64 KiB in all, 8 KiB per line, 128 fields
+// and a 1 GiB body by default. This is the wire level under HttpClient and
+// HttpServer; programs rarely need it.
+
 import "http/message" take Request, Response, RequestCoordinates, InvalidHttpMessage;
 import "http/method" take Method, MethodName, InvalidMethod;
 import "http/target" take RequestTarget, ParsedRequestTarget, InvalidRequestTarget;
@@ -11,9 +24,11 @@ import "url/value" take InvalidUrl, UrlParts;
 import "encoding/single_byte" take Latin1Encoded;
 import "runtime/single_byte" take latin1_representable_prefix, ascii_representable_prefix;
 
+// How large an HTTP/1.1 message may be.
 object Http1Limits {
     has head_bytes, line_bytes, fields, body_bytes is int;
 
+    // 64 KiB of head, 8 KiB per line, 128 fields, 1 GiB of body.
     Http1Limits() {
         head_bytes = 65536;
         line_bytes = 8192;
@@ -21,6 +36,7 @@ object Http1Limits {
         body_bytes = 1073741824;
     }
 
+    // The limits as given.
     Http1Limits(head_bytes is int, line_bytes is int, fields is int, body_bytes is int) {
         confirm head_bytes >= 4
             && head_bytes <= 1048576
@@ -37,6 +53,7 @@ object Http1Limits {
         self.body_bytes = body_bytes;
     }
 
+    // The head, line, field and body limits.
     cap Limits {
         head_bytes is int {
             head_bytes;
@@ -56,22 +73,27 @@ object Http1Limits {
     }
 }
 
+// A head or body over a limit; kind says which.
 enum Http1LimitExceeded is Error = (kind(kind is string));
 
+// A request head read from text.
 object ParsedHttp1RequestHead {
     has origin is string;
     has limits is Http1Limits;
 
+    // The text, up to and including the empty line, within the default limits.
     ParsedHttp1RequestHead(origin is string) {
         self.origin = origin;
         limits = Http1Limits();
     }
 
+    // The text within limits.
     ParsedHttp1RequestHead(origin is string, limits is Http1Limits) {
         self.origin = origin;
         self.limits = limits;
     }
 
+    // The head; InvalidHttpMessage for text that is not one.
     head() is Http1RequestHead {
         let head = Http1HeadLines(origin: origin, limits: limits);
         let words = head.start_line().split(" ");
@@ -99,20 +121,24 @@ object ParsedHttp1RequestHead {
     }
 }
 
+// A response head read from text.
 object ParsedHttp1ResponseHead {
     has origin is string;
     has limits is Http1Limits;
 
+    // The text, up to and including the empty line, within the default limits.
     ParsedHttp1ResponseHead(origin is string) {
         self.origin = origin;
         limits = Http1Limits();
     }
 
+    // The text within limits.
     ParsedHttp1ResponseHead(origin is string, limits is Http1Limits) {
         self.origin = origin;
         self.limits = limits;
     }
 
+    // The head; InvalidHttpMessage for text that is not one.
     head() is Http1ResponseHead {
         let head = Http1HeadLines(origin: origin, limits: limits);
         let line = head.start_line();
@@ -213,6 +239,7 @@ hidden object Http1HeadLines {
     }
 }
 
+// The head of an HTTP/1 request: method, target, fields and version.
 object Http1RequestHead {
     has method is Method;
     has target is RequestTarget;
@@ -220,6 +247,7 @@ object Http1RequestHead {
     has version is HttpVersion;
     has host is @UrlParts;
 
+    // The head; InvalidHttpMessage when they do not fit together.
     Http1RequestHead(
         method is Method,
         target is RequestTarget,
@@ -260,10 +288,12 @@ object Http1RequestHead {
         host = authorities;
     }
 
+    // The target.
     target() is RequestTarget {
         target;
     }
 
+    // The fields.
     headers() is Headers {
         headers;
     }
@@ -274,10 +304,12 @@ object Http1RequestHead {
         host[0];
     }
 
+    // The request with body.
     request(body is BodyOpening) is Request {
         Request(method: method, target: target, headers: headers, body: body, version: version);
     }
 
+    // The method and the version.
     cap Head {
         method is Method {
             method;
@@ -289,11 +321,13 @@ object Http1RequestHead {
     }
 }
 
+// The head of an HTTP/1 response: status, fields and version.
 object Http1ResponseHead {
     has status is Status;
     has headers is Headers;
     has version is HttpVersion;
 
+    // The head.
     Http1ResponseHead(status is Status, headers is Headers, version is HttpVersion) {
         confirm version != HttpVersion.http_2
             else throw InvalidHttpMessage.because("HTTP1 head requires HTTP1 wire version");
@@ -302,14 +336,17 @@ object Http1ResponseHead {
         self.version = version;
     }
 
+    // The fields.
     headers() is Headers {
         headers;
     }
 
+    // The response with body.
     response(body is BodyOpening) is Response {
         Response(status: status, headers: headers, body: body, version: version);
     }
 
+    // The status and the version.
     cap Head {
         status is Status {
             status;
@@ -321,6 +358,7 @@ object Http1ResponseHead {
     }
 }
 
+// An HTTP/1.1 request without Host.
 enum MissingHttp1Host is Error = (missing);
 
 // A Host field as URL parts. Only the port is split off here, past an IPv6

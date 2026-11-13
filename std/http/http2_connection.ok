@@ -1,8 +1,7 @@
 module http/http2_connection v1.0.0;
 
-// Explicit HTTP2 prior knowledge for HTTP; verified exact h2 ALPN for HTTPS. Every TCP attempt uses
-// the exact previously checked numeric endpoint; no second lookup occurs.
-// Bounded staggered TCP racing closes every losing attempt before publication.
+// Opening HTTP/2 client connections (RFC 9113): prior knowledge over cleartext,
+// or h2 selected by ALPN over TLS.
 
 import "http/endpoint" take HttpEndpointSelection;
 import "http/http2_settings" take Http2Settings;
@@ -31,6 +30,7 @@ import "net/tls" take TlsVersion;
 import "crypto/x509/trust" take TrustedCertificates;
 import "collections/set" take Set, OrderedSet;
 
+// How to open an HTTP/2 connection to a route.
 object Http2Connecting {
     has route is HttpEndpointSelection;
     has policy is TlsClientPolicy;
@@ -38,6 +38,7 @@ object Http2Connecting {
     has clock is Timing;
     has local is Http2Settings;
 
+    // To route with policy, the default settings and limits.
     Http2Connecting(route is HttpEndpointSelection, policy is TlsClientPolicy) {
         for policy.protocols() -> protocol {
             confirm protocol == "h2" else throw UnsupportedHttpVersion.unsupported;
@@ -49,6 +50,7 @@ object Http2Connecting {
         local = Http2Settings();
     }
 
+    // The same with local settings, limits and clock.
     Http2Connecting(
         route is HttpEndpointSelection,
         policy is TlsClientPolicy,
@@ -66,6 +68,7 @@ object Http2Connecting {
         self.local = local;
     }
 
+    // A new session.
     async session() is Http2Session {
         let group is FutureGroup<Http2Acquisition> = FutureGroup();
         let empty is @Future<Http2Acquisition> = [];
@@ -86,6 +89,7 @@ object Http2Connecting {
         acquired.session();
     }
 
+    // A new session and how it connected.
     async acquisition() is Http2Acquisition {
         let endpoints = await route.endpoints();
         let group is FutureGroup<TcpConnection> = FutureGroup();
@@ -191,19 +195,23 @@ object Http2Connecting {
     }
 }
 
+// A new HTTP/2 session and how it connected.
 object Http2Acquisition {
     has session is Http2Session;
     has details is ExchangeDetails;
 
+    // As given.
     Http2Acquisition(session is Http2Session, details is ExchangeDetails) {
         self.session = session;
         self.details = details;
     }
 
+    // The session.
     session() is Http2Session {
         session;
     }
 
+    // How it connected.
     details() is ExchangeDetails {
         details;
     }

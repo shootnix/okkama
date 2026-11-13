@@ -1,5 +1,9 @@
 module http/http2_settings v1.0.0;
 
+// The SETTINGS this side advertises on an HTTP/2 connection.
+//
+//     Http2Settings();                     // 4096 table, 65535 window, 16384 frames, 100 streams
+
 import "encoding/binary" take IntegerBytes, Signedness;
 import "encoding/utf" take ByteOrder;
 
@@ -8,6 +12,8 @@ import "encoding/utf" take ByteOrder;
 object Http2Settings {
     has header_table, initial_window, frame_size, streams is int;
 
+    // A 4096-byte header table, a 65535-byte window, 16384-byte frames, 100
+    // streams.
     Http2Settings() {
         header_table = 4096;
         initial_window = 65535;
@@ -15,6 +21,7 @@ object Http2Settings {
         streams = 100;
     }
 
+    // The settings as given; InvalidHttp2Settings out of range.
     Http2Settings(header_table is int, initial_window is int, frame_size is int, streams is int) {
         confirm header_table >= 0
             && header_table <= 1048576
@@ -31,6 +38,7 @@ object Http2Settings {
         self.streams = streams;
     }
 
+    // The table size, initial window, frame size and stream count.
     cap Settings {
         header_table is int {
             header_table;
@@ -55,11 +63,13 @@ object Http2SettingsWire {
     has origin is Http2Settings;
     has client is bool;
 
+    // origin as sent by a client or a server.
     Http2SettingsWire(origin is Http2Settings, client is bool) {
         self.origin = origin;
         self.client = client;
     }
 
+    // The SETTINGS frame.
     bytes() is @byte {
         let rows is @Http2Setting = if client {
             [
@@ -119,6 +129,7 @@ hidden object Http2Setting {
     }
 }
 
+// A setting out of range.
 enum InvalidHttp2Settings is Error = (invalid);
 
 test "zero stream/window/table caps remain explicit" {

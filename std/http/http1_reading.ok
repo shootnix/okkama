@@ -1,8 +1,12 @@
 module http/http1_reading v1.0.0;
 
-// Lazy one-head operations borrow the source and preserve an exact byte tail.
-// Their Future is memoized, including cancellation/failure. A started failure
-// can consume input: discard the enclosing session; no retry/timeout is hidden.
+// Reading HTTP/1.1 heads from a stream, keeping whatever was read past them.
+//
+//     let read = await Http1RequestHeadReading(socket_input).head();
+//     read.head();                          // the Http1RequestHead
+//     read.remainder();                     // bytes of the body already read
+//
+// A failure part way may have consumed input: the connection is then discarded.
 
 import "http/http1_head" take Http1Limits, Http1LimitExceeded, Http1RequestHead, Http1ResponseHead,
     ParsedHttp1RequestHead, ParsedHttp1ResponseHead;
@@ -13,17 +17,21 @@ import "async/atomic" take Atomic;
 import "encoding/single_byte" take Latin1Decoded;
 import "async/scope" take FutureScope, Supervising;
 
+// Reads one request head from a stream.
 object Http1RequestHeadReading {
     has pending is Future<Http1HeadRead<Http1RequestHead>>;
 
+    // Reads from origin within the default limits.
     Http1RequestHeadReading(origin is AsyncReading) {
         pending = Http1RequestHeadDecoding().reading(origin, [], Http1Limits(), 4096);
     }
 
+    // Reads prefix first, then origin.
     Http1RequestHeadReading(origin is AsyncReading, prefix is @byte) {
         pending = Http1RequestHeadDecoding().reading(origin, prefix, Http1Limits(), 4096);
     }
 
+    // The same within limits, reading chunk_bytes at a time.
     Http1RequestHeadReading(
         origin is AsyncReading,
         prefix is @byte,
@@ -33,22 +41,27 @@ object Http1RequestHeadReading {
         pending = Http1RequestHeadDecoding().reading(origin, prefix, limits, chunk_bytes);
     }
 
+    // The head and the bytes read past it; the same future on every call.
     head() is Future<Http1HeadRead<Http1RequestHead>> {
         pending;
     }
 }
 
+// Reads one response head from a stream.
 object Http1ResponseHeadReading {
     has pending is Future<Http1HeadRead<Http1ResponseHead>>;
 
+    // Reads from origin within the default limits.
     Http1ResponseHeadReading(origin is AsyncReading) {
         pending = Http1ResponseHeadDecoding().reading(origin, [], Http1Limits(), 4096);
     }
 
+    // Reads prefix first, then origin.
     Http1ResponseHeadReading(origin is AsyncReading, prefix is @byte) {
         pending = Http1ResponseHeadDecoding().reading(origin, prefix, Http1Limits(), 4096);
     }
 
+    // The same within limits, reading chunk_bytes at a time.
     Http1ResponseHeadReading(
         origin is AsyncReading,
         prefix is @byte,
@@ -58,30 +71,36 @@ object Http1ResponseHeadReading {
         pending = Http1ResponseHeadDecoding().reading(origin, prefix, limits, chunk_bytes);
     }
 
+    // The head and the bytes read past it; the same future on every call.
     head() is Future<Http1HeadRead<Http1ResponseHead>> {
         pending;
     }
 }
 
+// A head read from a stream, and what came after it.
 object Http1HeadRead<T> {
     has head is T;
     has tail is @byte;
     has count is int;
 
+    // head, the tail read past it, and count bytes consumed.
     Http1HeadRead(head is T, tail is @byte, count is int) {
         self.head = head;
         self.tail = tail;
         self.count = count;
     }
 
+    // The head.
     head() is T {
         head;
     }
 
+    // The bytes read past the head.
     remainder() is @byte {
         tail;
     }
 
+    // How many bytes the head took.
     consumed() is int {
         count;
     }

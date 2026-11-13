@@ -1,5 +1,8 @@
 module http/http1_chunk v1.0.0;
 
+// The pieces of chunked transfer coding (RFC 9112 §7.1): chunk size lines and
+// trailer fields. Chunk extensions are checked and ignored.
+
 import "http/http1_head" take Http1Limits, Http1LimitExceeded;
 import "http/http1_framing" take Http1FramingFields;
 import "http/version" take HttpVersion;
@@ -15,11 +18,13 @@ object ParsedHttp1ChunkLine {
     has origin is string;
     has limits is Http1Limits;
 
+    // A chunk line without its CRLF, within the default limits.
     ParsedHttp1ChunkLine(origin is string) {
         self.origin = origin;
         limits = Http1Limits();
     }
 
+    // The same within limits.
     ParsedHttp1ChunkLine(origin is string, limits is Http1Limits) {
         self.origin = origin;
         self.limits = limits;
@@ -197,23 +202,27 @@ object ParsedHttp1ChunkLine {
     }
 }
 
+// The trailer section after the last chunk.
 object ParsedHttp1Trailers {
     has origin is string;
     has head is Headers;
     has limits is Http1Limits;
 
+    // The trailer text; head is the message's own fields.
     ParsedHttp1Trailers(origin is string, head is Headers) {
         self.origin = origin;
         self.head = head;
         limits = Http1Limits();
     }
 
+    // The same within limits.
     ParsedHttp1Trailers(origin is string, head is Headers, limits is Http1Limits) {
         self.origin = origin;
         self.head = head;
         self.limits = limits;
     }
 
+    // The trailers; InvalidHttpMessage for fields that may not be trailers.
     trailers() is Headers {
         confirm origin.length() <= limits::Limits::head_bytes
             else throw Http1LimitExceeded.kind("trailer_bytes");
