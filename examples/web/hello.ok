@@ -19,19 +19,20 @@ object Greeter {
     Greeter();
 
     async hello(request is WebRequest) is Responding {
-        let name = request.query().maybe("name").text() else "Незнакомец";
-        TextReply("Привет, " + name + "!\n");
+        let name = request.query().maybe("name").text() else "";
+        let who = if name == "" {
+            "Незнакомец";
+        }
+        else {
+            name;
+        };
+        TextReply("Привет, " + who + "!\n");
     }
 }
 
 async main() is int {
     let greeter = Greeter();
     Stdout().writeln("Слушаю http://127.0.0.1:8080/?name=Вася");
-    let routes = WebRoutes(
-        Get(path: "/", endpoint: greeter.hello),
-    );
-    let app = WebApplication(routes: routes);
-    await app.listen("127.0.0.1", 8080);
-    
+    await WebApplication(WebRoutes(Get(path: "/", endpoint: greeter.hello))).listen("127.0.0.1", 8080);
     0;
 }
