@@ -18,6 +18,8 @@ use std::rc::Rc;
 /// Исполнитель программы, которому intrinsic отдаёт работу с её значениями.
 pub trait Host {
     /// Объект объявления `declaration` с полями в порядке объявления.
+    /// Register its creation identity before returning, just as for program
+    /// object instructions, including runtime-created result containers.
     fn make(&self, declaration: usize, fields: Vec<Value>) -> Value;
     /// Отказ с Error-объектом объявления `declaration`.
     fn thrown(&self, declaration: usize, fields: Vec<Value>) -> Rc<Failure>;

@@ -293,7 +293,8 @@ impl State {
         Ok(self.allocate_object(id.0, fields))
     }
 
-    fn allocate_object(&self, declaration: usize, fields: Vec<Value>) -> Value {
+    // Program instructions and Host::make share creation-order tracing.
+    pub(crate) fn allocate_object(&self, declaration: usize, fields: Vec<Value>) -> Value {
         let value = self.objects.allocate(declaration, fields);
         if let Value::Object(object) = &value {
             self.destroy_trace.borrow_mut().created(object);

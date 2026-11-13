@@ -45,7 +45,7 @@ impl IrHost {
 
 impl Host for IrHost {
     fn make(&self, declaration: usize, fields: Vec<Value>) -> Value {
-        ObjectHeap.allocate(declaration, fields)
+        self.0.state.allocate_object(declaration, fields)
     }
 
     fn thrown(&self, declaration: usize, fields: Vec<Value>) -> Rc<Failure> {
