@@ -8,6 +8,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 0.5.6 is in progress.
 
+### Changed
+
+- **Fewer allocations in Sparrow's scheduler (#434, #440).** A Future with
+  one waiter, the common `await`, wakes it without building a vector. The
+  collector visits the scheduler's roots in place instead of copying them.
+  Micro-benchmarks on Linux: `cancel` 268 → 256 ns, `event-wake` 214 → 205,
+  `event-many-waiters` 1275 → 1217; the other async programs are unchanged.
+
 ### Fixed
 
 - **The `else` of `confirm` after an index is the confirm's (#521).**
