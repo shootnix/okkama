@@ -8,7 +8,7 @@ A JVM result that differs between two JVM runs is nondeterministic and is
 reported separately instead of as a divergence.
 
     cargo build -p okkama-cli -p okkama-native
-    tools/engines/parity.py [--engines ir,sparrow] [--set std,examples]
+    tools/engines/parity.py [--engines sparrow,ir] [--set std,examples]
                             [-j 8] [--filter SUBSTRING] [--refresh]
 
 The JVM baseline is cached in target/parity/jvm.json by file content and the
@@ -122,7 +122,7 @@ def first_difference(reference, result):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--engines", default="ir,sparrow")
+    parser.add_argument("--engines", default="sparrow,ir")
     parser.add_argument("--set", default="std,examples")
     parser.add_argument("-j", type=int, default=8)
     parser.add_argument("--filter", default="")

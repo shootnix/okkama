@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """The t/ suite (#245): self-checking Okkama programs that print TAP.
 
-    tools/t/run.py [--configs ir,sparrow,jvm] [--jobs N] [--cage] [FILE|DIR ...]
+    tools/t/run.py [--configs sparrow,ir,jvm] [--jobs N] [--cage] [FILE|DIR ...]
 
 Every file under t/ (or the ones given) runs on every configuration:
 
-    ir              okkama run --engine ir
     sparrow         okkama run --engine sparrow
+    ir              okkama run --engine ir
     jvm             okkama run --engine jvm
     ir-passes-off   the IR engine with OKKAMA_IR_PASSES=none
     ir-gc-stress    the IR engine with OKKAMA_GC=stress
@@ -43,8 +43,8 @@ OKKAMA = os.path.join(ROOT, "okkama-rs", "target", "release", "okkama")
 CAGE = os.path.join(ROOT, "okkama-rs", "tools", "new-runtime", "caged.py")
 
 CONFIGS = {
-    "ir": ("ir", {}),
     "sparrow": ("sparrow", {}),
+    "ir": ("ir", {}),
     "jvm": ("jvm", {}),
     "ir-passes-off": ("ir", {"OKKAMA_IR_PASSES": "none"}),
     "ir-gc-stress": ("ir", {"OKKAMA_GC": "stress"}),
@@ -115,7 +115,7 @@ def run(job, args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("paths", nargs="*")
-    parser.add_argument("--configs", default="ir,sparrow,jvm")
+    parser.add_argument("--configs", default="sparrow,ir,jvm")
     parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     parser.add_argument("--okkama", default=OKKAMA)
     parser.add_argument("--timeout", type=int, default=60)

@@ -14,6 +14,18 @@ spec.loader.exec_module(adapter)
 
 
 class ProbeCacheTests(unittest.TestCase):
+    def test_default_engine_is_sparrow(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(adapter.os.environ, {
+                "OCS_RUST_IMPLEMENTATION_ROOT": directory,
+                "OCS_RUST_TARGET_DIR": directory,
+            }), patch.object(adapter, "source_fingerprint", return_value="same-source"), \
+                    patch.object(adapter, "probe_uncached", return_value={"build_exit": 0, "modes": ["run"]}) as build:
+                adapter.os.environ.pop("OCS_RUST_ENGINE", None)
+                self.assertEqual(adapter.probe()["engine"], "sparrow")
+                self.assertTrue(adapter.probe()["cached"])
+                self.assertEqual(build.call_count, 1)
+
     def test_engine_change_invalidates_cached_capabilities(self):
         with tempfile.TemporaryDirectory() as directory:
             with patch.dict(adapter.os.environ, {

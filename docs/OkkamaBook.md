@@ -23,7 +23,10 @@ okkama build test.ok --target sparrow -o out.spb
 sparrow out.spb
 ```
 
-`run` executes source with the Rust interpreter. `build` emits the selected
+`run` executes source on Sparrow (JIT) by default, including inline tests
+with `run -t`. `--engine ir` keeps the IR interpreter selectable until its
+planned removal in 0.6.0; `OKKAMA_ENGINE` overrides the default.
+`build` emits the selected
 bytecode; the `sparrow` binary runs `.spb` on the Sparrow runtime (its current
 version is called Tomato). `--backend` remains an alias
 for `--target`. `sparrow check out.spb` verifies without execution.
@@ -32,7 +35,7 @@ tools and current runtime coverage.
 
 Every engine can bound a run, for untrusted programs or services: Sparrow
 (`okkama exec`, `okkama run --engine sparrow`, `sparrow run`), the IR
-engine (`okkama run`) and the JVM (`okkama run --engine jvm`). Every budget is
+engine (`okkama run --engine ir`) and the JVM (`okkama run --engine jvm`). Every budget is
 off by default and costs nothing then:
 
 ```sh

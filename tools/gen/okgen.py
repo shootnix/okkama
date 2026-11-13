@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generated Okkama programs compared across engines (hardening H-18).
 
-    tools/gen/okgen.py run [--seeds N] [--first S] [--engines ir,sparrow,jvm] [--out DIR]
+    tools/gen/okgen.py run [--seeds N] [--first S] [--engines sparrow,ir,jvm] [--out DIR]
     tools/gen/okgen.py show SEED
 
 Each seed makes one terminating, deterministic program: exact integers with
@@ -198,7 +198,7 @@ def main():
     runner = sub.add_parser("run")
     runner.add_argument("--seeds", type=int, default=50)
     runner.add_argument("--first", type=int, default=1)
-    runner.add_argument("--engines", default="ir,sparrow,jvm")
+    runner.add_argument("--engines", default="sparrow,ir,jvm")
     runner.add_argument("--out", default=os.path.join(ROOT, "conformance", "reports", "runs", "okgen"))
     show = sub.add_parser("show")
     show.add_argument("seed", type=int)

@@ -92,7 +92,7 @@ fn native_stdio_preserves_bytes_and_shared_input_state_in_both_engines() {
     let bytecode = TempFile::absent("native-stdio.spb");
     let input = b"one\r\nabtail\n";
     let expected = [input.as_slice(), &[0, 255]].concat();
-    let ir = run_stdin(&["run", source.path()], input);
+    let ir = run_stdin(&["run", "--engine", "ir", source.path()], input);
     assert_eq!(ir.status.code(), Some(0), "{}", stderr(&ir));
     assert_eq!(ir.stdout, expected);
     assert_eq!(ir.stderr, b"E\n");
@@ -117,7 +117,7 @@ fn native_stdio_preserves_bytes_and_shared_input_state_in_both_engines() {
 #[test]
 fn standard_stdout_uses_real_native_providers_in_the_ir_interpreter() {
     let source = TempFile::new("stdlib-stdout-ir.ok", "module app v1.0.0; import \"io/stdout\" take Stdout, Stderr; main() is int { Stdout().writeln(\"Aé🙂\"); Stderr().write(\"error\"); 0; }".as_bytes());
-    let output = run_stdin(&["run", source.path()], b"");
+    let output = run_stdin(&["run", "--engine", "ir", source.path()], b"");
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     assert_eq!(stdout(&output), "Aé🙂\n");
     assert_eq!(stderr(&output), "error");
@@ -136,7 +136,7 @@ fn ocs_native_engines_report_execution_and_limitations_without_java() {
         ),
     )
     .unwrap();
-    for engine in ["ir", "sparrow"] {
+    for engine in ["sparrow", "ir"] {
         for (body, outcome, code) in [
             ("6 * 7;", "completed", 42),
             ("256;", "failed", 1),
@@ -187,7 +187,7 @@ fn ocs_native_engines_report_execution_and_limitations_without_java() {
 
 #[test]
 fn ocs_capabilities_follow_the_selected_engine() {
-    for engine in ["ir", "sparrow", "jvm"] {
+    for engine in ["sparrow", "ir", "jvm"] {
         let output = okkama()
             .arg("--ocs-capabilities")
             .env("OCS_RUST_ENGINE", engine)
@@ -203,8 +203,8 @@ fn ocs_capabilities_follow_the_selected_engine() {
         .env_remove("OCS_RUST_ENGINE")
         .output()
         .unwrap();
-    // Как `okkama run`: IR по умолчанию.
-    assert!(stdout(&output).contains("\"engine\": \"ir\""));
+    // Как `okkama run`: Sparrow по умолчанию.
+    assert!(stdout(&output).contains("\"engine\": \"sparrow\""));
     let output = okkama()
         .arg("--ocs-capabilities")
         .env("OCS_RUST_ENGINE", "typo")
@@ -232,13 +232,58 @@ fn sparrow_build_and_exec_need_neither_source_nor_java() {
     assert!(output.stderr.is_empty());
 }
 
+/// Sparrow-only statistics distinguish the selected engine from identical
+/// program output. No servers, workers or external runtime are involved.
+#[test]
+fn sparrow_default_and_explicit_engine_overrides() {
+    let source = TempFile::new(
+        "default-engine.ok",
+        br#"module app v1.0.0; main() is int { 0; } test "default" { test.ok(true); }"#,
+    );
+    for prefix in [&[][..], &["run"][..], &["run", "-t"][..], &["-t"][..]] {
+        for (environment, explicit, sparrow) in [
+            (None, None, true),
+            (Some(""), None, true),
+            (Some("typo"), None, true),
+            (Some("ir"), None, false),
+            (Some("sparrow"), None, true),
+            (Some("sparrow"), Some("ir"), false),
+            (Some("ir"), Some("sparrow"), true),
+        ] {
+            let mut command = okkama();
+            command.args(prefix);
+            if let Some(engine) = explicit {
+                if prefix.is_empty() {
+                    continue; // Engine flags belong to the run subcommand.
+                }
+                command.args(["--engine", engine]);
+            }
+            command.arg(source.path()).env("SPARROW_CORE_STATS", "1").env_remove("OKKAMA_ENGINE");
+            if let Some(engine) = environment {
+                command.env("OKKAMA_ENGINE", engine);
+            }
+            let output = command.output().unwrap();
+            assert!(output.status.success(), "{}", stderr(&output));
+            assert_eq!(
+                stderr(&output).contains("heap bytes allocated"),
+                sparrow,
+                "{prefix:?}, env={environment:?}, flag={explicit:?}: {}",
+                stderr(&output)
+            );
+            if prefix.contains(&"-t") {
+                assert!(stdout(&output).contains("--- PASS: default"), "{}", stdout(&output));
+            }
+        }
+    }
+}
+
 #[test]
 fn native_run_engines_execute_source_without_java() {
     let source = TempFile::new(
         "native-engines.ok",
         b"module app v1.0.0; main() is int { 6 * 7; }",
     );
-    // По умолчанию `run` — IR-интерпретатор в процессе: java не нужна.
+    // По умолчанию `run` — Sparrow в процессе: java не нужна.
     let output = okkama()
         .args(["run", source.path()])
         .env("PATH", "")
@@ -257,7 +302,7 @@ fn native_run_engines_execute_source_without_java() {
         .unwrap();
     assert_eq!(output.status.code(), Some(3), "{}", stderr(&output));
     assert!(stderr(&output).contains("cannot start java"));
-    for engine in ["ir", "sparrow"] {
+    for engine in ["sparrow", "ir"] {
         let output = okkama()
             .args(["run", "--engine", engine, source.path()])
             .env("PATH", "")
@@ -298,7 +343,7 @@ fn skipped_and_filtered_tests_report_alike_on_every_engine() {
           test \"through catch\" { try { test.skip(\"uncaught\"); } catch e is Error { test.fail(\"caught\"); } }\n\
           test \"failed first\" { test.is(1, 2); test.skip(\"too late\"); }\n",
     );
-    for engine in ["ir", "sparrow"] {
+    for engine in ["sparrow", "ir"] {
         let output = run(&["run", "--engine", engine, "-t", source.path()]);
         assert_eq!(output.status.code(), Some(1), "{engine}: {}", stderr(&output));
         assert_eq!(
@@ -341,7 +386,7 @@ fn channel_examples_print_their_expected_output() {
             continue;
         }
         let expected = std::fs::read_to_string(path.with_extension("expected")).unwrap();
-        for engine in ["ir", "sparrow"] {
+        for engine in ["sparrow", "ir"] {
             let output = run(&["run", "--engine", engine, "--timeout", "30", path.to_str().unwrap()]);
             assert_eq!(output.status.code(), Some(0), "{} {engine}: {}", path.display(), stderr(&output));
             assert_eq!(stdout(&output), expected, "{} {engine}", path.display());
@@ -355,7 +400,7 @@ fn channel_examples_print_their_expected_output() {
 fn uncaught_failure_prints_place_and_call_stack() {
     let source = b"module app v1.0.0;\nobject Box {\n    Box();\n    at(i is int) is int { [1, 2][i]; }\n}\nmain() is int {\n    Box().at(5);\n}\n";
     // Every engine reports the place and the call stack (the core since #10).
-    for engine in ["ir", "sparrow"] {
+    for engine in ["sparrow", "ir"] {
         let output = run_stdin(&["run", "--engine", engine, "-"], source);
         assert_eq!(output.status.code(), Some(1));
         let text = stderr(&output);
@@ -457,7 +502,7 @@ fn native_run_does_not_ignore_arguments_or_fallback_to_java() {
     ] {
         assert_eq!(run(&args).status.code(), Some(2));
     }
-    for engine in ["ir", "sparrow"] {
+    for engine in ["sparrow", "ir"] {
         let output = run_stdin(
             &["run", "--engine", engine, "-"],
             b"module runtime/unlinked v1.0.0; native nothing() is int; main() is int { nothing(); }",
@@ -621,6 +666,8 @@ fn help_and_version() {
         let output = run(args);
         assert_eq!(output.status.code(), Some(0));
         assert!(stdout(&output).contains("okkama ast <FILE|->"));
+        assert!(stdout(&output).contains("Sparrow (JIT) by default"));
+        assert!(stdout(&output).contains("OKKAMA_ENGINE=sparrow|ir|jvm"));
         assert!(stdout(&output).contains("okkama ir <FILE|->"));
         assert!(stdout(&output).contains("okkama build <FILE|-> --target jvm [--budgeted] -o <FILE>"));
         assert!(stderr(&output).is_empty());
@@ -1493,7 +1540,7 @@ fn an_uncaught_error_text_keeps_its_payload_on_one_line() {
     // #306: a string payload is an Okkama literal, so a newline in it does
     // not split the report.
     let source = b"module app v1.0.0;\nenum Ferr is Error = (text(s is string));\nmain() is int { throw Ferr.text(\"line1\\nline2 \\\"q\\\"\"); }\n";
-    for engine in ["ir", "sparrow"] {
+    for engine in ["sparrow", "ir"] {
         let mut command = okkama();
         command.args(["run", "--engine", engine, "-"]).env("OKKAMA_TRACE", "off");
         command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -1531,7 +1578,7 @@ fn a_cancelled_worker_stops_before_its_future_settles() {
             Stdout().writeln(\"end\");\n\
             0;\n}\n";
     let file = TempFile::new("cancelled-worker.ok", source.as_bytes());
-    for engine in ["ir", "sparrow"] {
+    for engine in ["sparrow", "ir"] {
         let started = std::time::Instant::now();
         let output = okkama().args(["run", "--engine", engine]).arg(&file.0).output().unwrap();
         assert_eq!(output.status.code(), Some(0), "{engine}: {}", stderr(&output));

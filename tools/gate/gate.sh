@@ -10,14 +10,14 @@
 #      останавливаются), тесты Rust всего workspace (профиль gate —
 #      оптимизации release без fat LTO, — и debug: глубина стека и
 #      debug-проверки видны только там), clippy без предупреждений;
-#   2. conformance на IR, JVM, Sparrow (ядро; компилирует каждую функцию
-#      целиком), на IR без IR-проходов (OKKAMA_IR_PASSES=none) и на IR со
+#   2. conformance на Sparrow (JIT), IR, JVM, на IR без IR-проходов
+#      (OKKAMA_IR_PASSES=none) и на IR со
 #      сборкой циклов на каждом кандидате (OKKAMA_GC=stress);
 #   3. перечень std в conformance актуален (conformance/tools/inventory_std.py
-#      --check, #282); встроенные тесты всех модулей std на IR и Sparrow
+#      --check, #282); встроенные тесты всех модулей std на Sparrow и IR
 #      (tools/gate/std-tests.py);
 #   4. t/ — самопроверяющиеся программы на Okkama (tools/t/run.py, #245) на всех
-#      конфигурациях: IR, Sparrow, JVM, IR без проходов и IR со стресс-сборкой;
+#      конфигурациях: Sparrow, IR, JVM, IR без проходов и IR со стресс-сборкой;
 #      TAP-потоки конфигураций обязаны совпадать.
 #
 # Статус каждого шага — код выхода его команды (ocs: 0 только если прошли все
@@ -163,9 +163,9 @@ conformance() {
 }
 
 step "conformance"
+conformance sparrow --adapter-env OCS_RUST_ENGINE=sparrow
 conformance ir --adapter-env OCS_RUST_ENGINE=ir
 conformance jvm --adapter-env OCS_RUST_ENGINE=jvm
-conformance sparrow --adapter-env OCS_RUST_ENGINE=sparrow
 # Every engine runs the passed OIR: the IR suite again with the passes off
 # shows a pass that changes meaning (#29).
 # Without the passes tail calls are real calls: L03.recursion.tail-constant-stack
@@ -203,7 +203,7 @@ fi
 
 step "t/ suite"
 started=$SECONDS
-if python3 "$ROOT/tools/t/run.py" --configs ir,sparrow,jvm,ir-passes-off,ir-gc-stress,sparrow-gc-stress --okkama "$OKKAMA" \
+if python3 "$ROOT/tools/t/run.py" --configs sparrow,ir,jvm,ir-passes-off,ir-gc-stress,sparrow-gc-stress --okkama "$OKKAMA" \
         | tee "$LOGS/t-suite.log"; [[ ${PIPESTATUS[0]} -eq 0 ]]; then
     record "t suite" pass $((SECONDS - started))
 else

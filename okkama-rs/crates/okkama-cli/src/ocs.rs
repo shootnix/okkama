@@ -2,7 +2,7 @@
 //!
 //! `--ocs-capabilities` reports supported modes for OCS_RUST_ENGINE.
 //! `--ocs-request R --ocs-response P` parses/checks the linked source and runs
-//! it with JVM (default, as `okkama run`), IR or serialized Sparrow bytecode.
+//! it with serialized Sparrow bytecode (default, as `okkama run`), IR or JVM.
 //! Unsupported operations never fall back to another engine. JVM failures
 //! are distinguished from application exit codes via OKKAMA_FAILURE_REPORT.
 
@@ -32,12 +32,12 @@ pub(super) fn capabilities() -> Outcome {
 }
 
 fn engine() -> Result<String, String> {
-    // Как `okkama run` и адаптер: IR по умолчанию, Sparrow и JVM — явно.
-    let engine = std::env::var("OCS_RUST_ENGINE").unwrap_or_else(|_| "ir".into());
+    // Как `okkama run` и адаптер: Sparrow по умолчанию, IR и JVM — явно.
+    let engine = std::env::var("OCS_RUST_ENGINE").unwrap_or_else(|_| "sparrow".into());
     match engine.as_str() {
-        "ir" | "sparrow" | "jvm" => Ok(engine),
+        "sparrow" | "ir" | "jvm" => Ok(engine),
         _ => Err(format!(
-            "unknown OCS_RUST_ENGINE `{engine}`; expected ir, sparrow or jvm"
+            "unknown OCS_RUST_ENGINE `{engine}`; expected sparrow, ir or jvm"
         )),
     }
 }

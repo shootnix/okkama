@@ -45,7 +45,7 @@ response, stdout/stderr bytes, process status, source hashes), `summary.json`
 and `summary.md`. Non-passing cases keep their temporary directory for
 inspection (`--keep failed`).
 
-The Rust adapter defaults to the native IR interpreter. Select Sparrow or
+The Rust adapter defaults to Sparrow. Select IR or
 JVM explicitly as above; results for one engine do not establish support in
 another. The selected engine appears in each run's adapter configuration.
 
