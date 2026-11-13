@@ -4,9 +4,12 @@ module locale/internal/plurals v1.0.0;
 import "i18n/operands" take PluralOperands;
 import "locale/internal/parents" take CldrParents;
 
+// CLDR plural rules by locale.
 object CldrPlurals {
+    // The rules.
     CldrPlurals();
 
+    // The category index (zero 0 … other 5) of number in locale, cardinal or ordinal.
     category(number is PluralOperands, locale is string, ordinal is bool) is int {
         let rules is %string:int = if ordinal {
             [

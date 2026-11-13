@@ -1,18 +1,39 @@
 module locale/collation v1.0.0;
 
+// Sorting text as a language does (Unicode Collation Algorithm, CLDR
+// tailorings).
+//
+//     let a = CollatedString(origin: "Äpfel", locale: Locale("de"), options: options);
+//     let b = CollatedString(origin: "Zebra", locale: Locale("de"), options: options);
+//     a.order(b);                                     // less
+//     CollatedString(origin: "item 10", locale: en, options: CollationOptions(
+//         strength: CollationStrength.tertiary, case_first: CollationCaseFirst.locale_default,
+//         numeric: true, normalization: true));      // "item 2" < "item 10"
+//
+// Strings collated with different locales or options are IncompatibleCollation.
+// key() gives bytes that sort the same way, for an index.
+//
+// Collation runs on the pinned ICU 76.1 library (tools/build-icu-collation.sh,
+// or OKKAMA_ICU_LIBDIR); without it, CollatedString is UnavailableCollation.
+
 import "locale/tag" take Locale, LocaleExtensions;
 import "compare" take Comparing, Order;
 import "runtime/collation" take collation_key;
 
+// Which differences count: base letters, accents, case, punctuation,
+// everything.
 enum CollationStrength = (primary, secondary, tertiary, quaternary, identical);
 
+// Whether lower or upper case sorts first.
 enum CollationCaseFirst = (locale_default, lower, upper);
 
+// How text is compared.
 object CollationOptions {
     has strength is CollationStrength;
     has case_first is CollationCaseFirst;
     has numeric, normalization is bool;
 
+    // strength, case order, numeric digit runs, and normalization.
     CollationOptions(
         strength is CollationStrength,
         case_first is CollationCaseFirst,
@@ -25,6 +46,7 @@ object CollationOptions {
         self.normalization = normalization;
     }
 
+    // The strength's ICU code.
     strength_code() is int {
         match strength {
             case CollationStrength.primary {
@@ -45,6 +67,7 @@ object CollationOptions {
         }
     }
 
+    // The case order's ICU code.
     case_first_code() is int {
         match case_first {
             case CollationCaseFirst.lower {
@@ -59,6 +82,7 @@ object CollationOptions {
         }
     }
 
+    // The strength, case order, numeric and normalization.
     cap Settings {
         strength is CollationStrength {
             strength;
@@ -78,36 +102,45 @@ object CollationOptions {
     }
 }
 
+// The versions of the collation data.
 object CollationDataVersion {
+    // The versions.
     CollationDataVersion();
 
+    // The ICU version.
     icu() is string {
         "76.1";
     }
 
+    // The Unicode version.
     unicode() is string {
         "16.0.0";
     }
 
+    // The UCA version.
     uca() is string {
         "16.0.0";
     }
 
+    // The CLDR version.
     cldr() is string {
         "46.0";
     }
 
+    // All of them as text.
     string() is string {
         "ICU76.1/UCA16.0.0/CLDR46.0";
     }
 }
 
+// Text with the rules it sorts by.
 object CollatedString does Comparing<CollatedString> {
     has origin is string;
     has locale is Locale;
     has options is CollationOptions;
     has key is @byte;
 
+    // origin, sorted as locale sorts with options.
     CollatedString(origin is string, locale is Locale, options is CollationOptions) {
         self.origin = origin;
         self.locale = locale;
@@ -147,26 +180,33 @@ object CollatedString does Comparing<CollatedString> {
         };
     }
 
+    // The text.
     string() is string {
         origin;
     }
 
+    // The locale.
     locale() is Locale {
         locale;
     }
 
+    // The options.
     options() is CollationOptions {
         options;
     }
 
+    // A sort key: bytes that compare as the text does; InvalidCollation or
+    // UnavailableCollation when it cannot be made.
     key() is @byte {
         key;
     }
 
+    // The data it was sorted with.
     data_version() is CollationDataVersion {
         CollationDataVersion();
     }
 
+    // Orders by collation; IncompatibleCollation for other locales or options.
     order(other is CollatedString) is Order {
         let policy = other.options();
         confirm locale.string() == other.locale().string()
@@ -193,10 +233,13 @@ object CollatedString does Comparing<CollatedString> {
     }
 }
 
+// A locale or text the collator refuses; reason says why.
 enum InvalidCollation is Error = (because(reason is string));
 
+// The collator is not available here; reason says why.
 enum UnavailableCollation is Error = (because(reason is string));
 
+// Strings collated with different rules were compared.
 enum IncompatibleCollation is Error = (incompatible);
 
 test "numeric collation is explicit" {

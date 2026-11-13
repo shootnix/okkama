@@ -2,13 +2,17 @@ module locale/internal/iana v1.0.0;
 
 // Generated from SHA-checked IANA Language Subtag Registry, file-date 2026-09-17.
 // Materialize only the queried registry group, not every table for every tag.
+// The IANA Language Subtag Registry, as needed for canonical tags.
 object IanaLanguages {
+    // The registry.
     IanaLanguages();
 
+    // The registry's file date.
     version() is string {
         "2026-09-17";
     }
 
+    // The preferred value of tag among the subtags of kind, or tag itself.
     alias(kind is string, tag is string) is string {
         let values is %string:string = match kind {
             case "extlang" {
@@ -461,6 +465,7 @@ object IanaLanguages {
         }
     }
 
+    // Whether tag is a grandfathered tag.
     grandfathered(tag is string) is bool {
         if tag.split("-").size() == 1 {
             return false;
@@ -496,6 +501,7 @@ object IanaLanguages {
         values.has(tag);
     }
 
+    // The preferred value of a whole tag, or "".
     preferred_tag(tag is string) is string {
         if tag.split("-").size() == 1 {
             return "";
@@ -561,6 +567,7 @@ object IanaLanguages {
         }
     }
 
+    // The prefix an extended language subtag requires, or "".
     extlang_prefix(tag is string) is string {
         let values is %string:string = [
             "aao": "ar",
@@ -831,9 +838,12 @@ object IanaLanguages {
     }
 }
 
+// The registry version.
 object IanaLanguageDataVersion {
+    // The version.
     IanaLanguageDataVersion();
 
+    // The registry's file date.
     string() is string {
         "2026-09-17";
     }

@@ -1,8 +1,14 @@
 module locale/currency v1.0.0;
 
-// Currency identity is explicit. ISO minor units and CLDR representation data
-// are immutable pinned snapshots; no exchange rate, locale inference or host
-// currency service participates. Undefined ISO minor units fail explicitly.
+// Money in a locale's way: symbol, digits, accounting brackets.
+//
+//     let money = CurrencyFormat(numbers: number, display: CurrencyDisplay.symbol, accounting: false, currency_digits: true);
+//     LocalizedCurrency(amount: Decimal("-1234.5"), currency: Currency("EUR"), locale: Locale("de"), format: money).string();   // "-1.234,50 €"
+//     Currency("JPY").digits();                       // 0
+//
+// Currency codes are ISO 4217 as shipped (see CurrencyDataVersion);
+// currency_digits rounds to the currency's minor units.
+
 import "locale/internal/currencies" take CldrCurrencies, CurrencySymbolLetters;
 import "locale/tag" take Locale;
 import "locale/data" take LocaleFallbacks;
@@ -14,11 +20,14 @@ import "strings/parse" take Number;
 import "compare" take Comparing, Order;
 import "i18n/plural" take PluralNumber, PluralCategory, PluralCategoryOf, PluralKind;
 
+// How a currency is shown: symbol, narrow symbol, code or name.
 enum CurrencyDisplay = (symbol, narrow_symbol, code, name);
 
+// An ISO 4217 currency.
 object Currency does Comparing<Currency> {
     has code, minor_units is string;
 
+    // The code; InvalidCurrency for one not in ISO 4217.
     Currency(code is string) {
         confirm code.length() == 3 else throw InvalidCurrency.code(code);
         let digits = CldrCurrencies().digits(code);
@@ -27,29 +36,37 @@ object Currency does Comparing<Currency> {
         minor_units = digits;
     }
 
+    // The code.
     code() is string {
         code;
     }
 
+    // Its minor units; MissingCurrencyDigits for codes without (XAU…).
     digits() is int {
         confirm minor_units != "N.A." else throw MissingCurrencyDigits.code(code);
         Number(minor_units).int();
     }
 
+    // Orders by code.
     order(other is Currency) is Order {
         code.order(other.code());
     }
 }
 
+// A code that is not an ISO 4217 currency.
 enum InvalidCurrency is Error = (code(code is string));
 
+// The currency has no minor units.
 enum MissingCurrencyDigits is Error = (code(code is string));
 
+// How an amount is written.
 object CurrencyFormat {
     has numbers is NumberFormat;
     has display is CurrencyDisplay;
     has accounting, currency_digits is bool;
 
+    // numbers, shown with display, in accounting form or not, rounded to the
+    // currency's digits or not.
     CurrencyFormat(
         numbers is NumberFormat,
         display is CurrencyDisplay,
@@ -62,10 +79,12 @@ object CurrencyFormat {
         self.currency_digits = currency_digits;
     }
 
+    // The number format.
     numbers() is NumberFormat {
         numbers;
     }
 
+    // The display, accounting and currency digits.
     cap Settings {
         display is CurrencyDisplay {
             display;
@@ -81,13 +100,17 @@ object CurrencyFormat {
     }
 }
 
+// The versions of the currency data.
 object CurrencyDataVersion {
+    // The versions.
     CurrencyDataVersion();
 
+    // The ISO 4217 list date.
     iso() is string {
         "2026-09-17";
     }
 
+    // The CLDR version.
     cldr() is string {
         "46.1.0";
     }
@@ -447,12 +470,14 @@ hidden object CurrencyPluralCategory {
     }
 }
 
+// An amount of money in a locale.
 object LocalizedCurrency {
     has amount is Decimal;
     has currency is Currency;
     has locale is Locale;
     has format is CurrencyFormat;
 
+    // amount of currency, as locale writes it with format.
     LocalizedCurrency(
         amount is Decimal,
         currency is Currency,
@@ -465,6 +490,7 @@ object LocalizedCurrency {
         self.format = format;
     }
 
+    // The text.
     string() is string {
         let policy = format.numbers();
         let source = policy.precision();
